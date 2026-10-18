@@ -1,0 +1,20 @@
+[package]
+name = "notecraft"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "notecraft"
+description = "NoteCraft desktop app"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-engine = { workspace = true }
+notecraft-store = { workspace = true }
+notecraft-ui-egui = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+image = { workspace = true }

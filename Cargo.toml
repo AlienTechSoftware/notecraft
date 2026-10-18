@@ -1,0 +1,52 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "xtask"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/AlienTechSoftware/notecraft"
+publish = false
+
+[workspace.dependencies]
+notecraft-model = { path = "crates/model" }
+notecraft-math = { path = "crates/math" }
+notecraft-formats = { path = "crates/formats" }
+notecraft-store = { path = "crates/store" }
+notecraft-engine = { path = "crates/engine" }
+notecraft-mcp = { path = "crates/mcp" }
+notecraft-ui-egui = { path = "crates/ui-egui" }
+
+# Versions match the sibling Craft apps (storytold/wordcraft).
+eframe = "0.36"
+egui = "0.36"
+egui_extras = { version = "0.36", default-features = false, features = ["image", "file"] }
+egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = 0
+
+

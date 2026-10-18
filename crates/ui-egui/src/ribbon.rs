@@ -1,0 +1,731 @@
+//! The ribbon: a tab strip and, under it, the groups of controls for the chosen tab, the way
+//! Office and OneNote arrange them. It follows the shape the sibling Craft apps use (a tab
+//! strip, groups of buttons, a label under each group) without sharing their code.
+//!
+//! Every control here asks for an [`Act`]; the window carries it out. Nothing in this module
+//! touches the notebook, so the whole ribbon is tested by asking what the buttons return.
+
+use crate::icons::{self, Icon};
+use crate::ribbon_icons::{self, Mark};
+use crate::theme::Tokens;
+use egui::{Align2, Rect, Sense, Ui, vec2};
+use notecraft_model::{PageFormat, Tag};
+
+/// The tabs, in order. "Source" only appears while the page source is shown, the way Office
+/// shows a tab for what is selected.
+pub const TABS: [&str; 3] = ["Home", "Insert", "View"];
+pub const SOURCE_TAB: &str = "Source";
+
+/// What a ribbon control asks the window to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Act {
+    /// Put marks around the selection, or at the caret: bold, italic, strikethrough, code.
+    Mark(&'static str),
+    /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
+    /// `number`, `todo`.
+    Block(&'static str),
+    /// Put a snippet in the page: a table, a link, an equation, a diagram, the date.
+    Insert(&'static str),
+    /// Add a file to the page (opens the same question a dropped file asks).
+    AddFile,
+    /// Add a picture to the page.
+    AddPicture,
+    ToggleSource,
+    ToggleFullPage,
+    FocusSearch,
+    OpenThemes,
+    /// Lines or squares behind the page, as on paper.
+    RuleLines(RuleLines),
+    /// Show or hide the page's title line.
+    ToggleTitle,
+    /// Larger (1), smaller (-1) or back to 100% (0).
+    Zoom(i8),
+    /// Cut or copy what is selected.
+    Clipboard(&'static str),
+    /// More or less indent on a list item.
+    Indent(bool),
+    /// Take the marks off the selection.
+    ClearFormatting,
+    /// Put a tag on the line the caret is in, or take it off again.
+    Tag(Tag),
+    /// Something OneNote has that NoteCraft does not: say so plainly.
+    NotBuilt(&'static str),
+    /// The user picked another tab.
+    Tab(String),
+}
+
+/// What is drawn behind the page: nothing, ruled lines, or squares. OneNote calls this
+/// Rule Lines, and keeps it per page; here it is how the pages are viewed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RuleLines {
+    #[default]
+    None,
+    Lines,
+    Grid,
+}
+
+impl RuleLines {
+    pub fn id(self) -> &'static str {
+        match self {
+            RuleLines::None => "none",
+            RuleLines::Lines => "lines",
+            RuleLines::Grid => "grid",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RuleLines::None => "No lines",
+            RuleLines::Lines => "Lines",
+            RuleLines::Grid => "Squares",
+        }
+    }
+
+    /// The next one, for a button that cycles through them.
+    pub fn next(self) -> RuleLines {
+        match self {
+            RuleLines::None => RuleLines::Lines,
+            RuleLines::Lines => RuleLines::Grid,
+            RuleLines::Grid => RuleLines::None,
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<RuleLines> {
+        match text.trim() {
+            "none" => Some(RuleLines::None),
+            "lines" => Some(RuleLines::Lines),
+            "grid" => Some(RuleLines::Grid),
+            _ => None,
+        }
+    }
+}
+
+/// What the View tab shows about the window.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct View {
+    pub full_page: bool,
+    pub rules: RuleLines,
+    pub hide_title: bool,
+    pub zoom_percent: u32,
+}
+
+/// How tall the ribbon is: the tab strip, then the groups.
+pub const TAB_STRIP_H: f32 = 26.0;
+pub const GROUP_H: f32 = 78.0;
+const BIG: f32 = 46.0;
+const SMALL_W: f32 = 30.0;
+const SMALL_H: f32 = 18.0;
+
+/// Draws the ribbon. `tab` is the chosen tab, `source` whether the page source is shown.
+/// Returns every act the user asked for this frame (usually none or one).
+pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
+    let mut acts = Vec::new();
+    tab_strip(ui, tab, source, t, &mut acts);
+    ui.add_space(2.0);
+    let chosen = resolve_tab(tab, source);
+    ui.horizontal_top(|ui| {
+        ui.add_space(4.0);
+        match chosen {
+            "Insert" => insert_tab(ui, t, &mut acts),
+            "View" => view_tab(ui, source, view, t, &mut acts),
+            SOURCE_TAB => source_tab(ui, format, t, &mut acts),
+            _ => home_tab(ui, t, &mut acts),
+        }
+    });
+    acts
+}
+
+/// The tab that is really shown: the Source tab disappears with the source pane.
+pub fn resolve_tab(tab: &str, source: bool) -> &str {
+    if tab == SOURCE_TAB && !source {
+        return "Home";
+    }
+    if TABS.contains(&tab) || (tab == SOURCE_TAB && source) { tab } else { "Home" }
+}
+
+/// Every tab that can be chosen now.
+pub fn tabs(source: bool) -> Vec<&'static str> {
+    let mut v = TABS.to_vec();
+    if source {
+        v.push(SOURCE_TAB);
+    }
+    v
+}
+
+fn tab_strip(ui: &mut Ui, tab: &str, source: bool, t: &Tokens, acts: &mut Vec<Act>) {
+    let chosen = resolve_tab(tab, source);
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        for name in tabs(source) {
+            let selected = name == chosen;
+            let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(13.0), t.text);
+            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 20.0, TAB_STRIP_H), Sense::click());
+            let painter = ui.painter_at(rect);
+            if selected {
+                painter.rect_filled(rect.shrink2(vec2(0.0, 2.0)), 4.0, t.row_selected);
+                painter.line_segment(
+                    [egui::pos2(rect.min.x + 6.0, rect.max.y - 2.0), egui::pos2(rect.max.x - 6.0, rect.max.y - 2.0)],
+                    egui::Stroke::new(2.0, t.accent),
+                );
+            } else if resp.hovered() {
+                painter.rect_filled(rect.shrink2(vec2(0.0, 2.0)), 4.0, t.row_hover);
+            }
+            painter.text(rect.center(), Align2::CENTER_CENTER, name, egui::FontId::proportional(13.0), if selected { t.strong } else { t.text });
+            let enabled = ui.is_enabled();
+            let label = name.to_string();
+            resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
+            if resp.clicked() {
+                acts.push(Act::Tab(name.to_string()));
+            }
+        }
+    });
+}
+
+/// One group of the ribbon: its controls, a line on the right, and its name underneath.
+fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
+    // The controls first; the group's name and its divider are painted around whatever they
+    // took, so a group is exactly as wide as it needs to be, as in Office.
+    let inner = ui
+        .scope(|ui| {
+            ui.spacing_mut().item_spacing = vec2(3.0, 3.0);
+            ui.horizontal_top(|ui| {
+                ui.add_space(5.0);
+                add(ui);
+                ui.add_space(5.0);
+            });
+        })
+        .response
+        .rect;
+    let painter = ui.painter();
+    painter.text(egui::pos2(inner.center().x, inner.min.y + GROUP_H - 9.0), Align2::CENTER_CENTER, title, egui::FontId::proportional(10.5), t.muted);
+    // A crisp divider between groups, on a whole pixel so it does not blur, and dark enough
+    // to read on a light or a dark surface, the way Office separates its groups.
+    let x = (inner.max.x + 6.0).round() + 0.5;
+    painter.line_segment(
+        [egui::pos2(x, inner.min.y + 2.0), egui::pos2(x, inner.min.y + GROUP_H - 6.0)],
+        egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.22)),
+    );
+    ui.add_space(13.0);
+}
+
+/// A big button: an icon with its name under it.
+fn big(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(BIG.max(label.len() as f32 * 6.5 + 10.0), GROUP_H - 18.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + 18.0), vec2(22.0, 22.0)), icon, t.accent);
+    painter.text(egui::pos2(rect.center().x, rect.min.y + 40.0), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), t.text);
+    let enabled = ui.is_enabled();
+    // The name a test or a screen reader hears: one line, no matter how the label wraps.
+    let name = label.replace('\n', " ");
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp.on_hover_text(tip)
+}
+
+/// A small button: an icon, or a letter for the marks that have one.
+fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    // Wide enough for whatever it says: a letter, or a word like "Copy".
+    let width = if icon.is_some() || letter.is_empty() {
+        SMALL_W
+    } else {
+        ui.painter().layout_no_wrap(letter.to_string(), egui::FontId::proportional(12.5), t.text).size().x + 14.0
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width.max(SMALL_W), SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if on || resp.hovered() {
+        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
+    }
+    match icon {
+        Some(i) => icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), i, t.accent),
+        None => {
+            painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), t.strong);
+        }
+    }
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
+    resp.on_hover_text(tip)
+}
+
+/// Rows of small buttons inside a group.
+fn rows(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+        add(ui);
+    });
+}
+
+/// The styles OneNote lists in its Styles gallery, and what each one is here.
+pub const STYLES: [(&str, &str); 11] = [
+    ("Heading 1", "h1"),
+    ("Heading 2", "h2"),
+    ("Heading 3", "h3"),
+    ("Heading 4", "h4"),
+    ("Heading 5", "h5"),
+    ("Heading 6", "h6"),
+    ("Page Title", "title"),
+    ("Citation", "citation"),
+    ("Quote", "quote"),
+    ("Code", "codeblock"),
+    ("Normal", "p"),
+];
+
+/// OneNote's tag list. Every one of them works: To Do is a task item, the rest are a
+/// marker word at the start of the line (`notecraft_model::Tag`).
+pub fn tag_label(tag: Tag) -> String {
+    match tag.shortcut() {
+        Some(keys) => format!("{} ({keys})", tag.label()),
+        None => tag.label().to_string(),
+    }
+}
+
+fn home_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Clipboard", t, |ui| {
+        if big_mark(ui, Mark::Paste, "Paste", "Ctrl+V pastes into the page", t).clicked() {
+            acts.push(Act::NotBuilt("Paste from the ribbon"));
+        }
+        rows(ui, |ui| {
+            if mark_button(ui, Mark::Cut, "Cut", "Cut the selection", false, t).clicked() {
+                acts.push(Act::Clipboard("cut"));
+            }
+            if mark_button(ui, Mark::Copy, "Copy", "Copy the selection", false, t).clicked() {
+                acts.push(Act::Clipboard("copy"));
+            }
+            if mark_button(ui, Mark::Painter, "Format Painter", "Not built", false, t).clicked() {
+                acts.push(Act::NotBuilt("Format Painter"));
+            }
+        });
+    });
+    group(ui, "Basic Text", t, |ui| {
+        rows(ui, |ui| {
+            ui.horizontal(|ui| {
+                if mark_button(ui, Mark::Bold, "Bold", "Bold (Ctrl+B)", false, t).clicked() {
+                    acts.push(Act::Mark("bold"));
+                }
+                if mark_button(ui, Mark::Italic, "Italic", "Italic (Ctrl+I)", false, t).clicked() {
+                    acts.push(Act::Mark("italic"));
+                }
+                if mark_button(ui, Mark::Strike, "Strikethrough", "Strike through", false, t).clicked() {
+                    acts.push(Act::Mark("strike"));
+                }
+                if small(ui, Some(Icon::Code), "", "Code", "Code, in one line", false, t).clicked() {
+                    acts.push(Act::Mark("code"));
+                }
+                if small(ui, Some(Icon::Link), "", "Link", "A link", false, t).clicked() {
+                    acts.push(Act::Insert("link"));
+                }
+            });
+            ui.horizontal(|ui| {
+                if small(ui, Some(Icon::ListBullet), "", "Bullets", "A bullet list", false, t).clicked() {
+                    acts.push(Act::Block("bullet"));
+                }
+                if small(ui, Some(Icon::ListNumber), "", "Numbering", "A numbered list", false, t).clicked() {
+                    acts.push(Act::Block("number"));
+                }
+                if mark_button(ui, Mark::IndentLess, "Decrease indent", "Less indent (Shift+Tab)", false, t).clicked() {
+                    acts.push(Act::Indent(false));
+                }
+                if mark_button(ui, Mark::IndentMore, "Increase indent", "More indent (Tab)", false, t).clicked() {
+                    acts.push(Act::Indent(true));
+                }
+                if small(ui, Some(Icon::Quote), "", "Quote", "Quote this paragraph", false, t).clicked() {
+                    acts.push(Act::Block("quote"));
+                }
+                if mark_button(ui, Mark::ClearFormat, "Clear formatting", "Take the marks off", false, t).clicked() {
+                    acts.push(Act::ClearFormatting);
+                }
+            });
+        });
+    });
+    group(ui, "Styles", t, |ui| {
+        gallery(ui, "styles", t, acts, |ui, acts| {
+            // The box shows the first two, as OneNote's does.
+            for (label, kind) in STYLES.iter().take(2) {
+                if style_row(ui, label, kind, t).clicked() {
+                    acts.push(Act::Block(leak(kind)));
+                }
+            }
+        });
+    });
+    group(ui, "Tags", t, |ui| {
+        gallery(ui, "tags", t, acts, |ui, acts| {
+            for tag in [Tag::ToDo, Tag::Important] {
+                if tag_row(ui, tag, t).clicked() {
+                    acts.push(Act::Tag(tag));
+                }
+            }
+        });
+        if big(ui, Icon::Todo, "To Do\nTag", "A to-do box on this line (Ctrl+1)", t).clicked() {
+            acts.push(Act::Block("todo"));
+        }
+        if big(ui, Icon::Search, "Find\nTags", "Not built", t).clicked() {
+            acts.push(Act::NotBuilt("Find Tags"));
+        }
+    });
+    group(ui, "Email", t, |ui| {
+        if big(ui, Icon::Attach, "Send\nPage", "Not built", t).clicked() {
+            acts.push(Act::NotBuilt("Send Page"));
+        }
+    });
+    group(ui, "Meetings", t, |ui| {
+        if big(ui, Icon::Page, "Meeting\nDetails", "Not built", t).clicked() {
+            acts.push(Act::NotBuilt("Meeting Details"));
+        }
+    });
+}
+
+/// A static name for a style, so an act can carry it.
+fn leak(kind: &str) -> &'static str {
+    STYLES.iter().find(|(_, k)| *k == kind).map(|(_, k)| *k).unwrap_or("p")
+}
+
+/// A gallery like OneNote's: a bordered box with the first entries, and an arrow that opens
+/// the whole list beside it.
+fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, rows_in_box: impl FnOnce(&mut Ui, &mut Vec<Act>)) {
+    let height = GROUP_H - 20.0;
+    let box_rect = egui::Frame::NONE
+        .stroke(egui::Stroke::new(1.0, t.faint))
+        .corner_radius(3.0)
+        .inner_margin(4.0)
+        .show(ui, |ui| {
+            ui.set_min_size(vec2(130.0, height));
+            ui.set_max_width(190.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                rows_in_box(ui, acts);
+            });
+        })
+        .response
+        .rect;
+    // The arrow that opens the whole gallery.
+    let (rect, resp) = ui.allocate_exact_size(vec2(16.0, height), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    let c = egui::pos2(rect.center().x, rect.max.y - 8.0);
+    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, t.text));
+    painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, t.text));
+    let enabled = ui.is_enabled();
+    let name = if which == "styles" { "More styles" } else { "More tags" };
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    let resp = resp.on_hover_text(name);
+    // The list opens over the box it belongs to, as OneNote's galleries do: same left edge,
+    // same top, so the two rows in the box are the first two rows of the list.
+    let open_id = egui::Id::new(("ribbon-gallery", which));
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(box_rect.min)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(box_rect.width().max(210.0));
+                    ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
+                    if which == "styles" {
+                        for (label, kind) in STYLES {
+                            if style_row(ui, label, kind, t).clicked() {
+                                acts.push(Act::Block(leak(kind)));
+                                picked = true;
+                            }
+                        }
+                        ui.separator();
+                        if ui.button("Clear formatting").clicked() {
+                            acts.push(Act::ClearFormatting);
+                            picked = true;
+                        }
+                    } else {
+                        ui.label(egui::RichText::new("Tags").strong());
+                        for tag in Tag::ALL {
+                            if tag_row(ui, tag, t).clicked() {
+                                acts.push(Act::Tag(tag));
+                                picked = true;
+                            }
+                        }
+                        ui.separator();
+                        ui.add_enabled(false, egui::Label::new(egui::RichText::new("Customize Tags... (not built)").color(t.muted)));
+                    }
+                });
+            })
+            .response;
+        // A click anywhere else closes it, the way a menu does.
+        let clicked_away =
+            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+/// One line of the Styles gallery, drawn the way the style looks.
+fn style_row(ui: &mut Ui, label: &str, kind: &str, t: &Tokens) -> egui::Response {
+    let (size, color, italics) = match kind {
+        "h1" | "title" => (17.0, t.accent, false),
+        "h2" => (15.0, t.accent, false),
+        "h3" | "h4" => (13.5, t.muted, kind == "h4"),
+        "h5" | "h6" => (12.5, t.accent, kind == "h6"),
+        "quote" | "citation" => (12.5, t.muted, true),
+        "codeblock" => (12.5, t.text, false),
+        _ => (13.0, t.text, false),
+    };
+    let mut text = egui::RichText::new(label).size(size).color(color);
+    if italics {
+        text = text.italics();
+    }
+    if kind == "codeblock" {
+        text = text.monospace();
+    }
+    ui.add(egui::Button::new(text).frame(false).min_size(vec2(130.0, 22.0)))
+}
+
+/// One line of the Tags gallery: OneNote's own mark and the name, with its shortcut.
+fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
+    // A fixed width: the gallery box is as wide as its rows, not as wide as the ribbon.
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().clamp(150.0, 230.0), 24.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    let mark = mark_for(tag);
+    ribbon_icons::paint(
+        &painter,
+        Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)),
+        mark,
+        mark.color(t.text, t.accent),
+    );
+    painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, tag_label(tag), egui::FontId::proportional(12.5), t.text);
+    let enabled = ui.is_enabled();
+    let name = tag_label(tag);
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp
+}
+
+/// OneNote's mark for a tag.
+pub fn mark_for(tag: Tag) -> Mark {
+    match tag {
+        Tag::ToDo => Mark::ToDo,
+        Tag::Important => Mark::Important,
+        Tag::Question => Mark::Question,
+        Tag::Remember => Mark::Remember,
+        Tag::Definition => Mark::Definition,
+        Tag::Highlight => Mark::Highlighter,
+        Tag::Contact => Mark::Contact,
+        Tag::Address => Mark::Address,
+        Tag::Phone => Mark::Phone,
+        Tag::Website => Mark::Website,
+        Tag::Idea => Mark::Idea,
+        Tag::Critical => Mark::Critical,
+    }
+}
+
+/// A small button that draws one of the ribbon's own marks.
+fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if on || resp.hovered() {
+        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
+    }
+    ribbon_icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), mark, mark.color(t.text, t.accent));
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
+    resp.on_hover_text(tip)
+}
+
+fn insert_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Tables", t, |ui| {
+        if big(ui, Icon::Table, "Table", "A table", t).clicked() {
+            acts.push(Act::Insert("table"));
+        }
+    });
+    group(ui, "Files", t, |ui| {
+        if big(ui, Icon::Picture, "Picture", "A picture from a file", t).clicked() {
+            acts.push(Act::AddPicture);
+        }
+        if big(ui, Icon::Attach, "File", "A file: copied in, or linked where it is", t).clicked() {
+            acts.push(Act::AddFile);
+        }
+    });
+    group(ui, "Links", t, |ui| {
+        if big(ui, Icon::Link, "Link", "A link to a page or an address", t).clicked() {
+            acts.push(Act::Insert("link"));
+        }
+    });
+    group(ui, "Symbols", t, |ui| {
+        if big(ui, Icon::Equation, "Equation", "An equation, written in TeX", t).clicked() {
+            acts.push(Act::Insert("equation"));
+        }
+        if big(ui, Icon::Diagram, "Diagram", "A Mermaid diagram, kept as its source", t).clicked() {
+            acts.push(Act::Insert("diagram"));
+        }
+    });
+    group(ui, "Time", t, |ui| {
+        if big(ui, Icon::Page, "Date", "Today's date and time", t).clicked() {
+            acts.push(Act::Insert("date"));
+        }
+    });
+}
+
+fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Views", t, |ui| {
+        if big(ui, if view.full_page { Icon::ExitFullPage } else { Icon::FullPage }, "Full page", "Give the page the whole window", t).clicked() {
+            acts.push(Act::ToggleFullPage);
+        }
+        if big(ui, Icon::Search, "Search", "Search all pages", t).clicked() {
+            acts.push(Act::FocusSearch);
+        }
+    });
+    group(ui, "Page Setup", t, |ui| {
+        let next = view.rules.next();
+        if big(ui, Icon::Table, view.rules.label(), "Lines or squares behind the page, as on paper", t).clicked() {
+            acts.push(Act::RuleLines(next));
+        }
+        rows(ui, |ui| {
+            if small(ui, None, "T", "Hide page title", "Hide the page title", view.hide_title, t).clicked() {
+                acts.push(Act::ToggleTitle);
+            }
+            not_built(ui, "Page colour", t);
+            not_built(ui, "Paper size", t);
+        });
+    });
+    group(ui, "Zoom", t, |ui| {
+        rows(ui, |ui| {
+            ui.horizontal(|ui| {
+                if small(ui, None, "-", "Zoom out", "Smaller", false, t).clicked() {
+                    acts.push(Act::Zoom(-1));
+                }
+                if small(ui, None, "+", "Zoom in", "Larger", false, t).clicked() {
+                    acts.push(Act::Zoom(1));
+                }
+            });
+            if small(ui, None, &format!("{}%", view.zoom_percent), "Zoom to 100%", "Back to 100%", false, t).clicked() {
+                acts.push(Act::Zoom(0));
+            }
+        });
+    });
+    group(ui, "Appearance", t, |ui| {
+        if big(ui, Icon::Sun, "Theme", "Light or dark, and the accent colour", t).clicked() {
+            acts.push(Act::OpenThemes);
+        }
+    });
+    group(ui, "Source", t, |ui| {
+        if big(ui, Icon::Code, if source { "Hide" } else { "Show" }, "The page source, beside the page", t).clicked() {
+            acts.push(Act::ToggleSource);
+        }
+    });
+    group(ui, "Window", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "New window", t);
+            not_built(ui, "Always on top", t);
+            not_built(ui, "Dock to desktop", t);
+        });
+    });
+}
+
+/// A control that is listed so nobody goes looking for it, and says it is not built.
+fn not_built(ui: &mut Ui, label: &str, t: &Tokens) {
+    let text = egui::RichText::new(format!("{label} (not built)")).size(10.5).color(t.muted);
+    ui.add_enabled(false, egui::Label::new(text));
+}
+
+fn source_tab(ui: &mut Ui, format: Option<PageFormat>, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Source", t, |ui| {
+        if big(ui, Icon::Code, "Hide", "Close the source pane", t).clicked() {
+            acts.push(Act::ToggleSource);
+        }
+    });
+    group(ui, "This page", t, |ui| {
+        let name = format.map(PageFormat::label).unwrap_or("No page");
+        ui.vertical(|ui| {
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new(name).size(12.0).color(t.text));
+            ui.label(egui::RichText::new("The format is set when the page is created").size(10.0).color(t.muted));
+        });
+    });
+}
+
+/// A big button that draws one of the ribbon's own marks.
+fn big_mark(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(BIG, GROUP_H - 18.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    ribbon_icons::paint(
+        &painter,
+        Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + 18.0), vec2(24.0, 24.0)),
+        mark,
+        mark.color(t.text, t.accent),
+    );
+    painter.text(egui::pos2(rect.center().x, rect.min.y + 40.0), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), t.text);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp.on_hover_text(tip)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    fn draw(tab: &str, source: bool) -> Vec<Act> {
+        let t = Theme::DEFAULT.tokens();
+        let ctx = egui::Context::default();
+        let mut acts = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            acts = show(ui, tab, source, &View { zoom_percent: 100, ..View::default() }, Some(PageFormat::Html), &t);
+        });
+        out.textures_delta.clear();
+        acts
+    }
+
+    #[test]
+    fn the_tabs_are_office_like_and_source_comes_and_goes() {
+        assert_eq!(tabs(false), vec!["Home", "Insert", "View"]);
+        assert_eq!(tabs(true), vec!["Home", "Insert", "View", "Source"]);
+        assert_eq!(resolve_tab("Insert", false), "Insert");
+        assert_eq!(resolve_tab("Source", true), "Source");
+        assert_eq!(resolve_tab("Source", false), "Home", "the Source tab goes when the source pane does");
+        assert_eq!(resolve_tab("Nonsense", false), "Home");
+        assert_eq!(resolve_tab("", true), "Home");
+    }
+
+    #[test]
+    fn every_tab_draws_without_panicking_and_asks_for_nothing_by_itself() {
+        for tab in ["Home", "Insert", "View", "Source", "junk"] {
+            for source in [false, true] {
+                assert_eq!(draw(tab, source), Vec::new(), "{tab} asked for something nobody clicked");
+            }
+        }
+    }
+
+    /// The acts are plain values, so the window's side of the ribbon is testable on its own.
+    #[test]
+    fn rule_lines_cycle_and_round_trip() {
+        assert_eq!(RuleLines::None.next(), RuleLines::Lines);
+        assert_eq!(RuleLines::Lines.next(), RuleLines::Grid);
+        assert_eq!(RuleLines::Grid.next(), RuleLines::None);
+        for r in [RuleLines::None, RuleLines::Lines, RuleLines::Grid] {
+            assert_eq!(RuleLines::parse(r.id()), Some(r));
+            assert!(!r.label().is_empty());
+        }
+        assert_eq!(RuleLines::parse("squares"), None);
+        assert_eq!(RuleLines::default(), RuleLines::None);
+    }
+
+    #[test]
+    fn the_acts_name_what_they_do() {
+        assert_eq!(Act::Mark("bold"), Act::Mark("bold"));
+        assert_ne!(Act::Mark("bold"), Act::Mark("italic"));
+        assert_ne!(Act::Block("h1"), Act::Insert("h1"));
+        assert_eq!(Act::Tab("Insert".into()), Act::Tab("Insert".to_string()));
+    }
+}

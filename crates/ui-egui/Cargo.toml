@@ -1,0 +1,28 @@
+[package]
+name = "notecraft-ui-egui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft egui front end. Swappable: nothing below it depends on egui"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-model = { workspace = true }
+notecraft-math = { workspace = true }
+notecraft-formats = { workspace = true }
+notecraft-store = { workspace = true }
+notecraft-engine = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+egui_kittest = { workspace = true }
+
+
+

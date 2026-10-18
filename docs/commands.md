@@ -1,0 +1,124 @@
+# Commands
+
+Generated from the command registry. Do not edit by hand: run
+`UPDATE_DOCS=1 cargo test -p notecraft-engine commands_doc` to refresh it.
+Every front end (window, `notecraft-cli run`, the control channel) uses these ids.
+
+## `notebook.create`
+
+New notebook (changes the tree).
+
+Parameters:
+
+- name (required): the notebook's title
+- format (optional): html or cmgfm; default: the global setting
+- empty (optional): true to leave the notebook empty instead of creating the first section and page
+
+## `node.create`
+
+New section group, section or page (changes the tree).
+
+Parameters:
+
+- parent (required): path of the notebook, group, section or page to add to
+- kind (required): section-group, section or page
+- title (required)
+- format (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below
+
+## `node.color`
+
+Colour a notebook, section group or section (changes the tree).
+
+Parameters:
+
+- path (required): the notebook, group or section
+- color (required): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none for the theme's own colour
+
+## `node.delete`
+
+Delete a notebook, section group, section or page (changes the tree).
+
+Parameters:
+
+- path (required): the node to delete with everything inside it
+
+## `node.title`
+
+Rename the title of a node (changes the tree).
+
+Parameters:
+
+- path (required)
+- title (required)
+
+## `page.load`
+
+Open a page.
+
+Parameters:
+
+- path (required): the page
+
+## `page.save`
+
+Save a page.
+
+Parameters:
+
+- path (required): the page
+- body (required): the editable part (inside of the HTML body, or the Markdown after the front matter)
+
+## `page.attach`
+
+Attach a file to a page.
+
+Parameters:
+
+- path (required): the page
+- source (required): a file to copy into the page's assets folder
+
+## `settings.default_format.get`
+
+Show the global default format.
+
+No parameters.
+
+## `settings.default_format.set`
+
+Set the global default format.
+
+Parameters:
+
+- format (required): html or cmgfm
+
+## `search.query`
+
+Search all pages.
+
+Parameters:
+
+- q (required): text to find
+- limit (optional): at most this many hits (default 40, at most 500)
+
+## `notebook.check`
+
+Check a notebook against the folder rules.
+
+Parameters:
+
+- path (required): the notebook
+
+## `tree.read`
+
+List the notebooks, sections and pages.
+
+Parameters:
+
+- path (optional): start at this node instead of listing every notebook
+
+## `tree.refresh`
+
+Reload the tree from disk.
+
+No parameters.
+

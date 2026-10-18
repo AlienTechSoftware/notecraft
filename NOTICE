@@ -1,0 +1,22 @@
+NoteCraft
+Copyright (c) 2026 ArtCraft Team and the NoteCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Third-party material
+
+This product bundles third-party material under its own licenses. The per-file list (what it
+is, where it came from, its license status) is in ATTRIBUTION.md.
+
+- The koala artwork in assets/brand/ was generated with an AI image tool. Its terms have not
+  been verified, so it is NOT covered by the license above and NOT open source. See
+  ATTRIBUTION.md. It must be replaced or cleared before any release that ships it.
+- The window uses the fonts bundled with egui, which carry their own licenses; those ship with
+  the egui crates. No font files are in this repository.
+- Dependencies are listed in Cargo.lock, each under its own license. A license audit of them
+  (for example with cargo deny) has not been run.
+- The pictures in docs/images/ are screenshots of NoteCraft itself, made by its own test
+  harness. They contain the koala artwork above.
+
+The notes in docs/research/ paraphrase Microsoft's published specifications [MS-ONESTORE] and
+[MS-ONE]. No Microsoft text, code or assets are included.

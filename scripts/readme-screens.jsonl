@@ -1,0 +1,38 @@
+{"width": 1440, "height": 900, "scale": 1.0, "theme": "light-default"}
+{"method": "engine.execute", "params": {"command": "node.color", "params": {"path": "my-notebook", "color": "blue"}}}
+{"method": "engine.execute", "params": {"command": "node.color", "params": {"path": "my-notebook/work", "color": "orange"}}}
+{"method": "engine.execute", "params": {"command": "node.color", "params": {"path": "my-notebook/ideas", "color": "teal"}}}
+{"method": "ui.expandAll"}
+{"method": "ui.open", "params": {"path": "my-notebook/ideas/format-ideas"}}
+{"wait": 800}
+{"shot": "docs/images/hero.png"}
+{"method": "ui.open", "params": {"path": "my-notebook/work/projects/project-x"}}
+{"wait": 400}
+{"shot": "docs/images/html-page.png"}
+{"method": "engine.execute", "params": {"command": "node.create", "params": {"parent": "my-notebook/ideas", "kind": "page", "title": "Equations", "format": "cmgfm"}}}
+{"method": "engine.execute", "params": {"command": "page.save", "params": {"path": "my-notebook/ideas/equations", "body": "# Equations\n\nInline: $E = mc^2$, a fraction $\\frac{a+b}{2}$ and a root $\\sqrt{x^2+y^2}$ flow with the text.\n\n$$\nx = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\n$$\n\n$$\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6} \\qquad \\int_0^1 x^2\\,dx = \\tfrac{1}{3}\n$$\n"}}}
+{"method": "ui.open", "params": {"path": "my-notebook/ideas/equations"}}
+{"wait": 400}
+{"shot": "docs/images/equations.png"}
+{"method": "engine.execute", "params": {"command": "node.create", "params": {"parent": "my-notebook/ideas", "kind": "page", "title": "Tags", "format": "cmgfm"}}}
+{"method": "engine.execute", "params": {"command": "page.save", "params": {"path": "my-notebook/ideas/tags", "body": "# Trip\n\n- [ ] book the train\n- [x] passport\n\n#important leave on Friday\n\n#question which hotel?\n\n#idea take the coast road\n\n#phone call the office\n\n#website routes.example\n"}}}
+{"method": "ui.open", "params": {"path": "my-notebook/ideas/tags"}}
+{"wait": 400}
+{"shot": "docs/images/tags.png"}
+{"method": "ui.click", "params": {"x": 110, "y": 54}}
+{"steps": 6}
+{"shot": "docs/images/ribbon-insert.png"}
+{"method": "ui.click", "params": {"x": 47, "y": 54}}
+{"steps": 6}
+{"shot": "docs/images/ribbon-home.png"}
+{"method": "ui.theme", "params": {"mode": "dark", "accent": "green"}}
+{"wait": 300}
+{"shot": "docs/images/dark-green.png"}
+{"method": "ui.theme", "params": {"mode": "light", "accent": "default"}}
+{"method": "ui.click", "params": {"x": 1411, "y": 23}}
+{"steps": 8}
+{"shot": "docs/images/theme-switcher.png"}
+{"method": "ui.key", "params": {"key": "Escape"}}
+{"method": "ui.click", "params": {"x": 143, "y": 23}}
+{"steps": 8}
+{"shot": "docs/images/file-screen.png"}
