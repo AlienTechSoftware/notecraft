@@ -15,6 +15,8 @@ pub enum Act {
     /// Leave the File screen.
     Close,
     NewNotebook,
+    /// Write the Welcome notebook into the notebooks folder, or open it if it is there.
+    AddWelcome,
     /// Show this notebook's folder in the file manager.
     OpenFolder(std::path::PathBuf),
     /// Open the notebooks folder itself.
@@ -196,6 +198,17 @@ fn new_page(ui: &mut Ui, folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
     ui.add_space(10.0);
     if ui.button("New notebook").clicked() {
         acts.push(Act::NewNotebook);
+    }
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("The welcome notebook").size(14.0).color(t.strong));
+    ui.label(
+        egui::RichText::new("A tour of NoteCraft, shown on its own pages. It is added to an empty notebooks folder on the first start; this adds it again, or opens it if it is still here.")
+            .size(11.5)
+            .color(t.muted),
+    );
+    ui.add_space(6.0);
+    if ui.button("Add the welcome notebook").clicked() {
+        acts.push(Act::AddWelcome);
     }
     ui.add_space(14.0);
     ui.label(egui::RichText::new("Somewhere else").size(14.0).color(t.strong));

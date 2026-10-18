@@ -19,7 +19,20 @@ it is fixed and tested, not when it is promised.
   horizontal rule cannot be edited in place: only the blocks around it.
 - **No bold or italic font.** egui bundles none; the preview uses colour and slant for emphasis.
   A bundled font family is the fix and needs a licence check.
-- **Links are not clickable** in the preview.
+- **Links follow by relative path only.** A click on a link opens the page or folder it
+  names, a file in the program the system has for it, or a web address in the browser; the
+  target is a path as written, so a renamed page breaks the links to it. Links by id are not
+  defined (`folder-format.md` section 10). Not clickable yet: a link inside a table cell, and
+  one in a line that mixes left-to-right and right-to-left text.
+- **One weight per bundled script.** Arabic, Hebrew, Devanagari, Chinese, Japanese and
+  Korean draw from bundled Noto faces (the CJK one is 16 MB, most of the app's size), but in
+  one weight each and with Simplified Chinese forms for characters the CJK scripts share; a
+  Japanese or Korean reader may see a few unfamiliar shapes. Scripts outside these six still
+  draw as boxes.
+- **The Welcome notebook speaks English only.** `docs/demo/DemoNotebook`, built by
+  `cargo xtask demo` and carried inside the app, appears in an empty notebooks folder on the
+  first start and comes back from the File screen. Twelve more languages are planned, four
+  of them right to left; the start page lists only what is built.
 - **No icons of the user's own** on a notebook or section. Colours are there (nine of them,
   on notebooks, section groups and sections); a chosen icon or picture is not.
 - **Rule lines are a window setting, not a page setting.** View, Rule Lines draws none, lines
@@ -29,14 +42,47 @@ it is fixed and tested, not when it is promised.
   gallery, a Tags gallery and a File screen. Missing: fonts and sizes, text colour and
   highlight, alignment, and the Draw, History, Review and Help tabs. Controls that are not
   built say so rather than doing nothing.
+- **Right-to-left text works; the window around it does not know yet.** Arabic and the other
+  right-to-left scripts draw, joined and in the right order; a page, a paragraph or a run can
+  be given a direction; a right-to-left line hangs from the right edge with its bullet, box
+  and tag mark on that side; and a line that mixes the two directions is laid out by the
+  Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. What is missing: the
+  window is not mirrored (the tree stays on the left whatever the page says), a selection
+  cannot be dragged inside a right-to-left line yet (the caret moves, the selection does not),
+  and the isolates the Run buttons write are kept in the file but not yet honoured when the
+  line is drawn.
+- **The caret in a right-to-left line is NoteCraft's own, and it is new.** egui cannot place
+  one there (`crates/ui-egui/tests/arabic_layout.rs` measures why: it counts glyphs where it
+  means characters), so a line with Arabic in it is drawn by `crates/ui-egui/src/bidi.rs` and
+  written in with a caret of ours: parley says which character a click landed on and which
+  way a step moves, egui still draws. Selecting works there too, by dragging, with Shift and
+  the arrows, and a double click takes the word under the pointer. What it does not do yet:
+  a selection that spans two paragraphs, which no block can do, and Ctrl with the arrows to
+  step by word.
 - **The caret is egui's, not ours.** Each block is an egui text box, so there is no caret of
-  our own across blocks: no selection spanning two blocks, no bidi caret movement, and
-  right-to-left text is laid out by egui, which does not run the bidi algorithm. The sibling
-  WordCraft owns its whole text pipeline (shaping, line boxes, hit testing) and gets this
-  right; matching a mature editor here means doing the same, or reusing PdfCraft's `bidi.rs` for a
-  partial fix. Decision pending.
+  our own across blocks: no selection spanning two blocks, and no caret movement by visible
+  step in mixed text. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
+  hit testing) and gets this right; matching a mature editor means a text crate of our own
+  over parley or the same house stack. Decision pending.
 - **A dropped file can be copied in or linked.** A printout (a document rendered to pictures,
   as other apps insert one) is not built: it needs a renderer for PDF and Office files.
+- **Pasting reads only the flavour egui hands over, which is text.** An app that copies a
+  table puts several on the clipboard at once: HTML (the richest, with the cells, the marks
+  inside them and even `direction:ltr`), plain text with a tab between cells, and pictures
+  (Bitmap, DIB, PNG). NoteCraft understands both text flavours: tab-separated lines come
+  back as a table, and if the HTML reaches it as text, header and all, it is parsed the way
+  a page is. What it cannot do is ask the clipboard for the HTML or the picture flavour,
+  because egui exposes text only; that needs a clipboard crate (`clipboard-rs` reads HTML
+  and pictures on all three systems, `arboard` pictures alone), which is a decision for the
+  owner.
+- **Containers are a first pass.** A page can hold several boxes, each with its own place,
+  width and blocks; a box is moved by the bar along its top and resized by its right edge,
+  and the arrangement is kept in the page's own file. What is missing: making a new box by
+  clicking an empty part of the page, moving blocks from one box to another, boxes that know
+  how tall they are (the room under them is guessed), and a picture as a box of its own. The
+  blocks themselves stay in reading order in the file, so a page read anywhere else is
+  unchanged; if the counts and the blocks ever disagree, everything goes back into one box
+  rather than losing a word.
 - **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
   and the other familiar marks, stored as plain text in the page.)
 - **Sync conflicts** are only detected by name by the checker; there is no merge or resolve UI.

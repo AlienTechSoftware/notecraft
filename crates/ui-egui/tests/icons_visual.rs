@@ -11,9 +11,18 @@ use image::RgbaImage;
 use notecraft_ui_egui::icons::{self, Icon};
 use std::path::PathBuf;
 
+/// Every test here builds its own offscreen GPU renderer. Letting four of them do that at
+/// once killed the process with a heap corruption inside the graphics driver, twice, while
+/// the whole suite was running; one at a time is both enough and stable.
+static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn gpu() -> std::sync::MutexGuard<'static, ()> {
+    GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 22] = [
+const ALL: [Icon; 24] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -36,6 +45,8 @@ const ALL: [Icon; 22] = [
     Icon::Equation,
     Icon::Diagram,
     Icon::Quote,
+    Icon::DirLtr,
+    Icon::DirRtl,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -63,6 +74,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::Equation => "equation",
         Icon::Diagram => "diagram",
         Icon::Quote => "quote",
+        Icon::DirLtr => "dir-ltr",
+        Icon::DirRtl => "dir-rtl",
         Icon::Sun => "sun",
         Icon::Moon => "moon",
     }
@@ -197,6 +210,20 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(9.0, 6.0), (5.0, 9.0), (5.0, 13.0), (9.0, 13.0), (9.0, 9.0), (5.0, 9.0)]),
             open(&[(19.0, 6.0), (15.0, 9.0), (15.0, 13.0), (19.0, 13.0), (19.0, 9.0), (15.0, 9.0)]),
         ],
+        Icon::DirLtr => vec![
+            open(&[(5.0, 6.0), (17.0, 6.0)]),
+            open(&[(5.0, 10.0), (19.0, 10.0)]),
+            open(&[(5.0, 14.0), (14.0, 14.0)]),
+            open(&[(5.0, 19.0), (19.0, 19.0)]),
+            open(&[(16.0, 16.0), (19.0, 19.0), (16.0, 22.0)]),
+        ],
+        Icon::DirRtl => vec![
+            open(&[(19.0, 6.0), (7.0, 6.0)]),
+            open(&[(19.0, 10.0), (5.0, 10.0)]),
+            open(&[(19.0, 14.0), (10.0, 14.0)]),
+            open(&[(19.0, 19.0), (5.0, 19.0)]),
+            open(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
+        ],
     };
     for s in shapes {
         painter.add(s);
@@ -240,6 +267,7 @@ fn keep(label: &str, before: &RgbaImage, after: &RgbaImage) {
 
 #[test]
 fn every_icon_matches_its_reference_pixel_for_pixel() {
+    let _gpu = gpu();
     let origin = pos2(10.0, 10.0);
     let mut pairs = 0;
     for icon in ALL {
@@ -255,11 +283,12 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 132);
+    assert_eq!(pairs, 144);
 }
 
 #[test]
 fn negative_controls_are_caught() {
+    let _gpu = gpu();
     let origin = pos2(10.0, 10.0);
     let bg = Color32::from_rgb(247, 247, 249);
     let ink = LIGHT_INK;
@@ -277,6 +306,7 @@ fn negative_controls_are_caught() {
 
 #[test]
 fn icons_are_distinct_from_each_other() {
+    let _gpu = gpu();
     let origin = pos2(10.0, 10.0);
     let bg = Color32::WHITE;
     let images: Vec<RgbaImage> = ALL
@@ -294,6 +324,7 @@ fn icons_are_distinct_from_each_other() {
 /// glance. The page outline stays the same ink it is given.
 #[test]
 fn coloured_icons_use_the_colour_they_are_given() {
+    let _gpu = gpu();
     let origin = pos2(10.0, 10.0);
     let bg = Color32::WHITE;
     let rect = Rect::from_min_size(origin, vec2(SIZE, SIZE));

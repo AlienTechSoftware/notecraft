@@ -11,8 +11,12 @@ is, where it came from, its license status) is in ATTRIBUTION.md.
 - The koala artwork in assets/brand/ was generated with an AI image tool. Its terms have not
   been verified, so it is NOT covered by the license above and NOT open source. See
   ATTRIBUTION.md. It must be replaced or cleared before any release that ships it.
-- The window uses the fonts bundled with egui, which carry their own licenses; those ship with
-  the egui crates. No font files are in this repository.
+- Noto Naskh Arabic, Noto Sans Hebrew and Noto Sans Devanagari (assets/fonts/) - SIL Open
+  Font License 1.1, Copyright 2022 The Noto Project Authors. Bundled unmodified so that
+  Arabic, Hebrew and Devanagari have glyphs on a machine that has no such font installed;
+  each licence text sits beside its font as assets/fonts/OFL-*.txt.
+- The window also uses the fonts bundled with egui, which carry their own licenses; those ship
+  with the egui crates.
 - Dependencies are listed in Cargo.lock, each under its own license. A license audit of them
   (for example with cargo deny) has not been run.
 - The pictures in docs/images/ are screenshots of NoteCraft itself, made by its own test

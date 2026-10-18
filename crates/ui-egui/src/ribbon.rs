@@ -38,12 +38,22 @@ pub enum Act {
     RuleLines(RuleLines),
     /// Show or hide the page's title line.
     ToggleTitle,
+    /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
+    TogglePanes,
     /// Larger (1), smaller (-1) or back to 100% (0).
     Zoom(i8),
     /// Cut or copy what is selected.
     Clipboard(&'static str),
     /// More or less indent on a list item.
     Indent(bool),
+    /// Which way the line the caret is in reads. `None` lets the words decide again.
+    Direction(Option<notecraft_model::Dir>),
+    /// Which way the whole page reads. `None` lets every line decide for itself.
+    PageDirection(Option<notecraft_model::Dir>),
+    /// Which way the selection, or what is typed next, reads: an isolated run inside the line.
+    Embedding(notecraft_model::Dir),
+    /// Open the window with the direction controls that are not everyday ones.
+    OpenAdvancedDirection,
     /// Take the marks off the selection.
     ClearFormatting,
     /// Put a tag on the line the caret is in, or take it off again.
@@ -103,6 +113,8 @@ impl RuleLines {
 /// What the View tab shows about the window.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct View {
+    /// True when the side panel is two columns.
+    pub split_panes: bool,
     pub full_page: bool,
     pub rules: RuleLines,
     pub hide_title: bool,
@@ -330,11 +342,39 @@ fn home_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 if mark_button(ui, Mark::IndentMore, "Increase indent", "More indent (Tab)", false, t).clicked() {
                     acts.push(Act::Indent(true));
                 }
+                align_menu(ui, t, acts);
                 if small(ui, Some(Icon::Quote), "", "Quote", "Quote this paragraph", false, t).clicked() {
                     acts.push(Act::Block("quote"));
                 }
                 if mark_button(ui, Mark::ClearFormat, "Clear formatting", "Take the marks off", false, t).clicked() {
                     acts.push(Act::ClearFormatting);
+                }
+            });
+        });
+    });
+    // Page direction is NoteCraft's own: OneNote has no such thing, and a notebook written
+    // in Arabic wants one. The paragraph's direction lives where OneNote keeps it, in the
+    // alignment menu above; the rarer run direction is behind the launcher.
+    group(ui, "Direction", t, |ui| {
+        rows(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Page").size(10.5).color(t.muted));
+                if small(ui, Some(Icon::DirLtr), "", "Page left to right", "The whole page reads left to right", false, t).clicked() {
+                    acts.push(Act::PageDirection(Some(notecraft_model::Dir::Ltr)));
+                }
+                if small(ui, Some(Icon::DirRtl), "", "Page right to left", "The whole page reads right to left (Arabic, Hebrew)", false, t).clicked()
+                {
+                    acts.push(Act::PageDirection(Some(notecraft_model::Dir::Rtl)));
+                }
+                if small(ui, None, "Auto", "Page direction from the words", "Every paragraph decides for itself", false, t).clicked() {
+                    acts.push(Act::PageDirection(None));
+                }
+            });
+            ui.horizontal(|ui| {
+                if small(ui, None, "More...", "Advanced direction", "Direction for part of a line, and the options that are not built yet", false, t)
+                    .clicked()
+                {
+                    acts.push(Act::OpenAdvancedDirection);
                 }
             });
         });
@@ -464,6 +504,55 @@ fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, ro
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// OneNote's alignment button: a menu of alignment, then the paragraph's direction under a
+/// separator, in that order. Alignment itself is not built and says so.
+fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = small(ui, Some(Icon::DirLtr), "", "Alignment and direction", "Alignment, and which way this paragraph reads", false, t);
+    let open_id = egui::Id::new("ribbon-align-menu");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(resp.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(200.0);
+                    ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
+                    for (label, what) in [("Align Left", "Align left"), ("Center", "Centring"), ("Align Right", "Align right")] {
+                        if ui.button(label).clicked() {
+                            acts.push(Act::NotBuilt(what));
+                            picked = true;
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Left-to-Right").clicked() {
+                        acts.push(Act::Direction(Some(notecraft_model::Dir::Ltr)));
+                        picked = true;
+                    }
+                    if ui.button("Right-to-Left").clicked() {
+                        acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
+                        picked = true;
+                    }
+                    if ui.button("Direction from the words").clicked() {
+                        acts.push(Act::Direction(None));
+                        picked = true;
+                    }
+                });
+            })
+            .response;
+        let clicked_away =
+            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
 /// One line of the Styles gallery, drawn the way the style looks.
 fn style_row(ui: &mut Ui, label: &str, kind: &str, t: &Tokens) -> egui::Response {
     let (size, color, italics) = match kind {
@@ -581,6 +670,16 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<A
         if big(ui, Icon::Search, "Search", "Search all pages", t).clicked() {
             acts.push(Act::FocusSearch);
         }
+    });
+    group(ui, "Panes", t, |ui| {
+        rows(ui, |ui| {
+            // What OneNote calls the navigation pane: notebooks and sections in one
+            // column, the pages of the chosen section in the next.
+            if small(ui, None, "Split", "Separate pages", "Notebooks and sections in one column, pages in the next", view.split_panes, t).clicked() {
+                acts.push(Act::TogglePanes);
+            }
+            not_built(ui, "Docked window", t);
+        });
     });
     group(ui, "Page Setup", t, |ui| {
         let next = view.rules.next();

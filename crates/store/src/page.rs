@@ -3,7 +3,7 @@
 use crate::error::{Result, StoreError};
 use crate::tree::{page_file, read_node};
 use notecraft_formats::{frontmatter, html};
-use notecraft_model::{PageFormat, kv, time::iso_now};
+use notecraft_model::{Container, Dir, PageFormat, container, kv, time::iso_now};
 use std::fs;
 use std::path::Path;
 
@@ -16,6 +16,9 @@ pub struct Page {
     pub title: String,
     /// The editable part: the inside of the HTML body, or the Markdown after the front matter.
     pub body: String,
+    /// Which way the whole page reads, if the writer said. `None` means each line decides
+    /// for itself, from its own first letter.
+    pub dir: Option<Dir>,
 }
 
 pub fn load_page(dir: &Path) -> Result<Page> {
@@ -30,7 +33,85 @@ pub fn load_page(dir: &Path) -> Result<Page> {
         PageFormat::Cmgfm => frontmatter::split_front(&text).1.trim_start_matches('\n').to_string(),
     };
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
-    Ok(Page { format, title, body })
+    Ok(Page { format, title, body, dir: read_direction(&text, format) })
+}
+
+/// The name the page direction goes by in both formats.
+const DIR_KEY: &str = "dir";
+const DIR_META: &str = "notecraft:dir";
+
+/// The direction written in a page's own file, if any.
+fn read_direction(text: &str, format: PageFormat) -> Option<Dir> {
+    let raw = match format {
+        PageFormat::Html => html::meta(text, DIR_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(text).0, DIR_KEY),
+    }?;
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "rtl" => Some(Dir::Rtl),
+        "ltr" => Some(Dir::Ltr),
+        _ => None,
+    }
+}
+
+/// Which way the whole page reads, as written in its file.
+pub fn direction(dir: &Path) -> Result<Option<Dir>> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    Ok(read_direction(&text, format))
+}
+
+/// Writes the page's direction into its own file, so it travels with the folder.
+/// `None` takes it out again and lets every line decide for itself.
+pub fn set_direction(dir: &Path, want: Option<Dir>) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let out = match (format, want) {
+        (PageFormat::Html, Some(d)) => html::set_meta(&text, DIR_META, d.id()),
+        // An HTML page keeps the meta tag with an empty value rather than losing the line.
+        (PageFormat::Html, None) => html::set_meta(&text, DIR_META, ""),
+        (PageFormat::Cmgfm, want) => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front = match want {
+                Some(d) => frontmatter::set_value(&front, DIR_KEY, d.id()),
+                None => frontmatter::remove_value(&front, DIR_KEY),
+            };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
+const BOXES_KEY: &str = "containers";
+const BOXES_META: &str = "notecraft:containers";
+
+/// The containers a page keeps, as written in its own file. An empty list means the page
+/// has never been arranged, and is one column of blocks.
+pub fn containers(dir: &Path) -> Result<Vec<Container>> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let raw = match format {
+        PageFormat::Html => html::meta(&text, BOXES_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, BOXES_KEY),
+    };
+    Ok(raw.map(|r| container::parse(&r)).unwrap_or_default())
+}
+
+/// Writes them into the page's own file, so the arrangement travels with the folder. An
+/// empty list takes the line out again.
+pub fn set_containers(dir: &Path, boxes: &[Container]) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let line = container::write(boxes);
+    let out = match format {
+        PageFormat::Html => html::set_meta(&text, BOXES_META, &line),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front =
+                if boxes.is_empty() { frontmatter::remove_value(&front, BOXES_KEY) } else { frontmatter::set_value(&front, BOXES_KEY, &line) };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
 }
 
 /// Saves the editable part of a page, keeping its metadata and updating `updated`.

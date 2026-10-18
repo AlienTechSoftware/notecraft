@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 notecraft-model = { workspace = true }
+notecraft-text = { workspace = true }
 notecraft-math = { workspace = true }
 notecraft-formats = { workspace = true }
 notecraft-store = { workspace = true }

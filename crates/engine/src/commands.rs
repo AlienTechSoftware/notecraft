@@ -2,7 +2,7 @@
 
 use crate::error::EngineError;
 use crate::session::Session;
-use notecraft_model::{NodeColor, NodeKind, PageFormat};
+use notecraft_model::{Dir, NodeColor, NodeKind, PageFormat};
 use notecraft_store::check::Report;
 use notecraft_store::page::Page;
 use notecraft_store::search::Hit;
@@ -57,6 +57,11 @@ fn notebook_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         let section = ops::create_node(&dir, FIRST_SECTION, NodeKind::Section, None, &s.settings)?;
         ops::create_node(&section, FIRST_PAGE, NodeKind::Page, None, &s.settings)?;
     }
+    Ok(Output::Path(dir))
+}
+
+fn notebook_welcome(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
+    let dir = crate::welcome::install(s.root(), s.tree())?;
     Ok(Output::Path(dir))
 }
 
@@ -130,6 +135,36 @@ fn notebook_check(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Report(check::check_tree(&path)))
 }
 
+/// Which way a whole page reads. Without `dir`, it reports; with it, it sets.
+fn page_direction(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let Some(want) = p.get("dir").map(|d| d.trim().to_ascii_lowercase()) else {
+        return Ok(Output::Text(page::direction(&path)?.map(Dir::id).unwrap_or("auto").to_string()));
+    };
+    let want = match want.as_str() {
+        "rtl" => Some(Dir::Rtl),
+        "ltr" => Some(Dir::Ltr),
+        "auto" | "" | "none" => None,
+        _ => return Err(EngineError::BadParam("dir must be rtl, ltr or auto".into())),
+    };
+    page::set_direction(&path, want)?;
+    Ok(Output::Text(want.map(Dir::id).unwrap_or("auto").to_string()))
+}
+
+/// The boxes a page's blocks are arranged in. Without `boxes`, it reports them.
+fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let Some(want) = p.get("boxes") else {
+        return Ok(Output::Text(notecraft_model::container::write(&page::containers(&path)?)));
+    };
+    let boxes = notecraft_model::container::parse(want);
+    if boxes.is_empty() && !want.trim().is_empty() {
+        return Err(EngineError::BadParam("boxes is x,y,width,blocks per container, separated by semicolons".into()));
+    }
+    page::set_containers(&path, &boxes)?;
+    Ok(Output::Text(notecraft_model::container::write(&boxes)))
+}
+
 fn tree_refresh(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
     s.refresh();
     Ok(Output::Count(s.tree().iter().map(|n| n.count()).sum()))
@@ -172,6 +207,13 @@ static REGISTRY: &[CommandSpec] = &[
         run: notebook_create,
     },
     CommandSpec {
+        id: "notebook.welcome",
+        label: "Add the welcome notebook",
+        params: "(none). Writes the Welcome to NoteCraft notebook, a tour of the app, into the notebooks folder. Refused when it is already there",
+        changes_tree: true,
+        run: notebook_welcome,
+    },
+    CommandSpec {
         id: "node.create",
         label: "New section group, section or page",
         params: "parent (required): path of the notebook, group, section or page to add to\nkind (required): section-group, section or page\ntitle (required)\nformat (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below",
@@ -206,6 +248,22 @@ static REGISTRY: &[CommandSpec] = &[
         params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)",
         changes_tree: false,
         run: page_save,
+    },
+    CommandSpec {
+        id: "page.direction",
+        label: "Which way a page reads",
+        params: "path (required): the page
+dir (optional): rtl, ltr, or auto to let every line decide; without it the current setting is reported",
+        changes_tree: false,
+        run: page_direction,
+    },
+    CommandSpec {
+        id: "page.containers",
+        label: "How a page's blocks are arranged in boxes",
+        params: "path (required): the page
+boxes (optional): x,y,width,blocks per container, separated by semicolons; empty puts the page back in one column. Without it, the current arrangement is reported",
+        changes_tree: false,
+        run: page_containers,
     },
     CommandSpec {
         id: "page.attach",
@@ -303,6 +361,13 @@ mod tests {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
+    fn text_of(out: Output) -> String {
+        match out {
+            Output::Text(t) => t,
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
     fn path_of(out: Output) -> PathBuf {
         match out {
             Output::Path(p) => p,
@@ -350,6 +415,85 @@ mod tests {
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
+    }
+
+    #[test]
+    fn a_page_remembers_how_its_boxes_are_arranged() {
+        let t = TempDir::new("engine-boxes");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("format", "cmgfm")])).expect("notebook");
+        let path = "work/new-section-1/untitled-page";
+        let page = p(&[("path", path)]);
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "", "a new page is one column");
+
+        let set = p(&[("path", path), ("boxes", "0,0,420,2; 460,24,300,1")]);
+        assert_eq!(text_of(s.run("page.containers", &set).expect("set")), "0,0,420,2; 460,24,300,1");
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "0,0,420,2; 460,24,300,1");
+        // It is in the page's own file, so the arrangement travels with the folder.
+        let file = s.resolve(path).expect("path").join("index.md");
+        assert!(std::fs::read_to_string(&file).unwrap_or_default().contains("containers: 0,0,420,2"), "in the front matter");
+
+        // Writing the page keeps it, and an empty list puts the page back in one column.
+        s.run(
+            "page.save",
+            &p(&[
+                ("path", path),
+                (
+                    "body",
+                    "one
+
+two
+
+three",
+                ),
+            ]),
+        )
+        .expect("save");
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "0,0,420,2; 460,24,300,1", "a save must not lose it");
+        assert_eq!(text_of(s.run("page.containers", &p(&[("path", path), ("boxes", "")])).expect("clear")), "");
+        assert!(!std::fs::read_to_string(&file).unwrap_or_default().contains("containers:"));
+        assert!(s.run("page.containers", &p(&[("path", path), ("boxes", "sideways")])).is_err());
+    }
+
+    #[test]
+    fn a_page_can_be_told_which_way_it_reads() {
+        let t = TempDir::new("engine-dir");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("format", "cmgfm")])).expect("notebook");
+        let page = p(&[("path", "work/new-section-1/untitled-page")]);
+        assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "auto", "nobody has said yet");
+
+        let set = p(&[("path", "work/new-section-1/untitled-page"), ("dir", "rtl")]);
+        s.run("page.direction", &set).expect("set");
+        assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "rtl");
+        // It is in the file, so it travels with the folder.
+        let file = s.resolve("work/new-section-1/untitled-page").expect("path").join("index.md");
+        let text = std::fs::read_to_string(&file).expect("read");
+        assert!(text.contains("dir: rtl"), "{text}");
+
+        // Saving the page keeps it, and auto takes it out again.
+        s.run("page.save", &p(&[("path", "work/new-section-1/untitled-page"), ("body", "مرحبا")])).expect("save");
+        assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "rtl", "a save must not lose it");
+        s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "auto")])).expect("auto");
+        assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "auto");
+        assert!(s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "sideways")])).is_err());
+    }
+
+    /// An HTML page keeps it too, in a meta tag.
+    #[test]
+    fn an_html_page_keeps_its_direction_in_a_meta_tag() {
+        let t = TempDir::new("engine-dir-html");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("format", "html")])).expect("notebook");
+        let path = "work/new-section-1/untitled-page";
+        s.run("page.direction", &p(&[("path", path), ("dir", "rtl")])).expect("set");
+        s.run("page.save", &p(&[("path", path), ("body", "<p>مرحبا</p>")])).expect("save");
+        assert_eq!(text_of(s.run("page.direction", &p(&[("path", path)])).expect("read")), "rtl");
+        let loaded = s.run("page.load", &p(&[("path", path)])).expect("load");
+        match loaded {
+            Output::Page(page) => assert_eq!(page.dir, Some(Dir::Rtl)),
+            other => panic!("expected a page, got {other:?}"),
+        }
     }
 
     #[test]

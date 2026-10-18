@@ -36,14 +36,58 @@ pub struct Caret {
 
 /// The character of `text` a click at `x` lands on, given how the block is drawn. Used so a
 /// click puts the caret where the pointer is, the way it does in any editor.
-pub fn char_at(ui: &Ui, text: &str, size: f32, strong: bool, t: &Tokens, width: f32, offset: egui::Vec2) -> usize {
-    let job = pagetext::inline_job(text, size, strong, t, width.max(1.0));
+pub fn char_at(ui: &Ui, text: &str, size: f32, strong: bool, t: &Tokens, width: f32, offset: egui::Vec2, page: notecraft_model::Dir) -> usize {
+    let job = pagetext::inline_job(text, size, strong, t, width.max(1.0), page);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
-    galley.cursor_from_pos(offset).index.0.min(text.chars().count())
+    let chars = text.chars().count();
+    // Two things have to be undone for a right-to-left line, both measured in
+    // `tests/arabic_layout.rs`:
+    //
+    // 1. egui lays such a row out to the LEFT of the origin, so its x runs from minus the
+    //    row width up to zero, while the pointer offset given here starts at zero.
+    // 2. The index egui answers with counts glyphs, not characters, and a shaped Arabic
+    //    word has more glyphs than characters (a mark above a letter is its own glyph with
+    //    no width). Counting only the glyphs that advance gives the character back.
+    //
+    // What is left is the visual position: in a line that reads right to left, the leftmost
+    // character is the last one, so the count is taken from the other end.
+    let rtl = galley.rect.max.x <= 0.0 && galley.rect.width() > 0.0;
+    let probe = if rtl { egui::vec2(offset.x - galley.rect.width(), offset.y) } else { offset };
+    let hit = galley.cursor_from_pos(probe).index.0;
+    let visual = galley.rows.iter().flat_map(|r| r.glyphs.iter()).take(hit).filter(|g| g.advance_width > 0.0).count();
+    if rtl { chars.saturating_sub(visual) } else { visual.min(chars) }
 }
 
 /// Puts `marks` around the selection, or takes them away again when they are already there.
 /// Returns the new text and the new selection.
+/// Puts the selection inside a directional isolate, so that run reads the way the writer
+/// says whatever surrounds it ([UAX #9]: RLI or LRI, then PDI). With nothing selected the
+/// pair goes in at the caret and the caret lands between them, so what is typed next is
+/// inside it. Asking again for a run that already has one takes it off.
+///
+/// The characters are invisible and are part of the text, so the run keeps its direction in
+/// any other editor too. What NoteCraft cannot do yet is draw a mixed line in the right
+/// order; that needs the bidi algorithm (`docs/gaps.md`).
+pub fn isolate(text: &str, selection: (usize, usize), dir: notecraft_model::Dir) -> (String, (usize, usize)) {
+    const PDI: char = '\u{2069}';
+    const RLI: char = '\u{2067}';
+    const LRI: char = '\u{2066}';
+    let open = if dir.is_rtl() { RLI } else { LRI };
+    let chars: Vec<char> = text.chars().collect();
+    let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));
+    let before: String = chars.get(..a).unwrap_or(&[]).iter().collect();
+    let middle: String = chars.get(a..b).unwrap_or(&[]).iter().collect();
+    let after: String = chars.get(b..).unwrap_or(&[]).iter().collect();
+    // Already isolated, either way round: take it off, so the same button is the way back.
+    if middle.starts_with([RLI, LRI]) && middle.ends_with(PDI) && middle.chars().count() >= 2 {
+        let inner: String = middle.chars().skip(1).take(middle.chars().count() - 2).collect();
+        let len = inner.chars().count();
+        return (format!("{before}{inner}{after}"), (a, a + len));
+    }
+    let len = middle.chars().count();
+    (format!("{before}{open}{middle}{PDI}{after}"), (a + 1, a + 1 + len))
+}
+
 pub fn wrap_selection(text: &str, selection: (usize, usize), marks: &str) -> (String, (usize, usize)) {
     let chars: Vec<char> = text.chars().collect();
     let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));
@@ -138,6 +182,31 @@ pub fn set_tag(blocks: &mut [Block], at: usize, tag: Tag) -> bool {
     true
 }
 
+/// Which way the paragraph in block `at` reads: a mark at its start, or `None` to let the
+/// words decide again. False if there is no such block or it holds no words.
+pub fn set_direction(blocks: &mut [Block], at: usize, dir: Option<notecraft_model::Dir>) -> bool {
+    set_direction_over(blocks, at..=at, dir)
+}
+
+/// The same over a run of blocks, which is what selecting several paragraphs and asking for
+/// a direction means: there is no direction of its own on a block or an outline, it simply
+/// goes on every paragraph inside the selection. One place to store it, one rule to read it.
+pub fn set_direction_over(blocks: &mut [Block], range: std::ops::RangeInclusive<usize>, dir: Option<notecraft_model::Dir>) -> bool {
+    let mut done = false;
+    for at in range {
+        let Some(block) = blocks.get(at) else { continue };
+        if !is_writable(block) {
+            continue;
+        }
+        let text = notecraft_model::text::set_direction(&block_text(block), dir);
+        if let Some(b) = blocks.get_mut(at) {
+            set_block_text(b, &text);
+            done = true;
+        }
+    }
+    done
+}
+
 /// The tag on a block, if it has one, and the words without its marker.
 pub fn tag_of(block: &Block) -> (Option<Tag>, String) {
     if matches!(block, Block::Item { task: Some(_), .. }) {
@@ -218,6 +287,8 @@ pub struct Changed {
     pub blocks: bool,
     /// The caret moved to another block.
     pub caret: bool,
+    /// A link was clicked: its target as written in the page, for the window to follow.
+    pub link: Option<String>,
 }
 
 /// The text of a block as it is edited: the inline marks only.
@@ -229,6 +300,43 @@ pub fn block_text(block: &Block) -> String {
         Block::Image { alt, .. } => alt.clone(),
         Block::Table { .. } | Block::Rule => String::new(),
     }
+}
+
+/// Clicking under the page writes at its end: in the last empty block if there is one,
+/// else in a new one. The canvas of containers uses it for the room under the boxes.
+pub fn click_below(blocks: &mut Vec<Block>, caret: &mut Option<Caret>) -> bool {
+    let mut changed = Changed::default();
+    apply(Action::ClickBelow, blocks, caret, &mut changed);
+    changed.blocks
+}
+
+/// A light frame around the block the caret is in, the way a container is outlined in
+/// OneNote, so it is plain which block is being written in and where it ends. Blocks that
+/// are only being read get nothing, so a page at rest stays quiet.
+fn frame_block(ui: &Ui, top: f32, editing: bool, t: &Tokens) {
+    if !editing {
+        return;
+    }
+    let bottom = ui.cursor().min.y;
+    let rect = egui::Rect::from_min_max(egui::pos2(ui.max_rect().min.x - 6.0, top - 3.0), egui::pos2(ui.max_rect().max.x + 6.0, bottom + 1.0));
+    ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+}
+
+/// The text the caret writes in: the words of the block without the tag marker, because
+/// the marker is drawn as a mark beside the line and showing it as words again the moment
+/// the caret arrives makes the line jump.
+pub fn caret_text(block: &Block) -> String {
+    Tag::split(&block_text(block)).1.to_string()
+}
+
+/// Puts the caret's text back into a block, keeping the tag the block already carries.
+pub fn set_caret_text(block: &mut Block, text: &str) {
+    let tag = Tag::split(&block_text(block)).0;
+    let whole = match tag {
+        Some(t) => Tag::set(text, Some(t)),
+        None => text.to_string(),
+    };
+    set_block_text(block, &whole);
 }
 
 /// Puts edited text back into a block, keeping what the block is.
@@ -297,25 +405,147 @@ pub fn renumber(blocks: &mut [Block]) {
 }
 
 /// Draws the page and lets the caret work in it. Returns what changed.
-pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, page_dir: &std::path::Path, t: &Tokens) -> Changed {
+pub fn show(
+    ui: &mut Ui,
+    blocks: &mut Vec<Block>,
+    caret: &mut Option<Caret>,
+    page_dir: &std::path::Path,
+    t: &Tokens,
+    page: notecraft_model::Dir,
+) -> Changed {
+    let all = 0..blocks.len();
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all);
+    // Room under the page: a click there writes at the end, the way an empty page does.
+    let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
+    if below.clicked() {
+        apply(Action::ClickBelow, blocks, caret, &mut changed);
+    }
+    if below.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    changed
+}
+
+/// The blocks in `range`, drawn and written in. This is the body of a page, and of one
+/// container on a page that has them.
+pub fn show_blocks(
+    ui: &mut Ui,
+    blocks: &mut Vec<Block>,
+    caret: &mut Option<Caret>,
+    page_dir: &std::path::Path,
+    t: &Tokens,
+    page: notecraft_model::Dir,
+    range: std::ops::Range<usize>,
+) -> Changed {
     let mut changed = Changed::default();
     let mut action: Option<Action> = None;
     let count = blocks.len();
-    for i in 0..count {
+    // A table copied from OneNote, Word or Excel arrives as plain text with tabs between
+    // cells. Caught here, before the text box puts it all on one line.
+    if let Some(at) = caret.as_ref().map(|c| c.block) {
+        let pastes: Vec<String> = ui.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Paste(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        });
+        if let Some(text) = pastes.first() {
+            let blocks_in = pasted_blocks(pasted(text));
+            if !blocks_in.is_empty() {
+                // Take it out of the queue, so the text box does not paste it as well.
+                ui.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Paste(_))));
+                action = Some(Action::Paste(at, blocks_in));
+            }
+        }
+    }
+    for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
         let editing = caret.as_ref().is_some_and(|c| c.block == i);
+        // Where this block starts, so a frame can be drawn around it afterwards: the block
+        // the caret is in gets one, the way a container is outlined in OneNote.
+        let top = ui.cursor().min.y;
         if editing && is_writable(&block) {
             let (size, strong) = size_of(&block);
             let Some(c) = caret.as_mut() else { continue };
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
-                ui.fonts_mut(|f| f.layout_job(pagetext::inline_job(text.as_str(), size, strong, t, width)))
+                ui.fonts_mut(|f| f.layout_job(pagetext::inline_job(text.as_str(), size, strong, t, width, page)))
             };
             let mut at_start = false;
             let mut selection = None;
             let mut ticked = None;
             let id = ui.make_persistent_id(("page-block", i));
+            // A line that reads right to left is written from the right: its bullet, box or
+            // tag mark sits on the right, and the words hang from that edge.
+            let align = if notecraft_model::direction_or(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
+            let row = if align == egui::Align::RIGHT {
+                egui::Layout::right_to_left(egui::Align::Min)
+            } else {
+                egui::Layout::left_to_right(egui::Align::Min)
+            };
+            // A line with right-to-left text in it is written in by NoteCraft's own caret;
+            // everything else stays with egui's text box, which does it well.
+            let ours = needs_our_caret(&c.text) && !matches!(block, Block::Code { .. } | Block::MathBlock(_));
+            if ours {
+                let mut wrote = None;
+                let resp = ui
+                    .with_layout(row, |ui| {
+                        if let Some(done) = lead(ui, &block, t) {
+                            ticked = Some(done);
+                        }
+                        let w = write_rtl(ui, c, size, t, id);
+                        let resp = w.response.clone();
+                        wrote = Some(w);
+                        resp
+                    })
+                    .inner;
+                let (wrote_changed, at_start) = wrote.map(|w| (w.changed, w.at_start)).unwrap_or((false, false));
+                if let Some(done) = ticked {
+                    action = Some(Action::SetTask(i, done));
+                }
+                if wrote_changed {
+                    let typed = c.text.clone();
+                    if let Some(b) = blocks.get_mut(i) {
+                        set_caret_text(b, &typed);
+                    }
+                    changed.blocks = true;
+                }
+                let (enter, backspace, tab, shift, escape, up, down) = ui.input(|i| {
+                    (
+                        i.key_pressed(Key::Enter),
+                        i.key_pressed(Key::Backspace),
+                        i.key_pressed(Key::Tab),
+                        i.modifiers.shift,
+                        i.key_pressed(Key::Escape),
+                        i.key_pressed(Key::ArrowUp),
+                        i.key_pressed(Key::ArrowDown),
+                    )
+                });
+                if resp.has_focus() || resp.lost_focus() {
+                    if enter {
+                        action = Some(Action::Split(i));
+                    } else if backspace && at_start && !wrote_changed {
+                        action = Some(Action::JoinBack(i));
+                    } else if tab {
+                        action = Some(Action::Indent(i, !shift));
+                    } else if escape {
+                        action = Some(Action::Leave);
+                    } else if up && i > 0 {
+                        action = Some(Action::Move(i - 1));
+                    } else if down && i + 1 < count {
+                        action = Some(Action::Move(i + 1));
+                    }
+                }
+                frame_block(ui, top, true, t);
+                if let Some(a) = action.take() {
+                    apply(a, blocks, caret, &mut changed);
+                }
+                continue;
+            }
             let resp = ui
-                .horizontal_top(|ui| {
+                .with_layout(row, |ui| {
                     if let Some(done) = lead(ui, &block, t) {
                         ticked = Some(done);
                     }
@@ -325,6 +555,7 @@ pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, pag
                             .id(id)
                             .frame(egui::Frame::NONE)
                             .desired_width(ui.available_width())
+                            .horizontal_align(align)
                             .font(egui::FontId::monospace(size))
                             .show(ui)
                     } else {
@@ -332,6 +563,7 @@ pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, pag
                             .id(id)
                             .frame(egui::Frame::NONE)
                             .desired_width(ui.available_width())
+                            .horizontal_align(align)
                             .layouter(&mut layouter)
                             .show(ui)
                     };
@@ -344,6 +576,16 @@ pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, pag
                 .inner;
             if let Some(sel) = selection {
                 c.selection = sel;
+            }
+            // Ctrl+click (Cmd on a Mac) on a link while writing in the block follows it; a
+            // plain click only moves the caret, which is how Word and OneNote do it.
+            if resp.clicked()
+                && ui.input(|i| i.modifiers.command)
+                && !matches!(block, Block::Code { .. } | Block::MathBlock(_))
+                && let Some((a, _)) = selection
+                && let Some(href) = pagetext::link_at(&c.text, a)
+            {
+                changed.link = Some(href);
             }
             if let Some(done) = ticked {
                 action = Some(Action::SetTask(i, done));
@@ -364,7 +606,7 @@ pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, pag
                 // follow the caret without waiting for it to leave the block.
                 let typed = c.text.clone();
                 if let Some(b) = blocks.get_mut(i) {
-                    set_block_text(b, &typed);
+                    set_caret_text(b, &typed);
                 }
                 changed.blocks = true;
             }
@@ -395,34 +637,28 @@ pub fn show(ui: &mut Ui, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, pag
                     action = Some(Action::Move(i + 1));
                 }
             }
+            frame_block(ui, top, true, t);
         } else {
             // A finished block. Clicking it puts the caret in it, under the pointer, and a
             // to-do box on it can be ticked without putting the caret anywhere.
-            let out = preview::show_block(ui, &block, i, page_dir, t, true);
+            let out = preview::show_block(ui, &block, i, page_dir, t, true, page);
             let resp = out.response;
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
             } else if resp.clicked() && is_writable(&block) {
-                let (size, strong) = size_of(&block);
-                let text = block_text(&block);
-                let at = resp
-                    .interact_pointer_pos()
-                    .map(|p| char_at(ui, &text, size, strong, t, resp.rect.width(), p - resp.rect.min - egui::vec2(lead_width(&block), 0.0)));
-                action = Some(Action::MoveTo(i, at));
+                let at = resp.interact_pointer_pos().map(|p| char_under(ui, &block, &resp, p, t, page));
+                // A click on a link follows it; anywhere else it puts the caret there.
+                match at.and_then(|a| link_in(&block, a)) {
+                    Some(href) => changed.link = Some(href),
+                    None => action = Some(Action::MoveTo(i, at)),
+                }
             }
             if resp.hovered() && is_writable(&block) {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                let over_link = resp.hover_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)).is_some();
+                ui.ctx().set_cursor_icon(if over_link { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Text });
             }
+            frame_block(ui, top, false, t);
         }
-    }
-    // Room under the page: a click there writes at the end, the way an empty page does.
-    let (rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
-    let _ = rect;
-    if below.clicked() {
-        action = Some(Action::ClickBelow);
-    }
-    if below.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
     if let Some(a) = action {
         apply(a, blocks, caret, &mut changed);
@@ -440,15 +676,291 @@ enum Action {
     Split(usize),
     JoinBack(usize),
     Indent(usize, bool),
+    /// A clipboard paste that is more than a line: a table, or several paragraphs.
+    Paste(usize, Vec<Block>),
     Leave,
     ClickBelow,
+}
+
+/// What a pasted clipboard string should become on the page.
+///
+/// OneNote, Word and Excel put a table on the clipboard as plain text with a tab between
+/// cells and a newline between rows. Dropping that into one paragraph loses the table, so it
+/// is turned back into one here. Several lines with no tabs become several paragraphs, which
+/// is the other thing a one-line paste gets wrong.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Pasted {
+    /// Leave it to the text box: it belongs inside the line.
+    Inline,
+    /// Rows of cells, the first row being the heading.
+    Table(Vec<Vec<String>>),
+    /// One paragraph per line.
+    Paragraphs(Vec<String>),
+    /// Markup: the richest flavour, with the table structure and the marks inside the cells.
+    Markup(String),
+}
+
+/// True for text that is really HTML. The apps that copy a table put an HTML flavour on the
+/// clipboard beside the plain one, headed the way Windows heads it (`Version:1.0`,
+/// `StartFragment`), and it is the better one to take: it carries the cells, the marks
+/// inside them, and even the direction. Reading that flavour off the clipboard needs a
+/// crate egui does not have; this catches it when it reaches us as text.
+fn looks_like_html(text: &str) -> bool {
+    let head = text.trim_start();
+    let body = match head.find('<') {
+        Some(i) if head.starts_with("Version:") => head.split_at(i).1,
+        _ => head,
+    };
+    if !body.starts_with('<') {
+        return false;
+    }
+    let lower = body.to_ascii_lowercase();
+    ["<table", "<tr", "<p ", "<p>", "<div", "<ul", "<ol", "<h1", "<h2", "<span", "<html", "<body"].iter().any(|tag| lower.contains(tag))
+}
+
+/// The HTML inside a clipboard flavour: what is between the fragment markers if they are
+/// there, else everything from the first tag on.
+fn html_fragment(text: &str) -> String {
+    const START: &str = "<!--StartFragment-->";
+    const END: &str = "<!--EndFragment-->";
+    let start = text.find(START).map(|i| i + START.len());
+    let end = text.find(END);
+    match (start, end) {
+        (Some(a), Some(b)) if b > a => text.get(a..b).unwrap_or(text).trim().to_string(),
+        _ => match text.find('<') {
+            Some(i) => text.split_at(i).1.trim().to_string(),
+            None => text.trim().to_string(),
+        },
+    }
+}
+
+pub fn pasted(text: &str) -> Pasted {
+    if looks_like_html(text) {
+        return Pasted::Markup(html_fragment(text));
+    }
+    let text = text.replace("\r\n", "\n");
+    let lines: Vec<String> = text.trim_end_matches('\n').split('\n').map(|l| l.trim_end_matches('\r').to_string()).collect();
+    if lines.len() < 2 {
+        return Pasted::Inline;
+    }
+    if lines.iter().any(|l| l.contains('\t')) {
+        let rows: Vec<Vec<String>> = lines.iter().map(|l| l.split('\t').map(|c| c.trim().to_string()).collect()).collect();
+        let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+        // A table of one column is a list of lines, not a table.
+        if width > 1 {
+            let rows: Vec<Vec<String>> = rows
+                .into_iter()
+                .map(|mut r| {
+                    r.resize(width, String::new());
+                    r
+                })
+                .collect();
+            return Pasted::Table(rows);
+        }
+    }
+    Pasted::Paragraphs(lines)
+}
+
+/// The blocks a pasted table or paragraph list becomes.
+pub fn pasted_blocks(p: Pasted) -> Vec<Block> {
+    match p {
+        Pasted::Inline => Vec::new(),
+        // The same path an HTML page takes when it is opened, so a pasted table keeps its
+        // cells and a pasted sentence keeps its bold and its links.
+        Pasted::Markup(html) => notecraft_formats::markdown::parse(&notecraft_formats::html::to_markdown(&html)),
+        Pasted::Paragraphs(lines) => lines.into_iter().map(|l| Block::Paragraph(parse_inline(&l))).collect(),
+        Pasted::Table(mut rows) => {
+            if rows.is_empty() {
+                return Vec::new();
+            }
+            let head = rows.remove(0).iter().map(|c| parse_inline(c)).collect();
+            let rows = rows.into_iter().map(|r| r.iter().map(|c| parse_inline(c)).collect()).collect();
+            vec![Block::Table { head, rows }]
+        }
+    }
+}
+
+/// True for a line egui cannot put a caret in: anything with right-to-left letters, where
+/// egui counts glyphs as characters and the caret lands in the wrong place.
+pub fn needs_our_caret(text: &str) -> bool {
+    text.chars().any(|c| notecraft_model::direction(c.encode_utf8(&mut [0u8; 4])) == notecraft_model::Dir::Rtl)
+}
+
+/// A character offset turned into a byte offset in `text`, and back.
+fn byte_of(text: &str, chars: usize) -> usize {
+    text.char_indices().nth(chars).map(|(b, _)| b).unwrap_or(text.len())
+}
+
+fn chars_of(text: &str, byte: usize) -> usize {
+    text.get(..byte.min(text.len())).map(|s| s.chars().count()).unwrap_or(0)
+}
+
+/// What one frame of writing in a right-to-left line did.
+pub struct Wrote {
+    pub response: egui::Response,
+    pub changed: bool,
+    pub at_start: bool,
+}
+
+/// Writing in a line that has right-to-left text in it.
+///
+/// egui's own text box cannot do it: it treats a glyph index as a character offset, so in a
+/// shaped script the caret lands in the wrong place and the text appears to jump
+/// (`crates/ui-egui/tests/arabic_layout.rs`). So the line is drawn by the bidi painter,
+/// which puts the runs where the Unicode algorithm says, and the caret is NoteCraft's own:
+/// a click asks parley which character is under the pointer, and the arrow keys step the
+/// way the eye moves, not the way the bytes run.
+pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id) -> Wrote {
+    let width = ui.available_width().max(32.0);
+    let pieces = vec![(
+        0..c.text.len(),
+        egui::text::TextFormat { font_id: egui::FontId::proportional(size), color: t.text, ..egui::text::TextFormat::default() },
+    )];
+    let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width);
+    // The block's own id, the same one the egui text box uses for a line without
+    // right-to-left text in it, so the focus carries over when a line becomes one or stops
+    // being one under the caret.
+    let (rect, _) = ui.allocate_exact_size(vec2(width, used.y.max(size * 1.3)), Sense::hover());
+    let resp = ui.interact(rect, id, Sense::click_and_drag());
+    crate::bidi::paint(ui, rect.min, &drawn);
+
+    if c.focus {
+        c.focus = false;
+        if let Some(place) = c.place.take() {
+            let at = place.min(c.text.chars().count());
+            c.selection = (at, at);
+        }
+    }
+    // The caret is in this block, so this is where the typing goes.
+    if !resp.has_focus() {
+        resp.request_focus();
+    }
+    let mut changed = false;
+    let chars = c.text.chars().count();
+    // The selection is kept as two byte offsets: where it was started and where it is now.
+    let mut anchor = byte_of(&c.text, c.selection.1.min(chars));
+    let mut at = byte_of(&c.text, c.selection.0.min(chars));
+
+    // A click puts the caret under the pointer, which only parley can work out here. A
+    // double click takes the word, and a drag extends the selection from where it began.
+    if let Some(p) = resp.interact_pointer_pos() {
+        let point = p - rect.min;
+        if resp.double_clicked() {
+            let word = crate::bidi::word_at(&c.text, point, size, width);
+            anchor = word.start;
+            at = word.end;
+            resp.request_focus();
+        } else if resp.drag_started() || (resp.clicked() && !resp.dragged()) {
+            at = crate::bidi::hit(&c.text, point, size, width);
+            anchor = at;
+            resp.request_focus();
+        } else if resp.dragged() {
+            at = crate::bidi::hit(&c.text, point, size, width);
+            resp.request_focus();
+        }
+    }
+    if resp.has_focus() {
+        // The modifier is read off the key event itself, not off the global state: a
+        // scripted key (the control channel, the tests) carries its modifiers there.
+        let pressed = |want: Key| -> Option<bool> {
+            ui.input(|i| {
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want => Some(modifiers.shift),
+                    _ => None,
+                })
+            })
+        };
+        let (left, right, home, end) = (pressed(Key::ArrowLeft), pressed(Key::ArrowRight), pressed(Key::Home), pressed(Key::End));
+        let shift = [left, right, home, end].iter().flatten().any(|s| *s);
+        let (left, right, home, end) = (left.is_some(), right.is_some(), home.is_some(), end.is_some());
+        let delete = pressed(Key::Delete).is_some();
+        let moved = left || right || home || end;
+        if left {
+            at = crate::bidi::step(&c.text, at, false, size, width);
+        }
+        if right {
+            at = crate::bidi::step(&c.text, at, true, size, width);
+        }
+        if home {
+            at = 0;
+        }
+        if end {
+            at = c.text.len();
+        }
+        // Shift keeps where the selection began; moving without it drops the selection.
+        if moved && !shift {
+            anchor = at;
+        }
+        // What was typed goes in at the caret, in the text's own order.
+        let typed: String = ui.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect()
+        });
+        if !typed.is_empty() {
+            // What is selected is replaced by what is typed, as everywhere else.
+            let (a, b) = (anchor.min(at), anchor.max(at));
+            if a < b {
+                c.text.replace_range(a..b, "");
+                at = a;
+            }
+            c.text.insert_str(at.min(c.text.len()), &typed);
+            at += typed.len();
+            anchor = at;
+            changed = true;
+        }
+        if delete && at < c.text.len() {
+            let next = c.text.get(at..).and_then(|s| s.chars().next()).map(char::len_utf8).unwrap_or(0);
+            c.text.replace_range(at..at + next, "");
+            changed = true;
+        }
+        if pressed(Key::Backspace).is_some() {
+            let (a, b) = (anchor.min(at), anchor.max(at));
+            if a < b {
+                c.text.replace_range(a..b, "");
+                at = a;
+                anchor = a;
+                changed = true;
+            } else if at > 0 {
+                let prev = c.text.get(..at).and_then(|s| s.chars().next_back()).map(char::len_utf8).unwrap_or(0);
+                c.text.replace_range(at - prev..at, "");
+                at -= prev;
+                anchor = at;
+                changed = true;
+            }
+        }
+    }
+    let at = at.min(c.text.len());
+    let anchor = anchor.min(c.text.len());
+    c.selection = (chars_of(&c.text, at), chars_of(&c.text, anchor));
+
+    // What is selected, painted behind the words, one rectangle per run it covers.
+    if resp.has_focus() && anchor != at {
+        for r in crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width) {
+            let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
+            ui.painter().rect_filled(r, 1.0, t.row_selected);
+        }
+    }
+    // The caret itself, drawn where parley says it belongs on the line.
+    if resp.has_focus()
+        && let Some(bar) = crate::bidi::caret(ui, &c.text, &pieces, at, size, width)
+    {
+        let bar = egui::Rect::from_min_max(rect.min + bar.min.to_vec2(), rect.min + bar.max.to_vec2());
+        let bar = egui::Rect::from_min_size(bar.min, vec2(1.5, bar.height().max(size)));
+        ui.painter().rect_filled(bar, 0.0, t.accent);
+    }
+    Wrote { response: resp, changed, at_start: at == 0 }
 }
 
 fn commit(blocks: &mut [Block], caret: &Option<Caret>) {
     if let Some(c) = caret
         && let Some(b) = blocks.get_mut(c.block)
     {
-        set_block_text(b, &c.text);
+        set_caret_text(b, &c.text);
     }
 }
 
@@ -456,7 +968,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
     commit(blocks, caret);
     match action {
         Action::Move(to) => {
-            *caret = blocks.get(to).map(|b| Caret { block: to, text: block_text(b), focus: true, selection: (0, 0), place: None });
+            *caret = blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: None });
             changed.caret = true;
         }
         Action::SetTask(at, done) => {
@@ -465,7 +977,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             }
         }
         Action::MoveTo(to, at) => {
-            *caret = blocks.get(to).map(|b| Caret { block: to, text: block_text(b), focus: true, selection: (0, 0), place: at });
+            *caret = blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: at });
             changed.caret = true;
         }
         Action::Leave => {
@@ -475,6 +987,27 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         // Enter splits the line at the caret, the way it does in Word and OneNote: what is
         // before the caret stays, what is after it moves down with the caret. At the very
         // start of a line that means an empty line above and the words drop.
+        Action::Paste(at, pasted) => {
+            // What was pasted goes in after the line the caret is in, unless that line is
+            // empty, in which case it takes its place. The caret lands after the last of it.
+            let empty = blocks.get(at).map(|b| block_text(b).trim().is_empty()).unwrap_or(false);
+            let start = if empty { at } else { at + 1 };
+            if empty {
+                blocks.remove(at);
+            }
+            let n = pasted.len();
+            for (i, b) in pasted.into_iter().enumerate() {
+                let index = (start + i).min(blocks.len());
+                blocks.insert(index, b);
+            }
+            renumber(blocks);
+            let land = (start + n).saturating_sub(1).min(blocks.len().saturating_sub(1));
+            let text = blocks.get(land).map(block_text).unwrap_or_default();
+            let end = text.chars().count();
+            *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end) });
+            changed.blocks = true;
+            changed.caret = true;
+        }
         Action::Split(at) => {
             // Enter on an empty list item ends the list, as it does in every editor.
             if matches!(blocks.get(at), Some(Block::Item { spans, .. }) if spans.is_empty()) {
@@ -564,6 +1097,35 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
     }
 }
 
+/// The character of a finished block under `pos`, given the area `resp` it was drawn in.
+fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> usize {
+    let (size, strong) = size_of(block);
+    let text = caret_text(block);
+    char_at(ui, &text, size, strong, t, resp.rect.width(), pos - resp.rect.min - egui::vec2(lead_width(block), 0.0), page)
+}
+
+/// The link the character `at` of `block` sits in, if any. Code and equations hold no links,
+/// and a line that mixes the two directions is drawn in an order this lookup cannot follow
+/// yet, so it answers `None` there (see `docs/gaps.md`).
+fn link_in(block: &Block, at: usize) -> Option<String> {
+    if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
+        return None;
+    }
+    let text = caret_text(block);
+    if crate::bidi::is_mixed(&text) {
+        return None;
+    }
+    pagetext::link_at(&text, at)
+}
+
+/// The link under the pointer at `pos` in a finished block, if the pointer is on one.
+pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<String> {
+    if !is_writable(block) {
+        return None;
+    }
+    link_in(block, char_under(ui, block, resp, pos, t, page))
+}
+
 /// How wide the bullet or quote bar in front of a block is, so a click lands on the right
 /// character of the text beside it.
 fn lead_width(block: &Block) -> f32 {
@@ -645,6 +1207,69 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    #[test]
+    fn a_table_copied_from_another_app_comes_back_as_a_table() {
+        // What OneNote puts on the clipboard: a tab between cells, a newline between rows.
+        let clip = "test\t\t\t\n\t\t\t\n\ttest\t\t\n";
+        match pasted(clip) {
+            Pasted::Table(rows) => {
+                assert_eq!(rows.len(), 3, "three rows");
+                assert!(rows.iter().all(|r| r.len() == 4), "every row four cells wide: {rows:?}");
+                assert_eq!(rows.first().and_then(|r| r.first()).map(String::as_str), Some("test"));
+                assert_eq!(rows.get(2).and_then(|r| r.get(1)).map(String::as_str), Some("test"));
+            }
+            other => panic!("expected a table, got {other:?}"),
+        }
+        let blocks = pasted_blocks(pasted(clip));
+        assert!(matches!(blocks.first(), Some(Block::Table { rows, .. }) if rows.len() == 2), "a heading row and two rows: {blocks:?}");
+
+        // Several lines with no tabs are paragraphs, not a table of one column.
+        assert_eq!(pasted("one\ntwo"), Pasted::Paragraphs(vec!["one".into(), "two".into()]));
+        assert_eq!(pasted_blocks(pasted("one\ntwo")).len(), 2);
+        // One line, tabs or not, belongs inside the line the caret is in.
+        assert_eq!(pasted("just words"), Pasted::Inline);
+        assert_eq!(pasted("a\tb"), Pasted::Inline);
+        assert_eq!(pasted(""), Pasted::Inline);
+        assert!(pasted_blocks(Pasted::Inline).is_empty());
+        // The HTML flavour is the better one, and the one OneNote puts there with the
+        // Windows header. Taken whole, it keeps the cells and what is inside them.
+        let clip_html = "Version:1.0\r\nStartHTML:0000000105\r\nStartFragment:0000000527\r\n<html><body>\r\n<!--StartFragment-->\
+<table border=1><tr><td><p>test</p></td><td><p>&nbsp;</p></td></tr><tr><td><p>two</p></td><td><p><b>bold</b></p></td></tr></table>\
+<!--EndFragment--></body></html>";
+        match pasted(clip_html) {
+            Pasted::Markup(html) => {
+                assert!(html.starts_with("<table"), "the fragment, not the header: {html:.40}");
+                assert!(!html.contains("Version:1.0"));
+            }
+            other => panic!("expected markup, got {other:?}"),
+        }
+        let blocks = pasted_blocks(pasted(clip_html));
+        assert!(matches!(blocks.first(), Some(Block::Table { .. })), "a table came back: {blocks:?}");
+        // Plain words that merely start with a bracket are not markup.
+        assert_eq!(pasted("<- look at that\nand this"), Pasted::Paragraphs(vec!["<- look at that".into(), "and this".into()]));
+
+        // Windows line endings are the usual case and must not leave stray returns.
+        assert_eq!(pasted("one\r\ntwo\r\n"), Pasted::Paragraphs(vec!["one".into(), "two".into()]));
+    }
+
+    #[test]
+    fn a_direction_over_several_paragraphs_goes_on_each_of_them() {
+        use notecraft_model::Dir;
+        let mut bs = blocks("one\n\ntwo\n\nthree\n");
+        assert_eq!(bs.len(), 3);
+        // Selecting a block of the page and asking for right to left marks every paragraph
+        // in it, because a paragraph is the only thing that carries a direction.
+        assert!(set_direction_over(&mut bs, 0..=1, Some(Dir::Rtl)));
+        let marked: Vec<bool> = bs.iter().map(|b| notecraft_model::direction(&block_text(b)).is_rtl()).collect();
+        assert_eq!(marked, vec![true, true, false], "the third was not in the selection");
+
+        // Asking for auto over the same run takes them all off again.
+        assert!(set_direction_over(&mut bs, 0..=2, None));
+        assert!(bs.iter().all(|b| !block_text(b).starts_with('\u{200F}')), "every mark is gone");
+        // A range past the end is not a panic, and changes nothing.
+        assert!(!set_direction_over(&mut bs, 9..=12, Some(Dir::Rtl)));
     }
 
     #[test]

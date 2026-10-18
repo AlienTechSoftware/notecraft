@@ -17,6 +17,7 @@ and nothing below L6 may depend on egui, eframe, winit or rfd.
 | L0 | `model` | The shared vocabulary: node kinds, page formats, name and folder rules, ids, time, a tiny `key = "value"` reader. No file system, no dependencies. |
 | L1 | `formats` | Text handling for HTML and CommonMark + GFM: front matter, the body of an HTML page, page templates, HTML to Markdown-like text for previews, and a Markdown parser into a block model. |
 | L1 | `math` | A TeX subset parsed into a tree and laid out into drawing items (text, lines, paths) given a way to measure text. No UI dependency. |
+| L1 | `text` | The text layer, started: parley for the runs of a line, their order, their direction and which character a click is on. No egui, no drawing: the UI paints the runs egui's way. |
 | L1 | `onenote` | Reads `.one` section files: the revision store container, its objects and their property sets. Read only, no file system of its own. |
 | L2 | `store` | Notebooks as plain folders: the tree, creating and deleting nodes, page content, attachments, settings, search, and the folder checker. |
 | L4 | `engine` | `Session` and the **command registry**. Every user-visible action is a `CommandSpec`. |

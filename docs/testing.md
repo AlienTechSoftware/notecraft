@@ -13,7 +13,9 @@ cargo xtask ci
 
 That runs, in order: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, the layer check, the asset attribution check, the documentation
-link check, and the text style check. Each can be run alone: `cargo xtask fmt|clippy|test|layers|assets|docs|text`.
+link check, the text style check, and the check that the Welcome notebook in
+`docs/demo/DemoNotebook` is current with its content. Each can be run alone:
+`cargo xtask fmt|clippy|test|layers|assets|docs|text|demo-check`.
 
 ## What is tested, and how
 

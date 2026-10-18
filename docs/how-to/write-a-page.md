@@ -7,6 +7,22 @@ The page is shown the way it will be read: headings in heading type, bold and li
 colours, lists with their bullets. The marks that make them (`**`, `#`, `-`) stay in the text but
 are dimmed, so the words come first.
 
+## Links
+
+A link is the words in square brackets, then the target in round brackets:
+
+```text
+Read [the plan](../plan/) first.
+```
+
+The target is a web address, a file beside the page
+(`assets/notes.pdf`), or another page or folder of the notebook by relative path:
+`../other-page/` is the page next door, `../../` is the section group above. Click a link to
+follow it: a page opens in the window, a file opens in the program your system has for it, a
+web address opens in the browser. While the caret is in the line, hold Ctrl (Cmd on a Mac)
+and click, so a plain click can still place the caret. A link never reaches outside the
+notebooks folder.
+
 ## Keys
 
 | Key | What it does |

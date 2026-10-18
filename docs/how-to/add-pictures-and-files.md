@@ -31,6 +31,18 @@ refused.
 Anything you drop into an `assets` folder yourself is an attachment too; NoteCraft lists what it
 finds under the page.
 
+
+## Pasting from another app
+
+Copying a table out of another note taking app and pasting it here keeps the table: the
+clipboard carries the rows as text with a tab between cells, and NoteCraft turns that back
+into a grid. If the richer HTML flavour reaches it, that is used instead, which keeps the
+marks inside the cells. Several lines without tabs become several paragraphs.
+
+Pasting a **picture** from the clipboard is not built: the window's toolkit hands over text
+only, so NoteCraft never sees the picture flavour. Drag the file onto the page, or save it
+and use **Insert**. [docs/gaps.md](../gaps.md) says what it would take.
+
 ## What a printout is, and why there is not one
 
 Some apps can insert a document as a **printout**: every page of a PDF or a Word file rendered to

@@ -14,6 +14,14 @@ Parameters:
 - format (optional): html or cmgfm; default: the global setting
 - empty (optional): true to leave the notebook empty instead of creating the first section and page
 
+## `notebook.welcome`
+
+Add the welcome notebook (changes the tree).
+
+Parameters:
+
+- (none). Writes the Welcome to NoteCraft notebook, a tour of the app, into the notebooks folder. Refused when it is already there
+
 ## `node.create`
 
 New section group, section or page (changes the tree).
@@ -67,6 +75,24 @@ Parameters:
 
 - path (required): the page
 - body (required): the editable part (inside of the HTML body, or the Markdown after the front matter)
+
+## `page.direction`
+
+Which way a page reads.
+
+Parameters:
+
+- path (required): the page
+- dir (optional): rtl, ltr, or auto to let every line decide; without it the current setting is reported
+
+## `page.containers`
+
+How a page's blocks are arranged in boxes.
+
+Parameters:
+
+- path (required): the page
+- boxes (optional): x,y,width,blocks per container, separated by semicolons; empty puts the page back in one column. Without it, the current arrangement is reported
 
 ## `page.attach`
 

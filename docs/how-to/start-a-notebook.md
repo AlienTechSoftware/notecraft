@@ -14,7 +14,13 @@ window and on the File screen.
 
 ## The first notebook
 
-Click **New notebook** in the top bar, or **File**, then **New**. Give it a name.
+The first time NoteCraft starts on an empty notebooks folder it adds one for you: **Welcome to
+NoteCraft**, a tour of the app written as an ordinary notebook, and opens it on its start page.
+It is yours to change or delete. **File**, then **New**, then **Add the welcome notebook**
+brings it back, or opens it if it is still there.
+
+For a notebook of your own, click **New notebook** in the top bar, or **File**, then **New**.
+Give it a name.
 
 Like the app you are coming from, a new notebook is not empty: it gets a section called "New Section 1" with one
 page called "Untitled page" inside it, and the page carries the date you started it. You can

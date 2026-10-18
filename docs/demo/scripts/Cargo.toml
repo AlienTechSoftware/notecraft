@@ -1,0 +1,19 @@
+[package]
+name = "notecraft-demo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Builds the Welcome notebook in docs/demo/DemoNotebook from docs/demo/scripts/content"
+
+[[bin]]
+name = "notecraft-demo"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-model = { workspace = true }
+notecraft-store = { workspace = true }

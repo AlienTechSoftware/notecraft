@@ -1,0 +1,16 @@
+[package]
+name = "notecraft-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft text layer (spike): shaping, bidi and a caret, over parley"
+
+[lints]
+workspace = true
+
+[dependencies]
+# No `system` feature: fontique's system backend links fontconfig on Linux. NoteCraft
+# registers the faces it bundles, the way PhotoCraft does.
+parley = { version = "0.11", default-features = false, features = ["std"] }

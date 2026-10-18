@@ -32,6 +32,16 @@ Beside the page, three buttons:
 **View** adds rule lines (none, lines or squares behind the page), hiding the page title, and
 zoom (smaller, larger, back to 100%). Rule lines and the zoom are remembered.
 
+## Two columns, or one tree
+
+**View**, then **Panes**, then **Separate pages**: the notebooks, section groups and sections
+go in one column and the pages of the chosen section in the next, which is how OneNote
+arranges them. Without it, everything is one tree, which is how NoteCraft started.
+
+The three-bar button at the top left hides the notebooks column and leaves the pages. Pressing
+it from the one-tree layout switches to the two columns with the notebooks hidden, the way that
+button behaves in OneNote. The choice is remembered.
+
 ## Opening where you left off
 
 NoteCraft reopens the page you closed on, with the sections above it expanded.

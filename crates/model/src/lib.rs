@@ -5,15 +5,19 @@
 //! a few small text helpers. No file system access and no dependencies.
 
 pub mod color;
+pub mod container;
 pub mod format;
 pub mod id;
 pub mod kind;
 pub mod kv;
 pub mod names;
 pub mod tag;
+pub mod text;
 pub mod time;
 
 pub use color::NodeColor;
+pub use container::Container;
 pub use format::{FormatError, PageFormat};
 pub use kind::NodeKind;
 pub use tag::Tag;
+pub use text::{Dir, direction, direction_or};

@@ -10,7 +10,10 @@
 
 pub mod app;
 pub mod backstage;
+pub mod bidi;
+pub mod containers;
 pub mod control;
+pub mod fonts;
 pub mod icons;
 pub mod mathview;
 pub mod pageedit;
