@@ -68,7 +68,11 @@ fn notebook_welcome(s: &mut Session, _p: &Params) -> Result<Output, EngineError>
 fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let parent = s.resolve(req(p, "parent")?)?;
     let kind = NodeKind::parse(req(p, "kind")?).ok_or_else(|| EngineError::BadParam("kind must be section-group, section or page".into()))?;
-    let dir = ops::create_node(&parent, req(p, "title")?, kind, opt_format(p)?, &s.settings)?;
+    let order = match p.get("order").map(|o| o.trim()).filter(|o| !o.is_empty()) {
+        Some(o) => Some(o.parse::<u32>().map_err(|_| EngineError::BadParam("order must be a whole number".into()))?),
+        None => None,
+    };
+    let dir = ops::create_node_at(&parent, req(p, "title")?, kind, opt_format(p)?, &s.settings, order)?;
     Ok(Output::Path(dir))
 }
 
@@ -163,6 +167,19 @@ fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     }
     page::set_containers(&path, &boxes)?;
     Ok(Output::Text(notecraft_model::container::write(&boxes)))
+}
+
+/// Opens a notebook that lives outside the notebooks folder, keeping the open ones.
+fn notebook_open(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = std::path::PathBuf::from(req(p, "path")?);
+    Ok(Output::Path(s.open_notebook(&path)?))
+}
+
+/// Puts one of those away again. The folder and its notes are untouched.
+fn notebook_close(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = std::path::PathBuf::from(req(p, "path")?);
+    let closed = s.close_notebook(&path);
+    Ok(Output::Text(if closed { "closed".into() } else { "that notebook was not open from elsewhere".into() }))
 }
 
 fn tree_refresh(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
@@ -294,6 +311,20 @@ boxes (optional): x,y,width,blocks per container, separated by semicolons; empty
         run: search_query,
     },
     CommandSpec {
+        id: "notebook.open",
+        label: "Open a notebook kept somewhere else",
+        params: "path (required): the notebook's folder, anywhere on this machine. The notebooks already open stay open, and this one is opened again next time",
+        changes_tree: true,
+        run: notebook_open,
+    },
+    CommandSpec {
+        id: "notebook.close",
+        label: "Put away a notebook opened from somewhere else",
+        params: "path (required): the notebook's folder. Nothing is deleted",
+        changes_tree: true,
+        run: notebook_close,
+    },
+    CommandSpec {
         id: "notebook.check",
         label: "Check a notebook against the folder rules",
         params: "path (required): the notebook",
@@ -415,6 +446,66 @@ mod tests {
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
+    }
+
+    #[test]
+    fn a_notebook_from_elsewhere_opens_beside_the_others_and_stays_open() {
+        let t = TempDir::new("engine-open-elsewhere");
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let mut s = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook");
+
+        // A notebook in a folder of its own, nowhere near the notebooks folder.
+        let away = t.path().join("away");
+        std::fs::create_dir_all(&away).expect("dir");
+        let mut other = Session::new(&away, settings.clone()).expect("other session");
+        let made = path_of(other.run("notebook.create", &p(&[("name", "Elsewhere")])).expect("notebook"));
+
+        s.run("notebook.open", &p(&[("path", &made.to_string_lossy())])).expect("open");
+        let titles: Vec<String> = s.tree().iter().map(|n| n.info.title.clone()).collect();
+        assert_eq!(titles, vec!["Here".to_string(), "Elsewhere".to_string()], "both, the opened one last");
+        // Its pages can be reached, which means paths inside it resolve.
+        // Built with `join`, not with slashes: a Windows verbatim path (`\?\C:\...`) does
+        // not accept forward slashes, and the canonical paths here are verbatim.
+        let page = made.join("new-section-1").join("untitled-page");
+        let loaded = s.run("page.load", &p(&[("path", &page.to_string_lossy())]));
+        assert!(loaded.is_ok(), "a page inside the opened notebook: {loaded:?}");
+
+        // It is remembered: a new session on the same settings has it too.
+        let again = Session::new(&t.path().join("notebooks"), settings.clone()).expect("again");
+        assert_eq!(again.tree().len(), 2, "still open next time");
+        assert_eq!(again.opened_elsewhere().len(), 1);
+
+        // Closing puts it away without touching the folder.
+        s.run("notebook.close", &p(&[("path", &made.to_string_lossy())])).expect("close");
+        assert_eq!(s.tree().len(), 1, "back to the one in the notebooks folder");
+        assert!(made.is_dir(), "the folder is still there");
+        // What is not a notebook is refused, and so is nothing at all.
+        assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
+        assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    #[test]
+    fn a_page_can_be_slipped_between_two_others() {
+        let t = TempDir::new("engine-order");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work")])).expect("notebook");
+        let section = "work/new-section-1";
+        for title in ["First", "Second"] {
+            s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", title)])).expect("page");
+        }
+        // The section already has the page a new notebook starts with, so the three pages
+        // are numbered 10, 20 and 30: 25 slips one between the second and the third.
+        s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", "Middle"), ("order", "25")])).expect("between");
+        let tree = text_of(s.run("tree.read", &p(&[("path", section)])).expect("tree"));
+        let titles: Vec<&str> = tree.lines().filter_map(|l| l.trim().split("  [").next()).skip(1).collect();
+        assert_eq!(
+            titles,
+            vec!["Untitled page", "First", "Middle", "Second"],
+            "the new page sits where it was asked for:
+{tree}"
+        );
+        assert!(s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", "Bad"), ("order", "soon")])).is_err());
     }
 
     #[test]

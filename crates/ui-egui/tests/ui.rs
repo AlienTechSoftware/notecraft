@@ -501,6 +501,82 @@ fn the_notebooks_and_the_pages_can_have_columns_of_their_own() {
     review(&mut h, "panes");
 }
 
+/// The line between two pages, which OneNote shows on hover, makes a page in that place.
+#[test]
+fn a_page_can_be_added_between_two_others() {
+    let (_t, mut app, s) = sample_app("ui-insert-page");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    // The two columns, so the pages have a column of their own with the lines in it.
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+
+    let titles = |h: &mut Harness<'_, NoteCraftApp>| -> Vec<String> {
+        ask(h, "ui.inspect", json!({}))
+            .expect("inspect")
+            .pointer("/rows")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|r| r.get("title").and_then(Value::as_str).map(str::to_string))
+            .collect()
+    };
+    let before = titles(&mut h);
+
+    // Every gap offers a page; the first one puts it above everything else.
+    let gaps = h.get_all_by_label("Add a page here").count();
+    assert!(gaps >= 2, "a line above the first page and below the last: {gaps}");
+    h.get_all_by_label("Add a page here").next().expect("a gap").click();
+    h.run();
+    settle(&mut h);
+
+    let after = titles(&mut h);
+    assert_eq!(after.len(), before.len() + 1, "one page more:\n{before:?}\n{after:?}");
+    // It went in where the line was, not at the end of the section.
+    let pages: Vec<&String> = after.iter().filter(|t| *t == "Untitled page").collect();
+    assert!(!pages.is_empty(), "the new page is there: {after:?}");
+    assert_ne!(after.last(), Some(&"Untitled page".to_string()), "and not merely appended: {after:?}");
+}
+
+/// Opening a notebook from somewhere else must not put away the ones already open, and it
+/// must still be open next time the window starts.
+#[test]
+fn a_notebook_opened_from_elsewhere_joins_the_others() {
+    let (t, app, _s) = sample_app("ui-open-elsewhere");
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let count = |h: &mut Harness<'_, NoteCraftApp>| h.state().session().tree().len();
+    let before = count(&mut h);
+    assert!(before >= 1, "the sample notebooks are open");
+
+    // A notebook of its own, outside the notebooks folder.
+    let away = t.path().join("away");
+    std::fs::create_dir_all(&away).expect("dir");
+    let made = {
+        let settings = notecraft_store::Settings::at(t.path().join("settings").join("s.toml"));
+        let mut other = notecraft_engine::Session::new(&away, settings).expect("session");
+        match other.run("notebook.create", &notecraft_engine::Params::from([("name".to_string(), "Elsewhere".to_string())])) {
+            Ok(notecraft_engine::Output::Path(p)) => p,
+            other => panic!("expected a path, got {other:?}"),
+        }
+    };
+
+    ask(&mut h, "engine.execute", json!({"command": "notebook.open", "params": {"path": made.to_string_lossy()}})).expect("open");
+    pump(&mut h);
+    assert_eq!(count(&mut h), before + 1, "it joined the others rather than replacing them");
+    assert!(h.state().session().tree().iter().any(|n| n.info.title == "Elsewhere"));
+
+    // Closing it leaves the rest alone.
+    ask(&mut h, "engine.execute", json!({"command": "notebook.close", "params": {"path": made.to_string_lossy()}})).expect("close");
+    pump(&mut h);
+    assert_eq!(count(&mut h), before, "and goes away again without taking anything with it");
+    assert!(made.is_dir(), "the folder is untouched");
+}
+
 /// The window comes back on the page it closed on.
 #[test]
 fn the_last_page_opens_again_next_time() {
@@ -711,6 +787,72 @@ fn clicking_a_link_opens_the_page_it_names() {
     review(&mut h, "links_page");
 }
 
+/// A link in a right-to-left line. Those lines are drawn by the bidi painter, which paints
+/// straight onto the canvas, so two things have to hold: the line says what it says to a
+/// screen reader and to this test, and a click on it is mapped through the painter that drew
+/// it rather than through egui's own layout, which puts such a line in the wrong order.
+#[test]
+fn clicking_a_link_in_a_right_to_left_line_opens_the_page_it_names() {
+    let (_t, app, s) = sample_app("ui-rtl-link");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Arabic links", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": "[صفحة التنسيق](../format-ideas/)\n"}}))
+        .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // The painted line carries its words, so it is found by them, the way a reader hears it.
+    let rect = h.get_by_label("صفحة التنسيق").rect();
+    // Such a line hangs from the right edge of the page, so that is where its words are.
+    ask(&mut h, "ui.click", json!({"x": rect.max.x - 24.0, "y": rect.center().y})).expect("click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the linked page is open, not {:?}", h.state().body());
+}
+
+/// A click lands on the word under the pointer even when a link sits earlier in the line.
+/// The words on the page are shorter than the text the caret writes in by every mark and
+/// every link target, so measuring the pointer against the written text would put the caret
+/// a long way back - far enough, here, to land inside the link and open it by accident.
+#[test]
+fn the_caret_lands_in_the_last_word_of_a_line_that_holds_a_link() {
+    let (_t, app, s) = sample_app("ui-caret-after-link");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "After a link", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "see [the format page](../format-ideas/) and stop\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // On the page the marks are gone, so the line is found by the words a reader sees.
+    let rect = h.get_by_label("see the format page and stop").rect();
+    ask(&mut h, "ui.click", json!({"x": rect.max.x - 6.0, "y": rect.center().y})).expect("click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert!(h.state().body().is_some_and(|b| b.starts_with("see [the format page]")), "the page stays open: {:?}", h.state().body());
+    let at = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret/at").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let last_word = body.find("stop").unwrap_or(0);
+    assert!(at >= last_word, "the caret is in the last word: character {at} of {:?}, which begins at {last_word}", body.trim_end());
+}
+
 /// The Welcome notebook: the File screen adds it to an empty folder, the window opens on its
 /// start page, the link to the English group opens that group's first page, and asking
 /// again opens the one that is there instead of making another.
@@ -729,11 +871,11 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     assert!(h.state().body().is_some_and(|b| b.starts_with("# Welcome to NoteCraft")), "opened on the start page: {:?}", h.state().body());
     review(&mut h, "welcome_start");
 
-    // The start page links to the English group; the group opens on its first page. The
-    // list item reads "English, English" (the link, then the English name); the tree also
-    // has an "English" row, so the page's own label is the one looked up, and the click
-    // lands on its first word.
-    let rect = h.get_by_label_contains("English, English").rect();
+    // The start page links to the English group, and the group opens on its first page.
+    // "English" is on screen twice, once as a row of the tree and once in the page, so the
+    // one further right is the page's own, and the click lands on its first word.
+    let rect =
+        h.get_all_by_label_contains("English").map(|n| n.rect()).max_by(|a, b| a.min.x.total_cmp(&b.min.x)).expect("the link on the start page");
     ask(&mut h, "ui.click", json!({"x": rect.min.x + 20.0, "y": rect.center().y})).expect("click");
     for _ in 0..6 {
         pump(&mut h);

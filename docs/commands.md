@@ -126,6 +126,22 @@ Parameters:
 - q (required): text to find
 - limit (optional): at most this many hits (default 40, at most 500)
 
+## `notebook.open`
+
+Open a notebook kept somewhere else (changes the tree).
+
+Parameters:
+
+- path (required): the notebook's folder, anywhere on this machine. The notebooks already open stay open, and this one is opened again next time
+
+## `notebook.close`
+
+Put away a notebook opened from somewhere else (changes the tree).
+
+Parameters:
+
+- path (required): the notebook's folder. Nothing is deleted
+
 ## `notebook.check`
 
 Check a notebook against the folder rules.

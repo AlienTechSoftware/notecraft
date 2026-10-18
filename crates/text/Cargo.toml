@@ -11,6 +11,7 @@ description = "NoteCraft text layer (spike): shaping, bidi and a caret, over par
 workspace = true
 
 [dependencies]
+notecraft-model = { workspace = true }
 # No `system` feature: fontique's system backend links fontconfig on Linux. NoteCraft
 # registers the faces it bundles, the way PhotoCraft does.
 parley = { version = "0.11", default-features = false, features = ["std"] }

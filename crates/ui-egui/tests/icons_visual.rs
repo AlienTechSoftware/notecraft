@@ -22,7 +22,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 24] = [
+const ALL: [Icon; 25] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -47,6 +47,7 @@ const ALL: [Icon; 24] = [
     Icon::Quote,
     Icon::DirLtr,
     Icon::DirRtl,
+    Icon::Bars,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -74,6 +75,7 @@ fn name(icon: Icon) -> &'static str {
         Icon::Equation => "equation",
         Icon::Diagram => "diagram",
         Icon::Quote => "quote",
+        Icon::Bars => "bars",
         Icon::DirLtr => "dir-ltr",
         Icon::DirRtl => "dir-rtl",
         Icon::Sun => "sun",
@@ -210,6 +212,7 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(9.0, 6.0), (5.0, 9.0), (5.0, 13.0), (9.0, 13.0), (9.0, 9.0), (5.0, 9.0)]),
             open(&[(19.0, 6.0), (15.0, 9.0), (15.0, 13.0), (19.0, 13.0), (19.0, 9.0), (15.0, 9.0)]),
         ],
+        Icon::Bars => vec![open(&[(4.0, 7.0), (20.0, 7.0)]), open(&[(4.0, 12.0), (20.0, 12.0)]), open(&[(4.0, 17.0), (20.0, 17.0)])],
         Icon::DirLtr => vec![
             open(&[(5.0, 6.0), (17.0, 6.0)]),
             open(&[(5.0, 10.0), (19.0, 10.0)]),
@@ -283,7 +286,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 144);
+    assert_eq!(pairs, 150);
 }
 
 #[test]

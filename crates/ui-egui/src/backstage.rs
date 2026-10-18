@@ -19,8 +19,10 @@ pub enum Act {
     AddWelcome,
     /// Show this notebook's folder in the file manager.
     OpenFolder(std::path::PathBuf),
-    /// Open the notebooks folder itself.
+    /// Show the notebooks folder in the file manager.
     OpenNotebooksFolder,
+    /// Ask the system for a folder, and work from the notebooks in it.
+    ChooseFolder,
     /// Open a page of this notebook (the first one).
     Open(std::path::PathBuf),
     /// Another page of the File screen: Info, New or Open.
@@ -231,9 +233,21 @@ fn open_page(ui: &mut Ui, notebooks: &[Node], folder: &str, t: &Tokens, acts: &m
         }
     }
     ui.add_space(10.0);
-    if ui.button("Open the notebooks folder").clicked() {
-        acts.push(Act::OpenNotebooksFolder);
-    }
+    ui.horizontal(|ui| {
+        // The system's own dialog, which is what "Open" means everywhere else.
+        if ui.button("Open a folder...").on_hover_text("Choose the folder your notebooks are in").clicked() {
+            acts.push(Act::ChooseFolder);
+        }
+        if ui.button("Show the notebooks folder").on_hover_text("Open it in the file manager").clicked() {
+            acts.push(Act::OpenNotebooksFolder);
+        }
+    });
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new("Choosing a folder that is itself a notebook works too: NoteCraft then works from the folder it sits in.")
+            .size(11.5)
+            .color(t.muted),
+    );
     ui.add_space(14.0);
     ui.label(
         egui::RichText::new("Opening a notebook from a web address is not built. Importing a `.one` notebook is being written; see the roadmap.")

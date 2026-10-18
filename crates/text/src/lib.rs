@@ -96,7 +96,11 @@ impl Text {
         builder.push_default(StyleProperty::FontSize(size));
         let mut layout: Layout<Brush> = builder.build(text);
         layout.break_all_lines(width);
-        layout.align(Alignment::Start, AlignmentOptions::default());
+        // Which edge the lines hang from. parley's `Start` follows the base direction it
+        // infers; NoteCraft decides that itself (the mark at the start of the line, else
+        // its first strong letter), so the geometry here and the drawing agree.
+        let align = if notecraft_model::direction(text).is_rtl() { Alignment::Right } else { Alignment::Left };
+        layout.align(align, AlignmentOptions::default());
         layout
     }
 }

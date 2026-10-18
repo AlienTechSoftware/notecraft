@@ -13,7 +13,7 @@ use crate::pagetext;
 use crate::preview;
 use crate::theme::Tokens;
 use egui::{Key, Sense, Ui, vec2};
-use notecraft_formats::markdown::{Block, parse_inline};
+use notecraft_formats::markdown::{Block, Span, parse_inline};
 use notecraft_formats::render::spans_to_markdown;
 use notecraft_model::Tag;
 
@@ -646,11 +646,13 @@ pub fn show_blocks(
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
             } else if resp.clicked() && is_writable(&block) {
-                let at = resp.interact_pointer_pos().map(|p| char_under(ui, &block, &resp, p, t, page));
                 // A click on a link follows it; anywhere else it puts the caret there.
-                match at.and_then(|a| link_in(&block, a)) {
+                match resp.interact_pointer_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)) {
                     Some(href) => changed.link = Some(href),
-                    None => action = Some(Action::MoveTo(i, at)),
+                    None => {
+                        let at = resp.interact_pointer_pos().map(|p| char_under(ui, &block, &resp, p, t, page));
+                        action = Some(Action::MoveTo(i, at));
+                    }
                 }
             }
             if resp.hovered() && is_writable(&block) {
@@ -1099,31 +1101,100 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
 
 /// The character of a finished block under `pos`, given the area `resp` it was drawn in.
 fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> usize {
+    if let Some(at) = char_under_drawn(ui, block, resp, pos, t, page) {
+        return at;
+    }
     let (size, strong) = size_of(block);
     let text = caret_text(block);
     char_at(ui, &text, size, strong, t, resp.rect.width(), pos - resp.rect.min - egui::vec2(lead_width(block), 0.0), page)
 }
 
-/// The link the character `at` of `block` sits in, if any. Code and equations hold no links,
-/// and a line that mixes the two directions is drawn in an order this lookup cannot follow
-/// yet, so it answers `None` there (see `docs/gaps.md`).
-fn link_in(block: &Block, at: usize) -> Option<String> {
+/// Where a click on a finished block lands in the text the caret writes in.
+///
+/// A finished block is drawn from its parsed words, with no Markdown marks in sight, while
+/// the caret writes in the text that still carries them. Measuring the pointer against the
+/// marked text puts the caret early, and further out after a link, whose target is long in
+/// the text and invisible on the page. So the pointer is measured against what was drawn and
+/// the answer is carried back over the marks. `None` when that carrying back cannot be
+/// trusted, and the caller measures the old way.
+fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<usize> {
+    let spans = match block {
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        _ => return None,
+    };
+    if spans.iter().any(|s| s.math || s.image.is_some()) {
+        return None;
+    }
+    let (spans, mark) = match preview::tagged(spans) {
+        Some((_, stripped)) => (stripped, 21.0),
+        None => (spans.clone(), 0.0),
+    };
+    // The walk below counts the marks span by span. That count is only right when the marks
+    // it counts are the ones the caret's text really has, so the two are compared first.
+    if spans_to_markdown(&spans) != caret_text(block) {
+        return None;
+    }
+    let drawn: String = spans.iter().map(|s| s.text.as_str()).collect();
+    let lead = mark + lead_width(block);
+    // A row that reads right to left keeps its bullet and its tag mark on the right, so its
+    // words start at the left edge; a row that reads the other way has them after the lead.
+    let rtl = preview::dir_of(&spans, page).is_rtl();
+    let rel = pos - resp.rect.min;
+    let x = if rtl { rel.x } else { rel.x - lead };
+    let column = (resp.rect.width() - lead).max(32.0);
+    let (size, strong) = size_of(block);
+    let at = if crate::bidi::paints(&drawn, page) {
+        let byte = crate::bidi::hit(&drawn, vec2(x, rel.y), size, column);
+        drawn.get(..byte).unwrap_or(drawn.as_str()).chars().count()
+    } else {
+        char_at(ui, &drawn, size, strong, t, column, vec2(x, rel.y), page)
+    };
+    Some(over_marks(&spans, at))
+}
+
+/// A character of the drawn words, as a character of the same line written with its marks.
+fn over_marks(spans: &[Span], drawn: usize) -> usize {
+    let mut seen = 0usize;
+    let mut marked = 0usize;
+    for s in spans {
+        let n = s.text.chars().count();
+        let wrap = if s.code { 1 } else { 2 * usize::from(s.bold) + usize::from(s.italic) + 2 * usize::from(s.strike) };
+        let open = usize::from(s.link.is_some()) + wrap;
+        if drawn < seen + n {
+            return marked + open + (drawn - seen);
+        }
+        seen += n;
+        // A link closes with `](target)`: the bracket, the two round ones and the target.
+        marked += open + n + wrap + s.link.as_ref().map_or(0, |to| 3 + to.chars().count());
+    }
+    marked
+}
+
+/// The link the character `at` of `block` sits in, if any, for a block egui laid out. Code
+/// and equations hold no links. A block the bidi painter drew is not mapped this way (see
+/// `link_under`).
+fn link_in(block: &Block, at: usize, page: notecraft_model::Dir) -> Option<String> {
     if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
         return None;
     }
     let text = caret_text(block);
-    if crate::bidi::is_mixed(&text) {
+    if crate::bidi::paints(&text, page) {
         return None;
     }
     pagetext::link_at(&text, at)
 }
 
-/// The link under the pointer at `pos` in a finished block, if the pointer is on one.
+/// The link under the pointer at `pos` in a finished block, if the pointer is on one. A
+/// right-to-left or mixed line is asked through the painter that drew it; any other line
+/// through egui's layout of its text.
 pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<String> {
     if !is_writable(block) {
         return None;
     }
-    link_in(block, char_under(ui, block, resp, pos, t, page))
+    if let Some(href) = preview::link_at_point(block, pos - resp.rect.min, resp.rect.width(), page) {
+        return Some(href);
+    }
+    link_in(block, char_under(ui, block, resp, pos, t, page), page)
 }
 
 /// How wide the bullet or quote bar in front of a block is, so a click lands on the right
@@ -1207,6 +1278,35 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    /// A click is measured against the words on the page; the caret lives in the text with
+    /// its marks. The walk between the two is checked here against the text the renderer
+    /// actually writes, character for character, so a click after a link lands in the word
+    /// under the pointer and not a dozen characters before it.
+    #[test]
+    fn a_character_of_the_drawn_words_maps_to_the_same_one_with_the_marks() {
+        let line = "see [the format page](../format-ideas/) and **this** too";
+        let spans = parse_inline(line);
+        let drawn: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(drawn, "see the format page and this too", "what the page shows");
+        assert_eq!(spans_to_markdown(&spans), line, "and what the caret writes in");
+
+        // Every drawn character comes back as the same character in the marked line.
+        let marked: Vec<char> = line.chars().collect();
+        for (i, c) in drawn.chars().enumerate() {
+            let at = over_marks(&spans, i);
+            assert_eq!(marked.get(at), Some(&c), "drawn character {i} ({c:?}) landed on {at} in {line:?}");
+        }
+        // Past the last word is the end of the line, marks and all.
+        assert_eq!(over_marks(&spans, drawn.chars().count()), marked.len());
+        // The old way, measuring against the marked text, would have been this far out.
+        let after_link = "see the format page".chars().count();
+        assert_eq!(over_marks(&spans, after_link) - after_link, 20, "just past the link, the two texts are twenty characters apart");
+
+        // A line with no marks at all maps one to one.
+        let plain = parse_inline("just words");
+        assert_eq!(over_marks(&plain, 5), 5);
     }
 
     #[test]

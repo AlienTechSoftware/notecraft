@@ -9,8 +9,10 @@
 //! what order they are drawn, and where the caret goes. egui still shapes, measures and
 //! draws each run, which is the part it does well. Nothing here draws a glyph itself.
 //!
-//! Only a mixed line goes through this. A line of one direction is left to egui, which gets
-//! it right and keeps every feature the page editor has.
+//! A mixed line goes through this, and so does any paragraph that reads right to left: egui
+//! does not wrap such a paragraph into lines that hang from the right edge, and parley does.
+//! A left-to-right line of one direction is left to egui, which gets it right and keeps
+//! every feature the page editor has.
 
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
@@ -20,6 +22,13 @@ use std::cell::RefCell;
 thread_local! {
     /// One text engine per thread: it holds the font collection, which is not cheap to build.
     static TEXT: RefCell<notecraft_text::Text> = RefCell::new(notecraft_text::Text::new());
+}
+
+/// True when this painter should draw `text` rather than egui: a line of both directions,
+/// or a paragraph that reads right to left (given the page's direction for a line with no
+/// strong letters of its own).
+pub fn paints(text: &str, page: notecraft_model::Dir) -> bool {
+    is_mixed(text) || (notecraft_model::direction_or(text, page).is_rtl() && !text.trim().is_empty())
 }
 
 /// True when a line has strong characters of both directions in it, which is the only case
@@ -57,12 +66,13 @@ pub struct Drawn {
 }
 
 /// Lays `text` out with parley, builds one egui job per run with the formats of the pieces
-/// inside it, and places the runs left to right using the widths **egui** measures.
+/// inside it, and places each run where parley put it.
 ///
-/// parley and egui differ by about a pixel per run (egui rounds each advance), so taking
-/// parley's x for the drawing would slowly swallow the spaces between runs. parley decides
-/// the order and the split; egui decides the widths; the caret below is mapped through the
-/// same places, so the two can never drift apart.
+/// parley decides the order, the split into lines, and where every run starts, which is
+/// also how a line that reads right to left comes to hang from the right edge. egui shapes
+/// and draws each run; its galley can be about a pixel wider than parley's run (egui rounds
+/// each advance), which leans into the gap after it and never accumulates. The caret and
+/// the selection below are mapped through the same places.
 pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) -> (Vec<Drawn>, Vec2) {
     let Some(split) = split(text, size, max_width) else { return (Vec::new(), Vec2::ZERO) };
     let space = space_width(ui, size);
@@ -101,14 +111,18 @@ pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) ->
             let (before, after) = if run.rtl { (trail as f32 * space, lead as f32 * space) } else { (lead as f32 * space, trail as f32 * space) };
             placed.push((run, galley, before, after));
         }
-        let mut x = 0.0f32;
-        for (run, galley, before, after) in placed {
-            x += before;
+        // Each run starts where parley put it. That is what makes a right-to-left line hang
+        // from the right edge of `max_width`, a shorter last line included, and what keeps
+        // the drawing under the clicks: `hit` maps a point through parley's coordinates. An
+        // egui galley is up to about a pixel wider than parley's run, so a run may lean that
+        // far into the gap after it; it never accumulates, because the next run starts at
+        // its own place, not after this one.
+        for (run, galley, before, _after) in placed {
+            let x = run.x + before;
             let width = galley.rect.width();
             size_used.x = size_used.x.max(x + width);
             size_used.y = size_used.y.max(line.y + line.height);
             out.push(Drawn { at: vec2(x, line.y), galley, text: run.text.clone(), rtl: run.rtl });
-            x += width + after;
         }
     }
     (out, size_used)
@@ -144,13 +158,29 @@ pub fn paint(ui: &Ui, origin: Pos2, drawn: &[Drawn]) {
     }
 }
 
+/// A line as it is heard rather than as it is stored: the direction marks and isolates that
+/// carry the writing direction are invisible on screen, so they are left out of the label a
+/// screen reader reads and the tests look a line up by.
+fn spoken(text: &str) -> String {
+    const INVISIBLE: [char; 5] = ['\u{200F}', '\u{200E}', '\u{2066}', '\u{2067}', '\u{2069}'];
+    text.chars().filter(|c| !INVISIBLE.contains(c)).collect()
+}
+
 /// Draws one mixed line into `ui`, taking the space it needs. A line that reads right to
 /// left hangs from the right edge, as it does everywhere else in the page. Returns its
 /// rectangle.
+///
+/// The galleys are painted straight onto the canvas, so nothing here is a widget that egui
+/// would describe by itself. The line is given its text as a label, the way `Label` does, or
+/// a screen reader would find nothing on a right-to-left page and the window tests could not
+/// look a line up by what it says.
 pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: notecraft_model::Dir) -> Rect {
     let (drawn, used) = runs(ui, text, pieces, size, max_width);
     let full = vec2(max_width, used.y.max(size));
-    let (rect, _) = ui.allocate_exact_size(full, egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(full, egui::Sense::hover());
+    let enabled = ui.is_enabled();
+    let said = spoken(text);
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
     let origin = if notecraft_model::direction_or(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
     paint(ui, origin, &drawn);
     rect
@@ -264,22 +294,36 @@ mod tests {
 
     const PRICE: &str = "السعر 123 ريال";
 
+    /// A context whose fonts are ours. `set_fonts` takes effect on the next frame, so one
+    /// empty frame runs first; measuring in the same frame as the install would measure
+    /// egui's own faces, which have no Arabic and give every letter a box a full em wide.
+    fn ctx_with_fonts() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::fonts::install_once(&ctx);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        ctx
+    }
+
     /// The words must not run into the digits: the space between two runs is a real gap,
     /// wide enough to read, and no run is drawn on top of another.
     #[test]
     fn the_runs_are_spaced_and_never_overlap() {
         let t = Theme::DEFAULT.tokens();
-        let ctx = egui::Context::default();
+        let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0);
             assert!(drawn.len() >= 3, "{} runs", drawn.len());
             let space = space_width(ui, 16.0);
             assert!(space > 1.0, "a space has a width: {space}");
-            let mut end = 0.0f32;
+            // The line hangs from the right edge, so it starts wherever its first run is.
+            let mut end = drawn.first().map(|d| d.at.x).unwrap_or(0.0);
             let mut gaps = 0;
             for d in &drawn {
-                assert!(d.at.x >= end - 0.01, "no run sits on top of the one before it: {} after {end}", d.at.x);
+                // egui's galley may be about a pixel wider than parley's run; it leans into
+                // the gap, never onto the next word.
+                assert!(d.at.x >= end - 1.5, "no run sits on top of the one before it: {} after {end}", d.at.x);
                 if d.at.x - end > space * 0.5 {
                     gaps += 1;
                 }
@@ -296,6 +340,45 @@ mod tests {
         frame.textures_delta.clear();
     }
 
+    /// A paragraph that reads right to left wraps into lines that each hang from the right
+    /// edge, the shorter last line too, and a left-to-right line starts at the left.
+    #[test]
+    fn right_to_left_lines_hang_from_the_right_edge() {
+        const LONG: &str = "כל העמוד הזה נקרא מימין, והמחברת הזאת נכתבה כך מההתחלה: כיוון העמוד מוגדר לימין בקובץ שלו, ולכן פסקה שאין לה אותיות משלה הולכת אחריו. השורה נתלית מהקצה הימני.";
+        let t = Theme::DEFAULT.tokens();
+        let ctx = ctx_with_fonts();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::fonts::install_once(ui.ctx());
+            let (drawn, used) = runs(ui, LONG, &plain(LONG, 16.0, &t), 16.0, 300.0);
+            let mut lines: std::collections::BTreeMap<i32, (f32, f32)> = std::collections::BTreeMap::new();
+            for d in &drawn {
+                let e = lines.entry(d.at.y.round() as i32).or_insert((f32::INFINITY, 0.0));
+                e.0 = e.0.min(d.at.x);
+                e.1 = e.1.max(d.at.x + d.galley.rect.width());
+            }
+            assert!(lines.len() >= 3, "the paragraph wrapped: {} lines", lines.len());
+            for (y, (left, right)) in &lines {
+                assert!((right - 300.0).abs() < 4.0, "line at {y} ends at the right edge: {left}..{right}");
+                assert!(*left >= -1.0, "and starts inside the column: {left}");
+            }
+            // The last line is the one that proves it: it is shorter than the column, and
+            // it still ends at the right edge, so it hangs from the right rather than
+            // starting at the left. How much shorter depends on the words and the face,
+            // so what is checked is that it does not start at the left edge.
+            let lefts: Vec<f32> = lines.values().map(|(l, _)| *l).collect();
+            assert!(lefts.last().is_some_and(|l| *l > 10.0), "the last line hangs from the right, not the left: {lefts:?}");
+            assert!((used.x - 300.0).abs() < 4.0, "the block is as wide as the column: {}", used.x);
+
+            let (ltr, _) = runs(ui, "Hello مرحبا world", &plain("Hello مرحبا world", 16.0, &t), 16.0, 300.0);
+            assert!(ltr.first().is_some_and(|d| d.at.x.abs() < 1.0), "a left-to-right line starts at the left");
+        });
+        frame.textures_delta.clear();
+        assert!(paints("שלום עולם", notecraft_model::Dir::Ltr), "a right-to-left paragraph is painted here");
+        assert!(paints("123", notecraft_model::Dir::Rtl), "a line with no letters follows the page");
+        assert!(!paints("123", notecraft_model::Dir::Ltr));
+        assert!(!paints("Hello world", notecraft_model::Dir::Rtl), "a left-to-right line is egui's even on a right-to-left page");
+    }
+
     #[test]
     fn only_a_line_of_two_directions_needs_this() {
         assert!(is_mixed(PRICE));
@@ -310,7 +393,7 @@ mod tests {
     #[test]
     fn a_mixed_line_is_drawn_as_runs_in_reading_order() {
         let t = Theme::DEFAULT.tokens();
-        let ctx = egui::Context::default();
+        let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0);
@@ -329,7 +412,7 @@ mod tests {
     #[test]
     fn a_selection_is_one_rectangle_for_each_run_it_covers() {
         let t = Theme::DEFAULT.tokens();
-        let ctx = egui::Context::default();
+        let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             let pieces = plain(PRICE, 16.0, &t);
@@ -340,7 +423,8 @@ mod tests {
             let all = selection(ui, PRICE, &pieces, 0, PRICE.len(), 16.0, 400.0);
             assert_eq!(all.len(), drawn.len(), "a rectangle for each run: {all:?}");
             let covered: f32 = all.iter().map(egui::Rect::width).sum();
-            assert!(covered > size.x * 0.75, "they cover the line: {covered} of {}", size.x);
+            let extent = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(0.0f32, f32::max) - drawn.first().map(|d| d.at.x).unwrap_or(0.0);
+            assert!(covered > extent * 0.75, "they cover the line: {covered} of {extent}");
             for r in &all {
                 assert!(r.min.x >= -1.0 && r.max.x <= size.x + 1.0, "inside the line: {r:?}");
                 assert!(r.height() > 4.0);
@@ -368,7 +452,7 @@ mod tests {
     #[test]
     fn the_caret_and_the_steps_come_from_the_same_layout() {
         let t = Theme::DEFAULT.tokens();
-        let ctx = egui::Context::default();
+        let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             let pieces = plain(PRICE, 16.0, &t);

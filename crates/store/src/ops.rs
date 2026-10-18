@@ -99,13 +99,29 @@ pub fn create_notebook(root: &Path, title: &str, explicit: Option<PageFormat>, s
 /// section group or section is a folder with a `_node.toml`; `explicit` there sets the
 /// default format for pages below it.
 pub fn create_node(parent: &Path, title: &str, kind: NodeKind, explicit: Option<PageFormat>, settings: &Settings) -> Result<PathBuf> {
+    create_node_at(parent, title, kind, explicit, settings, None)
+}
+
+/// The same, with a place in the order of its siblings. Siblings are numbered ten apart, so
+/// a new node can be slipped between two of them by asking for the number in between.
+pub fn create_node_at(
+    parent: &Path,
+    title: &str,
+    kind: NodeKind,
+    explicit: Option<PageFormat>,
+    settings: &Settings,
+    want_order: Option<u32>,
+) -> Result<PathBuf> {
     let title = clean_title(title)?;
     let parent_info =
         read_node(parent).ok_or_else(|| StoreError::NotFound(format!("{} is not a notebook, section, group or page", parent.display())))?;
     if !parent_info.kind.may_contain().contains(&kind) {
         return Err(StoreError::invalid(format!("a {} cannot contain a {}", parent_info.kind.label().to_lowercase(), kind.label().to_lowercase())));
     }
-    let order = u32::try_from(child_dirs(parent).len()).unwrap_or(0).saturating_mul(10).saturating_add(10);
+    let order = match want_order {
+        Some(o) => o,
+        None => u32::try_from(child_dirs(parent).len()).unwrap_or(0).saturating_mul(10).saturating_add(10),
+    };
     let dir = unique_child(parent, &names::slug(&title));
     let (now, id) = (iso_now(), new_id());
     fs::create_dir(&dir).map_err(|e| StoreError::io("create", &dir, e))?;

@@ -40,6 +40,8 @@ pub enum Act {
     ToggleTitle,
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
+    /// Keep this window above the others, or stop.
+    ToggleAlwaysOnTop,
     /// Larger (1), smaller (-1) or back to 100% (0).
     Zoom(i8),
     /// Cut or copy what is selected.
@@ -70,43 +72,99 @@ pub enum Act {
 pub enum RuleLines {
     #[default]
     None,
-    Lines,
-    Grid,
+    /// Ruled paper, in the four spacings OneNote offers.
+    Narrow,
+    College,
+    Standard,
+    Wide,
+    /// Squared paper, in four sizes.
+    GridSmall,
+    GridMedium,
+    GridLarge,
+    GridHuge,
+    /// NoteCraft's own two: the same paper with every fifth line drawn stronger, which is
+    /// easier to count down and across than a plain grid.
+    CraftLines,
+    CraftGrid,
 }
 
 impl RuleLines {
+    /// Every choice, in the order the menu shows them: the ruled ones, then the squares.
+    pub const RULED: [RuleLines; 4] = [RuleLines::Narrow, RuleLines::College, RuleLines::Standard, RuleLines::Wide];
+    pub const GRIDS: [RuleLines; 4] = [RuleLines::GridSmall, RuleLines::GridMedium, RuleLines::GridLarge, RuleLines::GridHuge];
+    /// NoteCraft's own, offered under the other two.
+    pub const CRAFT: [RuleLines; 2] = [RuleLines::CraftLines, RuleLines::CraftGrid];
+
     pub fn id(self) -> &'static str {
         match self {
             RuleLines::None => "none",
-            RuleLines::Lines => "lines",
-            RuleLines::Grid => "grid",
+            RuleLines::Narrow => "narrow",
+            RuleLines::College => "college",
+            RuleLines::Standard => "standard",
+            RuleLines::Wide => "wide",
+            RuleLines::GridSmall => "grid-small",
+            RuleLines::GridMedium => "grid-medium",
+            RuleLines::GridLarge => "grid-large",
+            RuleLines::GridHuge => "grid-huge",
+            RuleLines::CraftLines => "lines",
+            RuleLines::CraftGrid => "grid",
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            RuleLines::None => "No lines",
-            RuleLines::Lines => "Lines",
-            RuleLines::Grid => "Squares",
+            RuleLines::None => "None",
+            RuleLines::Narrow => "Narrow ruled",
+            RuleLines::College => "College ruled",
+            RuleLines::Standard => "Standard ruled",
+            RuleLines::Wide => "Wide ruled",
+            RuleLines::GridSmall => "Small squares",
+            RuleLines::GridMedium => "Medium squares",
+            RuleLines::GridLarge => "Large squares",
+            RuleLines::GridHuge => "Very large squares",
+            RuleLines::CraftLines => "NoteCraft ruled",
+            RuleLines::CraftGrid => "NoteCraft squares",
         }
     }
 
-    /// The next one, for a button that cycles through them.
-    pub fn next(self) -> RuleLines {
+    /// How far apart the lines are, in points. The ruled spacings follow the paper the
+    /// names come from; the squares are the same four steps without the wide one.
+    pub fn step(self) -> f32 {
         match self {
-            RuleLines::None => RuleLines::Lines,
-            RuleLines::Lines => RuleLines::Grid,
-            RuleLines::Grid => RuleLines::None,
+            RuleLines::None => 0.0,
+            RuleLines::Narrow => 16.0,
+            RuleLines::College => 20.0,
+            RuleLines::Standard => 24.0,
+            RuleLines::Wide => 32.0,
+            RuleLines::GridSmall => 12.0,
+            RuleLines::GridMedium => 18.0,
+            RuleLines::GridLarge => 24.0,
+            RuleLines::GridHuge => 32.0,
+            RuleLines::CraftLines | RuleLines::CraftGrid => 24.0,
         }
+    }
+
+    /// True for the squared papers, which draw the upright lines as well.
+    pub fn squares(self) -> bool {
+        matches!(self, RuleLines::GridSmall | RuleLines::GridMedium | RuleLines::GridLarge | RuleLines::GridHuge | RuleLines::CraftGrid)
+    }
+
+    /// True where every fifth line is drawn stronger: NoteCraft's own two papers.
+    pub fn fives(self) -> bool {
+        matches!(self, RuleLines::CraftLines | RuleLines::CraftGrid)
+    }
+
+    pub fn on(self) -> bool {
+        self != RuleLines::None
     }
 
     pub fn parse(text: &str) -> Option<RuleLines> {
-        match text.trim() {
-            "none" => Some(RuleLines::None),
-            "lines" => Some(RuleLines::Lines),
-            "grid" => Some(RuleLines::Grid),
-            _ => None,
+        let want = text.trim();
+        if want == "none" {
+            return Some(RuleLines::None);
         }
+        // "lines" and "grid" are NoteCraft's own two, and the ids the first version wrote.
+        RuleLines::RULED.into_iter().chain(RuleLines::GRIDS).chain(RuleLines::CRAFT).find(|r| r.id() == want)
     }
 }
 
@@ -115,6 +173,8 @@ impl RuleLines {
 pub struct View {
     /// True when the side panel is two columns.
     pub split_panes: bool,
+    /// True when the window is kept above the others.
+    pub always_on_top: bool,
     pub full_page: bool,
     pub rules: RuleLines,
     pub hide_title: bool,
@@ -662,30 +722,107 @@ fn insert_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     });
 }
 
+/// OneNote's Rule Lines button: the paper now, and a menu of every paper under it.
+fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big(ui, Icon::Table, view.rules.label(), "Lines or squares behind the page, as on paper", t);
+    let open_id = egui::Id::new("ribbon-rule-lines");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(resp.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(190.0);
+                    ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
+                    let row = |ui: &mut Ui, r: RuleLines, acts: &mut Vec<Act>, picked: &mut bool| {
+                        let here = view.rules == r;
+                        if ui.selectable_label(here, r.label()).clicked() {
+                            acts.push(Act::RuleLines(r));
+                            *picked = true;
+                        }
+                    };
+                    row(ui, RuleLines::None, acts, &mut picked);
+                    ui.separator();
+                    ui.label(egui::RichText::new("Rule lines").strong());
+                    for r in RuleLines::RULED {
+                        row(ui, r, acts, &mut picked);
+                    }
+                    ui.separator();
+                    ui.label(egui::RichText::new("Grid lines").strong());
+                    for r in RuleLines::GRIDS {
+                        row(ui, r, acts, &mut picked);
+                    }
+                    ui.separator();
+                    ui.label(egui::RichText::new("NoteCraft's own").strong());
+                    for r in RuleLines::CRAFT {
+                        row(ui, r, acts, &mut picked);
+                    }
+                    ui.label(egui::RichText::new("Every fifth line stronger, to count by.").small().color(t.muted));
+                    ui.separator();
+                    ui.add_enabled(false, egui::Label::new(egui::RichText::new("Rule line colour (not built)").color(t.muted)));
+                    ui.add_enabled(false, egui::Label::new(egui::RichText::new("Always create pages with rule lines (not built)").color(t.muted)));
+                });
+            })
+            .response;
+        let clicked_away =
+            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
 fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+    // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
+    // Zoom, Window. What NoteCraft does not have says so rather than being left out.
     group(ui, "Views", t, |ui| {
+        if big(
+            ui,
+            Icon::Page,
+            "Normal
+view",
+            "The page beside the notebooks",
+            t,
+        )
+        .clicked()
+            && view.full_page
+        {
+            acts.push(Act::ToggleFullPage);
+        }
         if big(ui, if view.full_page { Icon::ExitFullPage } else { Icon::FullPage }, "Full page", "Give the page the whole window", t).clicked() {
             acts.push(Act::ToggleFullPage);
         }
-        if big(ui, Icon::Search, "Search", "Search all pages", t).clicked() {
-            acts.push(Act::FocusSearch);
-        }
+        rows(ui, |ui| {
+            not_built(ui, "Dock to desktop", t);
+        });
     });
-    group(ui, "Panes", t, |ui| {
+    group(ui, "Layout", t, |ui| {
         rows(ui, |ui| {
             // What OneNote calls the navigation pane: notebooks and sections in one
             // column, the pages of the chosen section in the next.
             if small(ui, None, "Split", "Separate pages", "Notebooks and sections in one column, pages in the next", view.split_panes, t).clicked() {
                 acts.push(Act::TogglePanes);
             }
-            not_built(ui, "Docked window", t);
+            not_built(ui, "Tabs layout", t);
+        });
+    });
+    group(ui, "Tools", t, |ui| {
+        if big(ui, Icon::Search, "Search", "Search all pages", t).clicked() {
+            acts.push(Act::FocusSearch);
+        }
+        rows(ui, |ui| {
+            not_built(ui, "Immersive reader", t);
+            not_built(ui, "Live captions", t);
         });
     });
     group(ui, "Page Setup", t, |ui| {
-        let next = view.rules.next();
-        if big(ui, Icon::Table, view.rules.label(), "Lines or squares behind the page, as on paper", t).clicked() {
-            acts.push(Act::RuleLines(next));
-        }
+        rule_lines_menu(ui, view, t, acts);
         rows(ui, |ui| {
             if small(ui, None, "T", "Hide page title", "Hide the page title", view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
@@ -707,6 +844,17 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<A
             if small(ui, None, &format!("{}%", view.zoom_percent), "Zoom to 100%", "Back to 100%", false, t).clicked() {
                 acts.push(Act::Zoom(0));
             }
+            not_built(ui, "Page width", t);
+        });
+    });
+    group(ui, "Window", t, |ui| {
+        rows(ui, |ui| {
+            // Always on top is the window manager's business, and eframe can ask for it.
+            if small(ui, None, "Top", "Always on top", "Keep this window above the others", view.always_on_top, t).clicked() {
+                acts.push(Act::ToggleAlwaysOnTop);
+            }
+            not_built(ui, "New window", t);
+            not_built(ui, "New quick note", t);
         });
     });
     group(ui, "Appearance", t, |ui| {
@@ -798,6 +946,31 @@ mod tests {
     }
 
     #[test]
+    fn every_paper_has_a_name_an_id_and_a_spacing() {
+        use std::collections::HashSet;
+        let all: Vec<RuleLines> = std::iter::once(RuleLines::None).chain(RuleLines::RULED).chain(RuleLines::GRIDS).chain(RuleLines::CRAFT).collect();
+        assert_eq!(all.len(), 11, "none, four ruled, four grids, two of ours");
+        let mut ids = HashSet::new();
+        for r in &all {
+            assert!(ids.insert(r.id()), "two papers share an id: {}", r.id());
+            assert!(!r.label().is_empty());
+            assert_eq!(RuleLines::parse(r.id()), Some(*r), "{} reads back", r.id());
+            assert_eq!(r.on(), *r != RuleLines::None);
+            assert!(r.step() > 8.0 || *r == RuleLines::None, "{} has a spacing", r.id());
+        }
+        // Only the squares draw upright lines, and only ours mark every fifth.
+        assert!(RuleLines::GRIDS.iter().all(|r| r.squares()) && RuleLines::RULED.iter().all(|r| !r.squares()));
+        assert!(RuleLines::CraftGrid.squares() && !RuleLines::CraftLines.squares());
+        assert!(RuleLines::CRAFT.iter().all(|r| r.fives()));
+        assert!(RuleLines::RULED.iter().chain(RuleLines::GRIDS.iter()).all(|r| !r.fives()), "OneNote's papers are evenly weighted");
+        // The ids the first version wrote are NoteCraft's own two, so a settings file
+        // written before the other papers existed keeps the paper it had.
+        assert_eq!(RuleLines::parse("lines"), Some(RuleLines::CraftLines));
+        assert_eq!(RuleLines::parse("grid"), Some(RuleLines::CraftGrid));
+        assert_eq!(RuleLines::parse("nonsense"), None);
+    }
+
+    #[test]
     fn every_tab_draws_without_panicking_and_asks_for_nothing_by_itself() {
         for tab in ["Home", "Insert", "View", "Source", "junk"] {
             for source in [false, true] {
@@ -808,16 +981,10 @@ mod tests {
 
     /// The acts are plain values, so the window's side of the ribbon is testable on its own.
     #[test]
-    fn rule_lines_cycle_and_round_trip() {
-        assert_eq!(RuleLines::None.next(), RuleLines::Lines);
-        assert_eq!(RuleLines::Lines.next(), RuleLines::Grid);
-        assert_eq!(RuleLines::Grid.next(), RuleLines::None);
-        for r in [RuleLines::None, RuleLines::Lines, RuleLines::Grid] {
-            assert_eq!(RuleLines::parse(r.id()), Some(r));
-            assert!(!r.label().is_empty());
-        }
-        assert_eq!(RuleLines::parse("squares"), None);
+    fn a_page_starts_with_no_lines_behind_it() {
         assert_eq!(RuleLines::default(), RuleLines::None);
+        assert_eq!(RuleLines::parse("squares"), None);
+        assert!(!RuleLines::None.on() && !RuleLines::None.squares() && !RuleLines::None.fives());
     }
 
     #[test]

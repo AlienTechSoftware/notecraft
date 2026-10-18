@@ -53,6 +53,8 @@ pub enum Icon {
     Diagram,
     /// Quotation marks: a quote.
     Quote,
+    /// Three thin lines, well apart: show or hide the notebooks column.
+    Bars,
     /// Lines of text with an arrow under them pointing right: this reads left to right.
     DirLtr,
     /// The same, mirrored: this reads right to left.
@@ -209,6 +211,8 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             path(&[(9.0, 6.0), (5.0, 9.0), (5.0, 13.0), (9.0, 13.0), (9.0, 9.0), (5.0, 9.0)]),
             path(&[(19.0, 6.0), (15.0, 9.0), (15.0, 13.0), (19.0, 13.0), (19.0, 9.0), (15.0, 9.0)]),
         ],
+        // Three lines, thin and well apart, for the button that hides the notebooks.
+        Icon::Bars => vec![path(&[(4.0, 7.0), (20.0, 7.0)]), path(&[(4.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 17.0), (20.0, 17.0)])],
         // Lines of text with an arrow beneath them, the way Word marks text direction.
         Icon::DirLtr => vec![
             path(&[(5.0, 6.0), (17.0, 6.0)]),
@@ -247,7 +251,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 24] = [
+    pub const ALL: [Icon; 25] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -272,6 +276,7 @@ mod tests {
         Icon::Quote,
         Icon::DirLtr,
         Icon::DirRtl,
+        Icon::Bars,
     ];
 
     #[test]

@@ -127,11 +127,12 @@ pub fn dir_of(spans: &[Span], page: Dir) -> Dir {
 /// edge, which is where a reader of Arabic or Hebrew starts.
 fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir) {
     if !spans.iter().any(|s| s.math) {
-        // A line that mixes the two directions is the one case egui draws in the wrong
-        // order, so it goes through the bidi painter: parley says where each run belongs,
-        // egui still draws them, and the marks inside the words are kept.
+        // A line that mixes the two directions is drawn by egui in the wrong order, and a
+        // paragraph that reads right to left is not wrapped by it, so both go through the
+        // bidi painter: parley says where each run belongs, egui still draws them, and the
+        // marks inside the words are kept.
         let text = text_of(spans);
-        if crate::bidi::is_mixed(&text) {
+        if crate::bidi::paints(&text, page) {
             let pieces = pieces(spans, size, color, tokens);
             let width = ui.available_width();
             let rect = crate::bidi::show(ui, &text, &pieces, size, width, page);
@@ -168,6 +169,67 @@ fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, toke
 
 fn text_of(spans: &[Span]) -> String {
     spans.iter().filter(|s| s.image.is_none()).map(|s| s.text.as_str()).collect()
+}
+
+/// The type size a block's words are drawn at here.
+fn size_of_block(block: &Block) -> f32 {
+    match block {
+        Block::Heading { level, .. } => match level {
+            1 => 28.0,
+            2 => 22.0,
+            3 => 18.0,
+            _ => 16.0,
+        },
+        _ => 14.5,
+    }
+}
+
+/// The link under a point in a block the bidi painter drew, if the point is on one. `at` is
+/// measured from the block's top left corner and `width` is the block's width. `None` for a
+/// block egui drew (the caller maps those through egui's own layout) and for a point on no
+/// link. The lookup goes through parley, the same way the drawing did, so a click on a
+/// right-to-left or mixed line lands on the word under the pointer.
+pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Dir) -> Option<String> {
+    let spans = match block {
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        _ => return None,
+    };
+    if spans.iter().any(|s| s.math) {
+        return None;
+    }
+    // What is drawn: the words without a tag's marker, beside the mark or the bullet.
+    let (spans, mark) = match tagged(spans) {
+        Some((_, stripped)) => (stripped, 21.0),
+        None => (spans.clone(), 0.0),
+    };
+    let text = text_of(&spans);
+    if !crate::bidi::paints(&text, page) {
+        return None;
+    }
+    let lead = mark
+        + match block {
+            Block::Item { depth, .. } => 8.0 + *depth as f32 * 18.0 + 22.0,
+            Block::Quote(_) => 18.0,
+            _ => 0.0,
+        };
+    // A right-to-left row puts its bullet or mark on the right, so the words start at the
+    // left edge; a left-to-right row has them on the left.
+    let rtl = dir_of(&spans, page).is_rtl();
+    let x = if rtl { at.x } else { at.x - lead };
+    let column = (width - lead).max(32.0);
+    let byte = crate::bidi::hit(&text, egui::vec2(x, at.y), size_of_block(block), column);
+    let mut start = 0usize;
+    for s in &spans {
+        if s.image.is_some() {
+            continue;
+        }
+        let end = start + s.text.len();
+        if byte >= start && byte < end {
+            return s.link.clone();
+        }
+        start = end;
+    }
+    None
 }
 
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path) {
@@ -446,6 +508,27 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         panic!("never ready: {last}");
+    }
+
+    /// A link in an Arabic line is found under the pointer through parley, and the words
+    /// around it are not links.
+    #[test]
+    fn a_link_in_a_right_to_left_line_is_found_under_the_pointer() {
+        let blocks = blocks_for(PageFormat::Cmgfm, "مرحبا بالعالم [هذه صفحة](../page-b/) والباقي كلام عادي\n");
+        let block = blocks.first().expect("a paragraph");
+        let hits: Vec<(i32, Option<String>)> =
+            (0..400).step_by(8).map(|x| (x, link_at_point(block, egui::vec2(x as f32, 8.0), 400.0, Dir::Ltr))).collect();
+        let on: Vec<i32> = hits.iter().filter(|(_, h)| h.is_some()).map(|(x, _)| *x).collect();
+        assert!(!on.is_empty(), "the link is somewhere on the line: {hits:?}");
+        assert!(hits.iter().all(|(_, h)| h.is_none() || h.as_deref() == Some("../page-b/")));
+        // The line hangs from the right edge: the first words sit at the far right and are
+        // not the link, and the link is left of them.
+        assert!(hits.last().is_some_and(|(_, h)| h.is_none()), "the right edge is the first word, not the link");
+        let (first_on, last_on) = (*on.first().unwrap_or(&0), *on.last().unwrap_or(&0));
+        assert!(last_on < 392 && last_on - first_on > 30, "a contiguous stretch: {first_on}..{last_on}");
+        // A left-to-right paragraph is not this painter's; the caller uses egui's layout.
+        let ltr = blocks_for(PageFormat::Cmgfm, "Hello [there](../x/) world\n");
+        assert_eq!(link_at_point(&ltr[0], egui::vec2(50.0, 8.0), 400.0, Dir::Ltr), None);
     }
 
     #[test]

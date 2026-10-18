@@ -19,6 +19,7 @@ notecraft-store = { workspace = true }
 notecraft-engine = { workspace = true }
 egui = { workspace = true }
 egui_extras = { workspace = true }
+rfd = { workspace = true }
 image = { workspace = true }
 serde_json = { workspace = true }
 
