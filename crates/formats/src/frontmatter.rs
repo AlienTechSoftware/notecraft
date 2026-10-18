@@ -31,6 +31,34 @@ pub fn value(front: &str, key: &str) -> Option<String> {
     front.lines().find_map(|l| l.strip_prefix(&prefix).map(|v| notecraft_model::kv::unquote(v.trim())))
 }
 
+/// Front matter with `key: value` set: the line is replaced if it is there, added just
+/// before the closing `---` if it is not. Text with no front matter is returned unchanged,
+/// because adding a block would change what the rest of the file means.
+pub fn set_value(front: &str, key: &str, value: &str) -> String {
+    let prefix = format!("{key}:");
+    if front.lines().any(|l| l.starts_with(&prefix)) {
+        return notecraft_model::kv::replace_line(front, &prefix, &format!("{key}: {value}"));
+    }
+    let mut out = String::with_capacity(front.len() + key.len() + value.len() + 4);
+    let mut added = false;
+    let lines: Vec<&str> = front.split_inclusive('\n').collect();
+    for (i, line) in lines.iter().enumerate() {
+        // The closing `---` is the last one; everything of ours goes above it.
+        if !added && i > 0 && line.trim_end() == "---" {
+            out.push_str(&format!("{key}: {value}\n"));
+            added = true;
+        }
+        out.push_str(line);
+    }
+    if added { out } else { front.to_string() }
+}
+
+/// Front matter without `key:` at all.
+pub fn remove_value(front: &str, key: &str) -> String {
+    let prefix = format!("{key}:");
+    front.split_inclusive('\n').filter(|l| !l.starts_with(&prefix)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +98,34 @@ mod tests {
         let (front, rest) = split_front("---\r\nid: 1\r\n---\r\nbody");
         assert!(front.ends_with("---\r\n"));
         assert_eq!(rest, "body");
+    }
+
+    #[test]
+    fn a_value_can_be_set_added_and_removed() {
+        let front = "---
+title: Plan
+id: abc
+---
+";
+        let with = set_value(front, "dir", "rtl");
+        assert_eq!(
+            with,
+            "---
+title: Plan
+id: abc
+dir: rtl
+---
+"
+        );
+        assert_eq!(value(&with, "dir").as_deref(), Some("rtl"));
+        let changed = set_value(&with, "dir", "ltr");
+        assert_eq!(value(&changed, "dir").as_deref(), Some("ltr"));
+        assert_eq!(changed.lines().filter(|l| l.starts_with("dir:")).count(), 1, "no second line");
+        let gone = remove_value(&changed, "dir");
+        assert_eq!(gone, front);
+        assert_eq!(value(&gone, "dir"), None);
+        // Text with no front matter is left alone rather than given a block.
+        assert_eq!(set_value("", "dir", "rtl"), "");
+        assert_eq!(remove_value("", "dir"), "");
     }
 }

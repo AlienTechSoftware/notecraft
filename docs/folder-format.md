@@ -244,7 +244,9 @@ and are not verified for every sync tool.
 
 - A strict HTML subset, and how a free-form canvas would be stored.
 - Version history of pages (git or file history is the intended answer).
-- Links between pages by id, and how renames update them.
+- Links between pages by id, and how renames update them. Today a page links to another
+  page or folder by relative path, as it links to its pictures (`../other-page/`), and the
+  app follows such a link; a rename breaks it.
 - Tags and templates.
 - Encryption of a section.
 - How `.one` files map onto it. A plan is in `docs/research/onenote-file-format/ms-one-notes.md`.

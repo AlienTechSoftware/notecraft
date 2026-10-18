@@ -26,6 +26,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-math", 1),
     ("notecraft-onenote", 1),
     ("notecraft-formats", 1),
+    ("notecraft-text", 1),
     ("notecraft-store", 2),
     ("notecraft-engine", 4),
     ("notecraft-mcp", 5),
@@ -33,6 +34,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft", 7),
     ("notecraft-cli", 7),
     ("xtask", 7),
+    ("notecraft-demo", 7),
 ];
 
 /// Crates that nothing below the UI layer (6) may depend on.
@@ -122,6 +124,7 @@ fn layers(root: &Path) -> Result<(), String> {
         }
     }
     manifests.push(root.join("xtask").join("Cargo.toml"));
+    manifests.push(root.join("docs").join("demo").join("scripts").join("Cargo.toml"));
     for m in &manifests {
         let text = fs::read_to_string(m).map_err(|e| format!("{}: {e}", m.display()))?;
         problems.extend(layer_problems(&text));
@@ -197,6 +200,11 @@ fn relative_links(markdown: &str) -> Vec<String> {
 fn docs(root: &Path) -> Result<(), String> {
     let mut files = Vec::new();
     files_under(&root.join("docs"), &mut files);
+    // The Welcome notebook's content files are laid out by `cargo xtask demo`; their links
+    // are relative to the pages they become, and the generator checks every one against the
+    // built notebook. The built notebook under docs/demo/DemoNotebook is checked here.
+    let content = root.join("docs").join("demo").join("scripts").join("content");
+    files.retain(|f| !f.starts_with(&content));
     for name in ["README.md", "AGENTS.md", "CLAUDE.md", "ROADMAP.md", "ATTRIBUTION.md"] {
         files.push(root.join(name));
     }
@@ -292,15 +300,19 @@ fn run(task: &str) -> Result<(), String> {
         "text" => text(&root),
         "screenshots" => screenshots(&root),
         "coverage" => coverage(&root),
+        // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
+        // the checked-in copy is current.
+        "demo" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"]),
+        "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "ci" => {
-            for t in ["fmt", "clippy", "test", "layers", "assets", "docs", "text"] {
+            for t in ["fmt", "clippy", "test", "layers", "assets", "docs", "text", "demo-check"] {
                 println!("\n== {t} ==");
                 run(t).map_err(|e| format!("{t}: {e}"))?;
             }
             println!("\nci: all checks passed");
             Ok(())
         }
-        other => Err(format!("unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage")),
+        other => Err(format!("unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage demo demo-check")),
     }
 }
 

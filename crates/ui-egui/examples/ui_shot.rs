@@ -9,8 +9,10 @@
 //! - `{"shot": "/abs/out.png"}` saves the window as a PNG;
 //! - `{"steps": n}` runs more frames, `{"wait": ms}` keeps running frames for a while;
 //! - options, anywhere before the first other line: `{"width": 1440, "height": 900,
-//!   "scale": 2.0, "empty": true, "theme": "dark-green"}`. The window opens on the sample
-//!   notebooks unless `empty` is true. Paths are redacted (`<notebooks>/...`).
+//!   "scale": 2.0, "empty": true, "theme": "dark-green", "notebook": "docs/demo/DemoNotebook"}`.
+//!   The window opens on the sample notebooks unless `empty` is true; `notebook` copies that
+//!   notebook folder into the window's own temporary notebooks folder as well (the original
+//!   is never touched). Paths are redacted (`<notebooks>/...`).
 
 use egui_kittest::Harness;
 use notecraft_engine::Session;
@@ -34,6 +36,22 @@ fn step_n(h: &mut Harness<'_, NoteCraftApp>, n: usize) {
     for _ in 0..n {
         step(h);
     }
+}
+
+/// Copies a folder tree, so a notebook from the repository can be opened without being
+/// written to.
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 fn main() {
@@ -65,10 +83,19 @@ fn main() {
     let empty = opt("empty").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let dir = TempDir::new("ui-shot");
-    let mut session = Session::new(&dir.path().join("notebooks"), Settings::at(dir.path().join("settings.toml"))).expect("session");
+    let notebooks = dir.path().join("notebooks");
+    if let Some(src) = opt("notebook").and_then(|v| v.as_str().map(std::path::PathBuf::from)) {
+        let name = src.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "notebook".into());
+        if let Err(e) = copy_dir(&src, &notebooks.join(name)) {
+            eprintln!("cannot copy {}: {e}", src.display());
+            std::process::exit(2);
+        }
+    }
+    let mut session = Session::new(&notebooks, Settings::at(dir.path().join("settings.toml"))).expect("session");
     if !empty {
         create_sample(&mut session, Some(LOGO_PNG)).expect("sample notebooks");
     }
+    session.refresh();
     let (tx, rx) = mpsc::channel::<ControlRequest>();
     let mut app = NoteCraftApp::new(session).with_requests(rx);
     app.set_redact_paths(true);

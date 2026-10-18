@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*", "xtask"]
+members = ["crates/*", "apps/*", "xtask", "docs/demo/scripts"]
 default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "xtask"]
 
 [workspace.package]
@@ -15,6 +15,7 @@ publish = false
 notecraft-model = { path = "crates/model" }
 notecraft-math = { path = "crates/math" }
 notecraft-formats = { path = "crates/formats" }
+notecraft-text = { path = "crates/text" }
 notecraft-store = { path = "crates/store" }
 notecraft-engine = { path = "crates/engine" }
 notecraft-mcp = { path = "crates/mcp" }

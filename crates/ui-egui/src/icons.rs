@@ -53,6 +53,10 @@ pub enum Icon {
     Diagram,
     /// Quotation marks: a quote.
     Quote,
+    /// Lines of text with an arrow under them pointing right: this reads left to right.
+    DirLtr,
+    /// The same, mirrored: this reads right to left.
+    DirRtl,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -205,6 +209,21 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             path(&[(9.0, 6.0), (5.0, 9.0), (5.0, 13.0), (9.0, 13.0), (9.0, 9.0), (5.0, 9.0)]),
             path(&[(19.0, 6.0), (15.0, 9.0), (15.0, 13.0), (19.0, 13.0), (19.0, 9.0), (15.0, 9.0)]),
         ],
+        // Lines of text with an arrow beneath them, the way Word marks text direction.
+        Icon::DirLtr => vec![
+            path(&[(5.0, 6.0), (17.0, 6.0)]),
+            path(&[(5.0, 10.0), (19.0, 10.0)]),
+            path(&[(5.0, 14.0), (14.0, 14.0)]),
+            path(&[(5.0, 19.0), (19.0, 19.0)]),
+            path(&[(16.0, 16.0), (19.0, 19.0), (16.0, 22.0)]),
+        ],
+        Icon::DirRtl => vec![
+            path(&[(19.0, 6.0), (7.0, 6.0)]),
+            path(&[(19.0, 10.0), (5.0, 10.0)]),
+            path(&[(19.0, 14.0), (10.0, 14.0)]),
+            path(&[(19.0, 19.0), (5.0, 19.0)]),
+            path(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
+        ],
         // A crescent: the outer circle, with the inner edge drawn across it.
         Icon::Moon => vec![
             Shape::circle_stroke(g.p(12.0, 12.0), w * 7.4 / 24.0, stroke),
@@ -228,7 +247,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 22] = [
+    pub const ALL: [Icon; 24] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -251,6 +270,8 @@ mod tests {
         Icon::Equation,
         Icon::Diagram,
         Icon::Quote,
+        Icon::DirLtr,
+        Icon::DirRtl,
     ];
 
     #[test]

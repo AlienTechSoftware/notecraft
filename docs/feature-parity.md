@@ -19,6 +19,7 @@ side by side. Status words:
 | Structure | Templates | Partial | Page templates for both formats; no template picker. |
 | Authoring | Rich text | Partial | Both formats are written on in their finished look, block by block, with a real caret. A page whose markup cannot be written back exactly opens read-only rather than risking it. No font, size, colour or alignment controls yet. |
 | Authoring | Tables, lists, to-do, quotes, code | Done | The ribbon inserts them, the page draws them, and a to-do box ticks where it stands. |
+| Authoring | Right-to-left text | Partial | Arabic and Hebrew draw, and the page, the line and the run each take a direction, written into the text so it travels. A line that mixes the two directions is still drawn in one order, and the window is not mirrored. |
 | Authoring | Tags | Partial | Twelve tags, stored as plain text in the page and drawn as marks. No tag summary page. |
 | Authoring | Equations | Partial | TeX subset, drawn natively. Unsupported commands stay visible as text. |
 | Authoring | Diagrams (Mermaid) | Partial | Stored as source; shown as source, not drawn. |

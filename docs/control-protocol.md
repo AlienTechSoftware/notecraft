@@ -50,7 +50,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page, theme, window size |
+| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; and `containers`: the boxes the blocks are arranged in), theme, window size, and `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
 | `ui.theme` | `mode` (`light`, `dark`, `system`), `accent` | `{theme, modePref}` |
@@ -58,6 +58,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `ui.move`, `ui.press`, `ui.release` | `x`, `y`, `button` | `{}` |
 | `ui.key` | `key` (an egui key name), modifiers | `{}` |
 | `ui.text` | `text` | `{}` (typed into the focused widget) |
+| `ui.paste` | `text` | `{}` (pasted, so a tab-separated table becomes a table) |
 | `ui.resize` | `width`, `height` | `{}` |
 | `ui.screenshot` | `path` (optional) | the PNG saved to `path`, or returned as base64 |
 | `app.quit` | none | `{}` (saves first) |
@@ -74,9 +75,11 @@ cargo run -p notecraft-ui-egui --example ui_shot -- script.jsonl
 ```
 
 A script is JSON lines. Control requests are sent as they are. Extra lines: `{"shot": "/abs/out.png"}`,
-`{"steps": n}`, `{"wait": ms}`, and options (`width`, `height`, `scale`, `empty`, `theme`)
-before the first other line. The README pictures are made this way:
-`scripts/readme-screens.jsonl` and `cargo xtask screenshots`.
+`{"steps": n}`, `{"wait": ms}`, and options (`width`, `height`, `scale`, `empty`, `theme`,
+`notebook`) before the first other line. `notebook` names a notebook folder to copy into the
+window's temporary notebooks folder, for example `docs/demo/DemoNotebook`; the original is not
+touched. The README pictures are made this way: `scripts/readme-screens.jsonl` and
+`cargo xtask screenshots`.
 
 ## Tests
 

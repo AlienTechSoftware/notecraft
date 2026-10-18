@@ -31,6 +31,17 @@ fn notebooks_dir(args: &[String]) -> PathBuf {
     }
 }
 
+/// The first page inside a notebook folder, walking its sections in tree order.
+fn first_page_in(notebook: &std::path::Path) -> Option<PathBuf> {
+    fn walk(n: &notecraft_store::tree::Node) -> Option<PathBuf> {
+        if n.info.kind == notecraft_store::NodeKind::Page {
+            return Some(n.path.clone());
+        }
+        n.children.iter().find_map(walk)
+    }
+    notecraft_store::tree::load_tree(notebook).as_ref().and_then(walk)
+}
+
 fn flag_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
@@ -44,13 +55,29 @@ fn icon() -> Option<egui::IconData> {
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let root = notebooks_dir(&args);
-    let session = match Session::new(&root, Settings::default_location()) {
+    let mut session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("NoteCraft cannot open the notebooks folder {}: {e}", root.display());
             std::process::exit(1);
         }
     };
+    // The first start, with nothing to show: the Welcome notebook, a tour of the app, goes
+    // into the empty folder and the window opens on it. Once only: a folder the user emptied
+    // on purpose stays empty, and the File screen can add the notebook again by hand.
+    let mut open_first: Option<String> = None;
+    if session.tree().is_empty() && session.settings.get("welcome_added").is_none() {
+        match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
+            Ok(notecraft_engine::Output::Path(dir)) => {
+                open_first = first_page_in(&dir).map(|p| p.to_string_lossy().into_owned());
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("NoteCraft: the welcome notebook was not added: {e}"),
+        }
+        if let Err(e) = session.settings.set("welcome_added", "true") {
+            eprintln!("NoteCraft: cannot remember that the welcome notebook was offered: {e}");
+        }
+    }
     let mut viewport = egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_min_inner_size([820.0, 520.0]).with_title("NoteCraft");
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);
@@ -78,7 +105,7 @@ fn main() -> eframe::Result {
             if expand {
                 app.expand_all();
             }
-            if let Some(p) = &open {
+            if let Some(p) = open.as_ref().or(open_first.as_ref()) {
                 app.open_path(p);
             }
             Ok(Box::new(Shell { app }))

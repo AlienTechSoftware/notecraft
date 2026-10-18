@@ -1,8 +1,9 @@
 <p align="center">
-  <img alt="NoteCraft" src="assets/brand/notecraft-256.png" width="120">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/notecraft-social-dark.png">
+    <img alt="NoteCraft. Notes as plain files, in plain folders. An open, clean-room alternative to OneNote, written in pure Rust." src="assets/brand/notecraft-social-light.png" width="100%">
+  </picture>
 </p>
-
-<h1 align="center">NoteCraft</h1>
 
 <p align="center">
   <b>Note taking and organization, written in pure Rust: an open, clean-room notebook app for people who want their notes to stay files.</b>
@@ -85,6 +86,8 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 | **Structure** | Notebooks, section groups, sections and pages as folders; sub-pages to any depth; expand and collapse at every level; a new notebook starts with a section and a page, the way you expect |
 | **Writing** | Write straight on the page in its finished look: headings, bold, italic, links, quotes, lists. Enter splits the line at the caret, Tab indents a list item, Backspace joins lines |
 | **Two formats** | HTML (the default) and CommonMark + GFM, chosen per page, per section, per notebook or globally; the file keeps its own format when you edit it |
+| **Containers** | A page is a sheet of boxes, not one column: move a box by the bar on top, resize it by the right edge; the arrangement is kept in the page's own file |
+| **Right to left** | Arabic, Hebrew and the rest draw, with a direction for the page, the line or the run, kept in the text itself so it travels. Mixed lines are not reordered yet |
 | **Tags** | To Do, Important, Question, Remember, Definition, Highlight, Contact, Address, Phone, Web site, Idea, Critical: stored as plain text in the page, drawn as the marks you know |
 | **Equations** | A TeX subset parsed and drawn natively, inline and display |
 | **Pictures and files** | Drop a file on the page: copy it into the page's folder or link to it where it is, and it asks which |
@@ -223,8 +226,10 @@ cargo xtask ci     # fmt, clippy -D warnings, every test, layers, assets, links,
 This is a young project. It runs, it is tested, and it is not finished:
 
 - Built and run on **Windows only**. The code avoids OS features, but macOS and Linux are untested.
-- The caret belongs to egui, so **there is no selection across blocks and no bidirectional text**
-  (Arabic and Hebrew read in the wrong order). The plan is in the roadmap.
+- **Right-to-left text is half there.** Arabic and Hebrew draw, and a page, a line or a run
+  can be given a direction. A line that mixes the two directions is still drawn in one order,
+  and the window is not mirrored. Measured, not assumed; the stages are in the roadmap.
+- The caret belongs to egui, so **there is no selection across blocks**.
 - **Import** reads a `.one` file's pages but does not write them into folders yet.
 - **Mermaid diagrams** are stored and shown as source, not drawn.
 - The koala artwork needs its origin confirmed before any release that ships it; it is not

@@ -34,6 +34,14 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 - The `.one` reader: the container (header, file node lists, object spaces, objects,
   property sets, inserted files) and the object model ([MS-ONE]: sections, pages, outlines,
   text runs, pictures, attachments), read only, with synthetic-file tests.
+- Containers: a page is a sheet of boxes, each with its place, width and blocks, moved by
+  the bar on top and resized by the right edge, kept in the page's own file.
+- Arabic and right-to-left: Noto Naskh Arabic bundled, so the scripts draw at all; a
+  direction for the page, for a paragraph and for a run, each written into the text itself as
+  the Unicode mark or isolate, so it travels with the file; right-to-left lines drawn from the
+  right edge, bullets, boxes and tag marks included; a line that mixes the two directions laid
+  out by the Unicode algorithm (`crates/text`, over parley), with a caret of NoteCraft's own
+  in it, because egui cannot place one in a shaped script.
 - Gates: `cargo xtask ci`.
 
 ## Next (in this order)
@@ -41,12 +49,20 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 1. **Import, part three**: turn what the reader returns into notebook folders, with
    pictures and attachments, then try it on real backup files. The reader is done; this is the
    writing half.
-2. The rest of the ribbon: Draw, History, Review and Help, fonts, size, colour and alignment.
-3. Mermaid rendering (choose an approach first).
-4. Clickable links, bold and italic fonts, page templates.
-5. Right-to-left text and a caret that handles it. Two ways were weighed: a third-party text
-   layer (parley) or NoteCraft's own shaping, as WordCraft does it.
-6. Build and run on macOS and Linux; re-measure coverage.
+2. **Pasting what other apps really put on the clipboard**: a picture (Bitmap, DIB or PNG,
+   which needs a clipboard crate such as `arboard`) and the HTML flavour, which keeps the
+   formatting inside a pasted table. The plain-text flavour already comes back as a table.
+3. The rest of the ribbon: Draw, History, Review and Help, fonts, size, colour and alignment.
+4. **Containers, the rest of them**: a new box where you click, dragging blocks between
+   boxes, a box that measures its own height, and a picture in a box of its own. Moving and
+   resizing are done (see Done above).
+5. Mermaid rendering (choose an approach first).
+6. Clickable links, bold and italic fonts, page templates.
+7. **Right-to-left, the rest of it**: selecting inside such a line (dragging, Shift with the
+   arrows, a word on a double click), honouring the run isolates when drawing, a Latin face
+   bundled so parley and egui shape the Latin with the same font, and a mirrored window for
+   an interface in Arabic. Then the advanced options Word has, such as which digits to show.
+8. Build and run on macOS and Linux; re-measure coverage.
 
 ## Open decisions for the owner
 

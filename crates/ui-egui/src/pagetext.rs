@@ -201,6 +201,27 @@ fn wrapped(s: &str, open: &str, close: &str) -> Option<usize> {
     if rest.get(..end)?.contains('\n') { None } else { Some(open.len() + end + close.len()) }
 }
 
+/// The target of the link the character `at` (a character index, as a caret counts) sits in,
+/// if it sits in one. `[words](target "title")` gives `target`; angle brackets around it are
+/// dropped. Pure, so a click can be tested without a window.
+pub fn link_at(text: &str, at: usize) -> Option<String> {
+    let byte = text.char_indices().nth(at).map(|(b, _)| b)?;
+    let (range, _) = inline_pieces(text).into_iter().find(|(r, s)| *s == Style::Link && r.contains(&byte))?;
+    href_of(text.get(range)?)
+}
+
+/// The target written inside a `[words](target)` link.
+fn href_of(link: &str) -> Option<String> {
+    let open = link.find("](")? + 2;
+    let inside = link.get(open..link.len().checked_sub(1)?)?.trim();
+    // `<...>` may hold spaces, as CommonMark allows; a bare target ends at the first one.
+    let target = match inside.strip_prefix('<') {
+        Some(rest) => rest.split('>').next().unwrap_or(""),
+        None => inside.split_whitespace().next().unwrap_or(""),
+    };
+    if target.is_empty() { None } else { Some(target.to_string()) }
+}
+
 /// The length of a `[text](target)` link at the start of `s`.
 fn link_len(s: &str) -> Option<usize> {
     let close = s.find("](")?;
@@ -253,9 +274,19 @@ pub fn inline_pieces(text: &str) -> Vec<(std::ops::Range<usize>, Style)> {
     merge(out, text.len())
 }
 
+/// Which edge a line hangs from: the right one when it reads right to left. A line with
+/// no letters of its own follows `page`, the direction the whole page was given.
+pub fn halign(text: &str, page: notecraft_model::Dir) -> egui::Align {
+    if notecraft_model::direction_or(text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT }
+}
+
 /// The layout for one block being written in: inline marks styled, in the block's own size.
-pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f32) -> LayoutJob {
-    let mut job = LayoutJob { wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() }, ..Default::default() };
+pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f32, page: notecraft_model::Dir) -> LayoutJob {
+    let mut job = LayoutJob {
+        wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() },
+        halign: halign(text, page),
+        ..Default::default()
+    };
     for (range, style) in inline_pieces(text) {
         if let Some(part) = text.get(range) {
             let mut format = style.format(base, t);
@@ -276,8 +307,12 @@ pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f
 }
 
 /// The layout egui draws: the pieces above, turned into one job.
-pub fn job(format: PageFormat, text: &str, base: f32, t: &Tokens, wrap_width: f32) -> LayoutJob {
-    let mut job = LayoutJob { wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() }, ..Default::default() };
+pub fn job(format: PageFormat, text: &str, base: f32, t: &Tokens, wrap_width: f32, page: notecraft_model::Dir) -> LayoutJob {
+    let mut job = LayoutJob {
+        wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() },
+        halign: halign(text, page),
+        ..Default::default()
+    };
     for (range, style) in pieces(format, text) {
         if let Some(part) = text.get(range) {
             job.append(part, 0.0, style.format(base, t));
@@ -324,6 +359,21 @@ mod tests {
 
     /// The words carry the style and the marks around them are dimmed, so the page reads as
     /// formatted text rather than as source.
+    #[test]
+    fn a_click_in_a_link_gives_its_target_and_one_beside_it_gives_none() {
+        let text = "Go to [the page](../page-b/ \"Page B\") now, or [the web](<https://x.test/a b>).";
+        let at = |needle: &str| text.find(needle).map(|b| text[..b].chars().count()).unwrap_or(usize::MAX);
+        assert_eq!(link_at(text, at("the page")), Some("../page-b/".to_string()));
+        assert_eq!(link_at(text, at("page-b")), Some("../page-b/".to_string()), "the target itself is part of the link");
+        assert_eq!(link_at(text, at("[the web")), Some("https://x.test/a b".to_string()), "angle brackets are dropped and may hold a space");
+        assert_eq!(link_at(text, at("Go")), None);
+        assert_eq!(link_at(text, at("now")), None);
+        assert_eq!(link_at(text, text.chars().count()), None, "past the end is nowhere");
+        assert_eq!(link_at("مرحبا [هنا](../هنا/) و", 7), Some("../هنا/".to_string()), "characters, not bytes");
+        assert_eq!(link_at("[empty]()", 1), None);
+        assert_eq!(link_at("[unclosed](x", 1), None);
+    }
+
     #[test]
     fn bold_italic_code_links_and_maths() {
         let text = "a **bold** and *slanted* and `code` and [link](x.md) and $x^2$ end";
@@ -424,10 +474,10 @@ mod tests {
     fn the_job_holds_every_character() {
         let t = crate::theme::Theme::DEFAULT.tokens();
         let text = "# Title\n\n- one **two**\n";
-        let laid = job(PageFormat::Cmgfm, text, 15.0, &t, 400.0);
+        let laid = job(PageFormat::Cmgfm, text, 15.0, &t, 400.0, notecraft_model::Dir::Ltr);
         assert_eq!(laid.text, text);
         assert!(laid.sections.len() > 3);
-        let empty = job(PageFormat::Cmgfm, "", 15.0, &t, 400.0);
+        let empty = job(PageFormat::Cmgfm, "", 15.0, &t, 400.0, notecraft_model::Dir::Ltr);
         assert_eq!(empty.sections.len(), 1, "an empty page still has one section to type into");
     }
 }

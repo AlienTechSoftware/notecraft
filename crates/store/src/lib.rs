@@ -13,6 +13,7 @@
 pub mod assets;
 pub mod check;
 pub mod error;
+pub mod links;
 pub mod ops;
 pub mod page;
 pub mod search;

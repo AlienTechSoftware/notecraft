@@ -215,6 +215,292 @@ fn tags_go_on_a_line_and_come_off_again() {
     review(&mut h, "tags");
 }
 
+/// Arabic draws, and the three direction controls do what they say: the page, the line the
+/// caret is in, and the run inside it.
+#[test]
+fn arabic_draws_and_the_direction_controls_work() {
+    let (_t, mut app, s) = sample_app("ui-rtl");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+
+    // The bundled face has Arabic; egui's own faces do not, which is why it is bundled.
+    assert!(h.ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), "مرحبا")), "Arabic would draw as empty boxes");
+
+    // Type Arabic into a line: it is written to the page as typed.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "مرحبا "})).expect("type");
+    pump(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("مرحبا"), "what was typed is in the page:\n{body}");
+
+    // The paragraph's direction sits where OneNote keeps it: in the alignment menu.
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Right-to-Left").click();
+    h.run();
+    h.run();
+    let body = h.state().body().unwrap_or_default().to_string();
+    let marked: Vec<&str> = body.lines().filter(|l| l.starts_with('\u{200F}')).collect();
+    assert_eq!(marked.len(), 1, "one paragraph carries the mark:\n{body:?}");
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Direction from the words").click();
+    h.run();
+    h.run();
+    assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "auto takes the mark off");
+
+    // The run direction is behind the launcher, with the options that are not built.
+    h.get_by_label("Advanced direction").click();
+    h.run();
+    h.get_by_label("Run right to left (Alt+Shift+R)").click();
+    h.run();
+    h.run();
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains('\u{2067}') && body.contains('\u{2069}'), "an isolate went in:\n{body:?}");
+
+    // The page control writes into the page's own file, where it travels with the folder.
+    h.get_by_label("Page right to left").click();
+    h.run();
+    h.run();
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("dir: rtl"), "the page's own direction is in its front matter:\n{file}");
+    review(&mut h, "rtl");
+}
+
+/// A table copied out of another note taking app arrives as tab-separated text. It must come
+/// back as a table, not as one long line.
+#[test]
+fn a_table_pasted_from_another_app_lands_as_a_table() {
+    let (_t, mut app, s) = sample_app("ui-paste-table");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    // Exactly what the clipboard holds after copying a small table in OneNote.
+    ask(&mut h, "ui.paste", json!({"text": "test\t\t\t\n\t\t\t\n\ttest\t\t\n"})).expect("paste");
+    pump(&mut h);
+    pump(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    let pipes = body.lines().filter(|l| l.starts_with('|')).count();
+    assert!(pipes >= 3, "the page has a table in it:\n{body}");
+    assert!(body.contains("test"), "with the cells that were copied:\n{body}");
+}
+
+/// Writing in an Arabic line: the caret is NoteCraft's own there, so a click lands on the
+/// character under the pointer and the arrow keys step the way the eye moves.
+#[test]
+fn the_caret_in_an_arabic_line_is_ours_and_behaves() {
+    let (_t, mut app, s) = sample_app("ui-rtl-caret");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    // A line of Arabic with a number in it: both the things egui gets wrong.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "السعر 17 ريال"})).expect("type");
+    pump(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("السعر 17 ريال"), "typed into the page:\n{body}");
+
+    // Typing more goes in at the caret, not at the far end: the text keeps its order.
+    ask(&mut h, "ui.text", json!({"text": "."})).expect("type");
+    pump(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("السعر 17 ريال."), "the full stop went in after what was typed:\n{body}");
+
+    // The arrow keys move without the text changing, and without a panic.
+    for key in ["ArrowLeft", "ArrowRight", "Home", "End"] {
+        ask(&mut h, "ui.key", json!({"key": key})).expect("key");
+        pump(&mut h);
+    }
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(after, body, "moving the caret does not change the text");
+
+    // Backspace takes off one character of the Arabic, not a glyph and not the line.
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("backspace");
+    pump(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("السعر 17 ريال") && !body.contains("السعر 17 ريال."), "one character came off:\n{body}");
+}
+
+/// Selecting inside an Arabic line: dragging, Shift with the arrows, and a double click.
+#[test]
+fn a_selection_can_be_made_inside_an_arabic_line() {
+    let (_t, mut app, s) = sample_app("ui-rtl-select");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "السعر 123 ريال"})).expect("type");
+    pump(&mut h);
+    let selection = |h: &mut Harness<'_, NoteCraftApp>| -> (u64, u64) {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let caret = v.pointer("/page/caret").cloned().unwrap_or(Value::Null);
+        (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0))
+    };
+    let (at, anchor) = selection(&mut h);
+    assert_eq!(at, anchor, "nothing is selected after typing");
+
+    // Shift with an arrow extends the selection from where the caret is.
+    ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("shift left");
+    pump(&mut h);
+    let (at2, anchor2) = selection(&mut h);
+    assert_eq!(anchor2, anchor, "the selection still begins where the caret was");
+    assert_ne!(at2, anchor2, "and now something is selected");
+
+    // An arrow without Shift drops it again.
+    ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+    pump(&mut h);
+    let (at3, anchor3) = selection(&mut h);
+    assert_eq!(at3, anchor3, "moving without Shift clears the selection");
+    assert_ne!(at3, 0, "and the caret is still in the line");
+}
+
+/// Clicking into a line must not change what the line says. The tag's marker is drawn as a
+/// mark beside it, and it stays a mark while the line is written in.
+#[test]
+fn a_line_looks_the_same_when_the_caret_arrives() {
+    let (_t, mut app, s) = sample_app("ui-no-jump");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Important (Ctrl+2)").click();
+    h.run();
+    h.run();
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("#important "), "the marker is in the file:\n{body}");
+
+    // The caret is in that line, and what it holds is the words, not the marker.
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    let text = caret.get("text").and_then(Value::as_str).unwrap_or_default().to_string();
+    assert!(!text.contains("#important"), "the line being written in shows no marker: {text:?}");
+    assert!(text.starts_with("NoteCraft pages"), "it shows the words: {text:?}");
+
+    // Leaving and coming back keeps both: the words on screen, the marker in the file.
+    ask(&mut h, "ui.caret", json!({"block": 2})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    let again =
+        ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret/text").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    assert_eq!(again, text, "the line reads the same the second time");
+    assert!(h.state().body().unwrap_or_default().contains("#important "), "and the file still has the tag");
+}
+
+/// A page arranged in containers opens that way, and the arrangement is the page's own.
+#[test]
+fn a_page_opens_in_the_boxes_it_was_arranged_in() {
+    let (_t, mut app, s) = sample_app("ui-boxes");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks >= 3, "the sample page has blocks in it: {blocks}");
+
+    // One box for everything is what a page that was never arranged gets.
+    let boxes = |h: &mut Harness<'_, NoteCraftApp>| -> Vec<Value> {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default()
+    };
+    assert_eq!(boxes(&mut h).len(), 1, "one box holding the page");
+
+    // Arrange it in two, the way dragging one would, and open it again.
+    let line = format!("0,0,320,2; 360,30,300,{}", blocks - 2);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    pump(&mut h);
+    let now = boxes(&mut h);
+    assert_eq!(now.len(), 2, "two boxes: {now:?}");
+    assert_eq!(now.first().and_then(|b| b.get("width")).and_then(Value::as_f64), Some(320.0));
+    assert_eq!(now.get(1).and_then(|b| b.get("y")).and_then(Value::as_f64), Some(30.0));
+    let counts: u64 = now.iter().filter_map(|b| b.get("blocks").and_then(Value::as_u64)).sum();
+    assert_eq!(counts, blocks, "every block is in a box");
+}
+
+/// A container is moved by the bar along its top, and the page keeps where it was put.
+#[test]
+fn a_container_can_be_dragged_and_stays_where_it_is_put() {
+    let (_t, mut app, s) = sample_app("ui-drag-box");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let look = |h: &mut Harness<'_, NoteCraftApp>| -> Value { ask(h, "ui.inspect", json!({})).expect("inspect") };
+    let blocks = look(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    let line = format!("40,20,320,{blocks}");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+
+    // Where the box's handle is drawn: the page's own origin plus the box's place.
+    let v = look(&mut h);
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
+    assert!(ox > 0.0 && oy > 0.0, "the page knows where it is drawn: {origin:?}");
+    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+
+    // Press on the bar, move, let go.
+    ask(&mut h, "ui.press", json!({"x": hx, "y": hy})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": hx + 60.0, "y": hy + 35.0})).expect("move");
+    pump(&mut h);
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": hx + 60.0, "y": hy + 35.0})).expect("release");
+    pump(&mut h);
+    settle(&mut h);
+
+    // The box moved, and the page's own file says so.
+    let now = look(&mut h).pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    let x = now.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+    let y = now.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+    assert!(x > 60.0 && y > 30.0, "the box followed the pointer: {now:?}");
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("containers:"), "and it is written in the page:\n{file}");
+}
+
+/// The side panel can be split the way OneNote splits it: notebooks and sections in one
+/// column, the pages of the chosen section in the next, and the three-bar button hides the
+/// first of them.
+#[test]
+fn the_notebooks_and_the_pages_can_have_columns_of_their_own() {
+    let (_t, mut app, s) = sample_app("ui-panes");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let panes = |h: &mut Harness<'_, NoteCraftApp>| -> (bool, bool) {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        (
+            v.pointer("/panes/split").and_then(Value::as_bool).unwrap_or(false),
+            v.pointer("/panes/organisers").and_then(Value::as_bool).unwrap_or(false),
+        )
+    };
+    assert_eq!(panes(&mut h), (false, true), "one tree to begin with");
+
+    // The three-bar button: first press splits the panel and hides the notebooks.
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.run();
+    assert_eq!(panes(&mut h), (true, false), "split, notebooks hidden");
+    // Pressing it again brings the notebooks back.
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.run();
+    assert_eq!(panes(&mut h), (true, true), "all three columns");
+
+    // The page still works: the rows listed are the ones in the open section.
+    let rows = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/rows").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert!(!rows.is_empty(), "the tree still reports its rows");
+    review(&mut h, "panes");
+}
+
 /// The window comes back on the page it closed on.
 #[test]
 fn the_last_page_opens_again_next_time() {
@@ -381,6 +667,83 @@ fn control_requests_run_commands_and_drive_input() {
     let opened = ask(&mut h, "ui.open", json!({"path": "my-notebook/ideas/format-ideas"})).expect("open");
     assert_eq!(opened["page"]["format"], "cmgfm");
     assert!(ask(&mut h, "ui.open", json!({"path": "../outside"})).is_err());
+}
+
+/// A link in a page is followed with a plain click when the caret is not in its line: a
+/// relative link opens the page it names, a broken one says so and stays put, a web address
+/// is handed to the browser. The resolver itself is tested in `notecraft-store`.
+#[test]
+fn clicking_a_link_opens_the_page_it_names() {
+    let (_t, app, s) = sample_app("ui-link");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Links", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "[Open the format page](../format-ideas/)\n\n[A page that is not there](../nowhere/)\n\n[The web](https://example.test/)\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    let click = |h: &mut Harness<'static, NoteCraftApp>, label: &str| {
+        let rect = h.get_by_label(label).rect();
+        ask(h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("click");
+        for _ in 0..6 {
+            pump(h);
+        }
+    };
+
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    click(&mut h, "Open the format page");
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the linked page is open, not {:?}", h.state().body());
+
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    click(&mut h, "A page that is not there");
+    assert!(h.state().status().contains("Nothing at"), "a broken link is reported: {}", h.state().status());
+    assert!(h.state().body().is_some_and(|b| b.starts_with("[Open the format page]")), "and the page stays open");
+
+    click(&mut h, "The web");
+    assert_eq!(h.state().status(), "Opened https://example.test/ in the browser");
+    review(&mut h, "links_page");
+}
+
+/// The Welcome notebook: the File screen adds it to an empty folder, the window opens on its
+/// start page, the link to the English group opens that group's first page, and asking
+/// again opens the one that is there instead of making another.
+#[test]
+fn the_welcome_notebook_is_added_once_and_its_links_work() {
+    let t = TempDir::new("ui-welcome");
+    let app = NoteCraftApp::new(session(&t));
+    let mut h = harness(app, LIGHT);
+    h.run();
+    assert!(h.state().session().tree().is_empty());
+    h.state_mut().add_welcome();
+    settle(&mut h);
+    assert_eq!(h.state().session().tree().len(), 1);
+    assert_eq!(h.state().session().tree()[0].info.title, "Welcome to NoteCraft");
+    assert_eq!(h.state().status(), "Added the welcome notebook");
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Welcome to NoteCraft")), "opened on the start page: {:?}", h.state().body());
+    review(&mut h, "welcome_start");
+
+    // The start page links to the English group; the group opens on its first page. The
+    // list item reads "English, English" (the link, then the English name); the tree also
+    // has an "English" row, so the page's own label is the one looked up, and the click
+    // lands on its first word.
+    let rect = h.get_by_label_contains("English, English").rect();
+    ask(&mut h, "ui.click", json!({"x": rect.min.x + 20.0, "y": rect.center().y})).expect("click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Welcome\n")), "the English welcome page: {:?}", h.state().body());
+
+    h.state_mut().add_welcome();
+    settle(&mut h);
+    assert_eq!(h.state().session().tree().len(), 1, "no second copy");
+    assert_eq!(h.state().status(), "The welcome notebook is already here");
 }
 
 /// The same thing over a real loopback connection, with the key file.

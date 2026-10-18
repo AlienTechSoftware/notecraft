@@ -100,9 +100,10 @@ impl Tag {
         Tag::ALL.into_iter().find(|t| t.id() == want)
     }
 
-    /// The tag at the start of `text`, and the rest of the line without it.
+    /// The tag at the start of `text`, and the rest of the line without it. A direction
+    /// mark may sit before the tag marker; it is invisible and does not hide the tag.
     pub fn split(text: &str) -> (Option<Tag>, &str) {
-        let Some(rest) = text.strip_prefix('#') else { return (None, text) };
+        let Some(rest) = crate::text::without_mark(text).strip_prefix('#') else { return (None, text) };
         let word: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
         let Some(tag) = Tag::parse(&word) else { return (None, text) };
         let after = rest.get(word.len()..).unwrap_or("");
@@ -115,12 +116,15 @@ impl Tag {
     }
 
     /// `text` with this tag at the start, replacing any tag already there. `None` removes
-    /// the tag and leaves the words.
+    /// the tag and leaves the words. A direction mark on the line stays in front of it.
     pub fn set(text: &str, tag: Option<Tag>) -> String {
+        let mark: String = crate::text::explicit(text).map(|d| if d.is_rtl() { crate::text::RLM } else { crate::text::LRM }).into_iter().collect();
         let (_, rest) = Tag::split(text);
+        // A line with no tag comes back whole, mark and all; the mark is put on once, here.
+        let rest = crate::text::without_mark(rest);
         match tag {
-            Some(t) => format!("{}{rest}", t.marker()),
-            None => rest.to_string(),
+            Some(t) => format!("{mark}{}{rest}", t.marker()),
+            None => format!("{mark}{rest}"),
         }
     }
 }
@@ -128,6 +132,18 @@ impl Tag {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tag_and_a_direction_mark_live_together() {
+        use crate::text::{self, Dir};
+        let line = text::set_direction("مرحبا", Some(Dir::Rtl));
+        let tagged = Tag::set(&line, Some(Tag::Important));
+        assert_eq!(text::direction(&tagged), Dir::Rtl, "the mark stays in front");
+        assert_eq!(Tag::split(&tagged).0, Some(Tag::Important), "and does not hide the tag");
+        assert_eq!(Tag::split(&tagged).1, "مرحبا");
+        let off = Tag::set(&tagged, None);
+        assert_eq!(off, line, "taking the tag off leaves the mark and the words");
+    }
 
     #[test]
     fn ids_labels_and_markers_round_trip() {

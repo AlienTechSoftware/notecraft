@@ -14,6 +14,7 @@ sections and pages are plain folders. See [`docs/architecture.md`](docs/architec
 cargo xtask ci              # the full gate
 cargo test --workspace
 cargo xtask screenshots     # rebuild docs/images
+cargo xtask demo            # rebuild docs/demo/DemoNotebook from docs/demo/scripts/content
 ```
 
 ## Rules
