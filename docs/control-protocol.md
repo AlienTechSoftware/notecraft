@@ -50,7 +50,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; and `containers`: the boxes the blocks are arranged in), theme, window size, and `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing) |
+| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; and `containers`: the boxes the blocks are arranged in), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
 | `ui.theme` | `mode` (`light`, `dark`, `system`), `accent` | `{theme, modePref}` |
@@ -65,6 +65,21 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 
 Coordinates are in points, not pixels. `engine.execute` saves the open page before it runs, so
 a command sees what the user sees. Paths in replies from the headless runner are redacted.
+
+### What `pen` reports
+
+`{"seen": false, "pressure": 1.0, "hardest": 0.0, "readings": 0}` until a device reports a
+pressure to this window; after that, `seen` is true and the three numbers are the pressure
+now, the hardest press so far and how many readings have arrived. A mouse always reads 1.0
+with `seen` false.
+
+Nothing draws with this yet. It is here so the question "does a pen reach NoteCraft on this
+machine" can be answered without a person in front of the window. On Windows the pressure is
+real: measured on 2026-10-18 at a hardest press of 0.930 over 1223 readings (winit reads
+`WM_POINTER`). On macOS, Linux and Wayland winit drops the tablet fields, so a pen there
+reports nothing. Tilt and the eraser end are not available on any platform.
+`crates\ui-egui\src\stylus.rs` has the detail, and
+`cargo run -p notecraft --example pen_check` opens a sheet to scribble on.
 
 ## Headless use
 

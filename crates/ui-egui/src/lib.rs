@@ -22,6 +22,7 @@ pub mod preview;
 pub mod ribbon;
 pub mod ribbon_icons;
 pub mod snippets;
+pub mod stylus;
 #[cfg(test)]
 mod testing_dir;
 pub mod theme;

@@ -325,10 +325,8 @@ fn runs_of(space: &ObjectSpace, props: &PropertySet) -> Vec<Run> {
     let chars: Vec<char> = text.chars().collect();
     // TextRunIndex holds the character positions where runs end; TextRunFormatting holds one
     // style object per run, one more than the indexes.
-    let ends: Vec<usize> = props
-        .bytes(TEXT_RUN_INDEX)
-        .map(|b| b.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]) as usize).collect())
-        .unwrap_or_default();
+    let ends: Vec<usize> =
+        props.bytes(TEXT_RUN_INDEX).map(|b| b.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c) as usize).collect()).unwrap_or_default();
     let styles: Vec<Option<&Object>> = props.object_ids(TEXT_RUN_FORMATTING).iter().map(|id| resolve(space, *id)).collect();
     let mut runs = Vec::new();
     let mut start = 0usize;

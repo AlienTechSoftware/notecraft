@@ -259,8 +259,7 @@ fn big(kind: BigKind, sub: Option<&Node>, sup: Option<&Node>, size: f32, m: &dyn
     let mut sub_b = sub.map(|n| build(n, ss, m, depth + 1));
     let gap = 0.08 * size;
     let (mut asc, mut desc) = (-(cy - h / 2.0), cy + h / 2.0);
-    let width;
-    if kind == BigKind::Int {
+    let width = if kind == BigKind::Int {
         let x = gw + 0.02 * size;
         let mut right: f32 = 0.0;
         if let Some(b) = sup_b.as_mut() {
@@ -277,7 +276,7 @@ fn big(kind: BigKind, sub: Option<&Node>, sup: Option<&Node>, size: f32, m: &dyn
             right = right.max(b.w - 0.12 * size);
             items.append(&mut b.items);
         }
-        width = x + right.max(0.0);
+        x + right.max(0.0)
     } else {
         let w = gw.max(sup_b.as_ref().map(|b| b.w).unwrap_or(0.0)).max(sub_b.as_ref().map(|b| b.w).unwrap_or(0.0));
         shift(&mut items, (w - gw) / 2.0, 0.0);
@@ -293,8 +292,8 @@ fn big(kind: BigKind, sub: Option<&Node>, sup: Option<&Node>, size: f32, m: &dyn
             desc = desc.max(y + b.desc);
             items.append(&mut b.items);
         }
-        width = w;
-    }
+        w
+    };
     B { w: width + 0.1 * size, asc, desc, items }
 }
 

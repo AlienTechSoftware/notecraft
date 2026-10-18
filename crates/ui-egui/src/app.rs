@@ -178,6 +178,8 @@ pub struct NoteCraftApp {
     show_source: bool,
     /// Which ribbon tab is open.
     ribbon_tab: String,
+    /// What the pen is reporting, where the platform reports anything.
+    stylus: crate::stylus::Stylus,
     /// Lines or squares behind the page.
     rules: ribbon::RuleLines,
     /// The page title line is hidden (OneNote: View, Hide Page Title).
@@ -240,6 +242,7 @@ impl NoteCraftApp {
             next_screenshot: 1,
             show_source,
             ribbon_tab: "Home".to_string(),
+            stylus: crate::stylus::Stylus::default(),
             rules: session_rules,
             hide_title: session_hide_title,
             zoom: 0,
@@ -1829,27 +1832,7 @@ impl NoteCraftApp {
                     // every fifth line stronger, which the others do not.
                     if wide && rules.on() {
                         let area = ui.max_rect();
-                        let painter = ui.painter_at(area);
-                        let step = rules.step().max(8.0);
-                        let fives = rules.fives();
-                        let mut y = area.min.y + step;
-                        let mut n = 0;
-                        while y < area.max.y {
-                            n += 1;
-                            let color = if fives && n % 5 == 0 { tokens.rule_line_strong } else { tokens.rule_line };
-                            painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, color));
-                            y += step;
-                        }
-                        if rules.squares() {
-                            let mut x = area.min.x + step;
-                            let mut n = 0;
-                            while x < area.max.x {
-                                n += 1;
-                                let color = if fives && n % 5 == 0 { tokens.rule_line_strong } else { tokens.rule_line };
-                                painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, color));
-                                x += step;
-                            }
-                        }
+                        crate::ribbon::paint_paper(&ui.painter_at(area), area, rules, 1.0, tokens.rule_line, tokens.rule_line_strong);
                     }
                     // Which way lines fall when they say nothing themselves: the page's own
                     // direction, if the writer gave it one.
@@ -2404,6 +2387,11 @@ impl NoteCraftApp {
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
+            // The paper behind the pages, as the View tab's gallery sets it.
+            "paper": self.rules.id(),
+            // What a pen has told this window. `pen` is false until a device reports a
+            // pressure at all, and `hardest` is the hardest press since the window opened.
+            "pen": {"seen": self.stylus.sample().pen, "pressure": self.stylus.sample().pressure, "hardest": self.stylus.seen().0, "readings": self.stylus.seen().1},
             "defaultFormat": self.session.settings.global_format().0.id(),
             "notebooksFolder": self.shown(self.session.root()),
             "status": {"text": self.status, "error": self.status_is_error},
@@ -2436,6 +2424,9 @@ impl NoteCraftApp {
         }
         // Arabic and the other right-to-left scripts have no glyphs in egui's own faces.
         crate::fonts::install_once(ctx);
+        // Pen pressure, where the platform reports it. Nothing draws with it yet; it is
+        // read here so `ui.inspect` can say whether a pen reaches this window at all.
+        ctx.input(|i| self.stylus.update(&i.events));
         self.apply_theme(ctx);
         if self.window_level_pending {
             let level = if self.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };

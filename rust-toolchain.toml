@@ -1,0 +1,10 @@
+# One Rust for everybody: this machine, every agent session and the CI runner all use the
+# version named here. Without it each side picks up whatever "stable" means on the day, and a
+# gate that passes locally fails on CI over a lint that only the newer clippy knows.
+#
+# This is a pin, not a floor. The oldest Rust that can still build NoteCraft is `rust-version`
+# in Cargo.toml. Raise the pin in a change of its own, and run `cargo xtask ci` in that change.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

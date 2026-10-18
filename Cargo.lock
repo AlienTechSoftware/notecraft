@@ -2185,6 +2185,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "notecraft-ink"
+version = "0.0.1"
+
+[[package]]
 name = "notecraft-math"
 version = "0.0.1"
 

@@ -76,7 +76,7 @@ pub fn slice<'a>(data: &'a [u8], start: u64, len: u64, what: &'static str) -> Re
 
 /// UTF-16LE text up to the first NUL (or the end).
 pub fn utf16(b: &[u8]) -> String {
-    let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c.first().copied().unwrap_or(0), c.get(1).copied().unwrap_or(0)])).collect();
+    let units: Vec<u16> = b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
     String::from_utf16_lossy(units.get(..end).unwrap_or(&[]))
 }

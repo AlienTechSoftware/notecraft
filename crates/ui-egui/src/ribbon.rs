@@ -127,6 +127,25 @@ impl RuleLines {
         }
     }
 
+    /// The name under a thumbnail, where the shelf above it already says what kind of paper
+    /// this is. The full `label` stays the button's name, so it is still what a screen
+    /// reader says and what the ribbon's button shows.
+    pub fn short(self) -> &'static str {
+        match self {
+            RuleLines::None => "None",
+            RuleLines::Narrow => "Narrow",
+            RuleLines::College => "College",
+            RuleLines::Standard => "Standard",
+            RuleLines::Wide => "Wide",
+            RuleLines::GridSmall => "Small",
+            RuleLines::GridMedium => "Medium",
+            RuleLines::GridLarge => "Large",
+            RuleLines::GridHuge => "Very large",
+            RuleLines::CraftLines => "Ruled",
+            RuleLines::CraftGrid => "Squares",
+        }
+    }
+
     /// How far apart the lines are, in points. The ruled spacings follow the paper the
     /// names come from; the squares are the same four steps without the wide one.
     pub fn step(self) -> f32 {
@@ -165,6 +184,34 @@ impl RuleLines {
         }
         // "lines" and "grid" are NoteCraft's own two, and the ids the first version wrote.
         RuleLines::RULED.into_iter().chain(RuleLines::GRIDS).chain(RuleLines::CRAFT).find(|r| r.id() == want)
+    }
+}
+
+/// Draws a paper's lines inside `area`. The page draws itself at full size; the gallery in
+/// the ribbon draws the same papers at `scale`, so a thumbnail is the paper itself made
+/// small and cannot drift from what the page will show.
+pub fn paint_paper(painter: &egui::Painter, area: egui::Rect, rules: RuleLines, scale: f32, line: egui::Color32, strong: egui::Color32) {
+    if !rules.on() {
+        return;
+    }
+    let step = (rules.step() * scale).max(4.0);
+    let fives = rules.fives();
+    let colour = |n: usize| if fives && n.is_multiple_of(5) { strong } else { line };
+    let mut y = area.min.y + step;
+    let mut n = 0;
+    while y < area.max.y {
+        n += 1;
+        painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, colour(n)));
+        y += step;
+    }
+    if rules.squares() {
+        let mut x = area.min.x + step;
+        let mut n = 0;
+        while x < area.max.x {
+            n += 1;
+            painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, colour(n)));
+            x += step;
+        }
     }
 }
 
@@ -722,7 +769,43 @@ fn insert_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     });
 }
 
-/// OneNote's Rule Lines button: the paper now, and a menu of every paper under it.
+/// One paper in the gallery: the paper itself, drawn small, with its name under it. Picking
+/// a paper is picking a look, so the look is what is shown; the name is there to say it.
+fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Response {
+    // Half size. At that scale the closest two papers still differ by two lines, and
+    // NoteCraft's own show their stronger fifth line, which is the whole point of them.
+    const SCALE: f32 = 0.5;
+    const PAPER: egui::Vec2 = egui::vec2(78.0, 66.0);
+    const CAPTION: f32 = 15.0;
+    let (rect, resp) = ui.allocate_exact_size(PAPER + vec2(0.0, CAPTION), egui::Sense::click());
+    let enabled = ui.is_enabled();
+    let label = r.label();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, label));
+    let paper = egui::Rect::from_min_size(rect.min, PAPER);
+    let painter = ui.painter().with_clip_rect(paper);
+    painter.rect_filled(paper, 2.0, t.editor);
+    paint_paper(&painter, paper, r, SCALE, t.rule_line, t.rule_line_strong);
+    // A page with no lines needs something to look at, so it says so in the middle.
+    if !r.on() {
+        painter.text(paper.center(), egui::Align2::CENTER_CENTER, "Plain", egui::FontId::proportional(12.0), t.muted);
+    }
+    let (edge, width) = if here {
+        (t.accent, 2.0)
+    } else if resp.hovered() {
+        (t.muted, 1.0)
+    } else {
+        (t.faint, 1.0)
+    };
+    ui.painter().rect_stroke(paper, 2.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+    // The name is kept inside the thumbnail's own width, so a long one cannot run into the
+    // paper beside it.
+    let colour = if here { t.accent } else { t.text };
+    let name = egui::pos2(paper.center().x, paper.max.y + 1.0);
+    ui.painter().with_clip_rect(rect).text(name, egui::Align2::CENTER_TOP, r.short(), egui::FontId::proportional(11.0), colour);
+    resp.on_hover_text(label)
+}
+
+/// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
 fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
     let resp = big(ui, Icon::Table, view.rules.label(), "Lines or squares behind the page, as on paper", t);
     let open_id = egui::Id::new("ribbon-rule-lines");
@@ -737,31 +820,22 @@ fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
             .fixed_pos(resp.rect.left_bottom())
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(190.0);
-                    ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
-                    let row = |ui: &mut Ui, r: RuleLines, acts: &mut Vec<Act>, picked: &mut bool| {
-                        let here = view.rules == r;
-                        if ui.selectable_label(here, r.label()).clicked() {
-                            acts.push(Act::RuleLines(r));
-                            *picked = true;
-                        }
+                    ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
+                    let shelf = |ui: &mut Ui, title: &str, papers: &[RuleLines], acts: &mut Vec<Act>, picked: &mut bool| {
+                        ui.label(egui::RichText::new(title).strong());
+                        ui.horizontal(|ui| {
+                            for r in papers {
+                                if paper_swatch(ui, *r, view.rules == *r, t).clicked() {
+                                    acts.push(Act::RuleLines(*r));
+                                    *picked = true;
+                                }
+                            }
+                        });
                     };
-                    row(ui, RuleLines::None, acts, &mut picked);
-                    ui.separator();
-                    ui.label(egui::RichText::new("Rule lines").strong());
-                    for r in RuleLines::RULED {
-                        row(ui, r, acts, &mut picked);
-                    }
-                    ui.separator();
-                    ui.label(egui::RichText::new("Grid lines").strong());
-                    for r in RuleLines::GRIDS {
-                        row(ui, r, acts, &mut picked);
-                    }
-                    ui.separator();
-                    ui.label(egui::RichText::new("NoteCraft's own").strong());
-                    for r in RuleLines::CRAFT {
-                        row(ui, r, acts, &mut picked);
-                    }
+                    shelf(ui, "No lines", &[RuleLines::None], acts, &mut picked);
+                    shelf(ui, "Rule lines", &RuleLines::RULED, acts, &mut picked);
+                    shelf(ui, "Grid lines", &RuleLines::GRIDS, acts, &mut picked);
+                    shelf(ui, "NoteCraft's own", &RuleLines::CRAFT, acts, &mut picked);
                     ui.label(egui::RichText::new("Every fifth line stronger, to count by.").small().color(t.muted));
                     ui.separator();
                     ui.add_enabled(false, egui::Label::new(egui::RichText::new("Rule line colour (not built)").color(t.muted)));
