@@ -1,0 +1,15 @@
+[package]
+name = "notecraft-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft store: notebooks as plain folders. Reading and writing the tree, pages, attachments, settings and search"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-model = { workspace = true }
+notecraft-formats = { workspace = true }

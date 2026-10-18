@@ -1,0 +1,16 @@
+[package]
+name = "notecraft-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft command line: list and run engine commands, check a notebooks folder"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-engine = { workspace = true }
+notecraft-mcp = { workspace = true }
+notecraft-store = { workspace = true }

@@ -1,0 +1,18 @@
+*~
+/target
+/target-*/
+/dist
+/.claude/
+.DS_Store
+.env
+out/
+/out/
+# Pictures a failing visual test writes next to the one it compared.
+/crates/*/tests/**/*.diff.png
+/crates/*/tests/**/*.new.png
+
+# Working notes of the private repository: they do not belong in the open one.
+JOURNAL.md
+MEMORY.md
+/.agents/
+/plan/

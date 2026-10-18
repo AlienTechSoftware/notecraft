@@ -1,0 +1,13 @@
+[package]
+name = "notecraft-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft model: node kinds, page formats, names and folder rules, ids, time, small key-value text helpers"
+
+[lints]
+workspace = true
+
+[dependencies]

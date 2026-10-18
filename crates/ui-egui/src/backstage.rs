@@ -1,0 +1,298 @@
+//! The File screen: what Office calls the backstage. It takes over the window and shows the
+//! notebooks with where they live, and the things done to a whole notebook rather than to a
+//! page. Anything that needs a service NoteCraft does not have is listed and marked as not
+//! built, rather than hidden, so nobody goes looking for it.
+
+use crate::icons::{self, Icon};
+use crate::theme::Tokens;
+use egui::{Align2, Sense, Ui, vec2};
+use notecraft_model::NodeColor;
+use notecraft_store::tree::Node;
+
+/// What the File screen asks the window to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Act {
+    /// Leave the File screen.
+    Close,
+    NewNotebook,
+    /// Show this notebook's folder in the file manager.
+    OpenFolder(std::path::PathBuf),
+    /// Open the notebooks folder itself.
+    OpenNotebooksFolder,
+    /// Open a page of this notebook (the first one).
+    Open(std::path::PathBuf),
+    /// Another page of the File screen: Info, New or Open.
+    Page(&'static str),
+    /// A side entry that is listed but not built yet.
+    NotBuilt(&'static str),
+}
+
+/// The entries down the left side, in the order the Office apps use. The flag says whether
+/// it works.
+pub const SIDE: [(&str, bool); 10] = [
+    ("Info", true),
+    ("New", true),
+    ("Open", true),
+    ("Save a Copy", false),
+    ("Print", false),
+    ("Share", false),
+    ("Export", false),
+    ("Account", false),
+    ("Options", false),
+    ("About", true),
+];
+
+/// Where NoteCraft comes from. Named once, here, so there is one place to change it.
+pub const REPOSITORY: &str = "https://github.com/AlienTechSoftware/notecraft";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Draws the File screen over the whole window. Returns what the user asked for.
+pub fn show(
+    ui: &mut Ui,
+    notebooks: &[Node],
+    notebooks_folder: &str,
+    page: &str,
+    show_path: &dyn Fn(&std::path::Path) -> String,
+    t: &Tokens,
+) -> Vec<Act> {
+    let mut acts = Vec::new();
+    egui::Frame::NONE.fill(t.panel).show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            side_bar(ui, page, t, &mut acts);
+            ui.add_space(14.0);
+            ui.vertical(|ui| {
+                ui.add_space(10.0);
+                match page {
+                    "New" => new_page(ui, notebooks_folder, t, &mut acts),
+                    "Open" => open_page(ui, notebooks, notebooks_folder, t, &mut acts),
+                    "About" => about_page(ui, t),
+                    _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
+                }
+            });
+        });
+    });
+    acts
+}
+
+fn side_bar(ui: &mut Ui, page: &str, t: &Tokens, acts: &mut Vec<Act>) {
+    ui.vertical(|ui| {
+        ui.set_width(170.0);
+        ui.add_space(8.0);
+        // The arrow back to the notebook, as in Office.
+        let (rect, back) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        if back.hovered() {
+            painter.circle_filled(rect.center(), 15.0, t.row_hover);
+        }
+        painter.circle_stroke(rect.center(), 11.0, egui::Stroke::new(1.5, t.accent));
+        painter.line_segment(
+            [egui::pos2(rect.center().x + 5.0, rect.center().y), egui::pos2(rect.center().x - 4.0, rect.center().y)],
+            egui::Stroke::new(1.5, t.accent),
+        );
+        painter.line_segment(
+            [egui::pos2(rect.center().x - 4.0, rect.center().y), egui::pos2(rect.center().x, rect.center().y - 4.0)],
+            egui::Stroke::new(1.5, t.accent),
+        );
+        painter.line_segment(
+            [egui::pos2(rect.center().x - 4.0, rect.center().y), egui::pos2(rect.center().x, rect.center().y + 4.0)],
+            egui::Stroke::new(1.5, t.accent),
+        );
+        let enabled = ui.is_enabled();
+        back.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, "Back"));
+        if back.on_hover_text("Back to the notebook").clicked() {
+            acts.push(Act::Close);
+        }
+        ui.add_space(8.0);
+        for (name, built) in SIDE {
+            let selected = name == page;
+            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+            let painter = ui.painter_at(rect);
+            if selected {
+                painter.rect_filled(rect, 4.0, t.row_selected);
+            } else if resp.hovered() {
+                painter.rect_filled(rect, 4.0, t.row_hover);
+            }
+            let color = if built { t.text } else { t.muted };
+            painter.text(egui::pos2(rect.min.x + 12.0, rect.center().y), Align2::LEFT_CENTER, name, egui::FontId::proportional(13.5), color);
+            if !built {
+                painter.text(
+                    egui::pos2(rect.max.x - 8.0, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    "not built",
+                    egui::FontId::proportional(10.0),
+                    t.muted,
+                );
+            }
+            let enabled = ui.is_enabled();
+            let label = name.to_string();
+            resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
+            if resp.clicked() {
+                acts.push(if built { Act::Page(name) } else { Act::NotBuilt(name) });
+            }
+        }
+    });
+}
+
+fn heading(ui: &mut Ui, text: &str, t: &Tokens) {
+    ui.label(egui::RichText::new(text).size(22.0).color(t.strong));
+    ui.add_space(8.0);
+}
+
+fn info_page(ui: &mut Ui, notebooks: &[Node], folder: &str, show_path: &dyn Fn(&std::path::Path) -> String, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "Notebook information", t);
+    if notebooks.is_empty() {
+        ui.label(egui::RichText::new("There are no notebooks yet. \"New\" starts one.").color(t.muted));
+    }
+    egui::ScrollArea::vertical().id_salt("backstage-info").show(ui, |ui| {
+        for n in notebooks {
+            ui.horizontal_top(|ui| {
+                // The notebook's cover, in its own colour.
+                let (rect, resp) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::click());
+                let painter = ui.painter_at(rect);
+                let color = n
+                    .info
+                    .color
+                    .map(|c| {
+                        let (r, g, b) = c.rgb(t.panel.r() < 128);
+                        egui::Color32::from_rgb(r, g, b)
+                    })
+                    .unwrap_or(t.notebook);
+                icons::paint(&painter, rect.shrink(8.0), Icon::Notebook, color);
+                if resp.clicked() {
+                    acts.push(Act::Open(n.path.clone()));
+                }
+                ui.add_space(8.0);
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new(&n.info.title).size(17.0).color(t.accent));
+                    ui.label(egui::RichText::new(show_path(&n.path)).size(11.5).monospace().color(t.muted));
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Open folder").clicked() {
+                            acts.push(Act::OpenFolder(n.path.clone()));
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("{} items, {} colour", n.count(), n.info.color.map(NodeColor::label).unwrap_or("no")))
+                                .size(11.0)
+                                .color(t.muted),
+                        );
+                    });
+                });
+            });
+            ui.add_space(10.0);
+        }
+    });
+    ui.add_space(6.0);
+    ui.separator();
+    ui.label(egui::RichText::new(format!("All of them live in {folder}")).size(11.5).color(t.muted));
+    ui.label(
+        egui::RichText::new("Online notebooks (OneDrive, SharePoint) are not built. A notebook in a folder your sync tool watches is synced by it.")
+            .size(11.5)
+            .color(t.muted),
+    );
+}
+
+fn new_page(ui: &mut Ui, folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "New notebook", t);
+    ui.label(egui::RichText::new(format!("A new notebook is a folder in {folder}, with one section and one page inside it.")).color(t.text));
+    ui.add_space(10.0);
+    if ui.button("New notebook").clicked() {
+        acts.push(Act::NewNotebook);
+    }
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("Somewhere else").size(14.0).color(t.strong));
+    ui.label(
+        egui::RichText::new(
+            "OneDrive and SharePoint: not built. Point NoteCraft at a folder your sync tool already watches and it is the same thing.",
+        )
+        .size(11.5)
+        .color(t.muted),
+    );
+}
+
+fn open_page(ui: &mut Ui, notebooks: &[Node], folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "Open", t);
+    ui.label(egui::RichText::new(format!("Notebooks in {folder}")).size(12.0).color(t.muted));
+    ui.add_space(6.0);
+    for n in notebooks {
+        if ui.button(&n.info.title).clicked() {
+            acts.push(Act::Open(n.path.clone()));
+        }
+    }
+    ui.add_space(10.0);
+    if ui.button("Open the notebooks folder").clicked() {
+        acts.push(Act::OpenNotebooksFolder);
+    }
+    ui.add_space(14.0);
+    ui.label(
+        egui::RichText::new("Opening a notebook from a web address is not built. Importing a `.one` notebook is being written; see the roadmap.")
+            .size(11.5)
+            .color(t.muted),
+    );
+}
+
+/// About: what this is, which version, and where the code lives.
+fn about_page(ui: &mut Ui, t: &Tokens) {
+    heading(ui, "About NoteCraft", t);
+    ui.horizontal_top(|ui| {
+        let (rect, _) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::hover());
+        icons::paint(&ui.painter_at(rect), rect.shrink(6.0), Icon::Notebook, t.accent);
+        ui.add_space(8.0);
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new("NoteCraft").size(20.0).color(t.accent));
+            ui.label(egui::RichText::new(format!("Version {VERSION}")).size(12.0).color(t.muted));
+            ui.label(
+                egui::RichText::new("Note taking and organisation in pure Rust. Your notes are plain folders and files.").size(12.5).color(t.text),
+            );
+        });
+    });
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("The code").size(14.0).color(t.strong));
+    ui.hyperlink_to(REPOSITORY, REPOSITORY);
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(
+            "Issues, the roadmap and the documentation are all there. Nothing in NoteCraft talks to it, or to any other service, by itself.",
+        )
+        .size(11.5)
+        .color(t.muted),
+    );
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("Licence").size(14.0).color(t.strong));
+    ui.label(
+        egui::RichText::new("MIT or Apache-2.0, at your option. The koala artwork is not covered by it; see ATTRIBUTION.md.")
+            .size(11.5)
+            .color(t.muted),
+    );
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("Built with").size(14.0).color(t.strong));
+    ui.hyperlink_to("egui and eframe", "https://github.com/emilk/egui");
+    ui.label(
+        egui::RichText::new("The window, drawn on the GPU. The icons here are drawn in code; there are no icon files.").size(11.5).color(t.muted),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_side_entries_say_what_works() {
+        let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
+        assert_eq!(built, vec!["Info", "New", "Open", "About"]);
+        assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
+        assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
+    }
+
+    #[test]
+    fn about_says_where_the_code_lives_and_asks_for_nothing() {
+        let t = crate::theme::Theme::DEFAULT.tokens();
+        let ctx = egui::Context::default();
+        let mut acts = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            acts = show(ui, &[], "C:/notebooks", "About", &|p| p.to_string_lossy().into_owned(), &t);
+        });
+        out.textures_delta.clear();
+        assert_eq!(acts, Vec::new(), "the About page asked for something nobody clicked");
+        assert!(REPOSITORY.starts_with("https://github.com/"), "{REPOSITORY}");
+        assert!(!VERSION.is_empty());
+    }
+}

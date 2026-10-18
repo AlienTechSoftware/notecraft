@@ -1,0 +1,13 @@
+[package]
+name = "notecraft-onenote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft OneNote reader: reads .one section files (MS-ONESTORE, MS-ONE) into a plain document model. Read only, no UI, no file system writes"
+
+[lints]
+workspace = true
+
+[dependencies]
