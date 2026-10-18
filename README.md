@@ -5,7 +5,7 @@
 <h1 align="center">NoteCraft</h1>
 
 <p align="center">
-  <b>Note taking and organisation, written in pure Rust: an open, clean-room notebook app for people who want their notes to stay files.</b>
+  <b>Note taking and organization, written in pure Rust: an open, clean-room notebook app for people who want their notes to stay files.</b>
 </p>
 
 <p align="center">
