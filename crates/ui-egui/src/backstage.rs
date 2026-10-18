@@ -240,7 +240,7 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
             ui.label(egui::RichText::new("NoteCraft").size(20.0).color(t.accent));
             ui.label(egui::RichText::new(format!("Version {VERSION}")).size(12.0).color(t.muted));
             ui.label(
-                egui::RichText::new("Note taking and organisation in pure Rust. Your notes are plain folders and files.").size(12.5).color(t.text),
+                egui::RichText::new("Note taking and organization in pure Rust. Your notes are plain folders and files.").size(12.5).color(t.text),
             );
         });
     });
