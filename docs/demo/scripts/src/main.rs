@@ -215,7 +215,9 @@ fn language_list(present: &[&Language]) -> String {
     let mut out = String::new();
     for l in present {
         let note = if l.rtl { ", right to left" } else { "" };
-        out.push_str(&format!("- [{}](../../{}/), {}{}\n", l.name, l.folder(), l.english, note));
+        // The English name only when it adds something: "English, English" would not.
+        let english = if l.english == l.name { String::new() } else { format!(", {}", l.english) };
+        out.push_str(&format!("- [{}](../../{}/){english}{note}\n", l.name, l.folder()));
     }
     out.trim_end().to_string()
 }
@@ -535,7 +537,8 @@ mod tests {
             assert!(group.children[0].children.len() >= 8, "the same pages in every language");
         }
         let start = fs::read_to_string(out.join(START_FOLDER).join("welcome").join("index.md")).expect("start page");
-        assert!(start.contains("- [English](../../10-en/), English"), "{start}");
+        assert!(start.contains("- [English](../../10-en/)\n"), "{start}");
+        assert!(start.contains("- [العربية](../../20-ar/), Arabic, right to left"), "{start}");
         assert!(!start.contains(LANGUAGES_MARK));
         let first_build = snapshot(&out).expect("snapshot");
         let again = dir.join("Again");

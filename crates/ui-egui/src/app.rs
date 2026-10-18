@@ -126,6 +126,16 @@ enum Act {
     Toggle(PathBuf),
     Select(PathBuf),
     Add(PathBuf, NodeKind),
+    /// A page in this section at this place in the order, from the line between two pages.
+    AddPageAt(PathBuf, u32),
+    /// Add a child of this kind, named in the menu rather than chosen in the dialog.
+    AddKind(PathBuf, NodeKind, NodeKind),
+    /// A notebook, from the menu on the empty space.
+    NewNotebook,
+    /// Show the notebooks folder in the file manager.
+    RevealRoot,
+    /// Ask the system for the folder to work from.
+    ChooseRoot,
     Rename(PathBuf, String),
     Delete(PathBuf, String, usize),
     Color(PathBuf, Option<NodeColor>),
@@ -141,6 +151,10 @@ pub struct NoteCraftApp {
     split_panes: bool,
     /// Whether the organisers column is showing, which the three-bar button toggles.
     organisers: bool,
+    /// Whether the window is kept above the others.
+    always_on_top: bool,
+    /// Set when that has just changed and the window manager has not been told yet.
+    window_level_pending: bool,
     editor: Option<Editor>,
     dialog: Option<Dialog>,
     status: String,
@@ -202,6 +216,8 @@ impl NoteCraftApp {
             selected: None,
             split_panes: session_split,
             organisers: true,
+            always_on_top: false,
+            window_level_pending: false,
             editor: None,
             dialog: None,
             status: "Ready".into(),
@@ -572,6 +588,26 @@ impl NoteCraftApp {
                 let kind = if parent_kind == NodeKind::Notebook || parent_kind == NodeKind::SectionGroup { NodeKind::Section } else { kind };
                 self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind, format: None });
             }
+            Act::NewNotebook => self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None }),
+            Act::RevealRoot => {
+                let root = self.session.root().to_path_buf();
+                self.reveal(&root);
+            }
+            Act::ChooseRoot => self.choose_notebooks_folder(),
+            Act::AddKind(parent, parent_kind, kind) => {
+                self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind, format: None });
+            }
+            Act::AddPageAt(section, order) => {
+                let path = path_str(&section);
+                let title = String::from("Untitled page");
+                let order = order.to_string();
+                if let Some(Output::Path(dir)) =
+                    self.run("node.create", &params(&[("parent", &path), ("kind", "page"), ("title", &title), ("order", &order)]))
+                {
+                    self.open_page(&dir);
+                    self.say("New page");
+                }
+            }
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
             Act::Delete(path, title, count) => self.dialog = Some(Dialog::Delete { path, title, count }),
             Act::Color(path, color) => {
@@ -674,10 +710,23 @@ impl NoteCraftApp {
             }
         }
         resp.context_menu(|ui| {
-            if ui.button("Add inside...").clicked() {
-                acts.push(Act::Add(node.path.clone(), node.info.kind));
-                ui.close();
+            // What this node may hold, named in full rather than left to the dialog: a
+            // notebook and a group take sections and groups, a section takes pages, and a
+            // page takes sub-pages.
+            for kind in node.info.kind.may_contain() {
+                let label = match kind {
+                    NodeKind::SectionGroup => "New section group...",
+                    NodeKind::Section => "New section...",
+                    NodeKind::Page if node.info.kind == NodeKind::Page => "New sub-page...",
+                    NodeKind::Page => "New page...",
+                    NodeKind::Notebook => "New notebook...",
+                };
+                if ui.button(label).clicked() {
+                    acts.push(Act::AddKind(node.path.clone(), node.info.kind, *kind));
+                    ui.close();
+                }
             }
+            ui.separator();
             if ui.button("Rename...").clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
@@ -834,6 +883,7 @@ impl NoteCraftApp {
                     self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
                 }
                 backstage::Act::OpenFolder(p) => self.reveal(&p),
+                backstage::Act::ChooseFolder => self.choose_notebooks_folder(),
                 backstage::Act::OpenNotebooksFolder => {
                     let root = self.session.root().to_path_buf();
                     self.reveal(&root);
@@ -857,6 +907,39 @@ impl NoteCraftApp {
                 }
             }
         }
+    }
+
+    /// Asks the system for a folder and opens the notebooks in it, keeping everything that
+    /// is already open. A folder that is itself a notebook opens as one; a folder that
+    /// holds notebooks opens all of them. Nothing is closed and nothing is moved.
+    fn choose_notebooks_folder(&mut self) {
+        let Some(picked) = rfd::FileDialog::new().set_title("Choose a notebook, or a folder of notebooks").pick_folder() else { return };
+        let is_notebook = notecraft_store::tree::read_node(&picked).is_some_and(|i| i.kind == NodeKind::Notebook);
+        let wanted: Vec<std::path::PathBuf> =
+            if is_notebook { vec![picked.clone()] } else { notecraft_store::tree::load_notebooks(&picked).into_iter().map(|n| n.path).collect() };
+        if wanted.is_empty() {
+            self.status = format!("No notebooks in {}", self.shown(&picked));
+            self.status_is_error = true;
+            return;
+        }
+        let mut opened = 0;
+        let mut first = None;
+        for path in wanted {
+            let p = path_str(&path);
+            if self.run("notebook.open", &params(&[("path", &p)])).is_some() {
+                opened += 1;
+                first.get_or_insert(path.clone());
+                self.open.insert(path);
+            }
+        }
+        if let Some(path) = first {
+            self.selected = Some(path);
+        }
+        self.backstage = None;
+        self.say(match opened {
+            1 => "Notebook opened".to_string(),
+            n => format!("{n} notebooks opened"),
+        });
     }
 
     fn reveal(&mut self, path: &Path) {
@@ -932,6 +1015,7 @@ impl NoteCraftApp {
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
         let view = ribbon::View {
             split_panes: self.split_panes,
+            always_on_top: self.always_on_top,
             full_page: self.full_page,
             rules: self.rules,
             hide_title: self.hide_title,
@@ -977,6 +1061,13 @@ impl NoteCraftApp {
                     ribbon::RuleLines::None => "No lines behind the page".to_string(),
                     other => format!("{} behind the page", other.label()),
                 });
+            }
+            ribbon::Act::ToggleAlwaysOnTop => {
+                self.always_on_top = !self.always_on_top;
+                // Asked for on the next frame, where the context is at hand.
+                self.window_level_pending = true;
+                let _ = self.session.settings.set("always_on_top", if self.always_on_top { "true" } else { "false" });
+                self.say(if self.always_on_top { "This window stays on top" } else { "This window behaves like the others" });
             }
             ribbon::Act::TogglePanes => {
                 self.split_panes = !self.split_panes;
@@ -1436,6 +1527,7 @@ impl NoteCraftApp {
                 for n in self.session.tree() {
                     self.draw_node(ui, n, 0, &mut acts);
                 }
+                self.empty_space_menu(ui, None, &mut acts);
             });
         });
         if split_now {
@@ -1448,10 +1540,99 @@ impl NoteCraftApp {
         }
     }
 
+    /// The empty space under the rows of a column, with a menu of its own: right-clicking
+    /// where there is no row is how a new notebook or a new page is started in OneNote.
+    fn empty_space_menu(&self, ui: &mut Ui, section: Option<&Path>, acts: &mut Vec<Act>) {
+        let left = ui.available_size();
+        if left.y < 2.0 {
+            return;
+        }
+        let (rect, resp) = ui.allocate_exact_size(left, Sense::click());
+        let _ = rect;
+        let mut reveal = false;
+        let mut choose = false;
+        resp.context_menu(|ui| {
+            match section {
+                // Under the pages: a page at the end of this section.
+                Some(path) => {
+                    if ui.button("New page...").clicked() {
+                        acts.push(Act::AddKind(path.to_path_buf(), NodeKind::Section, NodeKind::Page));
+                        ui.close();
+                    }
+                }
+                // Under the notebooks: a notebook, and the ways into the folder itself.
+                None => {
+                    if ui.button("New notebook...").clicked() {
+                        acts.push(Act::NewNotebook);
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Open a folder...").clicked() {
+                        choose = true;
+                        ui.close();
+                    }
+                    if ui.button("Show the notebooks folder").clicked() {
+                        reveal = true;
+                        ui.close();
+                    }
+                }
+            }
+        });
+        if reveal {
+            acts.push(Act::RevealRoot);
+        }
+        if choose {
+            acts.push(Act::ChooseRoot);
+        }
+    }
+
+    /// The gap between two pages in the pages column. Hovering it draws the line OneNote
+    /// draws there, and clicking it makes a page in that place rather than at the end.
+    ///
+    /// `before` and `after` are the orders of the pages on either side; the new page takes
+    /// the number in between, which is why siblings are numbered ten apart.
+    fn page_gap(&self, ui: &mut Ui, section: &Path, before: Option<u32>, after: Option<u32>, acts: &mut Vec<Act>) {
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::click());
+        let hot = resp.hovered();
+        if hot {
+            let painter = ui.painter_at(rect.expand(2.0));
+            let y = rect.center().y;
+            let t = &self.tokens;
+            painter.line_segment([egui::pos2(rect.min.x + 18.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
+            let c = egui::pos2(rect.min.x + 9.0, y);
+            painter.circle_filled(c, 6.5, t.accent);
+            painter.text(c, Align2::CENTER_CENTER, "+", egui::FontId::proportional(12.0), t.panel);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, "Add a page here"));
+        let resp = resp.on_hover_text("A page here");
+        if resp.clicked() {
+            // Halfway between the two, or ten past the last one.
+            let order = match (before, after) {
+                (Some(b), Some(a)) if a > b + 1 => b + (a - b) / 2,
+                (Some(b), Some(_)) => b.saturating_add(1),
+                (Some(b), None) => b.saturating_add(10),
+                (None, Some(a)) => a / 2,
+                (None, None) => 10,
+            };
+            acts.push(Act::AddPageAt(section.to_path_buf(), order));
+        }
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
-        let bars = egui::RichText::new(BARS).size(15.0);
-        ui.add(egui::Button::new(bars).frame(false)).on_hover_text("Show or hide the notebooks column")
+        // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
+        let (rect, resp) = ui.allocate_exact_size(vec2(22.0, 20.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        if resp.hovered() {
+            painter.rect_filled(rect, 3.0, ui.visuals().widgets.hovered.bg_fill);
+        }
+        let colour = ui.visuals().widgets.inactive.fg_stroke.color;
+        icons::paint(&painter, egui::Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), Icon::Bars, colour);
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, BARS));
+        resp.on_hover_text("Show or hide the notebooks column")
     }
 
     /// The side panel as two columns: the organisers (notebooks, section groups and
@@ -1480,6 +1661,7 @@ impl NoteCraftApp {
                     for n in self.session.tree() {
                         self.draw_row(ui, n, 0, acts, false);
                     }
+                    self.empty_space_menu(ui, None, acts);
                 });
             });
         }
@@ -1501,12 +1683,20 @@ impl NoteCraftApp {
                     ui.label(egui::RichText::new(title.to_uppercase()).small().color(self.tokens.muted));
                     ui.add_space(2.0);
                     egui::ScrollArea::vertical().id_salt("pages").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
-                        if pages.iter().all(|p| p.info.kind != NodeKind::Page) {
+                        let list: Vec<&Node> = pages.iter().filter(|p| p.info.kind == NodeKind::Page).collect();
+                        if list.is_empty() {
                             ui.weak("No pages in this section yet.");
                         }
-                        for p in pages.iter().filter(|p| p.info.kind == NodeKind::Page) {
+                        // A line between every pair, and above the first and below the
+                        // last: hovering one offers a page in that place.
+                        let mut last: Option<u32> = None;
+                        for p in &list {
+                            self.page_gap(ui, path, last, Some(p.info.order), acts);
                             self.draw_row(ui, p, 0, acts, true);
+                            last = Some(p.info.order);
                         }
+                        self.page_gap(ui, path, last, None, acts);
+                        self.empty_space_menu(ui, Some(path), acts);
                     });
                 }
                 None => {
@@ -1634,26 +1824,28 @@ impl NoteCraftApp {
                     ..egui::containers::scroll_area::ScrollSource::default()
                 };
                 egui::ScrollArea::vertical().id_salt("preview").scroll_source(scroll).max_height(height).show(ui, |ui| {
-                    // Lines or squares behind the page, the way OneNote rules a page.
-                    if wide && rules != ribbon::RuleLines::None {
+                    // Lines or squares behind the page, the way OneNote rules one. The
+                    // spacing comes from the paper chosen; NoteCraft's own two papers draw
+                    // every fifth line stronger, which the others do not.
+                    if wide && rules.on() {
                         let area = ui.max_rect();
                         let painter = ui.painter_at(area);
-                        let step = 24.0;
+                        let step = rules.step().max(8.0);
+                        let fives = rules.fives();
                         let mut y = area.min.y + step;
                         let mut n = 0;
                         while y < area.max.y {
                             n += 1;
-                            let strong = n % 5 == 0;
-                            let color = if strong { tokens.rule_line_strong } else { tokens.rule_line };
+                            let color = if fives && n % 5 == 0 { tokens.rule_line_strong } else { tokens.rule_line };
                             painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, color));
                             y += step;
                         }
-                        if rules == ribbon::RuleLines::Grid {
+                        if rules.squares() {
                             let mut x = area.min.x + step;
                             let mut n = 0;
                             while x < area.max.x {
                                 n += 1;
-                                let color = if n % 5 == 0 { tokens.rule_line_strong } else { tokens.rule_line };
+                                let color = if fives && n % 5 == 0 { tokens.rule_line_strong } else { tokens.rule_line };
                                 painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, color));
                                 x += step;
                             }
@@ -2245,6 +2437,11 @@ impl NoteCraftApp {
         // Arabic and the other right-to-left scripts have no glyphs in egui's own faces.
         crate::fonts::install_once(ctx);
         self.apply_theme(ctx);
+        if self.window_level_pending {
+            let level = if self.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+            self.window_level_pending = false;
+        }
         if let Some(text) = self.pending_copy.take() {
             ctx.copy_text(text);
         }

@@ -27,6 +27,8 @@ egui = "0.36"
 egui_extras = { version = "0.36", default-features = false, features = ["image", "file"] }
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 serde_json = "1"
+# The system file and folder dialogs, for "Open a notebook folder". UI only.
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [workspace.lints.rust]

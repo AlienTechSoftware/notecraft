@@ -8,16 +8,27 @@ use std::path::{Path, PathBuf};
 /// A notebooks folder, the settings, and a cached copy of the tree.
 pub struct Session {
     root: PathBuf,
+    /// Notebooks kept somewhere else and opened anyway. A notebook is a folder, so one can
+    /// live outside the notebooks folder; opening it must not put away the others, which is
+    /// why these sit beside the root rather than replacing it. Remembered in the settings.
+    extra: Vec<PathBuf>,
     pub settings: Settings,
     tree: Vec<Node>,
 }
+
+/// How the settings file keeps the list. A vertical bar cannot appear in a Windows path and
+/// is vanishingly rare elsewhere, which makes it a safe separator for one line of them.
+const OPEN_KEY: &str = "open_notebooks";
+const SEP: char = '|';
 
 impl Session {
     /// Opens (and creates, if needed) the notebooks folder `root`.
     pub fn new(root: &Path, settings: Settings) -> Result<Session, EngineError> {
         std::fs::create_dir_all(root).map_err(|e| StoreError::io("create", root, e))?;
         let root = std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))?;
-        let mut s = Session { root, settings, tree: Vec::new() };
+        let extra =
+            settings.get(OPEN_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
+        let mut s = Session { root, extra, settings, tree: Vec::new() };
         s.refresh();
         Ok(s)
     }
@@ -33,6 +44,56 @@ impl Session {
 
     pub fn refresh(&mut self) {
         self.tree = tree::load_notebooks(&self.root);
+        // The notebooks opened from elsewhere, in the order they were opened, after the
+        // ones in the notebooks folder. A folder that has gone is quietly left out.
+        self.extra.retain(|p| p.is_dir());
+        for path in &self.extra {
+            if let Some(node) = tree::load_tree(path)
+                && node.info.kind == notecraft_store::NodeKind::Notebook
+                && !self.tree.iter().any(|n| n.path == node.path)
+            {
+                self.tree.push(node);
+            }
+        }
+    }
+
+    /// The notebooks opened from outside the notebooks folder.
+    pub fn opened_elsewhere(&self) -> &[PathBuf] {
+        &self.extra
+    }
+
+    /// Opens a notebook that lives outside the notebooks folder, keeping everything that is
+    /// already open. Opening one that is already there changes nothing.
+    pub fn open_notebook(&mut self, path: &Path) -> Result<PathBuf, EngineError> {
+        let path = std::fs::canonicalize(path).map_err(|_| StoreError::NotFound(path.display().to_string()))?;
+        let info = tree::read_node(&path).ok_or_else(|| EngineError::BadParam(format!("{} is not a notebook", path.display())))?;
+        if info.kind != notecraft_store::NodeKind::Notebook {
+            return Err(EngineError::BadParam(format!("{} is a {}, not a notebook", path.display(), info.kind.label().to_lowercase())));
+        }
+        if !path.starts_with(&self.root) && !self.extra.contains(&path) {
+            self.extra.push(path.clone());
+            self.remember();
+        }
+        self.refresh();
+        Ok(path)
+    }
+
+    /// Puts an opened-from-elsewhere notebook away again. Nothing is deleted.
+    pub fn close_notebook(&mut self, path: &Path) -> bool {
+        let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let before = self.extra.len();
+        self.extra.retain(|p| p != &canon);
+        if self.extra.len() != before {
+            self.remember();
+            self.refresh();
+            return true;
+        }
+        false
+    }
+
+    fn remember(&self) {
+        let line = self.extra.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join(&SEP.to_string());
+        let _ = self.settings.set(OPEN_KEY, &line);
     }
 
     /// An absolute path or a path relative to the notebooks folder, resolved and
@@ -41,7 +102,8 @@ impl Session {
         let p = Path::new(path);
         let joined = if p.is_absolute() { p.to_path_buf() } else { self.root.join(p) };
         let canon = std::fs::canonicalize(&joined).map_err(|_| StoreError::NotFound(path.to_string()))?;
-        if !canon.starts_with(&self.root) {
+        // Inside the notebooks folder, or inside a notebook opened from somewhere else.
+        if !canon.starts_with(&self.root) && !self.extra.iter().any(|n| canon.starts_with(n)) {
             return Err(EngineError::BadParam("that path is outside the notebooks folder".into()));
         }
         Ok(canon)
