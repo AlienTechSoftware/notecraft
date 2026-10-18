@@ -1042,6 +1042,48 @@ fn the_ribbon_theme_button_opens_the_chooser() {
     review(&mut h, "ribbon_theme");
 }
 
+/// Rule Lines opens a gallery, not a list of words: every paper is drawn small so the look
+/// is picked by looking. Each thumbnail is still a button with the paper's name, which is
+/// how a screen reader reads it and how this test picks one.
+#[test]
+fn the_rule_lines_gallery_shows_every_paper_and_picking_one_rules_the_page() {
+    let (_t, mut app, s) = sample_app("ui-rule-gallery");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("View").click();
+    h.run();
+    h.get_by_label("None").click();
+    h.run();
+
+    // All eleven papers are on the screen, each as its own thumbnail.
+    for paper in [
+        "None",
+        "Narrow ruled",
+        "College ruled",
+        "Standard ruled",
+        "Wide ruled",
+        "Small squares",
+        "Medium squares",
+        "Large squares",
+        "Very large squares",
+        "NoteCraft ruled",
+        "NoteCraft squares",
+    ] {
+        assert!(h.query_all_by_label(paper).count() >= 1, "{paper} is in the gallery");
+    }
+    review(&mut h, "rule_lines_gallery");
+
+    // Picking one rules the page and closes the gallery, and the button says what is on.
+    h.get_by_label("NoteCraft squares").click();
+    h.run();
+    h.run();
+    let paper = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["paper"].as_str().unwrap_or_default().to_string();
+    assert_eq!(paper, "grid", "the page is on NoteCraft's squared paper");
+    assert_eq!(h.query_all_by_label("Wide ruled").count(), 0, "the gallery closed");
+    assert!(h.query_all_by_label("NoteCraft squares").count() >= 1, "and the button now says so");
+}
+
 #[test]
 fn following_the_system_keeps_the_accent() {
     let t = TempDir::new("ui-system");

@@ -83,6 +83,14 @@ it is fixed and tested, not when it is promised.
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box
   rather than losing a word.
+- **Pen and drawing are not built.** There is no ink of any kind: nothing to draw with, no
+  eraser, no lasso, and no drawing stored in a page. What exists is the measuring end:
+  `crates\ui-egui\src\stylus.rs` reads the pressure a pen reports, `ui.inspect` says what it
+  has seen, and `cargo run -p notecraft --example pen_check` opens a sheet to scribble on so
+  a pen can be tried. Pressure on Windows is real and measured: a pen reported a hardest
+  press of 0.930 over 1223 readings on 2026-10-18. On macOS, Linux and Wayland winit drops
+  the tablet fields, so a pen there reports nothing and draws at full pressure like a mouse;
+  tilt and the eraser end are available on no platform.
 - **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
   and the other familiar marks, stored as plain text in the page.)
 - **Sync conflicts** are only detected by name by the checker; there is no merge or resolve UI.

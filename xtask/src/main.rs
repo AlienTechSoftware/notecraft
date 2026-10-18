@@ -24,6 +24,7 @@ use std::process::{Command, ExitCode};
 const LAYERS: &[(&str, u8)] = &[
     ("notecraft-model", 0),
     ("notecraft-math", 1),
+    ("notecraft-ink", 1),
     ("notecraft-onenote", 1),
     ("notecraft-formats", 1),
     ("notecraft-text", 1),

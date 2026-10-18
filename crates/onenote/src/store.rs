@@ -157,7 +157,7 @@ fn parse_ifndf(reference: &str) -> Option<Guid> {
         return None;
     }
     let mut n = [0u8; 16];
-    for (i, pair) in hex.chunks_exact(2).enumerate() {
+    for (i, pair) in hex.as_chunks::<2>().0.iter().enumerate() {
         let s = std::str::from_utf8(pair).ok()?;
         n[i] = u8::from_str_radix(s, 16).ok()?;
     }

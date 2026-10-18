@@ -14,6 +14,7 @@ publish = false
 [workspace.dependencies]
 notecraft-model = { path = "crates/model" }
 notecraft-math = { path = "crates/math" }
+notecraft-ink = { path = "crates/ink" }
 notecraft-formats = { path = "crates/formats" }
 notecraft-text = { path = "crates/text" }
 notecraft-store = { path = "crates/store" }
