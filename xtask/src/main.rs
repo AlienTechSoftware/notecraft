@@ -13,12 +13,15 @@
 //!           punctuation (no em or en dashes, no curly quotes) in Markdown, per .agents/TONE.md
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  line coverage with cargo-llvm-cov, if it is installed
+//! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
 //! ```
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+
+mod version;
 
 /// The layer of each workspace crate. A crate may depend only on crates in lower layers.
 const LAYERS: &[(&str, u8)] = &[
@@ -313,13 +316,17 @@ fn run(task: &str) -> Result<(), String> {
             println!("\nci: all checks passed");
             Ok(())
         }
-        other => Err(format!("unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage demo demo-check")),
+        other => {
+            Err(format!("unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage version demo demo-check"))
+        }
     }
 }
 
 fn main() -> ExitCode {
-    let task = std::env::args().nth(1).unwrap_or_else(|| "ci".into());
-    match run(&task) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let task = args.first().cloned().unwrap_or_else(|| "ci".into());
+    let result = if task == "version" { version::run(&root(), &args[1..]) } else { run(&task) };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");

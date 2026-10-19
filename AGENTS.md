@@ -37,6 +37,7 @@ git config core.hooksPath .githooks   # once per clone: turn the hooks on
 - **Personal data.** No owner name, email or real notebook names in tracked files. Never copy
   the owner's `.one` files into the repository.
 - **Clean room.** Use only Microsoft's published specifications for the `.one` format.
+- **Versions.** Semantic versioning, `MAJOR.MINOR.PATCH`, as the sibling Craft apps do. Still 0.x. A patch (0.1.0 to 0.1.1) is bug fixes only, or a rebuild after a packaging or workflow fix, and never changes the folder format. A minor (0.1.x to 0.2.0) adds features or changes behaviour, and resets the patch to 0. A pre-release adds a tag, `0.2.0-rc.1`. The version lives only in `[workspace.package]`; change it with `cargo xtask version set`. Tags are `v<version>`. Details in [`docs/releasing.md`](docs/releasing.md).
 - **Git.** Do not commit, push or publish without explicit permission.
 - **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs the cheap gates (fmt, layers,
   assets, docs, text), about two seconds. [`.githooks/pre-push`](.githooks/pre-push) runs the

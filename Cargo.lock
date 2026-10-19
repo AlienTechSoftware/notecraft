@@ -2145,6 +2145,7 @@ dependencies = [
  "eframe",
  "egui",
  "image",
+ "log",
  "notecraft-engine",
  "notecraft-store",
  "notecraft-ui-egui",
@@ -2232,6 +2233,7 @@ version = "0.0.1"
 dependencies = [
  "arboard",
  "egui",
+ "egui-wgpu",
  "egui_extras",
  "egui_kittest",
  "image",

@@ -33,6 +33,8 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "t
 # The clipboard, for pictures. egui hands us text only, and eframe already uses this
 # crate for its own text clipboard, so nothing new enters the build.
 arboard = { version = "3.7", default-features = false, features = ["image-data"] }
+# The log facade. The app routes it into its log file (apps/notecraft/src/applog.rs).
+log = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [workspace.lints.rust]

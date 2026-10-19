@@ -27,6 +27,8 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true }
+# The icon tests share one offscreen GPU device instead of building one per picture.
+egui-wgpu = "0.36"
 
 
 
