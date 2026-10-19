@@ -1080,9 +1080,14 @@ impl NoteCraftApp {
     /// the program the system has for it; a web address opens in the browser. A relative
     /// path can never reach outside the notebooks folder (`notecraft_store::links`).
     pub fn follow_link(&mut self, ctx: &Context, href: &str) {
-        use notecraft_store::links::{Link, resolve};
+        use notecraft_store::links::{Link, resolve_in};
         let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
-        match resolve(self.session.root(), &page, href) {
+        // Every folder a notebook is open from, not just the notebooks folder: a notebook
+        // opened from elsewhere is as much inside as one that lives there, and judging it
+        // by the notebooks folder alone made every link in it dead.
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        match resolve_in(&roots, &page, href) {
             Link::Web(url) => {
                 ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
                 self.say(format!("Opened {url} in the browser"));
