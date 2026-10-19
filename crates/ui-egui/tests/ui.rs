@@ -467,7 +467,13 @@ fn a_container_can_be_dragged_and_stays_where_it_is_put() {
     let y = now.get("y").and_then(Value::as_f64).unwrap_or(0.0);
     assert!(x > 60.0 && y > 30.0, "the box followed the pointer: {now:?}");
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
-    assert!(file.contains("containers:"), "and it is written in the page:\n{file}");
+    // The box is an element in the page's own text, with its place on it, and the old header
+    // line is not used.
+    assert!(file.contains("class=\"nc-box\"") && file.contains("data-x="), "it is written in the page's text:\n{file}");
+    assert!(!file.contains("containers:"), "and not on a line in the front matter:\n{file}");
+    // What the source pane shows is the same text, so the window and the file say one thing.
+    let shown = h.state().body().unwrap_or_default().to_string();
+    assert!(shown.contains("class=\"nc-box\""), "the source pane shows the box:\n{shown}");
 }
 
 /// The side panel can be split the way OneNote splits it: notebooks and sections in one
@@ -2190,7 +2196,8 @@ fn escape_lets_go_of_a_selected_container() {
 
 /// The first line of words in `blocks` of a page body, to look for in what is left of it.
 fn needle(body: &str, from: usize, to: usize) -> String {
-    let blocks = notecraft_formats::markdown::parse(body);
+    // The page's text has its boxes written in it; the blocks are what is inside them.
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
     let md = notecraft_formats::render::blocks_to_markdown(blocks.get(from..to.min(blocks.len())).unwrap_or_default());
     md.lines().map(|l| l.trim_start_matches(['#', '-', '*', '>', ' ']).trim()).find(|l| l.len() > 6).unwrap_or_default().to_string()
 }
@@ -2823,4 +2830,110 @@ fn the_quick_access_menu_hides_moves_and_remembers() {
         "and the settings agree:\n{}",
         settings(&t)
     );
+}
+
+/// The boxes of an HTML page are elements in its text. The window, the source pane and the saved
+/// file all say the same thing, and the page opens in the same boxes again.
+#[test]
+fn an_html_page_keeps_its_boxes_in_its_text() {
+    let (_t, mut app, s) = sample_app("ui-boxes-html-text");
+    let html = s.html_page.to_string_lossy().to_string();
+    app.open_path(&html);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (blocks, _) = arrange_in_two(&mut h, &html);
+
+    let shown = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(shown.matches("class=\"nc-box\"").count(), 2, "the source pane shows one element per box:\n{shown}");
+    assert!(shown.contains("position:absolute"), "positioned, so a browser shows the arrangement:\n{shown}");
+    let file = std::fs::read_to_string(s.html_page.join("index.html")).unwrap_or_default();
+    assert_eq!(file.matches("class=\"nc-box\"").count(), 2, "the saved file has them too:\n{file}");
+    assert!(!file.contains("content=\"0,0,320,2"), "and the header line is not used:\n{file}");
+
+    // Opening it again gives the same boxes and the same blocks.
+    ask(&mut h, "ui.open", json!({"path": html})).expect("open again");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "the same blocks: {v}");
+    let boxes = v.pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), 2, "the same boxes: {boxes:?}");
+    assert_eq!(boxes.get(1).and_then(|b| b.get("x")).and_then(Value::as_f64), Some(360.0));
+}
+
+/// Writing in a box does not take the boxes out of the text.
+#[test]
+fn typing_in_a_box_keeps_the_boxes_in_the_text() {
+    let (_t, mut h, _, _) = two_boxes("ui-boxes-typing");
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": " more words"})).expect("type");
+    settle(&mut h);
+    settle(&mut h);
+    let shown = h.state().body().unwrap_or_default().to_string();
+    assert!(shown.contains("more words"), "the words went in:\n{shown}");
+    assert_eq!(shown.matches("class=\"nc-box\"").count(), 2, "and both boxes are still in the text:\n{shown}");
+}
+
+/// A page nobody arranged stays plain text: no wrapper is written just because it was opened and
+/// written on.
+#[test]
+fn a_page_that_was_never_arranged_stays_plain_text() {
+    let (_t, mut app, s) = sample_app("ui-boxes-plain");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": " edited"})).expect("type");
+    settle(&mut h);
+    settle(&mut h);
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("edited"), "the edit was saved:\n{file}");
+    assert!(!file.contains("nc-box"), "but no box was written into a page nobody arranged:\n{file}");
+}
+
+/// A page from before the boxes were in the text, which kept them on a line in its front matter,
+/// still opens in them, and is rewritten in the new form the next time its boxes change.
+#[test]
+fn an_older_page_is_read_and_moved_to_the_new_form() {
+    let (_t, mut app, s) = sample_app("ui-boxes-older");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let blocks = look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    // Write the older form by hand: a line in the front matter, and a plain body.
+    let file_path = s.md_page.join("index.md");
+    let text = std::fs::read_to_string(&file_path).unwrap_or_default();
+    let line = format!("containers: 40,20,320,2; 380,50,300,{}", blocks - 2);
+    let older = text.replacen("\ntitle:", &format!("\n{line}\ntitle:"), 1);
+    assert!(older.contains("containers: 40,20"), "the older form was written:\n{older}");
+    std::fs::write(&file_path, older).expect("write the older page");
+    ask(&mut h, "ui.open", json!({"path": md.clone()})).expect("open");
+    settle(&mut h);
+    let boxes = look_at(&mut h).pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), 2, "it opens in its boxes: {boxes:?}");
+    assert_eq!(boxes.first().and_then(|b| b.get("x")).and_then(Value::as_f64), Some(40.0));
+
+    // Moving a box rewrites the page in the new form and drops the old line.
+    let v = look_at(&mut h);
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
+    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    ask(&mut h, "ui.press", json!({"x": hx, "y": hy})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("move");
+    pump(&mut h);
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("release");
+    pump(&mut h);
+    settle(&mut h);
+    settle(&mut h);
+    let now = std::fs::read_to_string(&file_path).unwrap_or_default();
+    assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
+    assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");
 }

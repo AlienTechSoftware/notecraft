@@ -298,7 +298,7 @@ dir (optional): rtl, ltr, or auto to let every line decide; without it the curre
         id: "page.containers",
         label: "How a page's blocks are arranged in boxes",
         params: "path (required): the page
-boxes (optional): x,y,width,blocks per container, separated by semicolons; empty puts the page back in one column. Without it, the current arrangement is reported",
+boxes (optional): x,y,width,blocks per container, separated by semicolons. The counts must add up to the page's blocks. They are written into the page's text as elements around the blocks; empty puts the page back in one column. Without it, the current arrangement is reported",
         changes_tree: false,
         run: page_containers,
     },
@@ -550,35 +550,43 @@ mod tests {
         s.run("notebook.create", &p(&[("name", "Work"), ("format", "cmgfm")])).expect("notebook");
         let path = "work/new-section-1/untitled-page";
         let page = p(&[("path", path)]);
-        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "", "a new page is one column");
+        let save = |s: &mut Session, body: &str| {
+            s.run("page.save", &p(&[("path", path), ("body", body)])).expect("save");
+        };
+        save(&mut s, "one\n\ntwo\n\nthree\n");
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "", "a page nobody arranged is one column");
 
         let set = p(&[("path", path), ("boxes", "0,0,420,2; 460,24,300,1")]);
         assert_eq!(text_of(s.run("page.containers", &set).expect("set")), "0,0,420,2; 460,24,300,1");
         assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "0,0,420,2; 460,24,300,1");
-        // It is in the page's own file, so the arrangement travels with the folder.
+
+        // The boxes are elements in the page's own text, so what the window shows is what the
+        // file says, and the file opens as boxes anywhere that reads it.
         let file = s.resolve(path).expect("path").join("index.md");
-        assert!(std::fs::read_to_string(&file).unwrap_or_default().contains("containers: 0,0,420,2"), "in the front matter");
+        let text = std::fs::read_to_string(&file).unwrap_or_default();
+        assert_eq!(text.matches("class=\"nc-box\"").count(), 2, "one element per box:\n{text}");
+        assert!(text.contains("data-x=\"460\" data-y=\"24\" data-width=\"300\""), "with its place:\n{text}");
+        assert!(!text.contains("containers:"), "and not on a line in the front matter:\n{text}");
 
-        // Writing the page keeps it, and an empty list puts the page back in one column.
-        s.run(
-            "page.save",
-            &p(&[
-                ("path", path),
-                (
-                    "body",
-                    "one
+        // A body written with the boxes in it keeps them. A plain body is one column.
+        let body = match s.run("page.load", &page).expect("load") {
+            Output::Page(p) => p.body,
+            other => panic!("not a page: {other:?}"),
+        };
+        assert!(body.contains("nc-box"), "the page's body carries them:\n{body}");
+        save(&mut s, &body);
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "0,0,420,2; 460,24,300,1", "saving the body as it is keeps them");
+        save(&mut s, "one\n\ntwo\n\nthree\n");
+        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "", "a plain body is one column");
 
-two
-
-three",
-                ),
-            ]),
-        )
-        .expect("save");
-        assert_eq!(text_of(s.run("page.containers", &page).expect("read")), "0,0,420,2; 460,24,300,1", "a save must not lose it");
-        assert_eq!(text_of(s.run("page.containers", &p(&[("path", path), ("boxes", "")])).expect("clear")), "");
-        assert!(!std::fs::read_to_string(&file).unwrap_or_default().contains("containers:"));
+        // Counts that do not match the blocks are refused, and so is a box line that is not one.
+        assert!(s.run("page.containers", &p(&[("path", path), ("boxes", "0,0,420,5")])).is_err());
         assert!(s.run("page.containers", &p(&[("path", path), ("boxes", "sideways")])).is_err());
+
+        // An empty list puts an arranged page back in one column.
+        s.run("page.containers", &set).expect("set again");
+        assert_eq!(text_of(s.run("page.containers", &p(&[("path", path), ("boxes", "")])).expect("clear")), "");
+        assert!(!std::fs::read_to_string(&file).unwrap_or_default().contains("nc-box"));
     }
 
     #[test]

@@ -32,19 +32,23 @@ page's own menu cuts and copies them.
 
 ## Where the arrangement is kept
 
-In the page's own file, as one line of metadata: `containers: 0,0,320,2; 360,30,300,3` in the
-front matter of a Markdown page, or `<meta name="notecraft:containers" content="...">` in an
-HTML one. Each box is `x,y,width,blocks`: where it sits, how wide it is, and how many of the
-page's blocks belong to it, in order.
+In the page's own text, as an element around each box's blocks: a `div` with
+`class="nc-box"` and its place in `data-x`, `data-y` and `data-width`. The source pane shows
+them, a browser shows an HTML page in the same boxes, and the format is written out in
+[the folder format](../folder-format.md), section 3.4.
 
-The paragraphs themselves are **not** moved around in the file. They stay in reading order, so
-the page is the same document in any other editor, in a diff, or in a search. The boxes are a
-layer over that order.
+The blocks inside are ordinary HTML or Markdown, in reading order, so the page is the same
+document in any other editor, in a diff, or in a search.
 
-That has one honest consequence. If the page is edited somewhere else and gains or loses a
-paragraph, the counts no longer match what is there. NoteCraft notices and puts everything
-back into one box rather than guessing and losing a paragraph. Arrange it again and it is
-saved again.
+A page nobody arranged has no boxes in its text. Opening it, or writing on it, does not add any:
+the first box that is moved, resized or added does.
+
+Pages from an earlier version kept the arrangement on one line of metadata instead
+(`containers: ...` in the front matter, or a `notecraft:containers` meta tag). They still open in
+their boxes, and are rewritten in the new form the next time the boxes change.
+
+If the page is edited somewhere else so that a box's words no longer add up, NoteCraft reads what
+is there: words outside every box join the box before them, and nothing is dropped.
 
 A script can do the same thing:
 

@@ -2,7 +2,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::tree::{page_file, read_node};
-use notecraft_formats::{frontmatter, html};
+use notecraft_formats::{boxes, frontmatter, html};
 use notecraft_model::{Container, Dir, PageFormat, container, kv, tablecols, time::iso_now};
 use std::fs;
 use std::path::Path;
@@ -28,12 +28,18 @@ pub fn load_page(dir: &Path) -> Result<Page> {
         return Err(StoreError::invalid("this page is too large to open"));
     }
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
-    let body = match format {
-        PageFormat::Html => html::inner(&text),
-        PageFormat::Cmgfm => frontmatter::split_front(&text).1.trim_start_matches('\n').to_string(),
-    };
+    let body = body_of(format, &text);
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
     Ok(Page { format, title, body, dir: read_direction(&text, format) })
+}
+
+/// The editable part of a page's file: the inside of the HTML body, or the Markdown after the
+/// front matter.
+fn body_of(format: PageFormat, text: &str) -> String {
+    match format {
+        PageFormat::Html => html::inner(text),
+        PageFormat::Cmgfm => frontmatter::split_front(text).1.trim_start_matches('\n').to_string(),
+    }
 }
 
 /// The name the page direction goes by in both formats.
@@ -81,14 +87,21 @@ pub fn set_direction(dir: &Path, want: Option<Dir>) -> Result<()> {
     write_atomic(&file, &out)
 }
 
+/// Where older versions kept the boxes: a line in the head or the front matter. Still read, so
+/// an older page keeps its arrangement, and cleared the next time the boxes are written.
 const BOXES_KEY: &str = "containers";
 const BOXES_META: &str = "notecraft:containers";
 
-/// The containers a page keeps, as written in its own file. An empty list means the page
+/// The containers a page keeps. They are elements in the page's own text
+/// ([`notecraft_formats::boxes`]); a page from an older version has them on a line in its head or
+/// front matter instead, and that is read when the text has none. An empty list means the page
 /// has never been arranged, and is one column of blocks.
 pub fn containers(dir: &Path) -> Result<Vec<Container>> {
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    if let (_, Some(in_the_text)) = boxes::read(format, &body_of(format, &text)) {
+        return Ok(in_the_text);
+    }
     let raw = match format {
         PageFormat::Html => html::meta(&text, BOXES_META),
         PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, BOXES_KEY),
@@ -96,22 +109,51 @@ pub fn containers(dir: &Path) -> Result<Vec<Container>> {
     Ok(raw.map(|r| container::parse(&r)).unwrap_or_default())
 }
 
-/// Writes them into the page's own file, so the arrangement travels with the folder. An
-/// empty list takes the line out again.
-pub fn set_containers(dir: &Path, boxes: &[Container]) -> Result<()> {
+/// Arranges the page's blocks in these boxes, by writing them into the page's own text as
+/// elements around the blocks. An empty list takes the boxes out again: one column. The counts
+/// must add up to the page's blocks, and a page with markup the block model would drop is
+/// refused rather than rewritten.
+pub fn set_containers(dir: &Path, arrangement: &[Container]) -> Result<()> {
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
-    let line = container::write(boxes);
-    let out = match format {
-        PageFormat::Html => html::set_meta(&text, BOXES_META, &line),
-        PageFormat::Cmgfm => {
-            let (front, rest) = frontmatter::split_front(&text);
-            let front =
-                if boxes.is_empty() { frontmatter::remove_value(&front, BOXES_KEY) } else { frontmatter::set_value(&front, BOXES_KEY, &line) };
-            format!("{front}{rest}")
+    let body = body_of(format, &text);
+    if format == PageFormat::Html && html::unsupported_tag(&body).is_some() {
+        return Err(StoreError::invalid("this page has markup the block editor would lose, so its boxes cannot be written"));
+    }
+    let (blocks, _) = boxes::read(format, &body);
+    let wanted = (!arrangement.is_empty()).then_some(arrangement);
+    if let Some(wanted) = wanted {
+        let counted: usize = wanted.iter().map(|c| c.blocks).sum();
+        if counted != blocks.len() {
+            return Err(StoreError::invalid(format!("the boxes hold {counted} blocks but the page has {}", blocks.len())));
         }
-    };
-    write_atomic(&file, &out)
+    }
+    save_body(dir, &boxes::write(format, &blocks, wanted))?;
+    clear_old_boxes(dir)
+}
+
+/// The page's file text with the line an older version kept the boxes on taken out of the head
+/// or the front matter. Unchanged when there is no such line.
+fn without_old_boxes(format: PageFormat, text: &str) -> String {
+    match format {
+        PageFormat::Html if html::meta(text, BOXES_META).is_some() => html::set_meta(text, BOXES_META, ""),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(text);
+            if frontmatter::value(&front, BOXES_KEY).is_none() {
+                return text.to_string();
+            }
+            format!("{}{rest}", frontmatter::remove_value(&front, BOXES_KEY))
+        }
+        _ => text.to_string(),
+    }
+}
+
+/// Takes the older line out of the page's file.
+fn clear_old_boxes(dir: &Path) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let out = without_old_boxes(format, &text);
+    if out == text { Ok(()) } else { write_atomic(&file, &out) }
 }
 
 const COLUMNS_KEY: &str = "columns";
@@ -163,6 +205,8 @@ pub fn save_body(dir: &Path, body: &str) -> Result<String> {
             format!("{front}\n{}", body.trim_start_matches('\n'))
         }
     };
+    // A body with its boxes in the text says everything the older line said, so the line goes.
+    let out = if boxes::read(format, body).1.is_some() { without_old_boxes(format, &out) } else { out };
     write_atomic(&file, &out)?;
     Ok(now)
 }
@@ -219,6 +263,39 @@ mod tests {
         assert_eq!(frontmatter::value(&front_before, "id"), frontmatter::value(&front_after, "id"), "id is stable");
         assert_eq!(frontmatter::value(&front_before, "created"), frontmatter::value(&front_after, "created"));
         assert_eq!(load_page(&page).expect("load").body, "# Page\n\n- [ ] one\n");
+    }
+
+    #[test]
+    fn saving_a_body_with_boxes_in_it_drops_the_older_line_and_a_plain_one_keeps_it() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("older-boxes", format);
+            let file = page_file(&dir).expect("page").1;
+            let text = fs::read_to_string(&file).expect("read");
+            // An older page: the boxes on a line in the front matter or the head.
+            let older = match format {
+                PageFormat::Html => html::set_meta(&text, BOXES_META, "0,0,300,1"),
+                PageFormat::Cmgfm => text.replacen("\ntitle:", "\ncontainers: 0,0,300,1\ntitle:", 1),
+            };
+            fs::write(&file, &older).expect("write");
+            assert_eq!(containers(&dir).expect("read").len(), 1, "{format:?}: the older line is read");
+
+            // A plain body does not touch it.
+            save_body(&dir, "one\n").expect("save plain");
+            let kept = fs::read_to_string(&file).expect("read");
+            assert!(kept.contains("0,0,300,1"), "{format:?}: a plain save leaves the older line alone:\n{kept}");
+
+            // A body with its boxes in it replaces it.
+            let body =
+                notecraft_formats::boxes::write(format, &notecraft_formats::markdown::parse("one\n"), Some(&[Container::new(10.0, 10.0, 300.0, 1)]));
+            save_body(&dir, &body).expect("save boxed");
+            let now = fs::read_to_string(&file).expect("read");
+            assert!(!now.contains("0,0,300,1"), "{format:?}: the older line is gone:\n{now}");
+            assert_eq!(
+                containers(&dir).expect("read"),
+                vec![Container::new(10.0, 10.0, 300.0, 1)],
+                "{format:?}: the boxes in the text are what is read"
+            );
+        }
     }
 
     #[test]

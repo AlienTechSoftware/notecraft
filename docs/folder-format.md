@@ -150,6 +150,57 @@ tags: []
 Unknown keys are kept. Times in front matter and `<meta>` are the truth; file modification
 times are not used, because sync tools change them.
 
+### 3.4 Boxes on a page
+
+A page can be a sheet of boxes instead of one column, as an outline is in OneNote. Each box is an
+element in the page's own text, around the blocks it holds, so the file says what the window shows
+and any program that opens it can see the structure.
+
+HTML, in the body:
+
+```html
+<div class="nc-box" data-x="40" data-y="20" data-width="320"
+     style="position:absolute;left:40px;top:20px;width:320px">
+<h1>Meeting</h1>
+<p>Agenda</p>
+</div>
+```
+
+Markdown, after the front matter. The blank line after the opening tag and before the closing tag
+keeps the inside ordinary Markdown:
+
+```md
+<div class="nc-box" data-x="40" data-y="20" data-width="320">
+
+# Meeting
+
+Agenda
+
+</div>
+```
+
+| Part | Meaning |
+|---|---|
+| `class="nc-box"` | Marks the element as a box. |
+| `data-x`, `data-y` | Points from the left and top of the page. Whole numbers. |
+| `data-width` | How wide the box is, in points. Never less than 120. |
+| `style` (HTML only) | For a browser, so the page opens looking like the window. NoteCraft reads the `data-` attributes and ignores `style`. |
+
+Rules:
+
+- Boxes are not nested. A `div` that is not a box, inside a box, is part of its words.
+- The blocks stay in reading order. The first box holds the first blocks, and so on.
+- Words outside every box (a hand edit) belong to the box before them, or get a box of their own
+  at the top left when there is none. Nothing is dropped.
+- A page nobody arranged has no boxes in its text and is read as one column. Opening or writing on
+  such a page does not add any.
+- A box with nothing in it is written as an empty element and kept.
+- A line in Markdown that looks like a box inside a fenced code block is only code.
+- An older page kept its boxes on one line instead: `containers: x,y,width,blocks; ...` in the
+  Markdown front matter, or `<meta name="notecraft:containers" content="...">` in the HTML head.
+  That is still read when the text has no boxes, and it is taken out the next time the page is
+  saved with its boxes in the text.
+
 ## 4. Containers: `_node.toml`
 
 ```toml
