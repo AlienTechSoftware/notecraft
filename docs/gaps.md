@@ -174,7 +174,10 @@ it is fixed and tested, not when it is promised.
   OneNote converts a table to Excel. The Table tab writes the table out as a CSV file
   beside the page and opens it; the Insert tab starts an empty one and links it from the
   page. Both are greyed when GridCraft is not installed, which is looked for on the PATH
-  and in the folder its installer uses.
+  and in the folder its installer uses (`%ProgramFiles%\GridCraft` on Windows). Checked
+  against GridCraft 0.8.0 on 2026-10-19: a table with a comma and a quote in it opens in
+  the right cells. The table goes one way only - a change made in GridCraft is in the CSV
+  beside the page, and the page's own table is not touched.
 - **Undo** takes back changes to the page: Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the two
   buttons at the left of the Home tab. A step is the whole page as it stood - its text,
   its blocks, the boxes they sit in and where the caret was - so anything that changes the
