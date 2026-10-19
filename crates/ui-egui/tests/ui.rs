@@ -2280,6 +2280,9 @@ fn a_shape_is_drawn_on_the_page_as_ink() {
 #[test]
 fn a_table_is_read_back_from_the_spreadsheet_beside_the_page() {
     let (_t, app, s) = sample_app("ui-grid-back");
+    // Reading back needs no program, only the spreadsheet's file, but the button is offered only
+    // where GridCraft is installed, so the test says it is: a runner that has none must pass too.
+    let app = app.with_gridcraft(Some(std::path::PathBuf::from("gridcraft")));
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.run();
     let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
