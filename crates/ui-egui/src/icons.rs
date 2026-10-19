@@ -85,6 +85,8 @@ pub enum Icon {
     Help,
     /// A pen nib pointing down and to the left: ink.
     Pen,
+    /// A plain plus: add one more of something.
+    Plus,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -308,6 +310,8 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             Shape::circle_filled(g.p(12.0, 17.5), rect.width() / 20.0, color),
         ],
         // A pen nib pointing down and to the left, with its slit.
+        // A plain plus.
+        Icon::Plus => vec![line((12.0, 4.5), (12.0, 19.5)), line((4.5, 12.0), (19.5, 12.0))],
         Icon::Pen => vec![
             fill(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
             Shape::line_segment([g.p(6.0, 18.0), g.p(13.5, 10.5)], Stroke::new((w / 18.0).max(1.0), shade(color, 0.45))),
@@ -355,7 +359,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 38] = [
+    pub const ALL: [Icon; 39] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -394,6 +398,7 @@ mod tests {
         Icon::Replay,
         Icon::Help,
         Icon::Pen,
+        Icon::Plus,
     ];
 
     #[test]

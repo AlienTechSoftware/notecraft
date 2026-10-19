@@ -1198,6 +1198,96 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
 }
 
+/// Every tool on the rack can be picked up. This is the test that was missing when a
+/// second interact was laid over each pen for its right-click menu: later widgets win in
+/// egui, so the left click was swallowed and only the eraser, which had no such overlay,
+/// could be chosen. Nothing noticed, because nothing clicked a pen.
+#[test]
+fn every_tool_on_the_rack_can_be_picked_up() {
+    let (_t, mut app, s) = sample_app("ui-rack-pick");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    for (pen, tool, colour) in [
+        ("Pen red", "pen", "#d02121"),
+        ("Highlighter yellow", "highlighter", "#ffdd33"),
+        ("Pencil grey", "pencil", "#555555"),
+        ("Pen blue", "pen", "#1855c4"),
+        ("Pen black", "pen", "#202020"),
+        ("Pen green", "pen", "#167f3d"),
+        ("Highlighter mint", "highlighter", "#6fe39a"),
+    ] {
+        h.get_by_label(pen).click();
+        h.run();
+        let now = ink(&mut h);
+        assert_eq!(now["pointer"].as_str(), Some("draw"), "{pen} put the pen in hand: {now}");
+        assert_eq!(now["tool"].as_str(), Some(tool), "{pen} is a {tool}: {now}");
+        assert_eq!(now["colour"].as_str(), Some(colour), "{pen} writes in {colour}: {now}");
+    }
+
+    // The eraser and the Write arrow take the pen out of the hand again.
+    h.get_by_label("Eraser").click();
+    h.run();
+    assert_eq!(ink(&mut h)["pointer"].as_str(), Some("erase"));
+    h.get_by_label("Select").click();
+    h.run();
+    assert_eq!(ink(&mut h)["pointer"].as_str(), Some("write"), "and the arrow puts the caret back");
+}
+
+/// The rack is the owner's to arrange: another tool added, moved along, changed and taken
+/// off, and still there the next time the window opens.
+#[test]
+fn the_rack_can_be_arranged_and_is_remembered() {
+    let t = TempDir::new("ui-rack-edit");
+    let mut sess = session(&t);
+    let s = create_sample(&mut sess, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(sess);
+    app.set_redact_paths(true);
+    app.open_path(&s.md_page.to_string_lossy());
+    let settings = t.path().join("settings.toml");
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    let rack =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
+    let before = rack(&mut h);
+    assert_eq!(before.split('|').count(), 7, "the rack a notebook starts with: {before}");
+
+    // Add a fountain pen: it goes on the end and comes to hand.
+    h.get_by_label("Add").click();
+    h.run();
+    h.run();
+    for probe in ["Add", "Pen", "Pencil", "Fountain Pen", "Add Fountain Pen", "Add Pen", "Laser Pointer"] {
+        eprintln!("LABELS {probe}: {}", h.query_all_by_label(probe).count());
+    }
+    h.get_by_label("Add Fountain Pen").click();
+    settle(&mut h);
+    let after = rack(&mut h);
+    assert_eq!(after.split('|').count(), 8, "one more tool: {after}");
+    assert!(after.split('|').next_back().is_some_and(|n| n.starts_with("fountain-pen:")), "on the end: {after}");
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    assert_eq!(now["tool"].as_str(), Some("fountain-pen"), "and in hand: {now}");
+    assert_eq!(now["nib"].as_u64(), Some(7));
+
+    // It was written down, so the next window opens with it.
+    let saved = std::fs::read_to_string(&settings).unwrap_or_default();
+    assert!(
+        saved.contains("fountain-pen"),
+        "the rack is in the settings file:
+{saved}"
+    );
+    let again = NoteCraftApp::new(session(&t));
+    let mut h2 = Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
+    h2.run();
+    let reopened = ask(&mut h2, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
+    assert_eq!(reopened, after, "the rack came back as it was left");
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

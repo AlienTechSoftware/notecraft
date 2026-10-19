@@ -26,6 +26,11 @@ const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
 const BARS: &str = "\u{2630}";
 
+/// Where the pen rack and the tool in hand are remembered between runs.
+const RACK_KEY: &str = "pen_rack";
+const NIB_KEY: &str = "pen_in_hand";
+const SENSITIVITY_KEY: &str = "pen_sensitivity";
+
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
 
@@ -182,8 +187,15 @@ pub struct NoteCraftApp {
     stylus: crate::stylus::Stylus,
     /// Where the page's words were drawn last frame, which is where its ink goes.
     page_rect: Option<egui::Rect>,
-    /// What the pointer does on the page, and the pen it does it with (the Draw tab).
-    pen: crate::inkpad::Pen,
+    /// What the pointer does on the page (the Draw tab).
+    pointer: ribbon::Pointer,
+    /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
+    /// are remembered between runs.
+    rack: Vec<notecraft_ink::rack::Nib>,
+    nib: usize,
+    /// How readily the pen answers pressure, 0 to 100. 50 leaves the readings as the pen
+    /// gave them; above that a light hand lays down more ink.
+    sensitivity: u8,
     /// The drawing open in this page, if it has one.
     pad: Option<crate::inkpad::Pad>,
     /// Lines or squares behind the page.
@@ -218,6 +230,10 @@ impl NoteCraftApp {
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. Off by default: one tree is what NoteCraft has always shown.
         let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(false);
+        // The pen rack as the owner last arranged it, and which tool was in hand.
+        let rack = notecraft_ink::rack::parse(&session.settings.get(RACK_KEY).unwrap_or_default());
+        let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
+        let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(50).min(100);
         NoteCraftApp {
             session,
             open: HashSet::new(),
@@ -250,7 +266,10 @@ impl NoteCraftApp {
             ribbon_tab: "Home".to_string(),
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
-            pen: crate::inkpad::Pen::default(),
+            pointer: ribbon::Pointer::Write,
+            rack,
+            nib,
+            sensitivity,
             pad: None,
             rules: session_rules,
             hide_title: session_hide_title,
@@ -493,11 +512,52 @@ impl NoteCraftApp {
                 origin: egui::Pos2::ZERO,
             });
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
+            self.absorb_old_sheets(dir);
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
             self.say("Opened");
         }
+    }
+
+    /// A page written by an earlier version holds its drawing as a picture pointing at
+    /// `assets/drawing-1.svg`. Nothing draws those now, so the page showed a broken
+    /// picture. Their strokes are moved onto the page's own ink and the picture is taken
+    /// out of the words; the old file is left in the folder untouched.
+    fn absorb_old_sheets(&mut self, dir: &Path) {
+        use notecraft_formats::markdown::Block;
+        let olds: Vec<String> = self
+            .editor
+            .as_ref()
+            .map(|e| {
+                e.blocks
+                    .iter()
+                    .filter_map(|b| match b {
+                        Block::Image { src, .. } if crate::inkpad::is_old_sheet(src) => Some(src.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if olds.is_empty() {
+            return;
+        }
+        let mut moved = 0;
+        if let Some(pad) = self.pad.as_mut() {
+            for src in &olds {
+                moved += pad.absorb(dir, src);
+            }
+            if pad.dirty && pad.save().is_err() {
+                self.complain("Cannot write this page's ink");
+                return;
+            }
+        }
+        if let Some(ed) = self.editor.as_mut() {
+            ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_old_sheet(src)));
+            ed.body = pageedit::to_body(ed.format, &ed.blocks);
+            Self::mark_dirty_from_blocks(ed);
+        }
+        self.say(format!("Moved {moved} strokes from this page's drawing onto the page itself"));
     }
 
     fn save_now(&mut self) {
@@ -1045,11 +1105,10 @@ impl NoteCraftApp {
             rules: self.rules,
             hide_title: self.hide_title,
             zoom_percent: (ui.ctx().zoom_factor() * 100.0).round() as u32,
-            pointer: self.pen.pointer,
-            tool: self.pen.tool,
-            ink_colour: self.pen.colour,
-            ink_width: (self.pen.width * 10.0).round().clamp(4.0, 400.0) as u16,
-            has_drawing: self.pad.is_some(),
+            pointer: self.pointer,
+            rack: &self.rack,
+            nib: self.nib,
+            sensitivity: self.sensitivity,
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -1122,14 +1181,94 @@ impl NoteCraftApp {
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
-            ribbon::Act::InkPointer(p) => self.pen.pointer = p,
-            ribbon::Act::InkPen(tool, colour, tenths) => {
-                self.pen = crate::inkpad::Pen { pointer: ribbon::Pointer::Draw, tool, colour, width: f32::from(tenths) / 10.0 };
+            ribbon::Act::InkPointer(p) => self.pointer = p,
+            ribbon::Act::InkPen(i) => {
+                self.nib = i.min(self.rack.len().saturating_sub(1));
+                self.pointer = ribbon::Pointer::Draw;
+                self.remember_rack();
             }
-            ribbon::Act::InkWidth(tenths) => self.pen.width = f32::from(tenths) / 10.0,
+            ribbon::Act::InkRack(edit) => self.edit_rack(edit),
+            ribbon::Act::InkSensitivity(v) => {
+                self.sensitivity = v.min(100);
+                let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
+            }
             ribbon::Act::InkUndo => self.ink_undo(),
             ribbon::Act::InkInsert => self.ink_insert(),
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
+        }
+    }
+
+    /// Adds, removes, moves or changes a tool on the rack, and remembers the result. The
+    /// rules about what may not happen - the last tool cannot be taken off, a tool cannot
+    /// be moved off either end - live in `notecraft_ink::rack`, so they hold wherever the
+    /// rack is edited from.
+    fn edit_rack(&mut self, edit: ribbon::RackEdit) {
+        use notecraft_ink::rack;
+        match edit {
+            ribbon::RackEdit::Add(tool) => {
+                if self.rack.len() >= rack::MAX_NIBS {
+                    self.say("There is no room on the rack for another tool");
+                    return;
+                }
+                self.rack.push(rack::new_nib(tool));
+                self.nib = self.rack.len() - 1;
+                self.pointer = ribbon::Pointer::Draw;
+                self.say(format!("Added a {}", tool.label().to_lowercase()));
+            }
+            ribbon::RackEdit::Remove(i) => {
+                if !rack::remove(&mut self.rack, i) {
+                    self.say("The last tool stays on the rack");
+                    return;
+                }
+                if self.nib >= self.rack.len() {
+                    self.nib = self.rack.len() - 1;
+                } else if self.nib > i {
+                    self.nib -= 1;
+                }
+                self.say("Took it off the rack");
+            }
+            ribbon::RackEdit::Move(i, left) => {
+                let to = rack::shift(&mut self.rack, i, left);
+                if self.nib == i {
+                    self.nib = to;
+                } else if self.nib == to {
+                    self.nib = i;
+                }
+            }
+            ribbon::RackEdit::Set(i, nib) => {
+                if let Some(slot) = self.rack.get_mut(i) {
+                    *slot = nib;
+                    self.nib = i;
+                    self.pointer = ribbon::Pointer::Draw;
+                }
+            }
+        }
+        self.remember_rack();
+    }
+
+    /// Writes the rack and which tool is in hand into the settings, so the next run opens
+    /// with the pens the owner arranged.
+    fn remember_rack(&mut self) {
+        let line = notecraft_ink::rack::write(&self.rack);
+        let _ = self.session.settings.set(RACK_KEY, &line);
+        let _ = self.session.settings.set(NIB_KEY, &self.nib.to_string());
+    }
+
+    /// The pen as the page's ink layer wants it: what it is, and what the pointer is for.
+    fn pen(&self) -> crate::inkpad::Pen {
+        let nib =
+            self.rack.get(self.nib).or_else(|| self.rack.first()).copied().unwrap_or_else(|| notecraft_ink::rack::new_nib(notecraft_ink::Tool::Pen));
+        crate::inkpad::Pen { pointer: self.pointer, tool: nib.tool, colour: nib.colour, width: nib.width(), gain: self.gain() }
+    }
+
+    /// The sensitivity as the curve a stroke is drawn with: the middle of the control is
+    /// 1, which leaves the pen's readings exactly as they came.
+    fn gain(&self) -> f32 {
+        let share = f32::from(self.sensitivity.min(100)) / 50.0;
+        if share <= 1.0 {
+            notecraft_ink::MIN_GAIN + (1.0 - notecraft_ink::MIN_GAIN) * share
+        } else {
+            1.0 + (notecraft_ink::MAX_GAIN - 1.0) * (share - 1.0)
         }
     }
 
@@ -1157,7 +1296,7 @@ impl NoteCraftApp {
             self.say("Open a page first");
             return;
         }
-        self.pen.pointer = ribbon::Pointer::Draw;
+        self.pointer = ribbon::Pointer::Draw;
         self.ribbon_tab = "Draw".to_string();
         self.say("Write anywhere on the page");
     }
@@ -1840,7 +1979,7 @@ impl NoteCraftApp {
         let mut follow: Option<String> = None;
         // The drawing on this page is lent to the block that holds it, and written back
         // once the page's borrow is over.
-        let (pen, pressure) = (self.pen, self.stylus.sample().pressure);
+        let (pen, pressure) = (self.pen(), self.stylus.sample().pressure);
         let mut pad = self.pad.take();
         let mut ink_changed = false;
         let mut page_rect = None;
@@ -2512,10 +2651,14 @@ impl NoteCraftApp {
             "paper": self.rules.id(),
             // The pen the Draw tab is set to, and the drawing it writes in.
             "ink": {
-                "pointer": self.pen.pointer.id(),
-                "tool": self.pen.tool.id(),
-                "colour": self.pen.colour.hex(),
-                "width": self.pen.width,
+                "pointer": self.pointer.id(),
+                "tool": self.pen().tool.id(),
+                "colour": self.pen().colour.hex(),
+                "width": self.pen().width,
+                "rack": notecraft_ink::rack::write(&self.rack),
+                "nib": self.nib,
+                "sensitivity": self.sensitivity,
+                "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
             },

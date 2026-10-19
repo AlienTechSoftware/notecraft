@@ -93,7 +93,11 @@ pub fn write(drawing: &Drawing, flavour: Flavour) -> String {
         d.push('Z');
         out.push_str("  <path");
         if flavour == Flavour::Editable {
-            out.push_str(&format!(" nc:tool=\"{}\" nc:width=\"{}\" nc:dabs=\"{}\"", stroke.tool.id(), num(stroke.width), dabs_text(&stroke.dabs)));
+            out.push_str(&format!(" nc:tool=\"{}\" nc:width=\"{}\"", stroke.tool.id(), num(stroke.width)));
+            if (stroke.gain - 1.0).abs() > 0.001 {
+                out.push_str(&format!(" nc:gain=\"{}\"", num(stroke.gain)));
+            }
+            out.push_str(&format!(" nc:dabs=\"{}\"", dabs_text(&stroke.dabs)));
         }
         out.push_str(&format!(" fill=\"{}\"", stroke.colour.hex()));
         let opacity = stroke.tool.opacity();
@@ -161,6 +165,7 @@ pub fn read(text: &str) -> Result<(Drawing, usize), InkError> {
             tool: attr(tag, "nc:tool").and_then(|v| Tool::parse(&v)).unwrap_or_default(),
             colour: attr(tag, "fill").and_then(|v| Rgb::parse(&v)).unwrap_or(Rgb::BLACK),
             width: attr(tag, "nc:width").and_then(|v| v.trim().parse().ok()).unwrap_or(3.0),
+            gain: attr(tag, "nc:gain").and_then(|v| v.trim().parse().ok()).unwrap_or(1.0),
             dabs: dabs_from(&dabs),
         }
         .sane();
@@ -244,7 +249,7 @@ mod tests {
             pen.dabs.push(Dab::new(x, 50.0, p));
         }
         d.add(pen);
-        let mut marker = Stroke::new(Tool::Highlighter, Rgb(0xff, 0xe0, 0x30), 14.0);
+        let mut marker = Stroke::with_gain(Tool::Highlighter, Rgb(0xff, 0xe0, 0x30), 14.0, 1.8);
         marker.dabs.push(Dab::new(10.0, 120.0, 1.0));
         marker.dabs.push(Dab::new(180.0, 120.0, 1.0));
         d.add(marker);
@@ -262,6 +267,7 @@ mod tests {
         assert_eq!(after.strokes.len(), before.strokes.len());
         for (a, b) in after.strokes.iter().zip(&before.strokes) {
             assert_eq!(a.tool, b.tool);
+            assert!((a.gain - b.gain).abs() < 0.01, "the pen's setting came back too");
             assert_eq!(a.colour, b.colour);
             assert_eq!(a.width, b.width);
             assert_eq!(a.dabs.len(), b.dabs.len());
