@@ -1,8 +1,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+// A release build on Windows is a window app. Without this a console opens beside the window.
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 //! NoteCraft desktop app: a native window over the engine.
 //!
 //! Usage: `notecraft [--notebooks FOLDER] [--open PAGE] [--expand-all] [--control PORT]`. The notebooks folder defaults to the
 //! `NOTECRAFT_NOTEBOOKS` environment variable, then `Documents/NoteCraft` in the home folder.
+
+mod applog;
 
 use notecraft_engine::Session;
 use notecraft_store::Settings;
@@ -52,14 +56,35 @@ fn icon() -> Option<egui::IconData> {
     Some(egui::IconData { rgba: img.into_raw(), width, height })
 }
 
+/// Says why the app cannot start. A release build on Windows has no console, so the message
+/// also goes into a box; otherwise the window would just never appear.
+fn fail(message: &str) -> ! {
+    eprintln!("{message}");
+    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("NoteCraft").set_description(message).show();
+    std::process::exit(1);
+}
+
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let settings_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    applog::init(settings_dir);
+    applog::info(&format!(
+        "start: NoteCraft {} exe={:?} args={args:?} settings={:?}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::current_exe().ok(),
+        Settings::default_location().path()
+    ));
+    if args.iter().any(|a| a == "--version") {
+        println!("notecraft {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let root = notebooks_dir(&args);
+    applog::info(&format!("notebooks folder: {}", root.display()));
     let mut session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("NoteCraft cannot open the notebooks folder {}: {e}", root.display());
-            std::process::exit(1);
+            applog::line("ERROR", &format!("cannot open the notebooks folder {}: {e}", root.display()));
+            fail(&format!("NoteCraft cannot open the notebooks folder {}: {e}", root.display()));
         }
     };
     // The first start, with nothing to show: the Welcome notebook, a tour of the app, goes
@@ -83,12 +108,13 @@ fn main() -> eframe::Result {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
+    applog::info(&format!("session open ({} tree nodes); starting the window", session.tree().len()));
     let open = flag_value(&args, "--open");
     let expand = args.iter().any(|a| a == "--expand-all");
     let control_port: Option<u16> =
         flag_value(&args, "--control").or_else(|| std::env::var("NOTECRAFT_CONTROL_PORT").ok()).and_then(|p| p.parse().ok());
     let key_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
-    eframe::run_native(
+    let result = eframe::run_native(
         "NoteCraft",
         options,
         Box::new(move |cc| {
@@ -108,9 +134,15 @@ fn main() -> eframe::Result {
             if let Some(p) = open.as_ref().or(open_first.as_ref()) {
                 app.open_path(p);
             }
+            applog::info("window ready");
             Ok(Box::new(Shell { app }))
         }),
-    )
+    );
+    match &result {
+        Ok(()) => applog::info("exit: the window was closed"),
+        Err(e) => applog::line("ERROR", &format!("exit: the window failed: {e}")),
+    }
+    result
 }
 
 #[cfg(test)]

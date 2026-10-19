@@ -18,3 +18,5 @@ notecraft-ui-egui = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
 image = { workspace = true }
+rfd = { workspace = true }
+log = { workspace = true }

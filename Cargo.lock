@@ -2145,9 +2145,11 @@ dependencies = [
  "eframe",
  "egui",
  "image",
+ "log",
  "notecraft-engine",
  "notecraft-store",
  "notecraft-ui-egui",
+ "rfd",
 ]
 
 [[package]]
