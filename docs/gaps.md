@@ -120,6 +120,20 @@ it is fixed and tested, not when it is promised.
 - **Coverage is 87.8% of lines** (measured 2026-10-17); window start-up and `app.rs` are the weakest.
 - **Control key file permissions on Windows** rely on the user folder's access rules.
 - **Large pages and attachments** are capped but not load tested.
+- **Crashes on one Windows PC are unexplained.** A release build was reported to crash several
+  times on a Windows machine with AMD graphics. It was not reproduced: about fifteen runs under
+  a debugger (empty folders, a restored session, real use) ended in clean exits, and no panic was
+  logged. One lead, assumed and not confirmed: NoteCraft takes the graphics library's default
+  backends (Vulkan, DirectX 12 and OpenGL), and WordCraft's README documents that also creating
+  an OpenGL instance can crash AMD's driver before the window appears. WordCraft's answer is
+  DirectX 12 only by default; NoteCraft has not made that change. To rule it in or out, set
+  `WGPU_BACKEND` to `dx12` or `vulkan` before starting (the library reads it; checked in its
+  source, not tested here). `notecraft.log` in `%APPDATA%\NoteCraft` records a panic with its
+  backtrace and the last step reached; see [the README](../README.md#logs).
+- **The installer is built but not yet installed, upgraded or removed on a clean machine.** The
+  MSI's contents and properties were checked by unpacking it. The Start menu shortcut, the
+  finish-page launch box and an uninstall that leaves notebooks alone are unchecked. Builds are
+  unsigned, so Windows SmartScreen warns. The release workflow has not run on GitHub.
 
 ## Legal and provenance
 

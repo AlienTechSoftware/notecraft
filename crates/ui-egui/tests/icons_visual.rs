@@ -7,6 +7,8 @@
 
 use egui::{Color32, CornerRadius, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
+use egui_wgpu::{RenderState, Renderer, RendererOptions};
 use image::RgbaImage;
 use notecraft_ui_egui::icons::{self, Icon};
 use std::path::PathBuf;
@@ -392,8 +394,23 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
     }
 }
 
+/// One offscreen GPU device for the whole file. Building a device costs about half a second,
+/// and this file used to build one per picture, some 350 of them: three minutes of a four-minute
+/// push check. Each picture still gets its own renderer and textures, so nothing leaks from one
+/// picture into the next; only the adapter, device and queue are shared.
+fn shared() -> &'static RenderState {
+    static STATE: std::sync::OnceLock<RenderState> = std::sync::OnceLock::new();
+    STATE.get_or_init(|| create_render_state(default_wgpu_setup(), RendererOptions::PREDICTABLE))
+}
+
+fn fresh_renderer() -> WgpuTestRenderer {
+    let base = shared();
+    let renderer = Renderer::new(&base.device, base.target_format, RendererOptions::PREDICTABLE);
+    WgpuTestRenderer::from_render_state(RenderState { renderer: std::sync::Arc::new(egui::mutex::RwLock::new(renderer)), ..base.clone() })
+}
+
 fn render(scale: f32, bg: Color32, draw: impl Fn(&Painter) + 'static) -> RgbaImage {
-    let mut h = Harness::builder().with_size(vec2(CANVAS, CANVAS)).with_pixels_per_point(scale).wgpu().build_ui(move |ui| {
+    let mut h = Harness::builder().with_size(vec2(CANVAS, CANVAS)).with_pixels_per_point(scale).renderer(fresh_renderer()).build_ui(move |ui| {
         let screen = ui.max_rect();
         ui.set_clip_rect(screen);
         ui.painter().rect_filled(screen, 0.0, bg);
