@@ -52,6 +52,17 @@ it is fixed and tested, not when it is promised.
   window is not mirrored (the tree stays on the left whatever the page says), and the
   isolates the Run buttons write are kept in the file but not yet honoured when the line is
   drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+- **A right-to-left page title is drawn, not typed into, until it is clicked.** The title
+  is an egui text box, which lays the letters of an Arabic word out the right way and then
+  puts the next word to the right of it, so every Arabic page showed its own name with the
+  words backwards. A right-to-left title is drawn by the bidi painter now and becomes a
+  text box when it is clicked. **Not built:** the words are still backwards while the title
+  is being typed in, which needs the page's own caret in the title box.
+- **The demo has a page with right-to-left in every element** - العربية في كل عنصر, under
+  the Arabic How to - which is the corpus to look at after any change to text drawing.
+  **Known from it, and not fixed:** a numbered item puts its number on the left of a
+  right-to-left line (a bullet and a task box go to the right, as they should), and a line
+  that starts with a Latin tag word such as `TODO:` is read as left to right and flips.
 - **The caret keeps off the vowels.** A letter with a haraka on it is two shaped clusters,
   so the arrow keys used to stop inside it and a click could land there: a caret in a place
   the eye cannot see, and a Backspace that takes the vowel off a letter that looks
