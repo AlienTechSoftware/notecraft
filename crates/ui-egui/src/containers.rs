@@ -132,17 +132,43 @@ pub fn show(
     // is under them: allocated at the cursor it would sit on top of the first container and
     // take every click meant for a block.
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
-    // Room under everything: a click there writes at the end of the last container.
+    // Bare page: a click starts a box of its own where the pointer is, which is how
+    // OneNote treats a click on open paper - the words begin where you pointed, not at
+    // the end of whatever was written last.
     let rest = (area.max.y - bottom).max(40.0);
-    let below = ui.allocate_rect(Rect::from_min_size(pos2(area.min.x, bottom), vec2(area.width(), rest.min(200.0))), Sense::click());
+    let below = ui.allocate_rect(Rect::from_min_size(pos2(area.min.x, bottom), vec2(area.width(), rest.max(260.0))), Sense::click());
     if below.clicked() {
         out.changed.caret = true;
-        pageedit::click_below(blocks, caret);
+        match below.interact_pointer_pos() {
+            Some(at) => {
+                let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
+                start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+                out.boxes = true;
+                out.changed.blocks = true;
+            }
+            None => {
+                pageedit::click_below(blocks, caret);
+            }
+        }
     }
     if below.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
     out
+}
+
+/// Starts an empty box at `at`, in the page's own coordinates, and puts the caret in it.
+///
+/// The block goes on the end of the page's blocks, because the file keeps its blocks in
+/// reading order whatever the boxes do with them; the box that holds it is placed where
+/// the pointer was.
+fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, at: egui::Pos2, room: f32) {
+    // A box of its own needs a width that leaves space to its right, so the page does not
+    // turn into one column the moment somebody clicks near the middle.
+    let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
+    blocks.push(Block::Paragraph(Vec::new()));
+    boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
+    *caret = Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None });
 }
 
 #[cfg(test)]

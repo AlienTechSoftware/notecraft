@@ -1547,6 +1547,106 @@ fn a_table_cell_is_written_in_and_the_page_keeps_it() {
     );
 }
 
+/// Tab off the last cell of a table adds a row and lands in it, the way OneNote grows a
+/// table as it is filled in.
+#[test]
+fn tab_off_the_end_of_a_table_adds_a_row() {
+    let (_t, app, s) = sample_app("ui-table-grow");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Grow", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| A | B |
+|---|---|
+| one | two |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Into the last cell, then Tab: a row appears and the caret is in its first cell.
+    let cell = h.get_by_label("two").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("click");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Tab"})).expect("tab");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "three"})).expect("type");
+    settle(&mut h);
+
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("three"),
+        "the new row took what was typed:
+{body}"
+    );
+    assert_eq!(
+        body.lines().filter(|l| l.starts_with('|')).count(),
+        4,
+        "a heading, its rule and two rows:
+{body}"
+    );
+}
+
+/// Clicking bare page starts a box of its own where the pointer is, as OneNote does:
+/// the words begin where you pointed, not at the end of whatever was written last.
+#[test]
+fn clicking_bare_page_starts_a_box_where_the_pointer_is() {
+    let (_t, app, s) = sample_app("ui-click-space");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    // A short page, so there is real bare paper under the words to click on.
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Bare", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "one line
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    let boxes = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/containers").and_then(Value::as_array).map_or(0, Vec::len)
+    };
+    let before = boxes(&mut h);
+    let body = h.state().page_rect().expect("the page");
+    ask(&mut h, "ui.click", json!({"x": body.min.x + 260.0, "y": body.min.y + 320.0})).expect("click the bare page");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h), before + 1, "a box of its own appeared where the pointer was");
+
+    ask(&mut h, "ui.text", json!({"text": "started here"})).expect("type");
+    settle(&mut h);
+    let page_text = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        page_text.contains("started here"),
+        "and it took what was typed:
+{page_text}"
+    );
+    assert!(
+        page_text.contains("one line"),
+        "without disturbing what was already there:
+{page_text}"
+    );
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.
