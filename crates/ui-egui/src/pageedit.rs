@@ -323,6 +323,26 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
     let Block::Table { head, rows } = block else { return None };
     let mut action = None;
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
+    // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
+    // asking afterwards never sees it, and Tab did nothing in a table at all.
+    let (tab, shift, escape) = ui.input(|i| (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape)));
+    // Keyed off which cell the caret is in, not off whether the text box still has the
+    // keyboard: egui moves focus on Tab before any widget is drawn, so by the time the
+    // cell is shown it has already lost focus and would never see its own Tab.
+    if let Some(cell) = here {
+        if tab {
+            // Tab off the last cell adds a row and lands in it, the way OneNote grows a
+            // table as it is filled in. Shift+Tab off the front leaves instead: going
+            // back from the first cell has nowhere to go.
+            action = Some(match (next_cell(block, cell, shift), shift) {
+                (Some(to), _) => Action::EnterCell(i, to),
+                (None, false) => Action::AddRow(i),
+                (None, true) => Action::Leave,
+            });
+        } else if escape {
+            action = Some(Action::Leave);
+        }
+    }
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1);
     let width = ((ui.available_width() - 24.0) / columns as f32).clamp(48.0, 320.0);
 
@@ -347,18 +367,6 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
                     }
                     if out.response.changed() {
                         action = Some(Action::SetCell(i, cell, caret.text.clone()));
-                    }
-                    // Tab walks the cells; Escape leaves the table altogether.
-                    let (tab, shift, escape) = ui.input(|i| (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape)));
-                    if out.response.has_focus() {
-                        if tab {
-                            action = Some(match next_cell(block, cell, shift) {
-                                Some(to) => Action::EnterCell(i, to),
-                                None => Action::Leave,
-                            });
-                        } else if escape {
-                            action = Some(Action::Leave);
-                        }
                     }
                 } else {
                     let strong = r == 0;
@@ -815,6 +823,8 @@ enum Action {
     EnterCell(usize, (usize, usize)),
     /// What was typed in a cell goes into the table.
     SetCell(usize, (usize, usize), String),
+    /// Add a row to the end of a table and put the caret in its first cell.
+    AddRow(usize),
 }
 
 /// What a pasted clipboard string should become on the page.
@@ -1218,6 +1228,16 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             let text = blocks.get(i).and_then(|b| cell_text(b, cell)).unwrap_or_default();
             *caret = Some(Caret { block: i, text, focus: true, selection: (0, 0), place: None, cell: Some(cell) });
             changed.caret = true;
+        }
+        Action::AddRow(i) => {
+            if let Some(Block::Table { head, rows }) = blocks.get_mut(i) {
+                let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(1)).max(1);
+                rows.push(vec![Vec::new(); columns]);
+                changed.blocks = true;
+                let cell = (rows.len(), 0);
+                *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: Some(cell) });
+                changed.caret = true;
+            }
         }
         Action::SetCell(i, cell, text) => {
             if let Some(b) = blocks.get_mut(i) {
