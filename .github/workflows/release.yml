@@ -124,8 +124,12 @@ jobs:
           if [ "${{ steps.v.outputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
           notes="Windows x64 only. macOS and Linux are untested and not built.
 
-          These files are **not signed** unless the release notes say so: Windows SmartScreen may show
-          \"Windows protected your PC\". Choose More info, then Run anyway. Check the download against
-          \`SHA256SUMS.txt\`. Your notebooks are plain folders under Documents\\NoteCraft, and neither
-          the installer nor an uninstall touches them."
+          These files are **not signed**: Windows SmartScreen may show \"Windows protected your PC\".
+          Choose More info, then Run anyway. Check a download against \`SHA256SUMS.txt\`, or with
+          \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
+
+          Your notebooks are plain folders under Documents\NoteCraft, and neither the installer nor
+          an uninstall touches them. The app writes \`notecraft.log\` in \`%APPDATA%\NoteCraft\`: attach it
+          to a bug report at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in
+          docs/gaps.md."
           gh release create "$tag" dist/release/* "${flags[@]}" --notes "$notes"

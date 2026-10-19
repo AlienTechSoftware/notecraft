@@ -16,3 +16,9 @@ JOURNAL.md
 MEMORY.md
 /.agents/
 /plan/
+
+# Release artifacts and debugger output. They are built, never committed (docs/releasing.md).
+*.msi
+*.wixpdb
+*.exe
+*.dmp

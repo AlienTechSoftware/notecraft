@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  NoteCraft MSI (WiX Toolset v5: `dotnet tool install -g wix --version 5.0.2`, plus its UI and Util
+  NoteCraft MSI (WiX Toolset v5: `dotnet tool install -g wix` at version 5.0.2, plus its UI and Util
   extensions: `wix extension add -g WixToolset.UI.wixext/5.0.2` and the same for
   WixToolset.Util.wixext/5.0.2). Built by package.ps1:
 

@@ -9,6 +9,14 @@ name or mark.
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
 - Plain semantic versioning: `MAJOR.MINOR.PATCH`, with an optional `-rc.1` style tag. The Craft
   apps do the same, and they are all in the 0.x range today.
+- **Patch** (0.1.0 to 0.1.1): bug fixes only, or a rebuild after a packaging or workflow fix. No new
+  features, and never a change to the notebook folder format. The Craft apps' patch tags (WordCraft
+  0.6.1, PdfCraft 0.7.1, CADCraft 0.6.2) were rebuilds after a release workflow fix.
+- **Minor** (0.1.x to 0.2.0): new features or changed behaviour. In 0.x, anything that might break
+  something goes here too. The patch number goes back to 0.
+- **Pre-release:** `0.2.0-rc.1`. Source of these rules: the Craft apps' tags and release guides.
+  Their central release playbook was not available, so the rules above are the standard meaning of
+  semantic versioning plus what the tags show.
 - Git tags and release names are `v<version>`, for example `v0.1.0`.
 - `cargo xtask version` prints it. `cargo xtask version set 0.1.0` changes it and refreshes
   `Cargo.lock`.
@@ -62,6 +70,8 @@ cargo xtask version
 pwsh packaging/windows/package.ps1 -ZipOnly     # portable zip and checksums, no WiX needed
 pwsh packaging/windows/package.ps1              # also the MSI (needs WiX v5, see the script)
 ```
+
+WiX 5 installs with `dotnet tool install --global wix --version 5.0.2`, which needs .NET SDK 6 or newer. With only SDK 5 on the machine, download the `wix` package from NuGet and run its `wix.dll` with the .NET 8 runtime (`DOTNET_ROLL_FORWARD=Major`) instead.
 
 Output goes to `dist/release`. The script checks that the app is a Windows GUI program and the
 command line tool a console one, and that both are x64, before it packs anything.
