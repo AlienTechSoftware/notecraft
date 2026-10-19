@@ -15,6 +15,7 @@ pub mod containers;
 pub mod control;
 pub mod fonts;
 pub mod icons;
+pub mod inkpad;
 pub mod mathview;
 pub mod pageedit;
 pub mod pagetext;

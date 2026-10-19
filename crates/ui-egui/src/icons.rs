@@ -59,6 +59,8 @@ pub enum Icon {
     DirLtr,
     /// The same, mirrored: this reads right to left.
     DirRtl,
+    /// A block rubber held at an angle, with the worn end on the page: the ink eraser.
+    Eraser,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -213,6 +215,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         ],
         // Three lines, thin and well apart, for the button that hides the notebooks.
         Icon::Bars => vec![path(&[(4.0, 7.0), (20.0, 7.0)]), path(&[(4.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 17.0), (20.0, 17.0)])],
+        // A block rubber leaning on the page: the body, the worn band across its foot, and
+        // the line it sits on, which is what says it is rubbing something out.
+        Icon::Eraser => vec![
+            fill(&[(4.5, 15.5), (12.0, 5.0), (19.5, 10.5), (12.0, 21.0)], color),
+            fill(&[(7.6, 18.0), (12.0, 11.8), (19.5, 10.5), (12.0, 21.0)], shade(color, 0.45)),
+            Shape::line_segment([g.p(3.0, 21.0), g.p(21.0, 21.0)], stroke),
+        ],
         // Lines of text with an arrow beneath them, the way Word marks text direction.
         Icon::DirLtr => vec![
             path(&[(5.0, 6.0), (17.0, 6.0)]),
@@ -251,7 +260,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 25] = [
+    pub const ALL: [Icon; 26] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -277,6 +286,7 @@ mod tests {
         Icon::DirLtr,
         Icon::DirRtl,
         Icon::Bars,
+        Icon::Eraser,
     ];
 
     #[test]

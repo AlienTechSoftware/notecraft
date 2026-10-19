@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs before every push. The whole gate, the same command CI runs: fmt, clippy with
+# -D warnings, the test suite, layers, assets, docs, text and the Welcome notebook check.
+# Two to four minutes warm, once per push rather than once per commit.
+#
+# This is the one that matters. CI only ever sees pushes, so this is the last place a red
+# tree can be caught before it is public.
+#
+# Skip once:        git push --no-verify
+# Turn off for good: git config --unset core.hooksPath
+set -e
+
+echo "pre-push: cargo xtask ci (this takes a few minutes)"
+if ! cargo xtask ci; then
+    echo
+    echo "pre-push: the gate failed. This is what CI would have told you, only sooner."
+    echo "          Push anyway with --no-verify if you mean to."
+    exit 1
+fi

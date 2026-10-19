@@ -15,6 +15,8 @@ cargo xtask ci              # the full gate
 cargo test --workspace
 cargo xtask screenshots     # rebuild docs/images
 cargo xtask demo            # rebuild docs/demo/DemoNotebook from docs/demo/scripts/content
+
+git config core.hooksPath .githooks   # once per clone: turn the hooks on
 ```
 
 ## Rules
@@ -36,4 +38,11 @@ cargo xtask demo            # rebuild docs/demo/DemoNotebook from docs/demo/scri
   the owner's `.one` files into the repository.
 - **Clean room.** Use only Microsoft's published specifications for the `.one` format.
 - **Git.** Do not commit, push or publish without explicit permission.
+- **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs the cheap gates (fmt, layers,
+  assets, docs, text), about two seconds. [`.githooks/pre-push`](.githooks/pre-push) runs the
+  whole of `cargo xtask ci`, a few minutes, so a red tree is caught before CI sees it. Git does
+  not pick up a tracked hooks folder by itself, so each clone needs the `core.hooksPath` line
+  above once. They check the working tree, not the index, so another session's half-written file
+  will stop your commit; `--no-verify` is the way through that, and it is not a thing to reach
+  for otherwise.
 - **Installs and downloads** (for example `cargo-llvm-cov`) need explicit permission.

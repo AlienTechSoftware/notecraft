@@ -2235,6 +2235,7 @@ dependencies = [
  "image",
  "notecraft-engine",
  "notecraft-formats",
+ "notecraft-ink",
  "notecraft-math",
  "notecraft-model",
  "notecraft-store",

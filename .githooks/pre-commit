@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs before every commit. The cheap half of the gate only: formatting and the four file
+# checks, about two seconds warm. Compiling is left to pre-push, so making a commit stays
+# something you do without thinking about it.
+#
+# Skip once:        git commit --no-verify
+# Turn off for good: git config --unset core.hooksPath
+#
+# It checks the working tree, not just what is staged. That is deliberate: stashing the rest
+# away to test the index in isolation can lose work, and this repository often has more than
+# one session editing at once. So a broken file somebody else is still writing will stop your
+# commit too, and --no-verify is the honest way through that.
+set -e
+
+echo "pre-commit: fmt, layers, assets, docs, text"
+for task in fmt layers assets docs text; do
+    if ! cargo xtask "$task"; then
+        echo
+        echo "pre-commit: '$task' failed. Fix it, or commit with --no-verify if the failure is"
+        echo "            in work that is not yours."
+        exit 1
+    fi
+done
+echo "pre-commit: ok (clippy and the tests run on push)"
