@@ -3347,6 +3347,8 @@ impl NoteCraftApp {
             // pressure at all, and `hardest` is the hardest press since the window opened.
             "pen": {"seen": self.stylus.sample().pen, "pressure": self.stylus.sample().pressure, "hardest": self.stylus.seen().0, "readings": self.stylus.seen().1},
             "defaultFormat": self.session.settings.global_format().0.id(),
+            // Where GridCraft is, when a table can be handed to it.
+            "gridcraft": self.gridcraft.as_ref().map(|p| p.to_string_lossy()),
             // The code view: whether it is open, which of the page's files is picked, and
             // how much of that file is in hand.
             "codeView": {

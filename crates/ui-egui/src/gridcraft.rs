@@ -8,7 +8,7 @@
 //! page carries on exactly as before; the table is written out as a CSV file beside the
 //! page, which is a file anything can read, GridCraft included.
 
-use notecraft_formats::markdown::{Block, Span};
+use notecraft_formats::markdown::Block;
 use std::path::{Path, PathBuf};
 
 /// Where GridCraft is, if it is installed.
@@ -18,23 +18,18 @@ use std::path::{Path, PathBuf};
 /// every frame.
 pub fn installed() -> Option<PathBuf> {
     let name = if cfg!(target_os = "windows") { "gridcraft.exe" } else { "gridcraft" };
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let exe = dir.join(name);
-            if exe.is_file() {
-                return Some(exe);
-            }
-        }
-    }
-    for dir in known_homes() {
-        let exe = dir.join(name);
-        if exe.is_file() {
-            return Some(exe);
-        }
-    }
-    // macOS keeps an app in a bundle, with the binary inside it.
-    let bundle = PathBuf::from("/Applications/GridCraft.app/Contents/MacOS/gridcraft");
-    bundle.is_file().then_some(bundle)
+    let on_path = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default();
+    found_in(on_path.iter().chain(known_homes().iter()), name)
+        // macOS keeps an app in a bundle, with the binary inside it.
+        .or_else(|| {
+            let bundle = PathBuf::from("/Applications/GridCraft.app/Contents/MacOS/gridcraft");
+            bundle.is_file().then_some(bundle)
+        })
+}
+
+/// The first of `dirs` that holds a file called `name`.
+pub fn found_in<'a>(dirs: impl Iterator<Item = &'a PathBuf>, name: &str) -> Option<PathBuf> {
+    dirs.map(|d| d.join(name)).find(|exe| exe.is_file())
 }
 
 /// The folders an installer puts GridCraft in, beside the PATH.
@@ -51,40 +46,22 @@ fn known_homes() -> Vec<PathBuf> {
     homes
 }
 
-/// The table as CSV: one line per row, a comma between cells.
-///
-/// The marks inside a cell are dropped, because a spreadsheet cell holds a value, not a
-/// marked-up line. Quotes are doubled and a cell is wrapped when it holds a comma, a
-/// quote or a line break, which is the rule everything that reads CSV agrees on.
-pub fn as_csv(block: &Block) -> Option<String> {
-    let Block::Table { head, rows } = block else { return None };
-    let mut out = String::new();
-    for row in std::iter::once(head).chain(rows.iter()) {
-        let line: Vec<String> = row.iter().map(|cell| quote(&plain(cell))).collect();
-        out.push_str(&line.join(","));
-        out.push('\n');
-    }
-    Some(out)
-}
-
-/// The words of a cell without the marks round them.
-fn plain(spans: &[Span]) -> String {
-    spans.iter().map(|s| s.text.as_str()).collect()
-}
-
-fn quote(cell: &str) -> String {
-    if cell.contains([',', '"', '\n', '\r']) { format!("\"{}\"", cell.replace('"', "\"\"")) } else { cell.to_string() }
-}
-
 /// Writes the table beside the page and opens it in GridCraft.
 ///
 /// The file stays: a spreadsheet saved over it is a file in the page's own folder, which
 /// is where everything else a page carries lives.
 pub fn hand_over(exe: &Path, page_dir: &Path, name: &str, block: &Block) -> std::io::Result<PathBuf> {
-    let csv = as_csv(block).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "that block is not a table"))?;
+    let file = write_csv(page_dir, name, block)?;
+    std::process::Command::new(exe).arg(&file).spawn()?;
+    Ok(file)
+}
+
+/// Writes the table beside the page as `<name>.csv` and returns the file.
+pub fn write_csv(page_dir: &Path, name: &str, block: &Block) -> std::io::Result<PathBuf> {
+    let csv = notecraft_formats::csv::from_table(block)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "that block is not a table"))?;
     let file = page_dir.join(format!("{name}.csv"));
     std::fs::write(&file, csv)?;
-    std::process::Command::new(exe).arg(&file).spawn()?;
     Ok(file)
 }
 
@@ -94,15 +71,29 @@ mod tests {
     use notecraft_formats::markdown::parse;
 
     #[test]
-    fn a_table_goes_out_as_csv_a_spreadsheet_can_read() {
-        let table = parse("| Name | Note |\n|---|---|\n| *Ada* | one, two |\n| \"Q\" | |\n").remove(0);
-        let csv = as_csv(&table).expect("a table");
-        assert_eq!(csv, "Name,Note\nAda,\"one, two\"\n\"\"\"Q\"\"\",\n", "marks come off, commas and quotes are wrapped:\n{csv}");
+    fn it_is_found_in_the_first_folder_that_holds_it() {
+        let t = notecraft_store::testing::TempDir::new("gridcraft-find");
+        let (empty, here) = (t.path().join("empty"), t.path().join("here"));
+        std::fs::create_dir_all(&empty).expect("dir");
+        std::fs::create_dir_all(&here).expect("dir");
+        std::fs::write(here.join("gridcraft.exe"), b"not really").expect("exe");
+        let dirs = [empty.clone(), here.clone()];
+        assert_eq!(found_in(dirs.iter(), "gridcraft.exe"), Some(here.join("gridcraft.exe")));
+        assert_eq!(found_in(dirs.iter(), "something-else.exe"), None, "nothing is invented");
+        assert_eq!(found_in(std::iter::empty(), "gridcraft.exe"), None);
     }
 
     #[test]
-    fn anything_that_is_not_a_table_is_left_alone() {
+    fn the_table_is_written_beside_the_page() {
+        let t = notecraft_store::testing::TempDir::new("gridcraft-csv");
+        let page = t.path().join("page");
+        std::fs::create_dir_all(&page).expect("dir");
+        let table = parse("| a | b |\n|---|---|\n| 1 | 2 |\n").remove(0);
+        let file = write_csv(&page, "table-1", &table).expect("write");
+        assert_eq!(file, page.join("table-1.csv"));
+        assert_eq!(std::fs::read_to_string(&file).expect("read"), "a,b\n1,2\n");
+
         let para = parse("just words\n").remove(0);
-        assert_eq!(as_csv(&para), None);
+        assert!(write_csv(&page, "nope", &para).is_err(), "a paragraph is not a table");
     }
 }
