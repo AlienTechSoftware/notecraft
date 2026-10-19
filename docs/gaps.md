@@ -86,6 +86,9 @@ it is fixed and tested, not when it is promised.
   but the widths a table's columns were dragged to are kept in the head (`notecraft:columns`) or the
   front matter (`columns:`), so the same disconnect remains for them: another program does not see
   them. The code view does show them, because it shows the page file's head.
+- **A drawing in the code view** is drawn, not shown as a wall of numbers: NoteCraft's own
+  painter draws the strokes to fit the room, says how many there are, and Show the code puts
+  the SVG one click away.
 - **The code view** is the page's folder as it is: every file of the page down the left, the one
   that is picked on the right. The page file is picked when the view opens, and the whole of
   it can be typed in, head included - the owner asked for that on 2026-10-19, against the earlier
@@ -202,8 +205,11 @@ it is fixed and tested, not when it is promised.
   page. Both are greyed when GridCraft is not installed, which is looked for on the PATH
   and in the folder its installer uses (`%ProgramFiles%\GridCraft` on Windows). Checked
   against GridCraft 0.8.0 on 2026-10-19: a table with a comma and a quote in it opens in
-  the right cells. The table goes one way only - a change made in GridCraft is in the CSV
-  beside the page, and the page's own table is not touched.
+  the right cells. The table goes out and comes back: Read back
+  from it, beside Convert, puts what the spreadsheet holds into the table it came from,
+  quotes and commas undone. Nothing watches the file, because a page would be a strange
+  thing to write in if its tables changed under the writer's hands; the way back is a
+  button, as the way out is.
 - **Undo** takes back changes to the page: Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the two
   buttons at the left of the Home tab. A step is the whole page as it stood - its text,
   its blocks, the boxes they sit in and where the caret was - so anything that changes the

@@ -2105,8 +2105,17 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     settle(&mut h);
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state["codeView"]["picked"], json!("ink.svg"), "the drawing is picked: {}", state["codeView"]);
+    // A drawing is drawn, not shown as a wall of numbers, and says how many strokes it
+    // holds; the code is one click away.
+    assert!(h.query_all_by_label_contains("1 stroke").count() >= 1, "it says what is in the drawing");
+    h.get_by_label("Show the code").click();
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert!(state["codeView"]["characters"].as_u64().unwrap_or(0) > 100, "its SVG is in hand: {}", state["codeView"]);
     assert!(h.query_all_by_label_contains("The pen's own readings").count() >= 1, "with a word about what is in it");
+    h.get_by_label("Show the strokes").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("Show the code").count() >= 1, "and back to the drawing");
     review(&mut h, "code_view_ink");
 
     // A file nothing names is marked, so an orphan is not mistaken for one in use, and
@@ -2264,6 +2273,72 @@ fn a_shape_is_drawn_on_the_page_as_ink() {
     settle(&mut h);
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state["ink"]["inked"], json!(false), "the shape was taken back: {}", state["ink"]);
+}
+
+/// A table handed to a spreadsheet and read back again: what the spreadsheet holds is
+/// what the page's table says afterwards.
+#[test]
+fn a_table_is_read_back_from_the_spreadsheet_beside_the_page() {
+    let (_t, app, s) = sample_app("ui-grid-back");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Budget", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| Item | Cost |
+|---|---|
+| Tea | 3 |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // The spreadsheet's own work, as GridCraft would leave it beside the page.
+    let folder = s.md_page.parent().expect("section").join("budget");
+    std::fs::write(
+        folder.join("table-1.csv"),
+        "Item,Cost,Note
+\"Tea, green\",3.50,\"she said \"\"best\"\"\"
+Paper,12,
+",
+    )
+    .expect("the csv");
+
+    let cell = h.get_by_label("Tea").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("into the table");
+    settle(&mut h);
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    h.get_by_label("Read back from it").click();
+    settle(&mut h);
+
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("| Note |"),
+        "the column the spreadsheet added is there:
+{body}"
+    );
+    assert!(
+        body.contains("Tea, green"),
+        "and a cell with a comma in it came back whole:
+{body}"
+    );
+    assert!(
+        body.contains("she said \"best\""),
+        "with its quotes undone:
+{body}"
+    );
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(state["status"]["text"].as_str().unwrap_or_default().contains("3 rows"), "{}", state["status"]);
 }
 
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

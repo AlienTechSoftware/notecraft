@@ -70,6 +70,8 @@ pub struct State {
     /// The page's own file was typed in, so the page has to be read again when the view
     /// closes.
     pub page_edited: bool,
+    /// A drawing is shown as its strokes; this is the one the code is shown for instead.
+    pub as_code: bool,
 }
 
 /// What the view did this frame.
@@ -188,6 +190,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     if row.clicked() {
                         state.picked = Some(entry.name.clone());
                         state.loaded = None;
+                        state.as_code = false;
                     }
                 }
             });
@@ -228,6 +231,41 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     ui.label(egui::RichText::new("Nothing here can show this kind of file.").color(t.muted));
                     ui.label(egui::RichText::new("It is listed so the page's folder is not a secret.").small().color(t.muted));
                 }
+                // A drawing is drawn, with its code one click away: a wall of numbers
+                // says nothing about what is on the page.
+                Kind::Ink if !state.as_code => {
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Show the code").clicked() {
+                            state.as_code = true;
+                        }
+                        let strokes = read_for_view(&dir.join(&entry.name)).0.matches("<path").count();
+                        ui.label(egui::RichText::new(format!("{strokes} stroke{}", if strokes == 1 { "" } else { "s" })).small().color(t.muted));
+                    });
+                    let room = egui::vec2(ui.available_width(), (height - 70.0).max(80.0));
+                    let (rect, _) = ui.allocate_exact_size(room, Sense::hover());
+                    ui.painter().rect_filled(rect, 2.0, t.editor);
+                    match std::fs::read_to_string(dir.join(&entry.name)).ok().and_then(|text| notecraft_ink::svg::read(&text).ok()) {
+                        Some((drawing, _)) => {
+                            // Drawn to fit, so a sheet the size of a page can be seen in
+                            // the room the view has.
+                            let scale = (rect.width() / drawing.width.max(1.0)).min(rect.height() / drawing.height.max(1.0)).min(1.0);
+                            let painter = ui.painter().with_clip_rect(rect);
+                            for stroke in &drawing.strokes {
+                                let scaled = scale_stroke(stroke, scale);
+                                crate::inkpad::paint_stroke(&painter, rect.min, &scaled);
+                            }
+                        }
+                        None => {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "This drawing cannot be read",
+                                egui::FontId::proportional(13.0),
+                                t.muted,
+                            );
+                        }
+                    }
+                }
                 Kind::PageFile | Kind::Ink | Kind::Text => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
@@ -237,6 +275,9 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         if cut {
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
+                    }
+                    if entry.kind == Kind::Ink && ui.small_button("Show the strokes").clicked() {
+                        state.as_code = false;
                     }
                     let warning = match entry.kind {
                         Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
@@ -260,6 +301,15 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             }
         });
     });
+    out
+}
+
+/// The same stroke at a different size, for drawing a whole sheet in a small space.
+fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::Stroke {
+    let mut out = notecraft_ink::Stroke::with_gain(stroke.tool, stroke.colour, (stroke.width * scale).max(0.4), stroke.gain);
+    for dab in &stroke.dabs {
+        out.add(notecraft_ink::Dab { x: dab.x * scale, y: dab.y * scale, pressure: dab.pressure });
+    }
     out
 }
 
