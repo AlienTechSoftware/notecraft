@@ -70,7 +70,11 @@ fn spline(p0: Dab, p1: Dab, p2: Dab, p3: Dab, t: f32) -> Dab {
 /// whole width, because a chisel tip does not thin.
 pub fn width_at(stroke: &Stroke, pressure: f32) -> f32 {
     let floor = stroke.tool.floor();
-    let share = floor + (1.0 - floor) * pressure.clamp(0.0, 1.0);
+    // The pen's answer to pressure, bent by the stroke's gain: above 1 a light hand
+    // already lays down a broad line, below 1 it takes a firm press. A gain of 1 leaves
+    // the reading exactly as the pen gave it.
+    let felt = if (stroke.gain - 1.0).abs() < f32::EPSILON { pressure.clamp(0.0, 1.0) } else { pressure.clamp(0.0, 1.0).powf(1.0 / stroke.gain) };
+    let share = floor + (1.0 - floor) * felt;
     (stroke.width * share).max(crate::MIN_WIDTH)
 }
 
@@ -228,6 +232,17 @@ mod tests {
 
         let pencil = drawn(Tool::Pencil, &[(0.0, 0.0, 0.1)]);
         assert!(width_at(&pencil, 0.2) > width_at(&pen, 0.2), "a pencil varies less than a pen");
+
+        // Turning the pen up lays down more ink for the same press, and down less; full
+        // pressure is the pen's full width whatever it is set to.
+        let eager = crate::Stroke::with_gain(Tool::Pen, Rgb::BLACK, 6.0, 2.5);
+        let shy = crate::Stroke::with_gain(Tool::Pen, Rgb::BLACK, 6.0, 0.4);
+        assert!(width_at(&eager, 0.3) > width_at(&pen, 0.3), "turned up, a light press draws more");
+        assert!(width_at(&shy, 0.3) < width_at(&pen, 0.3), "turned down, it draws less");
+        for s in [&eager, &shy] {
+            assert!((width_at(s, 1.0) - 6.0).abs() < 0.01, "a full press is the full width either way");
+            assert!(width_at(s, 0.0) > 0.0, "and nothing still marks the page");
+        }
     }
 
     #[test]

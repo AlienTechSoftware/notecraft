@@ -26,6 +26,7 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod rack;
 pub mod shape;
 pub mod svg;
 
@@ -159,14 +160,23 @@ pub struct Stroke {
     pub colour: Rgb,
     /// The width in points at full pressure. The pressure of each reading scales it.
     pub width: f32,
+    /// How hard the pen has to be pressed to lay down its full width. Above 1 a light
+    /// hand already draws a broad line; below 1 it takes a firm press. The pen's own
+    /// readings are kept as they came, and this shapes them when the stroke is drawn, so
+    /// a stroke can be re-weighted later without the readings having been thrown away.
+    pub gain: f32,
     pub dabs: Vec<Dab>,
 }
 
 impl Default for Stroke {
     fn default() -> Self {
-        Self { tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, dabs: Vec::new() }
+        Self { tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, gain: 1.0, dabs: Vec::new() }
     }
 }
+
+/// How far a pen's answer to pressure may be turned up or down.
+pub const MIN_GAIN: f32 = 0.3;
+pub const MAX_GAIN: f32 = 3.0;
 
 /// The smallest and largest a stroke may be asked to be, in points. A stroke outside this
 /// is a file that has been meddled with, or a slider that got away.
@@ -182,7 +192,16 @@ pub const MAX_STROKES: usize = 20_000;
 
 impl Stroke {
     pub fn new(tool: Tool, colour: Rgb, width: f32) -> Self {
-        Self { tool, colour, width: Self::sane_width(width), dabs: Vec::new() }
+        Self { tool, colour, width: Self::sane_width(width), gain: 1.0, dabs: Vec::new() }
+    }
+
+    /// The same, drawn with a pen set to answer pressure more or less readily.
+    pub fn with_gain(tool: Tool, colour: Rgb, width: f32, gain: f32) -> Self {
+        Self { gain: Self::sane_gain(gain), ..Self::new(tool, colour, width) }
+    }
+
+    fn sane_gain(gain: f32) -> f32 {
+        if gain.is_finite() { gain.clamp(MIN_GAIN, MAX_GAIN) } else { 1.0 }
     }
 
     fn sane_width(width: f32) -> f32 {
@@ -213,6 +232,7 @@ impl Stroke {
     /// and not more of them than anything will draw.
     pub fn sane(mut self) -> Self {
         self.width = Self::sane_width(self.width);
+        self.gain = Self::sane_gain(self.gain);
         self.dabs.truncate(MAX_DABS);
         for d in &mut self.dabs {
             *d = d.sane();

@@ -5,8 +5,7 @@ Open the **Draw** tab and pick a pen. That is all: there is no sheet to insert f
 
 ## Write on it
 
-Pick a pen from the rack in **Drawing Tools**. The slider beside them sets how wide it is.
-Then write anywhere on the page.
+Pick a pen from the rack in **Drawing Tools**, then write anywhere on the page.
 
 - A **pen** swells as you press. At a light touch it is a quarter of its width.
 - A **pencil** varies less, the way a pencil does.
@@ -17,8 +16,28 @@ Then write anywhere on the page.
   its whole width however you hold it.
 
 **Eraser** rubs out any stroke the pointer passes over. **Undo stroke** takes the last one
-back. **Write** puts the caret back, so clicking the page writes words again instead of
-drawing.
+back. **Select** stops drawing: the pointer picks text and puts the caret back.
+
+## Arranging the rack
+
+The rack is yours to arrange, and it is remembered between runs.
+
+- **Add** puts another tool on the end: a pen, pencil, fountain pen, brush pen or
+  highlighter.
+- **Right-click a tool** for Modify Tool, Move Left, Move Right, Add Another and Delete.
+- **The chevron** under the tool in your hand opens the same editor: the stroke it makes,
+  its thickness as dots, and a grid of colours.
+- The last tool cannot be deleted, so there is always something to draw with.
+
+## Sensitivity
+
+The wedge beside the rack sets how readily the pen answers pressure. It is not thickness:
+thickness is how wide a tool is at a full press, and sensitivity is how hard you have to
+press to get there. Turned up, a light hand already lays down a broad line; turned down, it
+takes a firm press. The middle leaves the readings exactly as the pen gave them.
+
+Your pen's own readings are kept whatever this is set to, so a stroke drawn at one setting
+can be re-weighted later rather than having to be drawn again.
 
 Each stroke is written the moment you lift the pen. Ink does not wait for the page to save.
 

@@ -26,16 +26,26 @@ pub struct Pen {
     pub colour: Rgb,
     /// In points.
     pub width: f32,
+    /// How readily this pen answers pressure; 1 leaves the readings as they came.
+    pub gain: f32,
 }
 
 impl Default for Pen {
     fn default() -> Self {
-        Self { pointer: crate::ribbon::Pointer::Write, tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0 }
+        Self { pointer: crate::ribbon::Pointer::Write, tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, gain: 1.0 }
     }
 }
 
 /// The file a page's ink lives in, inside the page's own folder.
 pub const FILE: &str = "ink.svg";
+
+/// An earlier version of NoteCraft put a drawing into the page as a picture, pointing at
+/// `assets/drawing-1.svg`. Nothing draws those now, so such a page showed a broken picture
+/// where its drawing had been. This says whether an image block is one of them.
+pub fn is_old_sheet(src: &str) -> bool {
+    let src = src.trim();
+    !src.contains("://") && src.to_ascii_lowercase().starts_with("assets/drawing-") && src.to_ascii_lowercase().ends_with(".svg")
+}
 
 /// How large a page's ink sheet is said to be in the file's `viewBox`. The pen may write
 /// past it; the number is only what another program uses to frame the picture.
@@ -98,6 +108,25 @@ impl Pad {
         Ok(plain)
     }
 
+    /// Moves the strokes of an old inserted sheet onto the page, and says how many came.
+    /// The sheet's own file is left where it is: it is the owner's, and nothing here
+    /// throws away a file it has only read.
+    pub fn absorb(&mut self, page_dir: &Path, src: &str) -> usize {
+        if !is_old_sheet(src) {
+            return 0;
+        }
+        let file = page_dir.join(src.trim().replace('/', std::path::MAIN_SEPARATOR_STR));
+        let Ok(text) = std::fs::read_to_string(&file) else { return 0 };
+        let Ok((old, _)) = svg::read(&text) else { return 0 };
+        let before = self.drawing.strokes.len();
+        for stroke in old.strokes {
+            self.drawing.add(stroke);
+        }
+        let came = self.drawing.strokes.len() - before;
+        self.dirty |= came > 0;
+        came
+    }
+
     /// Takes the last stroke back.
     pub fn undo(&mut self) -> bool {
         let went = self.drawing.undo();
@@ -156,7 +185,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
         Pointer::Draw => {
             if down {
                 if pad.drawing_now.is_none() {
-                    pad.drawing_now = Some(Stroke::new(pen.tool, pen.colour, pen.width));
+                    pad.drawing_now = Some(Stroke::with_gain(pen.tool, pen.colour, pen.width, pen.gain));
                 }
                 if let (Some(stroke), Some((x, y))) = (pad.drawing_now.as_mut(), at) {
                     stroke.add(Dab::new(x, y, pressure));

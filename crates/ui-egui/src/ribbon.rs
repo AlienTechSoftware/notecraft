@@ -9,6 +9,7 @@ use crate::icons::{self, Icon};
 use crate::ribbon_icons::{self, Mark};
 use crate::theme::Tokens;
 use egui::{Align2, Rect, Sense, Ui, vec2};
+use notecraft_ink::rack::{self, Nib};
 use notecraft_ink::{Rgb, Tool};
 use notecraft_model::{PageFormat, Tag};
 
@@ -65,11 +66,12 @@ pub enum Act {
     NotBuilt(&'static str),
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
-    /// A pen was picked off the rack: what it is, its colour, and how wide it is in tenths
-    /// of a point. Tenths, because an act is compared for equality and a float is not.
-    InkPen(Tool, Rgb, u16),
-    /// Just the width, from the slider, in tenths of a point.
-    InkWidth(u16),
+    /// The pen at this place on the rack was picked up.
+    InkPen(usize),
+    /// The rack itself changed: a tool added, taken off, moved or altered.
+    InkRack(RackEdit),
+    /// How readily the pen answers pressure, 0 to 100 along the wedge.
+    InkSensitivity(u8),
     /// Take the last stroke back.
     InkUndo,
     /// Put a drawing on the page at the caret.
@@ -102,17 +104,18 @@ impl Pointer {
     }
 }
 
-/// The pens on the rack, in the order OneNote racks them: black, red, blue and green pens,
-/// a pencil, then two highlighters. Width is in tenths of a point.
-pub const PENS: [(Tool, Rgb, u16); 7] = [
-    (Tool::Pen, Rgb(0x20, 0x20, 0x20), 30),
-    (Tool::Pen, Rgb(0xd0, 0x21, 0x21), 30),
-    (Tool::Pen, Rgb(0x18, 0x55, 0xc4), 30),
-    (Tool::Pen, Rgb(0x16, 0x7f, 0x3d), 30),
-    (Tool::Pencil, Rgb(0x55, 0x55, 0x55), 18),
-    (Tool::Highlighter, Rgb(0xff, 0xdd, 0x33), 140),
-    (Tool::Highlighter, Rgb(0x6f, 0xe3, 0x9a), 140),
-];
+/// What the user asked to do to the rack itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RackEdit {
+    /// Put a new tool of this kind on the end.
+    Add(Tool),
+    /// Take the one at this place off.
+    Remove(usize),
+    /// Move it one place left (true) or right.
+    Move(usize, bool),
+    /// Change the one at this place to this.
+    Set(usize, Nib),
+}
 
 /// What is drawn behind the page: nothing, ruled lines, or squares. OneNote calls this
 /// Rule Lines, and keeps it per page; here it is how the pages are viewed.
@@ -265,7 +268,7 @@ pub fn paint_paper(painter: &egui::Painter, area: egui::Rect, rules: RuleLines, 
 
 /// What the View tab shows about the window.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct View {
+pub struct View<'a> {
     /// True when the side panel is two columns.
     pub split_panes: bool,
     /// True when the window is kept above the others.
@@ -274,14 +277,20 @@ pub struct View {
     pub rules: RuleLines,
     pub hide_title: bool,
     pub zoom_percent: u32,
-    /// What the pointer does on the page, and the pen it does it with.
+    /// What the pointer does on the page.
     pub pointer: Pointer,
-    pub tool: Tool,
-    pub ink_colour: Rgb,
-    /// In tenths of a point, as the acts carry it.
-    pub ink_width: u16,
-    /// True when the page has a drawing the pen can write in.
-    pub has_drawing: bool,
+    /// The tools on the rack, and which of them is in hand.
+    pub rack: &'a [Nib],
+    pub nib: usize,
+    /// How readily the pen answers pressure, 0 to 100.
+    pub sensitivity: u8,
+}
+
+impl View<'_> {
+    /// The tool in hand, or the first on the rack if the saved number is out of range.
+    pub fn in_hand(&self) -> Nib {
+        self.rack.get(self.nib).or_else(|| self.rack.first()).copied().unwrap_or_else(|| rack::new_nib(Tool::Pen))
+    }
 }
 
 /// How tall the ribbon is: the tab strip, then the groups.
@@ -306,7 +315,7 @@ const DROP: f32 = 4.0;
 
 /// Draws the ribbon. `tab` is the chosen tab, `source` whether the page source is shown.
 /// Returns every act the user asked for this frame (usually none or one).
-pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
+pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
     let mut acts = Vec::new();
     tab_strip(ui, tab, source, t, &mut acts);
     ui.add_space(2.0);
@@ -741,9 +750,7 @@ fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, ro
             })
             .response;
         // A click anywhere else closes it, the way a menu does.
-        let clicked_away =
-            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
-        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if picked || away(ui, &area, &resp) {
             open = false;
         }
     }
@@ -964,7 +971,7 @@ fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Resp
 }
 
 /// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
-fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     let resp = big_menu(ui, Icon::Table, "Format\nBackground", "Lines or squares behind the page, as on paper", t);
     let open_id = egui::Id::new("ribbon-rule-lines");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
@@ -1010,6 +1017,117 @@ fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// How readily the pen answers pressure, drawn as the wedge a volume control uses: thin
+/// at the quiet end, thick at the loud one, so which way is "more ink" needs no label.
+///
+/// This is not thickness. Thickness is how wide the tool is at a full press; this is how
+/// hard you have to press to get there. Turned up, a light hand already lays down a broad
+/// line; turned down, it takes a firm press. The pen's own readings are kept as they came
+/// either way, so a stroke drawn at one setting can be re-weighted later.
+fn sensitivity(ui: &mut Ui, now: u8, t: &Tokens, acts: &mut Vec<Act>) {
+    rows(ui, |ui| {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Sensitivity").size(10.0).color(t.muted));
+        let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
+        let share = f32::from(now.min(100)) / 100.0;
+        let painter = ui.painter_at(rect);
+        let track = rect.shrink2(vec2(6.0, 3.0));
+        // The wedge: nothing at the left, full at the right.
+        let wedge = vec![egui::pos2(track.min.x, track.max.y), egui::pos2(track.max.x, track.max.y), egui::pos2(track.max.x, track.min.y)];
+        painter.add(egui::Shape::convex_polygon(wedge.clone(), crate::theme::mix(t.panel, t.text, 0.14), egui::Stroke::NONE));
+        // The part that is turned on is filled in the accent, cut at the handle.
+        let x = track.min.x + track.width() * share;
+        let h = track.max.y - track.height() * share;
+        painter.add(egui::Shape::convex_polygon(
+            vec![egui::pos2(track.min.x, track.max.y), egui::pos2(x, track.max.y), egui::pos2(x, h)],
+            t.accent,
+            egui::Stroke::NONE,
+        ));
+        painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, t.accent));
+
+        if (resp.dragged() || resp.clicked())
+            && let Some(at) = resp.interact_pointer_pos()
+        {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let picked = (((at.x - track.min.x) / track.width().max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8;
+            if picked != now {
+                acts.push(Act::InkSensitivity(picked));
+            }
+        }
+        let enabled = ui.is_enabled();
+        let said = format!("Pressure sensitivity {now} of 100");
+        resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
+        resp.on_hover_text("How readily the pen answers pressure: turned up, a light hand lays down more ink");
+        ui.label(egui::RichText::new(format!("{now}")).size(10.5).color(t.text));
+    });
+}
+
+/// OneNote's Add button: a new tool of whatever kind, put on the end of the rack.
+fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Plus, "Add", "Put another tool on the rack", t);
+    let id = egui::Id::new("ribbon-add-pen");
+    let mut open = ui.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(resp.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(170.0);
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for tool in Tool::ALL {
+                        let (row, hit) = ui.allocate_exact_size(vec2(162.0, 28.0), Sense::click());
+                        let painter = ui.painter_at(row);
+                        if hit.hovered() {
+                            painter.rect_filled(row, 4.0, t.row_hover);
+                        }
+                        // The tool itself beside its name, drawn by the code the rack
+                        // uses, so a menu cannot show one thing and the rack another.
+                        let glyph = Rect::from_min_size(row.min, vec2(26.0, row.height()));
+                        paint_tool(&painter, glyph, tool, rack::new_nib(tool).colour, 0.0);
+                        painter.text(
+                            egui::pos2(row.min.x + 32.0, row.center().y),
+                            Align2::LEFT_CENTER,
+                            tool.label(),
+                            egui::FontId::proportional(12.5),
+                            t.text,
+                        );
+                        let enabled = ui.is_enabled();
+                        let name = format!("Add {}", tool.label());
+                        hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+                        if hit.clicked() {
+                            acts.push(Act::InkRack(RackEdit::Add(tool)));
+                            picked = true;
+                        }
+                    }
+                    ui.separator();
+                    not_built(ui, "Laser Pointer", t);
+                });
+            })
+            .response;
+        if picked || away(ui, &area, &resp) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(id, open));
+}
+
+/// True when the pointer was clicked anywhere but in this popup or on the button that
+/// opened it, or Escape was pressed: either way the popup should close.
+///
+/// The button is tested by where it is, not by whether it reported a click this frame. A
+/// press and its release land on different frames, so on the release the button has not
+/// "clicked" and the popup it had just opened closed itself again.
+fn away(ui: &Ui, area: &egui::Response, button: &egui::Response) -> bool {
+    let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
+    let out = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !button.rect.contains(at);
+    out || ui.input(|i| i.key_pressed(egui::Key::Escape))
+}
+
 /// One tool on the rack, drawn as the tool: a pen standing on its nib, the way OneNote
 /// racks them. The barrel is the colour it writes in, so the rack is read by looking.
 ///
@@ -1018,11 +1136,10 @@ fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
 /// in a row look like one set of pens rather than seven drawings. The nib is what tells
 /// them apart: a cone for a pen, bare wood and lead for a pencil, a long slit nib for a
 /// fountain pen, a soft bulb for a brush, a slanted chisel for a highlighter.
-fn pen_on_rack(ui: &mut Ui, tool: Tool, colour: Rgb, tenths: u16, chosen: bool, t: &Tokens) -> egui::Response {
-    let _ = tenths;
-    let (rect, resp) = ui.allocate_exact_size(vec2(24.0, GROUP_H - 20.0), Sense::click());
+fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(vec2(27.0, GROUP_H - 20.0), Sense::click());
     let enabled = ui.is_enabled();
-    let name = format!("{} {}", tool.label(), swatch_name(colour));
+    let name = format!("{} {}", nib.tool.label(), swatch_name(nib.colour));
     let label = name.clone();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, label.clone()));
     let painter = ui.painter_at(rect);
@@ -1035,17 +1152,152 @@ fn pen_on_rack(ui: &mut Ui, tool: Tool, colour: Rgb, tenths: u16, chosen: bool, 
     // The one in use sinks into the rack, the way a pen lifted out of a tray sits lower
     // than its neighbours, and it eases down rather than jumping.
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
-    paint_tool(&painter, rect, tool, colour, drop);
+    paint_tool(&painter, rect, nib.tool, nib.colour, drop);
+
+    // The chevron on the tool in hand opens its editor, as OneNote's does; a right click
+    // opens the same editor and the rest of the rack's own menu.
+    let mut picked_up = resp.clicked();
+    let chev = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.max.y - 5.0), vec2(14.0, 11.0));
+    let mut modify = false;
     if chosen {
-        chevron(&painter, egui::pos2(rect.center().x, rect.max.y - 5.0), t.muted);
+        let hit = ui.interact(chev, resp.id.with("chevron"), Sense::click());
+        chevron(&painter, chev.center(), if hit.hovered() { t.accent } else { t.muted });
+        if hit.clicked() {
+            modify = true;
+            picked_up = false;
+        }
     }
-    resp.on_hover_text(name)
+    // The menu hangs off the pen's own response. A second interact over the same
+    // rectangle looked harmless and was not: later widgets win in egui, so it swallowed
+    // every left click and only the eraser, which had no such overlay, could be picked up.
+    resp.context_menu(|ui| {
+        if ui.button("Modify Tool").clicked() {
+            modify = true;
+            ui.close();
+        }
+        ui.separator();
+        if ui.add_enabled(i > 0, egui::Button::new("Move Left")).clicked() {
+            acts.push(Act::InkRack(RackEdit::Move(i, true)));
+            ui.close();
+        }
+        if ui.add_enabled(i + 1 < rack_len, egui::Button::new("Move Right")).clicked() {
+            acts.push(Act::InkRack(RackEdit::Move(i, false)));
+            ui.close();
+        }
+        ui.separator();
+        if ui.button(format!("Add Another {}", nib.tool.label())).clicked() {
+            acts.push(Act::InkRack(RackEdit::Add(nib.tool)));
+            ui.close();
+        }
+        if ui.add_enabled(rack_len > 1, egui::Button::new(format!("Delete {}", nib.tool.label()))).clicked() {
+            acts.push(Act::InkRack(RackEdit::Remove(i)));
+            ui.close();
+        }
+    });
+
+    let open_id = egui::Id::new(("modify-tool", i));
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if modify {
+        open = true;
+        picked_up = true;
+    }
+    if open && modify_tool(ui, open_id, rect, i, nib, rack_len, t, acts) {
+        open = false;
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+    resp.on_hover_text(name);
+    picked_up
+}
+
+/// OneNote's Modify Tool popup: the stroke this tool makes, the thicknesses as dots, the
+/// colours as a grid, and a way to take the tool off the rack. Returns true when it should
+/// close.
+#[allow(clippy::too_many_arguments)]
+fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_len: usize, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let mut done = false;
+    let area = egui::Area::new(id.with("area"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(under.left_bottom())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(196.0);
+                // The stroke this tool makes, drawn by the code that draws the page's ink,
+                // so the sample cannot say one thing and the page another.
+                let (sample, _) = ui.allocate_exact_size(vec2(180.0, 26.0), Sense::hover());
+                let mut stroke = notecraft_ink::Stroke::new(nib.tool, nib.colour, nib.width());
+                for (at, press) in [(0.04, 0.12), (0.3, 0.55), (0.62, 1.0), (0.96, 0.3)] {
+                    stroke.dabs.push(notecraft_ink::Dab::new(sample.width() * at, 13.0 + (at * 9.0).sin() * 3.0, press));
+                }
+                crate::inkpad::paint_stroke(&ui.painter_at(sample), sample.min, &stroke);
+                ui.separator();
+
+                ui.label(egui::RichText::new("Thickness").size(10.5).color(t.muted));
+                ui.horizontal(|ui| {
+                    for tenths in rack::THICKNESSES {
+                        let here = nib.tenths == tenths;
+                        let (dot, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                        let painter = ui.painter_at(dot);
+                        if here {
+                            painter.circle_stroke(dot.center(), 10.0, egui::Stroke::new(1.3, t.accent));
+                        } else if resp.hovered() {
+                            painter.circle_filled(dot.center(), 10.0, t.row_hover);
+                        }
+                        // Each dot is the width it stands for, so the choice is made by eye.
+                        let r = (f32::from(tenths) / 10.0 / 2.0).clamp(1.0, 7.0);
+                        painter.circle_filled(dot.center(), r, t.text);
+                        let enabled = ui.is_enabled();
+                        let name = format!("{:.1} pt", f32::from(tenths) / 10.0);
+                        resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
+                        if resp.on_hover_text(format!("{:.1} pt", f32::from(tenths) / 10.0)).clicked() {
+                            acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, nib.colour, tenths))));
+                        }
+                    }
+                });
+
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new("Colours").size(10.5).color(t.muted));
+                for row in rack::PALETTE {
+                    ui.horizontal(|ui| {
+                        for colour in row {
+                            let here = nib.colour == colour;
+                            let (cell, resp) = ui.allocate_exact_size(vec2(26.0, 20.0), Sense::click());
+                            let painter = ui.painter_at(cell);
+                            painter.rect_filled(cell.shrink(2.0), 3.0, egui::Color32::from_rgb(colour.0, colour.1, colour.2));
+                            let edge = if here { t.accent } else { crate::theme::mix(t.panel, t.text, 0.25) };
+                            painter.rect_stroke(
+                                cell.shrink(2.0),
+                                3.0,
+                                egui::Stroke::new(if here { 2.0 } else { 0.8 }, edge),
+                                egui::StrokeKind::Outside,
+                            );
+                            let enabled = ui.is_enabled();
+                            let name = format!("{} {}", swatch_name(colour), colour.hex());
+                            resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
+                            if resp.on_hover_text(colour.hex()).clicked() {
+                                acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, colour, nib.tenths))));
+                            }
+                        }
+                    });
+                }
+                ui.separator();
+                not_built(ui, "More Colours", t);
+                not_built(ui, "Eyedropper", t);
+                if ui.add_enabled(rack_len > 1, egui::Button::new("Delete Tool")).clicked() {
+                    acts.push(Act::InkRack(RackEdit::Remove(i)));
+                    done = true;
+                }
+            });
+        })
+        .response;
+    let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
+    let outside = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !under.contains(at);
+    done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape))
 }
 
 /// The eraser, racked beside the pens because that is where a hand reaches for it, and
 /// drawn like them: a pale sleeve a hand holds, and the worn rubber below it.
 fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(24.0, GROUP_H - 20.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(27.0, GROUP_H - 20.0), Sense::click());
     let enabled = ui.is_enabled();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, "Eraser"));
     let painter = ui.painter_at(rect);
@@ -1058,7 +1310,7 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
 
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
     let cx = rect.center().x;
-    let tall = 44.0;
+    let tall = 38.0;
     let top = rect.center().y - tall / 2.0 - 2.0 + drop;
     let foot = top + tall;
     let at = |x: f32, y: f32| egui::pos2(cx + x, y);
@@ -1071,16 +1323,16 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     let rubber_side = egui::Color32::from_rgb(0xe3, 0xd6, 0xda);
     let rubber_edge = egui::Color32::from_rgb(0x7e, 0x70, 0x75);
 
-    let hold = foot - 13.0;
-    painter.add(shape(vec![at(-4.1, top), at(4.1, top), at(3.8, hold), at(-3.8, hold)], sleeve, sleeve_edge));
+    let hold = foot - 15.0;
+    painter.add(shape(vec![at(-5.2, top), at(5.2, top), at(4.9, hold), at(-4.9, hold)], sleeve, sleeve_edge));
     painter.line_segment([at(-1.8, top + 3.0), at(-1.6, hold - 2.0)], egui::Stroke::new(1.2, egui::Color32::from_white_alpha(130)));
-    painter.rect_filled(egui::Rect::from_min_max(at(1.4, top + 2.5), at(3.2, hold - 3.0)), 1.0, collar);
-    painter.line_segment([at(-3.8, hold), at(3.8, hold)], egui::Stroke::new(2.0, collar));
+    painter.rect_filled(egui::Rect::from_min_max(at(2.0, top + 2.5), at(4.0, hold - 3.0)), 1.0, collar);
+    painter.line_segment([at(-4.9, hold), at(4.9, hold)], egui::Stroke::new(2.0, collar));
     // The rubber: a soft dome, not a block. An eraser is worn round by use, and a rounded
     // tip is what says "this rubs out" where a sharp corner says "this cuts".
-    let r = 4.2;
+    let r = 5.4;
     let waist = foot - r;
-    painter.add(shape(vec![at(-3.8, hold), at(3.8, hold), at(r, waist), at(-r, waist)], rubber, rubber_edge));
+    painter.add(shape(vec![at(-4.9, hold), at(4.9, hold), at(r, waist), at(-r, waist)], rubber, rubber_edge));
     painter.circle(at(0.0, waist), r, rubber, egui::Stroke::new(0.8, rubber_edge));
     painter.circle_filled(at(1.4, waist + 0.4), r - 1.7, rubber_side);
     resp.on_hover_text("Rub out whatever the pointer passes over")
@@ -1104,7 +1356,9 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
     let shine = egui::Color32::from_white_alpha(130);
 
     let cx = rect.center().x;
-    let tall = 44.0;
+    // Short and wide rather than long and thin, so the nib is a good third of the whole
+    // and the eye lands on it: the tip is what says what mark the tool makes.
+    let tall = (rect.height() - 14.0).clamp(16.0, 38.0);
     let top = rect.center().y - tall / 2.0 - 2.0 + drop;
     let foot = top + tall;
     let at = |x: f32, y: f32| egui::pos2(cx + x, y);
@@ -1124,64 +1378,64 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
     match tool {
         Tool::Highlighter => {
             // Fatter and squarer than a pen, with a chisel cut across the bottom.
-            let (w, lw) = (6.4, 5.9);
-            let grip = top + 14.0;
-            let nib = foot - 10.0;
+            let (w, lw) = (7.4, 6.9);
+            let grip = top + 9.0;
+            let nib = foot - 13.0;
             let g = hold(painter, w, lw, grip);
             let _ = g;
             painter.add(shape(vec![at(-lw, grip), at(lw, grip), at(lw, nib), at(-lw, nib)], ink, darker(ink, 0.35)));
-            painter.add(shape(vec![at(-lw, nib), at(lw, nib), at(lw, foot - 5.0), at(-lw, foot)], darker(ink, 0.12), darker(ink, 0.4)));
+            painter.add(shape(vec![at(-lw, nib), at(lw, nib), at(lw, foot - 6.0), at(-lw, foot)], darker(ink, 0.12), darker(ink, 0.4)));
         }
         Tool::Pencil => {
             // Painted body, bare wood, then the lead.
-            let (w, lw) = (4.1, 3.7);
-            let wood = foot - 13.0;
+            let (w, lw) = (5.4, 5.0);
+            let wood = foot - 15.0;
             painter.add(shape(vec![at(-w, top), at(w, top), at(lw, wood), at(-lw, wood)], ink, darker(ink, 0.4)));
             painter.line_segment([at(-w * 0.42, top + 3.0), at(-lw * 0.42, wood - 2.0)], egui::Stroke::new(1.2, shine));
             painter.line_segment([at(-w, top + 7.0), at(w, top + 7.0)], egui::Stroke::new(1.8, collar));
             painter.add(shape(
-                vec![at(-lw, wood), at(lw, wood), at(1.3, foot - 3.2), at(-1.3, foot - 3.2)],
+                vec![at(-lw, wood), at(lw, wood), at(1.5, foot - 3.6), at(-1.5, foot - 3.6)],
                 egui::Color32::from_rgb(0xe8, 0xd0, 0xa6),
                 egui::Color32::from_rgb(0xb2, 0x95, 0x66),
             ));
             painter.add(shape(
-                vec![at(-1.3, foot - 3.2), at(1.3, foot - 3.2), at(0.0, foot)],
+                vec![at(-1.5, foot - 3.6), at(1.5, foot - 3.6), at(0.0, foot)],
                 egui::Color32::from_gray(60),
                 egui::Color32::from_gray(40),
             ));
         }
         Tool::FountainPen => {
-            let (w, lw) = (4.1, 3.7);
-            let grip = top + 16.0;
-            let nib = foot - 14.0;
+            let (w, lw) = (5.4, 5.0);
+            let grip = top + 10.0;
+            let nib = foot - 16.0;
             hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-3.9, grip), at(3.9, grip), at(3.4, nib), at(-3.4, nib)], ink, darker(ink, 0.42)));
+            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.4, nib), at(-4.4, nib)], ink, darker(ink, 0.42)));
             // A long tapered nib, with its slit and breather hole.
-            painter.add(shape(vec![at(-3.4, nib), at(3.4, nib), at(0.7, foot), at(-0.7, foot)], collar, body_edge));
+            painter.add(shape(vec![at(-4.4, nib), at(4.4, nib), at(0.8, foot), at(-0.8, foot)], collar, body_edge));
             painter.line_segment([at(0.0, nib + 3.0), at(0.0, foot - 1.0)], egui::Stroke::new(0.9, egui::Color32::from_gray(90)));
             painter.circle_filled(at(0.0, nib + 2.5), 1.0, egui::Color32::from_gray(90));
         }
         Tool::BrushPen => {
-            let (w, lw) = (4.3, 3.8);
-            let grip = top + 16.0;
-            let ferrule = foot - 15.0;
+            let (w, lw) = (5.6, 5.1);
+            let grip = top + 10.0;
+            let ferrule = foot - 16.0;
             hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-4.0, grip), at(4.0, grip), at(3.6, ferrule), at(-3.6, ferrule)], ink, darker(ink, 0.42)));
+            painter.add(shape(vec![at(-5.3, grip), at(5.3, grip), at(4.7, ferrule), at(-4.7, ferrule)], ink, darker(ink, 0.42)));
             painter.line_segment([at(-3.4, ferrule), at(3.4, ferrule)], egui::Stroke::new(1.8, collar));
             // A loaded brush: full at the ferrule, drawn to a fine point.
             painter.add(shape(
-                vec![at(-3.5, ferrule), at(3.5, ferrule), at(2.1, ferrule + 7.0), at(0.5, foot), at(-0.5, foot), at(-2.1, ferrule + 7.0)],
+                vec![at(-4.6, ferrule), at(4.6, ferrule), at(2.6, ferrule + 7.5), at(0.6, foot), at(-0.6, foot), at(-2.6, ferrule + 7.5)],
                 darker(ink, 0.15),
                 darker(ink, 0.45),
             ));
         }
         Tool::Pen => {
-            let (w, lw) = (4.1, 3.7);
-            let grip = top + 17.0;
-            let nib = foot - 11.0;
+            let (w, lw) = (5.4, 5.0);
+            let grip = top + 11.0;
+            let nib = foot - 14.0;
             hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-3.9, grip), at(3.9, grip), at(3.5, nib), at(-3.5, nib)], ink, darker(ink, 0.42)));
-            painter.add(shape(vec![at(-3.5, nib), at(3.5, nib), at(0.8, foot), at(-0.8, foot)], darker(ink, 0.25), darker(ink, 0.5)));
+            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.7, nib), at(-4.7, nib)], ink, darker(ink, 0.42)));
+            painter.add(shape(vec![at(-4.7, nib), at(4.7, nib), at(0.9, foot), at(-0.9, foot)], darker(ink, 0.25), darker(ink, 0.5)));
         }
     }
 }
@@ -1213,7 +1467,7 @@ fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
 /// OneNote's Draw tab, group for group, and built the way OneNote builds it: big buttons
 /// with the mark each one makes above its name. What NoteCraft cannot do yet is greyed and
 /// says so, rather than being left out, so the tab is an honest map of the ink work.
-fn draw_tab(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, "Undo", t, |ui| {
         // Named apart from the group they sit in, so a screen reader and a test can tell
         // the Undo group from the Undo button inside it.
@@ -1238,7 +1492,12 @@ stroke",
         );
     });
     group(ui, "Selection", t, |ui| {
-        if big_on(ui, Icon::Pointer, "Write", "Put the caret back: click to write, not to draw", view.pointer == Pointer::Write, t).clicked() {
+        // OneNote calls this one Select. Ours does not select ink yet; what it does is
+        // put the pointer back to the words, which is the same "stop drawing" the button
+        // is reached for, so it keeps the name and the tooltip says plainly what happens.
+        if big_on(ui, Icon::Pointer, "Select", "Stop drawing: the pointer picks text and puts the caret back", view.pointer == Pointer::Write, t)
+            .clicked()
+        {
             acts.push(Act::InkPointer(Pointer::Write));
         }
         soon(
@@ -1253,22 +1512,14 @@ Select",
         if eraser_on_rack(ui, view.pointer == Pointer::Erase, t).clicked() {
             acts.push(Act::InkPointer(Pointer::Erase));
         }
-        for (tool, colour, tenths) in PENS {
-            let chosen = view.pointer == Pointer::Draw && view.tool == tool && view.ink_colour == colour;
-            if pen_on_rack(ui, tool, colour, tenths, chosen, t).clicked() {
-                acts.push(Act::InkPen(tool, colour, tenths));
+        for (i, nib) in view.rack.iter().enumerate() {
+            let chosen = view.pointer == Pointer::Draw && view.nib == i;
+            if pen_on_rack(ui, i, *nib, chosen, view.rack.len(), t, acts) {
+                acts.push(Act::InkPen(i));
             }
         }
-        rows(ui, |ui| {
-            ui.add_space(3.0);
-            ui.label(egui::RichText::new("Thickness").size(10.0).color(t.muted));
-            let mut tenths = view.ink_width.clamp(4, 400);
-            if ui.add_sized(vec2(88.0, 14.0), egui::Slider::new(&mut tenths, 4..=400).show_value(false)).changed() {
-                acts.push(Act::InkWidth(tenths));
-            }
-            ui.label(egui::RichText::new(format!("{:.1} pt", f32::from(view.ink_width) / 10.0)).size(10.5).color(t.text));
-            not_built(ui, "Add a pen", t);
-        });
+        add_menu(ui, t, acts);
+        sensitivity(ui, view.sensitivity, t, acts);
     });
     group(ui, "Input Mode", t, |ui| {
         soon(
@@ -1353,7 +1604,7 @@ Help",
     });
 }
 
-fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
     group(ui, "Views", t, |ui| {

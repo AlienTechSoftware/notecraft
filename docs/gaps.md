@@ -87,16 +87,17 @@ it is fixed and tested, not when it is promised.
   page is `ink.svg` in the page's own folder; a page never drawn on has no such file, and a
   page rubbed clean loses it. It is SVG that also carries the pen's own readings in our
   namespace, so NoteCraft can change a stroke later while anything else sees the picture.
-  Built: the Draw tab, five nibs (pen, pencil, fountain pen, brush pen, highlighter), a
-  rack of seven, a width, an eraser, undo, and Save picture. **Not built:** select and
-  lasso; moving or resizing ink; adding to or rearranging the pen rack, and a tool's own
-  popup for its colour and thickness; shapes and automatic shapes; the ruler and other
-  stencils; ink replay; ink to text and ink to math; laser pointer. Ink is not shown by
-  other programs that open the page, because neither page format references it. Pressure
-  is real and measured on Windows (hardest 0.930 over 1223 readings, 2026-10-18); on
-  macOS, Linux and Wayland winit drops the tablet fields, so a pen there draws at full
-  pressure like a mouse, and tilt and the eraser end are on no platform.
-  `cargo run -p notecraft --example pen_check` shows what a pen reports.
+  Built: the Draw tab; five nibs (pen, pencil, fountain pen, brush pen, highlighter); a
+  rack the owner arranges, with Add, a right-click menu, a Modify Tool editor for colour
+  and thickness, and the whole rack remembered between runs; a pressure sensitivity wedge;
+  an eraser; undo; and Save picture. **Not built:** select and lasso; moving or resizing
+  ink; shapes and automatic shapes; the ruler and other stencils; ink replay; ink to text
+  and ink to math; laser pointer; More Colours and the eyedropper in the tool editor. Ink
+  is not shown by other programs that open the page, because neither page format
+  references it. Pressure is real and measured on Windows (hardest 0.930 over 1223
+  readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
+  pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
+  platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
 - **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
   and the other familiar marks, stored as plain text in the page.)
 - **Sync conflicts** are only detected by name by the checker; there is no merge or resolve UI.
