@@ -82,6 +82,12 @@ it is fixed and tested, not when it is promised.
   before it, so a line of them came out with its words backwards; the owner read one on
   2026-10-19 and said so. `bidi.rs` draws each word on its own and places them from the
   right edge of the run leftwards, with the gaps measured rather than left in a galley.
+  **That now covers the window as well as the page**, from 2026-10-19: every row of the
+  notebook tree and the window's title band draw their label through `bidi::line_at`, so a
+  section called `الصور والملفات` is no longer listed as `والملفات الصور`. The tree was the
+  most visible instance left, because it is on screen all the time. Anywhere else that hands
+  a whole string to `Painter::text` still has the fault; `line_at` is the fix, and
+  `crates/ui-egui/tests/rtl_quality.rs` measures both halves of it.
 - **The caret in a right-to-left line is NoteCraft's own, and it is new.** egui cannot place
   one there (`crates/ui-egui/tests/arabic_layout.rs` measures why: it counts glyphs where it
   means characters), so a line with Arabic in it is drawn by `crates/ui-egui/src/bidi.rs` and

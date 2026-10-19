@@ -977,7 +977,11 @@ impl NoteCraftApp {
         let text_pos = egui::pos2(x0 + 40.0, cy);
         let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
         let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x - 52.0, rect.max.y));
-        painter.with_clip_rect(text_clip).text(text_pos, Align2::LEFT_CENTER, &node.info.title, egui::FontId::proportional(14.0), text_color);
+        // The tree is on screen all the time, so this is the most visible place the words
+        // of an Arabic name would come out backwards. Each row's name decides its own
+        // direction; the row keeps its place and its clip either way.
+        let clipped = painter.with_clip_rect(text_clip);
+        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &node.info.title, 14.0, text_color, notecraft_model::Dir::default());
         let plus_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x - 24.0, rect.min.y + 2.0), vec2(20.0, ROW_HEIGHT - 4.0));
         if node.info.kind == NodeKind::Page
             && let Some(f) = node.info.format
@@ -1172,7 +1176,11 @@ impl NoteCraftApp {
             }
         });
         let text = title.map_or_else(|| "NoteCraft".to_owned(), |t| format!("{t} - NoteCraft"));
-        ui.painter_at(row).text(row.center(), Align2::CENTER_CENTER, text, egui::FontId::proportional(12.5), on.text);
+        // A page named in Arabic puts the band's words in the wrong order if the whole
+        // string is handed to egui, so the band goes through the bidi painter like the page
+        // does. The name decides its own direction here; there is no page to follow.
+        let band = ui.painter_at(row);
+        crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, notecraft_model::Dir::default());
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));

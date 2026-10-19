@@ -16,7 +16,7 @@
 
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Align, Color32, Pos2, Rect, Ui, Vec2, pos2, vec2};
+use egui::{Align, Align2, Color32, Pos2, Rect, Ui, Vec2, pos2, vec2};
 use std::cell::RefCell;
 
 thread_local! {
@@ -190,12 +190,56 @@ fn split(text: &str, size: f32, max_width: f32) -> Option<Split> {
 
 /// Draws the runs at `origin`.
 pub fn paint(ui: &Ui, origin: Pos2, drawn: &[Drawn]) {
+    paint_with(ui.painter(), origin, drawn);
+}
+
+/// The same, onto a painter the caller chose: one that is clipped to a row of the tree, or
+/// one made for a band of the window. The page's own words go through [`paint`]; this is
+/// for the places that draw straight onto a rectangle they have already laid out.
+pub fn paint_with(painter: &egui::Painter, origin: Pos2, drawn: &[Drawn]) {
     for d in drawn {
         // A right-to-left galley is laid out to the left of its origin, so it is shifted
         // back by its own left edge: then its left edge lands where the run belongs.
         let at = origin + d.at - vec2(d.galley.rect.min.x, 0.0);
-        ui.painter().galley(at, d.galley.clone(), Color32::PLACEHOLDER);
+        painter.galley(at, d.galley.clone(), Color32::PLACEHOLDER);
     }
+}
+
+/// Draws one short line of words where `painter.text` would draw it, but with the words in
+/// the order they are read.
+///
+/// `Painter::text` hands the whole string to egui, which shapes the letters of each word
+/// correctly and then puts the next word to the right of the one before it. In Arabic or
+/// Hebrew that comes out with the words backwards: a section called
+/// `من اليمين إلى اليسار` is drawn `اليسار إلى اليمين من`. The page's own words have gone
+/// through this module since 2026-10-19; the window around them had not, so a notebook
+/// written in Arabic read correctly in the page and backwards in the tree beside it and in
+/// the band above it.
+///
+/// This is for a label that is one line and already has its place: a row of the tree, the
+/// window's title band. `at` and `align` mean what they mean to `Painter::text`, and the
+/// line is measured and then anchored the same way, so a label that needs none of this is
+/// drawn exactly as it was before. A line too long for the painter's clip is cut by it, as
+/// it was before.
+pub fn line_at(ui: &Ui, painter: &egui::Painter, at: Pos2, align: Align2, text: &str, size: f32, color: Color32, page: notecraft_model::Dir) {
+    let font = egui::FontId::proportional(size);
+    if !paints(text, page) {
+        painter.text(at, align, text, font, color);
+        return;
+    }
+    let pieces = [(0..text.len(), TextFormat { font_id: font.clone(), color, ..TextFormat::default() })];
+    // Nothing to wrap against: a label is one line, however long it is.
+    let (drawn, _) = runs(ui, text, &pieces, size, f32::INFINITY);
+    let left = drawn.iter().map(|d| d.at.x).fold(f32::INFINITY, f32::min);
+    let right = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(f32::NEG_INFINITY, f32::max);
+    let tall = drawn.iter().map(|d| d.galley.rect.height()).fold(0.0_f32, f32::max);
+    if !left.is_finite() || !right.is_finite() {
+        painter.text(at, align, text, font, color);
+        return;
+    }
+    // Anchored on the ink the runs actually cover, which is what `Painter::text` anchors on.
+    let box_ = align.anchor_size(at, vec2(right - left, tall));
+    paint_with(painter, box_.min - vec2(left, 0.0), &drawn);
 }
 
 /// A line as it is heard rather than as it is stored: the direction marks and isolates that
