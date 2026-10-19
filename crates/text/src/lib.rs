@@ -17,6 +17,8 @@
 //! (outlines through skrifa, or a small atlas of our own). That is the next question the
 //! spike has to answer, and the decision is written up in the private research file.
 
+pub mod kashida;
+
 use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::style::{FontFamily, FontFamilyName};
 use parley::{Alignment, AlignmentOptions, FontContext, Layout, LayoutContext, StyleProperty};
