@@ -683,9 +683,17 @@ fn the_ribbon_inserts_in_both_formats() {
     }
     h.get_by_label("Insert").click();
     h.run();
+    // The Table button opens OneNote's size picker, and a square in it says how big.
     h.get_by_label("Table").click();
     h.run();
-    assert!(h.state().body().is_some_and(|b| b.contains("| A | B | C |")), "{:?}", h.state().body());
+    review(&mut h, "table_picker");
+    h.get_by_label("3 x 2 Table").click();
+    h.run();
+    let empty = "|  |  |  |
+| --- | --- | --- |
+|  |  |  |
+";
+    assert!(h.state().body().is_some_and(|b| b.contains(empty)), "three columns and two rows, all empty: {:?}", h.state().body());
     assert!(h.state().is_dirty());
     h.state_mut().save();
     assert!(!h.state().is_dirty());
@@ -695,7 +703,9 @@ fn the_ribbon_inserts_in_both_formats() {
     h.run();
     h.get_by_label("Table").click();
     h.run();
-    assert!(h.state().body().is_some_and(|b| b.contains("<table>") && b.contains("<th>A</th>")), "{:?}", h.state().body());
+    h.get_by_label("3 x 2 Table").click();
+    h.run();
+    assert!(h.state().body().is_some_and(|b| b.contains("<table>") && b.contains("<th>")), "{:?}", h.state().body());
 }
 
 /// The ribbon's Styles and Basic Text buttons change the block the caret is in.
@@ -1645,6 +1655,140 @@ fn clicking_bare_page_starts_a_box_where_the_pointer_is() {
         "without disturbing what was already there:
 {page_text}"
     );
+}
+
+/// The Table tab appears while the caret is in a table and goes when it leaves, and its
+/// Insert and Delete really change the table.
+#[test]
+fn the_table_tab_comes_with_the_caret_and_changes_the_table() {
+    let (_t, app, s) = sample_app("ui-table-tab");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Shape", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| A | B |
+|---|---|
+| one | two |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // No caret in a table, no Table tab.
+    assert_eq!(h.query_all_by_label("Table").count(), 0, "the tab is not offered while nothing is in hand");
+
+    let cell = h.get_by_label("one").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("into the cell");
+    settle(&mut h);
+    assert!(h.query_all_by_label("Table").count() >= 1, "now the tab is there");
+
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    review(&mut h, "tab_table");
+    for group in ["Select", "Delete", "Insert", "Merge", "Format", "Alignment", "Data", "Convert"] {
+        assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
+    }
+
+    // A column to the right, then a row below: the table grows both ways.
+    h.get_by_label("Insert Column Right").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(
+        body.lines().next().unwrap_or("").matches('|').count(),
+        4,
+        "three columns now:
+{body}"
+    );
+
+    h.get_by_label("Insert Row Below").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(
+        body.lines().filter(|l| l.starts_with('|')).count(),
+        4,
+        "a heading, its rule and two rows:
+{body}"
+    );
+
+    // And the heading row refuses to be deleted, with a word rather than silence.
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("| A |"),
+        "the heading is still there:
+{body}"
+    );
+}
+
+/// Dragging across cells picks the block between them: Delete empties it, and the Table
+/// tab's Select buttons pick the same way.
+#[test]
+fn cells_dragged_across_are_picked_and_can_be_emptied() {
+    let (_t, app, s) = sample_app("ui-cell-range");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Range", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let table = "| A | B |\n|---|---|\n| one | two |\n| three | four |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": table}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Drag from the first cell of the first row to the last cell of the second.
+    let from = h.get_by_label("one").rect().center();
+    let to = h.get_by_label("four").rect().center();
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("let go");
+    settle(&mut h);
+    review(&mut h, "cell-range");
+
+    // Delete empties what was picked and leaves the heading alone.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("| A | B |"), "the heading is untouched:\n{body}");
+    for word in ["one", "two", "three", "four"] {
+        assert!(!body.contains(word), "{word} was emptied with the rest of the block:\n{body}");
+    }
+
+    // And Select Rows from the Table tab picks a whole row, which Delete Rows then takes.
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": table}})).expect("put it back");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open it again");
+    settle(&mut h);
+    let cell = h.get_by_label("three").rect().center();
+    ask(&mut h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+    settle(&mut h);
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    h.get_by_label("Select Rows").click();
+    settle(&mut h);
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("one"), "the row that was not picked stayed:\n{body}");
+    assert!(!body.contains("three"), "the picked row went:\n{body}");
 }
 
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

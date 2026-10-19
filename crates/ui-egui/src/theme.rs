@@ -212,6 +212,9 @@ pub struct Tokens {
     pub rule_line: Color32,
     /// Every fifth grid line, or the margin line of a ruled page. A little stronger.
     pub rule_line_strong: Color32,
+    /// The lines round the cells of a table. Stronger than a ruled page, because a table
+    /// is read as a grid and its lines carry the shape; still quiet beside the words.
+    pub table_line: Color32,
 }
 
 fn rgb(c: (u8, u8, u8)) -> Color32 {
@@ -324,6 +327,7 @@ impl Tokens {
             warn: ensure_contrast(if dark { rgb((0xff, 0x8a, 0x80)) } else { rgb((0xb3, 0x26, 0x1e)) }, panel, 4.5, dark),
             rule_line: faint_line(editor, acc, 1.25),
             rule_line_strong: faint_line(editor, acc, 1.8),
+            table_line: faint_line(editor, acc, 2.4),
         }
     }
 }

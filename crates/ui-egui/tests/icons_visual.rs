@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 47] = [
+const ALL: [Icon; 49] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -72,6 +72,8 @@ const ALL: [Icon; 47] = [
     Icon::Clip,
     Icon::Sticker,
     Icon::Symbol,
+    Icon::TableRow,
+    Icon::TableColumn,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -108,6 +110,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::Clip => "clip",
         Icon::Sticker => "sticker",
         Icon::Symbol => "symbol",
+        Icon::TableRow => "table-row",
+        Icon::TableColumn => "table-column",
         Icon::Search => "search",
         Icon::FullPage => "full-page",
         Icon::ExitFullPage => "exit-full-page",
@@ -266,6 +270,18 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             (13.5, 20.0),
             (17.5, 20.0),
         ])],
+        Icon::TableRow => vec![
+            poly(&[(4.0, 10.0), (20.0, 10.0), (20.0, 14.5), (4.0, 14.5)], shade(color, 45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 19.0), (4.0, 19.0)]),
+            seg((4.0, 10.0), (20.0, 10.0)),
+            seg((4.0, 14.5), (20.0, 14.5)),
+        ],
+        Icon::TableColumn => vec![
+            poly(&[(9.5, 5.5), (14.5, 5.5), (14.5, 19.0), (9.5, 19.0)], shade(color, 45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 19.0), (4.0, 19.0)]),
+            seg((9.5, 5.5), (9.5, 19.0)),
+            seg((14.5, 5.5), (14.5, 19.0)),
+        ],
         Icon::Plus => vec![seg((12.0, 4.5), (12.0, 19.5)), seg((4.5, 12.0), (19.5, 12.0))],
         Icon::Pen => vec![
             poly(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
@@ -474,7 +490,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 94);
+    assert_eq!(pairs, 98);
 }
 
 #[test]
