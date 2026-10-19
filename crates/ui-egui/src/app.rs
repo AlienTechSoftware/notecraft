@@ -174,6 +174,8 @@ enum Act {
     Color(PathBuf, Option<NodeColor>),
     /// Show the node's folder in the operating system's file manager.
     Reveal(PathBuf),
+    /// Put a link to this page on the clipboard, to paste into another page.
+    CopyLink(PathBuf),
 }
 
 pub struct NoteCraftApp {
@@ -900,6 +902,7 @@ impl NoteCraftApp {
                     });
                 }
             }
+            Act::CopyLink(path) => self.copy_link_to(&path),
             Act::Reveal(path) => match open_folder(&path) {
                 Ok(()) => self.say(format!("Opened {}", self.shown(&path))),
                 Err(e) => {
@@ -1037,6 +1040,10 @@ impl NoteCraftApp {
                         ui.close();
                     }
                 });
+            }
+            if ui.button("Copy link to page").on_hover_text("A link to paste into another page").clicked() {
+                acts.push(Act::CopyLink(node.path.clone()));
+                ui.close();
             }
             if ui.button("Open folder").on_hover_text(self.shown(&node.path)).clicked() {
                 acts.push(Act::Reveal(node.path.clone()));
@@ -1268,6 +1275,27 @@ impl NoteCraftApp {
     /// window; a notebook, section group or section opens on its first page; a file opens in
     /// the program the system has for it; a web address opens in the browser. A relative
     /// path can never reach outside the notebooks folder (`notecraft_store::links`).
+    /// Puts a link to a page on the clipboard, as OneNote's Copy Link to Page does.
+    ///
+    /// The link names the page from the notebooks folder down
+    /// (`notecraft:/book/section/page`), not relative to anything, because what a relative
+    /// link would be relative to is the page it is pasted into, and nobody knows that when
+    /// the link is copied. Pasted into a page it reads as an ordinary link and opens the
+    /// page it names.
+    pub fn copy_link_to(&mut self, dir: &Path) {
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        let Some(uri) = notecraft_store::links::page_uri(&roots, dir) else {
+            self.complain("That page is not in a notebook that is open");
+            return;
+        };
+        let title = notecraft_store::tree::read_node(dir).map(|n| n.title).unwrap_or_else(|| "Page".to_string());
+        // A Markdown link, so pasting it into a page gives words to click rather than the
+        // address itself. The address alone is in it for anywhere else.
+        self.pending_copy = Some(format!("[{title}]({uri})"));
+        self.say(format!("Link to \"{title}\" copied"));
+    }
+
     pub fn follow_link(&mut self, ctx: &Context, href: &str) {
         use notecraft_store::links::{Link, resolve_in};
         let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
