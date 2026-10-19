@@ -52,6 +52,15 @@ it is fixed and tested, not when it is promised.
   window is not mirrored (the tree stays on the left whatever the page says), and the
   isolates the Run buttons write are kept in the file but not yet honoured when the line is
   drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+- **The caret keeps off the vowels.** A letter with a haraka on it is two shaped clusters,
+  so the arrow keys used to stop inside it and a click could land there: a caret in a place
+  the eye cannot see, and a Backspace that takes the vowel off a letter that looks
+  untouched. `bidi::step` and `bidi::hit` carry on past a mark now, for Arabic, Hebrew,
+  Syriac, Thaana, Thai, Cyrillic and the Latin combining accents. A general answer is
+  Unicode grapheme breaking, which would want a crate of its own.
+  `crates/ui-egui/tests/rtl_quality.rs` measures this and five other things a writer of
+  Arabic would notice. **Not built:** a triple click that takes the line, and sorting names
+  by Arabic collation rather than by code point.
 - **Each word of a right-to-left line is placed by NoteCraft.** egui lays the letters of an
   Arabic or Hebrew word out the right way, but puts the next word to the right of the one
   before it, so a line of them came out with its words backwards; the owner read one on

@@ -293,14 +293,62 @@ fn selection_in(text: &str, drawn: &[Drawn], from: usize, to: usize, size: f32) 
     out
 }
 
+/// A character that is drawn on the letter before it rather than beside it: an Arabic
+/// haraka, a Hebrew point, a combining accent. The caret must never stand between one of
+/// these and the letter it belongs to - the two are drawn as one mark on the page, so a
+/// caret between them is in a place the eye cannot see, and the next Backspace takes the
+/// vowel off a letter that looks untouched.
+///
+/// The ranges here are the ones NoteCraft's own scripts need. A general answer is Unicode's
+/// grapheme breaking, which wants a crate of its own; until that is weighed, this covers
+/// Arabic, Hebrew and the Latin combining accents, and anything else steps as it did.
+fn is_mark(c: char) -> bool {
+    matches!(c as u32,
+        0x0300..=0x036F   // combining diacritical marks (Latin and Greek)
+        | 0x0483..=0x0489 // Cyrillic
+        | 0x0591..=0x05BD | 0x05BF | 0x05C1..=0x05C2 | 0x05C4..=0x05C5 | 0x05C7 // Hebrew points
+        | 0x0610..=0x061A // Arabic honorifics
+        | 0x064B..=0x065F | 0x0670 // harakat and the dagger alef
+        | 0x06D6..=0x06DC | 0x06DF..=0x06E4 | 0x06E7..=0x06E8 | 0x06EA..=0x06ED // Quranic marks
+        | 0x0711 | 0x0730..=0x074A // Syriac
+        | 0x07A6..=0x07B0 // Thaana
+        | 0x0E31 | 0x0E34..=0x0E3A | 0x0E47..=0x0E4E // Thai
+        | 0x20D0..=0x20F0 // combining marks for symbols
+        | 0xFE00..=0xFE0F // variation selectors
+    )
+}
+
+/// Whether a byte index falls on a mark, which means it is inside a letter rather than
+/// between two of them.
+fn inside_a_letter(text: &str, at: usize) -> bool {
+    text.get(at..).and_then(|rest| rest.chars().next()).is_some_and(is_mark)
+}
+
 /// One step left or right on a mixed line, as the eye moves.
+///
+/// parley steps by shaped cluster, and a letter with a haraka on it is two of those, so a
+/// plain step would stop inside the letter. The step carries on in the same direction
+/// until it is between two letters.
 pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32) -> usize {
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return at };
         let layout = engine.layout(text, size, Some(max_width));
-        let caret = notecraft_text::Caret::at(at);
-        let moved = if right { notecraft_text::step_right(&layout, caret) } else { notecraft_text::step_left(&layout, caret) };
-        moved.index()
+        let mut now = at;
+        // At most a few marks hang off one letter; the bound is there so a strange string
+        // cannot spin here.
+        for _ in 0..8 {
+            let caret = notecraft_text::Caret::at(now);
+            let moved = if right { notecraft_text::step_right(&layout, caret) } else { notecraft_text::step_left(&layout, caret) };
+            let next = moved.index();
+            if next == now {
+                return now;
+            }
+            now = next;
+            if !inside_a_letter(text, now) {
+                return now;
+            }
+        }
+        now
     })
 }
 
@@ -318,7 +366,14 @@ pub fn hit(text: &str, at: Vec2, size: f32, max_width: f32) -> usize {
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return 0 };
         let layout = engine.layout(text, size, Some(max_width));
-        notecraft_text::caret_at(&layout, at.x, at.y).index()
+        let index = notecraft_text::caret_at(&layout, at.x, at.y).index();
+        // A click near a letter that carries a haraka can land between the two; the caret
+        // belongs before the letter, not inside it.
+        let mut now = index;
+        while now < text.len() && inside_a_letter(text, now) {
+            now += text[now..].chars().next().map(char::len_utf8).unwrap_or(1);
+        }
+        now
     })
 }
 
