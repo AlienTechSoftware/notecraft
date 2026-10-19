@@ -1865,3 +1865,175 @@ fn escape_lets_go_of_a_selected_container() {
     assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "no longer selected: {v}");
     assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "nothing was deleted");
 }
+
+/// The first line of words in `blocks` of a page body, to look for in what is left of it.
+fn needle(body: &str, from: usize, to: usize) -> String {
+    let blocks = notecraft_formats::markdown::parse(body);
+    let md = notecraft_formats::render::blocks_to_markdown(blocks.get(from..to.min(blocks.len())).unwrap_or_default());
+    md.lines().map(|l| l.trim_start_matches(['#', '-', '*', '>', ' ']).trim()).find(|l| l.len() > 6).unwrap_or_default().to_string()
+}
+
+fn select_box_by_handle(h: &mut Harness<'_, NoteCraftApp>, ox: f64, oy: f64, x: f64) {
+    ask(h, "ui.click", json!({"x": ox + x, "y": oy + 6.0})).expect("click the handle");
+    for _ in 0..6 {
+        pump(h);
+    }
+}
+
+/// Delete in a text box is Delete in the text box. A box that is not selected is never taken
+/// away by the key, and neither is one whose words are being edited.
+#[test]
+fn the_delete_key_in_the_words_does_not_delete_a_box() {
+    let (_t, mut h, blocks, _) = two_boxes("ui-box-delete-in-text");
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(2), "both boxes are still there: {v}");
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "and every block");
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "nothing was selected");
+}
+
+/// A right click with words selected in a box belongs to the words: the page's menu opens, and
+/// the box is not selected.
+#[test]
+fn right_click_with_words_selected_keeps_the_text_menu() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-words-menu");
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("Home");
+    ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select to the end");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    let (at, anchor) = (v.pointer("/page/caret/at").and_then(Value::as_u64), v.pointer("/page/caret/anchor").and_then(Value::as_u64));
+    assert!(at.is_some() && at != anchor, "words are selected before the right click: {v}");
+
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "the box was not selected: {v}");
+    assert!(h.query_all_by_label("Table").count() >= 1, "the page's menu opened");
+    assert_eq!(h.query_all_by_label("Delete").count(), 0, "and it has no box Delete on it");
+}
+
+/// Bare paper has the page's menu and nothing about a box.
+#[test]
+fn right_click_on_bare_paper_opens_only_the_page_menu() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-bare-paper");
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 300.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "no box is selected: {v}");
+    assert!(h.query_all_by_label("Table").count() >= 1, "the page's menu opened");
+    assert_eq!(h.query_all_by_label("Delete").count(), 0, "with no box Delete on it");
+    assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(2), "and no box was started or lost");
+}
+
+/// Deleting a box takes its words out of the saved page too, and leaves the other box's words.
+#[test]
+fn deleting_a_box_removes_its_words_from_the_saved_page() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-saved");
+    let before = h.state().body().unwrap_or_default().to_string();
+    let gone = needle(&before, 0, 2);
+    let kept = needle(&before, 2, usize::MAX);
+    assert!(!gone.is_empty() && !kept.is_empty() && gone != kept, "the sample page gives each box something to look for: {gone:?} {kept:?}");
+    assert!(before.contains(&gone) && before.contains(&kept));
+
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    settle(&mut h);
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert!(!after.contains(&gone), "the deleted box's words are gone from the page: {gone:?}");
+    assert!(after.contains(&kept), "the other box's words stay: {kept:?}");
+}
+
+/// Copy puts the box's content on the clipboard and leaves it on the page. Cut does the same and
+/// takes the box away.
+#[test]
+fn copy_and_cut_on_a_box_reach_the_clipboard() {
+    for (label, removes) in [("Copy", false), ("Cut", true)] {
+        let (_t, mut h, blocks, (ox, oy)) = two_boxes(&format!("ui-box-{label}"));
+        let before = h.state().body().unwrap_or_default().to_string();
+        let words = needle(&before, 0, 2);
+        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+        for _ in 0..6 {
+            pump(&mut h);
+        }
+        // The Home tab has a Cut and a Copy of its own; the box's menu is drawn over it.
+        h.query_all_by_label(label).last().expect("the menu item").click();
+        let mut copied = String::new();
+        for _ in 0..8 {
+            pump(&mut h);
+            for command in &h.output().platform_output.commands {
+                if let egui::OutputCommand::CopyText(text) = command {
+                    copied = text.clone();
+                }
+            }
+        }
+        assert!(copied.contains(&words), "{label} put the box's words on the clipboard: {words:?} in {copied:?}");
+        settle(&mut h);
+        let v = look_at(&mut h);
+        let boxes = v.pointer("/page/containers").and_then(Value::as_array).map_or(0, Vec::len);
+        if removes {
+            assert_eq!(boxes, 1, "Cut took the box away");
+            assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2));
+        } else {
+            assert_eq!(boxes, 2, "Copy left the box");
+            assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks));
+        }
+    }
+}
+
+/// The last box can go, and the page is still a page: bare paper starts a new box.
+#[test]
+fn deleting_the_only_box_leaves_a_page_that_can_be_written_on() {
+    let (_t, mut app, s) = sample_app("ui-box-only");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(1), "one box holds the page");
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
+
+    select_box_by_handle(&mut h, ox, oy, 100.0);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(0), "the page is empty: {v}");
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "and nothing is selected");
+
+    // Bare paper starts a box where the pointer is, as it does on any empty page.
+    ask(&mut h, "ui.click", json!({"x": ox + 200.0, "y": oy + 120.0})).expect("click the paper");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(1), "a new block is there to write in: {v}");
+    assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "with the caret in it");
+}
+
+/// Clicking into the words of another box lets go of the selection: the words are being edited
+/// now, not the box.
+#[test]
+fn clicking_into_words_lets_go_of_a_selected_box() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-click-away");
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "selected");
+    ask(&mut h, "ui.click", json!({"x": ox + 360.0 + 60.0, "y": oy + 30.0 + 40.0})).expect("click the other box's words");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "no longer selected: {v}");
+    assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "the caret is in the words");
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "nothing was deleted");
+}
