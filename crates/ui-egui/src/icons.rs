@@ -61,6 +61,30 @@ pub enum Icon {
     DirRtl,
     /// A block rubber held at an angle, with the worn end on the page: the ink eraser.
     Eraser,
+    /// An arrow curving back to the left: take the last thing back.
+    Undo,
+    /// The same arrow the other way: do it again.
+    Redo,
+    /// An arrow head: the select tool.
+    Pointer,
+    /// A loop drawn round something: lasso select.
+    Lasso,
+    /// An open hand: drag the page about instead of drawing on it.
+    Hand,
+    /// A ruler lying at an angle, with its marks along one edge.
+    Ruler,
+    /// Two arrows pushing apart with a line between: make room.
+    InsertSpace,
+    /// A circle behind a square: shapes.
+    Shapes,
+    /// A written stroke beside printed lines: handwriting becomes words.
+    InkToText,
+    /// An arrow running round a circle: watch the ink drawn again.
+    Replay,
+    /// A question mark in a ring.
+    Help,
+    /// A pen nib pointing down and to the left: ink.
+    Pen,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -217,6 +241,77 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Bars => vec![path(&[(4.0, 7.0), (20.0, 7.0)]), path(&[(4.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 17.0), (20.0, 17.0)])],
         // A block rubber leaning on the page: the body, the worn band across its foot, and
         // the line it sits on, which is what says it is rubbing something out.
+        // An arrow curving back on itself to the left: take the last thing back.
+        Icon::Undo => {
+            vec![path(&[(9.0, 6.0), (5.0, 10.0), (9.0, 14.0)]), path(&[(5.0, 10.0), (15.0, 10.0), (18.0, 13.0), (18.0, 17.0), (15.0, 20.0)])]
+        }
+        // The same arrow, mirrored: do it again.
+        Icon::Redo => {
+            vec![path(&[(15.0, 6.0), (19.0, 10.0), (15.0, 14.0)]), path(&[(19.0, 10.0), (9.0, 10.0), (6.0, 13.0), (6.0, 17.0), (9.0, 20.0)])]
+        }
+        // An arrow head with its tail: the ordinary select tool.
+        Icon::Pointer => vec![fill(&[(6.0, 3.0), (18.5, 13.5), (12.5, 14.0), (15.5, 20.5), (12.0, 22.0), (9.0, 15.5), (6.0, 19.5)], color)],
+        // A loop thrown round something, with its tail hanging down.
+        Icon::Lasso => vec![closed(&[(12.0, 4.0), (19.0, 8.5), (16.5, 15.0), (7.5, 15.0), (5.0, 8.5)]), path(&[(8.0, 15.0), (8.0, 21.0)])],
+        // An open hand: the fingers and the thumb as one outline.
+        Icon::Hand => vec![fill(
+            &[
+                (9.0, 4.0),
+                (11.0, 4.0),
+                (11.0, 12.0),
+                (13.0, 12.0),
+                (13.0, 5.5),
+                (15.0, 5.5),
+                (15.0, 12.5),
+                (17.5, 13.5),
+                (17.5, 19.0),
+                (14.0, 22.0),
+                (9.5, 22.0),
+                (6.5, 17.0),
+                (6.5, 11.0),
+                (9.0, 11.0),
+            ],
+            color,
+        )],
+        // A ruler lying at an angle, with its marks along the upper edge.
+        Icon::Ruler => vec![
+            closed(&[(3.5, 15.0), (15.0, 3.5), (20.5, 9.0), (9.0, 20.5)]),
+            line((7.0, 11.5), (9.5, 14.0)),
+            line((10.0, 8.5), (12.5, 11.0)),
+            line((13.0, 5.5), (15.5, 8.0)),
+        ],
+        // Two arrows pushing apart, with the line they are making room at.
+        Icon::InsertSpace => {
+            vec![line((4.0, 12.0), (20.0, 12.0)), path(&[(9.0, 7.0), (12.0, 4.0), (15.0, 7.0)]), path(&[(9.0, 17.0), (12.0, 20.0), (15.0, 17.0)])]
+        }
+        // A circle behind a square.
+        Icon::Shapes => vec![
+            Shape::circle_stroke(g.p(9.5, 9.5), rect.width() * 5.5 / 24.0, stroke),
+            closed(&[(11.5, 11.5), (20.5, 11.5), (20.5, 20.5), (11.5, 20.5)]),
+        ],
+        // A written stroke beside printed lines: handwriting turning into words.
+        Icon::InkToText => vec![
+            path(&[(4.0, 17.0), (6.5, 7.0), (9.0, 17.0), (11.5, 7.0), (14.0, 17.0)]),
+            line((16.5, 8.0), (20.5, 8.0)),
+            line((16.5, 12.5), (20.5, 12.5)),
+            line((16.5, 17.0), (20.5, 17.0)),
+        ],
+        // An arrow running round a circle: the ink drawn again.
+        Icon::Replay => vec![
+            path(&[(18.5, 7.5), (18.5, 12.0), (14.0, 12.0)]),
+            path(&[(18.0, 12.0), (16.0, 17.5), (10.5, 19.5), (5.5, 16.5), (4.5, 11.0), (8.0, 6.5), (13.5, 5.5), (18.0, 8.5)]),
+        ],
+        // A question mark in a ring.
+        Icon::Help => vec![
+            Shape::circle_stroke(g.p(12.0, 12.0), rect.width() * 8.5 / 24.0, stroke),
+            path(&[(9.5, 9.5), (10.5, 7.5), (13.5, 7.5), (14.5, 9.5), (13.5, 11.5), (12.0, 12.5), (12.0, 14.5)]),
+            Shape::circle_filled(g.p(12.0, 17.5), rect.width() / 20.0, color),
+        ],
+        // A pen nib pointing down and to the left, with its slit.
+        Icon::Pen => vec![
+            fill(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
+            Shape::line_segment([g.p(6.0, 18.0), g.p(13.5, 10.5)], Stroke::new((w / 18.0).max(1.0), shade(color, 0.45))),
+        ],
         Icon::Eraser => vec![
             fill(&[(4.5, 15.5), (12.0, 5.0), (19.5, 10.5), (12.0, 21.0)], color),
             fill(&[(7.6, 18.0), (12.0, 11.8), (19.5, 10.5), (12.0, 21.0)], shade(color, 0.45)),
@@ -260,7 +355,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 26] = [
+    pub const ALL: [Icon; 38] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -287,6 +382,18 @@ mod tests {
         Icon::DirRtl,
         Icon::Bars,
         Icon::Eraser,
+        Icon::Undo,
+        Icon::Redo,
+        Icon::Pointer,
+        Icon::Lasso,
+        Icon::Hand,
+        Icon::Ruler,
+        Icon::InsertSpace,
+        Icon::Shapes,
+        Icon::InkToText,
+        Icon::Replay,
+        Icon::Help,
+        Icon::Pen,
     ];
 
     #[test]

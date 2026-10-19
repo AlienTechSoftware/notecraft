@@ -180,6 +180,8 @@ pub struct NoteCraftApp {
     ribbon_tab: String,
     /// What the pen is reporting, where the platform reports anything.
     stylus: crate::stylus::Stylus,
+    /// Where the page's words were drawn last frame, which is where its ink goes.
+    page_rect: Option<egui::Rect>,
     /// What the pointer does on the page, and the pen it does it with (the Draw tab).
     pen: crate::inkpad::Pen,
     /// The drawing open in this page, if it has one.
@@ -247,6 +249,7 @@ impl NoteCraftApp {
             show_source,
             ribbon_tab: "Home".to_string(),
             stylus: crate::stylus::Stylus::default(),
+            page_rect: None,
             pen: crate::inkpad::Pen::default(),
             pad: None,
             rules: session_rules,
@@ -410,6 +413,12 @@ impl NoteCraftApp {
         self.editor.as_ref().is_some_and(|e| e.dirty_since.is_some())
     }
 
+    /// Where the page's words were drawn last frame. Its ink is measured from the top
+    /// left of this, so a test that writes on the page aims here.
+    pub fn page_rect(&self) -> Option<egui::Rect> {
+        self.page_rect
+    }
+
     /// The text in the editor, if a page is open.
     pub fn body(&self) -> Option<&str> {
         self.editor.as_ref().map(|e| e.body.as_str())
@@ -483,23 +492,12 @@ impl NoteCraftApp {
                 boxes: notecraft_store::page::containers(dir).unwrap_or_default(),
                 origin: egui::Pos2::ZERO,
             });
-            self.pad = self.drawing_of(dir);
+            self.pad = Some(crate::inkpad::Pad::of_page(dir));
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
             self.say("Opened");
         }
-    }
-
-    /// The drawing on the page just opened, if it has one. A page may hold several
-    /// pictures; the first that is a drawing of ours is the one the pen writes in, which is
-    /// enough while a page has one sheet (see `docs/gaps.md`).
-    fn drawing_of(&self, dir: &Path) -> Option<crate::inkpad::Pad> {
-        let blocks = self.editor.as_ref().map(|e| e.blocks.as_slice()).unwrap_or_default();
-        blocks.iter().find_map(|b| match b {
-            notecraft_formats::markdown::Block::Image { src, .. } if crate::inkpad::is_drawing(src) => crate::inkpad::Pad::open(dir, src),
-            _ => None,
-        })
     }
 
     fn save_now(&mut self) {
@@ -1152,32 +1150,16 @@ impl NoteCraftApp {
         }
     }
 
-    /// Puts a sheet to draw on into the page, as an ordinary picture that happens to be
-    /// ours, and opens it for the pen.
+    /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
+    /// sheet to put anywhere first.
     fn ink_insert(&mut self) {
-        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+        if self.editor.is_none() {
             self.say("Open a page first");
             return;
-        };
-        let src = crate::inkpad::next_name(&dir);
-        match crate::inkpad::Pad::create(&dir, &src) {
-            Ok(pad) => {
-                // A block of its own, put in after the one the caret is in, rather than
-                // text pushed into a paragraph, which would make the sheet an inline
-                // picture inside a line of words.
-                if let Some(ed) = self.editor.as_mut() {
-                    let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
-                    ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Drawing".to_string(), src: src.clone() });
-                    ed.body = pageedit::to_body(ed.format, &ed.blocks);
-                    Self::mark_dirty_from_blocks(ed);
-                }
-                self.pad = Some(pad);
-                self.pen.pointer = ribbon::Pointer::Draw;
-                self.ribbon_tab = "Draw".to_string();
-                self.say("A sheet to draw on. Pick a pen and write on it");
-            }
-            Err(e) => self.complain(&format!("Cannot make the drawing: {e}")),
         }
+        self.pen.pointer = ribbon::Pointer::Draw;
+        self.ribbon_tab = "Draw".to_string();
+        self.say("Write anywhere on the page");
     }
 
     /// Writes the drawing again with no pen readings in it, for sending somewhere else.
@@ -1692,15 +1674,24 @@ impl NoteCraftApp {
     /// `before` and `after` are the orders of the pages on either side; the new page takes
     /// the number in between, which is why siblings are numbered ten apart.
     fn page_gap(&self, ui: &mut Ui, section: &Path, before: Option<u32>, after: Option<u32>, acts: &mut Vec<Act>) {
+        /// How big the round "+" is. The gap itself is shorter than this on purpose: it is
+        /// a thin strip between two pages, and the button stands out of it.
+        const PLUS: f32 = 6.5;
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::click());
         let hot = resp.hovered();
         if hot {
-            let painter = ui.painter_at(rect.expand(2.0));
+            // The gap is 7 points tall and the circle is 13 across, so the circle has to
+            // be drawn outside the strip it belongs to. `painter_at` cannot: it narrows
+            // the clip it is given to whatever the ui already has, which is the strip, and
+            // the circle came out a lozenge, flat at the top and the bottom. Painting on
+            // the layer starts from the whole window instead.
+            let room = (PLUS + 1.0 - rect.height() / 2.0).max(2.0);
+            let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(rect.expand(room));
             let y = rect.center().y;
             let t = &self.tokens;
             painter.line_segment([egui::pos2(rect.min.x + 18.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
             let c = egui::pos2(rect.min.x + 9.0, y);
-            painter.circle_filled(c, 6.5, t.accent);
+            painter.circle_filled(c, PLUS, t.accent);
             painter.text(c, Align2::CENTER_CENTER, "+", egui::FontId::proportional(12.0), t.panel);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -1852,6 +1843,7 @@ impl NoteCraftApp {
         let (pen, pressure) = (self.pen, self.stylus.sample().pressure);
         let mut pad = self.pad.take();
         let mut ink_changed = false;
+        let mut page_rect = None;
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
@@ -1947,9 +1939,21 @@ impl NoteCraftApp {
                             // will be read, and the one being written in is a text box in
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
-                            let ink = pageedit::Ink { pad: pad.as_mut(), pen, pressure };
-                            let moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir, ink);
-                            ink_changed |= moved.changed.ink;
+                            let top = ui.cursor().min;
+                            let moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir);
+                            // The ink of a page sits over its words, anywhere on it, the
+                            // way a pen on paper does. It goes on after them so a press
+                            // with a pen in hand reaches the ink and not the caret.
+                            {
+                                let body = egui::Rect::from_min_max(
+                                    egui::pos2(ui.max_rect().min.x, top.y),
+                                    egui::pos2(ui.max_rect().max.x, ui.cursor().min.y.max(top.y + 1.0)),
+                                );
+                                page_rect = Some(body);
+                                if let Some(pad) = pad.as_mut() {
+                                    ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens);
+                                }
+                            }
                             if moved.changed.blocks {
                                 ed.body = pageedit::to_body(ed.format, &ed.blocks);
                                 *from_blocks = true;
@@ -2050,6 +2054,9 @@ impl NoteCraftApp {
         // The drawing comes back from the page, and a stroke laid down this frame is
         // written at once: ink is its own file, so it does not wait for the page to save.
         self.pad = pad;
+        if page_rect.is_some() {
+            self.page_rect = page_rect;
+        }
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
             match pad.save() {
@@ -2510,7 +2517,7 @@ impl NoteCraftApp {
                 "colour": self.pen.colour.hex(),
                 "width": self.pen.width,
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
-                "drawing": self.pad.as_ref().map(|p| p.src.clone()),
+                "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
             },
             // What a pen has told this window. `pen` is false until a device reports a
             // pressure at all, and `hardest` is the hardest press since the window opened.
