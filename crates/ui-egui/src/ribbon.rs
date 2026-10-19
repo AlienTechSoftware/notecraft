@@ -120,6 +120,8 @@ pub enum Pointer {
     Pick,
     /// Pick ink up by drawing a loop round it.
     Lasso,
+    /// Draw a regular shape: the drag gives the two corners it is drawn between.
+    Shape(notecraft_ink::shapes::Shape),
 }
 
 impl Pointer {
@@ -130,6 +132,7 @@ impl Pointer {
             Pointer::Erase => "erase",
             Pointer::Pick => "select",
             Pointer::Lasso => "lasso",
+            Pointer::Shape(s) => s.id(),
         }
     }
 }
@@ -1697,6 +1700,51 @@ fn row_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, live: bool, t: &T
     if live { resp } else { resp.on_hover_text(format!("{label}: nothing to {}", label.to_lowercase())) }
 }
 
+/// OneNote's Shapes group: a row of regular shapes, and the one in hand is lit.
+///
+/// A shape drawn here is ink like any other stroke, so the eraser, Select and Undo Stroke
+/// all work on it the day it is drawn.
+fn shapes_group(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    use notecraft_ink::shapes::Shape;
+    group(ui, "Shapes", t, |ui| {
+        let in_hand = |s: Shape| view.pointer == Pointer::Shape(s);
+        let mut row = |ui: &mut Ui, shapes: &[Shape]| {
+            ui.vertical(|ui| {
+                for s in shapes {
+                    if shape_button(ui, *s, in_hand(*s), t).clicked() {
+                        acts.push(Act::InkPointer(Pointer::Shape(*s)));
+                    }
+                }
+            });
+        };
+        row(ui, &[Shape::Line, Shape::Arrow, Shape::Rectangle]);
+        row(ui, &[Shape::RoundedRectangle, Shape::Square, Shape::Ellipse]);
+        row(ui, &[Shape::Circle, Shape::Diamond, Shape::Triangle]);
+        row(ui, &[Shape::Star]);
+    });
+}
+
+/// One shape on the Shapes row: the shape itself, drawn small, with its name beside it.
+fn shape_button(ui: &mut Ui, shape: notecraft_ink::shapes::Shape, here: bool, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(86.0, 20.0), Sense::click());
+    if here || resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, if here { t.row_selected } else { t.row_hover });
+    }
+    // The shape is traced with the same code that draws it on the page, so the button
+    // cannot show one thing and the pen draw another.
+    let box_ = egui::Rect::from_min_size(egui::pos2(rect.min.x + 4.0, rect.min.y + 4.0), vec2(12.0, 12.0));
+    let dabs = notecraft_ink::shapes::trace(shape, (box_.min.x, box_.min.y), (box_.max.x, box_.max.y), 1.0);
+    let points: Vec<egui::Pos2> = dabs.iter().map(|d| egui::pos2(d.x, d.y)).collect();
+    if points.len() >= 2 {
+        ui.painter().add(egui::Shape::line(points, egui::Stroke::new(1.2, if here { t.accent } else { t.text })));
+    }
+    let at = egui::pos2(rect.min.x + 24.0, rect.center().y);
+    ui.painter().text(at, egui::Align2::LEFT_CENTER, shape.label(), egui::FontId::proportional(11.5), t.text);
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, shape.label()));
+    resp.on_hover_text(format!("{}: drag on the page to draw one", shape.label()))
+}
+
 fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
     let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
     let resp = ui.add_enabled_ui(false, |ui| big(ui, icon, label, "Not built yet", &dim)).inner;
@@ -1799,8 +1847,8 @@ Space",
         // paper, so it goes to the same gallery the View tab opens.
         rule_lines_menu(ui, view, t, acts);
     });
+    shapes_group(ui, view, t, acts);
     group(ui, "Shapes", t, |ui| {
-        soon(ui, Icon::Shapes, "Shapes", t);
         soon(
             ui,
             Icon::Shapes,

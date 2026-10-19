@@ -29,6 +29,7 @@
 pub mod pick;
 pub mod rack;
 pub mod shape;
+pub mod shapes;
 pub mod svg;
 
 /// One reading of the pen: where the tip was, and how hard it was pressed there.
