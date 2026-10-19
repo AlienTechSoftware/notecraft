@@ -68,7 +68,7 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 
 | Decision | Why it matters |
 |---|---|
-| Koala artwork licence | Unverified. Replace or confirm before release. |
+| Koala artwork licence | Recorded from the owner's statement (licensed AI tool). Not independently checked. |
 | Where and when to push | Nothing is committed or pushed yet. |
 | Commit attribution lines | Two sources disagree. Resolve before the first commit. |
 

@@ -1262,13 +1262,16 @@ fn every_tool_on_the_rack_can_be_picked_up() {
         assert_eq!(now["colour"].as_str(), Some(colour), "{pen} writes in {colour}: {now}");
     }
 
-    // The eraser and the Write arrow take the pen out of the hand again.
+    // The eraser, the arrow and Type each take the pen out of the hand.
     h.get_by_label("Eraser").click();
     h.run();
     assert_eq!(ink(&mut h)["pointer"].as_str(), Some("erase"));
     h.get_by_label("Select").click();
     h.run();
-    assert_eq!(ink(&mut h)["pointer"].as_str(), Some("write"), "and the arrow puts the caret back");
+    assert_eq!(ink(&mut h)["pointer"].as_str(), Some("select"), "the arrow picks ink up");
+    h.get_by_label("Type").click();
+    h.run();
+    assert_eq!(ink(&mut h)["pointer"].as_str(), Some("write"), "and Type puts the caret back");
 }
 
 /// The rack is the owner's to arrange: another tool added, moved along, changed and taken
@@ -1319,6 +1322,78 @@ fn the_rack_can_be_arranged_and_is_remembered() {
     h2.run();
     let reopened = ask(&mut h2, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
     assert_eq!(reopened, after, "the rack came back as it was left");
+}
+
+/// Ink can be picked up, moved and thrown away, and a lasso takes what is wholly inside
+/// it. The strokes are their own objects on the page: nothing about the words moves them.
+#[test]
+fn ink_can_be_picked_up_moved_and_deleted() {
+    let (_t, mut app, s) = sample_app("ui-pick");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen black").click();
+    h.run();
+
+    // Two strokes, well apart.
+    let body = h.state().page_rect().expect("the page");
+    let draw = |h: &mut Harness<'_, NoteCraftApp>, x: f32, y: f32| {
+        ask(h, "ui.press", json!({"x": x, "y": y})).expect("down");
+        pump(h);
+        for step in 1..=4 {
+            ask(h, "ui.move", json!({"x": x + step as f32 * 20.0, "y": y})).expect("move");
+            pump(h);
+        }
+        ask(h, "ui.release", json!({"x": x + 80.0, "y": y})).expect("up");
+        pump(h);
+    };
+    draw(&mut h, body.min.x + 40.0, body.min.y + 120.0);
+    draw(&mut h, body.min.x + 40.0, body.min.y + 260.0);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    let mut now = Value::Null;
+    for _ in 0..20 {
+        rest(&mut h);
+        now = ink(&mut h);
+        if now["strokes"].as_u64() == Some(2) {
+            break;
+        }
+    }
+    assert_eq!(now["strokes"].as_u64(), Some(2), "two strokes on the page: {now}");
+
+    // Select, then click the first one: it is held, and only it.
+    h.get_by_label("Select").click();
+    h.run();
+    ask(&mut h, "ui.click", json!({"x": body.min.x + 80.0, "y": body.min.y + 120.0})).expect("pick");
+    rest(&mut h);
+    assert_eq!(ink(&mut h)["holding"].as_u64(), Some(1), "one stroke is held: {}", ink(&mut h));
+
+    // Clicking bare page lets go again.
+    ask(&mut h, "ui.click", json!({"x": body.min.x + 300.0, "y": body.min.y + 60.0})).expect("let go");
+    rest(&mut h);
+    assert_eq!(ink(&mut h)["holding"].as_u64(), Some(0), "and bare page lets go");
+
+    // A lasso round the lower stroke takes that one and leaves the upper one alone.
+    h.get_by_label("Lasso Select").click();
+    h.run();
+    let (lx, ly) = (body.min.x + 20.0, body.min.y + 230.0);
+    ask(&mut h, "ui.press", json!({"x": lx, "y": ly})).expect("down");
+    pump(&mut h);
+    for (dx, dy) in [(180.0, 0.0), (180.0, 70.0), (0.0, 70.0), (0.0, 2.0)] {
+        ask(&mut h, "ui.move", json!({"x": lx + dx, "y": ly + dy})).expect("move");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": lx, "y": ly + 2.0})).expect("up");
+    rest(&mut h);
+    assert_eq!(ink(&mut h)["holding"].as_u64(), Some(1), "the lasso took the one inside it: {}", ink(&mut h));
+
+    // Delete throws the held stroke away, and the other one stays.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    rest(&mut h);
+    let after = ink(&mut h);
+    assert_eq!(after["strokes"].as_u64(), Some(1), "one stroke left: {after}");
+    assert_eq!(after["holding"].as_u64(), Some(0), "and nothing is held");
 }
 
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

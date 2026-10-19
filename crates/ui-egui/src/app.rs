@@ -2708,6 +2708,7 @@ impl NoteCraftApp {
                 "rack": notecraft_ink::rack::write(&self.rack),
                 "nib": self.nib,
                 "sensitivity": self.sensitivity,
+                "holding": self.pad.as_ref().map_or(0, crate::inkpad::Pad::holding),
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
