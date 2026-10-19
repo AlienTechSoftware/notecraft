@@ -37,10 +37,12 @@ pub enum Mark {
     Copy,
     Paste,
     Painter,
+    /// A red cross: delete.
+    Delete,
 }
 
 impl Mark {
-    pub const ALL: [Mark; 24] = [
+    pub const ALL: [Mark; 25] = [
         Mark::ToDo,
         Mark::Important,
         Mark::Question,
@@ -65,6 +67,7 @@ impl Mark {
         Mark::Copy,
         Mark::Paste,
         Mark::Painter,
+        Mark::Delete,
     ];
 
     pub fn name(self) -> &'static str {
@@ -93,6 +96,7 @@ impl Mark {
             Mark::Copy => "copy",
             Mark::Paste => "paste",
             Mark::Painter => "painter",
+            Mark::Delete => "delete",
         }
     }
 
@@ -106,7 +110,7 @@ impl Mark {
             Mark::Remember => Color32::from_rgb(0xE6, 0xCC, 0x22),
             Mark::Definition => Color32::from_rgb(0x3F, 0xB9, 0x50),
             Mark::Highlighter => Color32::from_rgb(0xE6, 0xCC, 0x22),
-            Mark::Critical => Color32::from_rgb(0xD1, 0x34, 0x38),
+            Mark::Critical | Mark::Delete => Color32::from_rgb(0xD1, 0x34, 0x38),
             Mark::Contact | Mark::Address | Mark::Phone | Mark::Website | Mark::Idea => accent,
             _ => ink,
         }
@@ -254,6 +258,7 @@ pub fn shapes(rect: Rect, mark: Mark, color: Color32) -> Vec<Shape> {
             line((8.0, 12.0), (16.0, 12.0)),
             line((8.0, 16.0), (16.0, 16.0)),
         ],
+        Mark::Delete => vec![thick_line((6.0, 6.0), (18.0, 18.0)), thick_line((18.0, 6.0), (6.0, 18.0))],
         Mark::Painter => vec![
             fill(&[(4.0, 5.0), (12.0, 5.0), (12.0, 9.5), (4.0, 9.5)]),
             path(&[(12.0, 7.0), (16.0, 7.0), (16.0, 12.5), (11.0, 12.5), (11.0, 20.0)]),

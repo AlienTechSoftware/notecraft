@@ -17,6 +17,14 @@ use notecraft_formats::markdown::{Block, Span, parse_inline};
 use notecraft_formats::render::spans_to_markdown;
 use notecraft_model::Tag;
 
+/// Where a selection that a right click collapsed is to be put back: `(block, primary, secondary)`.
+/// Set by the container, taken by the block's text box on the next frame. A text box moves its
+/// selection to the pointer the moment any button goes down, so a menu that acts on the words
+/// (Cut, Copy, Bold) would find none selected unless they are put back.
+pub fn restore_selection_id() -> egui::Id {
+    egui::Id::new("restore-selection")
+}
+
 /// What the caret is in, and the text it is editing.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Caret {
@@ -1035,6 +1043,19 @@ pub fn show_blocks(
                 .inner;
             if let Some(sel) = selection {
                 c.selection = sel;
+            }
+            // A right click collapsed the selection; the container has asked for it back.
+            let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
+            if let Some((block_at, primary, secondary)) = wanted
+                && block_at == i
+            {
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {
+                    let (a, b) = (c.text.chars().count().min(secondary), c.text.chars().count().min(primary));
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(a), egui::text::CCursor::new(b))));
+                    state.store(ui.ctx(), id);
+                    c.selection = (b, a);
+                }
+                ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
             }
             // Ctrl+click (Cmd on a Mac) on a link while writing in the block follows it; a
             // plain click only moves the caret, which is how Word and OneNote do it.

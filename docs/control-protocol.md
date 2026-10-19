@@ -50,7 +50,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; and `containers`: the boxes the blocks are arranged in), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
+| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; and `selectedContainer`: the index of the box that is selected, or null), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
 | `ui.theme` | `mode` (`light`, `dark`, `system`), `accent` | `{theme, modePref}` |

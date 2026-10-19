@@ -7,6 +7,9 @@ name or mark.
 ## Versions
 
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
+- **The version is 0.0.1 and stays there until the owner approves a change, in words, each time.** The
+  rules below say what a number would mean once one is approved; they do not authorise a bump. The
+  first release is `v0.0.1`.
 - Plain semantic versioning: `MAJOR.MINOR.PATCH`, with an optional `-rc.1` style tag. The Craft
   apps do the same, and they are all in the 0.x range today.
 - **Patch** (0.1.0 to 0.1.1): bug fixes only, or a rebuild after a packaging or workflow fix. No new
@@ -26,7 +29,8 @@ name or mark.
 
 ## Making a release
 
-1. On `main`, with the gate green, set the version: `cargo xtask version set 0.1.0`. Commit it.
+1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
+   when the owner has approved that exact number. Commit it.
 2. Start the build, either way:
    - Actions, Release, Run workflow (the version box overrides `Cargo.toml` for a test run), or
    - merge `main` into the `release` branch and push.
