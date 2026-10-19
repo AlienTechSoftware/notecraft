@@ -6,6 +6,15 @@
 //! records what the app does today - whether that is the bar or a gap - and says which it
 //! is. A test that fails after a change is an answer that moved, not necessarily a
 //! regression: read the comment and decide.
+//!
+//! What it has found so far, in the order the tests sit below: the caret keeps off the
+//! vowels and Home and End go to the visual ends of the line; a bracket reaches egui as it
+//! was typed and is mirrored there; a line, and then a whole paragraph, is justified by
+//! stretching the letters rather than the spaces, which is the line of the bar no other
+//! note taking application answers at all; and the words of an Arabic name are drawn in
+//! reading order in the window around the page - the notebook tree and the title band -
+//! and not only inside the page. Still gaps: a triple click that takes the line, and
+//! sorting names by Arabic collation rather than by code point.
 
 use egui_kittest::Harness;
 use notecraft_ui_egui::{bidi, fonts, theme::Theme};
@@ -15,6 +24,10 @@ const LINE: &str = "ما الذي يمكنك فعله هنا";
 /// The same with harakat on the first word, and a word with a bracket in it.
 const VOWELLED: &str = "كِتَاب";
 const BRACKETED: &str = "النص (مثال) هنا";
+/// A page of the demo notebook, as the tree lists it: "pictures and files". The two words
+/// have a letter each that is in neither of the others, which is how a glyph is found again
+/// after shaping: `ص` in the first word, `ف` in the second.
+const NAME: &str = "الصور والملفات";
 
 fn harness() -> Harness<'static> {
     let mut h = Harness::builder().with_size(egui::vec2(600.0, 200.0)).build_ui(|ui| fonts::install_once(ui.ctx()));
@@ -315,6 +328,75 @@ fn picture(plain: &str, justified: &str, column: f32) {
     if let Ok(img) = h.render() {
         let _ = img.save(dir.join("kashida.png"));
     }
+}
+
+/// 1.2 of the bar, in the window rather than in the page. Every label the window draws
+/// around the page - a row of the notebook tree, the title band above it - puts the words
+/// of an Arabic name in the order they are read.
+///
+/// Measured: **the bar**, from 2026-10-19. Before that day it was a gap, and the most
+/// visible one left in the app: `Painter::text` shapes the letters of each word correctly
+/// and then puts the next word to the right of the one before it, so the demo notebook's
+/// Arabic section listed `الصور والملفات` as `والملفات الصور` in a tree that is on screen
+/// all the time. `bidi::line_at` is what the window now draws a label with, and the second
+/// half of this test is the fault it was built for, still there in egui underneath.
+#[test]
+fn the_words_of_an_arabic_name_are_drawn_in_reading_order_in_the_window() {
+    let first = 'ص'; // in الصور, the word that is read first
+    let second = 'ف'; // in والملفات, the word that is read second
+    assert_eq!(NAME.matches(first).count(), 1, "the letter is in one word only");
+    assert_eq!(NAME.matches(second).count(), 1);
+
+    // What the window now draws: one galley per word, each placed where it belongs.
+    let h = harness();
+    let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+        fonts::install_once(ui.ctx());
+        let painter = ui.painter().clone();
+        bidi::line_at(
+            ui,
+            &painter,
+            egui::pos2(40.0, 40.0),
+            egui::Align2::LEFT_CENTER,
+            NAME,
+            14.0,
+            egui::Color32::BLACK,
+            notecraft_model::Dir::default(),
+        );
+    });
+    let words: Vec<(f32, String)> = frame
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => Some((t.pos.x, t.galley.text().to_string())),
+            _ => None,
+        })
+        .collect();
+    frame.textures_delta.clear();
+    assert_eq!(words.len(), 2, "a word to a galley, placed one by one: {words:?}");
+    let x_of = |needle: char| words.iter().find(|(_, t)| t.contains(needle)).map(|(x, _)| *x);
+    let (a, b) = (x_of(first).unwrap_or(0.0), x_of(second).unwrap_or(0.0));
+    assert!(a > b, "the word that is read first is drawn to the right of the second: {a} then {b} in {words:?}");
+
+    // And the fault underneath, so this test says why the helper exists: handed the whole
+    // string, egui draws the first word to the left of the second, which is backwards.
+    let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().text(egui::pos2(40.0, 40.0), egui::Align2::LEFT_CENTER, NAME, egui::FontId::proportional(14.0), egui::Color32::BLACK);
+    });
+    let plain: Vec<(f32, f32)> = frame
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => {
+                let at = |needle: char| t.galley.rows.first().and_then(|r| r.glyphs.iter().find(|g| g.chr == needle)).map(|g| g.pos.x);
+                Some((at(first)?, at(second)?))
+            }
+            _ => None,
+        })
+        .collect();
+    frame.textures_delta.clear();
+    let (a, b) = plain.first().copied().unwrap_or_default();
+    assert!(a < b, "egui on its own still draws the words the other way round: {a} then {b}");
 }
 
 /// 4.3 of the bar. Pages and sections are listed in the order a reader of the script

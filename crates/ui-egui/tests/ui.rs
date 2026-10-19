@@ -298,7 +298,7 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     let made = ask(
         &mut h,
         "engine.execute",
-        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Justified", "format": "cmgfm"}}),
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "من اليمين إلى اليسار", "format": "cmgfm"}}),
     )
     .expect("page");
     let page = made.as_str().expect("a path").to_string();
@@ -327,6 +327,8 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     // the plain words, and the stretching belongs to the painter.
     ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the block");
     settle(&mut h);
+    // The page is named in Arabic, so the same picture shows the tree row and the title
+    // band drawing that name in reading order; `tests/rtl_quality.rs` measures it.
     review(&mut h, "justify");
 
     // Asking again puts it back the way it was, and takes the line out of the page.
