@@ -122,7 +122,9 @@ jobs:
           tag="v${{ steps.v.outputs.version }}"
           flags=(--draft --target "$GITHUB_SHA" --title "NoteCraft $tag" --generate-notes)
           if [ "${{ steps.v.outputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
-          notes="Windows x64 only. macOS and Linux are untested and not built.
+          notes="**Alpha.** NoteCraft is not a finished product. It has had little use, and the folder format can still change. Keep a backup of any notebook you care about.
+
+          Windows x64 only. macOS and Linux are untested and not built.
 
           These files are **not signed**: Windows SmartScreen may show \"Windows protected your PC\".
           Choose More info, then Run anyway. Check a download against \`SHA256SUMS.txt\`, or with

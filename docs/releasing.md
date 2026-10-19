@@ -24,6 +24,11 @@ name or mark.
 - `cargo xtask version` prints it. `cargo xtask version set 0.1.0` changes it and refreshes
   `Cargo.lock`.
 - Every 0.x and every `-pre` version is marked a pre-release on GitHub.
+- The maturity label is **alpha**, said in the README and in each release's notes. The sibling
+  Craft apps (WordCraft, PdfCraft, GridCraft) call themselves alpha in their READMEs and release
+  plain `v0.x` tags; none of them uses `-alpha` or `-beta` in a version, and neither do we. A
+  `-rc.N` tag is for a build to test before a number is final. Beta is a word for later, when
+  the owner says so, and it changes the README, not the version.
 - An MSI version is numeric, so `0.1.0-rc.1` and `0.1.0-rc.2` both become `0.1.0` there. The
   installer allows same-version upgrades so release candidates replace each other.
 
