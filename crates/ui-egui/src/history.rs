@@ -107,6 +107,12 @@ impl History {
         }
     }
 
+    /// When the step the page is showing was taken. The Quick Access Toolbar's Undo uses it to
+    /// tell whether the pen or the page changed last.
+    pub fn when(&self) -> Option<Instant> {
+        self.steps.get(self.at).map(|s| s.when)
+    }
+
     pub fn can_undo(&self) -> bool {
         self.at > 0
     }

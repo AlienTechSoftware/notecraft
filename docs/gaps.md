@@ -81,6 +81,13 @@ it is fixed and tested, not when it is promised.
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
   OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
   Delete is final once the page autosaves.
+- **The Quick Access Toolbar is part of OneNote's.** It has Back, Forward, Undo and Redo, a menu to
+  choose which show, to put it under the ribbon or to hide it, and the choices are kept. OneNote's
+  menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands: none exist here, so they
+  are not listed. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons. Undo
+  covers the page's words and boxes (a typing burst is one step); ink keeps its own undo and has no
+  redo, so Redo never brings a stroke back. In a text box Ctrl+Z is still the text box's own. When the
+  strip is hidden a small arrow stays, so it can be brought back: OneNote hides it completely.
 - **The mini toolbar is partial.** `crates/ui-egui/src/floating.rs` draws it, as data, so any menu can
   float one. Today it floats over the page's text menu with Bold, Italic, Strikethrough, Code, lists,
   indents, Quote, the To Do and Important tags and Clear Formatting. OneNote's also has a font and a

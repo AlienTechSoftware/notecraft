@@ -60,6 +60,26 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     resp
 }
 
+/// A menu row with a tick in the picture column when `checked`, the way OneNote lists the
+/// things a menu can turn on and off.
+pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Response {
+    let width = ui.available_width().max(MENU_W - 16.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    if checked {
+        let c = egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y);
+        painter.add(egui::Shape::line(vec![c + vec2(-4.5, 0.5), c + vec2(-1.5, 3.5), c + vec2(4.5, -3.5)], egui::Stroke::new(1.8, t.text)));
+    }
+    painter.text(egui::pos2(rect.min.x + ICON_COL + 2.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), t.text);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, checked, name.clone()));
+    resp
+}
+
 /// A thin rule between groups of rows, starting where the words do, as Office draws it.
 pub fn menu_separator(ui: &mut Ui, t: &Tokens) {
     let width = ui.available_width().max(MENU_W - 16.0);

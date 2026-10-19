@@ -6,8 +6,10 @@
 use crate::backstage;
 use crate::control::{ControlRequest, ControlServer, base64};
 use crate::icons::{self, Icon};
+use crate::navhistory::NavHistory;
 use crate::pageedit;
 use crate::preview;
+use crate::quickaccess;
 use crate::ribbon;
 use crate::snippets;
 use crate::theme::{Accent, Mode, ModePref, Theme, Tokens};
@@ -161,6 +163,12 @@ pub struct NoteCraftApp {
     session: Session,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
+    /// The pages visited, for Back and Forward.
+    nav: NavHistory,
+    /// Which Quick Access buttons are shown, and where.
+    qat: quickaccess::Config,
+    /// When the pen last changed the page, to tell which Undo should take back.
+    last_ink_change: Option<Instant>,
     /// Two columns in the side panel (organisers, then pages) instead of one tree.
     split_panes: bool,
     /// Whether the organisers column is showing, which the three-bar button toggles.
@@ -252,8 +260,12 @@ impl NoteCraftApp {
         let rack = notecraft_ink::rack::parse(&session.settings.get(RACK_KEY).unwrap_or_default());
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(50).min(100);
+        let qat = quickaccess::Config::load(|k| session.settings.get(k));
         NoteCraftApp {
             session,
+            nav: NavHistory::default(),
+            qat,
+            last_ink_change: None,
             open: HashSet::new(),
             selected: None,
             split_panes: session_split,
@@ -428,17 +440,106 @@ impl NoteCraftApp {
     pub fn open_path(&mut self, path: &str) {
         match self.session.resolve(path) {
             Ok(dir) => {
-                let mut parent = dir.parent();
-                while let Some(d) = parent {
-                    if d == self.session.root() {
-                        break;
-                    }
-                    self.open.insert(d.to_path_buf());
-                    parent = d.parent();
-                }
+                self.expand_to(&dir);
                 self.open_page(&dir);
             }
             Err(e) => self.fail(&e),
+        }
+    }
+
+    /// Opens every level above `dir`, so the page is visible in the tree.
+    fn expand_to(&mut self, dir: &Path) {
+        let mut parent = dir.parent();
+        while let Some(d) = parent {
+            if d == self.session.root() {
+                break;
+            }
+            self.open.insert(d.to_path_buf());
+            parent = d.parent();
+        }
+    }
+
+    /// Back to the page before this one.
+    fn go_back(&mut self) {
+        match self.nav.back(|p| p.exists()) {
+            Some(dir) => {
+                self.expand_to(&dir);
+                self.open_page_inner(&dir);
+            }
+            None => self.say("There is no earlier page"),
+        }
+    }
+
+    /// Forward to the page after this one.
+    fn go_forward(&mut self) {
+        match self.nav.forward(|p| p.exists()) {
+            Some(dir) => {
+                self.expand_to(&dir);
+                self.open_page_inner(&dir);
+            }
+            None => self.say("There is no later page"),
+        }
+    }
+
+    fn can_undo(&self) -> bool {
+        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo()) || self.pad.as_ref().is_some_and(|p| p.strokes() > 0)
+    }
+
+    fn can_redo(&self) -> bool {
+        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_redo())
+    }
+
+    /// Undo for the Quick Access Toolbar: the page's words and boxes (the page history in
+    /// `history.rs`), or the last stroke when the pen was used after anything else on the page,
+    /// or when the page has nothing left to take back but the drawing has.
+    fn undo(&mut self) {
+        let edited = self.editor.as_ref().and_then(|e| e.history.when());
+        let ink_newer = match (self.last_ink_change, edited) {
+            (Some(i), Some(e)) => i > e,
+            (Some(_), None) => true,
+            _ => false,
+        };
+        let has_strokes = self.pad.as_ref().is_some_and(|p| p.strokes() > 0);
+        let page_can = self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo());
+        if has_strokes && (ink_newer || !page_can) {
+            self.ink_undo();
+        } else {
+            self.step_back(true);
+        }
+    }
+
+    fn redo(&mut self) {
+        self.step_back(false);
+    }
+
+    /// The keys and buttons that move through the pages that were opened. Undo and Redo keys
+    /// are the page history's own, taken below.
+    fn nav_keys(&mut self, ctx: &Context) {
+        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1)) {
+            self.go_back();
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2)) {
+            self.go_forward();
+        }
+    }
+
+    /// The Quick Access Toolbar, drawn in whatever row it is given.
+    fn quick_access(&mut self, ui: &mut Ui) {
+        let enabled =
+            quickaccess::Enabled { back: self.nav.can_back(), forward: self.nav.can_forward(), undo: self.can_undo(), redo: self.can_redo() };
+        let tokens = self.tokens;
+        let (pressed, changed) = quickaccess::show(ui, &mut self.qat, enabled, &tokens);
+        if changed {
+            self.qat.save(|k, v| {
+                let _ = self.session.settings.set(k, v);
+            });
+        }
+        match pressed {
+            Some(quickaccess::Command::Back) => self.go_back(),
+            Some(quickaccess::Command::Forward) => self.go_forward(),
+            Some(quickaccess::Command::Undo) => self.undo(),
+            Some(quickaccess::Command::Redo) => self.redo(),
+            None => {}
         }
     }
 
@@ -510,6 +611,12 @@ impl NoteCraftApp {
     // ---------- page open, save ----------
 
     fn open_page(&mut self, dir: &Path) {
+        self.nav.visit(dir);
+        self.open_page_inner(dir);
+    }
+
+    /// Opens a page without counting it as a visit: what Back and Forward do.
+    fn open_page_inner(&mut self, dir: &Path) {
         self.save_now();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let blocks = preview::blocks_for(page.format, &page.body);
@@ -942,6 +1049,9 @@ impl NoteCraftApp {
             ui.horizontal(|ui| {
                 ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(26.0, 26.0)));
                 ui.strong("NoteCraft");
+                if self.qat.hidden || !self.qat.below {
+                    self.quick_access(ui);
+                }
                 ui.separator();
                 // File opens the backstage, as it does in Office.
                 if ui.button("File").on_hover_text("Notebooks, and what is done to a whole notebook").clicked() {
@@ -987,6 +1097,12 @@ impl NoteCraftApp {
             });
         });
         self.ribbon_bar(ui);
+        // Below the ribbon, as OneNote can put it.
+        if self.qat.below && !self.qat.hidden {
+            egui::Panel::top("quick-access").show(ui, |ui| {
+                ui.horizontal(|ui| self.quick_access(ui));
+            });
+        }
     }
 
     /// The File screen: notebooks and what is done to a whole notebook.
@@ -2620,6 +2736,9 @@ impl NoteCraftApp {
         for act in page_acts {
             self.ribbon_act(act);
         }
+        if ink_changed {
+            self.last_ink_change = Some(Instant::now());
+        }
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
             match pad.save() {
@@ -2996,6 +3115,26 @@ impl NoteCraftApp {
                 ctx.request_repaint();
                 Ok(json!({"block": n, "text": ed.caret.as_ref().map(|c| c.text.clone())}))
             }
+            "ui.back" => {
+                self.go_back();
+                ctx.request_repaint();
+                Ok(json!({}))
+            }
+            "ui.forward" => {
+                self.go_forward();
+                ctx.request_repaint();
+                Ok(json!({}))
+            }
+            "ui.undo" => {
+                self.undo();
+                ctx.request_repaint();
+                Ok(json!({}))
+            }
+            "ui.redo" => {
+                self.redo();
+                ctx.request_repaint();
+                Ok(json!({}))
+            }
             "ui.expandAll" => {
                 self.expand_all();
                 Ok(json!({}))
@@ -3120,6 +3259,13 @@ impl NoteCraftApp {
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},
+            // Back and Forward, and the Quick Access Toolbar's choices.
+            "nav": {
+                "back": self.nav.back_count(),
+                "forward": self.nav.forward_count(),
+                "current": self.nav.current().map(|p| self.shown(p)),
+            },
+            "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.rules.id(),
@@ -3218,6 +3364,7 @@ impl NoteCraftApp {
         } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
             self.step_back(true);
         }
+        self.nav_keys(ctx);
         self.direction_keys(ctx);
         self.restore_last_page();
         self.attach_dropped(ctx);
