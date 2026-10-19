@@ -83,17 +83,19 @@ it is fixed and tested, not when it is promised.
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box
   rather than losing a word.
-- **Pen and drawing: a sheet, not the page.** A drawing is inserted as an ordinary picture
-  (an image block naming `assets/drawing-1.svg`), written on with the pen, and saved as SVG that also
-  carries the pen's own readings in our namespace, so NoteCraft can change a stroke later
-  while anything else sees the picture. Built: the Draw tab, four pens, a pencil, two
-  highlighters, a width, an eraser, undo, and Save as a plain picture. **Not built:** ink
-  over the whole page rather than in a sheet (OneNote draws anywhere); select and lasso;
-  moving or resizing ink; shapes and automatic shapes; the ruler and other stencils; ink
-  replay; ink to text and ink to math; more than one drawing per page open for the pen at
-  a time. Pressure is real on Windows and measured (hardest 0.930 over 1223 readings,
-  2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a pen there
-  draws at full pressure like a mouse, and tilt and the eraser end are on no platform.
+- **Pen and drawing.** The pen writes anywhere on the page, as OneNote's does. The ink of a
+  page is `ink.svg` in the page's own folder; a page never drawn on has no such file, and a
+  page rubbed clean loses it. It is SVG that also carries the pen's own readings in our
+  namespace, so NoteCraft can change a stroke later while anything else sees the picture.
+  Built: the Draw tab, five nibs (pen, pencil, fountain pen, brush pen, highlighter), a
+  rack of seven, a width, an eraser, undo, and Save picture. **Not built:** select and
+  lasso; moving or resizing ink; adding to or rearranging the pen rack, and a tool's own
+  popup for its colour and thickness; shapes and automatic shapes; the ruler and other
+  stencils; ink replay; ink to text and ink to math; laser pointer. Ink is not shown by
+  other programs that open the page, because neither page format references it. Pressure
+  is real and measured on Windows (hardest 0.930 over 1223 readings, 2026-10-18); on
+  macOS, Linux and Wayland winit drops the tablet fields, so a pen there draws at full
+  pressure like a mouse, and tilt and the eraser end are on no platform.
   `cargo run -p notecraft --example pen_check` shows what a pen reports.
 - **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
   and the other familiar marks, stored as plain text in the page.)

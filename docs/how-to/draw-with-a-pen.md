@@ -1,35 +1,33 @@
 # Draw with a pen
 
-NoteCraft takes ink on a sheet you put into a page. Open the **Draw** tab.
-
-## Put a sheet on the page
-
-**Draw**, then **Insert a drawing**. A sheet appears under the line the caret is in, and the
-pen is already in your hand. The page now holds an ordinary picture:
-
-```markdown
-![Drawing](assets/drawing-1.svg)
-```
-
-That is all the page knows about it. The drawing itself is a file in the page's own folder,
-so it travels with the page, syncs with it and opens in any browser.
+NoteCraft takes ink on the page itself, anywhere on it, over the words and between them.
+Open the **Draw** tab and pick a pen. That is all: there is no sheet to insert first.
 
 ## Write on it
 
-Pick a pen from the rack in **Drawing Tools**: four pens, a pencil, two highlighters. The
-slider beside them sets how wide it is. Then draw on the sheet.
+Pick a pen from the rack in **Drawing Tools**. The slider beside them sets how wide it is.
+Then write anywhere on the page.
 
 - A **pen** swells as you press. At a light touch it is a quarter of its width.
 - A **pencil** varies less, the way a pencil does.
+- A **fountain pen** answers pressure more than a pen: a hairline at a touch, broad when
+  pressed.
+- A **brush pen** has the widest range of all, nearly nothing until you lean on it.
 - A **highlighter** is see-through and does not thin at all, because a chisel tip lays down
   its whole width however you hold it.
 
-**Eraser** rubs out any stroke the pointer passes over. **Undo the last stroke** takes the
-last one back. **Write** puts the caret back, so clicking the page writes words again
-instead of drawing.
+**Eraser** rubs out any stroke the pointer passes over. **Undo stroke** takes the last one
+back. **Write** puts the caret back, so clicking the page writes words again instead of
+drawing.
 
-Each stroke is written to the file the moment you lift the pen. Ink does not wait for the
-page to save.
+Each stroke is written the moment you lift the pen. Ink does not wait for the page to save.
+
+## Where the ink lives
+
+In `ink.svg`, in the page's own folder, beside `index.md` or `index.html`. A page nobody has
+drawn on has no such file, and a page rubbed clean loses it again. Nothing in either page
+format had to change to allow ink, and the ink travels, syncs and backs up with the page
+because it is another file in the same place.
 
 ## Pressure
 
@@ -55,13 +53,14 @@ Two things, in one file:
   programs ignore them. NoteCraft reads them back, which is what lets it rub out one stroke
   of an old drawing, or redraw it at another size, long after it was made.
 
-**Save as a plain picture** writes the drawing again next to the first, as
-`drawing-1.plain.svg`, with the readings left out. Use it when you are sending the drawing
-somewhere else and want nothing but the picture.
+**Save picture** writes the ink again next to it, as `ink-picture.svg`, with the readings
+left out. Use it when you are sending the drawing somewhere else and want nothing but the
+picture.
 
 ## What is not here yet
 
-Drawing anywhere on the page rather than on a sheet, selecting and moving ink, shapes, the
-ruler, ink replay, and turning handwriting into text. The Draw tab shows those and says
+Selecting and moving ink, shapes, the ruler, ink replay, and turning handwriting into
+text. The pen rack cannot be added to or rearranged yet, and a tool's colour and thickness
+cannot be changed from its own popup the way OneNote's can. The Draw tab shows those and says
 they are not built. The readings kept in every file are what will make handwriting
 recognition possible later without redrawing anything.

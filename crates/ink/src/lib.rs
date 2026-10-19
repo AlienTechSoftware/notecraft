@@ -55,7 +55,9 @@ impl Dab {
     }
 }
 
-/// What was drawing. The three OneNote offers, and what each one means here.
+/// What was drawing. The nibs OneNote offers under its Add button, and what each one
+/// means here. They differ in two things only: how see-through the ink is, and how much of
+/// the width the lightest touch still lays down.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
     /// Opaque, and the width follows the pressure.
@@ -66,24 +68,29 @@ pub enum Tool {
     Highlighter,
     /// Opaque and thin, with less of a swell than the pen.
     Pencil,
+    /// A split nib: it answers pressure more than a pen does, so a light hand gives a
+    /// hairline and a firm one a broad stroke.
+    FountainPen,
+    /// A loaded brush: the widest range of all, nearly nothing at a touch.
+    BrushPen,
 }
 
 impl Tool {
+    /// Every nib, in the order the Draw tab offers them.
+    pub const ALL: [Tool; 5] = [Tool::Pen, Tool::Pencil, Tool::FountainPen, Tool::BrushPen, Tool::Highlighter];
+
     pub fn id(self) -> &'static str {
         match self {
             Tool::Pen => "pen",
             Tool::Highlighter => "highlighter",
             Tool::Pencil => "pencil",
+            Tool::FountainPen => "fountain-pen",
+            Tool::BrushPen => "brush-pen",
         }
     }
 
     pub fn parse(id: &str) -> Option<Tool> {
-        match id.trim() {
-            "pen" => Some(Tool::Pen),
-            "highlighter" => Some(Tool::Highlighter),
-            "pencil" => Some(Tool::Pencil),
-            _ => None,
-        }
+        Tool::ALL.into_iter().find(|t| t.id() == id.trim())
     }
 
     pub fn label(self) -> &'static str {
@@ -91,24 +98,29 @@ impl Tool {
             Tool::Pen => "Pen",
             Tool::Highlighter => "Highlighter",
             Tool::Pencil => "Pencil",
+            Tool::FountainPen => "Fountain Pen",
+            Tool::BrushPen => "Brush Pen",
         }
     }
 
     /// How see-through the ink is, 0 to 1.
     pub fn opacity(self) -> f32 {
         match self {
-            Tool::Pen | Tool::Pencil => 1.0,
+            Tool::Pen | Tool::Pencil | Tool::FountainPen | Tool::BrushPen => 1.0,
             Tool::Highlighter => 0.4,
         }
     }
 
     /// How much of the width the lightest touch still lays down. A highlighter is a flat
-    /// chisel: it draws its whole width however it is held.
+    /// chisel and draws its whole width however it is held; a brush, at the other end,
+    /// leaves almost nothing until it is pressed.
     pub fn floor(self) -> f32 {
         match self {
             Tool::Pen => 0.25,
             Tool::Pencil => 0.55,
             Tool::Highlighter => 1.0,
+            Tool::FountainPen => 0.15,
+            Tool::BrushPen => 0.08,
         }
     }
 }
@@ -295,12 +307,19 @@ mod tests {
 
     #[test]
     fn a_tool_knows_how_it_marks_the_page() {
-        for t in [Tool::Pen, Tool::Highlighter, Tool::Pencil] {
+        for t in Tool::ALL {
             assert_eq!(Tool::parse(t.id()), Some(t), "{} round trips", t.label());
             assert!((0.0..=1.0).contains(&t.opacity()));
             assert!((0.0..=1.0).contains(&t.floor()));
         }
         assert_eq!(Tool::parse("crayon"), None);
+        assert_eq!(Tool::ALL.len(), 5, "every nib is offered");
+        // The nibs are ordered by how much they answer the pen: a brush most, a
+        // highlighter not at all.
+        assert!(Tool::BrushPen.floor() < Tool::FountainPen.floor());
+        assert!(Tool::FountainPen.floor() < Tool::Pen.floor());
+        assert!(Tool::Pen.floor() < Tool::Pencil.floor());
+        assert!(Tool::Pencil.floor() < Tool::Highlighter.floor());
         assert!(Tool::Highlighter.opacity() < Tool::Pen.opacity(), "a highlighter is see-through");
         assert_eq!(Tool::Highlighter.floor(), 1.0, "and it is a flat chisel, so pressure does not thin it");
     }

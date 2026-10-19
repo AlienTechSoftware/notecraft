@@ -542,6 +542,57 @@ fn a_page_can_be_added_between_two_others() {
     assert_ne!(after.last(), Some(&"Untitled page".to_string()), "and not merely appended: {after:?}");
 }
 
+/// The "+" between two pages is a circle. It is wider than the thin gap it sits in, so it
+/// is only round if the painter is given room for it; clipped to the gap it comes out a
+/// lozenge, flat at the top and the bottom. Measured in the pixels, since that is the only
+/// place the difference shows.
+#[test]
+fn the_plus_between_two_pages_is_round() {
+    let (_t, mut app, s) = sample_app("ui-gap-circle");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    // Two columns, so the pages have a column of their own with the lines in it.
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    let gap = h.get_all_by_label("Add a page here").next().expect("a gap").rect();
+    // Hover it, which is what draws the line and the button.
+    ask(&mut h, "ui.move", json!({"x": gap.center().x, "y": gap.center().y})).expect("hover");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    let shot = h.render().expect("a picture");
+    // The harness is 1200 points wide; the picture may be rendered larger than that.
+    let scale = f64::from(shot.width()) / 1200.0;
+
+    // The accent-coloured blob around the left end of the gap: how wide, and how tall.
+    let accent = LIGHT.tokens().accent;
+    let near = |p: &image::Rgba<u8>| {
+        let d = |a: u8, b: u8| i32::from(a).abs_diff(i32::from(b));
+        d(p.0[0], accent.r()) + d(p.0[1], accent.g()) + d(p.0[2], accent.b()) < 40
+    };
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
+    let look = egui::Rect::from_center_size(egui::pos2(gap.min.x + 9.0, gap.center().y), egui::vec2(30.0, 30.0));
+    for y in (look.min.y.max(0.0) as u32)..(look.max.y as u32).min(shot.height()) {
+        for x in (look.min.x.max(0.0) as u32)..(look.max.x as u32).min(shot.width()) {
+            let px = (f64::from(x) * scale) as u32;
+            let py = (f64::from(y) * scale) as u32;
+            if px < shot.width() && py < shot.height() && near(shot.get_pixel(px, py)) {
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    assert!(x1 > x0 && y1 > y0, "the button was drawn: {x0},{y0} to {x1},{y1}");
+    let (w, hgt) = (f64::from(x1 - x0), f64::from(y1 - y0));
+    assert!((w - hgt).abs() <= 2.0, "the + is as tall as it is wide: {w} by {hgt}");
+    review(&mut h, "page_gap_plus");
+}
+
 /// Opening a notebook from somewhere else must not put away the ones already open, and it
 /// must still be open next time the window starts.
 #[test]
@@ -1031,6 +1082,12 @@ fn the_ribbon_theme_button_opens_the_chooser() {
     let (_t, app, _s) = sample_app("ui-ribbon-theme");
     let mut h = harness(app, LIGHT);
     h.run();
+    // Appearance is the last group of the View tab, so in a narrow window it is past the
+    // fold and the ribbon has to be scrolled to reach it. The window is widened instead,
+    // which is what a person would do; the sun in the top bar opens the same chooser at
+    // any width, and `the_ribbon_scrolls_rather_than_cutting_a_group_off` covers the fold.
+    ask(&mut h, "ui.resize", json!({"width": 1700.0, "height": 760.0})).expect("wider");
+    settle(&mut h);
     h.get_by_label("View").click();
     h.run();
     h.get_by_label("Theme").click();
@@ -1042,11 +1099,11 @@ fn the_ribbon_theme_button_opens_the_chooser() {
     review(&mut h, "ribbon_theme");
 }
 
-/// The Draw tab end to end: insert a sheet, pick a pen off the rack, write on it, and the
-/// strokes are in a file beside the page with the pen's readings in them. Then rub one out
-/// and take the other back.
+/// The Draw tab end to end: pick a pen off the rack, write on the page itself, and the
+/// strokes are in `ink.svg` in the page's own folder with the pen's readings in them. Then
+/// rub one out and take the other back.
 #[test]
-fn a_drawing_is_made_written_on_and_saved_beside_the_page() {
+fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
     let (_t, mut app, s) = sample_app("ui-draw");
     app.open_path(&s.md_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
@@ -1055,60 +1112,123 @@ fn a_drawing_is_made_written_on_and_saved_beside_the_page() {
     h.run();
 
     // Every group OneNote's Draw tab has is on the screen, built or honestly labelled.
-    for group in ["Undo", "Selection", "Drawing Tools", "Input Mode", "Stencils", "Edit", "Shapes", "Text", "Math", "Replay", "Mode"] {
+    for group in ["Undo", "Selection", "Drawing Tools", "Input Mode", "Stencils", "Edit", "Shapes", "Text", "Math", "Replay", "Mode", "Help"] {
         assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
     }
     for pen in ["Pen black", "Pen red", "Pen blue", "Pen green", "Pencil grey", "Highlighter yellow", "Highlighter mint"] {
         assert!(h.query_all_by_label(pen).count() >= 1, "{pen} is on the rack");
     }
 
-    // Insert a sheet near the top of the page, where it can be seen and written on.
-    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
-    pump(&mut h);
-    h.get_by_label("Insert a drawing").click();
-    settle(&mut h);
-    let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains("![Drawing](assets/drawing-1.svg)"), "the page points at the drawing:\n{body}");
-    let file = s.md_page.join("assets").join("drawing-1.svg");
-    assert!(file.exists(), "and the file is there");
+    // A page nobody has drawn on has no ink file at all.
+    let file = s.md_page.join("ink.svg");
+    assert!(!file.exists(), "a clean page keeps no empty ink file");
 
-    // Pick the red pen and draw a line across the sheet.
+    // Pick the red pen and write across the middle of the page. No sheet is inserted
+    // first: the page itself takes the ink, the way OneNote's does.
     h.get_by_label("Pen red").click();
     h.run();
-    let sheet = h.get_by_label("Drawing, 0 strokes").rect();
-    let y = sheet.center().y;
-    ask(&mut h, "ui.press", json!({"x": sheet.min.x + 20.0, "y": y})).expect("down");
+    let body = h.state().page_rect().expect("the page is on the screen");
+    let y = body.min.y + 160.0;
+    ask(&mut h, "ui.press", json!({"x": body.min.x + 40.0, "y": y})).expect("down");
     pump(&mut h);
     for step in 1..=6 {
-        ask(&mut h, "ui.move", json!({"x": sheet.min.x + 20.0 + step as f32 * 30.0, "y": y})).expect("move");
+        ask(&mut h, "ui.move", json!({"x": body.min.x + 40.0 + step as f32 * 30.0, "y": y})).expect("move");
         pump(&mut h);
     }
-    ask(&mut h, "ui.release", json!({"x": sheet.min.x + 200.0, "y": y})).expect("up");
+    ask(&mut h, "ui.release", json!({"x": body.min.x + 220.0, "y": y})).expect("up");
     pump(&mut h);
     settle(&mut h);
 
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the window says one stroke: {ink}");
     assert_eq!(ink["colour"].as_str(), Some("#d02121"), "in red");
-    let written = std::fs::read_to_string(&file).expect("read the drawing");
+    let written = std::fs::read_to_string(&file).expect("the ink was written beside the page");
     assert!(written.contains("nc:dabs"), "the pen's own readings are in the file:\n{written}");
     assert!(written.contains("fill=\"#d02121\""), "drawn in the red that was picked");
-    assert!(written.contains("<path"), "and it is ordinary SVG that anything can draw");
     assert_eq!(written.matches("<path").count(), 1, "one stroke");
 
-    // Undo takes it back, and the file says so.
-    h.get_by_label("Undo the last stroke").click();
-    settle(&mut h);
-    let after = std::fs::read_to_string(&file).expect("read again");
-    assert_eq!(after.matches("<path").count(), 0, "the stroke was taken back:\n{after}");
+    // The words of the page are untouched: ink is its own file beside them.
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the page is as it was: {:?}", h.state().body());
 
-    // Saving it as a plain picture puts a second file beside it, with no readings in it.
-    h.get_by_label("Save as a plain picture").click();
+    // Undo takes the stroke back, and with nothing left the file goes too.
+    h.get_by_label("Undo stroke").click();
     settle(&mut h);
-    let plain = s.md_page.join("assets").join("drawing-1.plain.svg");
+    assert!(!file.exists(), "a page rubbed clean keeps no empty ink file");
+    review(&mut h, "draw_tab");
+}
+
+/// The same on an HTML page, and the ink comes back when the page is opened again.
+#[test]
+fn ink_comes_back_when_the_page_is_opened_again() {
+    let (_t, mut app, s) = sample_app("ui-draw-html");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen blue").click();
+    h.run();
+
+    let body = h.state().page_rect().expect("the page is on the screen");
+    let y = body.min.y + 140.0;
+    ask(&mut h, "ui.press", json!({"x": body.min.x + 30.0, "y": y})).expect("down");
+    pump(&mut h);
+    for step in 1..=4 {
+        ask(&mut h, "ui.move", json!({"x": body.min.x + 30.0 + step as f32 * 25.0, "y": y + step as f32 * 4.0})).expect("move");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": body.min.x + 130.0, "y": y + 16.0})).expect("up");
+    settle(&mut h);
+    assert!(s.html_page.join("ink.svg").exists(), "the ink is beside the HTML page too");
+
+    // Away to another page and back: the strokes are strokes again, not a picture.
+    ask(&mut h, "ui.open", json!({"path": &s.md_page.to_string_lossy()})).expect("another page");
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64(), Some(0), "the other page has no ink of its own");
+    ask(&mut h, "ui.open", json!({"path": &s.html_page.to_string_lossy()})).expect("back");
+    settle(&mut h);
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    assert_eq!(ink["strokes"].as_u64(), Some(1), "the stroke came back as a stroke: {ink}");
+
+    // Saved as a plain picture it is beside the ink and holds no readings.
+    h.get_by_label("Save picture").click();
+    settle(&mut h);
+    let plain = s.html_page.join("ink-picture.svg");
     assert!(plain.exists(), "the picture was written");
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
-    review(&mut h, "draw_tab");
+}
+
+/// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
+/// and they are wider than a small window. They scroll rather than being cut off, and every
+/// one of them is still there to be reached.
+#[test]
+fn the_ribbon_scrolls_rather_than_cutting_a_group_off() {
+    let (_t, app, _s) = sample_app("ui-ribbon-narrow");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    h.get_by_label("Draw").click();
+    h.run();
+    let groups = ["Undo", "Selection", "Drawing Tools", "Input Mode", "Stencils", "Edit", "Shapes", "Text", "Math", "Replay", "Mode", "Help"];
+
+    for width in [1400.0, 1100.0, 820.0, 640.0] {
+        ask(&mut h, "ui.resize", json!({"width": width, "height": 700.0})).expect("resize");
+        settle(&mut h);
+        for group in groups {
+            assert!(h.query_all_by_label(group).count() >= 1, "{group} is still there at {width} wide");
+        }
+        // Nothing drew itself off the left edge, which is what clipping looked like.
+        for group in groups {
+            // A name can belong to a group and to a button inside it; every one of them
+            // has to be inside the window, so they are all checked.
+            for node in h.get_all_by_label(group) {
+                let rect = node.rect();
+                assert!(rect.min.x >= -1.0, "{group} starts inside the window at {width} wide: {rect:?}");
+            }
+        }
+    }
+    ask(&mut h, "ui.resize", json!({"width": 820.0, "height": 700.0})).expect("narrow");
+    settle(&mut h);
+    review(&mut h, "ribbon_narrow");
 }
 
 /// Rule Lines opens a gallery, not a list of words: every paper is drawn small so the look
@@ -1122,7 +1242,7 @@ fn the_rule_lines_gallery_shows_every_paper_and_picking_one_rules_the_page() {
     settle(&mut h);
     h.get_by_label("View").click();
     h.run();
-    h.get_by_label("None").click();
+    h.get_by_label("Format Background").click();
     h.run();
 
     // All eleven papers are on the screen, each as its own thumbnail.
@@ -1150,7 +1270,6 @@ fn the_rule_lines_gallery_shows_every_paper_and_picking_one_rules_the_page() {
     let paper = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["paper"].as_str().unwrap_or_default().to_string();
     assert_eq!(paper, "grid", "the page is on NoteCraft's squared paper");
     assert_eq!(h.query_all_by_label("Wide ruled").count(), 0, "the gallery closed");
-    assert!(h.query_all_by_label("NoteCraft squares").count() >= 1, "and the button now says so");
 }
 
 #[test]
