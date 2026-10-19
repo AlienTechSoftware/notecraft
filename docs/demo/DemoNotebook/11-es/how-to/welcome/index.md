@@ -9,6 +9,10 @@ tags: []
 
 # Bienvenida
 
+![El koala de NoteCraft, escribiendo en un cuaderno](assets/banner-es.png)
+
+*Notas en archivos simples, en carpetas simples.*
+
 NoteCraft guarda las notas como tú guardas los archivos: un cuaderno es una carpeta, una
 sección es una carpeta, una página es una carpeta con un archivo y sus imágenes dentro. Nada
 queda encerrado en una base de datos, así que cualquier carpeta que tu herramienta de

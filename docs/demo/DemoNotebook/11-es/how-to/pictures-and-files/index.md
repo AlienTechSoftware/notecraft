@@ -45,3 +45,5 @@ NoteCraft todavía no puede; un PDF que adjuntes se queda como archivo, y el di�
 Siguiente: [Dos formatos de página](../page-formats/).
 
 *Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.*
+
+![Ink](ink.svg)

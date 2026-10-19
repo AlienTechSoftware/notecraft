@@ -40,3 +40,5 @@ pictures-and-files/
 下一页：[两种页面格式](../page-formats/)。
 
 *本页由人工智能模型翻译。欢迎指正。*
+
+![Ink](ink.svg)

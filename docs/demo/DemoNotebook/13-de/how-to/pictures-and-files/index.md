@@ -46,3 +46,5 @@ kann das noch nicht; ein angehängtes PDF bleibt eine Datei, und der Dialog sagt
 Weiter: [Zwei Seitenformate](../page-formats/).
 
 *Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.*
+
+![Ink](ink.svg)

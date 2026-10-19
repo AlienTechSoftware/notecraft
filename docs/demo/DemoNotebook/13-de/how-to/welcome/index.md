@@ -9,6 +9,10 @@ tags: []
 
 # Willkommen
 
+![Der NoteCraft-Koala beim Schreiben](assets/banner-de.png)
+
+*Notizen als einfache Dateien, in einfachen Ordnern.*
+
 NoteCraft bewahrt Notizen so auf, wie Sie Dateien aufbewahren: Ein Notizbuch ist ein Ordner,
 ein Abschnitt ist ein Ordner, eine Seite ist ein Ordner mit einer Datei und ihren Bildern
 darin. Nichts ist in einer Datenbank eingeschlossen, also wird jeder Ordner, den Ihr

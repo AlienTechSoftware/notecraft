@@ -17,3 +17,5 @@ workspace = true
 [dependencies]
 notecraft-model = { workspace = true }
 notecraft-store = { workspace = true }
+# The demo ships real handwriting, drawn with the same crate the pen uses.
+notecraft-ink = { workspace = true }

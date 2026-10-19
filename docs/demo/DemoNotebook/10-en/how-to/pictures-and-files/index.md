@@ -42,3 +42,5 @@ Some apps can render a PDF or a document as pictures on your page. NoteCraft can
 yet; a PDF you attach is kept as a file, and the dialog says so.
 
 Next: [Two page formats](../page-formats/).
+
+![Ink](ink.svg)

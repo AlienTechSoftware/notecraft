@@ -40,3 +40,5 @@ pictures-and-files/
 다음: [두 가지 페이지 형식](../page-formats/).
 
 *이 페이지는 AI 모델이 번역했습니다. 수정 제안을 환영합니다.*
+
+![Ink](ink.svg)

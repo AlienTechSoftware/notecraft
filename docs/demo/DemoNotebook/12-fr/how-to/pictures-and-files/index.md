@@ -48,3 +48,5 @@ dialogue le dit.
 Suite : [Deux formats de page](../page-formats/).
 
 *Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.*
+
+![Ink](ink.svg)

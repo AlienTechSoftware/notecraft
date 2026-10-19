@@ -4,6 +4,10 @@ title: Welcome
 
 # Welcome
 
+![The NoteCraft koala, writing in a notebook](assets/banner-en.png)
+
+*Notes as plain files, in plain folders.*
+
 NoteCraft keeps notes the way you keep files: a notebook is a folder, a section is a folder, a
 page is a folder with one file and its pictures inside. Nothing is locked in a database, so any
 folder your sync tool already watches becomes a synced notebook, and a backup is a copy.
