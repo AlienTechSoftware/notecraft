@@ -135,6 +135,94 @@ fn a_bracket_in_a_right_to_left_line_reaches_egui_as_it_was_typed() {
     assert!(drawn.contains(&')'), "and so is the closing one");
 }
 
+/// 1.8 of the bar: justification by kashida, the one line on it that no other note taking
+/// application answers at all. OneNote, Obsidian and Notion all justify Arabic the Latin
+/// way, by pulling the words apart, which is what leaves the rivers of white down a
+/// justified Arabic page.
+///
+/// Measured: **it works**, in the face the page is drawn with. `notecraft_text::kashida`
+/// picks the joins to stretch and egui shapes the tatweels into the words, so the line
+/// reaches the column within one tatweel of the target with every space exactly as wide as
+/// it was. Set `NOTECRAFT_UI_VISUAL_DIR` to look at it.
+///
+/// Not wired into the window yet: nothing in the ribbon asks for a justified paragraph,
+/// and the page format has nowhere to record that a paragraph is one.
+#[test]
+fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
+    const COLUMN: f32 = 520.0;
+    const SENTENCE: &str = "الملاحظات تعيش أطول من البرنامج";
+    let t = Theme::DEFAULT.tokens();
+    let (natural, filled, step, out) = in_frame(|ui| {
+        // Measured the way the line is actually drawn, and in the column it is drawn in:
+        // the bidi painter places each word itself and decides its own wrapping, so its
+        // answer is the one that counts. Measuring the string on its own instead is off by
+        // the spaces, and the line then wraps one word past the column. A stretch that
+        // wraps the line is no width at all, which is how the search knows to stop.
+        let line_height = {
+            let pieces = bidi::plain(SENTENCE, 18.0, &t);
+            bidi::runs(ui, SENTENCE, &pieces, 18.0, COLUMN).1.y
+        };
+        let mut width = |s: &str| {
+            let pieces = bidi::plain(s, 18.0, &t);
+            // Laid out in the column, the painter reports the column's own width, so the
+            // height is what says whether the line still fits; the ink width comes from
+            // laying the same line out with nothing to wrap against.
+            if bidi::runs(ui, s, &pieces, 18.0, COLUMN).1.y > line_height + 1.0 {
+                return f32::INFINITY;
+            }
+            bidi::runs(ui, s, &pieces, 18.0, f32::INFINITY).1.x
+        };
+        let natural = width(SENTENCE);
+        let out = notecraft_text::kashida::justify(SENTENCE, COLUMN, &mut width);
+        let step = width("ـ");
+        (natural, width(&out), step, out)
+    });
+    assert!(natural < COLUMN, "the sentence starts short of the column: {natural}");
+    assert!(filled.is_finite(), "the justified line still fits on one line");
+    assert!(filled <= COLUMN, "it does not run past the column: {filled}");
+    assert!(COLUMN - filled <= step + 0.5, "and it gets there: {natural} to {filled} of {COLUMN}, one step is {step}");
+    // Only tatweels were added: every word, and every space between them, is untouched.
+    let stripped: String = out.chars().filter(|c| *c != notecraft_text::kashida::TATWEEL).collect();
+    assert_eq!(stripped, SENTENCE);
+    assert_eq!(out.matches(' ').count(), SENTENCE.matches(' ').count(), "no space was widened or added");
+    assert!(out.contains(notecraft_text::kashida::TATWEEL), "something was stretched");
+    picture(SENTENCE, &out, COLUMN);
+}
+
+/// Draws the ragged line above the justified one, so the difference can be looked at
+/// rather than argued about. Only when `NOTECRAFT_UI_VISUAL_DIR` says where to put it.
+fn picture(plain: &str, justified: &str, column: f32) {
+    let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let t = Theme { mode: notecraft_ui_egui::theme::Mode::Light, accent: notecraft_ui_egui::theme::Accent::Default }.tokens();
+    let (plain, justified) = (plain.to_string(), justified.to_string());
+    let mut h = Harness::builder().with_size(egui::vec2(column + 40.0, 150.0)).with_pixels_per_point(2.0).wgpu().build_ui(move |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().rect_filled(ui.max_rect(), 0.0, t.editor);
+        ui.add_space(20.0);
+        for line in [plain.as_str(), justified.as_str()] {
+            let pieces = bidi::plain(line, 18.0, &t);
+            let (drawn, size) = bidi::runs(ui, line, &pieces, 18.0, column);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(column, size.y.max(24.0)), egui::Sense::hover());
+            bidi::paint(ui, rect.min, &drawn);
+            // The column the line is being justified into, so the eye can see which
+            // one reaches it.
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(rect.min, egui::vec2(column, size.y.max(24.0))),
+                0.0,
+                egui::Stroke::new(1.0, t.muted),
+                egui::StrokeKind::Outside,
+            );
+            ui.add_space(24.0);
+        }
+    });
+    h.run();
+    if let Ok(img) = h.render() {
+        let _ = img.save(dir.join("kashida.png"));
+    }
+}
+
 /// 4.3 of the bar. Pages and sections are listed in the order a reader of the script
 /// expects.
 ///
