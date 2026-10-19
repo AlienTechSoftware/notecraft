@@ -9,11 +9,12 @@ use crate::icons::{self, Icon};
 use crate::ribbon_icons::{self, Mark};
 use crate::theme::Tokens;
 use egui::{Align2, Rect, Sense, Ui, vec2};
+use notecraft_ink::{Rgb, Tool};
 use notecraft_model::{PageFormat, Tag};
 
 /// The tabs, in order. "Source" only appears while the page source is shown, the way Office
 /// shows a tab for what is selected.
-pub const TABS: [&str; 3] = ["Home", "Insert", "View"];
+pub const TABS: [&str; 4] = ["Home", "Insert", "Draw", "View"];
 pub const SOURCE_TAB: &str = "Source";
 
 /// What a ribbon control asks the window to do.
@@ -62,9 +63,56 @@ pub enum Act {
     Tag(Tag),
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
+    /// What the pointer does on the page: write, draw or rub out.
+    InkPointer(Pointer),
+    /// A pen was picked off the rack: what it is, its colour, and how wide it is in tenths
+    /// of a point. Tenths, because an act is compared for equality and a float is not.
+    InkPen(Tool, Rgb, u16),
+    /// Just the width, from the slider, in tenths of a point.
+    InkWidth(u16),
+    /// Take the last stroke back.
+    InkUndo,
+    /// Put a drawing on the page at the caret.
+    InkInsert,
+    /// Save the drawing beside the page as a plain picture, with no pen readings in it.
+    InkExportPlain,
     /// The user picked another tab.
     Tab(String),
 }
+
+/// What the pointer does on a page. The Draw tab sets it; everywhere else it is `Write`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pointer {
+    /// The caret: the ordinary page, where a click puts the caret and a drag selects.
+    #[default]
+    Write,
+    /// Lay down ink with the pen that is chosen.
+    Draw,
+    /// Rub out whatever the pointer passes over.
+    Erase,
+}
+
+impl Pointer {
+    pub fn id(self) -> &'static str {
+        match self {
+            Pointer::Write => "write",
+            Pointer::Draw => "draw",
+            Pointer::Erase => "erase",
+        }
+    }
+}
+
+/// The pens on the rack, in the order OneNote racks them: black, red, blue and green pens,
+/// a pencil, then two highlighters. Width is in tenths of a point.
+pub const PENS: [(Tool, Rgb, u16); 7] = [
+    (Tool::Pen, Rgb(0x20, 0x20, 0x20), 30),
+    (Tool::Pen, Rgb(0xd0, 0x21, 0x21), 30),
+    (Tool::Pen, Rgb(0x18, 0x55, 0xc4), 30),
+    (Tool::Pen, Rgb(0x16, 0x7f, 0x3d), 30),
+    (Tool::Pencil, Rgb(0x55, 0x55, 0x55), 18),
+    (Tool::Highlighter, Rgb(0xff, 0xdd, 0x33), 140),
+    (Tool::Highlighter, Rgb(0x6f, 0xe3, 0x9a), 140),
+];
 
 /// What is drawn behind the page: nothing, ruled lines, or squares. OneNote calls this
 /// Rule Lines, and keeps it per page; here it is how the pages are viewed.
@@ -226,6 +274,14 @@ pub struct View {
     pub rules: RuleLines,
     pub hide_title: bool,
     pub zoom_percent: u32,
+    /// What the pointer does on the page, and the pen it does it with.
+    pub pointer: Pointer,
+    pub tool: Tool,
+    pub ink_colour: Rgb,
+    /// In tenths of a point, as the acts carry it.
+    pub ink_width: u16,
+    /// True when the page has a drawing the pen can write in.
+    pub has_drawing: bool,
 }
 
 /// How tall the ribbon is: the tab strip, then the groups.
@@ -246,6 +302,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View, format: Option<Pa
         ui.add_space(4.0);
         match chosen {
             "Insert" => insert_tab(ui, t, &mut acts),
+            "Draw" => draw_tab(ui, view, t, &mut acts),
             "View" => view_tab(ui, source, view, t, &mut acts),
             SOURCE_TAB => source_tab(ui, format, t, &mut acts),
             _ => home_tab(ui, t, &mut acts),
@@ -317,6 +374,12 @@ fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
         .rect;
     let painter = ui.painter();
     painter.text(egui::pos2(inner.center().x, inner.min.y + GROUP_H - 9.0), Align2::CENTER_CENTER, title, egui::FontId::proportional(10.5), t.muted);
+    // The name is painted, so it is no widget by itself and a screen reader would skip
+    // straight from one group's buttons to the next with nothing to say where it is. It is
+    // given its name here, the way `bidi::show` gives a painted line its words.
+    let named = ui.interact(inner, ui.id().with(("group", title)), Sense::hover());
+    let (enabled, label) = (ui.is_enabled(), title.to_owned());
+    named.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &label));
     // A crisp divider between groups, on a whole pixel so it does not blur, and dark enough
     // to read on a light or a dark surface, the way Office separates its groups.
     let x = (inner.max.x + 6.0).round() + 0.5;
@@ -852,6 +915,161 @@ fn rule_lines_menu(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// One pen on the rack, drawn as the mark it makes: a stroke of its own colour that swells
+/// the way that tool swells, so the rack is read by looking, like OneNote's.
+fn pen_on_rack(ui: &mut Ui, tool: Tool, colour: Rgb, tenths: u16, chosen: bool, t: &Tokens) -> egui::Response {
+    const SIZE: egui::Vec2 = egui::vec2(26.0, GROUP_H - 20.0);
+    let (rect, resp) = ui.allocate_exact_size(SIZE, Sense::click());
+    let enabled = ui.is_enabled();
+    let name = format!("{} {}", tool.label(), swatch_name(colour));
+    let label = name.clone();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, label.clone()));
+    let painter = ui.painter_at(rect);
+    if chosen {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+    } else if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    // The pen is drawn as the mark it makes: a stroke down the middle of its own box.
+    let ink = egui::Color32::from_rgb(colour.0, colour.1, colour.2);
+    let mut stroke = notecraft_ink::Stroke::new(tool, colour, f32::from(tenths) / 10.0);
+    let x = rect.center().x;
+    for (i, (dy, press)) in [(-0.40, 0.15), (-0.12, 0.55), (0.16, 1.0), (0.40, 0.75)].into_iter().enumerate() {
+        let wobble = if i % 2 == 0 { -1.6 } else { 1.6 };
+        stroke.dabs.push(notecraft_ink::Dab::new(x + wobble, rect.center().y + rect.height() * dy, press));
+    }
+    let shape: Vec<egui::Pos2> = notecraft_ink::shape::outline(&stroke).into_iter().map(|(x, y)| egui::pos2(x, y)).collect();
+    if shape.len() > 2 {
+        let fill = if tool == Tool::Highlighter { ink.gamma_multiply(tool.opacity()) } else { ink };
+        painter.add(egui::Shape::convex_polygon(shape, fill, egui::Stroke::NONE));
+    }
+    resp.on_hover_text(name)
+}
+
+/// A plain name for a colour, so a pen can be told from its neighbour by a screen reader
+/// and by a test. Only the colours on the rack need one.
+fn swatch_name(colour: Rgb) -> &'static str {
+    match (colour.0, colour.1, colour.2) {
+        (0x20, 0x20, 0x20) => "black",
+        (0xd0, 0x21, 0x21) => "red",
+        (0x18, 0x55, 0xc4) => "blue",
+        (0x16, 0x7f, 0x3d) => "green",
+        (0x55, 0x55, 0x55) => "grey",
+        (0xff, 0xdd, 0x33) => "yellow",
+        (0x6f, 0xe3, 0x9a) => "mint",
+        _ => "custom",
+    }
+}
+
+/// OneNote's Draw tab, group for group. What NoteCraft can do is wired; what it cannot say
+/// so rather than being left out, so the tab is an honest map of where the ink work is.
+fn draw_tab(ui: &mut Ui, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Undo", t, |ui| {
+        rows(ui, |ui| {
+            if small(ui, None, "Undo", "Undo the last stroke", "Take the last stroke back", false, t).clicked() {
+                acts.push(Act::InkUndo);
+            }
+            not_built(ui, "Redo", t);
+        });
+    });
+    group(ui, "Selection", t, |ui| {
+        rows(ui, |ui| {
+            if small(ui, None, "Write", "Write", "Put the caret back: click to write, not to draw", view.pointer == Pointer::Write, t).clicked() {
+                acts.push(Act::InkPointer(Pointer::Write));
+            }
+            not_built(ui, "Select", t);
+            not_built(ui, "Lasso Select", t);
+        });
+    });
+    group(ui, "Drawing Tools", t, |ui| {
+        ui.horizontal_top(|ui| {
+            if big(ui, Icon::Eraser, "Eraser", "Rub out whatever the pointer passes over", t).clicked() {
+                acts.push(Act::InkPointer(Pointer::Erase));
+            }
+            for (tool, colour, tenths) in PENS {
+                let chosen = view.pointer == Pointer::Draw && view.tool == tool && view.ink_colour == colour;
+                if pen_on_rack(ui, tool, colour, tenths, chosen, t).clicked() {
+                    acts.push(Act::InkPen(tool, colour, tenths));
+                }
+            }
+            rows(ui, |ui| {
+                let mut tenths = view.ink_width.clamp(4, 400);
+                let slider = egui::Slider::new(&mut tenths, 4..=400).show_value(false).custom_formatter(|v, _| format!("{:.1}", v / 10.0));
+                if ui.add_sized(vec2(90.0, 16.0), slider).changed() {
+                    acts.push(Act::InkWidth(tenths));
+                }
+                ui.label(egui::RichText::new(format!("{:.1} pt", f32::from(view.ink_width) / 10.0)).size(10.5).color(t.muted));
+                not_built(ui, "Add a pen", t);
+            });
+        });
+    });
+    group(ui, "Input Mode", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Panning Hand", t);
+            ui.label(egui::RichText::new("Touch scrolls the page.").size(10.5).color(t.muted));
+        });
+    });
+    group(ui, "Stencils", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Ruler", t);
+            not_built(ui, "Protractor", t);
+        });
+    });
+    group(ui, "Edit", t, |ui| {
+        rows(ui, |ui| {
+            if small(ui, None, "Draw here", "Insert a drawing", "Put a sheet to draw on into the page", false, t).clicked() {
+                acts.push(Act::InkInsert);
+            }
+            if small(
+                ui,
+                None,
+                "Save as picture",
+                "Save as a plain picture",
+                "Write the drawing again with no pen readings in it, for sending on",
+                false,
+                t,
+            )
+            .clicked()
+            {
+                acts.push(Act::InkExportPlain);
+            }
+            not_built(ui, "Insert Space", t);
+        });
+    });
+    group(ui, "Background", t, |ui| {
+        // OneNote's Format Background is this tab's way to the paper, and we have the
+        // paper, so it goes to the same gallery the View tab opens.
+        rule_lines_menu(ui, view, t, acts);
+    });
+    group(ui, "Shapes", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Shapes", t);
+            not_built(ui, "Automatic Shapes", t);
+        });
+    });
+    group(ui, "Text", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Ink to Text", t);
+            ui.label(egui::RichText::new("The pen readings are kept,\nso this can be added later.").size(10.5).color(t.muted));
+        });
+    });
+    group(ui, "Math", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Ink to Math", t);
+        });
+    });
+    group(ui, "Replay", t, |ui| {
+        rows(ui, |ui| {
+            not_built(ui, "Ink Replay", t);
+        });
+    });
+    group(ui, "Mode", t, |ui| {
+        if big(ui, Icon::FullPage, "Full page", "Hide everything but the page", t).clicked() {
+            acts.push(Act::ToggleFullPage);
+        }
+    });
+}
+
 fn view_tab(ui: &mut Ui, source: bool, view: &View, t: &Tokens, acts: &mut Vec<Act>) {
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
@@ -1010,9 +1228,10 @@ mod tests {
 
     #[test]
     fn the_tabs_are_office_like_and_source_comes_and_goes() {
-        assert_eq!(tabs(false), vec!["Home", "Insert", "View"]);
-        assert_eq!(tabs(true), vec!["Home", "Insert", "View", "Source"]);
+        assert_eq!(tabs(false), vec!["Home", "Insert", "Draw", "View"]);
+        assert_eq!(tabs(true), vec!["Home", "Insert", "Draw", "View", "Source"]);
         assert_eq!(resolve_tab("Insert", false), "Insert");
+        assert_eq!(resolve_tab("Draw", false), "Draw");
         assert_eq!(resolve_tab("Source", true), "Source");
         assert_eq!(resolve_tab("Source", false), "Home", "the Source tab goes when the source pane does");
         assert_eq!(resolve_tab("Nonsense", false), "Home");

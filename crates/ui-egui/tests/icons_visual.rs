@@ -22,7 +22,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 25] = [
+const ALL: [Icon; 26] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -48,6 +48,7 @@ const ALL: [Icon; 25] = [
     Icon::DirLtr,
     Icon::DirRtl,
     Icon::Bars,
+    Icon::Eraser,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -62,6 +63,7 @@ fn name(icon: Icon) -> &'static str {
         Icon::Page => "page",
         Icon::PageStack => "page-stack",
         Icon::Code => "code",
+        Icon::Eraser => "eraser",
         Icon::Search => "search",
         Icon::FullPage => "full-page",
         Icon::ExitFullPage => "exit-full-page",
@@ -118,6 +120,11 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             poly(&[(5.0, 3.0), (8.5, 3.0), (8.5, 21.0), (5.0, 21.0)], shade(color, 35)),
             Shape::line_segment([at(11.5, 8.5), at(16.5, 8.5)], thin),
             Shape::line_segment([at(11.5, 12.0), at(16.5, 12.0)], thin),
+        ],
+        Icon::Eraser => vec![
+            poly(&[(4.5, 15.5), (12.0, 5.0), (19.5, 10.5), (12.0, 21.0)], color),
+            poly(&[(7.6, 18.0), (12.0, 11.8), (19.5, 10.5), (12.0, 21.0)], shade(color, 45)),
+            Shape::line_segment([at(3.0, 21.0), at(21.0, 21.0)], stroke),
         ],
         Icon::Section => vec![tab(8.5, 3.5, 15.5, 20.5, 2, color)],
         Icon::SectionGroup => {
@@ -286,7 +293,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 150);
+    assert_eq!(pairs, 156);
 }
 
 #[test]

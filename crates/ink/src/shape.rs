@@ -55,7 +55,9 @@ pub fn centre(stroke: &Stroke) -> Vec<Dab> {
 /// Pressure rides along the same curve, so it swells and fades as smoothly as the line.
 fn spline(p0: Dab, p1: Dab, p2: Dab, p3: Dab, t: f32) -> Dab {
     let (t2, t3) = (t * t, t * t * t);
-    let f = |a: f32, b: f32, c: f32, d: f32| 0.5 * ((2.0 * b) + (-a + c) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (-a + 3.0 * b - 3.0 * c + d) * t3);
+    let f = |a: f32, b: f32, c: f32, d: f32| {
+        0.5 * ((2.0 * b) + (-a + c) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (-a + 3.0 * b - 3.0 * c + d) * t3)
+    };
     Dab {
         x: f(p0.x, p1.x, p2.x, p3.x),
         y: f(p0.y, p1.y, p2.y, p3.y),
@@ -72,14 +74,11 @@ pub fn width_at(stroke: &Stroke, pressure: f32) -> f32 {
     (stroke.width * share).max(crate::MIN_WIDTH)
 }
 
-/// The closed polygon to fill for one stroke: down one side of the ribbon, round the end,
-/// back up the other, round the start. Empty for a stroke with no readings.
-pub fn outline(stroke: &Stroke) -> Vec<(f32, f32)> {
+/// The two edges of the ribbon, left and right of the smoothed middle, point for point
+/// with it. A painter that fills triangles wants these; SVG wants them joined up, which is
+/// what [`outline`] does. Both come from here, so the file and the screen agree.
+pub fn sides(stroke: &Stroke) -> (Vec<(f32, f32)>, Vec<(f32, f32)>) {
     let line = centre(stroke);
-    let Some(first) = line.first().copied() else { return Vec::new() };
-    if line.len() == 1 {
-        return circle(first.x, first.y, width_at(stroke, first.pressure) / 2.0);
-    }
     let mut left: Vec<(f32, f32)> = Vec::with_capacity(line.len());
     let mut right: Vec<(f32, f32)> = Vec::with_capacity(line.len());
     for (i, d) in line.iter().enumerate() {
@@ -96,6 +95,18 @@ pub fn outline(stroke: &Stroke) -> Vec<(f32, f32)> {
         left.push((d.x + nx * half, d.y + ny * half));
         right.push((d.x - nx * half, d.y - ny * half));
     }
+    (left, right)
+}
+
+/// The closed polygon to fill for one stroke: down one side of the ribbon, round the end,
+/// back up the other, round the start. Empty for a stroke with no readings.
+pub fn outline(stroke: &Stroke) -> Vec<(f32, f32)> {
+    let line = centre(stroke);
+    let Some(first) = line.first().copied() else { return Vec::new() };
+    if line.len() == 1 {
+        return circle(first.x, first.y, width_at(stroke, first.pressure) / 2.0);
+    }
+    let (left, right) = sides(stroke);
     let last = line.last().copied().unwrap_or(first);
     let mut out = left;
     out.extend(half_circle(last, width_at(stroke, last.pressure) / 2.0, line.get(line.len().saturating_sub(2)).copied().unwrap_or(first)));

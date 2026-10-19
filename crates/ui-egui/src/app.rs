@@ -180,6 +180,10 @@ pub struct NoteCraftApp {
     ribbon_tab: String,
     /// What the pen is reporting, where the platform reports anything.
     stylus: crate::stylus::Stylus,
+    /// What the pointer does on the page, and the pen it does it with (the Draw tab).
+    pen: crate::inkpad::Pen,
+    /// The drawing open in this page, if it has one.
+    pad: Option<crate::inkpad::Pad>,
     /// Lines or squares behind the page.
     rules: ribbon::RuleLines,
     /// The page title line is hidden (OneNote: View, Hide Page Title).
@@ -243,6 +247,8 @@ impl NoteCraftApp {
             show_source,
             ribbon_tab: "Home".to_string(),
             stylus: crate::stylus::Stylus::default(),
+            pen: crate::inkpad::Pen::default(),
+            pad: None,
             rules: session_rules,
             hide_title: session_hide_title,
             zoom: 0,
@@ -432,6 +438,12 @@ impl NoteCraftApp {
         self.status_is_error = false;
     }
 
+    /// Says something went wrong, in our own words rather than the engine's.
+    fn complain(&mut self, msg: &str) {
+        self.status = msg.to_string();
+        self.status_is_error = true;
+    }
+
     fn fail(&mut self, e: &EngineError) {
         self.status = e.to_string();
         self.status_is_error = true;
@@ -471,11 +483,23 @@ impl NoteCraftApp {
                 boxes: notecraft_store::page::containers(dir).unwrap_or_default(),
                 origin: egui::Pos2::ZERO,
             });
+            self.pad = self.drawing_of(dir);
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
             self.say("Opened");
         }
+    }
+
+    /// The drawing on the page just opened, if it has one. A page may hold several
+    /// pictures; the first that is a drawing of ours is the one the pen writes in, which is
+    /// enough while a page has one sheet (see `docs/gaps.md`).
+    fn drawing_of(&self, dir: &Path) -> Option<crate::inkpad::Pad> {
+        let blocks = self.editor.as_ref().map(|e| e.blocks.as_slice()).unwrap_or_default();
+        blocks.iter().find_map(|b| match b {
+            notecraft_formats::markdown::Block::Image { src, .. } if crate::inkpad::is_drawing(src) => crate::inkpad::Pad::open(dir, src),
+            _ => None,
+        })
     }
 
     fn save_now(&mut self) {
@@ -1023,6 +1047,11 @@ impl NoteCraftApp {
             rules: self.rules,
             hide_title: self.hide_title,
             zoom_percent: (ui.ctx().zoom_factor() * 100.0).round() as u32,
+            pointer: self.pen.pointer,
+            tool: self.pen.tool,
+            ink_colour: self.pen.colour,
+            ink_width: (self.pen.width * 10.0).round().clamp(4.0, 400.0) as u16,
+            has_drawing: self.pad.is_some(),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -1095,6 +1124,74 @@ impl NoteCraftApp {
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
+            ribbon::Act::InkPointer(p) => self.pen.pointer = p,
+            ribbon::Act::InkPen(tool, colour, tenths) => {
+                self.pen = crate::inkpad::Pen { pointer: ribbon::Pointer::Draw, tool, colour, width: f32::from(tenths) / 10.0 };
+            }
+            ribbon::Act::InkWidth(tenths) => self.pen.width = f32::from(tenths) / 10.0,
+            ribbon::Act::InkUndo => self.ink_undo(),
+            ribbon::Act::InkInsert => self.ink_insert(),
+            ribbon::Act::InkExportPlain => self.ink_export_plain(),
+        }
+    }
+
+    /// Takes the last stroke back out of the drawing on this page.
+    fn ink_undo(&mut self) {
+        let Some(pad) = self.pad.as_mut() else {
+            self.say("There is no drawing on this page");
+            return;
+        };
+        if !pad.undo() {
+            self.say("There is no stroke to take back");
+            return;
+        }
+        let left = pad.strokes();
+        match pad.save() {
+            Ok(()) => self.say(format!("Took the last stroke back; {left} left")),
+            Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
+        }
+    }
+
+    /// Puts a sheet to draw on into the page, as an ordinary picture that happens to be
+    /// ours, and opens it for the pen.
+    fn ink_insert(&mut self) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.say("Open a page first");
+            return;
+        };
+        let src = crate::inkpad::next_name(&dir);
+        match crate::inkpad::Pad::create(&dir, &src) {
+            Ok(pad) => {
+                // A block of its own, put in after the one the caret is in, rather than
+                // text pushed into a paragraph, which would make the sheet an inline
+                // picture inside a line of words.
+                if let Some(ed) = self.editor.as_mut() {
+                    let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+                    ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Drawing".to_string(), src: src.clone() });
+                    ed.body = pageedit::to_body(ed.format, &ed.blocks);
+                    Self::mark_dirty_from_blocks(ed);
+                }
+                self.pad = Some(pad);
+                self.pen.pointer = ribbon::Pointer::Draw;
+                self.ribbon_tab = "Draw".to_string();
+                self.say("A sheet to draw on. Pick a pen and write on it");
+            }
+            Err(e) => self.complain(&format!("Cannot make the drawing: {e}")),
+        }
+    }
+
+    /// Writes the drawing again with no pen readings in it, for sending somewhere else.
+    fn ink_export_plain(&mut self) {
+        let Some(pad) = self.pad.as_ref() else {
+            self.say("There is no drawing on this page");
+            return;
+        };
+        match pad.save_plain() {
+            Ok(path) => {
+                let shown = self.shown(&path);
+                self.say(format!("Saved the drawing as a picture: {shown}"));
+            }
+            Err(e) => self.complain(&format!("Cannot write the picture: {e}")),
         }
     }
 
@@ -1750,6 +1847,11 @@ impl NoteCraftApp {
         let mut save_boxes: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
         let mut follow: Option<String> = None;
+        // The drawing on this page is lent to the block that holds it, and written back
+        // once the page's borrow is over.
+        let (pen, pressure) = (self.pen, self.stylus.sample().pressure);
+        let mut pad = self.pad.take();
+        let mut ink_changed = false;
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
@@ -1814,14 +1916,14 @@ impl NoteCraftApp {
             let height = ui.available_height();
             // The page itself. Without the source beside it the page is a readable column,
             // the way a page looks in OneNote or Word, and a click puts the caret in it.
-            let page = |ui: &mut Ui,
-                        ed: &mut Editor,
-                        wide: bool,
-                        _changed: &mut bool,
-                        from_blocks: &mut bool,
-                        toggle: &mut bool,
-                        boxes_moved: &mut bool,
-                        follow: &mut Option<String>| {
+            let mut page = |ui: &mut Ui,
+                            ed: &mut Editor,
+                            wide: bool,
+                            _changed: &mut bool,
+                            from_blocks: &mut bool,
+                            toggle: &mut bool,
+                            boxes_moved: &mut bool,
+                            follow: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
@@ -1845,7 +1947,9 @@ impl NoteCraftApp {
                             // will be read, and the one being written in is a text box in
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
-                            let moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir);
+                            let ink = pageedit::Ink { pad: pad.as_mut(), pen, pressure };
+                            let moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir, ink);
+                            ink_changed |= moved.changed.ink;
                             if moved.changed.blocks {
                                 ed.body = pageedit::to_body(ed.format, &ed.blocks);
                                 *from_blocks = true;
@@ -1942,6 +2046,16 @@ impl NoteCraftApp {
         }
         if focus_search {
             self.focus_search = true;
+        }
+        // The drawing comes back from the page, and a stroke laid down this frame is
+        // written at once: ink is its own file, so it does not wait for the page to save.
+        self.pad = pad;
+        if ink_changed && let Some(pad) = self.pad.as_mut() {
+            let strokes = pad.strokes();
+            match pad.save() {
+                Ok(()) => self.say(format!("Drawing saved, {strokes} strokes")),
+                Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
+            }
         }
         if let Some(href) = follow {
             self.follow_link(ui.ctx(), &href);
@@ -2389,6 +2503,15 @@ impl NoteCraftApp {
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.rules.id(),
+            // The pen the Draw tab is set to, and the drawing it writes in.
+            "ink": {
+                "pointer": self.pen.pointer.id(),
+                "tool": self.pen.tool.id(),
+                "colour": self.pen.colour.hex(),
+                "width": self.pen.width,
+                "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
+                "drawing": self.pad.as_ref().map(|p| p.src.clone()),
+            },
             // What a pen has told this window. `pen` is false until a device reports a
             // pressure at all, and `hardest` is the hardest press since the window opened.
             "pen": {"seen": self.stylus.sample().pen, "pressure": self.stylus.sample().pressure, "hardest": self.stylus.seen().0, "readings": self.stylus.seen().1},

@@ -289,6 +289,25 @@ pub struct Changed {
     pub caret: bool,
     /// A link was clicked: its target as written in the page, for the window to follow.
     pub link: Option<String>,
+    /// The drawing on the page gained or lost a stroke, so it needs writing back. The
+    /// blocks did not change: a drawing lives in its own file beside the page.
+    pub ink: bool,
+}
+
+/// The drawing on this page, and what the pen is set to do, handed down to the block that
+/// holds it. A page with no drawing passes `Ink::none()` and nothing here does anything.
+pub struct Ink<'a> {
+    pub pad: Option<&'a mut crate::inkpad::Pad>,
+    pub pen: crate::inkpad::Pen,
+    /// What the stylus reports this frame. A mouse is 1.
+    pub pressure: f32,
+}
+
+impl Ink<'_> {
+    /// For a page with no drawing on it, and for every caller that is only reading.
+    pub fn none() -> Self {
+        Self { pad: None, pen: crate::inkpad::Pen::default(), pressure: 1.0 }
+    }
 }
 
 /// The text of a block as it is edited: the inline marks only.
@@ -412,9 +431,10 @@ pub fn show(
     page_dir: &std::path::Path,
     t: &Tokens,
     page: notecraft_model::Dir,
+    ink: Ink<'_>,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, ink);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -436,6 +456,7 @@ pub fn show_blocks(
     t: &Tokens,
     page: notecraft_model::Dir,
     range: std::ops::Range<usize>,
+    mut ink: Ink<'_>,
 ) -> Changed {
     let mut changed = Changed::default();
     let mut action: Option<Action> = None;
@@ -639,6 +660,16 @@ pub fn show_blocks(
             }
             frame_block(ui, top, true, t);
         } else {
+            // A drawing of ours is not a picture here: it is a sheet the pen writes on.
+            if let Block::Image { src, .. } = &block
+                && let Some(pad) = ink.pad.as_deref_mut().filter(|p| p.src == *src)
+            {
+                if crate::inkpad::show(ui, pad, ink.pen, ink.pressure, t) {
+                    changed.ink = true;
+                }
+                ui.add_space(4.0);
+                continue;
+            }
             // A finished block. Clicking it puts the caret in it, under the pointer, and a
             // to-do box on it can be ticked without putting the caret anywhere.
             let out = preview::show_block(ui, &block, i, page_dir, t, true, page);

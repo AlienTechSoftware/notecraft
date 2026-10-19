@@ -1042,6 +1042,75 @@ fn the_ribbon_theme_button_opens_the_chooser() {
     review(&mut h, "ribbon_theme");
 }
 
+/// The Draw tab end to end: insert a sheet, pick a pen off the rack, write on it, and the
+/// strokes are in a file beside the page with the pen's readings in them. Then rub one out
+/// and take the other back.
+#[test]
+fn a_drawing_is_made_written_on_and_saved_beside_the_page() {
+    let (_t, mut app, s) = sample_app("ui-draw");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+
+    // Every group OneNote's Draw tab has is on the screen, built or honestly labelled.
+    for group in ["Undo", "Selection", "Drawing Tools", "Input Mode", "Stencils", "Edit", "Shapes", "Text", "Math", "Replay", "Mode"] {
+        assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
+    }
+    for pen in ["Pen black", "Pen red", "Pen blue", "Pen green", "Pencil grey", "Highlighter yellow", "Highlighter mint"] {
+        assert!(h.query_all_by_label(pen).count() >= 1, "{pen} is on the rack");
+    }
+
+    // Insert a sheet near the top of the page, where it can be seen and written on.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Insert a drawing").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("![Drawing](assets/drawing-1.svg)"), "the page points at the drawing:\n{body}");
+    let file = s.md_page.join("assets").join("drawing-1.svg");
+    assert!(file.exists(), "and the file is there");
+
+    // Pick the red pen and draw a line across the sheet.
+    h.get_by_label("Pen red").click();
+    h.run();
+    let sheet = h.get_by_label("Drawing, 0 strokes").rect();
+    let y = sheet.center().y;
+    ask(&mut h, "ui.press", json!({"x": sheet.min.x + 20.0, "y": y})).expect("down");
+    pump(&mut h);
+    for step in 1..=6 {
+        ask(&mut h, "ui.move", json!({"x": sheet.min.x + 20.0 + step as f32 * 30.0, "y": y})).expect("move");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": sheet.min.x + 200.0, "y": y})).expect("up");
+    pump(&mut h);
+    settle(&mut h);
+
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    assert_eq!(ink["strokes"].as_u64(), Some(1), "the window says one stroke: {ink}");
+    assert_eq!(ink["colour"].as_str(), Some("#d02121"), "in red");
+    let written = std::fs::read_to_string(&file).expect("read the drawing");
+    assert!(written.contains("nc:dabs"), "the pen's own readings are in the file:\n{written}");
+    assert!(written.contains("fill=\"#d02121\""), "drawn in the red that was picked");
+    assert!(written.contains("<path"), "and it is ordinary SVG that anything can draw");
+    assert_eq!(written.matches("<path").count(), 1, "one stroke");
+
+    // Undo takes it back, and the file says so.
+    h.get_by_label("Undo the last stroke").click();
+    settle(&mut h);
+    let after = std::fs::read_to_string(&file).expect("read again");
+    assert_eq!(after.matches("<path").count(), 0, "the stroke was taken back:\n{after}");
+
+    // Saving it as a plain picture puts a second file beside it, with no readings in it.
+    h.get_by_label("Save as a plain picture").click();
+    settle(&mut h);
+    let plain = s.md_page.join("assets").join("drawing-1.plain.svg");
+    assert!(plain.exists(), "the picture was written");
+    assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
+    review(&mut h, "draw_tab");
+}
+
 /// Rule Lines opens a gallery, not a list of words: every paper is drawn small so the look
 /// is picked by looking. Each thumbnail is still a button with the paper's name, which is
 /// how a screen reader reads it and how this test picks one.

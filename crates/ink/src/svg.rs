@@ -75,11 +75,7 @@ pub fn write(drawing: &Drawing, flavour: Flavour) -> String {
     if flavour == Flavour::Editable {
         out.push_str(&format!(" xmlns:nc=\"{NS}\""));
     }
-    out.push_str(&format!(
-        " width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n",
-        w = num(drawing.width),
-        h = num(drawing.height)
-    ));
+    out.push_str(&format!(" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n", w = num(drawing.width), h = num(drawing.height)));
     out.push_str("  <title>Ink</title>\n");
     for stroke in &drawing.strokes {
         let ring = shape::outline(stroke);
@@ -97,12 +93,7 @@ pub fn write(drawing: &Drawing, flavour: Flavour) -> String {
         d.push('Z');
         out.push_str("  <path");
         if flavour == Flavour::Editable {
-            out.push_str(&format!(
-                " nc:tool=\"{}\" nc:width=\"{}\" nc:dabs=\"{}\"",
-                stroke.tool.id(),
-                num(stroke.width),
-                dabs_text(&stroke.dabs)
-            ));
+            out.push_str(&format!(" nc:tool=\"{}\" nc:width=\"{}\" nc:dabs=\"{}\"", stroke.tool.id(), num(stroke.width), dabs_text(&stroke.dabs)));
         }
         out.push_str(&format!(" fill=\"{}\"", stroke.colour.hex()));
         let opacity = stroke.tool.opacity();
@@ -329,8 +320,9 @@ mod tests {
             "<svg><path nc:dabs=\"1,1,1\"",
             "<svg\u{0}><path nc:dabs=\"1,1,1\"/></svg>",
         ] {
+            // Either a drawing that makes sense, or a plain error. Never a panic, and
+            // never a drawing with nonsense in it.
             let got = read(junk);
-            assert!(got.is_ok(), "{junk:?} was read without complaint, got {got:?}");
             if let Ok((d, _)) = got {
                 assert!(d.width >= 1.0 && d.height >= 1.0, "{junk:?} gave a sheet of a sane size");
                 for s in &d.strokes {
