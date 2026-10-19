@@ -117,8 +117,12 @@ It says what is built, what is decided but not built, and what is open.
   `highlighter`), `nc:width`, `nc:gain` when it is not 1, and `nc:dabs`, a list of `x,y,pressure`
   readings. Other programs ignore an attribute in a namespace they do not know. The readings are
   what lets a stroke be rubbed out in part or smoothed later, and an outline alone cannot do that.
-  So every stroke is stored twice: the outline to be seen, the readings to be edited. That is why a
-  short scribble was 323 KB.
+  So every stroke is stored twice: the outline to be seen, the readings to be edited. The weight is
+  not shared evenly between the two, which is worth knowing before anybody tries to make ink
+  smaller: in the demo notebook's drawing, measured on 2026-10-19, two strokes came to 31 KB, of
+  which the outlines were 30.8 KB and the readings 0.6 KB. The outline is finely sampled along the
+  curve, two points a sample, each with two decimals. Rounding the outline and sampling it by how
+  much the curve actually bends is where the size is, not the readings.
 - **Coordinates** are the page body's own, measured from its top left corner, so strokes stay beside
   the words they were written against when the window is resized. The `viewBox` (820 by 1100) is
   only what another program uses to frame the picture; the pen may write past it.

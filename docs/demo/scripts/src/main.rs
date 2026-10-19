@@ -99,10 +99,13 @@ fn main() -> ExitCode {
     let task = std::env::args().nth(1).unwrap_or_else(|| "build".to_string());
     let here = std::env::var("CARGO_MANIFEST_DIR").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
     let content = here.join("content");
+    // The pictures a demo page shows live with the repository's other art, attributed
+    // there: `docs/demo/scripts` is three levels down from the root.
+    let art = here.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|r| r.join("assets").join("demo")).unwrap_or_default();
     let out = here.parent().map(|p| p.join("DemoNotebook")).unwrap_or_else(|| PathBuf::from("DemoNotebook"));
     let result = match task.as_str() {
-        "build" => build_in_place(&content, &out),
-        "check" => check_in_place(&content, &out),
+        "build" => build_in_place(&content, &out, &art),
+        "check" => check_in_place(&content, &out, &art),
         other => Err(format!("unknown task '{other}'. Tasks: build check")),
     };
     match result {
@@ -116,7 +119,7 @@ fn main() -> ExitCode {
 
 /// Builds into `out`, replacing what is there. Only a folder that holds this notebook (or
 /// nothing) is replaced, so a wrong path cannot delete someone's notes.
-fn build_in_place(content: &Path, out: &Path) -> Result<(), String> {
+fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> {
     if out.exists() {
         let node = notecraft_store::tree::read_node(out);
         let ours = node.as_ref().is_some_and(|n| n.title == NOTEBOOK_TITLE);
@@ -126,18 +129,18 @@ fn build_in_place(content: &Path, out: &Path) -> Result<(), String> {
         }
         fs::remove_dir_all(out).map_err(|e| format!("cannot clear {}: {e}", out.display()))?;
     }
-    let built = build(content, out)?;
+    let built = build(content, out, art)?;
     verify(out)?;
     println!("demo: built {} with {} languages ({}) and {} pages", out.display(), built.languages.len(), built.languages.join(", "), built.pages);
     Ok(())
 }
 
 /// Builds into a scratch folder and compares it with `out`, file by file.
-fn check_in_place(content: &Path, out: &Path) -> Result<(), String> {
+fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> {
     let scratch = std::env::temp_dir().join(format!("notecraft-demo-check-{}", std::process::id()));
     let _ = fs::remove_dir_all(&scratch);
     let fresh = scratch.join("DemoNotebook");
-    let result = build(content, &fresh).and_then(|_| verify(&fresh)).and_then(|()| {
+    let result = build(content, &fresh, art).and_then(|_| verify(&fresh)).and_then(|()| {
         let want = snapshot(&fresh)?;
         let have = snapshot(out)?;
         let mut differences: Vec<String> = Vec::new();
@@ -165,7 +168,7 @@ fn check_in_place(content: &Path, out: &Path) -> Result<(), String> {
 }
 
 /// Writes the notebook under `out`, which must not exist yet.
-fn build(content: &Path, out: &Path) -> Result<Built, String> {
+fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
     let mut built = Built::default();
     fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
     write(&out.join("_node.toml"), &node_toml("notebook", NOTEBOOK_TITLE, &id_for("notebook"), 10, Some("cmgfm"), Some("purple")))?;
@@ -183,7 +186,7 @@ fn build(content: &Path, out: &Path) -> Result<Built, String> {
     let start_page = read_source(&content.join("start").join("welcome.md"), 10)?;
     let list = language_list(&present);
     let body = start_page.body.replace(LANGUAGES_MARK, &list);
-    write_page(&start.join("welcome"), &Source { body, ..start_page }, &id_for("start/welcome"), None)?;
+    write_page(&start.join("welcome"), &Source { body, ..start_page }, &id_for("start/welcome"), None, art)?;
     built.pages += 1;
 
     for (n, lang) in present.iter().enumerate() {
@@ -201,7 +204,30 @@ fn build(content: &Path, out: &Path) -> Result<Built, String> {
         let default_dir = if lang.rtl { Some("rtl") } else { None };
         for s in &sources {
             let id = id_for(&format!("{}/how-to/{}", lang.folder(), s.slug));
-            write_page(&section.join(&s.slug), s, &id, default_dir)?;
+            let page = section.join(&s.slug);
+            // A page with ink names it, as every page with ink must: the folder and the
+            // page's own words have to agree. See docs/page-model.md section 5.
+            let inked = s.slug == "pictures-and-files";
+            let s = &if inked {
+                Source {
+                    body: format!(
+                        "{}
+
+![Ink](ink.svg)
+",
+                        s.body.trim_end()
+                    ),
+                    ..s.clone()
+                }
+            } else {
+                s.clone()
+            };
+            write_page(&page, s, &id, default_dir, art)?;
+            // The page about pictures and files is the one that shows handwriting, so a
+            // reader meets the pen on the page that talks about what a page can hold.
+            if s.slug == "pictures-and-files" {
+                write_ink(&page)?;
+            }
             built.pages += 1;
         }
         built.languages.push(lang.code.to_string());
@@ -222,15 +248,74 @@ fn language_list(present: &[&Language]) -> String {
     out.trim_end().to_string()
 }
 
-/// Writes one page folder: `index.md` or `index.html` with the page's metadata.
-fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>) -> Result<(), String> {
+/// Writes one page folder: `index.md` or `index.html` with the page's metadata, and
+/// every picture the page names, copied in from the repository's own `assets/demo`.
+fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: &Path) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     let dir_value = s.dir.as_deref().or(default_dir);
+    copy_assets(dir, &s.body, art)?;
     if s.html {
         write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body))
     } else {
         write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body))
     }
+}
+
+/// Copies every `assets/...` a page names into that page's own `assets` folder.
+///
+/// A page owns its files, so each page that shows a picture gets its own copy rather than
+/// linking across the notebook. The pictures themselves live in the repository under
+/// `assets/demo`, attributed there, and this is the only place they are copied from: a
+/// page that names one that is not there fails the build rather than shipping a hole.
+fn copy_assets(dir: &Path, body: &str, art: &Path) -> Result<(), String> {
+    for target in link_targets(body) {
+        let Some(name) = target.strip_prefix("assets/") else { continue };
+        if name.is_empty() || name.contains('/') || name.contains("..") {
+            return Err(format!("{}: {target} is not a plain file name", dir.display()));
+        }
+        let from = art.join(name);
+        if !from.is_file() {
+            return Err(format!("{}: nothing at {}", dir.display(), from.display()));
+        }
+        let assets = dir.join("assets");
+        fs::create_dir_all(&assets).map_err(|e| format!("cannot create {}: {e}", assets.display()))?;
+        fs::copy(&from, assets.join(name)).map_err(|e| format!("cannot copy {}: {e}", from.display(),))?;
+    }
+    Ok(())
+}
+
+/// A drawing for a page: a few strokes written as NoteCraft's own ink file.
+///
+/// The demo should show what the pen leaves behind, and a page with ink in the folder is
+/// the only honest way to show it. The strokes are drawn here with the same crate the pen
+/// uses, so the file the demo ships is the file the pen would have written.
+fn write_ink(dir: &Path) -> Result<(), String> {
+    use notecraft_ink::{Dab, Drawing, Rgb, Stroke, Tool};
+    let mut drawing = Drawing::new(820.0, 1100.0);
+
+    // A hand-drawn underline under the page's first heading, and a tick beside it.
+    let mut line = Stroke::new(Tool::Highlighter, Rgb(0xFF, 0xDD, 0x33), 14.0);
+    for i in 0..=18 {
+        let t = i as f32 / 18.0;
+        line.add(Dab { x: 60.0 + t * 300.0, y: 96.0 + (t * 6.2).sin() * 2.5, pressure: 0.55 + t * 0.2 });
+    }
+    drawing.add(line);
+
+    // Two strokes, not more: a stroke is stored as a filled outline, and an outline is
+    // some 30 KB a stroke. Thirteen languages carry a copy of this page.
+    let mut tick = Stroke::new(Tool::Pen, Rgb(0x1E, 0x8A, 0x44), 3.5);
+    for i in 0..=6 {
+        let t = i as f32 / 6.0;
+        tick.add(Dab { x: 400.0 + t * 14.0, y: 84.0 + t * 16.0, pressure: 0.4 + t * 0.4 });
+    }
+    for i in 1..=9 {
+        let t = i as f32 / 9.0;
+        tick.add(Dab { x: 414.0 + t * 26.0, y: 100.0 - t * 30.0, pressure: 0.8 - t * 0.3 });
+    }
+    drawing.add(tick);
+
+    let svg = notecraft_ink::svg::write(&drawing, notecraft_ink::svg::Flavour::Editable);
+    write(&dir.join("ink.svg"), &svg)
 }
 
 /// A `_node.toml` in the form `docs/folder-format.md` section 4 describes.
@@ -442,6 +527,11 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// The repository's own art, which a page's pictures are copied from.
+    fn art_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..").join("assets").join("demo")
+    }
+
     fn content_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("content")
     }
@@ -523,7 +613,7 @@ mod tests {
     fn the_notebook_builds_cleanly_and_the_same_way_twice() {
         let dir = scratch("build");
         let out = dir.join("DemoNotebook");
-        let built = build(&content_dir(), &out).expect("build");
+        let built = build(&content_dir(), &out, &art_dir()).expect("build");
         verify(&out).expect("verify");
         assert!(built.languages.contains(&"en".to_string()));
         let tree = notecraft_store::tree::load_tree(&out).expect("tree");
@@ -542,7 +632,7 @@ mod tests {
         assert!(!start.contains(LANGUAGES_MARK));
         let first_build = snapshot(&out).expect("snapshot");
         let again = dir.join("Again");
-        build(&content_dir(), &again).expect("build again");
+        build(&content_dir(), &again, &art_dir()).expect("build again");
         assert_eq!(snapshot(&again).expect("snapshot"), first_build, "deterministic");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -553,7 +643,7 @@ mod tests {
         let other = dir.join("Someone");
         fs::create_dir_all(&other).expect("dir");
         fs::write(other.join("_node.toml"), "kind = \"notebook\"\ntitle = \"Mine\"\nid = \"1\"\n").expect("node");
-        let err = build_in_place(&content_dir(), &other).expect_err("refused");
+        let err = build_in_place(&content_dir(), &other, &art_dir()).expect_err("refused");
         assert!(err.contains("not touching it"), "{err}");
         assert!(other.join("_node.toml").is_file(), "nothing was deleted");
         let _ = fs::remove_dir_all(&dir);

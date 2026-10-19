@@ -4,6 +4,10 @@ title: Bienvenue
 
 # Bienvenue
 
+![Le koala de NoteCraft, en train d'écrire](assets/banner-fr.png)
+
+*Des notes en fichiers simples, dans des dossiers simples.*
+
 NoteCraft garde les notes comme vous gardez vos fichiers : un carnet est un dossier, une
 section est un dossier, une page est un dossier avec un fichier et ses images dedans. Rien
 n'est enfermé dans une base de données, donc n'importe quel dossier que votre outil de

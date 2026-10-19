@@ -2165,6 +2165,7 @@ dependencies = [
 name = "notecraft-demo"
 version = "0.0.1"
 dependencies = [
+ "notecraft-ink",
  "notecraft-model",
  "notecraft-store",
 ]
