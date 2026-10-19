@@ -87,7 +87,7 @@ fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> Text
     }
 }
 
-fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir) -> LayoutJob {
+pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir) -> LayoutJob {
     let mut job = LayoutJob { halign: crate::pagetext::halign(&text_of(spans), page), ..LayoutJob::default() };
     job.wrap.max_width = ui.available_width();
     for s in spans {

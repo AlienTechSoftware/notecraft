@@ -22,6 +22,7 @@ egui = { workspace = true }
 egui_extras = { workspace = true }
 rfd = { workspace = true }
 image = { workspace = true }
+arboard = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

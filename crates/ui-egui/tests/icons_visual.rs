@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 39] = [
+const ALL: [Icon; 47] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -64,6 +64,14 @@ const ALL: [Icon; 39] = [
     Icon::Help,
     Icon::Pen,
     Icon::Plus,
+    Icon::Calendar,
+    Icon::Clock,
+    Icon::Video,
+    Icon::Mic,
+    Icon::Spreadsheet,
+    Icon::Clip,
+    Icon::Sticker,
+    Icon::Symbol,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -92,6 +100,14 @@ fn name(icon: Icon) -> &'static str {
         Icon::Help => "help",
         Icon::Pen => "pen",
         Icon::Plus => "plus",
+        Icon::Calendar => "calendar",
+        Icon::Clock => "clock",
+        Icon::Video => "video",
+        Icon::Mic => "mic",
+        Icon::Spreadsheet => "spreadsheet",
+        Icon::Clip => "clip",
+        Icon::Sticker => "sticker",
+        Icon::Symbol => "symbol",
         Icon::Search => "search",
         Icon::FullPage => "full-page",
         Icon::ExitFullPage => "exit-full-page",
@@ -203,6 +219,53 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(9.5, 9.5), (10.5, 7.5), (13.5, 7.5), (14.5, 9.5), (13.5, 11.5), (12.0, 12.5), (12.0, 14.5)]),
             Shape::circle_filled(at(12.0, 17.5), SIZE / 20.0, color),
         ],
+        Icon::Calendar => vec![
+            closed(&[(4.0, 6.5), (20.0, 6.5), (20.0, 20.5), (4.0, 20.5)]),
+            seg((4.0, 11.0), (20.0, 11.0)),
+            seg((8.5, 3.5), (8.5, 8.0)),
+            seg((15.5, 3.5), (15.5, 8.0)),
+        ],
+        Icon::Clock => {
+            vec![Shape::circle_stroke(at(12.0, 12.5), SIZE * 8.5 / 24.0, stroke), seg((12.0, 12.5), (12.0, 7.0)), seg((12.0, 12.5), (16.0, 14.5))]
+        }
+        Icon::Video => vec![closed(&[(3.5, 5.5), (20.5, 5.5), (20.5, 18.5), (3.5, 18.5)]), poly(&[(10.0, 9.0), (16.0, 12.0), (10.0, 15.0)], color)],
+        Icon::Mic => vec![
+            closed(&[(9.5, 3.5), (14.5, 3.5), (14.5, 13.5), (9.5, 13.5)]),
+            open(&[(6.5, 11.0), (6.5, 13.5), (12.0, 17.5), (17.5, 13.5), (17.5, 11.0)]),
+            seg((12.0, 17.5), (12.0, 20.5)),
+        ],
+        Icon::Spreadsheet => vec![
+            poly(&[(4.0, 5.5), (20.0, 5.5), (20.0, 9.5), (4.0, 9.5)], shade(color, 45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 20.5), (4.0, 20.5)]),
+            seg((4.0, 9.5), (20.0, 9.5)),
+            seg((4.0, 15.0), (20.0, 15.0)),
+            seg((12.0, 9.5), (12.0, 20.5)),
+        ],
+        Icon::Clip => vec![
+            open(&[(5.0, 9.5), (5.0, 5.0), (9.5, 5.0)]),
+            open(&[(14.5, 5.0), (19.0, 5.0), (19.0, 9.5)]),
+            open(&[(19.0, 14.5), (19.0, 19.0), (14.5, 19.0)]),
+            open(&[(9.5, 19.0), (5.0, 19.0), (5.0, 14.5)]),
+        ],
+        Icon::Sticker => vec![
+            Shape::circle_stroke(at(12.0, 12.0), SIZE * 8.5 / 24.0, stroke),
+            Shape::circle_filled(at(9.0, 10.0), SIZE / 20.0, color),
+            Shape::circle_filled(at(15.0, 10.0), SIZE / 20.0, color),
+            open(&[(8.0, 14.5), (10.0, 17.0), (14.0, 17.0), (16.0, 14.5)]),
+        ],
+        Icon::Symbol => vec![open(&[
+            (6.5, 20.0),
+            (10.5, 20.0),
+            (10.5, 17.0),
+            (7.0, 14.0),
+            (7.0, 9.5),
+            (12.0, 6.0),
+            (17.0, 9.5),
+            (17.0, 14.0),
+            (13.5, 17.0),
+            (13.5, 20.0),
+            (17.5, 20.0),
+        ])],
         Icon::Plus => vec![seg((12.0, 4.5), (12.0, 19.5)), seg((4.5, 12.0), (19.5, 12.0))],
         Icon::Pen => vec![
             poly(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
@@ -411,7 +474,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 78);
+    assert_eq!(pairs, 94);
 }
 
 #[test]

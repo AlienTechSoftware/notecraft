@@ -87,6 +87,22 @@ pub enum Icon {
     Pen,
     /// A plain plus: add one more of something.
     Plus,
+    /// A calendar page with two rings: a date.
+    Calendar,
+    /// A clock face with two hands: a time.
+    Clock,
+    /// A screen with a play triangle on it.
+    Video,
+    /// A microphone on its stand: recording and transcribing.
+    Mic,
+    /// A sheet with a filled header row: a spreadsheet.
+    Spreadsheet,
+    /// Four corner brackets: clipping part of the screen.
+    Clip,
+    /// A round face: stickers.
+    Sticker,
+    /// An omega: a symbol from outside the keyboard.
+    Symbol,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -310,6 +326,63 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             Shape::circle_filled(g.p(12.0, 17.5), rect.width() / 20.0, color),
         ],
         // A pen nib pointing down and to the left, with its slit.
+        // A calendar page hanging from two rings.
+        Icon::Calendar => vec![
+            closed(&[(4.0, 6.5), (20.0, 6.5), (20.0, 20.5), (4.0, 20.5)]),
+            line((4.0, 11.0), (20.0, 11.0)),
+            line((8.5, 3.5), (8.5, 8.0)),
+            line((15.5, 3.5), (15.5, 8.0)),
+        ],
+        // A clock face, reading ten past ten as every clock in a shop window does.
+        Icon::Clock => vec![
+            Shape::circle_stroke(g.p(12.0, 12.5), rect.width() * 8.5 / 24.0, stroke),
+            line((12.0, 12.5), (12.0, 7.0)),
+            line((12.0, 12.5), (16.0, 14.5)),
+        ],
+        // A screen with a play triangle on it.
+        Icon::Video => vec![closed(&[(3.5, 5.5), (20.5, 5.5), (20.5, 18.5), (3.5, 18.5)]), fill(&[(10.0, 9.0), (16.0, 12.0), (10.0, 15.0)], color)],
+        // A microphone: the capsule, the cradle it sits in, and its stand.
+        Icon::Mic => vec![
+            closed(&[(9.5, 3.5), (14.5, 3.5), (14.5, 13.5), (9.5, 13.5)]),
+            path(&[(6.5, 11.0), (6.5, 13.5), (12.0, 17.5), (17.5, 13.5), (17.5, 11.0)]),
+            line((12.0, 17.5), (12.0, 20.5)),
+        ],
+        // A sheet with its header row filled, which is what tells it from a plain table.
+        Icon::Spreadsheet => vec![
+            fill(&[(4.0, 5.5), (20.0, 5.5), (20.0, 9.5), (4.0, 9.5)], shade(color, 0.45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 20.5), (4.0, 20.5)]),
+            line((4.0, 9.5), (20.0, 9.5)),
+            line((4.0, 15.0), (20.0, 15.0)),
+            line((12.0, 9.5), (12.0, 20.5)),
+        ],
+        // Four corner brackets: the part of the screen being cut out.
+        Icon::Clip => vec![
+            path(&[(5.0, 9.5), (5.0, 5.0), (9.5, 5.0)]),
+            path(&[(14.5, 5.0), (19.0, 5.0), (19.0, 9.5)]),
+            path(&[(19.0, 14.5), (19.0, 19.0), (14.5, 19.0)]),
+            path(&[(9.5, 19.0), (5.0, 19.0), (5.0, 14.5)]),
+        ],
+        // A round face.
+        Icon::Sticker => vec![
+            Shape::circle_stroke(g.p(12.0, 12.0), rect.width() * 8.5 / 24.0, stroke),
+            Shape::circle_filled(g.p(9.0, 10.0), rect.width() / 20.0, color),
+            Shape::circle_filled(g.p(15.0, 10.0), rect.width() / 20.0, color),
+            path(&[(8.0, 14.5), (10.0, 17.0), (14.0, 17.0), (16.0, 14.5)]),
+        ],
+        // An omega, which is the mark every word processor puts on this button.
+        Icon::Symbol => vec![path(&[
+            (6.5, 20.0),
+            (10.5, 20.0),
+            (10.5, 17.0),
+            (7.0, 14.0),
+            (7.0, 9.5),
+            (12.0, 6.0),
+            (17.0, 9.5),
+            (17.0, 14.0),
+            (13.5, 17.0),
+            (13.5, 20.0),
+            (17.5, 20.0),
+        ])],
         // A plain plus.
         Icon::Plus => vec![line((12.0, 4.5), (12.0, 19.5)), line((4.5, 12.0), (19.5, 12.0))],
         Icon::Pen => vec![
@@ -359,7 +432,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 39] = [
+    pub const ALL: [Icon; 47] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -399,6 +472,14 @@ mod tests {
         Icon::Help,
         Icon::Pen,
         Icon::Plus,
+        Icon::Calendar,
+        Icon::Clock,
+        Icon::Video,
+        Icon::Mic,
+        Icon::Spreadsheet,
+        Icon::Clip,
+        Icon::Sticker,
+        Icon::Symbol,
     ];
 
     #[test]
