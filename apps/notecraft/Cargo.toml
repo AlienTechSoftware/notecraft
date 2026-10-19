@@ -20,3 +20,6 @@ egui = { workspace = true }
 image = { workspace = true }
 rfd = { workspace = true }
 log = { workspace = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }

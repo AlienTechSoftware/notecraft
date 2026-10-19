@@ -84,6 +84,27 @@ foreach ($check in @(@('notecraft.exe', 2), @('notecraft-cli.exe', 3))) {
   if ($h.Subsystem -ne $check[1]) { throw "$($check[0]) has PE subsystem $($h.Subsystem), expected $($check[1])" }
   Write-Output "ok $($check[0]): $Arch, PE subsystem $($h.Subsystem)"
 }
+# Both programs must carry the app icon (a group-icon resource) and the product name, or Explorer
+# shows the default file icon and the Properties dialog is empty. build.rs embeds them.
+Add-Type -Namespace Nc -Name Res -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr LoadLibraryEx(string file, System.IntPtr h, uint flags);
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr FindResource(System.IntPtr m, System.IntPtr name, System.IntPtr type);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern bool FreeLibrary(System.IntPtr m);
+'@
+foreach ($name in @('notecraft.exe', 'notecraft-cli.exe')) {
+  $file = Join-Path $Bin $name
+  $m = [Nc.Res]::LoadLibraryEx($file, [IntPtr]::Zero, 0x22)  # as data file, as image resource
+  if ($m -eq [IntPtr]::Zero) { throw "could not open $name to check its resources" }
+  $icon = [Nc.Res]::FindResource($m, [IntPtr]1, [IntPtr]14)  # resource 1, RT_GROUP_ICON
+  [void][Nc.Res]::FreeLibrary($m)
+  if ($icon -eq [IntPtr]::Zero) { throw "$name has no icon resource: build.rs did not embed assets/app-icon/notecraft.ico" }
+  $product = (Get-Item $file).VersionInfo.ProductName
+  if ($product -ne 'NoteCraft') { throw "$name has product name '$product' in its version information, expected NoteCraft" }
+  Write-Output "ok ${name}: icon and version information"
+}
 $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
