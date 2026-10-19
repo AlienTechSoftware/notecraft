@@ -44,6 +44,13 @@ fn claimed_id() -> Id {
     Id::new("container-took-right-click")
 }
 
+/// The container that had words selected in it before any button went down. A text box moves
+/// its selection to the pointer the moment a button is pressed, right button included, so by the
+/// time the right click is complete the words are no longer selected and cannot be asked.
+fn words_id() -> Id {
+    Id::new("container-words-selected")
+}
+
 /// The container that is selected, if there is one.
 pub fn selected(ctx: &egui::Context) -> Option<usize> {
     ctx.data(|d| d.get_temp::<usize>(selected_id()))
@@ -113,6 +120,7 @@ pub fn show(
     let right_click = ui.input(|i| i.pointer.secondary_clicked());
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
+    let words_in = ui.data(|d| d.get_temp::<usize>(words_id()));
 
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
@@ -151,7 +159,7 @@ pub fn show(
         // A click on the handle selects the container. A right click anywhere in it does too,
         // unless the caret is in it with words selected: then the right click belongs to
         // those words, and the page's menu cuts and copies them.
-        let words_selected = editing && caret.as_ref().is_some_and(|c| c.selection.0 != c.selection.1);
+        let words_selected = words_in == Some(i);
         let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected;
         if drag.clicked() || right_here {
             sel = Some(i);
@@ -281,6 +289,19 @@ pub fn show(
         sel = None;
         menu_at = None;
         ui.ctx().request_repaint();
+    }
+    // Remember where words are selected, but only while no button is down: a press moves the
+    // selection, and what is wanted is how it stood before.
+    if !ui.input(|i| i.pointer.any_down()) {
+        let words = caret.as_ref().filter(|c| c.selection.0 != c.selection.1).and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+        ui.data_mut(|d| match words {
+            Some(i) => {
+                d.insert_temp(words_id(), i);
+            }
+            None => {
+                d.remove::<usize>(words_id());
+            }
+        });
     }
     ui.data_mut(|d| {
         match sel {

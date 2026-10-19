@@ -81,6 +81,10 @@ it is fixed and tested, not when it is promised.
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
   OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
   Delete is final once the page autosaves.
+- **A right click moves the words' selection.** The text box puts its selection at the pointer when
+  any button goes down, the right one too (measured: a selection of 0 to 12 became 7 to 7). A box
+  remembers what was selected before the press so its menu is chosen correctly, but the page's own
+  Cut and Copy then find nothing selected, because the selection has already moved. Not fixed.
 - **Containers are a first pass.** A page can hold several boxes, each with its own place,
   width and blocks; a box is moved by the bar along its top and resized by its right edge,
   and the arrangement is kept in the page's own file. What is missing: making a new box by
