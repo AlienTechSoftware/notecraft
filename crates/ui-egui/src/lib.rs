@@ -17,6 +17,7 @@ pub mod control;
 pub mod floating;
 pub mod fonts;
 pub mod gridcraft;
+pub mod history;
 pub mod icons;
 pub mod inkpad;
 pub mod mathview;

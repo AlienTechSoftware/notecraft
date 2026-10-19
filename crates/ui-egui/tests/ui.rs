@@ -681,6 +681,10 @@ fn the_ribbon_inserts_in_both_formats() {
     for label in ["Home", "Insert", "View", "Bold", "Heading 1", "Bullets", "To Do Tag"] {
         let _ = h.get_by_label(label);
     }
+    // Undo names both the group and the button in it, so both are expected.
+    assert!(h.query_all_by_label("Undo").count() >= 2, "the Undo group and its button");
+    assert!(h.query_all_by_label("Redo").count() >= 1, "and Redo beside it");
+    review(&mut h, "tab_home");
     h.get_by_label("Insert").click();
     h.run();
     // The Table button opens OneNote's size picker, and a square in it says how big.
@@ -1839,6 +1843,91 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     // And the table is drawn to it: the second column starts further right than it did.
     let now = h.get_by_label("B").rect();
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
+}
+
+/// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
+/// a row taken out of a table.
+#[test]
+fn undo_takes_back_a_change_to_the_page_and_redo_puts_it_back() {
+    let (_t, app, s) = sample_app("ui-undo");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Back", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "words here
+
+| A | B |
+|---|---|
+| one | two |
+| three | four |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Nothing has been done yet, so there is nothing to take back.
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["page"]["history"]["canUndo"], json!(false), "a page just opened has nothing to undo");
+
+    // Type into the first line, then take it back.
+    let line = h.get_by_label("words here").rect();
+    ask(&mut h, "ui.click", json!({"x": line.center().x, "y": line.center().y})).expect("caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": " and more"})).expect("type");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("and more"), "the words went in");
+
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        !body.contains("and more"),
+        "undo took the typing back:
+{body}"
+    );
+    assert!(
+        body.contains("words here"),
+        "and left what was there:
+{body}"
+    );
+
+    ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("redo");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("and more"), "redo put it back");
+
+    // A row taken out of a table comes back too, which is the change that used to be
+    // impossible to undo.
+    let cell = h.get_by_label("three").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("into the cell");
+    settle(&mut h);
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("three"), "the row went");
+
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo the delete");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("three") && body.contains("four"),
+        "the row came back:
+{body}"
+    );
+
+    // And the page says it has steps to walk back through.
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(state["page"]["history"]["steps"].as_u64().unwrap_or(0) >= 2, "{}", state["page"]["history"]);
 }
 
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
