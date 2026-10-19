@@ -260,12 +260,11 @@ fn open_page(ui: &mut Ui, notebooks: &[Node], folder: &str, t: &Tokens, acts: &m
 fn about_page(ui: &mut Ui, t: &Tokens) {
     heading(ui, "About NoteCraft", t);
     ui.horizontal_top(|ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::hover());
-        icons::paint(&ui.painter_at(rect), rect.shrink(6.0), Icon::Notebook, t.accent);
+        ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(64.0, 64.0)));
         ui.add_space(8.0);
         ui.vertical(|ui| {
             ui.label(egui::RichText::new("NoteCraft").size(20.0).color(t.accent));
-            ui.label(egui::RichText::new(format!("Version {VERSION}")).size(12.0).color(t.muted));
+            ui.label(egui::RichText::new(format!("Version {VERSION} (alpha)")).size(12.0).color(t.muted));
             ui.label(
                 egui::RichText::new("Note taking and organization in pure Rust. Your notes are plain folders and files.").size(12.5).color(t.text),
             );
@@ -293,7 +292,7 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
     ui.label(egui::RichText::new("Built with").size(14.0).color(t.strong));
     ui.hyperlink_to("egui and eframe", "https://github.com/emilk/egui");
     ui.label(
-        egui::RichText::new("The window, drawn on the GPU. The icons here are drawn in code; there are no icon files.").size(11.5).color(t.muted),
+        egui::RichText::new("The window, drawn on the GPU. The icons are drawn in code. The logo is the only picture.").size(11.5).color(t.muted),
     );
 }
 
