@@ -45,6 +45,7 @@ pub fn show(
     t: &Tokens,
     page: notecraft_model::Dir,
     borders: bool,
+    cols: &mut notecraft_model::tablecols::Widths,
 ) -> Moved {
     let mut out = Moved::default();
     let area = ui.available_rect_before_wrap();
@@ -68,9 +69,10 @@ pub fn show(
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width, area.height()))).layout(*ui.layout()));
         child.set_width(b.width);
-        let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders);
+        let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
+        out.changed.columns |= changed.columns;
         if changed.link.is_some() {
             out.changed.link = changed.link;
         }
@@ -192,7 +194,17 @@ mod tests {
         let ctx = egui::Context::default();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            let out = show(ui, &mut blocks, &mut boxes, &mut caret, std::path::Path::new("."), &t, notecraft_model::Dir::Ltr, true);
+            let out = show(
+                ui,
+                &mut blocks,
+                &mut boxes,
+                &mut caret,
+                std::path::Path::new("."),
+                &t,
+                notecraft_model::Dir::Ltr,
+                true,
+                &mut Default::default(),
+            );
             assert!(!out.boxes, "nothing was dragged");
         });
         frame.textures_delta.clear();
@@ -209,7 +221,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            show(ui, &mut blocks, &mut boxes, &mut caret, std::path::Path::new("."), &t, notecraft_model::Dir::Ltr, true);
+            show(ui, &mut blocks, &mut boxes, &mut caret, std::path::Path::new("."), &t, notecraft_model::Dir::Ltr, true, &mut Default::default());
         });
         frame.textures_delta.clear();
         // The arrangement is kept as it was, because it accounts for every block.
@@ -228,7 +240,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            show(ui, &mut blocks, &mut boxes, &mut caret, std::path::Path::new("."), &t, notecraft_model::Dir::Ltr, true);
+            show(ui, &mut blocks, &mut boxes, &mut caret, std::path::Path::new("."), &t, notecraft_model::Dir::Ltr, true, &mut Default::default());
         });
         frame.textures_delta.clear();
         assert_eq!(boxes.len(), 1, "everything in one box rather than losing a block");

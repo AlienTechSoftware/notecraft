@@ -327,7 +327,7 @@ impl Tokens {
             warn: ensure_contrast(if dark { rgb((0xff, 0x8a, 0x80)) } else { rgb((0xb3, 0x26, 0x1e)) }, panel, 4.5, dark),
             rule_line: faint_line(editor, acc, 1.25),
             rule_line_strong: faint_line(editor, acc, 1.8),
-            table_line: faint_line(editor, acc, 2.4),
+            table_line: faint_line(editor, text, 2.2),
         }
     }
 }

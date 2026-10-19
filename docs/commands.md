@@ -94,6 +94,15 @@ Parameters:
 - path (required): the page
 - boxes (optional): x,y,width,blocks per container, separated by semicolons; empty puts the page back in one column. Without it, the current arrangement is reported
 
+## `page.columns`
+
+How wide the columns of a page's tables are.
+
+Parameters:
+
+- path (required): the page
+- widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported
+
 ## `page.attach`
 
 Attach a file to a page.
