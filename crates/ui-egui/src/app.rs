@@ -3363,6 +3363,13 @@ impl NoteCraftApp {
         self
     }
 
+    /// Says where GridCraft is, or that it is not installed, instead of looking for it on this
+    /// machine. Tests use this so a table's spreadsheet buttons do not depend on the machine.
+    pub fn with_gridcraft(mut self, exe: Option<std::path::PathBuf>) -> Self {
+        self.gridcraft = exe;
+        self
+    }
+
     /// Attaches only a request receiver, with no network listener. The headless screenshot
     /// runner uses this to feed scripted requests.
     pub fn with_requests(mut self, rx: Receiver<ControlRequest>) -> Self {
