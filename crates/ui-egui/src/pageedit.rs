@@ -487,6 +487,68 @@ pub fn next_cell(block: &Block, cell: (usize, usize), back: bool) -> Option<(usi
     Some((to / columns, to % columns))
 }
 
+/// What the Table tab asks for, against the cell the caret is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableEdit {
+    /// A row above the caret's row, or below it.
+    InsertRow(bool),
+    /// A column to the left of the caret's column, or to the right.
+    InsertColumn(bool),
+    /// The caret's row. The heading cannot go: a table without one is not one.
+    DeleteRow,
+    /// The caret's column. The last column cannot go.
+    DeleteColumn,
+}
+
+/// Changes a table's shape. Returns where the caret should be afterwards, or `None` when
+/// nothing could be done - which is how the rules say no: the heading row stays, and a
+/// table keeps at least one column.
+pub fn edit_table(block: &mut Block, cell: (usize, usize), what: TableEdit) -> Option<(usize, usize)> {
+    let Block::Table { head, rows } = block else { return None };
+    let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1);
+    // Every row the same width, so an edit cannot leave a ragged table behind.
+    head.resize(columns, Vec::new());
+    for row in rows.iter_mut() {
+        row.resize(columns, Vec::new());
+    }
+    let (r, c) = cell;
+    match what {
+        TableEdit::InsertRow(above) => {
+            // Above the heading means directly under it: the heading is the table's top.
+            let at = if above { r.max(1) - 1 } else { r };
+            let at = at.min(rows.len());
+            rows.insert(at, vec![Vec::new(); columns]);
+            Some((at + 1, c))
+        }
+        TableEdit::InsertColumn(left) => {
+            let at = (if left { c } else { c + 1 }).min(columns);
+            head.insert(at, Vec::new());
+            for row in rows.iter_mut() {
+                row.insert(at, Vec::new());
+            }
+            Some((r, at))
+        }
+        TableEdit::DeleteRow => {
+            if r == 0 || rows.is_empty() {
+                return None;
+            }
+            rows.remove(r - 1);
+            Some((r.min(rows.len()), c))
+        }
+        TableEdit::DeleteColumn => {
+            if columns <= 1 {
+                return None;
+            }
+            let at = c.min(columns - 1);
+            head.remove(at);
+            for row in rows.iter_mut() {
+                row.remove(at);
+            }
+            Some((r, at.min(columns - 2)))
+        }
+    }
+}
+
 /// The type size of a block, so the text box matches the finished look.
 fn size_of(block: &Block) -> (f32, bool) {
     match block {
@@ -1615,6 +1677,66 @@ mod tests {
 ",
         ] {
             assert!(blocks(md).first().is_some_and(is_one_line_of_words), "{md} can become another kind");
+        }
+    }
+
+    #[test]
+    fn a_tables_shape_is_changed_round_the_caret() {
+        let table = || blocks("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n").remove(0);
+
+        // A row below the caret's row, and the caret follows it.
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (1, 0), TableEdit::InsertRow(false)), Some((2, 0)));
+        assert_eq!(table_size(&b), Some((4, 2)));
+        assert_eq!(cell_text(&b, (2, 0)).as_deref(), Some(""), "the new row is empty");
+        assert_eq!(cell_text(&b, (3, 0)).as_deref(), Some("3"), "and what was below it moved down");
+
+        // A row above. Above the heading means under it: the heading is the top.
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::InsertRow(true)), Some((1, 0)));
+        assert_eq!(cell_text(&b, (0, 0)).as_deref(), Some("A"), "the heading is still the heading");
+        assert_eq!(cell_text(&b, (1, 0)).as_deref(), Some(""));
+
+        // Columns, either side.
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::InsertColumn(true)), Some((0, 0)));
+        assert_eq!(table_size(&b), Some((3, 3)));
+        assert_eq!(cell_text(&b, (0, 1)).as_deref(), Some("A"), "what was first moved right");
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::InsertColumn(false)), Some((0, 1)));
+        assert_eq!(cell_text(&b, (0, 2)).as_deref(), Some("B"));
+
+        // Deleting a row, and the heading refusing to go.
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (1, 0), TableEdit::DeleteRow), Some((1, 0)));
+        assert_eq!(table_size(&b), Some((2, 2)));
+        assert_eq!(cell_text(&b, (1, 0)).as_deref(), Some("3"));
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::DeleteRow), None, "a table without a heading is not a table");
+
+        // Deleting a column, and the last one refusing to go.
+        let mut b = table();
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::DeleteColumn), Some((0, 0)));
+        assert_eq!(table_size(&b), Some((3, 1)));
+        assert_eq!(cell_text(&b, (0, 0)).as_deref(), Some("B"));
+        assert_eq!(edit_table(&mut b, (0, 0), TableEdit::DeleteColumn), None, "the last column stays");
+
+        // Anything that is not a table says no rather than guessing.
+        let mut p = blocks("just words\n").remove(0);
+        assert_eq!(edit_table(&mut p, (0, 0), TableEdit::DeleteRow), None);
+    }
+
+    #[test]
+    fn a_ragged_table_is_squared_up_before_it_is_changed() {
+        // A table read from a file can have rows of different lengths; an edit must not
+        // leave it raggeder still.
+        let mut b = blocks("| A | B | C |\n|---|---|---|\n| 1 |\n").remove(0);
+        edit_table(&mut b, (1, 0), TableEdit::InsertRow(false));
+        let (rows, columns) = table_size(&b).expect("a table");
+        assert_eq!(columns, 3);
+        for r in 0..rows {
+            for c in 0..columns {
+                assert!(cell_text(&b, (r, c)).is_some(), "every cell of {rows} by {columns} is there: {r},{c}");
+            }
         }
     }
 

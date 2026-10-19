@@ -98,8 +98,13 @@ it is fixed and tested, not when it is promised.
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
 - **Tables are edited cell by cell**: click a cell to write in it, Tab walks along the row
-  and on to the next, Escape leaves. Not built: adding or removing rows and columns from
-  the page, and OneNote's grid picker on the Table button for choosing the size.
+  and on to the next and grows a row off the end, Escape leaves. While the caret is in a
+  table the ribbon offers a Table tab, as Office does for the thing in hand: rows and
+  columns can be added either side of the caret and taken out, and the heading row and the
+  last column stay. Not built, and greyed where a OneNote user looks for them: selecting a
+  table, a row or a column, merging and splitting cells, borders and shading, alignment,
+  sorting, converting to a spreadsheet; dragging a column border to change its width; and
+  OneNote's grid picker on the Table button for choosing the size.
 - **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
   the clipboard is read directly, because egui hands a window text only. The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab
