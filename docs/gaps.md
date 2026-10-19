@@ -63,6 +63,11 @@ it is fixed and tested, not when it is promised.
   **Known from it, and not fixed:** a numbered item puts its number on the left of a
   right-to-left line (a bullet and a task box go to the right, as they should), and a line
   that starts with a Latin tag word such as `TODO:` is read as left to right and flips.
+  **Found there and fixed:** a picture low on a long page was drawn nothing at all tall,
+  because egui fits a picture into the height the layout has left and a page that scrolls
+  has none once the blocks above have filled the view. It was not a right-to-left fault -
+  it hit every language - and it stayed hidden because every other picture in the demo sits
+  near the top of its page.
 - **The caret keeps off the vowels.** A letter with a haraka on it is two shaped clusters,
   so the arrow keys used to stop inside it and a click could land there: a caret in a place
   the eye cannot see, and a Backspace that takes the vowel off a letter that looks

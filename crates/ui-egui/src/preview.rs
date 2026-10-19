@@ -232,12 +232,23 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Dir) -> Op
     None
 }
 
+/// The box a picture is fitted into, keeping its shape.
+///
+/// The height must not come from `ui.available_height()`. A page scrolls, so once the
+/// blocks above have filled the view there is no height left, and egui fits a picture into
+/// a box of no height: it drew nothing at all, and a picture low on a long page was a gap
+/// where a picture should be. Measured on 2026-10-19 on the Arabic showcase page, where the
+/// same picture drew at the top of one page and vanished at the bottom of another.
+fn picture_box(ui: &Ui) -> egui::Vec2 {
+    egui::vec2(ui.available_width(), 480.0)
+}
+
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
                 Some(uri) => {
-                    ui.add(egui::Image::new(uri).max_width(ui.available_width()).max_height(480.0));
+                    ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui)));
                 }
                 None => {
                     ui.weak(format!("[image: {} ({src})]", s.text));
@@ -416,7 +427,7 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
             Block::Image { alt, src } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {
-                        ui.add(egui::Image::new(uri).max_width(ui.available_width()).max_height(480.0));
+                        ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui)));
                     }
                     None => {
                         ui.weak(format!("[image: {alt} ({src})]"));
@@ -577,6 +588,46 @@ mod tests {
         // A left-to-right paragraph is not this painter's; the caller uses egui's layout.
         let ltr = blocks_for(PageFormat::Cmgfm, "Hello [there](../x/) world\n");
         assert_eq!(link_at_point(&ltr[0], egui::vec2(50.0, 8.0), 400.0, Dir::Ltr), None);
+    }
+
+    /// A picture is drawn at its full size even when the layout has no height left.
+    ///
+    /// This is the defect the Arabic showcase page found: the same picture drew at the top
+    /// of one page and came out nothing at all low down another, because egui fits an image
+    /// into the space the layout has left and a scrolling page has none once the blocks
+    /// above have filled the view.
+    #[test]
+    fn a_picture_low_on_a_page_is_still_drawn() {
+        use notecraft_store::testing::TempDir;
+        let t = TempDir::new("preview-low");
+        let page = t.path().join("page");
+        std::fs::create_dir_all(page.join("assets")).expect("assets");
+        std::fs::write(page.join("assets").join("logo.png"), crate::LOGO_PNG).expect("png");
+        let blocks = blocks_for(
+            PageFormat::Cmgfm,
+            "![logo](assets/logo.png)
+",
+        );
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let tokens = crate::theme::Theme { mode: crate::theme::Mode::Dark, accent: crate::theme::Accent::Default }.tokens();
+        let mut tall = 0.0;
+        for _ in 0..100 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                // The blocks above have taken the whole view: nothing is left below.
+                let left = ui.available_height();
+                ui.allocate_space(egui::vec2(0.0, left));
+                let before = ui.cursor().min.y;
+                show(ui, &blocks, &page, &tokens, Dir::Ltr);
+                tall = ui.cursor().min.y - before;
+            });
+            out.textures_delta.clear();
+            if tall > 100.0 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("the picture came out {tall} points tall");
     }
 
     #[test]
