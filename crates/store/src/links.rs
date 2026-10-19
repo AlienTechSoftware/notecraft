@@ -52,6 +52,13 @@ pub fn resolve(root: &Path, page_dir: &Path, href: &str) -> Link {
         return Link::Outside;
     }
     let target = Path::new(&decoded);
+    // Only Windows reads `C:/x` as absolute. Elsewhere it would be a folder called `C:` inside the
+    // page, and one notebook, synced between machines, would mean two things. A drive path is
+    // outside unless this system really treats it as an absolute path (and then the root check
+    // below decides).
+    if is_drive(&decoded) && !target.is_absolute() {
+        return Link::Outside;
+    }
     let Some(full) = normalise(if target.is_absolute() { target.to_path_buf() } else { page_dir.join(target) }) else {
         return Link::Outside;
     };
@@ -65,6 +72,11 @@ pub fn resolve(root: &Path, page_dir: &Path, href: &str) -> Link {
     } else {
         Link::Missing(full)
     }
+}
+
+/// `C:/x` or `C:x`: starts with a Windows drive letter.
+fn is_drive(path: &str) -> bool {
+    matches!(path.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic())
 }
 
 /// `scheme:rest` for a web or application scheme, `None` for a path. A single letter before
@@ -176,6 +188,16 @@ mod tests {
         // link is: it is the page's own folder. With backslashes it is not a link at all.
         let forward = a.to_string_lossy().replace('\\', "/");
         assert_eq!(resolve(&root, &a, &forward), Link::Node(a.clone()));
+    }
+
+    #[test]
+    fn a_drive_is_recognised_on_every_system() {
+        for drive in ["C:/Windows", "c:/x", "Z:", "d:file"] {
+            assert!(is_drive(drive), "{drive}");
+        }
+        for not in ["", "C", "page/C:/x", "1:/x", "ab:/x", "../C:/x"] {
+            assert!(!is_drive(not), "{not}");
+        }
     }
 
     #[test]
