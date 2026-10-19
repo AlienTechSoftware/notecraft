@@ -255,7 +255,7 @@ The installer puts the program in Program Files and needs administrator rights. 
 needs neither: unzip it and run `notecraft.exe`. Neither one touches your notebooks, which are
 plain folders (by default `Documents\NoteCraft`), so removing the app never removes them.
 
-Every release is marked a pre-release for now. [docs/releasing.md](docs/releasing.md) describes the
+Every release is an alpha and is marked a pre-release. [docs/releasing.md](docs/releasing.md) describes the
 version numbers and how a release is built.
 
 ## Logs
@@ -270,7 +270,10 @@ the version and write no file.
 
 ## Status and what is missing
 
-This is a young project. It runs, it is tested, and it is not finished:
+NoteCraft is **alpha**, version 0.0.1. It is not a ready product: it runs and it is tested, but
+it is not finished, it has had little use, and a notebook you care about should have a backup. The
+folder format can still change before 0.1. The other Craft apps describe themselves the same way.
+What is missing:
 
 - Built and run on **Windows only**. The code avoids OS features, but macOS and Linux are untested.
 - **Right-to-left text is half there.** Arabic and Hebrew draw, and a page, a line or a run
