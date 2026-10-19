@@ -2337,8 +2337,9 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
-                            let moved =
+                            let mut moved =
                                 crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir, table_borders);
+                            page_acts.append(&mut moved.acts);
                             // The ink of a page sits over its words, anywhere on it, the
                             // way a pen on paper does. It goes on after them so a press
                             // with a pen in hand reaches the ink and not the caret.
@@ -2367,7 +2368,7 @@ impl NoteCraftApp {
                                 // the caret, and one that does not sense clicks cannot
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
-                                crate::pagemenu::show(ui, body, &mut page_acts);
+                                crate::pagemenu::show(ui, body, &mut page_acts, &tokens);
                             }
                             if moved.changed.blocks {
                                 ed.body = pageedit::to_body(ed.format, &ed.blocks);
@@ -2972,6 +2973,8 @@ impl NoteCraftApp {
                 "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
                 // The boxes the blocks are arranged in, as the page keeps them.
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
+                // The container that is selected, with everything in it, or null.
+                "selectedContainer": crate::containers::selected(ctx, &e.dir),
                 "origin": [e.origin.x, e.origin.y],
             })),
         })
