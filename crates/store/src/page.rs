@@ -3,7 +3,7 @@
 use crate::error::{Result, StoreError};
 use crate::tree::{page_file, read_node};
 use notecraft_formats::{boxes, frontmatter, html};
-use notecraft_model::{Container, Dir, PageFormat, container, kv, tablecols, time::iso_now};
+use notecraft_model::{Container, Dir, PageFormat, container, justify, kv, tablecols, time::iso_now};
 use std::fs;
 use std::path::Path;
 
@@ -285,6 +285,43 @@ pub fn set_table_columns(dir: &Path, widths: &tablecols::Widths) -> Result<()> {
     write_atomic(&file, &out)
 }
 
+const JUSTIFY_KEY: &str = "justify";
+const JUSTIFY_META: &str = "notecraft:justify";
+
+/// Which paragraphs of the page are justified. Empty means every paragraph is drawn ragged
+/// at its far edge, which is what a page says until one is asked for.
+///
+/// The line names the paragraphs by their place among the page's blocks; the words of the
+/// page are not touched, so the file reads the same to any other program. See
+/// [`notecraft_model::justify`] and `docs/page-model.md` section 2 for why it is here and
+/// not in the markup.
+pub fn justified(dir: &Path) -> Result<justify::Justified> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let raw = match format {
+        PageFormat::Html => html::meta(&text, JUSTIFY_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, JUSTIFY_KEY),
+    };
+    Ok(raw.map(|r| justify::parse(&r)).unwrap_or_default())
+}
+
+/// Writes them into the page's own file, beside the table column widths.
+pub fn set_justified(dir: &Path, marked: &justify::Justified) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let line = justify::write(marked);
+    let out = match format {
+        PageFormat::Html => html::set_meta(&text, JUSTIFY_META, &line),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front =
+                if marked.is_empty() { frontmatter::remove_value(&front, JUSTIFY_KEY) } else { frontmatter::set_value(&front, JUSTIFY_KEY, &line) };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
 /// Saves the editable part of a page, keeping its metadata and updating `updated`.
 /// Returns the new `updated` timestamp.
 pub fn save_body(dir: &Path, body: &str) -> Result<String> {
@@ -381,6 +418,43 @@ mod tests {
         assert_eq!(frontmatter::value(&front_before, "id"), frontmatter::value(&front_after, "id"), "id is stable");
         assert_eq!(frontmatter::value(&front_before, "created"), frontmatter::value(&front_after, "created"));
         assert_eq!(load_page(&page).expect("load").body, "# Page\n\n- [ ] one\n");
+    }
+
+    /// A justified paragraph is a line in the page's head, and the words of the page are
+    /// not touched by it: a page saved and reopened comes back with the same body and the
+    /// same paragraphs justified, in both formats.
+    #[test]
+    fn a_justified_paragraph_survives_a_save_and_a_reopen() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("justified", format);
+            assert!(justified(&dir).expect("read").is_empty(), "{format:?}: a new page has nothing justified");
+
+            let body = match format {
+                PageFormat::Html => "<p>One</p><p>Two</p><p>Three</p>",
+                PageFormat::Cmgfm => "One\n\nTwo\n\nThree\n",
+            };
+            save_body(&dir, body).expect("save");
+            let mut marked = justify::Justified::default();
+            marked.set(1, true);
+            set_justified(&dir, &marked).expect("write");
+
+            assert_eq!(justified(&dir).expect("read"), marked, "{format:?}");
+            // The words are untouched: no tatweel, no marker, nothing but what was typed.
+            assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the body is the same text");
+
+            // Saving the body again keeps the line, because justification is metadata.
+            save_body(&dir, body).expect("save");
+            assert_eq!(justified(&dir).expect("read"), marked, "{format:?}: an edit elsewhere does not lose it");
+
+            // And taking the mark off takes the line out again.
+            marked.set(1, false);
+            set_justified(&dir, &marked).expect("write");
+            assert!(justified(&dir).expect("read").is_empty(), "{format:?}");
+            let raw = fs::read_to_string(page_file(&dir).expect("page").1).expect("raw");
+            if format == PageFormat::Cmgfm {
+                assert!(!raw.contains("justify:"), "the line is gone, not left empty: {raw}");
+            }
+        }
     }
 
     #[test]

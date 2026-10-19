@@ -937,10 +937,11 @@ pub fn show(
     page: notecraft_model::Dir,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    justified: &notecraft_model::justify::Justified,
     shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, shown_title);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, shown_title);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -965,6 +966,8 @@ pub fn show_blocks(
     range: std::ops::Range<usize>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    // Which blocks are stretched to reach the column; see `notecraft_model::justify`.
+    justified: &notecraft_model::justify::Justified,
     // The title the window is already showing, so the body does not repeat it.
     shown_title: &str,
 ) -> Changed {
@@ -1204,7 +1207,7 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(ui, &block, i, page_dir, t, true, page)
+                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.has(i))
                 })
                 .inner;
             let resp = out.response;
