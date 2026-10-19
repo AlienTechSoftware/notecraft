@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml"><img alt="CI status on main" src="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-2b47b5?style=flat-square&logo=rust&logoColor=white">
   <img alt="Runs on Windows today; macOS and Linux are untested" src="https://img.shields.io/badge/runs%20on-Windows%20today-3b5bdb?style=flat-square">
   <img alt="Licensed MIT or Apache-2.0, at your option" src="https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-3b5bdb?style=flat-square">

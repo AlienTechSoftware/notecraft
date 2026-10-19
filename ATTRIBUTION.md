@@ -13,6 +13,7 @@ is missing. Last reviewed: 2026-10-18.
 | `assets/brand/notecraft-128.png` | Same, 128 px | Derived | Same as the source |
 | `assets/brand/notecraft-64.png` | Same, 64 px | Derived | Same as the source |
 | `assets/brand/notecraft-32.png` | Same, 32 px | Derived | Same as the source |
+| `assets/app-icon/notecraft.ico` | The Windows app and installer icon, 16 to 256 px in one file | Derived from `assets/brand/notecraft-512.png` with Pillow on 2026-10-18 | Same as the koala source |
 | `assets/brand/notecraft-social-light.png` | The README header and GitHub social preview, 1280 x 640: the koala tile, the name, a tagline and four pills on a faint ruled page, light | Drawn by a Pillow script in the private planning repo on 2026-10-17, from `notecraft-512.png` and the theme colours in `crates/ui-egui/src/theme.rs`. The text is set in Inter (SIL OFL 1.1); only rendered glyphs are in the picture, no font file is shipped with it | Same as the koala source for the artwork. The rest is NoteCraft's own work |
 | `assets/brand/notecraft-social-dark.png` | Same, dark | Same | Same |
 

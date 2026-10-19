@@ -131,6 +131,10 @@ const HELP: &str =
     "notecraft-cli commands | run ID key=value ... | tree | check NOTEBOOK | search TEXT | sample | mcp [--connect PORT]   (add --notebooks FOLDER)";
 
 fn main() -> ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("notecraft-cli {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     match run(std::env::args().skip(1).collect()) {
         Ok((text, ok)) => {
             if !text.is_empty() {
