@@ -1,0 +1,8 @@
+# Text files are stored and checked out with LF, whatever a writer's editor does.
+# Without this, a file saved with CRLF reads as every line changed, and two people
+# working on the same file conflict over endings rather than over words.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
