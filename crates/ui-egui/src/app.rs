@@ -2176,7 +2176,8 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
-                            let moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir);
+                            let mut moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir);
+                            page_acts.append(&mut moved.acts);
                             // The ink of a page sits over its words, anywhere on it, the
                             // way a pen on paper does. It goes on after them so a press
                             // with a pen in hand reaches the ink and not the caret.
@@ -2803,6 +2804,8 @@ impl NoteCraftApp {
                 "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
                 // The boxes the blocks are arranged in, as the page keeps them.
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
+                // The container that is selected, with everything in it, or null.
+                "selectedContainer": crate::containers::selected(ctx),
                 "origin": [e.origin.x, e.origin.y],
             })),
         })

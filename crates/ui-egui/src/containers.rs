@@ -9,10 +9,16 @@
 //! What this module does: draws each container where it belongs, lets one be moved by its
 //! handle and resized by its right edge, and says when either changed so the page can be
 //! written back.
+//!
+//! A container can also be selected, by a click on its handle or a right click anywhere in it.
+//! Selecting it selects everything in it: the whole box is shaded, and Delete (the key, or the
+//! item on its right-click menu) takes the box away together with the blocks it holds. Cut and
+//! Copy put those blocks on the clipboard as Markdown.
 
 use crate::pageedit::{self, Caret, Changed};
+use crate::ribbon::Act;
 use crate::theme::Tokens;
-use egui::{Rect, Sense, Ui, pos2, vec2};
+use egui::{Id, Key, Pos2, Rect, Sense, Ui, pos2, vec2};
 use notecraft_formats::markdown::Block;
 use notecraft_model::{Container, container};
 
@@ -24,6 +30,45 @@ const GRIP: f32 = 10.0;
 /// The gap between a container's edge and the words inside it.
 const PAD: f32 = 6.0;
 
+/// Which container is selected. Kept in the ui's own store, as the page's menu keeps its place.
+fn selected_id() -> Id {
+    Id::new("container-selected")
+}
+
+/// Where the selected container's menu is open, if it is.
+fn menu_id() -> Id {
+    Id::new("container-menu")
+}
+
+fn claimed_id() -> Id {
+    Id::new("container-took-right-click")
+}
+
+/// The container that is selected, if there is one.
+pub fn selected(ctx: &egui::Context) -> Option<usize> {
+    ctx.data(|d| d.get_temp::<usize>(selected_id()))
+}
+
+/// True when a container took this frame's right click, so the page's own menu stays shut.
+pub fn took_right_click(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<u64>(claimed_id())) == Some(ctx.cumulative_pass_nr())
+}
+
+/// Takes container `at` off the page together with the blocks it holds. False, and nothing
+/// changed, when there is no such container or the counts do not fit the blocks.
+pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at: usize) -> bool {
+    if at >= boxes.len() {
+        return false;
+    }
+    let range = container::blocks_of(boxes, at);
+    if range.end > blocks.len() {
+        return false;
+    }
+    blocks.drain(range);
+    boxes.remove(at);
+    true
+}
+
 /// What a frame of the canvas did.
 #[derive(Default)]
 pub struct Moved {
@@ -32,6 +77,9 @@ pub struct Moved {
     pub boxes: bool,
     /// The top left of the page's own area, so a script can work out where a box is drawn.
     pub origin: egui::Pos2,
+    /// What the box's menu asked for besides its own Cut, Copy and Delete: the page's entries
+    /// (Paste, Table, Link and the rest), which the window runs once this frame's borrow is over.
+    pub acts: Vec<Act>,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -56,12 +104,25 @@ pub fn show(
     let before = blocks.len();
     let mut bottom = area.min.y;
 
+    // The selection, and the menu that goes with it. A container that has gone (the page
+    // was changed under it) cannot stay selected.
+    let mut sel = selected(ui.ctx()).filter(|i| *i < boxes.len());
+    let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
+    let mut sel_frame: Option<Rect> = None;
+    let mut delete_at: Option<usize> = None;
+    let right_click = ui.input(|i| i.pointer.secondary_clicked());
+    let pointer = ui.ctx().pointer_latest_pos();
+    let mut opened_now = false;
+
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
         let at = pos2(area.min.x + b.x, area.min.y + b.y);
         let editing = caret.as_ref().is_some_and(|c| range.contains(&c.block));
 
+        // A place kept behind the words for the selection's shading, filled in below once the
+        // box's size is known. Shading painted after the words washes them out.
+        let shading = ui.painter().add(egui::Shape::Noop);
         // The blocks of this container, drawn in a column of its own width.
         let inner = Rect::from_min_size(pos2(at.x + PAD, at.y + HANDLE), vec2(b.width, 0.0));
         let mut child =
@@ -83,14 +144,42 @@ pub fn show(
         // pointer loses the drag the moment the pointer leaves it, which is what made
         // moving a box feel like it slipped out of the hand.
         let bar = Rect::from_min_size(frame.min, vec2(frame.width(), HANDLE));
-        let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::Move);
+        let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - GRIP, frame.min.y + HANDLE), vec2(GRIP, (frame.height() - HANDLE).max(GRIP)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+
+        // A click on the handle selects the container. A right click anywhere in it does too,
+        // unless the caret is in it with words selected: then the right click belongs to
+        // those words, and the page's menu cuts and copies them.
+        let words_selected = editing && caret.as_ref().is_some_and(|c| c.selection.0 != c.selection.1);
+        let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected;
+        if drag.clicked() || right_here {
+            sel = Some(i);
+            *caret = None;
+            out.changed.caret = true;
+        }
+        if right_here {
+            menu_at = pointer;
+            opened_now = true;
+            // Read before the store is locked: asking the context for it inside would wait on itself.
+            let pass = ui.ctx().cumulative_pass_nr();
+            ui.data_mut(|d| d.insert_temp(claimed_id(), pass));
+        }
+        let is_sel = sel == Some(i);
+        if is_sel {
+            sel_frame = Some(frame);
+            // Everything in the box is selected: shade it all, behind the words.
+            ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
+            ui.painter().rect_stroke(frame, 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+            if caret.is_none() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
+                delete_at = Some(i);
+            }
+        }
 
         // Drawn only when the pointer is in the container, the caret is in it, or it is
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
-        if hovered || editing || busy {
+        if hovered || editing || busy || is_sel {
             ui.painter().rect_stroke(frame, 3.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
             ui.painter().rect_filled(bar, 3.0, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
             for n in 0..3 {
@@ -116,6 +205,59 @@ pub fn show(
         }
     }
 
+    // The selected container's menu, where the right click fell.
+    let mut menu_rect: Option<Rect> = None;
+    if let (Some(i), Some(at)) = (sel, menu_at) {
+        let mut picked = false;
+        let mut copy = false;
+        let area = egui::Area::new(menu_id().with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .show(ui.ctx(), |menu| {
+                egui::Frame::popup(menu.style()).show(menu, |menu| {
+                    menu.set_min_width(150.0);
+                    if menu.button("Cut").clicked() {
+                        copy = true;
+                        delete_at = Some(i);
+                        picked = true;
+                    }
+                    if menu.button("Copy").clicked() {
+                        copy = true;
+                        picked = true;
+                    }
+                    menu.separator();
+                    if menu.button("Delete").clicked() {
+                        delete_at = Some(i);
+                        picked = true;
+                    }
+                    // The page's own entries stay reachable from here: a right click on a
+                    // box's words used to open the page's menu, and it still offers all of it.
+                    menu.separator();
+                    picked |= crate::pagemenu::items(menu, &mut out.acts, false);
+                });
+            })
+            .response;
+        menu_rect = Some(area.rect);
+        if copy {
+            let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
+            ui.ctx().copy_text(notecraft_formats::render::blocks_to_markdown(held));
+        }
+        let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !area.rect.contains(pointer.unwrap_or_default());
+        if picked || outside || ui.input(|i| i.key_pressed(Key::Escape)) {
+            menu_at = None;
+        }
+    }
+    // A press outside the selected container and its menu, or Escape, lets go of the selection.
+    // So does the caret arriving in a container: the words are being edited, not the box.
+    if sel.is_some() {
+        let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p));
+        let pressed_away = ui.input(|i| i.pointer.primary_pressed()) && !opened_now && pointer.is_some_and(away);
+        if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
+            sel = None;
+            menu_at = None;
+        }
+    }
+
     // A block was added or taken away inside a container: it belongs to that one.
     let now = blocks.len();
     if now != before {
@@ -126,6 +268,34 @@ pub fn show(
         }
         out.boxes = true;
     }
+
+    // Delete (the key, or the menu's Cut and Delete): the container and everything in it go.
+    // Done after the drawing above so the blocks are not taken out from under it.
+    if let Some(i) = delete_at
+        && remove_container(blocks, boxes, i)
+    {
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        *caret = None;
+        sel = None;
+        menu_at = None;
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| {
+        match sel {
+            Some(i) => {
+                d.insert_temp(selected_id(), i);
+            }
+            None => d.remove::<usize>(selected_id()),
+        }
+        match menu_at {
+            Some(p) => {
+                d.insert_temp(menu_id(), p);
+            }
+            None => d.remove::<Pos2>(menu_id()),
+        }
+    });
 
     // The containers were drawn in child uis, which do not move this ui's cursor. Claim the
     // space they took, so the page scrolls to their bottom and so the room under them really
@@ -179,6 +349,30 @@ mod tests {
 
     fn page(md: &str) -> Vec<Block> {
         markdown::parse(md)
+    }
+
+    #[test]
+    fn removing_a_container_takes_its_blocks_with_it() {
+        let mut blocks = page("one\n\ntwo\n\nthree\n\nfour\n");
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1), Container::new(0.0, 50.0, 300.0, 2), Container::new(0.0, 120.0, 300.0, 1)];
+        assert!(remove_container(&mut blocks, &mut boxes, 1));
+        assert_eq!(boxes.iter().map(|b| b.blocks).collect::<Vec<_>>(), vec![1, 1]);
+        let md = notecraft_formats::render::blocks_to_markdown(&blocks);
+        assert!(md.contains("one") && md.contains("four"), "the others stay: {md}");
+        assert!(!md.contains("two") && !md.contains("three"), "its own blocks are gone: {md}");
+        assert_eq!(boxes.iter().map(|b| b.blocks).sum::<usize>(), blocks.len(), "every block is still in a box");
+    }
+
+    #[test]
+    fn removing_a_container_that_is_not_there_changes_nothing() {
+        let mut blocks = page("one\n\ntwo\n");
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 2)];
+        assert!(!remove_container(&mut blocks, &mut boxes, 3));
+        assert_eq!((blocks.len(), boxes.len()), (2, 1));
+        // Counts that do not fit the blocks are refused too, rather than cutting the wrong ones.
+        let mut odd = vec![Container::new(0.0, 0.0, 300.0, 5)];
+        assert!(!remove_container(&mut blocks, &mut odd, 0));
+        assert_eq!(blocks.len(), 2);
     }
 
     #[test]

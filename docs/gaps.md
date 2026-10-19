@@ -75,6 +75,12 @@ it is fixed and tested, not when it is promised.
   because egui exposes text only; that needs a clipboard crate (`clipboard-rs` reads HTML
   and pictures on all three systems, `arboard` pictures alone), which is a decision for the
   owner.
+- **A box's right-click menu is short.** It has Cut, Copy and Delete only. OneNote's also has
+  Paste Options, Copy Link to Paragraph, Select, Order, Move and Resize, and a small formatting
+  toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
+  resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
+  OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
+  Delete is final once the page autosaves.
 - **Containers are a first pass.** A page can hold several boxes, each with its own place,
   width and blocks; a box is moved by the bar along its top and resized by its right edge,
   and the arrangement is kept in the page's own file. What is missing: making a new box by
