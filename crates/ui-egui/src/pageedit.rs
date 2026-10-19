@@ -311,6 +311,51 @@ pub fn insert_block(blocks: &mut Vec<Block>, at: usize, what: &str) -> bool {
     true
 }
 
+/// Every file in the page's own folder that the page names: a picture, an attachment, a
+/// drawing. Used to tell a file in use from an orphan.
+///
+/// Only names that stay inside the folder count. A web address, or a path that climbs out
+/// with `..`, is not one of the page's files.
+pub fn links_in(blocks: &[Block]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let mut keep = |target: &str| {
+        let target = target.trim();
+        let ours = !target.is_empty() && !target.contains("://") && !target.starts_with('/') && !target.split(['/', '\\']).any(|p| p == "..");
+        if ours && !found.iter().any(|f| f == target) {
+            found.push(target.to_string());
+        }
+    };
+    for block in blocks {
+        match block {
+            Block::Image { src, .. } => keep(src),
+            Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => {
+                for span in spans {
+                    if let Some(link) = &span.link {
+                        keep(link);
+                    }
+                    if let Some(src) = &span.image {
+                        keep(src);
+                    }
+                }
+            }
+            Block::Table { head, rows } => {
+                for cell in head.iter().chain(rows.iter().flatten()) {
+                    for span in cell {
+                        if let Some(link) = &span.link {
+                            keep(link);
+                        }
+                        if let Some(src) = &span.image {
+                            keep(src);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
 /// The page's date stamp: the line under the title that says when the page was started.
 ///
 /// It is drawn as a stamp, quiet and grey, the way OneNote draws the date under a page

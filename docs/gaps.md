@@ -78,13 +78,21 @@ it is fixed and tested, not when it is promised.
 - **A box's right-click menu is short.** It has Cut, Copy and Delete, then the page's entries. OneNote's also has
   Paste Options, Copy Link to Paragraph, Select, Order, Move and Resize, and a small formatting
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
-  resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
-  OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
-  Delete is final once the page autosaves.
+  resize are the bar and the right edge. A box is deleted without asking, as OneNote does, and
+  Ctrl+Z brings it back: the page's history holds whole states of the page, boxes included.
 - **Table column widths are still on a metadata line.** The boxes of a page are elements in its text,
   but the widths a table's columns were dragged to are kept in the head (`notecraft:columns`) or the
-  front matter (`columns:`), so the same disconnect remains for them: the source pane does not show
-  them and another program does not see them.
+  front matter (`columns:`), so the same disconnect remains for them: another program does not see
+  them. The code view does show them, because it shows the page file's head.
+- **The code view** is the page's folder as it is: every file of the page down the left, the one
+  that is picked on the right. The page file is picked when the view opens; its head is shown above
+  its body and cannot be typed in, so a hand edit cannot break the page's id. The body can be typed
+  in, and so can a drawing's SVG - the owner asked for that on 2026-10-19, against the earlier line
+  that every file but the page's own is read-only; the view says what the risk is, because the pen's
+  readings are in that file. Pictures are shown as pictures, other text is read-only, and a file
+  nothing on the page names is marked as not used. The live page is not drawn while the view is
+  open, so there is only ever one editable copy of the page on screen. **Not built:** drawing an ink
+  file as strokes in the viewer (it shows the SVG as text), and opening a file with the system.
 - **Writing a page's text without boxes makes it one column.** The boxes are part of the text, so
   `page.save` with a plain body drops them. An agent that wants to keep an arrangement writes the box
   elements, or calls `page.containers` afterwards.
