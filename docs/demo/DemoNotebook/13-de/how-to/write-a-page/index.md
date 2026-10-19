@@ -4,6 +4,7 @@ title: "Eine Seite schreiben"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
+paper: college
 tags: []
 ---
 

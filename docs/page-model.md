@@ -35,7 +35,8 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
    **Ink is the one exception**: an ink file is drawn whether or not the page names it, and the
    page is made to name it (section 5.4). Hiding strokes a person drew because a line was lost
    would be the worse answer.
-4. **Metadata lives in the head.** Title, id, order, times and direction. The title is in
+4. **Metadata lives in the head.** Title, id, order, times, direction, and the paper and
+   colour the page is drawn on. The title is in
    the head alone: a new page does not repeat it in its body, and a page that does - an
    older one, or one written by hand - has that heading left out of the live view, because
    the title area above the page is already showing it. The file is not changed; the code
@@ -70,9 +71,10 @@ in section 8.
 
 - **A flat list of the page's files**, with a viewer beside it. The page file is first and is
   selected when the view opens.
-- **The page file is shown whole.** The head is shown above the body, read-only, so the title,
-  the id and every metadata line can be seen. Only the body can be edited. A hand edit cannot
-  break the page's id.
+- **The page file is shown whole, and the whole of it can be edited** - head and body (owner,
+  2026-10-19, changing the earlier line that only the body could be). A code view a person
+  cannot fix the broken line in is not worth having. The page is read again when the view
+  closes, so a change to the title or to any other metadata line takes effect then.
 - **Files in our own formats can be edited.** HTML and Markdown are the page's native formats, and
   a person debugging or fixing a bug needs to change them (decided by the owner, 2026-10-19). The
   page file is one. Every other file is read-only: ink files, pictures and attachments. A hand
@@ -246,7 +248,8 @@ text does not name.
 | The code view lists the page's files and has a viewer, and closing it renders the page and turns live editing on | 2026-10-19 | yes |
 | A drawing's SVG can be typed in in the code view | 2026-10-19 | yes |
 | Every ink SVG on a page is drawn in the live view, one or many | 2026-10-19 | no: one file today |
-| Files in our own formats (HTML, Markdown) are editable in the code view, to debug and fix bugs; every other file is read-only | 2026-10-19 | no |
+| Files in our own formats (HTML, Markdown) are editable in the code view, to debug and fix bugs; every other file is read-only | 2026-10-19 | yes |
+| The page file is editable whole, head included | 2026-10-19 | yes |
 | Ink is a file the page links to, not inline text; a setting is being weighed | current behaviour | yes, with the faults in 5.2 |
 | The folder decides what ink a page has: the page's text is made to name every ink file beside it, and none that is gone | 2026-10-19 | yes |
 

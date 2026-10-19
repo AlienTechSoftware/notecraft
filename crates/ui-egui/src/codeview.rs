@@ -6,10 +6,12 @@
 //! once. This is the view [`docs/page-model.md`](../../../docs/page-model.md) section 4
 //! asks for: a list, a viewer, and one editable copy.
 //!
-//! What can be edited: the page file's body, and the SVG of a drawing. The page file's
-//! head is shown above the body and cannot be typed in, so a hand edit cannot break the
-//! page's id. Everything else is read-only, because a hand edit to a picture or to a
-//! `_node.toml` is not something to do with a text box.
+//! What can be edited: the page file, whole, head and all, and the SVG of a drawing.
+//! The head was read-only at first, so that a hand edit could not break the page's id;
+//! the owner asked for the whole file on 2026-10-19, which is the point of a code view -
+//! a person debugging a page needs to change the line that is wrong, wherever it is.
+//! Everything else is read-only, because a hand edit to a picture or to a `_node.toml`
+//! is not something to do with a text box.
 
 use crate::theme::Tokens;
 use egui::{Sense, Ui, vec2};
@@ -65,17 +67,15 @@ pub struct State {
     pub loaded: Option<String>,
     /// The picked file has been typed in and not yet written.
     pub dirty: bool,
+    /// The page's own file was typed in, so the page has to be read again when the view
+    /// closes.
+    pub page_edited: bool,
 }
 
 /// What the view did this frame.
 #[derive(Clone, Debug, Default)]
 pub struct Out {
-    /// The page file's body was typed in.
-    pub body_changed: bool,
-    /// Where the caret is in the page file's body, in characters.
-    pub cursor: Option<usize>,
-    /// A file other than the page file was typed in: its name and its new text, for the
-    /// window to write.
+    /// A file was typed in: its name and its new text, for the window to write.
     pub wrote: Option<(String, String)>,
 }
 
@@ -164,9 +164,8 @@ pub fn size_text(bytes: u64) -> String {
     }
 }
 
-/// Draws the view. `body` is the page file's body, the one editable copy of the page.
-#[allow(clippy::too_many_arguments)]
-pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, head: &str, body: &mut String, t: &Tokens, height: f32) -> Out {
+/// Draws the view.
+pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &Tokens, height: f32) -> Out {
     let mut out = Out::default();
     let page_file = entries.first().filter(|e| e.kind == Kind::PageFile).map(|e| e.name.clone());
     if state.picked.is_none() || !entries.iter().any(|e| Some(&e.name) == state.picked.as_ref()) {
@@ -212,27 +211,6 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, head:
             });
             ui.separator();
             match entry.kind {
-                Kind::PageFile => {
-                    // The head is the page's own record of itself: shown, never typed in,
-                    // so a hand edit cannot break the page's id.
-                    if !head.trim().is_empty() {
-                        let mut shown = head.to_string();
-                        egui::ScrollArea::vertical().id_salt("code-head").max_height(110.0).show(ui, |ui| {
-                            ui.add_enabled(false, egui::TextEdit::multiline(&mut shown).code_editor().desired_width(f32::INFINITY).desired_rows(5));
-                        });
-                        ui.add_space(4.0);
-                    }
-                    egui::ScrollArea::vertical().id_salt("code-body").max_height(height - 150.0).show(ui, |ui| {
-                        let edit =
-                            egui::TextEdit::multiline(body).code_editor().desired_width(f32::INFINITY).desired_rows(28).lock_focus(true).show(ui);
-                        if let Some(range) = edit.cursor_range {
-                            out.cursor = Some(range.primary.index.0);
-                        }
-                        if edit.response.changed() {
-                            out.body_changed = true;
-                        }
-                    });
-                }
                 Kind::Picture => {
                     let uri = crate::preview::image_uri(dir, &entry.name);
                     match uri {
@@ -250,7 +228,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, head:
                     ui.label(egui::RichText::new("Nothing here can show this kind of file.").color(t.muted));
                     ui.label(egui::RichText::new("It is listed so the page's folder is not a secret.").small().color(t.muted));
                 }
-                Kind::Ink | Kind::Text => {
+                Kind::PageFile | Kind::Ink | Kind::Text => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
@@ -260,12 +238,13 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, head:
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
                     }
-                    if entry.kind == Kind::Ink {
-                        ui.label(
-                            egui::RichText::new("The pen's own readings are in this file. An edit that breaks them cannot be undone by the pen.")
-                                .small()
-                                .color(t.muted),
-                        );
+                    let warning = match entry.kind {
+                        Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
+                        Kind::Ink => Some("The pen's own readings are in this file. An edit that breaks them cannot be undone by the pen."),
+                        _ => None,
+                    };
+                    if let Some(words) = warning {
+                        ui.label(egui::RichText::new(words).small().color(t.muted));
                     }
                     egui::ScrollArea::vertical().id_salt("code-text").max_height(height - 70.0).show(ui, |ui| {
                         let edit = ui.add_enabled(

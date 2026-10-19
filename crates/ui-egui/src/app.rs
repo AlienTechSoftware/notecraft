@@ -83,6 +83,10 @@ struct Editor {
     boxes: Vec<notecraft_model::Container>,
     /// How wide the columns of this page's tables are drawn, from the same place.
     columns: notecraft_model::tablecols::Widths,
+    /// The paper this page is drawn on and the colour behind it, as the page's own file
+    /// keeps them. `None` means the page says nothing and the window's own choice stands.
+    paper: Option<ribbon::RuleLines>,
+    colour: Option<notecraft_model::NodeColor>,
     /// What the page looked like before each change, so a change can be taken back.
     history: crate::history::History,
     /// The ink files in the page's folder. The folder is what decides: the page's own
@@ -385,6 +389,14 @@ impl NoteCraftApp {
     }
 
     pub fn set_show_source(&mut self, on: bool) {
+        // Closing the view after the page file was typed in: the page is read again, so
+        // the live view, the title and everything in the head come from what is on disk.
+        if !on && self.code.page_edited {
+            self.code.page_edited = false;
+            if let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                self.open_page(&dir);
+            }
+        }
         self.show_source = on;
         if let Err(e) = self.session.settings.set("show_source", if on { "true" } else { "false" }) {
             self.status = format!("The setting could not be saved: {e}");
@@ -648,6 +660,10 @@ impl NoteCraftApp {
             // The page as it was opened is the first step of its history: undo goes back
             // this far and no further.
             let first = (page.body.clone(), blocks.clone(), boxes.clone());
+            // The paper this page is drawn on and the colour behind it are the page's own.
+            let appearance = notecraft_store::page::appearance(dir)
+                .map(|(p, c)| (p.and_then(|p| ribbon::RuleLines::parse(&p)), c.and_then(|c| notecraft_model::NodeColor::parse(&c))))
+                .unwrap_or((None, None));
             let attachments = notecraft_store::assets::list(dir);
             let writable = pageedit::round_trips(page.format, &page.body);
             self.editor = Some(Editor {
@@ -667,6 +683,8 @@ impl NoteCraftApp {
                 arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 ink_files: notecraft_store::page::ink_files(dir),
+                paper: appearance.0,
+                colour: appearance.1,
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
             });
@@ -1303,6 +1321,7 @@ impl NoteCraftApp {
             in_table: self.caret_in_table(),
             table_borders: self.table_borders,
             gridcraft: self.gridcraft.is_some(),
+            page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
             sensitivity: self.sensitivity,
@@ -1345,8 +1364,13 @@ impl NoteCraftApp {
             ribbon::Act::FocusSearch => self.focus_search = true,
             ribbon::Act::OpenThemes => self.theme_window = !self.theme_window,
             ribbon::Act::RuleLines(r) => {
+                // The paper is the page's own, as OneNote's rule lines are. The window's
+                // own setting stays as what a page with none of its own is drawn on.
                 self.rules = r;
                 let _ = self.session.settings.set("rule_lines", r.id());
+                if self.editor.is_some() {
+                    self.set_page_appearance(Some(r), None);
+                }
                 self.say(match r {
                     ribbon::RuleLines::None => "No lines behind the page".to_string(),
                     other => format!("{} behind the page", other.label()),
@@ -1395,6 +1419,13 @@ impl NoteCraftApp {
             ribbon::Act::TableBorders(on) => {
                 self.table_borders = on;
                 let _ = self.session.settings.set("table_borders", if on { "true" } else { "false" });
+            }
+            ribbon::Act::PageColour(c) => {
+                self.set_page_appearance(None, Some(c));
+                self.say(match c {
+                    Some(c) => format!("The page is {}", c.label().to_lowercase()),
+                    None => "The page is the theme's own colour".to_string(),
+                });
             }
             ribbon::Act::Undo => self.step_back(true),
             ribbon::Act::Redo => self.step_back(false),
@@ -1603,6 +1634,7 @@ impl NoteCraftApp {
     /// way it always was.
     fn write_page_file(&mut self, name: &str, text: &str) {
         let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        let is_page_file = self.editor.as_ref().is_some_and(|e| e.format.page_file() == name);
         let path = dir.join(name.replace('/', std::path::MAIN_SEPARATOR_STR));
         if !path.starts_with(&dir) {
             self.complain("That file is not in this page's folder");
@@ -1612,12 +1644,51 @@ impl NoteCraftApp {
             self.complain(&format!("Cannot write {name}: {e}"));
             return;
         }
+        if is_page_file {
+            // The page itself was typed in. Nothing the window remembered about it is
+            // true any more, and the autosave must not write its old copy over this one;
+            // the page is read again when the view closes.
+            if let Some(ed) = self.editor.as_mut() {
+                ed.dirty_since = None;
+                ed.body = notecraft_store::page::load_page(&dir).map(|p| p.body).unwrap_or_else(|_| ed.body.clone());
+            }
+            self.code.page_edited = true;
+            return;
+        }
         // A drawing that was typed in is read again, so what the pen does next is done to
         // the file as it now stands rather than to the one the window remembered.
         if notecraft_ink::svg::is_ink(text) {
             self.pad = Some(crate::inkpad::Pad::of_page(&dir));
         }
         self.sync_ink_reference();
+    }
+
+    /// The paper the open page is drawn on: its own, or the window's choice when it has
+    /// none of its own.
+    fn paper_now(&self) -> ribbon::RuleLines {
+        self.editor.as_ref().and_then(|e| e.paper).unwrap_or(self.rules)
+    }
+
+    /// Gives the open page its own paper, its own colour, or both, and writes them into
+    /// the page's file. `None` for either leaves that one as it is.
+    fn set_page_appearance(&mut self, paper: Option<ribbon::RuleLines>, colour: Option<Option<notecraft_model::NodeColor>>) {
+        let Some(ed) = self.editor.as_mut() else {
+            self.say("Open a page first");
+            return;
+        };
+        if let Some(p) = paper {
+            ed.paper = Some(p);
+        }
+        if let Some(c) = colour {
+            ed.colour = c;
+        }
+        let (path, paper, colour) = (path_str(&ed.dir), ed.paper, ed.colour);
+        let pairs: Vec<(&str, &str)> = vec![
+            ("path", path.as_str()),
+            ("paper", paper.map(ribbon::RuleLines::id).unwrap_or("none")),
+            ("color", colour.map(notecraft_model::NodeColor::id).unwrap_or("none")),
+        ];
+        self.run("page.paper", &params(&pairs));
     }
 
     /// Takes the page back to how it was before the last change, or forward again.
@@ -2487,11 +2558,18 @@ impl NoteCraftApp {
         let root = self.session.root().to_path_buf();
         let tokens = self.tokens;
         let mut rename: Option<String> = None;
-        let mut cursor = self.cursor;
+        let cursor = self.cursor;
         let mut changed = false;
         let show_source = self.show_source;
         let full_page = self.full_page;
-        let (hide_title, rules) = (self.hide_title, self.rules);
+        let (hide_title, rules) = (self.hide_title, self.paper_now());
+        // The wash behind this page, if it carries a colour: a pale tint of it over the
+        // page's own background, so the words keep their contrast whatever is chosen.
+        let page_colour = self.editor.as_ref().and_then(|e| e.colour).map(|c| {
+            let dark = self.theme().mode == crate::theme::Mode::Dark;
+            let (r, g, b) = c.rgb(dark);
+            crate::theme::mix(self.tokens.editor, egui::Color32::from_rgb(r, g, b), 0.16)
+        });
         // What the title area is showing, so the page's words do not say it again.
         let shown_title = self.editor.as_ref().map(|e| e.title.clone()).unwrap_or_default();
         let table_borders = self.table_borders;
@@ -2597,6 +2675,13 @@ impl NoteCraftApp {
                     // Lines or squares behind the page, the way OneNote rules one. The
                     // spacing comes from the paper chosen; NoteCraft's own two papers draw
                     // every fifth line stronger, which the others do not.
+                    // The colour behind the words, and then the lines on it. Both are
+                    // the page's own when it carries them, as OneNote's page colour and
+                    // rule lines are the page's.
+                    if wide && let Some(wash) = page_colour {
+                        let area = ui.max_rect();
+                        ui.painter_at(area).rect_filled(area, 0.0, wash);
+                    }
                     if wide && rules.on() {
                         let area = ui.max_rect();
                         crate::ribbon::paint_paper(&ui.painter_at(area), area, rules, 1.0, tokens.rule_line, tokens.rule_line_strong);
@@ -2718,16 +2803,7 @@ impl NoteCraftApp {
                 // ever one editable copy of the page on screen.
                 let named = pageedit::links_in(&ed.blocks);
                 let entries = crate::codeview::files(&ed.dir, ed.format.page_file(), &named);
-                let head = notecraft_store::page::head_text(&ed.dir).unwrap_or_default();
-                let mut body = std::mem::take(&mut ed.body);
-                let out = crate::codeview::show(ui, &mut code, &entries, &ed.dir, &head, &mut body, &tokens, height);
-                ed.body = body;
-                if out.body_changed {
-                    changed = true;
-                    if let Some(at) = out.cursor {
-                        cursor = at;
-                    }
-                }
+                let out = crate::codeview::show(ui, &mut code, &entries, &ed.dir, &tokens, height);
                 wrote_file = out.wrote;
             } else {
                 page(
@@ -3339,7 +3415,8 @@ impl NoteCraftApp {
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
-            "paper": self.rules.id(),
+            "paper": self.paper_now().id(),
+            "pageColour": self.editor.as_ref().and_then(|e| e.colour).map(notecraft_model::NodeColor::id),
             // The pen the Draw tab is set to, and the drawing it writes in.
             "ink": {
                 "pointer": self.pointer.id(),

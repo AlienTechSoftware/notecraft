@@ -2070,9 +2070,26 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     for row in ["index.md", "ink.svg", "assets/"] {
         assert!(h.query_all_by_label_contains(row).count() >= 1, "{row} is in the list");
     }
-    // The page file is picked when the view opens, so its body is what is shown.
-    let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains("Format ideas") || body.contains("#"), "the page's own text is shown: {body:.80}");
+    // The page file is picked when the view opens, and the whole file is in hand: the
+    // head as well as the words, so a line in the head can be put right here.
+    // Picked again after everything has settled, so the text in hand is the file as it
+    // now stands: the page adopts the drawing in its folder when it opens, which writes
+    // the file once.
+    let stray_row = h.query_all_by_label_contains("stray.txt").next().expect("a row").rect();
+    ask(&mut h, "ui.click", json!({"x": stray_row.center().x, "y": stray_row.center().y})).expect("another file");
+    settle(&mut h);
+    let page_row = h.query_all_by_label_contains("index.md").next().expect("the page file's row").rect();
+    ask(&mut h, "ui.click", json!({"x": page_row.center().x, "y": page_row.center().y})).expect("the page file");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["codeView"]["picked"], json!("index.md"), "{}", state["codeView"]);
+    let whole = std::fs::read_to_string(s.md_page.join("index.md")).expect("read the page file");
+    assert_eq!(
+        state["codeView"]["characters"].as_u64().unwrap_or(0) as usize,
+        whole.chars().count(),
+        "the whole file, head and all: {}",
+        state["codeView"]
+    );
     review(&mut h, "code_view");
 
     // Picking the drawing shows its SVG, which can be typed in.
@@ -2097,6 +2114,62 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     h.state_mut().set_show_source(false);
     settle(&mut h);
     assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
+}
+
+/// The paper a page is drawn on and the colour behind it are the page's own: chosen in
+/// Format Background, written into the page's file, and there again when it is reopened.
+#[test]
+fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
+    let (_t, app, s) = sample_app("ui-page-paper");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let page = s.md_page.to_string_lossy().into_owned();
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(before["paper"], json!("none"), "a page says nothing about paper to begin with");
+    assert_eq!(before["pageColour"], json!(null));
+
+    // Draw, then Format Background: the gallery of papers and the page colours.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Format Background").click();
+    settle(&mut h);
+    h.get_by_label("College ruled").click();
+    settle(&mut h);
+    h.get_by_label("Format Background").click();
+    settle(&mut h);
+    h.get_by_label("Yellow").click();
+    settle(&mut h);
+
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(now["paper"], json!("college"), "the page is on college ruled paper: {now}");
+    assert_eq!(now["pageColour"], json!("yellow"), "and it is yellow: {now}");
+
+    // Written into the page's own file, and read back from it.
+    let text = std::fs::read_to_string(s.md_page.join("index.md")).expect("read");
+    assert!(
+        text.contains("paper: college"),
+        "the page's file says so:
+{text}"
+    );
+    assert!(
+        text.contains("page-color: yellow"),
+        "and names the colour:
+{text}"
+    );
+
+    ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("another page");
+    settle(&mut h);
+    let other = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(other["pageColour"], json!(null), "another page is not coloured by it: {other}");
+
+    ask(&mut h, "ui.open", json!({"path": page})).expect("back");
+    settle(&mut h);
+    let again = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(again["paper"], json!("college"), "and the page still has its own paper");
+    assert_eq!(again["pageColour"], json!("yellow"));
+    review(&mut h, "page_paper");
 }
 
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

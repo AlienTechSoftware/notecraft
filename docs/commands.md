@@ -94,6 +94,16 @@ Parameters:
 - path (required): the page
 - boxes (optional): x,y,width,blocks per container, separated by semicolons. The counts must add up to the page's blocks. They are written into the page's text as elements around the blocks; empty puts the page back in one column. Without it, the current arrangement is reported
 
+## `page.paper`
+
+The paper a page is drawn on, and the colour behind it.
+
+Parameters:
+
+- path (required): the page
+- paper (optional): none, narrow, college, standard, wide, grid-small, grid-medium, grid-large, grid-huge, craft-lines, craft-grid
+- color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none. Without either, the page's own are reported
+
 ## `page.columns`
 
 How wide the columns of a page's tables are.
