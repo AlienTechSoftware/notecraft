@@ -67,6 +67,22 @@ fn num(v: f32) -> String {
     if s.is_empty() || s == "-0" { "0".to_string() } else { s }
 }
 
+/// Whether this SVG is one of ours: an ink file, not an ordinary picture.
+///
+/// The namespace says so, not the name. A picture someone dropped into the page's folder
+/// and called `ink.svg` is still a picture, and the plain copy written by Save Picture -
+/// the same strokes without the pen's readings - is not an ink file either, which is what
+/// keeps it from being adopted back as one.
+///
+/// Only the opening tag is read, so this can be asked of a large file cheaply.
+pub fn is_ink(text: &str) -> bool {
+    let head = &text[..text.len().min(4096)];
+    match find_tag(head, "<svg") {
+        Some(open) => open.contains(NS),
+        None => false,
+    }
+}
+
 /// The drawing as SVG.
 pub fn write(drawing: &Drawing, flavour: Flavour) -> String {
     let mut out = String::with_capacity(1024);
@@ -240,6 +256,22 @@ fn unescape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_ink_file_is_known_by_its_namespace_not_its_name() {
+        let drawing = {
+            let mut d = super::Drawing::new(100.0, 100.0);
+            let mut stroke = crate::Stroke::new(crate::Tool::Pen, crate::Rgb::BLACK, 3.0);
+            stroke.add(crate::Dab { x: 1.0, y: 1.0, pressure: 0.5 });
+            stroke.add(crate::Dab { x: 9.0, y: 9.0, pressure: 0.5 });
+            d.add(stroke);
+            d
+        };
+        assert!(super::is_ink(&super::write(&drawing, super::Flavour::Editable)), "ours");
+        assert!(!super::is_ink(&super::write(&drawing, super::Flavour::Plain)), "the plain copy is a picture, not ink");
+        assert!(!super::is_ink("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"), "someone else's picture");
+        assert!(!super::is_ink("not svg at all"));
+    }
+
     use super::*;
 
     fn sample() -> Drawing {

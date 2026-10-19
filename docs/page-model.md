@@ -32,6 +32,9 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
 3. **Other files are named by the page file.** A picture or an attachment is a link. The pen's
    drawing is a line that names `ink.svg`. A file in the folder that the page file does not name
    is an **orphan**: it is listed as one, it is never drawn, and it is deleted only by the owner.
+   **Ink is the one exception**: an ink file is drawn whether or not the page names it, and the
+   page is made to name it (section 5.4). Hiding strokes a person drew because a line was lost
+   would be the worse answer.
 4. **Metadata lives in the head.** Title, id, order, times and direction. The one exception today
    is the width of table columns, which is on a metadata line; see [gaps.md](gaps.md).
 5. **What the window shows and what the folder holds never disagree.** Open a page, change
@@ -142,10 +145,13 @@ It says what is built, what is decided but not built, and what is open.
 
 ### 5.2 Known faults
 
-1. **The page can stop naming its ink.** The line that names the ink is a block, and it sits in a
-   box. Deleting that box deletes the line, and the ink file stays. The page file then says
-   nothing about ink that is still drawn and still in the folder. The check that puts the line back
-   only runs when the pen changes something, so nothing repairs it. This breaks rule 3 of section 2.
+1. ~~**The page can stop naming its ink.**~~ Fixed on 2026-10-19: the folder decides. The page's
+   text is made to name every ink file beside it and no ink file that is gone, when the page opens
+   and again after every change to it, so deleting the box that held the line repairs it at once
+   rather than leaving the page silent about a drawing that is still there. An SVG counts as ink
+   because it carries the ink namespace, not because of its name, so a picture of the owner's own
+   is never adopted. `notecraft_store::page::ink_files` lists them; `NoteCraftApp::name_ink` keeps
+   the text in step.
 2. **Translucent strokes show dark spots at bends.** A stroke is drawn as a strip of triangles that
    each carry the stroke's opacity. Where the strip folds, two triangles overlap and blend twice.
    The highlighter shows it; the opaque pen does not.
@@ -170,11 +176,12 @@ It says what is built, what is decided but not built, and what is open.
 - **Where a new stroke goes.** Into the ink file that is active, which is the first unless the
   person chose another. The code does not have a choice yet, and the reason for having more than
   one file (separate layers, shapes, strokes that arrived from another device) is not settled.
-- **The folder and the page file are kept in step.** Rule 3 says a file the page does not name is an
-  orphan that is not drawn. For ink that would hide strokes a person drew. So an ink file found in
-  the folder that the page does not name is adopted: the page file gets the line for it, and it is
-  drawn. And a line that names an ink file that is gone is dropped. Nothing drawn is ever unnamed,
-  and nothing named is ever missing. This is also the repair for fault 1.
+- ~~**The folder and the page file are kept in step.**~~ Built on 2026-10-19, and it is the repair
+  for fault 1. An ink file in the folder that the page does not name is adopted: the page gets the
+  line for it. A line that names an ink file that is gone is dropped. Nothing drawn is ever
+  unnamed, and nothing named is ever missing. What is still proposed is the rest of many ink
+  files: the names `ink-2.svg` and so on, which file a new stroke goes into, and why a page would
+  have more than one. The adopting works for any number of them today.
 - **Each ink file in the code view** is drawn as strokes first, with its SVG text one click away,
   and shows how many strokes it holds.
 - **The fix for fault 2** is to draw a translucent stroke as one shape that does not overlap itself,
@@ -227,6 +234,7 @@ text does not name.
 | Every ink SVG on a page is drawn in the live view, one or many | 2026-10-19 | no: one file today |
 | Files in our own formats (HTML, Markdown) are editable in the code view, to debug and fix bugs; every other file is read-only | 2026-10-19 | no |
 | Ink is a file the page links to, not inline text; a setting is being weighed | current behaviour | yes, with the faults in 5.2 |
+| The folder decides what ink a page has: the page's text is made to name every ink file beside it, and none that is gone | 2026-10-19 | yes |
 
 Known faults are listed in 5.2.
 
@@ -243,8 +251,9 @@ read-only.
    recommendation.
 3. **Many ink files.** Why a page would have more than one, how the person picks the active one, and
    whether the names in 5.4 are right.
-4. **Adopting an unnamed ink file** (5.4): is it right that the page file is changed to name one it
-   did not?
+4. ~~**Adopting an unnamed ink file**~~ Answered by building it on 2026-10-19: yes, the page is
+   changed to name an ink file it did not, because the alternative is strokes that are drawn and
+   unnamed. Say so if you would rather it were the other way.
 5. **Ink undo.** Whether Undo Stroke should have a redo, and whether ink should join the page's own
    history.
 6. **Whether the width of table columns** moves from a metadata line to the markup of the table.
@@ -261,3 +270,4 @@ read-only.
 | Ink | `crates/ink`, `crates/ui-egui/src/inkpad.rs` |
 | The editor state and the source pane | `crates/ui-egui/src/app.rs` |
 | Undo and Redo of the page | `crates/ui-egui/src/history.rs` |
+| Which files of a page are ink | `crates/store/src/page.rs` (`ink_files`), `crates/ink/src/svg.rs` (`is_ink`) |
