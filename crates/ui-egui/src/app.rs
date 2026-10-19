@@ -200,6 +200,12 @@ pub struct NoteCraftApp {
     pad: Option<crate::inkpad::Pad>,
     /// Lines or squares behind the page.
     rules: ribbon::RuleLines,
+    /// Lines round the cells of a table, which is how a table is drawn unless the Table
+    /// tab turns them off.
+    table_borders: bool,
+    /// Where GridCraft is, when it is installed: a table can be handed to it. Looked for
+    /// once, when the window opens.
+    gridcraft: Option<std::path::PathBuf>,
     /// The page title line is hidden (OneNote: View, Hide Page Title).
     hide_title: bool,
     /// A zoom step asked for this frame: 1 larger, -1 smaller, 0 back to 100%.
@@ -227,6 +233,9 @@ impl NoteCraftApp {
         let show_source = session.settings.get("show_source").map(|v| v.trim() == "true").unwrap_or(false);
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
+        // A table has borders unless it was turned off: OneNote draws them, and a table
+        // without them reads as loose columns of words.
+        let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. Off by default: one tree is what NoteCraft has always shown.
         let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(false);
@@ -272,6 +281,8 @@ impl NoteCraftApp {
             sensitivity,
             pad: None,
             rules: session_rules,
+            table_borders: session_borders,
+            gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
             zoom: 0,
             theme_window: false,
@@ -1129,6 +1140,9 @@ impl NoteCraftApp {
             pointer: self.pointer,
             rack: &self.rack,
             nib: self.nib,
+            in_table: self.caret_in_table(),
+            table_borders: self.table_borders,
+            gridcraft: self.gridcraft.is_some(),
             sensitivity: self.sensitivity,
         };
         let format = self.editor.as_ref().map(|e| e.format);
@@ -1214,6 +1228,15 @@ impl NoteCraftApp {
                 self.remember_rack();
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
+            ribbon::Act::Table(what) => self.edit_table(what),
+            ribbon::Act::TableSelect(what) => self.select_in_table(what),
+            ribbon::Act::TableBorders(on) => {
+                self.table_borders = on;
+                let _ = self.session.settings.set("table_borders", if on { "true" } else { "false" });
+            }
+            ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
+            ribbon::Act::NewGridCraft => self.new_gridcraft(),
+            ribbon::Act::InsertTable(rows, columns) => self.insert_table(rows, columns),
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -1374,6 +1397,142 @@ impl NoteCraftApp {
         }
         // The page stops naming ink it no longer has.
         self.sync_ink_reference();
+    }
+
+    /// Whether the caret is in a table, which is when the Table tab is offered.
+    fn caret_in_table(&self) -> bool {
+        self.editor
+            .as_ref()
+            .and_then(|e| e.caret.as_ref().map(|c| (e, c)))
+            .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
+    }
+
+    /// Hands the table the caret is in to GridCraft, which is where a spreadsheet
+    /// belongs: OneNote's Table tab ends with Convert to Excel Spreadsheet, and this is
+    /// the same door with the open spreadsheet behind it.
+    fn hand_table_to_gridcraft(&mut self) {
+        let Some(exe) = self.gridcraft.clone() else {
+            self.say("GridCraft is not installed");
+            return;
+        };
+        let Some(ed) = self.editor.as_ref() else { return };
+        let Some(at) = ed.caret.as_ref().map(|c| c.block) else { return };
+        let Some(block) = ed.blocks.get(at) else { return };
+        let name = format!("table-{}", at + 1);
+        match crate::gridcraft::hand_over(&exe, &ed.dir, &name, block) {
+            Ok(file) => {
+                let said = format!("{} is open in GridCraft", file.file_name().unwrap_or_default().to_string_lossy());
+                self.say(&said);
+            }
+            Err(e) => self.complain(&format!("Cannot open the table in GridCraft: {e}")),
+        }
+    }
+
+    /// A table of the picked size, where the caret is.
+    fn insert_table(&mut self, rows: usize, columns: usize) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len());
+        pageedit::insert_table(&mut ed.blocks, at, rows, columns);
+        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.caret = Some(pageedit::Caret {
+            block: at.min(ed.blocks.len() - 1),
+            text: String::new(),
+            focus: true,
+            selection: (0, 0),
+            place: None,
+            cell: Some((0, 0)),
+            span: None,
+        });
+        Self::mark_dirty_from_blocks(ed);
+    }
+
+    /// An empty spreadsheet beside the page, opened in GridCraft and linked from the page
+    /// so it can be found again.
+    fn new_gridcraft(&mut self) {
+        let Some(exe) = self.gridcraft.clone() else {
+            self.say("GridCraft is not installed");
+            return;
+        };
+        let Some(ed) = self.editor.as_ref() else { return };
+        let dir = ed.dir.clone();
+        let mut name = "spreadsheet.csv".to_string();
+        for n in 2..100 {
+            if !dir.join(&name).exists() {
+                break;
+            }
+            name = format!("spreadsheet-{n}.csv");
+        }
+        let file = dir.join(&name);
+        if let Err(e) = std::fs::write(&file, "") {
+            self.complain(&format!("Cannot write {name}: {e}"));
+            return;
+        }
+        match std::process::Command::new(exe).arg(&file).spawn() {
+            Ok(_) => {
+                self.insert_in_page(&format!("[{name}]({name})"));
+                let said = format!("{name} is open in GridCraft");
+                self.say(&said);
+            }
+            Err(e) => self.complain(&format!("Cannot open GridCraft: {e}")),
+        }
+    }
+
+    /// Picks a block of cells from the Table tab's Select buttons, as a drag across them
+    /// would.
+    fn select_in_table(&mut self, what: pageedit::TableSpan) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
+            return;
+        };
+        let Some(block) = ed.blocks.get(at) else { return };
+        let Some((from, to)) = pageedit::span_of(block, cell, what) else { return };
+        if let Some(caret) = ed.caret.as_mut() {
+            caret.cell = Some(from);
+            caret.span = Some(to);
+            caret.text = pageedit::cell_text(block, from).unwrap_or_default();
+            caret.focus = false;
+        }
+    }
+
+    /// Changes the shape of the table the caret is in, from the Table tab.
+    ///
+    /// A block of cells picked across several rows or columns takes them all: Delete Rows
+    /// with three rows picked takes the three, the way it does in OneNote.
+    fn edit_table(&mut self, what: pageedit::TableEdit) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
+            return;
+        };
+        // Deleting works from the top-left of what is picked, over and over: each one
+        // after the first falls into the place the one before it left. A picked block
+        // that takes in the heading row starts under it, so picking the whole table and
+        // asking for its rows empties the body and keeps the heading.
+        let picked = ed.caret.as_ref().and_then(pageedit::cell_range);
+        let (cell, times) = match (what, picked) {
+            (pageedit::TableEdit::DeleteRow, Some((a, b))) => {
+                let start = a.0.max(1);
+                ((start, a.1), (b.0 + 1).saturating_sub(start))
+            }
+            (pageedit::TableEdit::DeleteColumn, Some((a, b))) => (a, b.1 - a.1 + 1),
+            _ => (cell, 1),
+        };
+        let Some(block) = ed.blocks.get_mut(at) else { return };
+        let mut last = None;
+        for _ in 0..times {
+            match pageedit::edit_table(block, cell, what) {
+                Some(to) => last = Some(to),
+                None => break,
+            }
+        }
+        let Some(to) = last else {
+            // The rules said no: a table keeps its heading row and at least one column.
+            self.say("A table keeps its heading row and at least one column");
+            return;
+        };
+        let text = pageedit::cell_text(block, to).unwrap_or_default();
+        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None });
+        Self::mark_dirty_from_blocks(ed);
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -1640,6 +1799,7 @@ impl NoteCraftApp {
             selection: (0, 0),
             place: None,
             cell: None,
+            span: None,
         });
         Self::mark_dirty_from_blocks(ed);
     }
@@ -2066,6 +2226,7 @@ impl NoteCraftApp {
         let show_source = self.show_source;
         let full_page = self.full_page;
         let (hide_title, rules) = (self.hide_title, self.rules);
+        let table_borders = self.table_borders;
         let (mut toggle_source, mut toggle_full_page, mut focus_search) = (false, false, false);
         let mut from_blocks = false;
         let mut boxes_moved = false;
@@ -2176,7 +2337,8 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
-                            let mut moved = crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir);
+                            let mut moved =
+                                crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir, table_borders);
                             page_acts.append(&mut moved.acts);
                             // The ink of a page sits over its words, anywhere on it, the
                             // way a pen on paper does. It goes on after them so a press
@@ -2651,8 +2813,15 @@ impl NoteCraftApp {
                 if !pageedit::is_writable(block) {
                     return Err(format!("block {n} is a table, a rule or a picture; the caret cannot go in it yet"));
                 }
-                ed.caret =
-                    Some(pageedit::Caret { block: n, text: pageedit::caret_text(block), focus: true, selection: (0, 0), place: None, cell: None });
+                ed.caret = Some(pageedit::Caret {
+                    block: n,
+                    text: pageedit::caret_text(block),
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: None,
+                    span: None,
+                });
                 ctx.request_repaint();
                 Ok(json!({"block": n, "text": ed.caret.as_ref().map(|c| c.text.clone())}))
             }
