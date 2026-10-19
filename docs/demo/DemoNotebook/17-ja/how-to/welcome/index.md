@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# ようこそ
-
 ![ノートに書きこむ NoteCraft のコアラ](assets/banner-ja.png)
 
 *ノートはただのファイル、ただのフォルダーに。*

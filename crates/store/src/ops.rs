@@ -278,16 +278,28 @@ mod tests {
             let nb = create_notebook(&root(&t), "Book", Some(format), &s).expect("notebook");
             let page = create_node(&nb, "First name", notecraft_model::NodeKind::Page, Some(format), &s).expect("page");
 
+            // A page written before the title moved out of the body carries it as a
+            // heading too. Renaming moves both, or the window and the page disagree.
+            let file = page_file(&page).expect("file").1;
+            let had = fs::read_to_string(&file).expect("read");
+            let old_style = match format {
+                PageFormat::Html => had.replace("<body>", "<body>\n<h1>First name</h1>"),
+                PageFormat::Cmgfm => had.replace("---\n\n", "---\n\n# First name\n\n"),
+            };
+            fs::write(&file, &old_style).expect("write");
+
             set_title(&page, "Second name").expect("rename");
-            let text = fs::read_to_string(page_file(&page).expect("file").1).expect("read");
+            let text = fs::read_to_string(&file).expect("read");
             assert!(text.contains("Second name"), "{format:?}: the new name is there:\n{text}");
             assert!(!text.contains("First name"), "{format:?}: and the old one is gone everywhere:\n{text}");
 
-            // A heading someone has written themselves is theirs: renaming leaves it.
+            // A heading someone has written themselves is theirs: renaming leaves it. A new
+            // page has none - its title is in the head alone - so the test writes one.
             let file = page_file(&page).expect("file").1;
+            let text = fs::read_to_string(&file).expect("read");
             let mine = match format {
-                PageFormat::Html => fs::read_to_string(&file).expect("read").replace("<h1>Second name</h1>", "<h1>My own heading</h1>"),
-                PageFormat::Cmgfm => fs::read_to_string(&file).expect("read").replace("# Second name", "# My own heading"),
+                PageFormat::Html => text.replace("<body>", "<body>\n<h1>My own heading</h1>"),
+                PageFormat::Cmgfm => text.replace("---\n\n", "---\n\n# My own heading\n\n"),
             };
             fs::write(&file, &mine).expect("write");
             set_title(&page, "Third name").expect("rename again");

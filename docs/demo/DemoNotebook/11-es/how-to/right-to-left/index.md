@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# De derecha a izquierda
-
 El árabe, el hebreo, el persa y el urdu se leen desde la derecha. NoteCraft los dibuja así: las
 letras se unen, una línea cuelga del borde derecho, y una línea que mezcla las dos direcciones
 se ordena con el algoritmo Unicode, de modo que un precio conserva su número del derecho:

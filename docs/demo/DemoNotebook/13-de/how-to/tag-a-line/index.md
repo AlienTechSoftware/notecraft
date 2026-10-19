@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Eine Zeile markieren
-
 Eine Markierung macht aus einer Zeile etwas: eine Aufgabe, etwas Wichtiges, eine offene Frage.
 Klicken Sie in eine Zeile, dann auf **Start** und das Markierungsfeld. Dieselbe Markierung noch
 einmal gewählt nimmt sie wieder weg.

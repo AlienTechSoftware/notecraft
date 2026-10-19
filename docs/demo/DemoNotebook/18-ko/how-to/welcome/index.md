@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# 환영합니다
-
 ![공책에 적고 있는 NoteCraft 코알라](assets/banner-ko.png)
 
 *노트는 평범한 파일, 평범한 폴더에.*

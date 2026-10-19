@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Von rechts nach links
-
 Arabisch, Hebräisch, Persisch und Urdu werden von rechts gelesen. NoteCraft zeichnet sie so: Die
 Buchstaben verbinden sich, eine Zeile hängt am rechten Rand, und eine Zeile, die beide
 Richtungen mischt, wird vom Unicode-Algorithmus geordnet, sodass ein Preis seine Zahl richtig

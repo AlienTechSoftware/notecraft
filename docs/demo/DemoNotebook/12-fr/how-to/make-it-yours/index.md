@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# À votre goût
-
 ## Thèmes
 
 Le soleil ou la lune en haut à droite ouvre le sélecteur de thèmes : clair et sombre, chacun en

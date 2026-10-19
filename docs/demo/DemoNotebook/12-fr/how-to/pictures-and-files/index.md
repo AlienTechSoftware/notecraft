@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Images et fichiers
-
 Faites glisser un fichier depuis votre gestionnaire de fichiers sur cette page. NoteCraft vous
 demande quoi en faire :
 

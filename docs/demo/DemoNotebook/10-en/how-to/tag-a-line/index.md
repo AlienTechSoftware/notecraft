@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Tag a line
-
 A tag marks a line as something: a thing to do, something important, a question to answer.
 Click in a line, then **Home** and the Tags box. Asking for the same tag again takes it off.
 

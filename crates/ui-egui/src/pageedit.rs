@@ -356,13 +356,35 @@ pub fn links_in(blocks: &[Block]) -> Vec<String> {
     found
 }
 
+/// Whether a block is a heading that only repeats the page's own title.
+///
+/// A page carries its title in its head and the window draws it above the words. An older
+/// page, or one written by hand, may also open with that title as a heading; drawing both
+/// shows the page its own name twice. The file is left exactly as it is - the code view
+/// shows it - and the live view draws the heading only when there is no title area to
+/// carry it.
+pub fn is_title_echo(blocks: &[Block], i: usize, title: &str) -> bool {
+    if i != 0 || title.trim().is_empty() {
+        return false;
+    }
+    match blocks.first() {
+        Some(Block::Heading { level: 1, spans }) => {
+            let words: String = spans.iter().map(|s| s.text.as_str()).collect();
+            words.trim() == title.trim()
+        }
+        _ => false,
+    }
+}
+
 /// The page's date stamp: the line under the title that says when the page was started.
 ///
 /// It is drawn as a stamp, quiet and grey, the way OneNote draws the date under a page
 /// title, rather than as an ordinary paragraph. It is still a paragraph in the file, so
 /// anything can read it; this only says which one it is.
 pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
-    if i != 1 || !matches!(blocks.first(), Some(Block::Heading { level: 1, .. })) {
+    // The first block of a page, or the second when the page opens with its own heading.
+    let after_heading = i == 1 && matches!(blocks.first(), Some(Block::Heading { level: 1, .. }));
+    if !(i == 0 || after_heading) {
         return false;
     }
     // The words themselves, not the marks round them: a page written before the stamp was
@@ -915,9 +937,10 @@ pub fn show(
     page: notecraft_model::Dir,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, shown_title);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -931,6 +954,7 @@ pub fn show(
 
 /// The blocks in `range`, drawn and written in. This is the body of a page, and of one
 /// container on a page that has them.
+#[allow(clippy::too_many_arguments)]
 pub fn show_blocks(
     ui: &mut Ui,
     blocks: &mut Vec<Block>,
@@ -941,6 +965,8 @@ pub fn show_blocks(
     range: std::ops::Range<usize>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    // The title the window is already showing, so the body does not repeat it.
+    shown_title: &str,
 ) -> Changed {
     let mut changed = Changed::default();
     let mut action: Option<Action> = None;
@@ -968,6 +994,10 @@ pub fn show_blocks(
     }
     for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
+        // The title area above the page is already showing this; see `is_title_echo`.
+        if is_title_echo(blocks, i, shown_title) {
+            continue;
+        }
         let editing = caret.as_ref().is_some_and(|c| c.block == i);
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
@@ -1044,7 +1074,7 @@ pub fn show_blocks(
                         action = Some(Action::Indent(i, !shift));
                     } else if escape {
                         action = Some(Action::Leave);
-                    } else if up && i > 0 {
+                    } else if up && i > 0 && !is_title_echo(blocks, i - 1, shown_title) {
                         action = Some(Action::Move(i - 1));
                     } else if down && i + 1 < count {
                         action = Some(Action::Move(i + 1));
@@ -1156,7 +1186,7 @@ pub fn show_blocks(
                     action = Some(Action::Indent(i, !shift));
                 } else if escape {
                     action = Some(Action::Leave);
-                } else if up && i > 0 {
+                } else if up && i > 0 && !is_title_echo(blocks, i - 1, shown_title) {
                     action = Some(Action::Move(i - 1));
                 } else if down && i + 1 < count {
                     action = Some(Action::Move(i + 1));
@@ -2093,6 +2123,31 @@ mod tests {
         // Anything that is not a table says no rather than guessing.
         let mut p = blocks("just words\n").remove(0);
         assert_eq!(edit_table(&mut p, (0, 0), TableEdit::DeleteRow), None);
+    }
+
+    #[test]
+    fn a_heading_that_only_repeats_the_title_is_left_to_the_title_area() {
+        let b = blocks(
+            "# Format ideas
+
+words
+
+# Format ideas
+",
+        );
+        assert!(is_title_echo(&b, 0, "Format ideas"), "the page opens with its own name");
+        assert!(is_title_echo(&b, 0, "  Format ideas  "), "spaces round the title do not matter");
+        assert!(!is_title_echo(&b, 2, "Format ideas"), "only the first block; later headings are the writer's");
+        assert!(!is_title_echo(&b, 1, "Format ideas"), "a paragraph is not a heading");
+        assert!(!is_title_echo(&b, 0, "Something else"), "a heading that says something else stays");
+        assert!(!is_title_echo(&b, 0, ""), "a page with no title hides nothing");
+
+        // A heading two levels down is the writer's, whatever it says.
+        let two = blocks(
+            "## Format ideas
+",
+        );
+        assert!(!is_title_echo(&two, 0, "Format ideas"));
     }
 
     #[test]

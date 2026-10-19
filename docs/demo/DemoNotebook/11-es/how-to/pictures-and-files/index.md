@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Imágenes y archivos
-
 Arrastra un archivo desde tu explorador de archivos hasta esta página. NoteCraft te pregunta qué
 hacer con él:
 

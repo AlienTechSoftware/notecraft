@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Eine Seite schreiben
-
 Klicken Sie in eine Zeile und tippen Sie. Die Seite wird so angezeigt, wie sie gelesen wird:
 Überschriften in Überschriftenschrift, **fett** und *kursiv* mit ihrem eigenen Aussehen,
 `Code` in einem Kasten, ~~durchgestrichen~~, wenn es erledigt ist. Die Zeichen, die das

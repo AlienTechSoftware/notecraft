@@ -253,12 +253,24 @@ fn language_list(present: &[&Language]) -> String {
 fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: &Path) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     let dir_value = s.dir.as_deref().or(default_dir);
+    // A page carries its title in its head, and the window draws it above the words. A
+    // body that opens with that same title as a heading would show it twice, so the
+    // heading comes off here and the content files keep it for reading on their own.
+    let s = &Source { body: without_title_heading(&s.body, &s.title), ..s.clone() };
     copy_assets(dir, &s.body, art)?;
     if s.html {
         write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body))
     } else {
         write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body))
     }
+}
+
+/// A body without the heading that only repeats the page's title.
+fn without_title_heading(body: &str, title: &str) -> String {
+    let rest = body.trim_start();
+    let Some(line) = rest.lines().next() else { return body.to_string() };
+    let is_echo = line.strip_prefix("# ").map(str::trim) == Some(title.trim());
+    if is_echo { rest[line.len()..].trim_start_matches('\n').to_string() } else { body.to_string() }
 }
 
 /// Copies every `assets/...` a page names into that page's own `assets` folder.

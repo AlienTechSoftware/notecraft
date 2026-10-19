@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Synchronisation et sauvegarde
-
 NoteCraft n'a ni synchronisation à lui ni compte. Un carnet est un dossier de petits fichiers,
 alors mettez votre dossier de carnets là où votre outil de synchronisation regarde déjà :
 OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, un partage réseau ou un dépôt git.

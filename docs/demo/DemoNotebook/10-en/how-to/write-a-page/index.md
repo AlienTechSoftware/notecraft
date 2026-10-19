@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Write a page
-
 Click in a line and type. The page is shown the way it reads: headings in heading type, **bold**
 and *italic* in their own look, `code` in a box, ~~crossed out~~ when it is done with. The marks
 that make them stay in the text but step back, so the words come first.

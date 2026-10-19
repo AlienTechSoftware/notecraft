@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# 欢迎
-
 ![NoteCraft 的考拉在记笔记](assets/banner-zh.png)
 
 *笔记就是普通文件，放在普通文件夹里。*

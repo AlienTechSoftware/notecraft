@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Welcome to NoteCraft
-
 This notebook is NoteCraft showing itself. Every page in it is an ordinary page: open it,
 change it, delete it.
 

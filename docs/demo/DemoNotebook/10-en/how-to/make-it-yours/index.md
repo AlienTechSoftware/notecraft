@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Make it yours
-
 ## Themes
 
 The sun or moon at the top right opens the theme chooser: light and dark, each in seven accents,

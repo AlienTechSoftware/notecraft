@@ -121,6 +121,12 @@ it is fixed and tested, not when it is promised.
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box
   rather than losing a word.
+- **One title, not two.** A page carries its title in its head, and the window draws it in
+  the title area above the words. A new page's body no longer repeats it. A page from
+  before this, or one written by hand, may still open with that title as a heading; the
+  live view leaves that heading out rather than showing the name twice, and the file is
+  left exactly as it is, so the code view still shows it and another program still sees a
+  page with a heading. Renaming moves both, as it did before.
 - **The demo notebook** ships pictures and handwriting: every language's welcome page opens with
   the NoteCraft banner in that language, and the page about pictures and files carries a real
   `ink.svg`, drawn by the demo builder with the same crate the pen uses. The banner's words are in

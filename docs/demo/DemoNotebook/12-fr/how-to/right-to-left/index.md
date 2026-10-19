@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# De droite à gauche
-
 L'arabe, l'hébreu, le persan et l'ourdou se lisent depuis la droite. NoteCraft les dessine
 ainsi : les lettres se lient, une ligne pend du bord droit, et une ligne qui mélange les deux
 sens est ordonnée par l'algorithme Unicode, si bien qu'un prix garde son nombre à l'endroit :

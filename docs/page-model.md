@@ -35,7 +35,11 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
    **Ink is the one exception**: an ink file is drawn whether or not the page names it, and the
    page is made to name it (section 5.4). Hiding strokes a person drew because a line was lost
    would be the worse answer.
-4. **Metadata lives in the head.** Title, id, order, times and direction. The one exception today
+4. **Metadata lives in the head.** Title, id, order, times and direction. The title is in
+   the head alone: a new page does not repeat it in its body, and a page that does - an
+   older one, or one written by hand - has that heading left out of the live view, because
+   the title area above the page is already showing it. The file is not changed; the code
+   view shows it as it is. The one exception today
    is the width of table columns, which is on a metadata line; see [gaps.md](gaps.md).
 5. **What the window shows and what the folder holds never disagree.** Open a page, change
    nothing, save it: the folder is the same. Close the window and read the folder: it says what
@@ -238,7 +242,7 @@ text does not name.
 | Decision | When | Built |
 |---|---|---|
 | Boxes are `div` elements in the text of both formats, with their place in `data-` attributes | 2026-10-19 | yes |
-| The page title is a title area inside the page, like OneNote's, stored as the page's title metadata | 2026-10-19 | no |
+| The page title is a title area inside the page, like OneNote's, stored as the page's title metadata | 2026-10-19 | yes |
 | The code view lists the page's files and has a viewer, and closing it renders the page and turns live editing on | 2026-10-19 | yes |
 | A drawing's SVG can be typed in in the code view | 2026-10-19 | yes |
 | Every ink SVG on a page is drawn in the live view, one or many | 2026-10-19 | no: one file today |

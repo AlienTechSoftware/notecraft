@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Look inside a page
-
 Many note taking apps keep a whole notebook in one binary file, and a text editor shows noise. A
 NoteCraft page is a folder of plain files, and the code view shows you that folder, file by file.
 Try it now: press the `< >` button beside this page.

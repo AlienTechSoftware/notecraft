@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Étiqueter une ligne
-
 Une étiquette fait d'une ligne quelque chose : une tâche, un point important, une question à
 régler. Cliquez dans une ligne, puis sur **Accueil** et la case des étiquettes. Redemander la
 même étiquette la retire.
