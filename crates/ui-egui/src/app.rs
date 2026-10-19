@@ -211,6 +211,9 @@ pub struct NoteCraftApp {
     screenshots: Vec<(u64, ControlRequest, Option<PathBuf>)>,
     next_screenshot: u64,
     show_source: bool,
+    /// The code view: which of the page's files is picked, and its text while it is read
+    /// or edited.
+    code: crate::codeview::State,
     /// Which ribbon tab is open.
     ribbon_tab: String,
     /// What the pen is reporting, where the platform reports anything.
@@ -306,6 +309,7 @@ impl NoteCraftApp {
             screenshots: Vec::new(),
             next_screenshot: 1,
             show_source,
+            code: crate::codeview::State::default(),
             ribbon_tab: "Home".to_string(),
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
@@ -1587,6 +1591,30 @@ impl NoteCraftApp {
             .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
     }
 
+    /// Writes a file of the open page that was typed in in the code view.
+    ///
+    /// Only the files the code view lets anybody type in reach here: a drawing's SVG. The
+    /// page file's body is not one of them; it is the editor's own text and is saved the
+    /// way it always was.
+    fn write_page_file(&mut self, name: &str, text: &str) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        let path = dir.join(name.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if !path.starts_with(&dir) {
+            self.complain("That file is not in this page's folder");
+            return;
+        }
+        if let Err(e) = notecraft_store::page::write_atomic(&path, text) {
+            self.complain(&format!("Cannot write {name}: {e}"));
+            return;
+        }
+        // A drawing that was typed in is read again, so what the pen does next is done to
+        // the file as it now stands rather than to the one the window remembered.
+        if notecraft_ink::svg::is_ink(text) {
+            self.pad = Some(crate::inkpad::Pad::of_page(&dir));
+        }
+        self.sync_ink_reference();
+    }
+
     /// Takes the page back to how it was before the last change, or forward again.
     ///
     /// The whole page is put back: its text, its blocks, the boxes they sit in and where
@@ -2466,6 +2494,9 @@ impl NoteCraftApp {
         let mut cols_moved = false;
         // A file the writer asked to delete from the page's folder, confirmed first.
         let mut delete_file: Option<String> = None;
+        // A file other than the page written in the code view, waiting to go to disk.
+        let mut wrote_file: Option<(String, String)> = None;
+        let mut code = std::mem::take(&mut self.code);
         let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
         let mut follow: Option<String> = None;
@@ -2674,41 +2705,22 @@ impl NoteCraftApp {
                 });
             };
             if show_source {
-                let mut left = std::mem::take(&mut ed.body);
-                let (mut source_changed, mut source_cursor) = (false, cursor);
-                ui.columns(2, |cols| {
-                    egui::ScrollArea::vertical().id_salt("source").max_height(height).show(&mut cols[0], |ui| {
-                        let out = egui::TextEdit::multiline(&mut left)
-                            .code_editor()
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(36)
-                            .lock_focus(true)
-                            .show(ui);
-                        if let Some(range) = out.cursor_range {
-                            source_cursor = range.primary.index.0;
-                        }
-                        if out.response.changed() {
-                            source_changed = true;
-                        }
-                    });
-                    page(
-                        &mut cols[1],
-                        ed,
-                        false,
-                        &mut changed,
-                        &mut from_blocks,
-                        &mut toggle_source,
-                        &mut boxes_moved,
-                        &mut cols_moved,
-                        &mut delete_file,
-                        &mut follow,
-                    );
-                });
-                ed.body = left;
-                if source_changed {
+                // The code view: the page's files on the left, the one picked on the
+                // right. The page itself is not drawn while it is open, so there is only
+                // ever one editable copy of the page on screen.
+                let named = pageedit::links_in(&ed.blocks);
+                let entries = crate::codeview::files(&ed.dir, ed.format.page_file(), &named);
+                let head = notecraft_store::page::head_text(&ed.dir).unwrap_or_default();
+                let mut body = std::mem::take(&mut ed.body);
+                let out = crate::codeview::show(ui, &mut code, &entries, &ed.dir, &head, &mut body, &tokens, height);
+                ed.body = body;
+                if out.body_changed {
                     changed = true;
-                    cursor = source_cursor;
+                    if let Some(at) = out.cursor {
+                        cursor = at;
+                    }
                 }
+                wrote_file = out.wrote;
             } else {
                 page(
                     ui,
@@ -2755,6 +2767,10 @@ impl NoteCraftApp {
         self.cursor = cursor;
         if let Some((path, line)) = save_cols {
             self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
+        }
+        self.code = code;
+        if let Some((name, text)) = wrote_file {
+            self.write_page_file(&name, &text);
         }
         if let Some(name) = delete_file {
             let page = self.editor.as_ref().map(|e| e.dir.clone());
@@ -3331,6 +3347,13 @@ impl NoteCraftApp {
             // pressure at all, and `hardest` is the hardest press since the window opened.
             "pen": {"seen": self.stylus.sample().pen, "pressure": self.stylus.sample().pressure, "hardest": self.stylus.seen().0, "readings": self.stylus.seen().1},
             "defaultFormat": self.session.settings.global_format().0.id(),
+            // The code view: whether it is open, which of the page's files is picked, and
+            // how much of that file is in hand.
+            "codeView": {
+                "open": self.show_source,
+                "picked": self.code.picked,
+                "characters": self.code.text.chars().count(),
+            },
             "notebooksFolder": self.shown(self.session.root()),
             "status": {"text": self.status, "error": self.status_is_error},
             "rows": rows,

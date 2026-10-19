@@ -156,6 +156,20 @@ fn clear_old_boxes(dir: &Path) -> Result<()> {
     if out == text { Ok(()) } else { write_atomic(&file, &out) }
 }
 
+/// The page file's head as text: the `<head>` of an HTML page, the front matter of a
+/// Markdown one. What the page records about itself, for the code view to show.
+pub fn head_text(dir: &Path) -> Result<String> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    Ok(match format {
+        PageFormat::Html => match text.find("<body") {
+            Some(at) => text[..at].to_string(),
+            None => text,
+        },
+        PageFormat::Cmgfm => frontmatter::split_front(&text).0.to_string(),
+    })
+}
+
 /// The ink files in a page's folder, in name order.
 ///
 /// A file is ink because its SVG carries NoteCraft's ink namespace, not because of what

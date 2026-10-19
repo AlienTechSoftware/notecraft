@@ -60,8 +60,8 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
 
 ## 4. The code view
 
-Status: agreed in principle by the owner; not built. Questions that are still open are in
-section 8.
+Status: built on 2026-10-19, except the two lines marked below. Questions that are still open are
+in section 8.
 
 - **A flat list of the page's files**, with a viewer beside it. The page file is first and is
   selected when the view opens.
@@ -76,10 +76,14 @@ section 8.
   - HTML and Markdown: shown as text, and editable.
   - Other text: shown as text, read-only.
   - Pictures: shown as pictures.
-  - Ink files: drawn as strokes by NoteCraft's own painter, with the SVG text one click away.
+  - Ink files: shown as SVG text, which **can be typed in** (owner, 2026-10-19, changing the line
+    above that every file but the page's own is read-only: a person debugging ink needs it, and the
+    view warns that the pen's readings are in that file). Not built: drawing the strokes in the
+    viewer with NoteCraft's own painter.
   - Anything else: name, size and type, and a button to open it with the system.
-- **Orphans are marked** "not used by the page", and can be deleted from the list.
-- **A big file shows its first part**, with a note, so the view stays quick.
+- **Orphans are marked** "not used by the page". Deleting one is on the page itself today, under
+  the list of files; not built in this view.
+- **A big file shows its first part**, with a note, so the view stays quick. The first 256 KB.
 
 ### While the code view is open
 
@@ -230,7 +234,8 @@ text does not name.
 |---|---|---|
 | Boxes are `div` elements in the text of both formats, with their place in `data-` attributes | 2026-10-19 | yes |
 | The page title is a title area inside the page, like OneNote's, stored as the page's title metadata | 2026-10-19 | no |
-| The code view lists the page's files and has a viewer, and closing it renders the page and turns live editing on | 2026-10-19 | no |
+| The code view lists the page's files and has a viewer, and closing it renders the page and turns live editing on | 2026-10-19 | yes |
+| A drawing's SVG can be typed in in the code view | 2026-10-19 | yes |
 | Every ink SVG on a page is drawn in the live view, one or many | 2026-10-19 | no: one file today |
 | Files in our own formats (HTML, Markdown) are editable in the code view, to debug and fix bugs; every other file is read-only | 2026-10-19 | no |
 | Ink is a file the page links to, not inline text; a setting is being weighed | current behaviour | yes, with the faults in 5.2 |
@@ -270,4 +275,5 @@ read-only.
 | Ink | `crates/ink`, `crates/ui-egui/src/inkpad.rs` |
 | The editor state and the source pane | `crates/ui-egui/src/app.rs` |
 | Undo and Redo of the page | `crates/ui-egui/src/history.rs` |
+| The code view | `crates/ui-egui/src/codeview.rs` |
 | Which files of a page are ink | `crates/store/src/page.rs` (`ink_files`), `crates/ink/src/svg.rs` (`is_ink`) |

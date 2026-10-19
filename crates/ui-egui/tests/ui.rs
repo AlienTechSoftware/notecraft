@@ -2039,6 +2039,62 @@ fn a_page_names_the_ink_in_its_folder_and_no_ink_that_is_gone() {
     );
 }
 
+/// The code view: the page's files down the left, the one that is picked on the right.
+/// The page file's body can be typed in, a drawing's SVG can be typed in, and a picture
+/// nothing names is marked as not used.
+#[test]
+fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
+    let (_t, app, s) = sample_app("ui-code-view");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let page = s.md_page.to_string_lossy().into_owned();
+    let ink = "<?xml version=\"1.0\"?>
+<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"https://notecraft.org/ns/ink\" width=\"820\" height=\"1100\">
+<title>Ink</title>
+<path nc:tool=\"pen\" nc:width=\"3\" nc:dabs=\"10,10,0.5 40,40,0.5\" d=\"M10 10 L40 40 Z\" fill=\"#202020\"/>
+</svg>
+";
+    std::fs::write(s.md_page.join("ink.svg"), ink).expect("a drawing beside the page");
+    std::fs::write(s.md_page.join("stray.txt"), "nothing on the page names this").expect("an orphan");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+
+    // The list: the page file first, then what sits beside it, then what is in assets.
+    for row in ["index.md", "ink.svg", "assets/"] {
+        assert!(h.query_all_by_label_contains(row).count() >= 1, "{row} is in the list");
+    }
+    // The page file is picked when the view opens, so its body is what is shown.
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Format ideas") || body.contains("#"), "the page's own text is shown: {body:.80}");
+    review(&mut h, "code_view");
+
+    // Picking the drawing shows its SVG, which can be typed in.
+    let row = h.query_all_by_label_contains("ink.svg").next().expect("the drawing's row").rect();
+    ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick it");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["codeView"]["picked"], json!("ink.svg"), "the drawing is picked: {}", state["codeView"]);
+    assert!(state["codeView"]["characters"].as_u64().unwrap_or(0) > 100, "its SVG is in hand: {}", state["codeView"]);
+    assert!(h.query_all_by_label_contains("The pen's own readings").count() >= 1, "with a word about what is in it");
+    review(&mut h, "code_view_ink");
+
+    // A file nothing names is marked, so an orphan is not mistaken for one in use, and
+    // it cannot be typed in.
+    let stray = h.query_all_by_label_contains("stray.txt").next().expect("the stray file's row").rect();
+    ask(&mut h, "ui.click", json!({"x": stray.center().x, "y": stray.center().y})).expect("pick it");
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("not used by the page").count() >= 1, "the file nothing names is marked");
+    assert!(h.query_all_by_label_contains("read-only").count() >= 1, "and it cannot be typed in");
+
+    // Closing the view puts the page back.
+    h.state_mut().set_show_source(false);
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
+}
+
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

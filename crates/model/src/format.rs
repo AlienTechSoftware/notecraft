@@ -34,6 +34,14 @@ impl PageFormat {
         }
     }
 
+    /// What the page's own file is called in its folder.
+    pub fn page_file(self) -> &'static str {
+        match self {
+            PageFormat::Html => "index.html",
+            PageFormat::Cmgfm => "index.md",
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             PageFormat::Html => "HTML",

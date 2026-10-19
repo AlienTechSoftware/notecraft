@@ -12,6 +12,7 @@ pub mod app;
 pub mod backstage;
 pub mod bidi;
 pub mod clipboard;
+pub mod codeview;
 pub mod containers;
 pub mod control;
 pub mod floating;
