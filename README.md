@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.png" alt="NoteCraft with the Home tab of the ribbon open. On the left a tree shows two notebooks, a blue My Notebook with an orange Work section group and a teal Ideas section, nested sub-pages six levels deep. On the right the page Format ideas is written in its finished look: a heading, a checklist with ticked boxes, a numbered list, a quote, a table and an equation." width="100%">
+  <img src="docs/images/hero.png" alt="NoteCraft with a purple title band across the top, holding the Quick Access Toolbar, the page title and the tab names, and the Home tab of the ribbon open. On the left a tree shows two notebooks, a blue My Notebook with an orange Work section group and a teal Ideas section, nested sub-pages six levels deep. On the right the page Format ideas is written in its finished look: a heading, a checklist with ticked boxes, a numbered list, a quote, a table and an equation." width="100%">
   <br><sub><b>The sample notebooks.</b> The ribbon, coloured notebooks and sections, and a page written in the type it will be read in.</sub>
 </p>
 
@@ -62,7 +62,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 <td width="50%" valign="top"><img src="docs/images/html-page.png" alt="An HTML page shown as it reads: a heading, bold and italic text, a link, a bulleted list, a to-do line, a table, a quote, an inline equation and a Mermaid diagram kept as source" width="100%"><p align="center"><sub><b>Both formats.</b> A page is HTML or CommonMark; the same editor, the same look, the file stays in its own format.</sub></p></td>
 </tr>
 <tr>
-<td colspan="2" valign="top"><img src="docs/images/page-source.png" alt="The page source view: a list of the page's files on the left, index.md and assets/koala.png, and on the right the page file with its head in grey, the id, title, order and dates, above its Markdown body" width="100%"><p align="center"><sub><b>Inside a page.</b> The files a page owns, and what is in each: the head in grey, the body below it.</sub></p></td>
+<td colspan="2" valign="top"><img src="docs/images/page-source.png" alt="The page source view: a list of the page's files on the left, index.md and assets/koala.png, and on the right the whole page file as text, its head with the id, title, order and dates above its Markdown body" width="100%"><p align="center"><sub><b>Inside a page.</b> The files a page owns, and what is in each: the whole page file, head and body, to read and to edit.</sub></p></td>
 </tr>
 </table>
 

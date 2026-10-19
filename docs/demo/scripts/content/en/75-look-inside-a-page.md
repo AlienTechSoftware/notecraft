@@ -14,13 +14,13 @@ On the left, **Files in this page**: the page's own file, `index.md`, first, the
 the folder. A file that nothing on the page uses is marked *not used by the page*. On the right is
 the file you picked. This is the page you are reading, so the viewer shows its own text.
 
-The page file shows its **head** in grey: the page's id, title, order and dates. You cannot type in
-it, so a hand edit cannot break the page's id. Below it is the **body**, which you can edit. Press
-the same button again to close the view, and the page is drawn again from what is in the body.
+The page file is shown whole: its **head** (the page's id, title, order, dates and settings) and
+under it the **body**. You can edit all of it. Press the same button again to close the view, and
+the page is drawn again from what you wrote.
 
 | File | What the viewer shows | Can you type in it? |
 |---|---|---|
-| The page file, `index.md` or `index.html` | The head, and the body exactly as saved | The body |
+| The page file, `index.md` or `index.html` | The head, and the body exactly as saved | All of it |
 | A drawing, `ink.svg` | The SVG text, with the pen's own readings | Yes, with care |
 | A picture | The picture | No |
 | Other text | Its text | No |

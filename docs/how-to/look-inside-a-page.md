@@ -4,7 +4,7 @@ A OneNote section is one binary file. Open it in a text editor and you see noise
 is a folder of plain files, and the code view shows you that folder, file by file, so you can see
 for yourself what your notes are made of.
 
-![The code view: the files of one page down the left, and the page file with its head and its body on the right](../images/page-source.png)
+![The code view: the files of one page down the left, and the whole page file, head and body, on the right](../images/page-source.png)
 
 ## Open it and close it
 
@@ -31,7 +31,7 @@ The viewer, on the right, shows the file you pick:
 
 | File | What you see | Can you type in it? |
 |---|---|---|
-| The page file | Its **head** in grey: the id, title, order and dates. Below it the **body**: the words, exactly as saved | The body, yes. The head is shown but cannot be typed in, so a hand edit cannot break the page's id |
+| The page file | The whole file as saved: the **head** (the id, title, order, dates and settings) and under it the **body**, the words | Yes, all of it, head included. The page is read again from it when you close the view |
 | A drawing, `ink.svg` | The SVG text. Each stroke is a path, with the pen's own readings beside it | Yes, with care: the pen's readings are in the file, and an edit that breaks them cannot be undone by the pen |
 | A picture | The picture | No |
 | Other text (`.txt`, `.json`, `.toml` and so on) | Its text | No |
@@ -54,7 +54,7 @@ tags: []
 ---
 ```
 
-- **The head is the page's own record:** its id, title, order, the times it was created and last
+- **The head is the page's own record, and you can edit it:** its id, title, order, the times it was created and last
   changed, and the settings that travel with it, such as a direction you chose for the page.
 - **Boxes are elements.** A page arranged in boxes has a `div` with `class="nc-box"` around each
   box's blocks, with its place in `data-x`, `data-y` and `data-width`. See
@@ -65,8 +65,9 @@ tags: []
 
 ## Fixing a page by hand
 
-Because the files are plain, the view is also how you debug a page. Change the body, and the page
-is drawn from what you wrote when you close the view. If the text holds markup the editor cannot
+Because the files are plain, the view is also how you debug a page. Change any line, in the head or the body,
+and the page is drawn from what you wrote when you close the view: a new title, a direction or a
+paper takes effect then, and what you typed is not overwritten by an autosave. If the text holds markup the editor cannot
 model, the page is shown but not written on, and says so. The code view is where you fix it.
 
 ## Not built yet

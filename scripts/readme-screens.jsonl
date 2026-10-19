@@ -26,20 +26,20 @@
 {"method": "ui.open", "params": {"path": "my-notebook/ideas/tags"}}
 {"wait": 400}
 {"shot": "docs/images/tags.png"}
-{"method": "ui.click", "params": {"x": 110, "y": 54}}
+{"method": "ui.click", "params": {"x": 145, "y": 52}}
 {"steps": 6}
 {"shot": "docs/images/ribbon-insert.png"}
-{"method": "ui.click", "params": {"x": 47, "y": 54}}
+{"method": "ui.click", "params": {"x": 87, "y": 52}}
 {"steps": 6}
 {"shot": "docs/images/ribbon-home.png"}
 {"method": "ui.theme", "params": {"mode": "dark", "accent": "green"}}
 {"wait": 300}
 {"shot": "docs/images/dark-green.png"}
 {"method": "ui.theme", "params": {"mode": "light", "accent": "default"}}
-{"method": "ui.click", "params": {"x": 1411, "y": 23}}
+{"method": "ui.click", "params": {"x": 1264, "y": 15}}
 {"steps": 8}
 {"shot": "docs/images/theme-switcher.png"}
 {"method": "ui.key", "params": {"key": "Escape"}}
-{"method": "ui.click", "params": {"x": 143, "y": 23}}
+{"method": "ui.click", "params": {"x": 34, "y": 52}}
 {"steps": 8}
 {"shot": "docs/images/file-screen.png"}
