@@ -91,6 +91,8 @@ pub struct Pad {
     held: Vec<usize>,
     /// The loop being drawn now by the lasso.
     loop_now: Vec<(f32, f32)>,
+    /// Where a shape's drag began, which is one of the two corners it is drawn between.
+    shape_from: Option<(f32, f32)>,
     /// Where the pointer was when a move or a stretch began, and the box as it was then.
     grabbed: Option<(egui::Pos2, (f32, f32, f32, f32), Grab)>,
 }
@@ -112,7 +114,7 @@ impl Pad {
         let file = page_dir.join(FILE);
         let (drawing, flat) =
             std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok()).unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
-        Pad { file, drawing, dirty: false, flat, drawing_now: None, held: Vec::new(), loop_now: Vec::new(), grabbed: None }
+        Pad { file, drawing, dirty: false, flat, drawing_now: None, held: Vec::new(), loop_now: Vec::new(), shape_from: None, grabbed: None }
     }
 
     /// Writes the ink, with its readings, which is what the page keeps.
@@ -282,6 +284,27 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
                 }
             } else if let Some(stroke) = pad.drawing_now.take() {
                 changed = pad.drawing.add(stroke);
+            }
+        }
+        Pointer::Shape(shape) => {
+            // The drag gives the two corners the shape is drawn between: it follows the
+            // pointer while the button is down, and is laid down when it is let go.
+            if down {
+                if let Some((x, y)) = at {
+                    let from = *pad.shape_from.get_or_insert((x, y));
+                    let dabs = notecraft_ink::shapes::trace(shape, from, (x, y), 0.6);
+                    let mut stroke = Stroke::with_gain(pen.tool, pen.colour, pen.width, pen.gain);
+                    for dab in dabs {
+                        stroke.add(dab);
+                    }
+                    pad.drawing_now = Some(stroke);
+                    ui.ctx().request_repaint();
+                }
+            } else {
+                pad.shape_from = None;
+                if let Some(stroke) = pad.drawing_now.take() {
+                    changed = pad.drawing.add(stroke);
+                }
             }
         }
         Pointer::Lasso => {

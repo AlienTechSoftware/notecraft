@@ -35,9 +35,16 @@ fn sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
     (t, app, sample)
 }
 
-fn harness(mut app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
+fn harness(app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
+    sized_harness(app, theme, egui::vec2(1200.0, 760.0))
+}
+
+/// A window of a given size, for a test that needs more room than the usual one: the Draw
+/// tab has more groups than fit in 1200 points, and a button that is scrolled off cannot
+/// be clicked.
+fn sized_harness(mut app: NoteCraftApp, theme: Theme, size: egui::Vec2) -> Harness<'static, NoteCraftApp> {
     app.set_theme(theme);
-    Harness::builder().with_size(egui::vec2(1200.0, 760.0)).wgpu().build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
+    Harness::builder().with_size(size).wgpu().build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
 }
 
 /// Feeds the clicks, keys and text that control requests queued into the next frame, then runs it.
@@ -2209,6 +2216,54 @@ fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
     settle(&mut h);
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state["page"]["title"], json!("Format ideas"), "the link opened the page it names: {}", state["page"]);
+}
+
+/// A shape from the Draw tab is drawn by dragging on the page, and what it leaves is ink:
+/// a stroke in the page's own drawing, which the eraser and Select can act on.
+#[test]
+fn a_shape_is_drawn_on_the_page_as_ink() {
+    let (_t, app, s) = sample_app("ui-shapes");
+    // The Draw tab has more groups than a narrow window shows, and Shapes is at the far
+    // end of it: a button that is scrolled off cannot be clicked.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.run();
+    let page = s.md_page.to_string_lossy().into_owned();
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Rectangle").click();
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["ink"]["pointer"], json!("rectangle"), "the rectangle is in hand: {}", state["ink"]);
+
+    // Drag out the two corners it is drawn between.
+    ask(&mut h, "ui.press", json!({"x": 620, "y": 420})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 760, "y": 520})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": 760, "y": 520})).expect("let go");
+    settle(&mut h);
+
+    // It is in the page's drawing, and in the file beside the page.
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["ink"]["inked"], json!(true), "the page has ink on it now: {}", state["ink"]);
+    let svg = std::fs::read_to_string(s.md_page.join("ink.svg")).expect("the drawing was written");
+    assert!(svg.contains("nc:dabs"), "with the pen's own readings in it");
+    assert_eq!(
+        svg.matches("<path").count(),
+        1,
+        "one stroke, the shape:
+{svg:.400}"
+    );
+    review(&mut h, "shape_drawn");
+
+    // Undo Stroke takes it back, as it does any other stroke.
+    h.get_by_label("Undo stroke").click();
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["ink"]["inked"], json!(false), "the shape was taken back: {}", state["ink"]);
 }
 
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
