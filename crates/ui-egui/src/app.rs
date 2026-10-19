@@ -2790,17 +2790,42 @@ impl NoteCraftApp {
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
+            // One id for the title, whether it is drawn as words or as a text box.
+            let title_id = egui::Id::new("page-title-box");
             ui.label(egui::RichText::new(crumbs).small().color(tokens.muted));
             ui.horizontal(|ui| {
                 if !hide_title {
                     // The title hangs from the same edge the page reads from.
                     let title_align = crate::pagetext::halign(&ed.title_buf, ed.default_dir());
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut ed.title_buf)
-                            .font(egui::FontId::proportional(22.0))
-                            .horizontal_align(title_align)
-                            .desired_width(ui.available_width() - 260.0),
-                    );
+                    let width = ui.available_width() - 260.0;
+                    // A title that reads right to left is drawn by the bidi painter, not
+                    // by the text box: egui lays the letters of a word out the right way
+                    // and then puts the next word to the right of it, so every Arabic page
+                    // showed its own name with the words backwards. Clicking it hands the
+                    // line to the text box, which is still where it is edited; that is the
+                    // same bargain the page itself made until its own caret was built.
+                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.default_dir());
+                    let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl_title;
+                    let r = if editing {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut ed.title_buf)
+                                .id(title_id)
+                                .font(egui::FontId::proportional(22.0))
+                                .horizontal_align(title_align)
+                                .desired_width(width),
+                        )
+                    } else {
+                        let pieces = crate::bidi::plain(&ed.title_buf, 22.0, &tokens);
+                        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 22.0, width);
+                        let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y.max(30.0)), egui::Sense::click());
+                        crate::bidi::paint(ui, rect.min, &drawn);
+                        if resp.clicked() {
+                            ui.memory_mut(|m| m.request_focus(title_id));
+                        }
+                        let name = ed.title_buf.clone();
+                        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
+                        resp.on_hover_cursor(egui::CursorIcon::Text)
+                    };
                     if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
                         rename = Some(ed.title_buf.trim().to_string());
                     }
