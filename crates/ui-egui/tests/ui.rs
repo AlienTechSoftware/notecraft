@@ -3149,6 +3149,38 @@ fn ctrl_z_and_the_undo_button_take_back_a_delete() {
     assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "and its Redo");
 }
 
+/// The band across the top is the window's title bar, or the system's is: a right click on the
+/// bare band says which, and the choice is kept in the settings.
+#[test]
+fn the_title_bar_is_a_choice_and_is_remembered() {
+    let (t, mut h, _) = three_pages("ui-title-bar");
+    let settings = |t: &TempDir| std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert_eq!(look_at(&mut h).pointer("/windowFrame").and_then(Value::as_str), Some("system"), "a test window keeps the system's frame");
+
+    // Bare band: left of the title, right of the Quick Access Toolbar.
+    ask(&mut h, "ui.click", json!({"x": 330.0, "y": 14.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    h.get_by_label("Use NoteCraft's own title bar").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/windowFrame").and_then(Value::as_str), Some("own"));
+    assert!(settings(&t).contains("window_frame = \"own\""), "kept in the settings:\n{}", settings(&t));
+    for name in ["Close", "Maximize", "Minimize"] {
+        assert!(h.query_all_by_label(name).count() >= 1, "{name} is drawn once the band is the title bar");
+    }
+
+    ask(&mut h, "ui.click", json!({"x": 330.0, "y": 14.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    h.get_by_label("Use the system title bar").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/windowFrame").and_then(Value::as_str), Some("system"));
+    assert!(settings(&t).contains("window_frame = \"system\""), "and back:\n{}", settings(&t));
+    assert_eq!(h.query_all_by_label("Close").count(), 0, "no window buttons of ours with the system's frame");
+}
+
 /// The menu on the arrow: tick buttons off, move the strip, hide it, and the choices are kept.
 #[test]
 fn the_quick_access_menu_hides_moves_and_remembers() {

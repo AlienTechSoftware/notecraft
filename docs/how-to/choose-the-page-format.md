@@ -16,7 +16,7 @@ First match wins:
 
 1. The format you pick while creating the page.
 2. The nearest `format` in a `_node.toml` above it, stopping at the notebook.
-3. The global setting, the **Default format** box in the top bar.
+3. The global setting, the **New pages** format box at the right of the status bar.
 4. The built-in default, HTML.
 
 A notebook records its own default when it is created, so it behaves the same on a machine with
@@ -28,7 +28,7 @@ new pages get.
 - **For one page**: in the Add dialog, pick the format.
 - **For a section or a notebook**: in its Add dialog, the format you pick is the default for
   pages below it. In the file: `format = "cmgfm"` in its `_node.toml`.
-- **Globally**: the **Default format** box, or
+- **Globally**: the **New pages** box in the status bar, or
   `notecraft-cli run settings.default_format.set format=cmgfm`.
 
 The current page's format is shown at the top right of the page, beside whether it is saved.

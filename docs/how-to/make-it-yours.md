@@ -13,6 +13,23 @@ the way back.
 Every colour in every theme is checked against its background by a test, so no theme can ship
 text you cannot read. [docs/themes.md](../themes.md) lists the targets.
 
+## The title bar
+
+The coloured band across the top is the window's title bar, as in OneNote. On it, from the
+left: the logo and the Quick Access Toolbar (Back, Forward, Undo, Redo), the page's title in the
+middle, then Search, the theme button and the window's own buttons. The ribbon's tab names sit
+under them, **File** first; the chosen tab joins the ribbon below it. Drag the band to move the
+window, double-click it to maximise, and drag any edge or corner to resize.
+
+The band takes the colour of your theme, darkened until white writing reads on it.
+
+If you would rather have the title bar your system draws, right-click a bare part of the band and
+choose **Use the system title bar**. The same menu brings NoteCraft's own back. The choice is kept
+in the settings file as `window_frame`, `own` or `system`.
+
+New notebook, Expand all and Collapse all are above the notebook list. The format new pages are
+written in is at the right of the status bar.
+
 ## Colours for notebooks and sections
 
 Right-click a notebook, section group or section, then **Colour**. Nine colours, shown on the

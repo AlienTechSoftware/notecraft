@@ -19,7 +19,7 @@ neutral on purpose.
 
 ## The switcher
 
-The top bar has a **Theme: Light Default** button. It opens a grid of 14 swatches (a light row
+The title band, at the top right beside Search, has a **Theme: Light Default** button. It opens a grid of 14 swatches (a light row
 and a dark row, seven accents each) and a switch, **Follow the system light or dark setting**.
 Each swatch shows the theme's surface colour ringed and dotted in its accent. A swatch names a
 mode, so clicking one picks that mode and turns the switch off. The switch is the way back to

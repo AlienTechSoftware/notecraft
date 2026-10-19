@@ -24,6 +24,8 @@ pub const TABLE_TAB: &str = "Table";
 /// What a ribbon control asks the window to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
+    /// The File tab: open the File screen.
+    File,
     /// Put marks around the selection, or at the caret: bold, italic, strikethrough, code.
     Mark(&'static str),
     /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
@@ -363,8 +365,7 @@ const DROP: f32 = 4.0;
 /// Returns every act the user asked for this frame (usually none or one).
 pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
     let mut acts = Vec::new();
-    tab_strip(ui, tab, source, view.in_table, t, &mut acts);
-    ui.add_space(2.0);
+    ui.add_space(3.0);
     let chosen = resolve_tab(tab, source, view.in_table);
     // A tab with many groups is wider than a narrow window: the Draw tab alone has eleven,
     // as OneNote's does. Rather than clipping the last of them, the groups scroll sideways.
@@ -415,38 +416,43 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
     v
 }
 
-fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
+/// The tab names, drawn on the coloured band at the top of the window, File first, as in
+/// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
+/// ribbon below it; the others are white writing on the band, lit when the pointer is over
+/// one.
+pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
     let chosen = resolve_tab(tab, source, in_table);
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(4.0);
-        for name in tabs(source, in_table) {
+        let names = std::iter::once(FILE_TAB).chain(tabs(source, in_table));
+        for name in names {
             let selected = name == chosen;
             let font = egui::FontId::proportional(12.5);
             let galley = ui.painter().layout_no_wrap(name.to_string(), font.clone(), t.text);
-            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 22.0, TAB_STRIP_H), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, TAB_STRIP_H), Sense::click());
             let painter = ui.painter_at(rect);
-            // A chosen tab is named in the accent colour and underlined by it, the way
-            // Office marks one; it is not a filled pill, which read as a button.
-            if resp.hovered() && !selected {
-                painter.rect_filled(rect.shrink2(vec2(1.0, 3.0)), 4.0, t.row_hover);
-            }
             if selected {
-                painter.rect_filled(rect.shrink2(vec2(1.0, 3.0)), 4.0, t.row_selected);
-                painter.line_segment(
-                    [egui::pos2(rect.min.x + 8.0, rect.max.y - 2.5), egui::pos2(rect.max.x - 8.0, rect.max.y - 2.5)],
-                    egui::Stroke::new(2.0, t.accent),
-                );
+                // Raised: the tab and the ribbon are one surface, so there is no line between.
+                let top = egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 };
+                painter.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.min.y + 3.0), rect.max), top, t.panel);
+            } else if resp.hovered() {
+                painter.rect_filled(rect.shrink2(vec2(1.0, 3.0)), 3.0, t.band_hover);
             }
-            painter.text(rect.center(), Align2::CENTER_CENTER, name, font, if selected { t.accent } else { t.text });
+            let colour = if selected { t.accent } else { t.band_text };
+            painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, name, font, colour);
             let enabled = ui.is_enabled();
             let label = name.to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
             if resp.clicked() {
-                acts.push(Act::Tab(name.to_string()));
+                acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
             }
         }
     });
 }
+
+/// The name of the first tab, which opens the File screen instead of a ribbon.
+pub const FILE_TAB: &str = "File";
 
 /// One group of the ribbon: its controls, a line on the right, and its name underneath.
 fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {

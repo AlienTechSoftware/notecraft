@@ -215,6 +215,15 @@ pub struct Tokens {
     /// The lines round the cells of a table. Stronger than a ruled page, because a table
     /// is read as a grid and its lines carry the shape; still quiet beside the words.
     pub table_line: Color32,
+    /// The coloured band across the top of the window, where the title, the Quick Access
+    /// Toolbar and the ribbon's tab names sit, as in Office. Dark enough for white writing.
+    pub band: Color32,
+    /// Writing and icons on the band.
+    pub band_text: Color32,
+    /// Greyed writing and icons on the band.
+    pub band_dim: Color32,
+    /// A button or tab on the band that the pointer is over.
+    pub band_hover: Color32,
 }
 
 fn rgb(c: (u8, u8, u8)) -> Color32 {
@@ -303,6 +312,10 @@ impl Tokens {
         let faint = mix(faint0, acc, tint);
         let muted = ensure_contrast(if dark { rgb((165, 157, 187)) } else { rgb((95, 88, 117)) }, panel, 4.5, dark);
         let accent = ensure_contrast(acc, panel, 3.0, dark);
+        // The band: the accent, taken darker until white writing reads on it (7, so it still reads under the hover tint), and in the
+        // dark modes kept low, so the band is a deep colour and not a bright one.
+        let band_base = if dark { mix(panel0, acc, 0.45) } else { acc };
+        let band = ensure_contrast(band_base, Color32::WHITE, 7.0, false);
         let link = ensure_contrast(acc, editor, 4.5, dark);
         let group = ensure_contrast(if dark { rgb((0xe0, 0xa2, 0x3c)) } else { rgb((0xb8, 0x76, 0x0f)) }, panel, 3.0, dark);
         let section = ensure_contrast(if dark { rgb((0x3f, 0xb8, 0xa8)) } else { rgb((0x1f, 0x8f, 0x80)) }, panel, 3.0, dark);
@@ -328,6 +341,25 @@ impl Tokens {
             rule_line: faint_line(editor, acc, 1.25),
             rule_line_strong: faint_line(editor, acc, 1.8),
             table_line: faint_line(editor, text, 2.2),
+            band,
+            band_text: Color32::WHITE,
+            band_dim: mix(band, Color32::WHITE, 0.6),
+            band_hover: mix(band, Color32::WHITE, 0.18),
+        }
+    }
+
+    /// The same colours seen from the band: its own surface and its own writing, so a control
+    /// drawn for the page's surfaces (the Quick Access Toolbar, the theme button) reads there.
+    pub fn on_band(&self) -> Tokens {
+        Tokens {
+            panel: self.band,
+            text: self.band_text,
+            accent: self.band_text,
+            muted: self.band_dim,
+            strong: self.band_text,
+            row_hover: self.band_hover,
+            row_selected: self.band_hover,
+            ..*self
         }
     }
 }
@@ -382,6 +414,14 @@ mod tests {
             assert!(contrast(t.text, t.row_selected) >= 7.0, "{name}: text on the selected row {:.2}", contrast(t.text, t.row_selected));
             assert!(contrast(t.strong, t.row_selected) >= 7.0, "{name}: strong text on the selected row");
             assert!(contrast(t.text, t.row_hover) >= 7.0, "{name}: text on a hovered row");
+            // The band across the top: white writing on it, and on it under the pointer.
+            assert!(contrast(t.band_text, t.band) >= 4.5, "{name}: writing on the band {:.2}", contrast(t.band_text, t.band));
+            assert!(
+                contrast(t.band_text, t.band_hover) >= 4.5,
+                "{name}: writing on a hovered band button {:.2}",
+                contrast(t.band_text, t.band_hover)
+            );
+            assert!(contrast(t.band_dim, t.band) >= 2.0, "{name}: greyed writing on the band {:.2}", contrast(t.band_dim, t.band));
             // Rule and grid lines on a page: visible against the page, but not loud, and
             // they must not hurt the text that sits on top of them.
             for (what, c, min) in [("rule line", t.rule_line, 1.25), ("strong rule line", t.rule_line_strong, 1.8)] {

@@ -103,7 +103,13 @@ fn main() -> eframe::Result {
             eprintln!("NoteCraft: cannot remember that the welcome notebook was offered: {e}");
         }
     }
-    let mut viewport = egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_min_inner_size([820.0, 520.0]).with_title("NoteCraft");
+    // NoteCraft draws its own title bar unless the settings say the system's is wanted.
+    let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([820.0, 520.0])
+        .with_title("NoteCraft")
+        .with_decorations(!own_frame);
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -119,6 +125,8 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = NoteCraftApp::new(session);
+            // With no frame of the system's own, the band across the top is the title bar.
+            app.set_frameless(own_frame);
             if let Some(port) = control_port {
                 match notecraft_ui_egui::control::start(port, &key_dir, cc.egui_ctx.clone()) {
                     Ok((server, rx)) => {
