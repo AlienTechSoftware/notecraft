@@ -1975,6 +1975,70 @@ fn a_file_in_the_pages_folder_can_be_deleted_from_the_page() {
     assert!(state["status"]["text"].as_str().unwrap_or_default().contains("gone"), "{}", state["status"]);
 }
 
+/// The folder decides what ink a page has: a drawing beside the page file is named by the
+/// page even when the line that named it was lost, and a line naming ink that has gone is
+/// dropped.
+#[test]
+fn a_page_names_the_ink_in_its_folder_and_no_ink_that_is_gone() {
+    let (_t, app, s) = sample_app("ui-ink-names");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Drawn", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "words only
+"}}),
+    )
+    .expect("save");
+
+    // A drawing in the folder that the page says nothing about: the state a deleted box
+    // used to leave behind.
+    let folder = s.md_page.parent().expect("section").join("drawn");
+    let ink = "<?xml version=\"1.0\"?>
+<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"https://notecraft.org/ns/ink\" width=\"820\" height=\"1100\" viewBox=\"0 0 820 1100\">
+<title>Ink</title>
+<path nc:tool=\"pen\" nc:width=\"3\" nc:dabs=\"10,10,0.5 40,40,0.5\" d=\"M10 10 L40 40 Z\" fill=\"#202020\"/>
+</svg>
+";
+    std::fs::write(folder.join("ink.svg"), ink).expect("a drawing beside the page");
+
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("![Ink](ink.svg)"),
+        "the page adopted the drawing in its folder:
+{body}"
+    );
+    h.state_mut().save();
+    let text = std::fs::read_to_string(folder.join("index.md")).expect("read the page file");
+    assert!(
+        text.contains("![Ink](ink.svg)"),
+        "and the file on disk says so too:
+{text}"
+    );
+
+    // Now the drawing goes, with the page still naming it.
+    std::fs::remove_file(folder.join("ink.svg")).expect("remove the drawing");
+    ask(&mut h, "ui.open", json!({"path": ideas})).ok();
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        !body.contains("ink.svg"),
+        "the page stopped naming ink that is not there:
+{body}"
+    );
+}
+
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

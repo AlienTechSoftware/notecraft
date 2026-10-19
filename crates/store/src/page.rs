@@ -156,6 +156,40 @@ fn clear_old_boxes(dir: &Path) -> Result<()> {
     if out == text { Ok(()) } else { write_atomic(&file, &out) }
 }
 
+/// The ink files in a page's folder, in name order.
+///
+/// A file is ink because its SVG carries NoteCraft's ink namespace, not because of what
+/// it is called: an ordinary picture dropped in the folder is never mistaken for one, and
+/// neither is the plain copy that Save Picture writes. Only the first few kilobytes of
+/// each file are read.
+pub fn ink_files(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut found: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.to_ascii_lowercase().ends_with(".svg") || !entry.path().is_file() {
+            continue;
+        }
+        let Ok(head) = read_head(&entry.path(), 4096) else { continue };
+        if notecraft_ink::svg::is_ink(&head) {
+            found.push(name);
+        }
+    }
+    found.sort();
+    found
+}
+
+/// The first `want` bytes of a file, as text. Used to look at a head without reading a
+/// drawing that may be megabytes.
+fn read_head(path: &Path, want: usize) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut buffer = vec![0u8; want];
+    let read = file.read(&mut buffer)?;
+    buffer.truncate(read);
+    Ok(String::from_utf8_lossy(&buffer).into_owned())
+}
+
 const COLUMNS_KEY: &str = "columns";
 const COLUMNS_META: &str = "notecraft:columns";
 
@@ -224,6 +258,26 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// A file is ink because of the namespace inside it, not because of its name.
+    #[test]
+    fn the_ink_files_of_a_page_are_the_ones_with_our_namespace() {
+        let t = crate::testing::TempDir::new("ink-files");
+        let s = crate::settings::Settings::at(t.path().join("s.toml"));
+        let nb = crate::ops::create_notebook(&t.path().join("nb"), "NB", None, &s).expect("nb");
+        let page = crate::ops::create_node(&nb, "P", notecraft_model::NodeKind::Page, None, &s).expect("page");
+
+        let ours = "<?xml version=\"1.0\"?>
+<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"https://notecraft.org/ns/ink\"><title>Ink</title></svg>";
+        fs::write(page.join("ink.svg"), ours).expect("write");
+        fs::write(page.join("ink-2.svg"), ours).expect("write");
+        // A picture of someone's own, and the plain copy the Draw tab writes: neither is ink.
+        fs::write(page.join("plan.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>").expect("write");
+        fs::write(page.join("ink-picture.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0\"/></svg>").expect("write");
+        fs::write(page.join("notes.txt"), "words").expect("write");
+
+        assert_eq!(ink_files(&page), vec!["ink-2.svg".to_string(), "ink.svg".to_string()], "named in order, and only ours");
+    }
+
     use super::*;
     use crate::ops;
     use crate::settings::Settings;

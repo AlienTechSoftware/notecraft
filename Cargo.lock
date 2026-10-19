@@ -2216,6 +2216,7 @@ name = "notecraft-store"
 version = "0.0.1"
 dependencies = [
  "notecraft-formats",
+ "notecraft-ink",
  "notecraft-model",
 ]
 

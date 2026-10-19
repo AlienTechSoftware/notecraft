@@ -13,3 +13,5 @@ workspace = true
 [dependencies]
 notecraft-model = { workspace = true }
 notecraft-formats = { workspace = true }
+# Only to tell an ink file from an ordinary picture by its namespace.
+notecraft-ink = { workspace = true }

@@ -46,6 +46,21 @@ pub fn is_page_ink(src: &str) -> bool {
     src.trim() == FILE
 }
 
+/// Whether an image line in the page is one that names ink.
+///
+/// Said of a line whose file may be gone, so the file itself cannot be asked: a picture
+/// beside the page file (not in `assets/`), an SVG, with `Ink` for its words. That is the
+/// line NoteCraft writes, and no line a person would write by hand for a picture of
+/// their own, which lives in `assets/` and says what it is a picture of.
+pub fn is_ink_line(src: &str, alt: &str) -> bool {
+    let src = src.trim();
+    !src.contains('/')
+        && !src.contains('\\')
+        && !src.contains("://")
+        && src.to_ascii_lowercase().ends_with(".svg")
+        && alt.trim().eq_ignore_ascii_case("Ink")
+}
+
 /// An earlier version of NoteCraft put a drawing into the page as a picture, pointing at
 /// `assets/drawing-1.svg`. Nothing draws those now, so such a page showed a broken picture
 /// where its drawing had been. This says whether an image block is one of them.

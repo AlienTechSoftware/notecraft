@@ -85,6 +85,9 @@ struct Editor {
     columns: notecraft_model::tablecols::Widths,
     /// What the page looked like before each change, so a change can be taken back.
     history: crate::history::History,
+    /// The ink files in the page's folder. The folder is what decides: the page's own
+    /// text is kept in step with this, never the other way round.
+    ink_files: Vec<String>,
     /// Where the page's area starts on screen, reported so a script can find a box.
     origin: egui::Pos2,
     /// Whether the boxes are written into the page's text. A page nobody arranged stays plain
@@ -654,6 +657,7 @@ impl NoteCraftApp {
                 boxes,
                 arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
+                ink_files: notecraft_store::page::ink_files(dir),
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
             });
@@ -1489,20 +1493,45 @@ impl NoteCraftApp {
     /// the page itself was covered in handwriting, and another program opening the folder
     /// would never have known the drawing was there.
     fn sync_ink_reference(&mut self) {
-        use notecraft_formats::markdown::Block;
-        let has_ink = self.pad.as_ref().is_some_and(|p| !p.is_empty());
         let Some(ed) = self.editor.as_mut() else { return };
-        let named = ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if crate::inkpad::is_page_ink(src)));
-        if has_ink == named {
-            return;
+        // The folder is asked again: the pen has just written or deleted a file.
+        ed.ink_files = notecraft_store::page::ink_files(&ed.dir);
+        if Self::name_ink(ed) {
+            Self::mark_dirty_from_blocks(ed);
         }
-        if has_ink {
-            ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: crate::inkpad::FILE.to_string() });
-        } else {
-            ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_page_ink(src)));
+    }
+
+    /// The page names every ink file in its folder, and names no ink file that is gone.
+    ///
+    /// The folder decides. A drawing is a file beside the page file; the line in the page
+    /// that names it is how the page's words and what is drawn on it agree, and how
+    /// another program opening the page sees the handwriting. Before this, the line could
+    /// be lost - deleting the box that held it took it out - and nothing put it back until
+    /// the pen next moved, so a page could say nothing about ink that was still there.
+    ///
+    /// Returns true when the page's text had to be changed.
+    fn name_ink(ed: &mut Editor) -> bool {
+        use notecraft_formats::markdown::Block;
+        let files = ed.ink_files.clone();
+        let mut changed = false;
+        // A line that names an ink file that is no longer in the folder goes.
+        let before = ed.blocks.len();
+        ed.blocks.retain(|b| match b {
+            Block::Image { src, alt } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
+            _ => true,
+        });
+        changed |= ed.blocks.len() != before;
+        // An ink file the page does not name is adopted: it is drawn, so it is named.
+        for file in &files {
+            if !ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if src.trim() == file)) {
+                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone() });
+                changed = true;
+            }
         }
-        ed.rebuild_body();
-        Self::mark_dirty_from_blocks(ed);
+        if changed {
+            ed.rebuild_body();
+        }
+        changed
     }
 
     /// Writes the rack and which tool is in hand into the settings, so the next run opens
@@ -2698,6 +2727,12 @@ impl NoteCraftApp {
                 Self::mark_dirty(ed);
             } else if from_blocks {
                 Self::mark_dirty_from_blocks(ed);
+            }
+            // Before the step is remembered, so the page in the history is one that
+            // names its ink: a box deleted with the ink line in it is repaired at once
+            // rather than at the next open.
+            if (changed || from_blocks) && Self::name_ink(ed) {
+                from_blocks = true;
             }
             if changed || from_blocks || boxes_moved {
                 Self::remember_step(ed);

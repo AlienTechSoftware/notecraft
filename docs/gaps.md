@@ -113,7 +113,15 @@ it is fixed and tested, not when it is promised.
   rather than losing a word.
 - **Pen and drawing.** The pen writes anywhere on the page, as OneNote's does. The ink of a
   page is `ink.svg` in the page's own folder; a page never drawn on has no such file, and a
-  page rubbed clean loses it. It is SVG that also carries the pen's own readings in our
+  page rubbed clean loses it. The folder is what decides: the page's own text names every
+  ink file beside it and names none that is gone, checked when the page opens and after
+  every change to it, so a drawing cannot be left unnamed by deleting the line that named
+  it. An SVG counts as ink because it carries NoteCraft's namespace, not because of its
+  name, so a picture of your own in the page's folder is never adopted as a drawing. The folder is what decides: the page's own text names every
+  ink file beside it and names none that is gone, checked when the page opens and after
+  every change to it, so a drawing cannot be left unnamed by deleting the line that named
+  it. An SVG counts as ink because it carries NoteCraft's namespace, not because of its
+  name, so a picture of your own in the page's folder is never adopted as a drawing. It is SVG that also carries the pen's own readings in our
   namespace, so NoteCraft can change a stroke later while anything else sees the picture.
   Built: the Draw tab; five nibs (pen, pencil, fountain pen, brush pen, highlighter); a
   rack the owner arranges, with Add, a right-click menu, a Modify Tool editor for colour
