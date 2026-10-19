@@ -49,10 +49,9 @@ it is fixed and tested, not when it is promised.
   be given a direction; a right-to-left line hangs from the right edge with its bullet, box
   and tag mark on that side; and a line that mixes the two directions is laid out by the
   Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. What is missing: the
-  window is not mirrored (the tree stays on the left whatever the page says), a selection
-  cannot be dragged inside a right-to-left line yet (the caret moves, the selection does not),
-  and the isolates the Run buttons write are kept in the file but not yet honoured when the
-  line is drawn.
+  window is not mirrored (the tree stays on the left whatever the page says), and the
+  isolates the Run buttons write are kept in the file but not yet honoured when the line is
+  drawn. Selecting inside a right-to-left line does work; see the caret entry below.
 - **Each word of a right-to-left line is placed by NoteCraft.** egui lays the letters of an
   Arabic or Hebrew word out the right way, but puts the next word to the right of the one
   before it, so a line of them came out with its words backwards; the owner read one on
