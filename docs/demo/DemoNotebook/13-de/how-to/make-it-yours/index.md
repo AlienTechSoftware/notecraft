@@ -27,7 +27,7 @@ Farben, sichtbar auf dem Symbol und am Rand der Zeile. Jede Gruppe in diesem Not
 
 | Schaltfläche neben der Seite | Was sie tut |
 |---|---|
-| `< >` | Zeigt den Seitenquelltext neben der Seite |
+| `< >` | Öffnet die Dateien der Seite in der Codeansicht |
 | Lupe | Alle Seiten durchsuchen |
 | Pfeile | Ganze Seite: Die Notizbücher treten zur Seite, bis Sie erneut drücken |
 
@@ -45,6 +45,6 @@ All das sind ein paar Zeilen in einer kleinen Einstellungsdatei außerhalb Ihrer
 also trägt ein Notizbuch nie die Fenstereinstellungen einer Person in den Synchronisierungsordner
 einer anderen.
 
-Weiter: [Von rechts nach links](../right-to-left/).
+Weiter: [In eine Seite hineinschauen](../look-inside-a-page/).
 
 *Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.*

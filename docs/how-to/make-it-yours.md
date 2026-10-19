@@ -25,7 +25,7 @@ Beside the page, three buttons:
 
 | Button | What it does |
 |---|---|
-| **`< >`** | Shows the page source beside the page, and adds a **Source** tab to the ribbon |
+| **`< >`** | Opens the page's files in the code view, and adds a **Source** tab to the ribbon |
 | Magnifier | Puts the caret in the search box |
 | Arrows | Full page view: the notebooks step aside until you press it again |
 

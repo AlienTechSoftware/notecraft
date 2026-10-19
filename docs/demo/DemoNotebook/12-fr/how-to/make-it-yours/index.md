@@ -27,7 +27,7 @@ visibles sur l'icône et sur le bord de la ligne. Chaque groupe de ce carnet en 
 
 | Bouton à côté de la page | Ce qu'il fait |
 |---|---|
-| `< >` | Affiche la source de la page à côté |
+| `< >` | Ouvre les fichiers de la page dans la vue code |
 | Loupe | Chercher dans toutes les pages |
 | Flèches | Pleine page : les carnets s'écartent jusqu'à ce que vous appuyiez de nouveau |
 
@@ -44,6 +44,6 @@ Tout cela tient en quelques lignes d'un petit fichier de réglages hors de vos c
 qu'un carnet n'emporte jamais les réglages de fenêtre d'une personne dans le dossier synchronisé
 d'une autre.
 
-Suite : [De droite à gauche](../right-to-left/).
+Suite : [Regarder à l'intérieur d'une page](../look-inside-a-page/).
 
 *Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.*

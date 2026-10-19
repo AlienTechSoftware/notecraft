@@ -93,10 +93,10 @@ way it will be read: headings in heading type, bold, links, quotes and code in t
 styles, and the Markdown marks themselves dimmed so the words come first. It is a pure
 function from text to styled ranges, so it is tested without a window.
 
-The source is shown only when the user asks for it with the Code button, side by side with
-the page. An HTML page cannot be written on as text (its markup is tags, not marks in the
-words), so it is shown the way it reads until the block editor is built. See
-[`gaps.md`](gaps.md).
+The code view opens with the Code button and takes the page's place. It shows the page's folder:
+a list of its files and a viewer, with the page file's body as the one editable copy, so two
+editable copies of a page never exist at once. Closing it reads the text again and draws the
+page. See [`page-model.md`](page-model.md) and [`gaps.md`](gaps.md).
 
 ## Reading `.one` files
 

@@ -7,6 +7,7 @@ Short guides for getting work done. Each one is a page; none is longer than a sc
 | [Start a notebook](start-a-notebook.md) | The first notebook, sections, pages and sub-pages |
 | [Arrange a page in boxes](arrange-a-page.md) | Containers: moving and resizing them, and where the arrangement is kept |
 | [Write a page](write-a-page.md) | Writing on the page, headings, lists, links, equations, the page source |
+| [Look inside a page](look-inside-a-page.md) | The code view: every file a page owns, what each one shows, and what you can edit |
 | [Tag a line](tag-a-line.md) | To-do boxes and the other tags, and what they look like in the file |
 | [Write right to left](write-right-to-left.md) | Arabic and Hebrew: the three direction controls and where the setting is kept |
 | [Draw with a pen](draw-with-a-pen.md) | Ink: the pens, the eraser, pressure, and what the drawing file holds |

@@ -22,7 +22,7 @@ colores, visibles en el icono y en el borde de la fila. Cada grupo de este cuade
 
 | Botón junto a la página | Qué hace |
 |---|---|
-| `< >` | Muestra el código de la página al lado |
+| `< >` | Abre los archivos de la página en la vista de código |
 | Lupa | Buscar en todas las páginas |
 | Flechas | Página completa: los cuadernos se apartan hasta que vuelvas a pulsar |
 
@@ -39,6 +39,6 @@ Todo esto son unas pocas líneas en un pequeño archivo de ajustes fuera de tus 
 que un cuaderno nunca lleva los ajustes de ventana de una persona a la carpeta sincronizada de
 otra.
 
-Siguiente: [De derecha a izquierda](../right-to-left/).
+Siguiente: [Mirar dentro de una página](../look-inside-a-page/).
 
 *Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.*

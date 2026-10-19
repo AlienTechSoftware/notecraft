@@ -61,12 +61,19 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 <td width="50%" valign="top"><img src="docs/images/file-screen.png" alt="The File screen listing two notebooks with their coloured covers, the folder each one lives in, an Open folder button and a note that online notebooks are not built" width="100%"><p align="center"><sub><b>File.</b> Your notebooks and where they live on disk. Anything not built says so instead of hiding.</sub></p></td>
 <td width="50%" valign="top"><img src="docs/images/html-page.png" alt="An HTML page shown as it reads: a heading, bold and italic text, a link, a bulleted list, a to-do line, a table, a quote, an inline equation and a Mermaid diagram kept as source" width="100%"><p align="center"><sub><b>Both formats.</b> A page is HTML or CommonMark; the same editor, the same look, the file stays in its own format.</sub></p></td>
 </tr>
+<tr>
+<td colspan="2" valign="top"><img src="docs/images/page-source.png" alt="The page source view: a list of the page's files on the left, index.md and assets/koala.png, and on the right the page file with its head in grey, the id, title, order and dates, above its Markdown body" width="100%"><p align="center"><sub><b>Inside a page.</b> The files a page owns, and what is in each: the head in grey, the body below it.</sub></p></td>
+</tr>
 </table>
 
 ## Why NoteCraft
 
 - **Your notes are files.** A notebook is a folder. A page is `index.html` or `index.md` with its
   pictures beside it. Open them in any editor, grep them, put them in git, or delete the app.
+- **You can look inside.** A OneNote section is one binary file, and a text editor shows noise.
+  NoteCraft's page source view lists every file a page owns and shows what is in each, the page's
+  own text with its head, the drawing, the pictures, so you can check what your notes contain
+  without taking anyone's word for it. See [Look inside a page](docs/how-to/look-inside-a-page.md).
 - **Sync is your sync.** Put a notebook in the folder OneDrive, Dropbox, Syncthing or iCloud
   already watches. There is no NoteCraft server and no account.
 - **No depth limit.** Note taking apps usually cap sub-pages at a level or three, because their
@@ -88,7 +95,8 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 | **Structure** | Notebooks, section groups, sections and pages as folders; sub-pages to any depth; expand and collapse at every level; a new notebook starts with a section and a page, the way you expect |
 | **Writing** | Write straight on the page in its finished look: headings, bold, italic, links, quotes, lists. Enter splits the line at the caret, Tab indents a list item, Backspace joins lines |
 | **Two formats** | HTML (the default) and CommonMark + GFM, chosen per page, per section, per notebook or globally; the file keeps its own format when you edit it |
-| **Containers** | A page is a sheet of boxes, not one column: move a box by the bar on top, resize it by the right edge; the arrangement is kept in the page's own file |
+| **Containers** | A page is a sheet of boxes, not one column: move a box by the bar on top, resize it by the right edge; select one whole to cut, copy or delete it; each box is an element in the page's own text |
+| **Page source** | The `< >` button opens the page's folder: every file the page owns on the left, the one you pick on the right. The page file shows its head (id, title, dates) above its body, which you can edit; a drawing's SVG shows as text, pictures as pictures, and a file nothing on the page uses is marked |
 | **Right to left** | Arabic, Hebrew and the rest draw, with a direction for the page, the line or the run, kept in the text itself so it travels. Mixed lines are not reordered yet |
 | **Tags** | To Do, Important, Question, Remember, Definition, Highlight, Contact, Address, Phone, Web site, Idea, Critical: stored as plain text in the page, drawn as the marks you know |
 | **Equations** | A TeX subset parsed and drawn natively, inline and display |
@@ -96,7 +104,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 | **Colours** | Nine colours for notebooks, section groups and sections, saved in the folder |
 | **Themes** | 14 themes, light and dark in seven accents, with contrast guaranteed by a test; a sun or moon switcher |
 | **Finding things** | Search across every page of every notebook, with snippets |
-| **Ribbon** | Home, Insert and View, with a Source tab that appears with the page source; a File screen for whole notebooks |
+| **Ribbon** | Home, Insert and View, with a Source tab that appears with the page source view; a File screen for whole notebooks |
 | **Safety** | Autosave through a temporary file and a rename; a checker for the folder rules; every command tested against junk parameters |
 | **Agents** | An MCP server on stdin and stdout: the tree, search, reading and writing pages, making notebooks, running any command; with the window open it can also see what you see |
 | **Import** | A reader for `.one` section files, the ones the Office note taking app writes on Windows: the container, its objects and its pages. Writing them out as folders is being built |
