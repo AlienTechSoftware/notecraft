@@ -79,6 +79,8 @@ struct Editor {
     page_dir: Option<notecraft_model::Dir>,
     /// The boxes the page's blocks are arranged in, as the page's own file keeps them.
     boxes: Vec<notecraft_model::Container>,
+    /// How wide the columns of this page's tables are drawn, from the same place.
+    columns: notecraft_model::tablecols::Widths,
     /// Where the page's area starts on screen, reported so a script can find a box.
     origin: egui::Pos2,
 }
@@ -520,6 +522,7 @@ impl NoteCraftApp {
                 writable,
                 page_dir: page.dir,
                 boxes: notecraft_store::page::containers(dir).unwrap_or_default(),
+                columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 origin: egui::Pos2::ZERO,
             });
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
@@ -2230,7 +2233,9 @@ impl NoteCraftApp {
         let (mut toggle_source, mut toggle_full_page, mut focus_search) = (false, false, false);
         let mut from_blocks = false;
         let mut boxes_moved = false;
+        let mut cols_moved = false;
         let mut save_boxes: Option<(String, String)> = None;
+        let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
         let mut follow: Option<String> = None;
         // The drawing on this page is lent to the block that holds it, and written back
@@ -2312,6 +2317,7 @@ impl NoteCraftApp {
                             from_blocks: &mut bool,
                             toggle: &mut bool,
                             boxes_moved: &mut bool,
+                            cols_moved: &mut bool,
                             follow: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
@@ -2337,8 +2343,17 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
-                            let moved =
-                                crate::containers::show(ui, &mut ed.blocks, &mut ed.boxes, &mut ed.caret, &ed.dir, &tokens, page_dir, table_borders);
+                            let moved = crate::containers::show(
+                                ui,
+                                &mut ed.blocks,
+                                &mut ed.boxes,
+                                &mut ed.caret,
+                                &ed.dir,
+                                &tokens,
+                                page_dir,
+                                table_borders,
+                                &mut ed.columns,
+                            );
                             // The ink of a page sits over its words, anywhere on it, the
                             // way a pen on paper does. It goes on after them so a press
                             // with a pen in hand reaches the ink and not the caret.
@@ -2375,6 +2390,9 @@ impl NoteCraftApp {
                             }
                             if moved.boxes {
                                 *boxes_moved = true;
+                            }
+                            if moved.changed.columns {
+                                *cols_moved = true;
                             }
                             ed.origin = moved.origin;
                             if moved.changed.link.is_some() {
@@ -2430,7 +2448,7 @@ impl NoteCraftApp {
                             source_changed = true;
                         }
                     });
-                    page(&mut cols[1], ed, false, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut follow);
+                    page(&mut cols[1], ed, false, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow);
                 });
                 ed.body = left;
                 if source_changed {
@@ -2438,7 +2456,7 @@ impl NoteCraftApp {
                     cursor = source_cursor;
                 }
             } else {
-                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut follow);
+                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow);
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -2452,10 +2470,20 @@ impl NoteCraftApp {
                 let line = notecraft_model::container::write(&ed.boxes);
                 save_boxes = Some((path, line));
             }
+            // A column was dragged wider or narrower. Widths are layout, like the boxes,
+            // so they go into the page's own file beside them.
+            if cols_moved {
+                let path = path_str(&ed.dir);
+                let line = notecraft_model::tablecols::write(&ed.columns);
+                save_cols = Some((path, line));
+            }
         }
         self.cursor = cursor;
         if let Some((path, line)) = save_boxes {
             self.run("page.containers", &params(&[("path", &path), ("boxes", &line)]));
+        }
+        if let Some((path, line)) = save_cols {
+            self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
         }
         if toggle_source {
             self.set_show_source(!show_source);

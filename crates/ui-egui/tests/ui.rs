@@ -1791,6 +1791,56 @@ fn cells_dragged_across_are_picked_and_can_be_emptied() {
     assert!(!body.contains("three"), "the picked row went:\n{body}");
 }
 
+/// A table's column borders are handles: a drag moves one, and the page remembers.
+#[test]
+fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
+    let (_t, app, s) = sample_app("ui-column-drag");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Wide", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| A | B |
+|---|---|
+| one | two |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // The heading of the second column starts one column in, so the border between them
+    // is a known distance from the first heading's left edge.
+    let a = h.get_by_label("A").rect();
+    let b = h.get_by_label("B").rect();
+    let edge = b.min.x - 7.0;
+    let y = a.center().y;
+
+    ask(&mut h, "ui.press", json!({"x": edge, "y": y})).expect("take hold");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": edge + 60.0, "y": y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": edge + 60.0, "y": y})).expect("let go");
+    settle(&mut h);
+    review(&mut h, "table_columns");
+
+    let kept = ask(&mut h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("widths");
+    let kept = kept.as_str().unwrap_or_default().to_string();
+    assert!(kept.starts_with("0:2"), "the first column is wider and the page knows: {kept:?}");
+
+    // And the table is drawn to it: the second column starts further right than it did.
+    let now = h.get_by_label("B").rect();
+    assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

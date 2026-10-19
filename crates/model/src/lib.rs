@@ -11,6 +11,7 @@ pub mod id;
 pub mod kind;
 pub mod kv;
 pub mod names;
+pub mod tablecols;
 pub mod tag;
 pub mod text;
 pub mod time;

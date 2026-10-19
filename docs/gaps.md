@@ -106,11 +106,14 @@ it is fixed and tested, not when it is promised.
   rows or columns with a block picked takes all of them. A table is drawn with lines round
   its cells, which the tab's Hide Borders turns off and on; that choice is the app's, not
   each table's, because CommonMark has nowhere to keep it. A column is a fixed width and
-  stays that width when the box around it is resized, the way OneNote's does. The Insert
+  stays that width when the box around it is resized, the way OneNote's does; a border
+  dragged sideways changes the column to its left, and the page keeps the widths beside
+  the arrangement of its boxes (`notecraft:columns`), because neither CommonMark nor an
+  HTML table that must match it has anywhere to put them. The Insert
   tab's Table button opens OneNote's size picker, where the pointer runs over a grid and
   names the size it would make. Not built, and greyed where a OneNote user looks for them:
-  merging and splitting cells, shading, alignment, sorting; dragging a column border to
-  change its width; and the Insert Table dialog.
+  merging and splitting cells, shading, alignment, sorting; dragging a row border to change
+  its height; and the Insert Table dialog.
 - **A spreadsheet goes to GridCraft**, the open spreadsheet from the same workshop, where
   OneNote converts a table to Excel. The Table tab writes the table out as a CSV file
   beside the page and opens it; the Insert tab starts an empty one and links it from the

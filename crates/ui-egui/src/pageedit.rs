@@ -372,6 +372,8 @@ pub struct Changed {
     pub caret: bool,
     /// A link was clicked: its target as written in the page, for the window to follow.
     pub link: Option<String>,
+    /// A table column was dragged: the page's own widths need writing back.
+    pub columns: bool,
 }
 
 /// The text of a block as it is edited: the inline marks only.
@@ -406,10 +408,25 @@ pub fn click_below(blocks: &mut Vec<Block>, caret: &mut Option<Caret>) -> bool {
 /// size while the paper around it changes, so that is what this is.
 const COLUMN_W: f32 = 160.0;
 
-/// Room round the words inside a cell: half of it either side of each border line.
-const CELL_PAD: egui::Vec2 = egui::vec2(14.0, 7.0);
+/// Room round the words inside a cell, inside its border lines.
+const PAD_X: f32 = 7.0;
+const PAD_Y: f32 = 4.0;
 
-fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &Tokens, page: notecraft_model::Dir, borders: bool) -> Option<Action> {
+/// How near a border the pointer must be to take hold of it.
+const GRAB: f32 = 4.0;
+
+#[allow(clippy::too_many_arguments)]
+fn table(
+    ui: &mut Ui,
+    block: &Block,
+    i: usize,
+    caret: &mut Option<Caret>,
+    t: &Tokens,
+    page: notecraft_model::Dir,
+    borders: bool,
+    cols: &mut notecraft_model::tablecols::Widths,
+    changed: &mut Changed,
+) -> Option<Action> {
     let Block::Table { head, rows } = block else { return None };
     let mut action = None;
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
@@ -443,64 +460,84 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
         }
     }
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1);
-    let width = COLUMN_W - CELL_PAD.x;
+    // What each column is wide: what this page remembers of this table, or the usual
+    // width for a column nobody has dragged.
+    let widths: Vec<f32> = (0..columns)
+        .map(|c| {
+            cols.of(i)
+                .and_then(|w| w.get(c).copied())
+                .unwrap_or(COLUMN_W)
+                .clamp(notecraft_model::tablecols::MIN_WIDTH, notecraft_model::tablecols::MAX_WIDTH)
+        })
+        .collect();
 
-    // The top of each row and the left of the first column, which is all the geometry the
-    // lines and the hit testing need: every column is the same width on purpose.
+    // Laid out by hand rather than with a grid, because a grid gives every column the
+    // same width and these are each their own. Rows butt up against each other, and the
+    // room round the words is inside the cell, so the lines can be drawn on the joins.
     let mut tops = Vec::with_capacity(rows.len() + 1);
-    let mut left = ui.cursor().min.x;
-
-    let grid = egui::Grid::new(("table", i)).striped(!borders).spacing(CELL_PAD).min_col_width(width).max_col_width(width).show(ui, |ui| {
-        let last = rows.len();
-        for r in 0..=last {
-            for c in 0..columns {
-                let cell = (r, c);
-                let text = cell_text(block, cell).unwrap_or_default();
-                if c == 0 {
-                    tops.push(ui.cursor().min.y);
-                    left = ui.cursor().min.x;
+    let left = ui.cursor().min.x;
+    let bottom;
+    {
+        let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(ui.available_rect_before_wrap()).layout(*ui.layout()));
+        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        for r in 0..=rows.len() {
+            tops.push(ui.cursor().min.y);
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                for (c, &w) in widths.iter().enumerate() {
+                    let cell = (r, c);
+                    let text = cell_text(block, cell).unwrap_or_default();
+                    ui.allocate_ui_with_layout(vec2(w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                        ui.set_min_width(w);
+                        ui.set_max_width(w);
+                        let inner = (w - 2.0 * PAD_X).max(8.0);
+                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(PAD_X as i8, PAD_Y as i8)).show(ui, |ui| {
+                            ui.set_min_width(inner);
+                            ui.set_max_width(inner);
+                            if here == Some(cell) && picked.is_none() {
+                                let Some(caret) = caret.as_mut() else { return };
+                                let id = ui.make_persistent_id(("table-cell", i, r, c));
+                                let out = egui::TextEdit::singleline(&mut caret.text)
+                                    .id(id)
+                                    .frame(egui::Frame::NONE)
+                                    .desired_width(inner)
+                                    .font(egui::FontId::proportional(14.5))
+                                    .show(ui);
+                                if caret.focus {
+                                    out.response.request_focus();
+                                    caret.focus = false;
+                                }
+                                if out.response.changed() {
+                                    action = Some(Action::SetCell(i, cell, caret.text.clone()));
+                                }
+                            } else {
+                                let strong = r == 0;
+                                let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
+                                let spans = notecraft_formats::markdown::parse_inline(&text);
+                                let job = preview::job(ui, &spans, 14.5, colour, t, page);
+                                let resp = ui.add(egui::Label::new(job).sense(Sense::click()).selectable(false).wrap());
+                                if resp.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                                }
+                                if resp.clicked() {
+                                    action = Some(Action::EnterCell(i, cell));
+                                }
+                            }
+                        });
+                    });
                 }
-                if here == Some(cell) && picked.is_none() {
-                    let Some(caret) = caret.as_mut() else { continue };
-                    let id = ui.make_persistent_id(("table-cell", i, r, c));
-                    let out = egui::TextEdit::singleline(&mut caret.text)
-                        .id(id)
-                        .frame(egui::Frame::NONE)
-                        .desired_width(width)
-                        .font(egui::FontId::proportional(14.5))
-                        .show(ui);
-                    if caret.focus {
-                        out.response.request_focus();
-                        caret.focus = false;
-                    }
-                    if out.response.changed() {
-                        action = Some(Action::SetCell(i, cell, caret.text.clone()));
-                    }
-                } else {
-                    let strong = r == 0;
-                    let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
-                    let spans = notecraft_formats::markdown::parse_inline(&text);
-                    let job = preview::job(ui, &spans, 14.5, colour, t, page);
-                    let resp = ui.add(egui::Label::new(job).sense(Sense::click()).selectable(false).wrap());
-                    if resp.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
-                    }
-                    if resp.clicked() {
-                        action = Some(Action::EnterCell(i, cell));
-                    }
-                }
-            }
-            ui.end_row();
+            });
         }
-    });
+        bottom = ui.cursor().min.y;
+        let used = egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + widths.iter().sum::<f32>(), bottom));
+        ui.advance_cursor_after_rect(used);
+    }
+    ui.advance_cursor_after_rect(egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + widths.iter().sum::<f32>(), bottom)));
 
-    // The lines of the grid, worked out from where the rows landed. Every column is
-    // `COLUMN_W` wide, so only the first column's left edge is needed; the rows are
-    // however tall their words made them.
-    let bottom = grid.response.rect.max.y;
-    let edge_x: Vec<f32> = (0..=columns).map(|c| left - CELL_PAD.x / 2.0 + c as f32 * COLUMN_W).collect();
-    let mut edge_y: Vec<f32> = tops.iter().map(|y| y - CELL_PAD.y / 2.0).collect();
-    edge_y.push(bottom + CELL_PAD.y / 2.0);
+    // The lines of the table, which are also where a cell begins and ends.
+    let edge_x: Vec<f32> = (0..=columns).map(|c| left + widths.iter().take(c).sum::<f32>()).collect();
+    let mut edge_y: Vec<f32> = tops.clone();
+    edge_y.push(bottom);
     let cell_rect = |r: usize, c: usize| match (edge_x.get(c), edge_x.get(c + 1), edge_y.get(r), edge_y.get(r + 1)) {
         (Some(x0), Some(x1), Some(y0), Some(y1)) => Some(egui::Rect::from_min_max(egui::pos2(*x0, *y0), egui::pos2(*x1, *y1))),
         _ => None,
@@ -520,9 +557,11 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
     // started in is remembered across frames, because the pointer may be over any cell by
     // the time it is let go, and a press on its own is still only a click.
     let anchor_id = ui.make_persistent_id(("table-drag", i));
+    let on_border =
+        ui.ctx().pointer_latest_pos().is_some_and(|p| edge_x.iter().skip(1).any(|x| (p.x - x).abs() <= GRAB) && p.y >= edge_y[0] && p.y <= bottom);
     let (pressed, down, at) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos()));
     let over = at.and_then(|p| where_.iter().find(|(_, r)| r.contains(p)).map(|(c, _)| *c));
-    if pressed {
+    if pressed && !on_border {
         ui.memory_mut(|m| match over {
             Some(cell) => {
                 m.data.insert_temp(anchor_id, cell);
@@ -572,6 +611,34 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
         for y in &edge_y {
             paint.hline(x0..=x1, *y, line);
         }
+    }
+
+    // The borders are handles as well as lines: a drag on one changes the width of the
+    // column to its left, the way a column is resized in OneNote or Word. Added after
+    // the cells so the few pixels round a line answer to the drag and not to the words.
+    let mut on_handle = false;
+    for c in 0..columns {
+        let Some(&x) = edge_x.get(c + 1) else { continue };
+        let handle = egui::Rect::from_min_max(egui::pos2(x - GRAB, edge_y[0]), egui::pos2(x + GRAB, bottom));
+        let grip = ui.interact(handle, ui.make_persistent_id(("table-column", i, c)), Sense::drag());
+        if grip.hovered() || grip.dragged() {
+            on_handle = true;
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        if grip.dragged() {
+            let want = widths[c] + grip.drag_delta().x;
+            cols.set(i, c, want, &widths);
+            changed.columns = true;
+        }
+        // While a column is being dragged its line is drawn in the accent colour, so it
+        // is plain which one is moving.
+        if grip.dragged() {
+            ui.painter().vline(x, edge_y[0]..=bottom, egui::Stroke::new(1.5, t.accent));
+        }
+    }
+    if on_handle {
+        // A press on a border is a resize, not the start of a block of cells.
+        ui.memory_mut(|m| m.data.remove_temp::<(usize, usize)>(anchor_id));
     }
 
     ui.add_space(6.0);
@@ -794,9 +861,10 @@ pub fn show(
     t: &Tokens,
     page: notecraft_model::Dir,
     borders: bool,
+    cols: &mut notecraft_model::tablecols::Widths,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -819,6 +887,7 @@ pub fn show_blocks(
     page: notecraft_model::Dir,
     range: std::ops::Range<usize>,
     borders: bool,
+    cols: &mut notecraft_model::tablecols::Widths,
 ) -> Changed {
     let mut changed = Changed::default();
     let mut action: Option<Action> = None;
@@ -851,7 +920,7 @@ pub fn show_blocks(
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
         if matches!(block, Block::Table { .. }) {
-            if let Some(what) = table(ui, &block, i, caret, t, page, borders) {
+            if let Some(what) = table(ui, &block, i, caret, t, page, borders, cols, &mut changed) {
                 action = Some(what);
             }
             frame_block(ui, top, editing, t);

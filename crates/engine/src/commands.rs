@@ -169,6 +169,19 @@ fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(notecraft_model::container::write(&boxes)))
 }
 
+fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let Some(want) = p.get("widths") else {
+        return Ok(Output::Text(notecraft_model::tablecols::write(&page::table_columns(&path)?)));
+    };
+    let widths = notecraft_model::tablecols::parse(want);
+    if widths.is_empty() && !want.trim().is_empty() {
+        return Err(EngineError::BadParam("widths is block:w,w,w per table, separated by semicolons".into()));
+    }
+    page::set_table_columns(&path, &widths)?;
+    Ok(Output::Text(notecraft_model::tablecols::write(&widths)))
+}
+
 /// Opens a notebook that lives outside the notebooks folder, keeping the open ones.
 fn notebook_open(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = std::path::PathBuf::from(req(p, "path")?);
@@ -281,6 +294,14 @@ dir (optional): rtl, ltr, or auto to let every line decide; without it the curre
 boxes (optional): x,y,width,blocks per container, separated by semicolons; empty puts the page back in one column. Without it, the current arrangement is reported",
         changes_tree: false,
         run: page_containers,
+    },
+    CommandSpec {
+        id: "page.columns",
+        label: "How wide the columns of a page's tables are",
+        params: "path (required): the page
+widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported",
+        changes_tree: false,
+        run: page_columns,
     },
     CommandSpec {
         id: "page.attach",

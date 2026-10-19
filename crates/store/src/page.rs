@@ -3,7 +3,7 @@
 use crate::error::{Result, StoreError};
 use crate::tree::{page_file, read_node};
 use notecraft_formats::{frontmatter, html};
-use notecraft_model::{Container, Dir, PageFormat, container, kv, time::iso_now};
+use notecraft_model::{Container, Dir, PageFormat, container, kv, tablecols, time::iso_now};
 use std::fs;
 use std::path::Path;
 
@@ -108,6 +108,38 @@ pub fn set_containers(dir: &Path, boxes: &[Container]) -> Result<()> {
             let (front, rest) = frontmatter::split_front(&text);
             let front =
                 if boxes.is_empty() { frontmatter::remove_value(&front, BOXES_KEY) } else { frontmatter::set_value(&front, BOXES_KEY, &line) };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
+const COLUMNS_KEY: &str = "columns";
+const COLUMNS_META: &str = "notecraft:columns";
+
+/// The column widths the page's tables were given. Empty means every table is drawn at
+/// the usual width, which is what a page says until a column is dragged.
+pub fn table_columns(dir: &Path) -> Result<tablecols::Widths> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let raw = match format {
+        PageFormat::Html => html::meta(&text, COLUMNS_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, COLUMNS_KEY),
+    };
+    Ok(raw.map(|r| tablecols::parse(&r)).unwrap_or_default())
+}
+
+/// Writes them into the page's own file, beside the arrangement of its boxes.
+pub fn set_table_columns(dir: &Path, widths: &tablecols::Widths) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let line = tablecols::write(widths);
+    let out = match format {
+        PageFormat::Html => html::set_meta(&text, COLUMNS_META, &line),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front =
+                if widths.is_empty() { frontmatter::remove_value(&front, COLUMNS_KEY) } else { frontmatter::set_value(&front, COLUMNS_KEY, &line) };
             format!("{front}{rest}")
         }
     };
