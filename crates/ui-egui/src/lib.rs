@@ -14,6 +14,7 @@ pub mod bidi;
 pub mod clipboard;
 pub mod containers;
 pub mod control;
+pub mod floating;
 pub mod fonts;
 pub mod icons;
 pub mod inkpad;

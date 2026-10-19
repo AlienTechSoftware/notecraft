@@ -15,8 +15,10 @@
 //! item on its right-click menu) takes the box away together with the blocks it holds. Cut and
 //! Copy put those blocks on the clipboard as Markdown.
 
+use crate::floating::{self, Glyph};
 use crate::pageedit::{self, Caret, Changed};
 use crate::ribbon::Act;
+use crate::ribbon_icons::Mark;
 use crate::theme::Tokens;
 use egui::{Id, Key, Pos2, Rect, Sense, Ui, pos2, vec2};
 use notecraft_formats::markdown::Block;
@@ -124,7 +126,7 @@ pub fn show(
     let right_click = ui.input(|i| i.pointer.secondary_clicked());
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
-    let words_in = ui.data(|d| d.get_temp::<usize>(words_id()));
+    let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
 
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
@@ -163,7 +165,17 @@ pub fn show(
         // A click on the handle selects the container. A right click anywhere in it does too,
         // unless the caret is in it with words selected: then the right click belongs to
         // those words, and the page's menu cuts and copies them.
-        let words_selected = words_in == Some(i);
+        let words_selected = words_in.is_some_and(|w| w.0 == i);
+        // A right click on selected words: the text box is about to forget the selection, so
+        // ask for it back. The page's own menu opens, and its Cut, Copy and the toolbar's Bold
+        // find the words where they were.
+        if right_click
+            && words_selected
+            && pointer.is_some_and(|p| frame.contains(p))
+            && let Some((_, block_at, primary, secondary)) = words_in
+        {
+            ui.data_mut(|d| d.insert_temp(pageedit::restore_selection_id(), (block_at, primary, secondary)));
+        }
         let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected;
         if drag.clicked() || right_here {
             sel = Some(i);
@@ -226,26 +238,27 @@ pub fn show(
             .order(egui::Order::Foreground)
             .fixed_pos(at)
             .show(ui.ctx(), |menu| {
-                egui::Frame::popup(menu.style()).show(menu, |menu| {
-                    menu.set_min_width(150.0);
-                    if menu.button("Cut").clicked() {
+                egui::Frame::popup(menu.style()).inner_margin(egui::Margin::same(4)).show(menu, |menu| {
+                    menu.set_width(floating::MENU_W);
+                    menu.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Cut)), "Cut", t).clicked() {
                         copy = true;
                         delete_at = Some(i);
                         picked = true;
                     }
-                    if menu.button("Copy").clicked() {
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Copy)), "Copy", t).clicked() {
                         copy = true;
                         picked = true;
                     }
-                    menu.separator();
-                    if menu.button("Delete").clicked() {
+                    floating::menu_separator(menu, t);
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
                         delete_at = Some(i);
                         picked = true;
                     }
                     // The page's own entries stay reachable from here: a right click on a
                     // box's words used to open the page's menu, and it still offers all of it.
-                    menu.separator();
-                    picked |= crate::pagemenu::items(menu, &mut out.acts, false);
+                    floating::menu_separator(menu, t);
+                    picked |= crate::pagemenu::items(menu, &mut out.acts, false, t);
                 });
             })
             .response;
@@ -301,13 +314,16 @@ pub fn show(
     // Remember where words are selected, but only while no button is down: a press moves the
     // selection, and what is wanted is how it stood before.
     if !ui.input(|i| i.pointer.any_down()) {
-        let words = caret.as_ref().filter(|c| c.selection.0 != c.selection.1).and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+        let words = caret
+            .as_ref()
+            .filter(|c| c.selection.0 != c.selection.1)
+            .and_then(|c| container::place(boxes, c.block).map(|(i, _)| (i, c.block, c.selection.0, c.selection.1)));
         ui.data_mut(|d| match words {
-            Some(i) => {
-                d.insert_temp(words_id(), i);
+            Some(w) => {
+                d.insert_temp(words_id(), w);
             }
             None => {
-                d.remove::<usize>(words_id());
+                d.remove::<(usize, usize, usize, usize)>(words_id());
             }
         });
     }

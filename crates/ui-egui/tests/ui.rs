@@ -2128,3 +2128,97 @@ fn deleting_a_box_with_a_picture_in_it_removes_the_picture_from_the_page() {
     assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(2), "only the first box's two blocks are left of {blocks}: {v}");
     assert!(!file(&s).contains("koala.png"), "the saved page no longer names the picture");
 }
+
+/// The first block's whole line selected, then a right click on it: the state the text menu and
+/// its toolbar are meant for.
+fn right_click_on_selected_words(label: &str) -> (TempDir, Harness<'static, NoteCraftApp>) {
+    let (t, mut h, _, (ox, oy)) = two_boxes(label);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("Home");
+    ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select to the end");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    (t, h)
+}
+
+/// A right click on selected words keeps them selected and floats the mini toolbar over the menu.
+#[test]
+fn right_click_on_selected_words_keeps_them_selected_and_shows_the_mini_toolbar() {
+    let (_t, mut h) = right_click_on_selected_words("ui-minibar-shown");
+    let v = look_at(&mut h);
+    let (at, anchor) = (v.pointer("/page/caret/at").and_then(Value::as_u64), v.pointer("/page/caret/anchor").and_then(Value::as_u64));
+    assert!(at.is_some() && at != anchor, "the words are still selected after the right click: {at:?} {anchor:?}");
+    // The Home tab has a Bold, an Italic and the rest of them; the toolbar is drawn over them.
+    for name in ["Bold", "Italic", "Strikethrough", "Bullets", "Numbering", "Decrease indent", "Increase indent"] {
+        assert!(h.query_all_by_label(name).count() >= 2, "{name} is on the ribbon and on the floating toolbar");
+    }
+    for name in ["To Do", "Important", "Quote", "Clear Formatting"] {
+        assert!(h.query_all_by_label(name).count() >= 1, "{name} is on the toolbar");
+    }
+}
+
+/// A button on the toolbar acts on the words that were selected when the menu was opened.
+#[test]
+fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
+    let (_t, mut h) = right_click_on_selected_words("ui-minibar-bold");
+    h.query_all_by_label("Bold").last().expect("the toolbar's Bold").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("**Format ideas**"), "the selected title is bold:\n{body}");
+    assert_eq!(h.query_all_by_label("Italic").count(), 1, "the toolbar closed once a button was pressed");
+}
+
+/// The page menu's own Cut works on words that were selected before the right click, which
+/// the text box used to forget the moment the button went down.
+#[test]
+fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
+    let (_t, mut h) = right_click_on_selected_words("ui-minibar-cut");
+    let before = h.state().body().unwrap_or_default().to_string();
+    assert!(before.contains("Format ideas"));
+    h.query_all_by_label("Cut").last().expect("the menu's Cut").click();
+    let mut copied = String::new();
+    for _ in 0..8 {
+        pump(&mut h);
+        for command in &h.output().platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                copied = text.clone();
+            }
+        }
+    }
+    settle(&mut h);
+    assert_eq!(copied.trim(), "Format ideas", "the selected words went to the clipboard");
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert!(!after.contains("# Format ideas"), "and they are gone from the page:\n{after}");
+}
+
+/// Escape closes the menu and the toolbar together.
+#[test]
+fn escape_closes_the_menu_and_its_toolbar() {
+    let (_t, mut h) = right_click_on_selected_words("ui-minibar-escape");
+    assert!(h.query_all_by_label("Bold").count() >= 2, "the toolbar is open");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("press Escape");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Bold").count(), 1, "only the ribbon's Bold is left");
+    assert_eq!(h.query_all_by_label("Table").count(), 0, "and the menu is shut");
+}
+
+/// A box's menu has no formatting toolbar: with the whole box selected there is no word for Bold
+/// to act on, and a button that does nothing is not drawn.
+#[test]
+fn a_boxs_menu_has_no_formatting_toolbar() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-minibar-box");
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    assert!(h.query_all_by_label("Delete").count() >= 1, "the box's menu is open");
+    assert_eq!(h.query_all_by_label("Bold").count(), 1, "and only the ribbon has a Bold");
+}
