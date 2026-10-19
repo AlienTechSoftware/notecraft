@@ -2544,3 +2544,76 @@ fn a_boxs_menu_has_no_formatting_toolbar() {
     assert!(h.query_all_by_label("Delete").count() >= 1, "the box's menu is open");
     assert_eq!(h.query_all_by_label("Bold").count(), 1, "and only the ribbon has a Bold");
 }
+
+/// A new page whose body is `body`, opened, and where the first box on it is drawn.
+fn blank_page(label: &str, body: &str) -> (TempDir, Harness<'static, NoteCraftApp>, (f64, f64)) {
+    let (t, mut app, s) = sample_app(label);
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": "my-notebook/ideas", "kind": "page", "title": "Blank", "format": "html"}}),
+    )
+    .expect("create");
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": "my-notebook/ideas/blank", "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": "my-notebook/ideas/blank"})).expect("open");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let at = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
+    (t, h, at)
+}
+
+/// Clicking inside an empty box puts the caret there, and what is typed goes in. It used to do
+/// nothing at all: a box with no blocks has nothing under the pointer to answer the click.
+#[test]
+fn clicking_in_an_empty_box_puts_the_caret_there_and_typing_works() {
+    for (label, body) in [("empty-p", "<p></p>"), ("nothing", "")] {
+        let (_t, mut h, (ox, oy)) = blank_page(&format!("ui-empty-box-{label}"), body);
+        let v = look_at(&mut h);
+        assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(0), "{label}: the page has no blocks, only an empty box");
+        assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(1), "{label}: and one box");
+        // Below the handle, well inside the box.
+        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in the box");
+        for _ in 0..6 {
+            pump(&mut h);
+        }
+        let v = look_at(&mut h);
+        assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "{label}: the caret is in the box: {v}");
+        assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(1), "{label}: the box has a line to write in now");
+        assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(1), "{label}: still one box");
+        ask(&mut h, "ui.text", json!({"text": "hello"})).expect("type");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default().to_string();
+        assert!(body.contains("hello"), "{label}: what was typed is on the page:\n{body}");
+    }
+}
+
+/// The box and its line can be clicked into again after the caret has been somewhere else.
+#[test]
+fn an_empty_line_can_be_clicked_into_again() {
+    let (_t, mut h, (ox, oy)) = blank_page("ui-empty-box-again", "<p></p>");
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    // Leave the line without writing anything: it stays, empty, in the box.
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 700.0, "button": "right"})).expect("right click away");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in again");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "the caret is back in the box: {v}");
+    ask(&mut h, "ui.text", json!({"text": "again"})).expect("type");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("again"), "and typing goes in");
+}

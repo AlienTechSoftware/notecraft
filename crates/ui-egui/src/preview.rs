@@ -426,10 +426,35 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
             }
         }
     }
+    // A block with no words in it is still a line the writer can click into. Drawn as nothing it
+    // was a few points tall, so clicking the empty box that held it went nowhere and no caret
+    // appeared: give it the height of one line, for the eye and for the pointer.
+    if is_blank(block) {
+        let used = ui.cursor().min.y - start.y;
+        let line = match block {
+            Block::Heading { level: 1, .. } => 34.0,
+            Block::Heading { level: 2, .. } => 28.0,
+            Block::Heading { .. } => 24.0,
+            _ => 22.0,
+        };
+        if used < line {
+            ui.add_space(line - used);
+        }
+    }
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
     let response = ui.interact(rect, ui.id().with(("block", i)), egui::Sense::click());
     BlockResponse { response, task_set }
+}
+
+/// A text block with no words, no maths and no picture in it: a blank line.
+pub fn is_blank(block: &Block) -> bool {
+    match block {
+        Block::Paragraph(spans) | Block::Quote(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } => {
+            text_of(spans).is_empty() && !spans.iter().any(|s| s.math || s.image.is_some())
+        }
+        _ => false,
+    }
 }
 
 /// The tag at the start of a line, and the words without its marker.
@@ -467,6 +492,24 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_blank_line_is_a_line_tall_so_it_can_be_clicked() {
+        use notecraft_formats::markdown::Block;
+        let t = crate::theme::Theme::DEFAULT.tokens();
+        let ctx = egui::Context::default();
+        let mut heights = Vec::new();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::fonts::install_once(ui.ctx());
+            for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
+                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, notecraft_model::Dir::Ltr);
+                heights.push(out.response.rect.height());
+            }
+        });
+        frame.textures_delta.clear();
+        assert!(heights.iter().all(|h| *h >= 20.0), "an empty line has the height of a line, not a sliver: {heights:?}");
+        assert!(is_blank(&Block::Paragraph(Vec::new())) && !is_blank(&Block::Rule));
+    }
 
     #[test]
     fn both_formats_give_the_same_blocks_for_the_same_content() {
