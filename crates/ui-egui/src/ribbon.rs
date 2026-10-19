@@ -33,6 +33,8 @@ pub enum Act {
     Block(&'static str),
     /// Put a snippet in the page: a table, a link, an equation, a diagram, the date.
     Insert(&'static str),
+    /// Put this TeX in the page as an equation: the one picked from the Equation gallery.
+    Equation(&'static str),
     /// Add a file to the page (opens the same question a dropped file asks).
     AddFile,
     /// Add a picture to the page.
@@ -830,6 +832,77 @@ fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, ro
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// The equations the Equation button offers, each a name and the TeX it puts in the page. They are
+/// drawn in the list, so a person picks by looking. Every one of them is something the engine
+/// draws in full; a test checks it.
+pub const EQUATIONS: &[(&str, &str)] = &[
+    ("Fraction", r"\frac{a}{b}"),
+    ("Square root", r"\sqrt{x}"),
+    ("Root of any degree", r"\sqrt[n]{x}"),
+    ("Superscript and subscript", r"x_i^2"),
+    ("Brackets", r"\left( \frac{a}{b} \right)"),
+    ("Sum", r"\sum_{i=1}^{n} i"),
+    ("Integral", r"\int_{a}^{b} f(x)\,dx"),
+    ("Limit", r"\lim_{x \to 0} \frac{\sin x}{x}"),
+    ("Binomial", r"\binom{n}{k}"),
+    ("Accents", r"\hat{x} + \vec{v} + \bar{y}"),
+    ("Matrix", r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}"),
+    ("Cases", r"f(x) = \begin{cases} x^2 & x \ge 0 \\ -x & x < 0 \end{cases}"),
+    ("Aligned equations", r"\begin{aligned} a &= b + c \\ d &= e + f \end{aligned}"),
+    ("Quadratic formula", r"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}"),
+    ("Pythagorean theorem", r"a^2 + b^2 = c^2"),
+    ("Euler's identity", r"e^{i\pi} + 1 = 0"),
+];
+
+/// The Equation button: a list of equations to start from, each drawn as it will look.
+fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Equation, "Equation", "An equation, written in TeX: pick one to start from", t);
+    let open_id = egui::Id::new("ribbon-equation-gallery");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        // Under the button, but kept inside the window: the button is far to the right.
+        const WIDTH: f32 = 330.0;
+        let at = egui::pos2(resp.rect.left().min(ui.ctx().content_rect().right() - WIDTH - 6.0).max(4.0), resp.rect.bottom());
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(WIDTH - 20.0);
+                    ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    for (name, tex) in EQUATIONS {
+                        // The row is the name and the formula; the whole of it is the button.
+                        let inner = ui.horizontal(|ui| {
+                            ui.allocate_ui_with_layout(vec2(150.0, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.add(egui::Label::new(egui::RichText::new(*name).color(t.text)).selectable(false));
+                            });
+                            crate::mathview::inline(ui, tex, 15.0, t.text);
+                        });
+                        let row = ui.interact(inner.response.rect, open_id.with(("row", *name)), Sense::click());
+                        if row.hovered() {
+                            ui.painter().rect_filled(inner.response.rect.expand(2.0), 3.0, t.row_hover.gamma_multiply(0.6));
+                        }
+                        let (enabled, label) = (ui.is_enabled(), format!("Equation: {name}"));
+                        row.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label));
+                        if row.clicked() {
+                            acts.push(Act::Equation(tex));
+                            picked = true;
+                        }
+                    }
+                });
+            })
+            .response;
+        if picked || away(ui, &area, &resp) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
 /// OneNote's alignment button: a menu of alignment, then the paragraph's direction under a
 /// separator, in that order. Alignment itself is not built and says so.
 fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
@@ -1029,9 +1102,7 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::PageStack, "Page\nTemplates", t);
     });
     group(ui, "Symbols", t, |ui| {
-        if big_menu(ui, Icon::Equation, "Equation", "An equation, written in TeX", t).clicked() {
-            acts.push(Act::Insert("equation"));
-        }
+        equation_gallery(ui, t, acts);
         soon(ui, Icon::Symbol, "Symbol", t);
     });
     // NoteCraft's own, which OneNote has no button for: a diagram kept as its source, so

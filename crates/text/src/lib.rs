@@ -43,6 +43,35 @@ pub mod fonts {
         [("noto-naskh-arabic", ARABIC), ("noto-sans-hebrew", HEBREW), ("noto-sans-devanagari", DEVANAGARI), ("noto-sans-cjk-sc", CJK)];
 }
 
+/// The KaTeX maths faces, the glyphs equations are drawn with (SIL Open Font License 1.1, text in
+/// `assets/fonts/katex/OFL-KaTeX.txt`, provenance in `ATTRIBUTION.md`). 514 KB for the 20.
+/// Each is named by the id the equation engine puts on a glyph, such as `Main-Regular` or
+/// `Size3-Regular`, so the window can register them under that name and draw a glyph by it.
+pub mod katex {
+    pub const FACES: [(&str, &[u8]); 20] = [
+        ("AMS-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_AMS-Regular.ttf")),
+        ("Caligraphic-Bold", include_bytes!("../../../assets/fonts/katex/KaTeX_Caligraphic-Bold.ttf")),
+        ("Caligraphic-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Caligraphic-Regular.ttf")),
+        ("Fraktur-Bold", include_bytes!("../../../assets/fonts/katex/KaTeX_Fraktur-Bold.ttf")),
+        ("Fraktur-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Fraktur-Regular.ttf")),
+        ("Main-Bold", include_bytes!("../../../assets/fonts/katex/KaTeX_Main-Bold.ttf")),
+        ("Main-BoldItalic", include_bytes!("../../../assets/fonts/katex/KaTeX_Main-BoldItalic.ttf")),
+        ("Main-Italic", include_bytes!("../../../assets/fonts/katex/KaTeX_Main-Italic.ttf")),
+        ("Main-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Main-Regular.ttf")),
+        ("Math-BoldItalic", include_bytes!("../../../assets/fonts/katex/KaTeX_Math-BoldItalic.ttf")),
+        ("Math-Italic", include_bytes!("../../../assets/fonts/katex/KaTeX_Math-Italic.ttf")),
+        ("SansSerif-Bold", include_bytes!("../../../assets/fonts/katex/KaTeX_SansSerif-Bold.ttf")),
+        ("SansSerif-Italic", include_bytes!("../../../assets/fonts/katex/KaTeX_SansSerif-Italic.ttf")),
+        ("SansSerif-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_SansSerif-Regular.ttf")),
+        ("Script-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Script-Regular.ttf")),
+        ("Size1-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Size1-Regular.ttf")),
+        ("Size2-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Size2-Regular.ttf")),
+        ("Size3-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Size3-Regular.ttf")),
+        ("Size4-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Size4-Regular.ttf")),
+        ("Typewriter-Regular", include_bytes!("../../../assets/fonts/katex/KaTeX_Typewriter-Regular.ttf")),
+    ];
+}
+
 use fonts::{ARABIC, CJK, DEVANAGARI, HEBREW};
 
 /// No brush: the spike cares about where things are, not what colour they are.

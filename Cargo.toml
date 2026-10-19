@@ -28,6 +28,12 @@ egui = "0.36"
 egui_extras = { version = "0.36", default-features = false, features = ["image", "file"] }
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 serde_json = "1"
+# Equations: a pure Rust, KaTeX compatible TeX maths typesetter. Pinned exactly, because it is
+# 0.x and young; the adapter in crates/math is the only place that names it.
+ratex-parser = "=0.1.15"
+ratex-layout = "=0.1.15"
+ratex-types = "=0.1.15"
+ratex-font = "=0.1.15"
 # Build time only, Windows only: puts the icon and the version into the .exe files.
 winresource = "0.1"
 # The system file and folder dialogs, for "Open a notebook folder". UI only.

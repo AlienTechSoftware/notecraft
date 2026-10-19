@@ -11,3 +11,7 @@ description = "NoteCraft math: a TeX subset parsed and laid out into drawing ite
 workspace = true
 
 [dependencies]
+ratex-parser = { workspace = true }
+ratex-layout = { workspace = true }
+ratex-types = { workspace = true }
+ratex-font = { workspace = true }

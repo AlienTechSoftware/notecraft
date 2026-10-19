@@ -49,9 +49,9 @@ A style or a tag you ask for twice turns itself off again, as it does elsewhere.
 ## Equations
 
 Insert, then **Equation**, or type TeX between dollar signs: `$E = mc^2$` inline, or a block
-between `$$` lines. NoteCraft draws a TeX subset itself: fractions, roots, superscripts and
-subscripts, sums, products and integrals with limits, scaled brackets, Greek letters and
-common symbols. Anything it does not know stays visible as text rather than disappearing.
+between `$$` lines. NoteCraft draws it itself, in real maths fonts: fractions, roots, sums,
+integrals, matrices, cases, accents and the rest. Anything it cannot read stays visible as text
+rather than disappearing. See [Write equations](write-equations.md).
 
 ## The page source
 

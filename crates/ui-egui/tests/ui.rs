@@ -1022,6 +1022,7 @@ fn display_math_paints_ink_inside_its_box() {
     let mut h = Harness::builder().with_size(egui::vec2(400.0, 160.0)).wgpu().build_ui(|ui| {
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, egui::Color32::WHITE);
+        notecraft_ui_egui::fonts::install_once(ui.ctx());
         notecraft_ui_egui::mathview::display(ui, "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", 28.0, egui::Color32::BLACK);
     });
     h.run();
@@ -1461,6 +1462,41 @@ fn the_insert_tab_has_onenotes_groups_and_its_stamps_work() {
         "the date went in as words:
 {body}"
     );
+}
+
+/// The Equation button opens a list of equations, each drawn as it will look, and picking one
+/// puts its TeX in the page.
+#[test]
+fn the_equation_button_offers_equations_and_puts_the_one_picked_in_the_page() {
+    let (_t, mut app, s) = sample_app("ui-eq-gallery");
+    app.open_path(&s.md_page.to_string_lossy());
+    // Wide enough that the Symbols group is on the screen and not scrolled out of the ribbon.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    h.run();
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+
+    // Clicked with a pointer position, as a person does: the list closes on a click elsewhere,
+    // and it asks where the pointer is.
+    let button = h.get_by_label("Equation").rect();
+    ask(&mut h, "ui.click", json!({"x": button.center().x, "y": button.center().y})).expect("click the button");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    for (name, _) in notecraft_ui_egui::ribbon::EQUATIONS {
+        assert!(h.query_all_by_label(&format!("Equation: {name}")).count() >= 1, "{name} is in the list");
+    }
+    let row = h.get_by_label("Equation: Matrix").rect();
+    ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick the matrix");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains(r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}"), "the matrix went into the page:\n{body}");
+    assert_eq!(h.query_all_by_label("Equation: Matrix").count(), 0, "the list closed after a pick");
 }
 
 /// The page has a menu under the right button, with the commands a page needs: paste,
