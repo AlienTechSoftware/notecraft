@@ -79,7 +79,7 @@ pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) ->
     let mut out: Vec<Drawn> = Vec::new();
     let mut size_used = Vec2::ZERO;
     for line in split.lines {
-        let mut placed: Vec<(notecraft_text::Run, std::sync::Arc<egui::Galley>, f32, f32)> = Vec::new();
+        let mut placed: Vec<(f32, std::sync::Arc<egui::Galley>, std::ops::Range<usize>, bool)> = Vec::new();
         for run in line.runs {
             let Some(whole) = text.get(run.text.clone()) else { continue };
             // The spaces at the ends of a run are the gaps around it. They are measured and
@@ -88,28 +88,42 @@ pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) ->
             let lead = whole.len() - whole.trim_start_matches(' ').len();
             let trail = whole.len() - whole.trim_end_matches(' ').len();
             let inner = run.text.start + lead..run.text.end.saturating_sub(trail).max(run.text.start + lead);
-            let mut job = LayoutJob { halign: Align::LEFT, keep_trailing_whitespace: true, ..LayoutJob::default() };
-            for (range, format) in pieces {
-                let (a, b) = (range.start.max(inner.start), range.end.min(inner.end));
-                if a >= b {
-                    continue;
+            let galley_of = |ui: &Ui, range: std::ops::Range<usize>| -> Option<std::sync::Arc<egui::Galley>> {
+                let mut job = LayoutJob { halign: Align::LEFT, keep_trailing_whitespace: true, ..LayoutJob::default() };
+                for (piece, format) in pieces {
+                    let (a, b) = (piece.start.max(range.start), piece.end.min(range.end));
+                    if a >= b {
+                        continue;
+                    }
+                    if let Some(part) = text.get(a..b) {
+                        job.append(part, 0.0, format.clone());
+                    }
                 }
-                if let Some(part) = text.get(a..b) {
-                    job.append(part, 0.0, format.clone());
-                }
-            }
-            if job.sections.is_empty() {
-                // A run of nothing but spaces is a gap of its own.
-                if lead + trail > 0 {
-                    placed.push((run, ui.fonts_mut(|f| f.layout_job(LayoutJob::default())), (lead + trail) as f32 * space, 0.0));
-                }
+                (!job.sections.is_empty()).then(|| ui.fonts_mut(|f| f.layout_job(job)))
+            };
+            if inner.is_empty() {
                 continue;
             }
-            let galley = ui.fonts_mut(|f| f.layout_job(job));
-            // In a right-to-left run the first characters are drawn on the right, so a
-            // space at the start of it belongs on the right-hand side.
-            let (before, after) = if run.rtl { (trail as f32 * space, lead as f32 * space) } else { (lead as f32 * space, trail as f32 * space) };
-            placed.push((run, galley, before, after));
+            if run.rtl {
+                // egui lays the letters of an Arabic or Hebrew word out right to left, but
+                // puts the next word to the right of the one before it, so a line of them
+                // comes out with its words backwards: the owner read one on 2026-10-19 and
+                // said so. Each word is drawn on its own and placed from the right edge of
+                // the run leftwards, which is where they belong.
+                //
+                // The gaps between the words are measured here, not left in a galley, for
+                // the same reason the gaps round a run are.
+                let mut right = run.x + run.width - lead as f32 * space;
+                for (word, gap) in words_of(text, inner.clone()) {
+                    let Some(galley) = galley_of(ui, word.clone()) else { continue };
+                    let width = galley.rect.width();
+                    placed.push((right - width, galley, word, true));
+                    right -= width + gap as f32 * space;
+                }
+            } else {
+                let Some(galley) = galley_of(ui, inner.clone()) else { continue };
+                placed.push((run.x + lead as f32 * space, galley, inner, false));
+            }
         }
         // Each run starts where parley put it. That is what makes a right-to-left line hang
         // from the right edge of `max_width`, a shorter last line included, and what keeps
@@ -117,15 +131,41 @@ pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) ->
         // egui galley is up to about a pixel wider than parley's run, so a run may lean that
         // far into the gap after it; it never accumulates, because the next run starts at
         // its own place, not after this one.
-        for (run, galley, before, _after) in placed {
-            let x = run.x + before;
+        for (x, galley, range, rtl) in placed {
             let width = galley.rect.width();
             size_used.x = size_used.x.max(x + width);
             size_used.y = size_used.y.max(line.y + line.height);
-            out.push(Drawn { at: vec2(x, line.y), galley, text: run.text.clone(), rtl: run.rtl });
+            out.push(Drawn { at: vec2(x, line.y), galley, text: range, rtl });
         }
     }
     (out, size_used)
+}
+
+/// The words of a range, each with the number of spaces that follow it.
+///
+/// Only spaces: a word is what egui shapes as one piece, and shaping does not join across
+/// a space. Anything else inside the run - a comma, a digit - rides along with its word.
+fn words_of(text: &str, range: std::ops::Range<usize>) -> Vec<(std::ops::Range<usize>, usize)> {
+    let Some(inner) = text.get(range.clone()) else { return Vec::new() };
+    let mut out: Vec<(std::ops::Range<usize>, usize)> = Vec::new();
+    let mut at = range.start;
+    for part in inner.split(' ') {
+        let word = at..at + part.len();
+        at = word.end + 1;
+        if part.is_empty() {
+            // Two spaces in a row: the gap after the word before grows by one.
+            if let Some((_, gap)) = out.last_mut() {
+                *gap += 1;
+            }
+            continue;
+        }
+        out.push((word, 1));
+    }
+    if let Some((_, gap)) = out.last_mut() {
+        // The last word has no space after it inside this run.
+        *gap = 0;
+    }
+    out
 }
 
 /// How wide a space is in this face and size.
@@ -303,6 +343,35 @@ mod tests {
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
         out.textures_delta.clear();
         ctx
+    }
+
+    /// A plain Arabic line reads right to left, word by word. egui lays the letters of one
+    /// word out the right way but puts the next word to the right of it, so a line came out
+    /// with its words backwards until each word was placed here.
+    #[test]
+    fn the_words_of_an_arabic_line_go_right_to_left() {
+        let t = Theme::DEFAULT.tokens();
+        let ctx = ctx_with_fonts();
+        let line = "ما الذي يمكنك فعله هنا";
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::fonts::install_once(ui.ctx());
+            let (drawn, _) = runs(ui, line, &plain(line, 16.0, &t), 16.0, 400.0);
+            assert_eq!(drawn.len(), 5, "one for each word: {:?}", drawn.iter().map(|d| d.galley.text().to_string()).collect::<Vec<_>>());
+            // The first word of the line is the rightmost thing on it, and each word after
+            // it is further left, with a gap between them.
+            let mut last: Option<&Drawn> = None;
+            for d in &drawn {
+                assert!(d.rtl, "{:?} reads right to left", d.galley.text());
+                if let Some(before) = last {
+                    assert!(d.at.x + d.galley.rect.width() <= before.at.x + 1.0, "{:?} is left of {:?}", d.galley.text(), before.galley.text());
+                }
+                last = Some(d);
+            }
+            // And the line still hangs from the right edge it was given.
+            let right = drawn.first().map(|d| d.at.x + d.galley.rect.width()).unwrap_or(0.0);
+            assert!(right > 380.0 && right <= 401.0, "the line ends at the right edge: {right}");
+        });
+        frame.textures_delta.clear();
     }
 
     /// The words must not run into the digits: the space between two runs is a real gap,
