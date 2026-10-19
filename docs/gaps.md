@@ -92,9 +92,7 @@ it is fixed and tested, not when it is promised.
   and thickness, and the whole rack remembered between runs; a pressure sensitivity wedge;
   an eraser; undo; and Save picture. **Not built:** select and lasso; moving or resizing
   ink; shapes and automatic shapes; the ruler and other stencils; ink replay; ink to text
-  and ink to math; laser pointer; More Colours and the eyedropper in the tool editor. Ink
-  is not shown by other programs that open the page, because neither page format
-  references it. Pressure is real and measured on Windows (hardest 0.930 over 1223
+  and ink to math; laser pointer; More Colours and the eyedropper in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223
   readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.

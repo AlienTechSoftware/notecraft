@@ -1313,28 +1313,27 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     let tall = 38.0;
     let top = rect.center().y - tall / 2.0 - 2.0 + drop;
     let foot = top + tall;
-    let at = |x: f32, y: f32| egui::pos2(cx + x, y);
-    let shape = |pts: Vec<egui::Pos2>, fill: egui::Color32, edge: egui::Color32| egui::Shape::convex_polygon(pts, fill, egui::Stroke::new(0.8, edge));
-    let sleeve = egui::Color32::from_rgb(0xee, 0xf0, 0xf3);
-    let sleeve_edge = egui::Color32::from_rgb(0x6f, 0x76, 0x81);
-    let collar = egui::Color32::from_rgb(0x8d, 0x94, 0x9f);
-    // A block rubber: white, with the shaded side that says it is a solid thing.
-    let rubber = egui::Color32::from_rgb(0xfa, 0xf7, 0xf8);
-    let rubber_side = egui::Color32::from_rgb(0xe3, 0xd6, 0xda);
-    let rubber_edge = egui::Color32::from_rgb(0x7e, 0x70, 0x75);
-
-    let hold = foot - 15.0;
-    painter.add(shape(vec![at(-5.2, top), at(5.2, top), at(4.9, hold), at(-4.9, hold)], sleeve, sleeve_edge));
-    painter.line_segment([at(-1.8, top + 3.0), at(-1.6, hold - 2.0)], egui::Stroke::new(1.2, egui::Color32::from_white_alpha(130)));
-    painter.rect_filled(egui::Rect::from_min_max(at(2.0, top + 2.5), at(4.0, hold - 3.0)), 1.0, collar);
-    painter.line_segment([at(-4.9, hold), at(4.9, hold)], egui::Stroke::new(2.0, collar));
-    // The rubber: a soft dome, not a block. An eraser is worn round by use, and a rounded
-    // tip is what says "this rubs out" where a sharp corner says "this cuts".
-    let r = 5.4;
-    let waist = foot - r;
-    painter.add(shape(vec![at(-4.9, hold), at(4.9, hold), at(r, waist), at(-r, waist)], rubber, rubber_edge));
-    painter.circle(at(0.0, waist), r, rubber, egui::Stroke::new(0.8, rubber_edge));
-    painter.circle_filled(at(1.4, waist + 0.4), r - 1.7, rubber_side);
+    // A block rubber seen square on: a pale grey body with a flat foot, and the band of
+    // rubber at the bottom in the lilac OneNote gives it. No dome and no wedge; the
+    // shape's whole job is to say "block" where the pens say "nib".
+    let body = egui::Color32::from_rgb(0xdf, 0xe1, 0xe5);
+    let body_edge = egui::Color32::from_rgb(0x8f, 0x94, 0x9d);
+    let rubber = egui::Color32::from_rgb(0xe4, 0xc4, 0xee);
+    let rubber_edge = egui::Color32::from_rgb(0xa9, 0x84, 0xb8);
+    let w = 6.4;
+    let band = foot - 10.0;
+    let whole = egui::Rect::from_min_max(egui::pos2(cx - w, top), egui::pos2(cx + w, foot));
+    painter.rect_filled(egui::Rect::from_min_max(whole.min, egui::pos2(whole.max.x, band)), 2.0, body);
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(whole.min.x, band - 2.0), whole.max), 2.0, rubber);
+    painter.line_segment([egui::pos2(whole.min.x, band), egui::pos2(whole.max.x, band)], egui::Stroke::new(1.0, rubber_edge));
+    painter.line_segment(
+        [egui::pos2(cx - w * 0.45, top + 3.0), egui::pos2(cx - w * 0.45, band - 3.0)],
+        egui::Stroke::new(1.2, egui::Color32::from_white_alpha(120)),
+    );
+    painter.rect_stroke(whole, 2.0, egui::Stroke::new(0.9, body_edge), egui::StrokeKind::Inside);
+    if chosen {
+        chevron(&painter, egui::pos2(rect.center().x, rect.max.y - 5.0), t.muted);
+    }
     resp.on_hover_text("Rub out whatever the pointer passes over")
 }
 

@@ -513,6 +513,7 @@ impl NoteCraftApp {
             });
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
             self.absorb_old_sheets(dir);
+            self.sync_ink_reference();
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
@@ -557,7 +558,22 @@ impl NoteCraftApp {
             ed.body = pageedit::to_body(ed.format, &ed.blocks);
             Self::mark_dirty_from_blocks(ed);
         }
-        self.say(format!("Moved {moved} strokes from this page's drawing onto the page itself"));
+        self.sync_ink_reference();
+        // The old file has been read and its strokes are in `ink.svg`, so leaving it
+        // behind only puts a dead 200 KB picture in the page's folder for the owner to
+        // wonder about. It goes, now that what was in it is kept somewhere better.
+        let mut left = 0;
+        for src in &olds {
+            let file = dir.join(src.trim().replace('/', std::path::MAIN_SEPARATOR_STR));
+            if std::fs::remove_file(&file).is_err() {
+                left += 1;
+            }
+        }
+        if left > 0 {
+            self.say(format!("Moved {moved} strokes onto the page; {left} old drawing files could not be removed"));
+        } else {
+            self.say(format!("Moved {moved} strokes from this page's old drawing onto the page itself"));
+        }
     }
 
     fn save_now(&mut self) {
@@ -1246,6 +1262,27 @@ impl NoteCraftApp {
         self.remember_rack();
     }
 
+    /// Keeps the page's words honest about its ink: a page with ink names `ink.svg`, a
+    /// page without it does not. Without this the source pane showed a page of text while
+    /// the page itself was covered in handwriting, and another program opening the folder
+    /// would never have known the drawing was there.
+    fn sync_ink_reference(&mut self) {
+        use notecraft_formats::markdown::Block;
+        let has_ink = self.pad.as_ref().is_some_and(|p| !p.is_empty());
+        let Some(ed) = self.editor.as_mut() else { return };
+        let named = ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if crate::inkpad::is_page_ink(src)));
+        if has_ink == named {
+            return;
+        }
+        if has_ink {
+            ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: crate::inkpad::FILE.to_string() });
+        } else {
+            ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_page_ink(src)));
+        }
+        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        Self::mark_dirty_from_blocks(ed);
+    }
+
     /// Writes the rack and which tool is in hand into the settings, so the next run opens
     /// with the pens the owner arranged.
     fn remember_rack(&mut self) {
@@ -1287,6 +1324,8 @@ impl NoteCraftApp {
             Ok(()) => self.say(format!("Took the last stroke back; {left} left")),
             Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
         }
+        // The page stops naming ink it no longer has.
+        self.sync_ink_reference();
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -2084,10 +2123,20 @@ impl NoteCraftApp {
                             // way a pen on paper does. It goes on after them so a press
                             // with a pen in hand reaches the ink and not the caret.
                             {
-                                let body = egui::Rect::from_min_max(
-                                    egui::pos2(ui.max_rect().min.x, top.y),
-                                    egui::pos2(ui.max_rect().max.x, ui.cursor().min.y.max(top.y + 1.0)),
-                                );
+                                // The sheet, not the words: ink goes anywhere on the page,
+                                // and the page is a sheet of paper whether or not anything
+                                // is written that far down it. Measuring the ink's area
+                                // from where the text happens to end meant the pen stopped
+                                // at the last line, which is not what a sheet of paper
+                                // does. The room is claimed so the page can be scrolled
+                                // into it and so what is drawn there is never cut off.
+                                let used = ui.cursor().min.y - top.y;
+                                let want = crate::inkpad::SHEET_H.max(used + 240.0);
+                                if want > used {
+                                    ui.allocate_space(vec2(ui.available_width(), want - used));
+                                }
+                                let body =
+                                    egui::Rect::from_min_max(egui::pos2(ui.max_rect().min.x, top.y), egui::pos2(ui.max_rect().max.x, top.y + want));
                                 page_rect = Some(body);
                                 if let Some(pad) = pad.as_mut() {
                                     ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens);
@@ -2202,6 +2251,7 @@ impl NoteCraftApp {
                 Ok(()) => self.say(format!("Drawing saved, {strokes} strokes")),
                 Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
             }
+            self.sync_ink_reference();
         }
         if let Some(href) = follow {
             self.follow_link(ui.ctx(), &href);

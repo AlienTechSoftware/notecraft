@@ -408,6 +408,11 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
             Block::Rule => {
                 ui.separator();
             }
+            // The page names its own ink so that its words say what is on it, but the ink
+            // is drawn as a layer over the whole page, not as a picture in the middle of
+            // the words. Another program opening the page sees the handwriting; here the
+            // line itself takes no room.
+            Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
             Block::Image { alt, src } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {

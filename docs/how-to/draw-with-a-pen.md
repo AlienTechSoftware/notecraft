@@ -44,9 +44,20 @@ Each stroke is written the moment you lift the pen. Ink does not wait for the pa
 ## Where the ink lives
 
 In `ink.svg`, in the page's own folder, beside `index.md` or `index.html`. A page nobody has
-drawn on has no such file, and a page rubbed clean loses it again. Nothing in either page
-format had to change to allow ink, and the ink travels, syncs and backs up with the page
-because it is another file in the same place.
+drawn on has no such file, and a page rubbed clean loses it again. The ink travels, syncs
+and backs up with the page because it is another file in the same place.
+
+A page with ink names it, at the end of its words:
+
+```markdown
+![Ink](ink.svg)
+```
+
+That line is how the page's source and the page itself stay in step, and how another
+program opening the folder finds your handwriting at all. NoteCraft does not draw it as a
+picture in the middle of the words; it draws the ink as a layer over the whole page, so
+the line takes no room here. The line appears the first time you draw and goes when the
+page is rubbed clean.
 
 ## Pressure
 
