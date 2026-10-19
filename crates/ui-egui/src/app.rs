@@ -2206,7 +2206,7 @@ impl NoteCraftApp {
                                 // the caret, and one that does not sense clicks cannot
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
-                                crate::pagemenu::show(ui, body, &mut page_acts);
+                                crate::pagemenu::show(ui, body, &mut page_acts, &tokens);
                             }
                             if moved.changed.blocks {
                                 ed.body = pageedit::to_body(ed.format, &ed.blocks);

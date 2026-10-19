@@ -75,16 +75,20 @@ it is fixed and tested, not when it is promised.
   because egui exposes text only; that needs a clipboard crate (`clipboard-rs` reads HTML
   and pictures on all three systems, `arboard` pictures alone), which is a decision for the
   owner.
-- **A box's right-click menu is short.** It has Cut, Copy and Delete only. OneNote's also has
+- **A box's right-click menu is short.** It has Cut, Copy and Delete, then the page's entries. OneNote's also has
   Paste Options, Copy Link to Paragraph, Select, Order, Move and Resize, and a small formatting
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
   OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
   Delete is final once the page autosaves.
-- **A right click moves the words' selection.** The text box puts its selection at the pointer when
-  any button goes down, the right one too (measured: a selection of 0 to 12 became 7 to 7). A box
-  remembers what was selected before the press so its menu is chosen correctly, but the page's own
-  Cut and Copy then find nothing selected, because the selection has already moved. Not fixed.
+- **The mini toolbar is partial.** `crates/ui-egui/src/floating.rs` draws it, as data, so any menu can
+  float one. Today it floats over the page's text menu with Bold, Italic, Strikethrough, Code, lists,
+  indents, Quote, the To Do and Important tags and Clear Formatting. OneNote's also has a font and a
+  size box, font colour, the highlighter, Styles and Format Painter: the editor has none of them, so
+  they are not drawn. It does not appear on a box's menu (a selected box has no words for Bold to act
+  on), beside a text selection, or on tables and pictures yet.
+- **Menu entries.** Rows carry OneNote's pictures. Still missing from a box's menu: Paste Options with
+  its pictures, Copy Link to Paragraph, Select, Order, Move and Resize.
 - **Containers are a first pass.** A page can hold several boxes, each with its own place,
   width and blocks; a box is moved by the bar along its top and resized by its right edge,
   and the arrangement is kept in the page's own file. What is missing: making a new box by
