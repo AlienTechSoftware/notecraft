@@ -154,8 +154,8 @@ it is fixed and tested, not when it is promised.
   the picture only where the script needs no shaping; Arabic, Persian, Urdu, Hindi and Hebrew get
   the wordmark, and every language carries the line as words under it, which reads correctly and
   can be searched. Baking those five into the picture needs a text shaping library, which is not
-  installed here. **Not built:** pages with lined, squared or coloured paper in the demo, because
-  paper and page colour are one setting for the app rather than something a page carries.
+  installed here. Three pages show paper and page colour: the one about writing is college
+  ruled, the one about tags is squared and warm, the one about making it yours is teal.
 - **Pen and drawing.** The pen writes anywhere on the page, as OneNote's does. The ink of a
   page is `ink.svg` in the page's own folder; a page never drawn on has no such file, and a
   page rubbed clean loses it. The folder is what decides: the page's own text names every
