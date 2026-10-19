@@ -125,6 +125,8 @@ pub fn show(
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
+    // An empty box that was clicked: it has no words to answer a click, so the click starts some.
+    let mut start_in: Option<usize> = None;
     let right_click = ui.input(|i| i.pointer.secondary_clicked());
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
@@ -156,6 +158,19 @@ pub fn show(
         bottom = bottom.max(frame.max.y);
 
         let hovered = ui.rect_contains_pointer(frame);
+        // A box with nothing in it has no block under the pointer, so a click inside it went
+        // nowhere and no caret appeared. The whole of it, below the handle, is a place to start
+        // writing: the click gives it a line and puts the caret there.
+        if range.is_empty() {
+            let hole = Rect::from_min_max(pos2(frame.min.x, frame.min.y + HANDLE), frame.max);
+            let start = ui.interact(hole, ui.id().with(("container-start", i)), Sense::click());
+            if start.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+            }
+            if start.clicked() {
+                start_in = Some(i);
+            }
+        }
         // The handle along the top and the grip down the right edge. Both widgets exist on
         // every frame, whether or not they are drawn: a widget that comes and goes with the
         // pointer loses the drag the moment the pointer leaves it, which is what made
@@ -295,6 +310,23 @@ pub fn show(
             c.blocks = (c.blocks as i64 + grew).max(0) as usize;
         }
         out.boxes = true;
+    }
+
+    // A click in an empty box: give it a line to write in, and put the caret there.
+    if let Some(i) = start_in
+        && delete_at.is_none()
+        && container::blocks_of(boxes, i).is_empty()
+    {
+        let at = container::blocks_of(boxes, i).start.min(blocks.len());
+        blocks.insert(at, Block::Paragraph(Vec::new()));
+        if let Some(c) = boxes.get_mut(i) {
+            c.blocks += 1;
+        }
+        *caret = Some(pageedit::Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
     }
 
     // Delete (the key, or the menu's Cut and Delete): the container and everything in it go.
