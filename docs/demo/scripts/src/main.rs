@@ -258,10 +258,11 @@ fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: 
     // heading comes off here and the content files keep it for reading on their own.
     let s = &Source { body: without_title_heading(&s.body, &s.title), ..s.clone() };
     copy_assets(dir, &s.body, art)?;
+    let look = look_of(&s.slug);
     if s.html {
-        write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body))
+        write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body, look))
     } else {
-        write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body))
+        write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body, look))
     }
 }
 
@@ -345,23 +346,58 @@ fn node_toml(kind: &str, title: &str, id: &str, order: u32, format: Option<&str>
 }
 
 /// A Markdown page with the front matter the store writes (section 3.2 of the format).
-fn markdown_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str) -> String {
+fn markdown_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look) -> String {
     let mut front = format!("---\nid: {id}\ntitle: {}\norder: {order}\ncreated: {DATE}\nupdated: {DATE}\n", kv::quote(title));
     if let Some(d) = dir {
         front.push_str(&format!("dir: {d}\n"));
+    }
+    if let Some(p) = look.paper {
+        front.push_str(&format!("paper: {p}\n"));
+    }
+    if let Some(c) = look.colour {
+        front.push_str(&format!("page-color: {c}\n"));
     }
     front.push_str("tags: []\n---\n\n");
     format!("{front}{}\n", body.trim_end())
 }
 
+/// The paper a demo page is drawn on and the colour behind it, so the notebook shows what
+/// a page can look like as well as what it can say.
+#[derive(Clone, Copy, Default)]
+struct Look {
+    paper: Option<&'static str>,
+    colour: Option<&'static str>,
+}
+
+/// Which pages are given paper of their own, by the folder they are written to. The rest
+/// are drawn on the plain page the window opens with.
+fn look_of(slug: &str) -> Look {
+    match slug {
+        // The page about writing is on ruled paper, as a page for writing on would be.
+        "write-a-page" => Look { paper: Some("college"), colour: None },
+        // The one about tags is squared, and a little warm, so the two show side by side
+        // in the tree what paper and page colour do.
+        "tag-a-line" => Look { paper: Some("grid-medium"), colour: Some("yellow") },
+        // The one about making it yours is coloured, with no lines.
+        "make-it-yours" => Look { paper: None, colour: Some("teal") },
+        _ => Look::default(),
+    }
+}
+
 /// An HTML page with the metadata in `<meta>` tags (section 3.1 of the format).
-fn html_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str) -> String {
+fn html_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look) -> String {
     let t = escape(title);
     let mut head = format!(
         "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{t}</title>\n<meta name=\"notecraft:id\" content=\"{id}\">\n<meta name=\"notecraft:order\" content=\"{order}\">\n<meta name=\"notecraft:created\" content=\"{DATE}\">\n<meta name=\"notecraft:updated\" content=\"{DATE}\">\n"
     );
     if let Some(d) = dir {
         head.push_str(&format!("<meta name=\"notecraft:dir\" content=\"{d}\">\n"));
+    }
+    if let Some(p) = look.paper {
+        head.push_str(&format!("<meta name=\"notecraft:paper\" content=\"{p}\">\n"));
+    }
+    if let Some(c) = look.colour {
+        head.push_str(&format!("<meta name=\"notecraft:page-color\" content=\"{c}\">\n"));
     }
     format!("{head}</head>\n<body>\n{}\n</body>\n</html>\n", body.trim())
 }
@@ -596,11 +632,37 @@ mod tests {
 
     #[test]
     fn the_page_files_have_the_metadata_the_store_reads() {
-        let md = markdown_page("A \"quoted\" title", "abc", 20, Some("rtl"), "# Body\n");
+        let md = markdown_page("A \"quoted\" title", "abc", 20, Some("rtl"), "# Body\n", Look::default());
         assert!(md.starts_with("---\nid: abc\ntitle: \"A \\\"quoted\\\" title\"\norder: 20\n"));
         assert!(md.contains("\ndir: rtl\n"));
         assert!(md.ends_with("---\n\n# Body\n"));
-        let html = html_page("A <b>", "abc", 10, None, "<p>x</p>");
+        let html = html_page("A <b>", "abc", 10, None, "<p>x</p>", Look::default());
+
+        // A page given paper and a colour of its own carries both in its head.
+        let dressed = markdown_page(
+            "T",
+            "id",
+            10,
+            None,
+            "words
+",
+            Look { paper: Some("college"), colour: Some("yellow") },
+        );
+        assert!(
+            dressed.contains(
+                "
+paper: college
+"
+            ) && dressed.contains(
+                "
+page-color: yellow
+"
+            ),
+            "{dressed}"
+        );
+        let dressed_html = html_page("T", "id", 10, None, "<p>x</p>", Look { paper: Some("grid-medium"), colour: None });
+        assert!(dressed_html.contains("notecraft:paper"), "{dressed_html}");
+        assert!(!dressed_html.contains("page-color"), "and says nothing about a colour it was not given");
         assert!(html.contains("<title>A &lt;b&gt;</title>"));
         assert!(html.contains("name=\"notecraft:id\" content=\"abc\""));
         assert!(!html.contains("notecraft:dir"));

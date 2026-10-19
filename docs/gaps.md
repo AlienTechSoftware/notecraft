@@ -87,9 +87,10 @@ it is fixed and tested, not when it is promised.
   front matter (`columns:`), so the same disconnect remains for them: another program does not see
   them. The code view does show them, because it shows the page file's head.
 - **The code view** is the page's folder as it is: every file of the page down the left, the one
-  that is picked on the right. The page file is picked when the view opens; its head is shown above
-  its body and cannot be typed in, so a hand edit cannot break the page's id. The body can be typed
-  in, and so can a drawing's SVG - the owner asked for that on 2026-10-19, against the earlier line
+  that is picked on the right. The page file is picked when the view opens, and the whole of
+  it can be typed in, head included - the owner asked for that on 2026-10-19, against the earlier
+  line that only the body could be edited; the page is read again when the view closes, so a
+  change to the title or any other metadata line takes effect then. A drawing's SVG can be typed in too - the owner asked for that on 2026-10-19, against the earlier line
   that every file but the page's own is read-only; the view says what the risk is, because the pen's
   readings are in that file. Pictures are shown as pictures, other text is read-only, and a file
   nothing on the page names is marked as not used. The live page is not drawn while the view is
@@ -121,6 +122,12 @@ it is fixed and tested, not when it is promised.
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box
   rather than losing a word.
+- **Paper and page colour are the page's own.** Draw, then Format Background, gives the
+  open page its rule lines or squares and a pale colour behind the words, and both are
+  written into that page's head (`notecraft:paper`, `notecraft:page-color`), so a page
+  keeps them and another page is not touched. The window's own rule-lines setting stays as
+  what a page with none of its own is drawn on. **Not built:** a rule line colour, and
+  "always create pages with rule lines".
 - **One title, not two.** A page carries its title in its head, and the window draws it in
   the title area above the words. A new page's body no longer repeats it. A page from
   before this, or one written by hand, may still open with that title as a heading; the

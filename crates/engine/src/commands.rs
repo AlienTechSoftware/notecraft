@@ -176,6 +176,29 @@ fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(notecraft_model::container::write(&boxes)))
 }
 
+fn page_paper(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let (paper, colour) = (p.get("paper"), p.get("color"));
+    if paper.is_none() && colour.is_none() {
+        let (have_paper, have_colour) = page::appearance(&path)?;
+        return Ok(Output::Text(format!("{} {}", have_paper.unwrap_or_else(|| "none".into()), have_colour.unwrap_or_else(|| "none".into()))));
+    }
+    let (was_paper, was_colour) = page::appearance(&path)?;
+    let keep = |want: Option<&String>, was: Option<String>| match want.map(|w| w.trim()) {
+        Some("") | Some("none") => None,
+        Some(w) => Some(w.to_string()),
+        None => was,
+    };
+    let (paper, colour) = (keep(paper, was_paper), keep(colour, was_colour));
+    if let Some(c) = colour.as_deref()
+        && notecraft_model::NodeColor::parse(c).is_none()
+    {
+        return Err(EngineError::BadParam(format!("'{c}' is not one of the page colours")));
+    }
+    page::set_appearance(&path, paper.as_deref(), colour.as_deref())?;
+    Ok(Output::Text(format!("{} {}", paper.unwrap_or_else(|| "none".into()), colour.unwrap_or_else(|| "none".into()))))
+}
+
 fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     let Some(want) = p.get("widths") else {
@@ -301,6 +324,15 @@ dir (optional): rtl, ltr, or auto to let every line decide; without it the curre
 boxes (optional): x,y,width,blocks per container, separated by semicolons. The counts must add up to the page's blocks. They are written into the page's text as elements around the blocks; empty puts the page back in one column. Without it, the current arrangement is reported",
         changes_tree: false,
         run: page_containers,
+    },
+    CommandSpec {
+        id: "page.paper",
+        label: "The paper a page is drawn on, and the colour behind it",
+        params: "path (required): the page
+paper (optional): none, narrow, college, standard, wide, grid-small, grid-medium, grid-large, grid-huge, craft-lines, craft-grid
+color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none. Without either, the page's own are reported",
+        changes_tree: false,
+        run: page_paper,
     },
     CommandSpec {
         id: "page.columns",

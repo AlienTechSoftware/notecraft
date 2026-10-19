@@ -204,6 +204,55 @@ fn read_head(path: &Path, want: usize) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&buffer).into_owned())
 }
 
+/// The paper a page is drawn on, and the colour behind it. Both are the page's own, the
+/// way OneNote gives a page its rule lines and its page colour, and both live in the head
+/// beside the direction.
+const PAPER_KEY: &str = "paper";
+const PAPER_META: &str = "notecraft:paper";
+const COLOUR_KEY: &str = "page-color";
+const COLOUR_META: &str = "notecraft:page-color";
+
+/// The paper and the colour a page carries, as they are written: `(paper, colour)`. Either
+/// is `None` when the page says nothing and the window's own choice stands.
+pub fn appearance(dir: &Path) -> Result<(Option<String>, Option<String>)> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let read = |meta: &str, key: &str| {
+        match format {
+            PageFormat::Html => html::meta(&text, meta),
+            PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, key),
+        }
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+    };
+    Ok((read(PAPER_META, PAPER_KEY), read(COLOUR_META, COLOUR_KEY)))
+}
+
+/// Writes them into the page's own file. `None` takes the line out again.
+pub fn set_appearance(dir: &Path, paper: Option<&str>, colour: Option<&str>) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let out = match format {
+        PageFormat::Html => {
+            let text = html::set_meta(&text, PAPER_META, paper.unwrap_or_default());
+            html::set_meta(&text, COLOUR_META, colour.unwrap_or_default())
+        }
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front = match paper {
+                Some(p) => frontmatter::set_value(&front, PAPER_KEY, p),
+                None => frontmatter::remove_value(&front, PAPER_KEY),
+            };
+            let front = match colour {
+                Some(c) => frontmatter::set_value(&front, COLOUR_KEY, c),
+                None => frontmatter::remove_value(&front, COLOUR_KEY),
+            };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
 const COLUMNS_KEY: &str = "columns";
 const COLUMNS_META: &str = "notecraft:columns";
 

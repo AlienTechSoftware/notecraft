@@ -77,6 +77,8 @@ pub enum Act {
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
     TableBorders(bool),
+    /// The colour behind the open page. `None` is the theme's own paper.
+    PageColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
     Undo,
     Redo,
@@ -316,6 +318,8 @@ pub struct View<'a> {
     pub table_borders: bool,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,
+    /// The colour behind the open page, when it carries one of its own.
+    pub page_colour: Option<notecraft_model::NodeColor>,
     /// Whether the page has anything to take back, and anything to put back.
     pub can_undo: bool,
     pub can_redo: bool,
@@ -1067,6 +1071,32 @@ fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Resp
     resp.on_hover_text(label)
 }
 
+/// One page colour in the Format Background menu: a pale wash of it, as the page is
+/// drawn, with a ring round the one the page is using.
+fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: bool, t: &Tokens) -> egui::Response {
+    let side = 22.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let dark = t.editor.r() < 128;
+    let fill = match colour {
+        Some(c) => {
+            let (r, g, b) = c.rgb(dark);
+            crate::theme::mix(t.editor, egui::Color32::from_rgb(r, g, b), 0.16)
+        }
+        None => t.editor,
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, fill);
+    let (edge, width) = if here { (t.accent, 2.0) } else { (t.faint, 1.0) };
+    painter.rect_stroke(rect, 3.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+    if colour.is_none() {
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "/", egui::FontId::proportional(13.0), t.muted);
+    }
+    let name = colour.map(notecraft_model::NodeColor::label).unwrap_or("No colour");
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, name));
+    resp.on_hover_text(name)
+}
+
 /// OneNote's Table button: a grid to pick the size from, the way OneNote picks one.
 ///
 /// Running the pointer over the grid lights the cells up to it and names the size, and a
@@ -1191,8 +1221,23 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                     shelf(ui, "NoteCraft's own", &RuleLines::CRAFT, acts, &mut picked);
                     ui.label(egui::RichText::new("Every fifth line stronger, to count by.").small().color(t.muted));
                     ui.separator();
+                    // OneNote's Page Color, under the paper: a pale wash behind the words.
+                    ui.label(egui::RichText::new("Page colour").strong());
+                    ui.horizontal(|ui| {
+                        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
+                            acts.push(Act::PageColour(None));
+                            picked = true;
+                        }
+                        for c in notecraft_model::NodeColor::ALL {
+                            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
+                                acts.push(Act::PageColour(Some(c)));
+                                picked = true;
+                            }
+                        }
+                    });
+                    ui.label(egui::RichText::new("The paper and the colour are this page's own.").small().color(t.muted));
+                    ui.separator();
                     ui.add_enabled(false, egui::Label::new(egui::RichText::new("Rule line colour (not built)").color(t.muted)));
-                    ui.add_enabled(false, egui::Label::new(egui::RichText::new("Always create pages with rule lines (not built)").color(t.muted)));
                 });
             })
             .response;

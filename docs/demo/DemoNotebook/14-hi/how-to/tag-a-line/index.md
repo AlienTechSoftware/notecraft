@@ -4,6 +4,8 @@ title: "पंक्ति पर टैग लगाएँ"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
+paper: grid-medium
+page-color: yellow
 tags: []
 ---
 

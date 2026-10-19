@@ -5,6 +5,7 @@ order: 70
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 dir: rtl
+page-color: teal
 tags: []
 ---
 
