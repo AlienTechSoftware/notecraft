@@ -103,10 +103,19 @@ it is fixed and tested, not when it is promised.
   columns can be added either side of the caret and taken out, and the heading row and the
   last column stay. A drag across cells picks the block between them, which Delete empties
   and the tab's Select Table, Select Rows and Select Columns pick the same way; deleting
-  rows or columns with a block picked takes all of them. Not built, and greyed where a
-  OneNote user looks for them: merging and splitting cells, borders and shading,
-  alignment, sorting, converting to a spreadsheet; dragging a column border to change its
-  width; and OneNote's grid picker on the Table button for choosing the size.
+  rows or columns with a block picked takes all of them. A table is drawn with lines round
+  its cells, which the tab's Hide Borders turns off and on; that choice is the app's, not
+  each table's, because CommonMark has nowhere to keep it. A column is a fixed width and
+  stays that width when the box around it is resized, the way OneNote's does. The Insert
+  tab's Table button opens OneNote's size picker, where the pointer runs over a grid and
+  names the size it would make. Not built, and greyed where a OneNote user looks for them:
+  merging and splitting cells, shading, alignment, sorting; dragging a column border to
+  change its width; and the Insert Table dialog.
+- **A spreadsheet goes to GridCraft**, the open spreadsheet from the same workshop, where
+  OneNote converts a table to Excel. The Table tab writes the table out as a CSV file
+  beside the page and opens it; the Insert tab starts an empty one and links it from the
+  page. Both are greyed when GridCraft is not installed, which is looked for on the PATH
+  and in the folder its installer uses.
 - **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
   the clipboard is read directly, because egui hands a window text only. The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab
