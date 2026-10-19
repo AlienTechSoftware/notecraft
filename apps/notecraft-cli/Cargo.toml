@@ -14,3 +14,6 @@ workspace = true
 notecraft-engine = { workspace = true }
 notecraft-mcp = { workspace = true }
 notecraft-store = { workspace = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }

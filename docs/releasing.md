@@ -66,7 +66,7 @@ the `release` environment of the repository, never in a file.
 - Decide on signing (SignPath Foundation is free for open source; check its conditions).
 - The MSI `UpgradeCode` in `packaging/windows/notecraft.wxs` is fixed once the first MSI is public.
   Changing it later stops new versions from replacing old ones.
-- The exe has the window icon at run time but no embedded file icon yet, and no version resource.
+- The exes carry the app icon and version information (build.rs, winresource), and the packaging script checks both.
 - Smoke test the artifact, not the build: it starts with no console window, a fresh profile gets
   the Welcome notebook in `Documents\NoteCraft`, a page can be opened, edited and saved, and a bad
   notebooks folder shows an error box. Install, upgrade and uninstall must leave the notebooks

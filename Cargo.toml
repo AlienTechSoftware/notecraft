@@ -28,6 +28,8 @@ egui = "0.36"
 egui_extras = { version = "0.36", default-features = false, features = ["image", "file"] }
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 serde_json = "1"
+# Build time only, Windows only: puts the icon and the version into the .exe files.
+winresource = "0.1"
 # The system file and folder dialogs, for "Open a notebook folder". UI only.
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 # The clipboard, for pictures. egui hands us text only, and eframe already uses this
