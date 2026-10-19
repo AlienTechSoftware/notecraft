@@ -1396,6 +1396,49 @@ fn ink_can_be_picked_up_moved_and_deleted() {
     assert_eq!(after["holding"].as_u64(), Some(0), "and nothing is held");
 }
 
+/// The Insert tab, group for group as OneNote has it, with the stamps it can really put
+/// on a page actually putting them there.
+#[test]
+fn the_insert_tab_has_onenotes_groups_and_its_stamps_work() {
+    let (_t, mut app, s) = sample_app("ui-insert");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    h.run();
+
+    for group in ["Insert", "Tables", "Files", "Images", "Media", "Links", "Recording", "Time Stamp", "Pages", "Symbols", "More"] {
+        assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
+    }
+    for control in ["Table", "File Attachment", "Pictures", "Link", "Date", "Time", "Date & Time", "Equation", "Diagram"] {
+        assert!(h.query_all_by_label(control).count() >= 1, "{control} is on the tab");
+    }
+
+    // The three stamps each put something different on the page.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Time").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    // A clock, five characters of it: two digits, a colon, two digits.
+    let clock: Vec<&str> = body.lines().filter(|l| l.len() >= 5 && l.contains(':')).collect();
+    assert!(
+        !clock.is_empty(),
+        "the time went in:
+{body}"
+    );
+
+    h.get_by_label("Date").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    let months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    assert!(
+        months.iter().any(|m| body.contains(m)),
+        "the date went in as words:
+{body}"
+    );
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

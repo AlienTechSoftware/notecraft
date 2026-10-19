@@ -97,6 +97,11 @@ it is fixed and tested, not when it is promised.
   readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
+- **The Insert tab** carries OneNote's groups, but most of what they offer is not built.
+  Working: tables, a file attachment, a picture, a link, the three time stamps, an
+  equation, and NoteCraft's own Mermaid diagram. Not built, and greyed on the tab: insert
+  space, file printout, spreadsheet, screen clipping, online video, transcribe, record
+  video, page templates, symbol and stickers.
 - **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
   and the other familiar marks, stored as plain text in the page.)
 - **Sync conflicts** are only detected by name by the checker; there is no merge or resolve UI.

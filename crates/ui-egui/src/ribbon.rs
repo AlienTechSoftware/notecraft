@@ -906,37 +906,72 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     resp.on_hover_text(tip)
 }
 
+/// OneNote's Insert tab, group for group and in its order. What NoteCraft can do is
+/// wired; what it cannot is greyed and says so, so the tab is an honest map of where the
+/// work is rather than a short list of what happens to exist.
 fn insert_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Insert", t, |ui| {
+        soon(ui, Icon::InsertSpace, "Insert\nSpace", t);
+    });
     group(ui, "Tables", t, |ui| {
-        if big(ui, Icon::Table, "Table", "A table", t).clicked() {
+        if big_menu(ui, Icon::Table, "Table", "A table", t).clicked() {
             acts.push(Act::Insert("table"));
         }
     });
     group(ui, "Files", t, |ui| {
-        if big(ui, Icon::Picture, "Picture", "A picture from a file", t).clicked() {
-            acts.push(Act::AddPicture);
-        }
-        if big(ui, Icon::Attach, "File", "A file: copied in, or linked where it is", t).clicked() {
+        soon(ui, Icon::Page, "File\nPrintout", t);
+        if big(ui, Icon::Attach, "File\nAttachment", "A file: copied in, or linked where it is", t).clicked() {
             acts.push(Act::AddFile);
         }
+        soon(ui, Icon::Spreadsheet, "Spreadsheet", t);
+    });
+    group(ui, "Images", t, |ui| {
+        soon(ui, Icon::Clip, "Screen\nClipping", t);
+        if big_menu(ui, Icon::Picture, "Pictures", "A picture from a file", t).clicked() {
+            acts.push(Act::AddPicture);
+        }
+    });
+    group(ui, "Media", t, |ui| {
+        soon(ui, Icon::Video, "Online\nVideo", t);
     });
     group(ui, "Links", t, |ui| {
         if big(ui, Icon::Link, "Link", "A link to a page or an address", t).clicked() {
             acts.push(Act::Insert("link"));
         }
     });
+    group(ui, "Recording", t, |ui| {
+        soon(ui, Icon::Mic, "Transcribe", t);
+        soon(ui, Icon::Video, "Record\nVideo", t);
+    });
+    group(ui, "Time Stamp", t, |ui| {
+        if big(ui, Icon::Calendar, "Date", "Today's date", t).clicked() {
+            acts.push(Act::Insert("date"));
+        }
+        if big(ui, Icon::Clock, "Time", "The time now", t).clicked() {
+            acts.push(Act::Insert("time"));
+        }
+        if big(ui, Icon::Calendar, "Date &\nTime", "Both, as the page's own stamp is written", t).clicked() {
+            acts.push(Act::Insert("datetime"));
+        }
+    });
+    group(ui, "Pages", t, |ui| {
+        soon(ui, Icon::PageStack, "Page\nTemplates", t);
+    });
     group(ui, "Symbols", t, |ui| {
-        if big(ui, Icon::Equation, "Equation", "An equation, written in TeX", t).clicked() {
+        if big_menu(ui, Icon::Equation, "Equation", "An equation, written in TeX", t).clicked() {
             acts.push(Act::Insert("equation"));
         }
+        soon(ui, Icon::Symbol, "Symbol", t);
+    });
+    // NoteCraft's own, which OneNote has no button for: a diagram kept as its source, so
+    // it can be read and changed in any editor rather than being a picture of one.
+    group(ui, "NoteCraft", t, |ui| {
         if big(ui, Icon::Diagram, "Diagram", "A Mermaid diagram, kept as its source", t).clicked() {
             acts.push(Act::Insert("diagram"));
         }
     });
-    group(ui, "Time", t, |ui| {
-        if big(ui, Icon::Page, "Date", "Today's date and time", t).clicked() {
-            acts.push(Act::Insert("date"));
-        }
+    group(ui, "More", t, |ui| {
+        soon(ui, Icon::Sticker, "Stickers", t);
     });
 }
 
