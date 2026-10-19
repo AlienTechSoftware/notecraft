@@ -26,6 +26,7 @@
 
 #![doc(test(attr(deny(warnings))))]
 
+pub mod pick;
 pub mod rack;
 pub mod shape;
 pub mod svg;

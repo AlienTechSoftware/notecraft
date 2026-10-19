@@ -14,8 +14,8 @@
 //! so they stay beside the words they were written against as the window is resized.
 
 use crate::theme::Tokens;
-use egui::{Sense, Ui};
-use notecraft_ink::{Dab, Drawing, Rgb, Stroke, Tool, shape, svg};
+use egui::{Sense, Ui, vec2};
+use notecraft_ink::{Dab, Drawing, Rgb, Stroke, Tool, pick, shape, svg};
 use std::path::{Path, PathBuf};
 
 /// What the pen is set to do, as the Draw tab has it.
@@ -71,6 +71,22 @@ pub struct Pad {
     pub flat: usize,
     /// The stroke being drawn now, if the pen is down.
     drawing_now: Option<Stroke>,
+    /// The strokes being held, by their place in the drawing. Never written to the file:
+    /// it is what someone has their hand on at this moment, not part of the page.
+    held: Vec<usize>,
+    /// The loop being drawn now by the lasso.
+    loop_now: Vec<(f32, f32)>,
+    /// Where the pointer was when a move or a stretch began, and the box as it was then.
+    grabbed: Option<(egui::Pos2, (f32, f32, f32, f32), Grab)>,
+}
+
+/// What a press on held ink began.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Grab {
+    /// Moving the whole of it.
+    Move,
+    /// Stretching it by the corner opposite this one.
+    Corner(bool, bool),
 }
 
 impl Pad {
@@ -81,7 +97,7 @@ impl Pad {
         let file = page_dir.join(FILE);
         let (drawing, flat) =
             std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok()).unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
-        Pad { file, drawing, dirty: false, flat, drawing_now: None }
+        Pad { file, drawing, dirty: false, flat, drawing_now: None, held: Vec::new(), loop_now: Vec::new(), grabbed: None }
     }
 
     /// Writes the ink, with its readings, which is what the page keeps.
@@ -148,7 +164,31 @@ impl Pad {
     pub fn is_empty(&self) -> bool {
         self.drawing.is_empty() && self.drawing_now.is_none()
     }
+
+    /// How many strokes are being held.
+    pub fn holding(&self) -> usize {
+        self.held.len()
+    }
+
+    /// Lets go of whatever is held, which is what happens when the tool changes or the
+    /// page does.
+    pub fn let_go(&mut self) {
+        self.held.clear();
+        self.loop_now.clear();
+        self.grabbed = None;
+    }
+
+    /// Throws away the held ink and says whether any went.
+    pub fn delete_held(&mut self) -> bool {
+        let went = pick::remove(&mut self.drawing, &self.held) > 0;
+        self.let_go();
+        self.dirty |= went;
+        went
+    }
 }
+
+/// How near a corner of the box the pointer has to be to take hold of it.
+const HANDLE: f32 = 9.0;
 
 /// Draws a page's ink over the page, and takes what the pen does to it. `body` is the
 /// rectangle the page's words were drawn in; the ink is kept in that rectangle's own
@@ -163,7 +203,28 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
         paint_stroke(&painter, body.min, stroke);
     }
 
+    // A pen or a rubber in the hand means the ink is not being held any more.
+    if matches!(pen.pointer, Pointer::Draw | Pointer::Erase) && !pad.held.is_empty() {
+        pad.let_go();
+    }
+    // What is held is outlined wherever the pointer is, so it is plain what a move or a
+    // delete would take.
+    if !pad.held.is_empty()
+        && let Some((x0, y0, x1, y1)) = pick::bounds(&pad.drawing, &pad.held)
+    {
+        let box_ = egui::Rect::from_min_max(body.min + vec2(x0, y0), body.min + vec2(x1, y1)).expand(3.0);
+        painter.rect_stroke(box_, 2.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Outside);
+        for corner in [box_.left_top(), box_.right_top(), box_.left_bottom(), box_.right_bottom()] {
+            painter.rect_filled(egui::Rect::from_center_size(corner, vec2(7.0, 7.0)), 1.0, t.accent);
+        }
+    }
+    if !pad.loop_now.is_empty() {
+        let path: Vec<egui::Pos2> = pad.loop_now.iter().map(|(x, y)| body.min + vec2(*x, *y)).collect();
+        painter.add(egui::Shape::line(path, egui::Stroke::new(1.2, t.accent)));
+    }
+
     if pen.pointer == Pointer::Write {
+        pad.let_go();
         // The tool was put down mid-stroke; keep what was drawn rather than losing it.
         if let Some(stroke) = pad.drawing_now.take() {
             let kept = pad.drawing.add(stroke);
@@ -176,7 +237,11 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
     // While a pen is in hand the whole page belongs to it, so this goes on last and over
     // everything: a press must not land in the words underneath and move the caret.
     let resp = ui.interact(body, ui.id().with("ink-layer"), Sense::click_and_drag());
-    ui.ctx().set_cursor_icon(if pen.pointer == Pointer::Erase { egui::CursorIcon::NotAllowed } else { egui::CursorIcon::Crosshair });
+    ui.ctx().set_cursor_icon(match pen.pointer {
+        Pointer::Erase => egui::CursorIcon::NotAllowed,
+        Pointer::Pick => egui::CursorIcon::Grab,
+        _ => egui::CursorIcon::Crosshair,
+    });
 
     // Not egui's drag, which only begins once the pointer has travelled far enough: a pen
     // put down and lifted in one place is a dot, and a dot is ink.
@@ -204,10 +269,105 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
                 changed = pad.drawing.add(stroke);
             }
         }
+        Pointer::Lasso => {
+            if down {
+                if let Some((x, y)) = at {
+                    // Only every few points: a loop of every frame's position is far more
+                    // than a ray-casting test needs, and it is thrown away at the end.
+                    if pad.loop_now.last().is_none_or(|(lx, ly)| (lx - x).hypot(ly - y) > 2.0) {
+                        pad.loop_now.push((x, y));
+                    }
+                    ui.ctx().request_repaint();
+                }
+            } else if !pad.loop_now.is_empty() {
+                let loop_ = std::mem::take(&mut pad.loop_now);
+                pad.held = pick::inside(&pad.drawing, &loop_);
+            }
+        }
+        Pointer::Pick => {
+            let held_box = pick::bounds(&pad.drawing, &pad.held)
+                .map(|(x0, y0, x1, y1)| egui::Rect::from_min_max(body.min + vec2(x0, y0), body.min + vec2(x1, y1)).expand(3.0));
+            let here = ui.ctx().pointer_interact_pos().unwrap_or(egui::Pos2::ZERO);
+            if down && pad.grabbed.is_none() {
+                // A press on a corner stretches, inside the box moves, on a stroke picks
+                // that stroke up, and anywhere else lets go.
+                let corner = held_box.and_then(|b| grab_corner(b, here));
+                match (corner, held_box, at) {
+                    (Some(c), Some(b), _) => pad.grabbed = Some((here, as_tuple(b, body), c)),
+                    (None, Some(b), _) if b.contains(here) => pad.grabbed = Some((here, as_tuple(b, body), Grab::Move)),
+                    (_, _, Some((x, y))) => match pick::at(&pad.drawing, x, y, 3.0) {
+                        Some(i) => {
+                            pad.held = vec![i];
+                            if let Some(b) = pick::bounds(&pad.drawing, &pad.held) {
+                                pad.grabbed = Some((here, b, Grab::Move));
+                            }
+                        }
+                        None => pad.let_go(),
+                    },
+                    _ => {}
+                }
+            }
+            if let Some((from, was, grab)) = pad.grabbed {
+                let (dx, dy) = (here.x - from.x, here.y - from.y);
+                if down {
+                    // The ink follows the pointer from where it was taken hold of, so a
+                    // long drag cannot drift away from the hand.
+                    let (x0, y0, x1, y1) = was;
+                    match grab {
+                        Grab::Move => {
+                            let now = pick::bounds(&pad.drawing, &pad.held).unwrap_or(was);
+                            pick::move_by(&mut pad.drawing, &pad.held, x0 + dx - now.0, y0 + dy - now.1);
+                        }
+                        Grab::Corner(right, bottom) => {
+                            let (ox, oy) = (if right { x0 } else { x1 }, if bottom { y0 } else { y1 });
+                            let (w, h) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+                            let want_w = if right { w + dx } else { w - dx };
+                            let want_h = if bottom { h + dy } else { h - dy };
+                            let now = pick::bounds(&pad.drawing, &pad.held).unwrap_or(was);
+                            let have_w = (now.2 - now.0).max(0.001);
+                            let have_h = (now.3 - now.1).max(0.001);
+                            pick::scale_about(&mut pad.drawing, &pad.held, ox, oy, want_w.max(4.0) / have_w, want_h.max(4.0) / have_h);
+                        }
+                    }
+                    ui.ctx().request_repaint();
+                } else {
+                    pad.grabbed = None;
+                    changed = true;
+                }
+            }
+        }
         Pointer::Write => {}
+    }
+    // Delete throws away whatever is held, however it was picked up.
+    if !pad.held.is_empty() && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+        changed |= pad.delete_held();
     }
     pad.dirty |= changed;
     changed
+}
+
+/// The corner of `box_` the pointer has hold of, if it is near one. The two flags say
+/// which way that corner moves: right, and down.
+fn grab_corner(box_: egui::Rect, at: egui::Pos2) -> Option<Grab> {
+    let near = |c: egui::Pos2| (c.x - at.x).abs() <= HANDLE && (c.y - at.y).abs() <= HANDLE;
+    if near(box_.right_bottom()) {
+        return Some(Grab::Corner(true, true));
+    }
+    if near(box_.left_bottom()) {
+        return Some(Grab::Corner(false, true));
+    }
+    if near(box_.right_top()) {
+        return Some(Grab::Corner(true, false));
+    }
+    if near(box_.left_top()) {
+        return Some(Grab::Corner(false, false));
+    }
+    None
+}
+
+/// A rectangle on the screen as the ink's own coordinates.
+fn as_tuple(b: egui::Rect, body: egui::Rect) -> (f32, f32, f32, f32) {
+    (b.min.x - body.min.x, b.min.y - body.min.y, b.max.x - body.min.x, b.max.y - body.min.y)
 }
 
 /// One stroke, as triangles between the two edges of its ribbon, with a round cap at each

@@ -92,6 +92,10 @@ pub enum Pointer {
     Draw,
     /// Rub out whatever the pointer passes over.
     Erase,
+    /// Pick ink up: click a stroke to hold it, then move, stretch or delete it.
+    Pick,
+    /// Pick ink up by drawing a loop round it.
+    Lasso,
 }
 
 impl Pointer {
@@ -100,6 +104,8 @@ impl Pointer {
             Pointer::Write => "write",
             Pointer::Draw => "draw",
             Pointer::Erase => "erase",
+            Pointer::Pick => "select",
+            Pointer::Lasso => "lasso",
         }
     }
 }
@@ -1491,21 +1497,30 @@ stroke",
         );
     });
     group(ui, "Selection", t, |ui| {
-        // OneNote calls this one Select. Ours does not select ink yet; what it does is
-        // put the pointer back to the words, which is the same "stop drawing" the button
-        // is reached for, so it keeps the name and the tooltip says plainly what happens.
-        if big_on(ui, Icon::Pointer, "Select", "Stop drawing: the pointer picks text and puts the caret back", view.pointer == Pointer::Write, t)
+        if big_on(ui, Icon::Pointer, "Select", "Click a stroke to pick it up, then move, stretch or delete it", view.pointer == Pointer::Pick, t)
             .clicked()
         {
-            acts.push(Act::InkPointer(Pointer::Write));
+            acts.push(Act::InkPointer(Pointer::Pick));
         }
-        soon(
+        if big_on(
             ui,
             Icon::Lasso,
             "Lasso
 Select",
+            "Draw a loop round ink to pick it up",
+            view.pointer == Pointer::Lasso,
             t,
-        );
+        )
+        .clicked()
+        {
+            acts.push(Act::InkPointer(Pointer::Lasso));
+        }
+        // OneNote has no such button: there, the pointer is always the caret until a pen
+        // is picked up. Ours needs one, because picking ink up and writing words are both
+        // things a plain click does, and only the person knows which they meant.
+        if big_on(ui, Icon::DirLtr, "Type", "Put the pointer back to the words and the caret", view.pointer == Pointer::Write, t).clicked() {
+            acts.push(Act::InkPointer(Pointer::Write));
+        }
     });
     group(ui, "Drawing Tools", t, |ui| {
         if eraser_on_rack(ui, view.pointer == Pointer::Erase, t).clicked() {

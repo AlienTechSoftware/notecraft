@@ -16,7 +16,20 @@ Pick a pen from the rack in **Drawing Tools**, then write anywhere on the page.
   its whole width however you hold it.
 
 **Eraser** rubs out any stroke the pointer passes over. **Undo stroke** takes the last one
-back. **Select** stops drawing: the pointer picks text and puts the caret back.
+back.
+
+## Picking ink up
+
+Ink is its own thing on the page, not part of any paragraph, so it is picked up on its own.
+
+- **Select** then click a stroke to hold it. Drag inside the box to move it, drag a corner
+  to stretch it, and press Delete to throw it away. Clicking bare page lets go.
+- **Lasso Select** then draw a loop: everything wholly inside it is picked up. Wholly, not
+  partly, so a loop round two words does not drag in the long line passing through them.
+- **Type** puts the pointer back to the words and the caret.
+
+Moving a paragraph does not move ink that happens to sit near it, and moving ink does not
+disturb the words under it. They are two layers on one sheet.
 
 ## Arranging the rack
 
