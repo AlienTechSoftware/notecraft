@@ -2232,6 +2232,7 @@ name = "notecraft-ui-egui"
 version = "0.0.1"
 dependencies = [
  "egui",
+ "egui-wgpu",
  "egui_extras",
  "egui_kittest",
  "image",
