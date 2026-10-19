@@ -1364,7 +1364,7 @@ fn ink_can_be_picked_up_moved_and_deleted() {
 
     // Select, then click the first one: it is held, and only it.
     h.get_by_label("Select").click();
-    h.run();
+    pump(&mut h);
     ask(&mut h, "ui.click", json!({"x": body.min.x + 80.0, "y": body.min.y + 120.0})).expect("pick");
     rest(&mut h);
     assert_eq!(ink(&mut h)["holding"].as_u64(), Some(1), "one stroke is held: {}", ink(&mut h));
@@ -1376,7 +1376,7 @@ fn ink_can_be_picked_up_moved_and_deleted() {
 
     // A lasso round the lower stroke takes that one and leaves the upper one alone.
     h.get_by_label("Lasso Select").click();
-    h.run();
+    pump(&mut h);
     let (lx, ly) = (body.min.x + 20.0, body.min.y + 230.0);
     ask(&mut h, "ui.press", json!({"x": lx, "y": ly})).expect("down");
     pump(&mut h);
