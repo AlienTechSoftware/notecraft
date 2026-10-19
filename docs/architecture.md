@@ -16,7 +16,7 @@ and nothing below L6 may depend on egui, eframe, winit or rfd.
 |---|---|---|
 | L0 | `model` | The shared vocabulary: node kinds, page formats, name and folder rules, ids, time, a tiny `key = "value"` reader. No file system, no dependencies. |
 | L1 | `formats` | Text handling for HTML and CommonMark + GFM: front matter, the body of an HTML page, page templates, HTML to Markdown-like text for previews, and a Markdown parser into a block model. |
-| L1 | `math` | A TeX subset parsed into a tree and laid out into drawing items (text, lines, paths) given a way to measure text. No UI dependency. |
+| L1 | `math` | TeX maths typeset into drawing items (glyphs, text runs, lines, rectangles, paths) given a way to measure text. RaTeX does it; a small engine of its own is the fallback. No UI dependency. |
 | L1 | `text` | The text layer, started: parley for the runs of a line, their order, their direction and which character a click is on. No egui, no drawing: the UI paints the runs egui's way. |
 | L1 | `onenote` | Reads `.one` section files: the revision store container, its objects and their property sets. Read only, no file system of its own. |
 | L2 | `store` | Notebooks as plain folders: the tree, creating and deleting nodes, page content, attachments, settings, search, and the folder checker. |
@@ -115,10 +115,15 @@ driven from the command line as easily as from the window.
 
 ## Equations and diagrams
 
-- **Equations** are a TeX subset (`crates/math`): fractions, roots, superscripts and
-  subscripts, sums, products and integrals with limits, scaled brackets, Greek letters,
-  common symbols and text. The layout is pure and tested without a window. Anything the parser
-  does not know stays visible as text.
+- **Equations** are TeX maths (`crates/math`). RaTeX, a pure Rust typesetter that follows KaTeX,
+  lays a formula out as shapes: glyphs of the KaTeX faces, lines, rectangles and paths. When it
+  cannot take a formula (a syntax error, or one past the length and nesting limits that keep it from
+  overflowing the stack) a smaller engine of the crate's own lays it out, and what that cannot read
+  stays visible as text. A page stores the TeX, not the picture, so the engine can change without
+  touching a page. The layout is pure and tested without a window; `ui-egui` paints it
+  (`mathview.rs`) with the KaTeX faces registered as `katex-<face>` fonts. RaTeX is pinned to an
+  exact version in the workspace manifest and is named only in `crates/math/src/tex.rs`. See
+  [how-to/write-equations.md](how-to/write-equations.md).
 - **Diagrams** (Mermaid) are stored as source, in a fenced block or `<pre class="diagram">`,
   and shown as source. Rendering is not built. Mermaid is JavaScript; a pure-Rust renderer or
   another approach is an open question in [`gaps.md`](gaps.md).

@@ -11,6 +11,10 @@ it is fixed and tested, not when it is promised.
   against synthetic files. What is missing is the other half, writing that out as notebook
   folders, so nothing can be imported yet. Notebook structure (`.onetoc2`) is not read, and
   neither are password-protected sections or ink.
+- **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
+  no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
+  one version, and a smaller engine of our own is the fallback. Arabic, Hebrew and Chinese inside
+  `\text{}` are drawn in the page's font; how they line up with the maths is judged by eye only.
 - **Mermaid diagrams are not drawn.** They are kept as source and shown as source. Mermaid is
   JavaScript; options are a pure-Rust renderer for a subset, or an optional external tool.
 - **The page editor has edges.** Both formats are written on in their finished look, block by

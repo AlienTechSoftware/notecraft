@@ -1487,6 +1487,7 @@ impl NoteCraftApp {
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
             ribbon::Act::File => self.backstage = Some("Info"),
+            ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
             ribbon::Act::Tab(name) => self.ribbon_tab = name,
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),

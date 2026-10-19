@@ -99,7 +99,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 | **Page source** | The `< >` button opens the page's folder: every file the page owns on the left, the one you pick on the right. The page file shows its head (id, title, dates) above its body, which you can edit; a drawing's SVG shows as text, pictures as pictures, and a file nothing on the page uses is marked |
 | **Right to left** | Arabic, Hebrew and the rest draw, with a direction for the page, the line or the run, kept in the text itself so it travels. Mixed lines are not reordered yet |
 | **Tags** | To Do, Important, Question, Remember, Definition, Highlight, Contact, Address, Phone, Web site, Idea, Critical: stored as plain text in the page, drawn as the marks you know |
-| **Equations** | A TeX subset parsed and drawn natively, inline and display |
+| **Equations** | KaTeX-style TeX maths drawn natively in real maths fonts, inline and display: fractions, roots, sums, integrals, matrices, cases, accents, with a gallery to start from |
 | **Pictures and files** | Drop a file on the page: copy it into the page's folder or link to it where it is, and it asks which |
 | **Colours** | Nine colours for notebooks, section groups and sections, saved in the folder |
 | **Themes** | 14 themes, light and dark in seven accents, with contrast guaranteed by a test; a sun or moon switcher |
@@ -195,7 +195,7 @@ layers, and that nothing below the UI layer knows about egui.
 |---|---|---|
 | L0 | `notecraft-model` | Node kinds, page formats, tags, name rules, ids, time |
 | L1 | `notecraft-formats` | HTML and CommonMark: front matter, parsing into blocks, writing blocks back |
-| L1 | `notecraft-math` | A TeX subset parsed and laid out into drawing items |
+| L1 | `notecraft-math` | TeX maths typeset into drawing items (RaTeX, with a small engine of its own as the fallback) |
 | L1 | `notecraft-onenote` | Reads `.one` section files: the revision store and its objects |
 | L2 | `notecraft-store` | Notebooks as folders: the tree, pages, attachments, settings, search, the checker |
 | L4 | `notecraft-engine` | The session and the command registry |

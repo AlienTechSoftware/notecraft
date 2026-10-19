@@ -13,6 +13,8 @@
 
 mod layout;
 mod parse;
+mod tex;
 
 pub use layout::{Item, Layout, Metrics, layout};
 pub use parse::{BigKind, Node, parse};
+pub use tex::{Cmd, Engine, MAX_NESTING, MAX_SOURCE_CHARS, Rgba, Shape, Typeset, typeset};

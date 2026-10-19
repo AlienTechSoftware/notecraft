@@ -31,6 +31,13 @@ pub fn definitions() -> egui::FontDefinitions {
             fonts.families.entry(family).or_default().push(name.to_owned());
         }
     }
+    // The KaTeX maths faces, each in a family of its own, `katex-<face>`: an equation names the
+    // face a glyph comes from, and nothing falls back to them or from them.
+    for (face, bytes) in notecraft_text::katex::FACES {
+        let name = format!("katex-{face}");
+        fonts.font_data.insert(name.clone(), Arc::new(egui::FontData::from_static(bytes)));
+        fonts.families.insert(egui::FontFamily::Name(name.clone().into()), vec![name]);
+    }
     fonts
 }
 
