@@ -1129,6 +1129,7 @@ impl NoteCraftApp {
             pointer: self.pointer,
             rack: &self.rack,
             nib: self.nib,
+            in_table: self.caret_in_table(),
             sensitivity: self.sensitivity,
         };
         let format = self.editor.as_ref().map(|e| e.format);
@@ -1214,6 +1215,7 @@ impl NoteCraftApp {
                 self.remember_rack();
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
+            ribbon::Act::Table(what) => self.edit_table(what),
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -1374,6 +1376,32 @@ impl NoteCraftApp {
         }
         // The page stops naming ink it no longer has.
         self.sync_ink_reference();
+    }
+
+    /// Whether the caret is in a table, which is when the Table tab is offered.
+    fn caret_in_table(&self) -> bool {
+        self.editor
+            .as_ref()
+            .and_then(|e| e.caret.as_ref().map(|c| (e, c)))
+            .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
+    }
+
+    /// Changes the shape of the table the caret is in, from the Table tab.
+    fn edit_table(&mut self, what: pageedit::TableEdit) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
+            return;
+        };
+        let Some(block) = ed.blocks.get_mut(at) else { return };
+        let Some(to) = pageedit::edit_table(block, cell, what) else {
+            // The rules said no: a table keeps its heading row and at least one column.
+            self.say("A table keeps its heading row and at least one column");
+            return;
+        };
+        let text = pageedit::cell_text(block, to).unwrap_or_default();
+        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to) });
+        Self::mark_dirty_from_blocks(ed);
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no

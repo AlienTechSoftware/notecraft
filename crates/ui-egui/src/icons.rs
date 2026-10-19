@@ -103,6 +103,10 @@ pub enum Icon {
     Sticker,
     /// An omega: a symbol from outside the keyboard.
     Symbol,
+    /// A table with one row picked out.
+    TableRow,
+    /// A table with one column picked out.
+    TableColumn,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -383,6 +387,20 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             (13.5, 20.0),
             (17.5, 20.0),
         ])],
+        // A table with its middle row picked out.
+        Icon::TableRow => vec![
+            fill(&[(4.0, 10.0), (20.0, 10.0), (20.0, 14.5), (4.0, 14.5)], shade(color, 0.45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 19.0), (4.0, 19.0)]),
+            line((4.0, 10.0), (20.0, 10.0)),
+            line((4.0, 14.5), (20.0, 14.5)),
+        ],
+        // The same, with a column picked out instead.
+        Icon::TableColumn => vec![
+            fill(&[(9.5, 5.5), (14.5, 5.5), (14.5, 19.0), (9.5, 19.0)], shade(color, 0.45)),
+            closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 19.0), (4.0, 19.0)]),
+            line((9.5, 5.5), (9.5, 19.0)),
+            line((14.5, 5.5), (14.5, 19.0)),
+        ],
         // A plain plus.
         Icon::Plus => vec![line((12.0, 4.5), (12.0, 19.5)), line((4.5, 12.0), (19.5, 12.0))],
         Icon::Pen => vec![
@@ -432,7 +450,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 47] = [
+    pub const ALL: [Icon; 49] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -480,6 +498,8 @@ mod tests {
         Icon::Clip,
         Icon::Sticker,
         Icon::Symbol,
+        Icon::TableRow,
+        Icon::TableColumn,
     ];
 
     #[test]

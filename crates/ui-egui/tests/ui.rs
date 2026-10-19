@@ -1647,6 +1647,81 @@ fn clicking_bare_page_starts_a_box_where_the_pointer_is() {
     );
 }
 
+/// The Table tab appears while the caret is in a table and goes when it leaves, and its
+/// Insert and Delete really change the table.
+#[test]
+fn the_table_tab_comes_with_the_caret_and_changes_the_table() {
+    let (_t, app, s) = sample_app("ui-table-tab");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Shape", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| A | B |
+|---|---|
+| one | two |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // No caret in a table, no Table tab.
+    assert_eq!(h.query_all_by_label("Table").count(), 0, "the tab is not offered while nothing is in hand");
+
+    let cell = h.get_by_label("one").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("into the cell");
+    settle(&mut h);
+    assert!(h.query_all_by_label("Table").count() >= 1, "now the tab is there");
+
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    for group in ["Select", "Delete", "Insert", "Merge", "Format", "Alignment", "Data", "Convert"] {
+        assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
+    }
+
+    // A column to the right, then a row below: the table grows both ways.
+    h.get_by_label("Insert Column Right").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(
+        body.lines().next().unwrap_or("").matches('|').count(),
+        4,
+        "three columns now:
+{body}"
+    );
+
+    h.get_by_label("Insert Row Below").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(
+        body.lines().filter(|l| l.starts_with('|')).count(),
+        4,
+        "a heading, its rule and two rows:
+{body}"
+    );
+
+    // And the heading row refuses to be deleted, with a word rather than silence.
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("| A |"),
+        "the heading is still there:
+{body}"
+    );
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

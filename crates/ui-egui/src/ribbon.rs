@@ -17,6 +17,9 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 4] = ["Home", "Insert", "Draw", "View"];
 pub const SOURCE_TAB: &str = "Source";
+/// Shown only while the caret is in a table, the way Office shows a tab for the thing in
+/// hand. It goes when the caret leaves, and the ribbon falls back to Home.
+pub const TABLE_TAB: &str = "Table";
 
 /// What a ribbon control asks the window to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +71,8 @@ pub enum Act {
     Tag(Tag),
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
+    /// Change the shape of the table the caret is in.
+    Table(crate::pageedit::TableEdit),
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
     /// The pen at this place on the rack was picked up.
@@ -292,6 +297,8 @@ pub struct View<'a> {
     /// The tools on the rack, and which of them is in hand.
     pub rack: &'a [Nib],
     pub nib: usize,
+    /// True while the caret is in a table, which is when the Table tab is offered.
+    pub in_table: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
 }
@@ -327,9 +334,9 @@ const DROP: f32 = 4.0;
 /// Returns every act the user asked for this frame (usually none or one).
 pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
     let mut acts = Vec::new();
-    tab_strip(ui, tab, source, t, &mut acts);
+    tab_strip(ui, tab, source, view.in_table, t, &mut acts);
     ui.add_space(2.0);
-    let chosen = resolve_tab(tab, source);
+    let chosen = resolve_tab(tab, source, view.in_table);
     // A tab with many groups is wider than a narrow window: the Draw tab alone has eleven,
     // as OneNote's does. Rather than clipping the last of them, the groups scroll sideways.
     // Dragging must not scroll: the controls here are clicked and dragged themselves, and a
@@ -345,6 +352,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
                     "Insert" => insert_tab(ui, t, &mut acts),
                     "Draw" => draw_tab(ui, view, t, &mut acts),
                     "View" => view_tab(ui, source, view, t, &mut acts),
+                    TABLE_TAB => table_tab(ui, t, &mut acts),
                     SOURCE_TAB => source_tab(ui, format, t, &mut acts),
                     _ => home_tab(ui, t, &mut acts),
                 }
@@ -354,27 +362,35 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
 }
 
 /// The tab that is really shown: the Source tab disappears with the source pane.
-pub fn resolve_tab(tab: &str, source: bool) -> &str {
+pub fn resolve_tab(tab: &str, source: bool, in_table: bool) -> &str {
     if tab == SOURCE_TAB && !source {
         return "Home";
     }
-    if TABS.contains(&tab) || (tab == SOURCE_TAB && source) { tab } else { "Home" }
+    // The Table tab goes with the caret: leaving a table leaves the tab, so the ribbon
+    // never offers commands for a table that is no longer in hand.
+    if tab == TABLE_TAB && !in_table {
+        return "Home";
+    }
+    if TABS.contains(&tab) || (tab == SOURCE_TAB && source) || (tab == TABLE_TAB && in_table) { tab } else { "Home" }
 }
 
 /// Every tab that can be chosen now.
-pub fn tabs(source: bool) -> Vec<&'static str> {
+pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
     let mut v = TABS.to_vec();
+    if in_table {
+        v.push(TABLE_TAB);
+    }
     if source {
         v.push(SOURCE_TAB);
     }
     v
 }
 
-fn tab_strip(ui: &mut Ui, tab: &str, source: bool, t: &Tokens, acts: &mut Vec<Act>) {
-    let chosen = resolve_tab(tab, source);
+fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
+    let chosen = resolve_tab(tab, source, in_table);
     ui.horizontal(|ui| {
         ui.add_space(4.0);
-        for name in tabs(source) {
+        for name in tabs(source, in_table) {
             let selected = name == chosen;
             let font = egui::FontId::proportional(12.5);
             let galley = ui.painter().layout_no_wrap(name.to_string(), font.clone(), t.text);
@@ -1657,6 +1673,59 @@ Help",
     });
 }
 
+/// OneNote's Table tab, which appears while the caret is in a table. What NoteCraft can
+/// do to a table is wired; the rest is greyed where a OneNote user looks for it.
+fn table_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    use crate::pageedit::TableEdit as E;
+    group(ui, "Select", t, |ui| {
+        soon(ui, Icon::Table, "Select\nTable", t);
+        soon(ui, Icon::TableColumn, "Select\nColumns", t);
+        soon(ui, Icon::TableRow, "Select\nRows", t);
+    });
+    group(ui, "Delete", t, |ui| {
+        soon(ui, Icon::Table, "Delete\nTable", t);
+        if big(ui, Icon::TableColumn, "Delete\nColumns", "Take the caret's column out", t).clicked() {
+            acts.push(Act::Table(E::DeleteColumn));
+        }
+        if big(ui, Icon::TableRow, "Delete\nRows", "Take the caret's row out", t).clicked() {
+            acts.push(Act::Table(E::DeleteRow));
+        }
+    });
+    group(ui, "Insert", t, |ui| {
+        if big(ui, Icon::TableRow, "Insert Row\nAbove", "A row above the caret's", t).clicked() {
+            acts.push(Act::Table(E::InsertRow(true)));
+        }
+        if big(ui, Icon::TableRow, "Insert Row\nBelow", "A row below the caret's", t).clicked() {
+            acts.push(Act::Table(E::InsertRow(false)));
+        }
+        if big(ui, Icon::TableColumn, "Insert Column\nLeft", "A column left of the caret's", t).clicked() {
+            acts.push(Act::Table(E::InsertColumn(true)));
+        }
+        if big(ui, Icon::TableColumn, "Insert Column\nRight", "A column right of the caret's", t).clicked() {
+            acts.push(Act::Table(E::InsertColumn(false)));
+        }
+    });
+    group(ui, "Merge", t, |ui| {
+        soon(ui, Icon::Table, "Merge\nCells", t);
+        soon(ui, Icon::Table, "Split\nCells", t);
+    });
+    group(ui, "Format", t, |ui| {
+        soon(ui, Icon::Table, "Hide\nBorders", t);
+        soon(ui, Icon::Picture, "Shading", t);
+    });
+    group(ui, "Alignment", t, |ui| {
+        soon(ui, Icon::DirLtr, "Align\nLeft", t);
+        soon(ui, Icon::DirLtr, "Center", t);
+        soon(ui, Icon::DirRtl, "Align\nRight", t);
+    });
+    group(ui, "Data", t, |ui| {
+        soon(ui, Icon::ListNumber, "Sort", t);
+    });
+    group(ui, "Convert", t, |ui| {
+        soon(ui, Icon::Spreadsheet, "Convert to\nSpreadsheet", t);
+    });
+}
+
 fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
@@ -1827,14 +1896,20 @@ mod tests {
 
     #[test]
     fn the_tabs_are_office_like_and_source_comes_and_goes() {
-        assert_eq!(tabs(false), vec!["Home", "Insert", "Draw", "View"]);
-        assert_eq!(tabs(true), vec!["Home", "Insert", "Draw", "View", "Source"]);
-        assert_eq!(resolve_tab("Insert", false), "Insert");
-        assert_eq!(resolve_tab("Draw", false), "Draw");
-        assert_eq!(resolve_tab("Source", true), "Source");
-        assert_eq!(resolve_tab("Source", false), "Home", "the Source tab goes when the source pane does");
-        assert_eq!(resolve_tab("Nonsense", false), "Home");
-        assert_eq!(resolve_tab("", true), "Home");
+        assert_eq!(tabs(false, false), vec!["Home", "Insert", "Draw", "View"]);
+        assert_eq!(tabs(true, false), vec!["Home", "Insert", "Draw", "View", "Source"]);
+        assert_eq!(resolve_tab("Insert", false, false), "Insert");
+        assert_eq!(resolve_tab("Draw", false, false), "Draw");
+        assert_eq!(resolve_tab("Source", true, false), "Source");
+        assert_eq!(resolve_tab("Source", false, false), "Home", "the Source tab goes when the source pane does");
+        assert_eq!(resolve_tab("Nonsense", false, false), "Home");
+        assert_eq!(resolve_tab("", true, false), "Home");
+
+        // The Table tab goes with the caret: it is offered only while the caret is in a
+        // table, and leaving one takes the tab and its commands away.
+        assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "View", "Table"]);
+        assert_eq!(resolve_tab("Table", false, true), "Table");
+        assert_eq!(resolve_tab("Table", false, false), "Home", "out of the table, out of the tab");
     }
 
     #[test]
