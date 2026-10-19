@@ -193,15 +193,28 @@ pub fn set_color(dir: &Path, color: Option<NodeColor>) -> Result<()> {
 }
 
 /// Changes the title of a node. The folder name is not changed.
+///
+/// A new page is written with its title in two places: where the page records it, and as
+/// the heading the reader sees. Renaming used to change only the first, so the page said
+/// one thing at the top of the window and another on the page - two titles, drifting
+/// apart with every rename. The heading moves with the title now, as long as it still
+/// says what the title said: a heading someone has edited themselves is theirs, and is
+/// left alone.
 pub fn set_title(dir: &Path, title: &str) -> Result<()> {
     let title = clean_title(title)?;
     if let Some((format, file)) = page_file(dir) {
         let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
         let out = match format {
-            PageFormat::Html => html::replace_between(&text, "<title>", "</title>", &html::escape(&title)),
+            PageFormat::Html => {
+                let was = html::title(&text).unwrap_or_default();
+                let renamed = html::replace_between(&text, "<title>", "</title>", &html::escape(&title));
+                retitle_heading(&renamed, &was, &title, PageFormat::Html)
+            }
             PageFormat::Cmgfm => {
                 let (front, rest) = frontmatter::split_front(&text);
-                format!("{}{rest}", kv::replace_line(&front, "title:", &format!("title: {}", kv::quote(&title))))
+                let was = frontmatter::value(&front, "title").unwrap_or_default();
+                let front = kv::replace_line(&front, "title:", &format!("title: {}", kv::quote(&title)));
+                format!("{front}{}", retitle_heading(&rest, &was, &title, PageFormat::Cmgfm))
             }
         };
         write_atomic(&file, &out)
@@ -212,10 +225,77 @@ pub fn set_title(dir: &Path, title: &str) -> Result<()> {
     }
 }
 
+/// Rewrites a page's first heading when it still says `was`, leaving it alone otherwise.
+///
+/// Only the first heading, and only when it matches: a page whose heading has been
+/// written by hand is not the title's to change.
+fn retitle_heading(body: &str, was: &str, now: &str, format: PageFormat) -> String {
+    if was.trim().is_empty() || was.trim() == now.trim() {
+        return body.to_string();
+    }
+    match format {
+        PageFormat::Html => {
+            let heading = html::between(body, "<h1>", "</h1>");
+            match heading {
+                Some(h) if html::unescape(&h).trim() == was.trim() => html::replace_between(body, "<h1>", "</h1>", &html::escape(now)),
+                _ => body.to_string(),
+            }
+        }
+        PageFormat::Cmgfm => {
+            let mut out = String::with_capacity(body.len());
+            let mut done = false;
+            for line in body.split_inclusive('\n') {
+                let bare = line.trim_end_matches(['\n', '\r']);
+                if !done && let Some(rest) = bare.strip_prefix("# ") {
+                    done = true;
+                    if rest.trim() == was.trim() {
+                        out.push_str("# ");
+                        out.push_str(now);
+                        out.push_str(&line[bare.len()..]);
+                        continue;
+                    }
+                }
+                out.push_str(line);
+            }
+            out
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    /// A page says its title twice: once where the page records it, once as the heading a
+    /// reader sees. Renaming has to move both, or the window shows one and the page the
+    /// other - which is what the owner saw.
+    #[test]
+    fn renaming_a_page_moves_its_heading_too() {
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let t = TempDir::new(&format!("retitle-{}", format.id()));
+            let s = settings(&t);
+            let nb = create_notebook(&root(&t), "Book", Some(format), &s).expect("notebook");
+            let page = create_node(&nb, "First name", notecraft_model::NodeKind::Page, Some(format), &s).expect("page");
+
+            set_title(&page, "Second name").expect("rename");
+            let text = fs::read_to_string(page_file(&page).expect("file").1).expect("read");
+            assert!(text.contains("Second name"), "{format:?}: the new name is there:\n{text}");
+            assert!(!text.contains("First name"), "{format:?}: and the old one is gone everywhere:\n{text}");
+
+            // A heading someone has written themselves is theirs: renaming leaves it.
+            let file = page_file(&page).expect("file").1;
+            let mine = match format {
+                PageFormat::Html => fs::read_to_string(&file).expect("read").replace("<h1>Second name</h1>", "<h1>My own heading</h1>"),
+                PageFormat::Cmgfm => fs::read_to_string(&file).expect("read").replace("# Second name", "# My own heading"),
+            };
+            fs::write(&file, &mine).expect("write");
+            set_title(&page, "Third name").expect("rename again");
+            let text = fs::read_to_string(&file).expect("read");
+            assert!(text.contains("My own heading"), "{format:?}: a heading of their own is left alone:\n{text}");
+            assert!(text.contains("Third name"), "{format:?}: while the title still changes:\n{text}");
+        }
+    }
 
     fn settings(t: &TempDir) -> Settings {
         Settings::at(t.path().join("settings").join("s.toml"))
