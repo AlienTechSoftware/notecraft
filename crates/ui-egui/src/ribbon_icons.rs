@@ -39,10 +39,14 @@ pub enum Mark {
     Painter,
     /// A red cross: delete.
     Delete,
+    /// An arrow pointing left: back to the page before.
+    Back,
+    /// An arrow pointing right: forward to the page after.
+    Forward,
 }
 
 impl Mark {
-    pub const ALL: [Mark; 25] = [
+    pub const ALL: [Mark; 27] = [
         Mark::ToDo,
         Mark::Important,
         Mark::Question,
@@ -68,6 +72,8 @@ impl Mark {
         Mark::Paste,
         Mark::Painter,
         Mark::Delete,
+        Mark::Back,
+        Mark::Forward,
     ];
 
     pub fn name(self) -> &'static str {
@@ -97,6 +103,8 @@ impl Mark {
             Mark::Paste => "paste",
             Mark::Painter => "painter",
             Mark::Delete => "delete",
+            Mark::Back => "back",
+            Mark::Forward => "forward",
         }
     }
 
@@ -259,6 +267,8 @@ pub fn shapes(rect: Rect, mark: Mark, color: Color32) -> Vec<Shape> {
             line((8.0, 16.0), (16.0, 16.0)),
         ],
         Mark::Delete => vec![thick_line((6.0, 6.0), (18.0, 18.0)), thick_line((18.0, 6.0), (6.0, 18.0))],
+        Mark::Back => vec![thick_line((19.0, 12.0), (6.0, 12.0)), path(&[(11.5, 6.0), (5.5, 12.0), (11.5, 18.0)])],
+        Mark::Forward => vec![thick_line((5.0, 12.0), (18.0, 12.0)), path(&[(12.5, 6.0), (18.5, 12.0), (12.5, 18.0)])],
         Mark::Painter => vec![
             fill(&[(4.0, 5.0), (12.0, 5.0), (12.0, 9.5), (4.0, 9.5)]),
             path(&[(12.0, 7.0), (16.0, 7.0), (16.0, 12.5), (11.0, 12.5), (11.0, 20.0)]),

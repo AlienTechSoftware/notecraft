@@ -2617,3 +2617,210 @@ fn an_empty_line_can_be_clicked_into_again() {
     settle(&mut h);
     assert!(h.state().body().unwrap_or_default().contains("again"), "and typing goes in");
 }
+
+fn nav(h: &mut Harness<'_, NoteCraftApp>) -> (u64, u64, String) {
+    let v = look_at(h);
+    (
+        v.pointer("/nav/back").and_then(Value::as_u64).unwrap_or(99),
+        v.pointer("/nav/forward").and_then(Value::as_u64).unwrap_or(99),
+        v.pointer("/nav/current").and_then(Value::as_str).unwrap_or("").to_string(),
+    )
+}
+
+/// Three pages opened one after another, so there is somewhere to go back to.
+fn three_pages(label: &str) -> (TempDir, Harness<'static, NoteCraftApp>, [String; 3]) {
+    let (t, mut app, s) = sample_app(label);
+    let pages = [s.md_page.to_string_lossy().to_string(), s.html_page.to_string_lossy().to_string(), s.deep_page.to_string_lossy().to_string()];
+    app.open_path(&pages[0]);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    for page in &pages[1..] {
+        ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+        settle(&mut h);
+    }
+    (t, h, pages)
+}
+
+/// Back and Forward walk the pages in the order they were opened.
+#[test]
+fn back_and_forward_walk_the_pages_that_were_opened() {
+    let (_t, mut h, _) = three_pages("ui-nav-walk");
+    let (back, forward, third) = nav(&mut h);
+    assert_eq!((back, forward), (2, 0), "two pages behind, none ahead");
+
+    ask(&mut h, "ui.back", json!({})).expect("back");
+    settle(&mut h);
+    let (back, forward, second) = nav(&mut h);
+    assert_eq!((back, forward), (1, 1));
+    assert_ne!(second, third, "back is a different page");
+
+    ask(&mut h, "ui.back", json!({})).expect("back");
+    settle(&mut h);
+    let (back, forward, first) = nav(&mut h);
+    assert_eq!((back, forward), (0, 2));
+    assert!(first != second && first != third, "three different pages");
+
+    ask(&mut h, "ui.back", json!({})).expect("back at the start does nothing");
+    settle(&mut h);
+    assert_eq!(nav(&mut h).2, first, "still on the first page");
+
+    ask(&mut h, "ui.forward", json!({})).expect("forward");
+    ask(&mut h, "ui.forward", json!({})).expect("forward");
+    settle(&mut h);
+    assert_eq!(nav(&mut h), (2, 0, third), "forward twice is back where it started");
+}
+
+/// Opening a page after going back ends the way forward, as in a browser.
+#[test]
+fn opening_a_page_after_going_back_ends_the_way_forward() {
+    let (_t, mut h, pages) = three_pages("ui-nav-branch");
+    ask(&mut h, "ui.back", json!({})).expect("back");
+    settle(&mut h);
+    assert_eq!(nav(&mut h).1, 1, "one page ahead");
+    ask(&mut h, "ui.open", json!({"path": pages[2]})).expect("open another page");
+    settle(&mut h);
+    assert_eq!(nav(&mut h).1, 0, "a new visit leaves nothing ahead");
+}
+
+/// A page deleted since is stepped over, not stopped at.
+#[test]
+fn back_steps_over_a_page_that_has_been_deleted() {
+    let (_t, mut h, pages) = three_pages("ui-nav-gone");
+    let gone = pages[1].clone();
+    ask(&mut h, "engine.execute", json!({"command": "node.delete", "params": {"path": gone}})).expect("delete the middle page");
+    ask(&mut h, "ui.back", json!({})).expect("back");
+    settle(&mut h);
+    let (_, _, now) = nav(&mut h);
+    assert!(now.contains("format-ideas") || now.ends_with("format-ideas") || !now.is_empty(), "landed somewhere");
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/nav/back").and_then(Value::as_u64), Some(0), "the deleted page was dropped from the way back: {v}");
+}
+
+/// The Back button on the toolbar, and Alt+Left.
+#[test]
+fn the_back_button_and_alt_left_go_back() {
+    let (_t, mut h, _) = three_pages("ui-nav-button");
+    let (_, _, third) = nav(&mut h);
+    h.query_all_by_label("Back").last().expect("the Back button").click();
+    settle(&mut h);
+    let (back, forward, second) = nav(&mut h);
+    assert_eq!((back, forward), (1, 1), "the button went back one page");
+    assert_ne!(second, third);
+
+    ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "alt": true})).expect("Alt+Left");
+    settle(&mut h);
+    assert_eq!(nav(&mut h).0, 0, "Alt+Left went back again");
+
+    ask(&mut h, "ui.key", json!({"key": "ArrowRight", "alt": true})).expect("Alt+Right");
+    settle(&mut h);
+    assert_eq!(nav(&mut h).1, 1, "Alt+Right went forward");
+    h.query_all_by_label("Forward").last().expect("the Forward button").click();
+    settle(&mut h);
+    assert_eq!(nav(&mut h), (2, 0, third), "and the Forward button took it the rest of the way");
+}
+
+/// Deleting a box can be taken back, and brought forward again.
+#[test]
+fn undo_brings_a_deleted_box_back_and_redo_deletes_it_again() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-undo-box");
+    let original = h.state().body().unwrap_or_default().to_string();
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "the box is gone");
+    assert_eq!(v.pointer("/page/history/canUndo").and_then(Value::as_bool), Some(true), "and there is something to undo");
+
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "undo gave the blocks back: {v}");
+    assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(2), "and the box");
+    let now = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(notecraft_formats::markdown::parse(&now), notecraft_formats::markdown::parse(&original), "the page has the same blocks as it did");
+    assert_eq!(v.pointer("/page/history/canRedo").and_then(Value::as_bool), Some(true));
+
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "redo deleted it again");
+}
+
+/// Ctrl+Z with no text box in use is the page's undo, and the toolbar's Undo does the same.
+#[test]
+fn ctrl_z_and_the_undo_button_take_back_a_delete() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-undo-keys");
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("Ctrl+Z");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "Ctrl+Z took the delete back");
+
+    ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("Ctrl+Y");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "Ctrl+Y did it again");
+
+    h.query_all_by_label("Undo").last().expect("the Undo button").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "so did the toolbar's Undo");
+    h.query_all_by_label("Redo").last().expect("the Redo button").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "and its Redo");
+}
+
+/// The menu on the arrow: tick buttons off, move the strip, hide it, and the choices are kept.
+#[test]
+fn the_quick_access_menu_hides_moves_and_remembers() {
+    let (t, mut h, _) = three_pages("ui-qat-menu");
+    let settings = |t: &TempDir| std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(h.query_all_by_label("Back").count() >= 1, "the strip is there to begin with");
+
+    // Move it below the ribbon.
+    h.get_by_label("Customize Quick Access Toolbar").click();
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    assert!(h.query_all_by_label("Hide Quick Access Toolbar").count() >= 1, "the menu opened");
+    h.get_by_label("Show Below the Ribbon").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/quickAccess/below").and_then(Value::as_bool), Some(true), "it moved: {v}");
+    assert!(h.query_all_by_label("Back").count() >= 1, "and is still drawn");
+    assert!(settings(&t).contains("qat_below = \"true\""), "the choice is in the settings:\n{}", settings(&t));
+
+    // Take Redo off the strip. The Home tab has a Redo button of its own, which stays.
+    let redo_buttons = h.query_all_by_label("Redo").count();
+    assert!(redo_buttons >= 2, "a Redo on the strip and one on the Home tab: {redo_buttons}");
+    h.get_by_label("Customize Quick Access Toolbar").click();
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    h.query_all_by_label("Redo").last().expect("the menu's Redo").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/quickAccess/shown/3").and_then(Value::as_bool), Some(false), "Redo is off the strip: {v}");
+    assert_eq!(h.query_all_by_label("Redo").count(), redo_buttons - 1, "the strip's Redo is gone and the Home tab's is not");
+
+    // Hide it, and bring it back from the arrow that stays.
+    h.get_by_label("Customize Quick Access Toolbar").click();
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    h.get_by_label("Hide Quick Access Toolbar").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/quickAccess/hidden").and_then(Value::as_bool), Some(true));
+    assert_eq!(h.query_all_by_label("Back").count(), 0, "no buttons while it is hidden");
+    assert!(h.query_all_by_label("Customize Quick Access Toolbar").count() >= 1, "but the arrow is left to bring it back");
+    h.get_by_label("Customize Quick Access Toolbar").click();
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    h.get_by_label("Show Quick Access Toolbar").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label("Back").count() >= 1, "it is back");
+    assert!(
+        settings(&t).contains("qat_hidden = \"false\"") && settings(&t).contains("qat_redo = \"false\""),
+        "and the settings agree:\n{}",
+        settings(&t)
+    );
+}

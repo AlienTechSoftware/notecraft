@@ -50,9 +50,11 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; `selectedContainer`: the index of the box that is selected, or null; and `history`: how many steps of undo the page is keeping, where in them it is, and whether undo and redo have anywhere to go), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
+| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; `selectedContainer`: the index of the box that is selected, or null; `nav` (`back` and `forward` counts and the `current` page), `quickAccess` (which of Back, Forward, Undo and Redo are shown, `below`, `hidden`); and `history`: how many steps of undo the page is keeping, where in them it is, and whether undo and redo have anywhere to go), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
+| `ui.back`, `ui.forward` | none | `{}`; the page before or after in the pages opened, skipping any that are gone |
+| `ui.undo`, `ui.redo` | none | `{}`; the page's words and boxes, or the last stroke if the pen came last |
 | `ui.theme` | `mode` (`light`, `dark`, `system`), `accent` | `{theme, modePref}` |
 | `ui.click` | `x`, `y`, `button`, `count`, `alt`, `ctrl`, `shift` | `{}` (events are queued one per frame) |
 | `ui.move`, `ui.press`, `ui.release` | `x`, `y`, `button` | `{}` |
