@@ -1145,10 +1145,14 @@ impl NoteCraftApp {
             ribbon::Act::Insert(what) => match what {
                 "link" => self.insert_in_page("[text](https://)"),
                 "equation" => self.insert_in_page("$E = mc^2$"),
-                "date" => {
+                "date" | "time" | "datetime" => {
                     let now = notecraft_model::time::iso_now();
-                    let text = notecraft_model::time::long_from_iso(&now).unwrap_or(now);
-                    self.insert_in_page(&text);
+                    let stamp = match what {
+                        "time" => notecraft_model::time::clock_from_iso(&now),
+                        "datetime" => notecraft_model::time::long_from_iso(&now),
+                        _ => notecraft_model::time::date_from_iso(&now),
+                    };
+                    self.insert_in_page(&stamp.unwrap_or(now));
                 }
                 other => self.insert_block(other),
             },

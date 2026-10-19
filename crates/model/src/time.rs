@@ -31,6 +31,17 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 const WEEKDAYS: [&str; 7] = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
 const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/// The day alone, as a note writes it: "Saturday, 17 October 2026".
+pub fn date_from_iso(iso: &str) -> Option<String> {
+    let whole = long_from_iso(iso)?;
+    Some(whole.rsplit_once(", ")?.0.to_string())
+}
+
+/// The clock alone: "18:29".
+pub fn clock_from_iso(iso: &str) -> Option<String> {
+    Some(long_from_iso(iso)?.rsplit_once(", ")?.1.to_string())
+}
+
 /// A timestamp the way a note shows it, under the page title: "Saturday, 17 October 2026,
 /// 18:29". English only for now, and the clock is UTC, like the stored timestamp.
 pub fn long_from_iso(iso: &str) -> Option<String> {
@@ -77,6 +88,20 @@ mod tests {
         // Junk is None, never a panic.
         for bad in ["", "2026-10-17", "x", "2026-13-01T00:00:00Z", "2026-10-99T00:00:00Z", "2026-10-17Txx:yy", "----T::"] {
             assert_eq!(long_from_iso(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_day_alone_and_the_clock_alone_are_the_two_halves_of_it() {
+        let iso = "2026-10-17T18:29:00Z";
+        assert_eq!(date_from_iso(iso).as_deref(), Some("Saturday, 17 October 2026"));
+        assert_eq!(clock_from_iso(iso).as_deref(), Some("18:29"));
+        // The two halves put back together are the whole, which is what makes them halves.
+        let (day, clock) = (date_from_iso(iso).expect("day"), clock_from_iso(iso).expect("clock"));
+        assert_eq!(format!("{day}, {clock}"), long_from_iso(iso).expect("whole"));
+        for bad in ["", "2026-10-17", "x", "2026-13-01T00:00:00Z"] {
+            assert_eq!(date_from_iso(bad), None, "{bad}");
+            assert_eq!(clock_from_iso(bad), None, "{bad}");
         }
     }
 
