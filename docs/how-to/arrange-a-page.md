@@ -13,6 +13,23 @@ Point at a box and its edges appear:
 
 Both are saved into the page as soon as you let go.
 
+## Selecting and deleting a box
+
+Click the **bar along the top**, or **right-click anywhere in the box**, and the whole box is
+selected: everything in it is shaded at once, and the caret goes away because the box, not a word
+in it, is what you picked. Then:
+
+- **Delete** (the key, or the item on the right-click menu) takes the box away together with every
+  block in it. It is saved like any other edit.
+- **Cut** and **Copy** on that menu put the box's content on the clipboard as Markdown. Cut also
+  takes the box away.
+- Below those, the same menu carries the page's own entries (Paste, Table, Link, Equation, Date and
+  time, Picture from a file, Attach a file), so a right-click on a box's words still reaches them.
+- **Escape**, or a click outside the box, lets go of the selection without changing anything.
+
+If the caret is in a box with some words selected, a right-click still belongs to those words: the
+page's own menu cuts and copies them.
+
 ## Where the arrangement is kept
 
 In the page's own file, as one line of metadata: `containers: 0,0,320,2; 360,30,300,3` in the
