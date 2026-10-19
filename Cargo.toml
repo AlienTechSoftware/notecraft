@@ -30,6 +30,9 @@ egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 serde_json = "1"
 # The system file and folder dialogs, for "Open a notebook folder". UI only.
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+# The clipboard, for pictures. egui hands us text only, and eframe already uses this
+# crate for its own text clipboard, so nothing new enters the build.
+arboard = { version = "3.7", default-features = false, features = ["image-data"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [workspace.lints.rust]

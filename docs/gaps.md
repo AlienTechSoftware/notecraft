@@ -97,6 +97,13 @@ it is fixed and tested, not when it is promised.
   readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
+- **Tables are edited cell by cell**: click a cell to write in it, Tab walks along the row
+  and on to the next, Escape leaves. Not built: adding or removing rows and columns from
+  the page, and OneNote's grid picker on the Table button for choosing the size.
+- **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
+  the clipboard is read directly, because egui hands a window text only. The page also has
+  its own menu under the right button, with paste, cut, copy and the things the Insert tab
+  can put there.
 - **The Insert tab** carries OneNote's groups, but most of what they offer is not built.
   Working: tables, a file attachment, a picture, a link, the three time stamps, an
   equation, and NoteCraft's own Mermaid diagram. Not built, and greyed on the tab: insert
