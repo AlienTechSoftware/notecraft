@@ -1497,6 +1497,56 @@ fn a_link_in_a_list_item_opens_the_page_it_names() {
     assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the linked page opened, not {:?}", h.state().body());
 }
 
+/// A table is written in, cell by cell: click a cell, type, and the page's own file has
+/// the new words in it. Tab walks along the row.
+#[test]
+fn a_table_cell_is_written_in_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-edit");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "A table", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| A | B |
+|---|---|
+| one | two |
+"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Click the cell that says "one". Every cell is its own control, so it is found by
+    // what it says.
+    let cell = h.get_by_label("one").rect();
+    ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("click the cell");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret.get("text").and_then(Value::as_str), Some("one"), "the caret is in that cell: {caret}");
+
+    ask(&mut h, "ui.text", json!({"text": " and a half"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("one and a half"),
+        "what was typed is in the page:
+{body}"
+    );
+    assert!(
+        body.contains("two"),
+        "and the rest of the table is untouched:
+{body}"
+    );
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.
