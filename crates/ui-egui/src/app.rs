@@ -81,6 +81,8 @@ struct Editor {
     boxes: Vec<notecraft_model::Container>,
     /// How wide the columns of this page's tables are drawn, from the same place.
     columns: notecraft_model::tablecols::Widths,
+    /// What the page looked like before each change, so a change can be taken back.
+    history: crate::history::History,
     /// Where the page's area starts on screen, reported so a script can find a box.
     origin: egui::Pos2,
 }
@@ -506,6 +508,9 @@ impl NoteCraftApp {
         self.save_now();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let blocks = preview::blocks_for(page.format, &page.body);
+            // The page as it was opened is the first step of its history: undo goes back
+            // this far and no further.
+            let first = (page.body.clone(), blocks.clone(), notecraft_store::page::containers(dir).unwrap_or_default());
             let attachments = notecraft_store::assets::list(dir);
             let writable = pageedit::round_trips(page.format, &page.body);
             self.editor = Some(Editor {
@@ -523,6 +528,7 @@ impl NoteCraftApp {
                 page_dir: page.dir,
                 boxes: notecraft_store::page::containers(dir).unwrap_or_default(),
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
+                history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
             });
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
@@ -1146,6 +1152,8 @@ impl NoteCraftApp {
             in_table: self.caret_in_table(),
             table_borders: self.table_borders,
             gridcraft: self.gridcraft.is_some(),
+            can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()),
+            can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
             sensitivity: self.sensitivity,
         };
         let format = self.editor.as_ref().map(|e| e.format);
@@ -1237,6 +1245,8 @@ impl NoteCraftApp {
                 self.table_borders = on;
                 let _ = self.session.settings.set("table_borders", if on { "true" } else { "false" });
             }
+            ribbon::Act::Undo => self.step_back(true),
+            ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
             ribbon::Act::NewGridCraft => self.new_gridcraft(),
             ribbon::Act::InsertTable(rows, columns) => self.insert_table(rows, columns),
@@ -1408,6 +1418,63 @@ impl NoteCraftApp {
             .as_ref()
             .and_then(|e| e.caret.as_ref().map(|c| (e, c)))
             .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
+    }
+
+    /// Takes the page back to how it was before the last change, or forward again.
+    ///
+    /// The whole page is put back: its text, its blocks, the boxes they sit in and where
+    /// the caret was. Ink is not part of this; a stroke is taken back with Undo Stroke on
+    /// the Draw tab, because the drawing is its own file beside the page.
+    fn step_back(&mut self, back: bool) {
+        let mut boxes: Option<(String, String)> = None;
+        let mut nothing = false;
+        if let Some(ed) = self.editor.as_mut() {
+            if !ed.writable {
+                nothing = true;
+            } else {
+                let step = if back { ed.history.undo().cloned() } else { ed.history.redo().cloned() };
+                match step {
+                    Some(step) => {
+                        ed.body = step.body;
+                        ed.blocks = step.blocks;
+                        ed.boxes = step.boxes;
+                        ed.caret = step.caret.map(|c| pageedit::Caret { focus: true, ..c });
+                        ed.dirty_since = Some(std::time::Instant::now());
+                        boxes = Some((path_str(&ed.dir), notecraft_model::container::write(&ed.boxes)));
+                    }
+                    None => nothing = true,
+                }
+            }
+        }
+        if nothing {
+            self.say(if back { "Nothing to undo" } else { "Nothing to redo" });
+            return;
+        }
+        if let Some((path, line)) = boxes {
+            self.run("page.containers", &params(&[("path", &path), ("boxes", &line)]));
+        }
+    }
+
+    /// Remembers the page as it stands now, so the change that just happened can be taken
+    /// back. Called once a frame, after whatever changed has been applied.
+    ///
+    /// Letters going into the block the caret was already in fold into the step before
+    /// them, so Ctrl+Z takes back a run of writing rather than one character.
+    fn remember_step(ed: &mut Editor) {
+        let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
+        if same {
+            // Nothing really changed, or the page was just put back by undo itself.
+            return;
+        }
+        let here = ed.caret.as_ref().map(|c| c.block);
+        let was = ed.history.here().and_then(|s| s.caret.as_ref().map(|c| c.block));
+        let shape = ed.history.here().is_some_and(|s| s.blocks.len() == ed.blocks.len());
+        let kind = match (shape, here, was) {
+            (true, Some(a), Some(b)) if a == b => crate::history::Kind::Typing(a),
+            _ => crate::history::Kind::Edit,
+        };
+        let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
+        ed.history.record(step);
     }
 
     /// Hands the table the caret is in to GridCraft, which is where a spreadsheet
@@ -2464,6 +2531,9 @@ impl NoteCraftApp {
             } else if from_blocks {
                 Self::mark_dirty_from_blocks(ed);
             }
+            if changed || from_blocks || boxes_moved {
+                Self::remember_step(ed);
+            }
             // A container was dragged or resized: the arrangement is the page's own, so it
             // is written into the page's file rather than kept in the window.
             if boxes_moved {
@@ -3004,6 +3074,8 @@ impl NoteCraftApp {
                 // The container that is selected, with everything in it, or null.
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
                 "origin": [e.origin.x, e.origin.y],
+                // What can be taken back, and how many steps are kept.
+                "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
             })),
         })
     }
@@ -3049,6 +3121,15 @@ impl NoteCraftApp {
                 ed.dirty_since.get_or_insert_with(Instant::now);
             }
             self.save_now();
+        }
+        // Taken before any widget sees them: a text box has an undo of its own that
+        // knows only about the letters in that one box, and the page's undo has to be the
+        // one that answers, or Ctrl+Z would mean two different things on one page.
+        let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
+        if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
+            self.step_back(false);
+        } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
+            self.step_back(true);
         }
         self.direction_keys(ctx);
         self.restore_last_page();

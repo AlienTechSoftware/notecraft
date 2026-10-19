@@ -50,7 +50,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; and `selectedContainer`: the index of the box that is selected, or null), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
+| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; `selectedContainer`: the index of the box that is selected, or null; and `history`: how many steps of undo the page is keeping, where in them it is, and whether undo and redo have anywhere to go), theme, window size, `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
 | `ui.theme` | `mode` (`light`, `dark`, `system`), `accent` | `{theme, modePref}` |

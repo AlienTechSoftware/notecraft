@@ -137,6 +137,14 @@ it is fixed and tested, not when it is promised.
   beside the page and opens it; the Insert tab starts an empty one and links it from the
   page. Both are greyed when GridCraft is not installed, which is looked for on the PATH
   and in the folder its installer uses.
+- **Undo** takes back changes to the page: Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the two
+  buttons at the left of the Home tab. A step is the whole page as it stood - its text,
+  its blocks, the boxes they sit in and where the caret was - so anything that changes the
+  page can be taken back, including a row deleted from a table or a box deleted whole. A
+  run of letters into one block folds into one step, as it does in Word. The history is
+  the open page's: it starts when the page opens and goes when another is opened, and at
+  most 200 steps or 16 MB are kept. Ink is not in it; a stroke is taken back with Undo
+  Stroke on the Draw tab, because a drawing is its own file beside the page.
 - **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
   the clipboard is read directly, because egui hands a window text only. The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab

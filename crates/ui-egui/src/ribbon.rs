@@ -77,6 +77,9 @@ pub enum Act {
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
     TableBorders(bool),
+    /// Take back the last change to the page, or put it back.
+    Undo,
+    Redo,
     /// Hand the table the caret is in to GridCraft.
     ToGridCraft,
     /// Start a spreadsheet beside the page and open it in GridCraft.
@@ -313,6 +316,9 @@ pub struct View<'a> {
     pub table_borders: bool,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,
+    /// Whether the page has anything to take back, and anything to put back.
+    pub can_undo: bool,
+    pub can_redo: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
 }
@@ -368,7 +374,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
                     "View" => view_tab(ui, source, view, t, &mut acts),
                     TABLE_TAB => table_tab(ui, view, t, &mut acts),
                     SOURCE_TAB => source_tab(ui, format, t, &mut acts),
-                    _ => home_tab(ui, t, &mut acts),
+                    _ => home_tab(ui, view, t, &mut acts),
                 }
             });
         });
@@ -588,7 +594,19 @@ pub fn tag_label(tag: Tag) -> String {
     }
 }
 
-fn home_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    // Undo comes first, as it does in OneNote's own Home tab: it is the button a writer
+    // reaches for in a hurry, and a page editor without one is not safe to write in.
+    group(ui, "Undo", t, |ui| {
+        rows(ui, |ui| {
+            if row_button(ui, Icon::Undo, "Undo", "Ctrl+Z takes back the last change", view.can_undo, t).clicked() {
+                acts.push(Act::Undo);
+            }
+            if row_button(ui, Icon::Redo, "Redo", "Ctrl+Y puts it back", view.can_redo, t).clicked() {
+                acts.push(Act::Redo);
+            }
+        });
+    });
     group(ui, "Clipboard", t, |ui| {
         if big_mark(ui, Mark::Paste, "Paste", "Ctrl+V pastes into the page", t).clicked() {
             acts.push(Act::Paste);
@@ -1627,6 +1645,13 @@ fn swatch_name(colour: Rgb) -> &'static str {
 /// A big button that is drawn but does nothing, for what OneNote has and NoteCraft does
 /// not. It keeps the tab's shape honest: the control is where a OneNote user looks for it,
 /// greyed, saying plainly that it is not here yet rather than being left out.
+/// A small button with an icon and a word, greyed when there is nothing for it to do.
+fn row_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, live: bool, t: &Tokens) -> egui::Response {
+    let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
+    let resp = ui.add_enabled_ui(live, |ui| small(ui, Some(icon), "", label, tip, false, if live { t } else { &dim })).inner;
+    if live { resp } else { resp.on_hover_text(format!("{label}: nothing to {}", label.to_lowercase())) }
+}
+
 fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
     let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
     let resp = ui.add_enabled_ui(false, |ui| big(ui, icon, label, "Not built yet", &dim)).inner;
