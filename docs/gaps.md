@@ -128,6 +128,12 @@ it is fixed and tested, not when it is promised.
   keeps them and another page is not touched. The window's own rule-lines setting stays as
   what a page with none of its own is drawn on. **Not built:** a rule line colour, and
   "always create pages with rule lines".
+- **Copy link to page** is on a page's menu in the tree, as it is in OneNote. The link
+  names the page from the notebooks folder down (`notecraft:/book/section/page`), because
+  a relative link would depend on the page it is pasted into, which nobody knows when the
+  link is copied. It is copied as a Markdown link with the page's name, so pasting it into
+  a page gives words to click, and clicking opens the page. A link of this kind cannot
+  climb out of the notebooks folder, and a link to a page that has gone says so.
 - **One title, not two.** A page carries its title in its head, and the window draws it in
   the title area above the words. A new page's body no longer repeats it. A page from
   before this, or one written by hand, may still open with that title as a heading; the

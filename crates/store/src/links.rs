@@ -11,6 +11,24 @@
 use crate::tree::read_node;
 use std::path::{Component, Path, PathBuf};
 
+/// The scheme a link to a page of one's own carries: `notecraft:/notebook/section/page`,
+/// the path from the notebooks folder.
+///
+/// OneNote has `onenote:` for the same job. A relative path cannot do it, because what it
+/// is relative to is the page the link is pasted into, which nobody knows when the link is
+/// copied; this names the page from the top and reads the same wherever it is pasted.
+pub const SCHEME: &str = "notecraft:";
+
+/// A link to this page, to paste into another one. `None` when the folder is not under any
+/// of the open notebooks.
+pub fn page_uri(roots: &[PathBuf], dir: &Path) -> Option<String> {
+    let full = normalise(dir.to_path_buf())?;
+    let root = roots.iter().find(|r| full.starts_with(r))?;
+    let rest = full.strip_prefix(root).ok()?;
+    let path = rest.components().filter_map(|c| c.as_os_str().to_str()).collect::<Vec<_>>().join("/");
+    Some(format!("{SCHEME}/{path}"))
+}
+
 /// Where a link leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -46,6 +64,37 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
     let href = href.trim();
     if href.is_empty() {
         return Link::Missing(page_dir.to_path_buf());
+    }
+    // A link of our own: the path after the scheme is read from each open notebook's
+    // folder, so the same link works from any page and in any notebook that holds it.
+    if href.len() >= SCHEME.len() && href[..SCHEME.len()].eq_ignore_ascii_case(SCHEME) {
+        let rest = href[SCHEME.len()..].trim_start_matches('/');
+        let rest = rest.split(['#', '?']).next().unwrap_or("");
+        let decoded = percent_decode(rest);
+        if decoded.is_empty() || decoded.contains('\\') || decoded.contains('\0') {
+            return Link::Outside;
+        }
+        let mut inside_somewhere = None;
+        for root in roots {
+            let Some(full) = normalise(root.join(&decoded)) else { continue };
+            if !full.starts_with(root) {
+                // A link that climbs out of this notebook; it may still be in another.
+                continue;
+            }
+            if full.is_dir() {
+                return if read_node(&full).is_some() { Link::Node(full) } else { Link::File(full) };
+            }
+            if full.is_file() {
+                return Link::File(full);
+            }
+            inside_somewhere.get_or_insert(full);
+        }
+        // Nothing of that name: missing when the path at least stayed inside a notebook,
+        // out when it climbed above every one of them.
+        return match inside_somewhere {
+            Some(full) => Link::Missing(full),
+            None => Link::Outside,
+        };
     }
     if href.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("file:")) {
         // A `file:` address is a path in disguise and could name anything on the disk.
@@ -243,6 +292,29 @@ mod tests {
         for not in ["", "C", "page/C:/x", "1:/x", "ab:/x", "../C:/x"] {
             assert!(!is_drive(not), "{not}");
         }
+    }
+
+    #[test]
+    fn a_link_of_our_own_names_a_page_from_the_notebooks_folder() {
+        let (_t, root, a, b) = fixture("links-scheme");
+        let roots = vec![root.clone()];
+        let uri = page_uri(&roots, &b).expect("a link to the page");
+        assert!(uri.starts_with("notecraft:/"), "{uri}");
+        assert!(!uri.contains('\\'), "written with forward slashes: {uri}");
+
+        // It leads to that page from anywhere, not only from the page next door.
+        assert_eq!(resolve_in(&roots, &a, &uri), Link::Node(b.clone()));
+        assert_eq!(resolve_in(&roots, &b, &uri), Link::Node(b.clone()), "and from the page itself");
+
+        // Upper case scheme, and a fragment on the end, are the same link.
+        let shouted = uri.replacen("notecraft:", "NoteCraft:", 1);
+        assert_eq!(resolve_in(&roots, &a, &shouted), Link::Node(b.clone()));
+        assert_eq!(resolve_in(&roots, &a, &format!("{uri}#heading")), Link::Node(b.clone()));
+
+        // A link of this kind cannot climb out of the notebooks folder.
+        assert_eq!(resolve_in(&roots, &a, "notecraft:/../secret"), Link::Outside);
+        assert_eq!(resolve_in(&roots, &a, "notecraft:/"), Link::Outside);
+        assert!(matches!(resolve_in(&roots, &a, "notecraft:/nothing/here"), Link::Missing(_)));
     }
 
     #[test]

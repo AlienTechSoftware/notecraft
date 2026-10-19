@@ -2172,6 +2172,45 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     review(&mut h, "page_paper");
 }
 
+/// Copy link to page, the way OneNote copies one: the link names the page from the
+/// notebooks folder down, so it works wherever it is pasted, and clicking it opens the
+/// page.
+#[test]
+fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
+    let (_t, app, s) = sample_app("ui-copy-link");
+    let mut h = harness(app, LIGHT);
+    h.run();
+
+    // The link to the Markdown page, taken the way the tree's menu takes it.
+    h.state_mut().copy_link_to(&s.md_page);
+    let mut copied = String::new();
+    for _ in 0..8 {
+        pump(&mut h);
+        for command in &h.output().platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                copied = text.clone();
+            }
+        }
+    }
+    assert!(copied.contains("notecraft:/"), "a link of our own: {copied:?}");
+    assert!(copied.starts_with("[Format ideas]("), "with the page's name to click: {copied:?}");
+
+    // Pasted into another page, it is a link, and clicking it opens the page it names.
+    let other = s.html_page.to_string_lossy().into_owned();
+    ask(&mut h, "ui.open", json!({"path": other})).expect("open the other page");
+    settle(&mut h);
+    let uri = copied.trim_start_matches("[Format ideas](").trim_end_matches(')').to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": other, "body": format!("<p><a href=\"{uri}\">go</a></p>")}}))
+        .expect("save with the link");
+    ask(&mut h, "ui.open", json!({"path": other})).expect("open again");
+    settle(&mut h);
+    let link = h.get_by_label("go").rect();
+    ask(&mut h, "ui.click", json!({"x": link.center().x, "y": link.center().y})).expect("click the link");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["page"]["title"], json!("Format ideas"), "the link opened the page it names: {}", state["page"]);
+}
+
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.
