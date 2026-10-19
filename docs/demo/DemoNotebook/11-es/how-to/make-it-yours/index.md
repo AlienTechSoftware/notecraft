@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Hazlo tuyo
-
 ## Temas
 
 El sol o la luna de arriba a la derecha abren el selector de temas: claro y oscuro, cada uno

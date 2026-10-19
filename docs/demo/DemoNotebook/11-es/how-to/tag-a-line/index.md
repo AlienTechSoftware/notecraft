@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Etiquetar una línea
-
 Una etiqueta convierte una línea en algo: una tarea, algo importante, una pregunta por
 responder. Haz clic en una línea, luego en **Inicio** y en la caja de etiquetas. Pedir la misma
 etiqueta otra vez la quita.

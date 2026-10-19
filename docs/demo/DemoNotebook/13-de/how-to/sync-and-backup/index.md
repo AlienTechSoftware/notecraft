@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Synchronisieren und sichern
-
 NoteCraft hat keine eigene Synchronisierung und kein Konto. Ein Notizbuch ist ein Ordner mit
 kleinen Dateien, also legen Sie Ihren Notizbuchordner dorthin, wo Ihr Synchronisierungsdienst
 schon hinschaut: OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, eine Netzwerkfreigabe

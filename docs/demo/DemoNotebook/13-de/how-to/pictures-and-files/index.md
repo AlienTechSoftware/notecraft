@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Bilder und Dateien
-
 Ziehen Sie eine Datei aus Ihrem Dateimanager auf diese Seite. NoteCraft fragt, was damit
 geschehen soll:
 

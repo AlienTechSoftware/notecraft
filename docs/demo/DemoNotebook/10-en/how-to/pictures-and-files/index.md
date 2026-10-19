@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Pictures and files
-
 Drag a file from your file manager onto this page. NoteCraft asks what to do with it:
 
 - **Insert the picture**: a copy goes into this page's `assets` folder and the page shows it.

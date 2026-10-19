@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Nach Ihrem Geschmack
-
 ## Designs
 
 Die Sonne oder der Mond oben rechts öffnet die Designauswahl: hell und dunkel, jeweils in

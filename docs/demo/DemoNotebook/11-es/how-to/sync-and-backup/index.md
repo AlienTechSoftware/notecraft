@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Sincronizar y copias de seguridad
-
 NoteCraft no tiene sincronización propia ni cuenta. Un cuaderno es una carpeta de archivos
 pequeños, así que pon la carpeta de cuadernos donde tu herramienta de sincronización ya mira:
 OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, una carpeta compartida de red o un

@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Regarder à l'intérieur d'une page
-
 Beaucoup d'applications de notes gardent un carnet entier dans un seul fichier binaire, et un éditeur de texte n'y montre que du bruit. Une page NoteCraft est un dossier de fichiers ordinaires, et la vue code vous montre ce dossier, fichier par fichier. Essayez maintenant : appuyez sur le bouton `< >` à côté de cette page.
 
 ## Ce que vous verrez

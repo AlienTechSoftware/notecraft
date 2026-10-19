@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# 同步与备份
-
 NoteCraft 没有自己的同步，也没有账户。笔记本是一个装着小文件的文件夹，所以把你的笔记本文件夹放在同步工具已经在看的地方：OneDrive、Dropbox、Google Drive、iCloud Drive、Syncthing、网络共享或 git 仓库。它们都不需要理解 NoteCraft。它们只是复制文件。
 
 ## 为什么行得通

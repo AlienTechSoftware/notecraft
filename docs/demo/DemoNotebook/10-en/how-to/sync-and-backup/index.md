@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Sync and backup
-
 NoteCraft has no sync of its own and no account. A notebook is a folder of small files, so put
 your notebooks folder where your sync tool already looks: OneDrive, Dropbox, Google Drive,
 iCloud Drive, Syncthing, a network share or a git repository. None of them has to understand

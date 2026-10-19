@@ -136,9 +136,9 @@ fn writing_on_the_page_changes_the_block_and_the_file() {
         assert!(after.contains("NEW "), "{label}: what was typed is in the page:\n{after}");
         // The page is still in its own format, not the other one.
         if open_md {
-            assert!(after.starts_with('#'), "{label}: still Markdown:\n{after}");
+            assert!(after.contains("## ") && !after.contains("<h2>"), "{label}: still Markdown:\n{after}");
         } else {
-            assert!(after.contains("<h1>") && after.contains("<p>"), "{label}: still HTML:\n{after}");
+            assert!(after.contains("<h2>") && after.contains("<p>"), "{label}: still HTML:\n{after}");
         }
 
         // Enter starts a new block, and the file on disk carries the change.
@@ -943,7 +943,10 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     assert_eq!(h.state().session().tree().len(), 1);
     assert_eq!(h.state().session().tree()[0].info.title, "Welcome to NoteCraft");
     assert_eq!(h.state().status(), "Added the welcome notebook");
-    assert!(h.state().body().is_some_and(|b| b.starts_with("# Welcome to NoteCraft")), "opened on the start page: {:?}", h.state().body());
+    // The start page's title is in its head and the window shows it above the page, so the
+    // body opens with the first thing the page says.
+    assert_eq!(h.state().title(), Some("Welcome to NoteCraft"), "opened on the start page");
+    assert!(h.state().body().is_some_and(|b| b.starts_with("This notebook is NoteCraft")), "{:?}", h.state().body());
     review(&mut h, "welcome_start");
 
     // The start page links to the English group, and the group opens on its first page.
@@ -955,7 +958,8 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     for _ in 0..6 {
         pump(&mut h);
     }
-    assert!(h.state().body().is_some_and(|b| b.starts_with("# Welcome\n")), "the English welcome page: {:?}", h.state().body());
+    assert_eq!(h.state().title(), Some("Welcome"), "the English welcome page");
+    assert!(h.state().body().is_some_and(|b| b.contains("banner-en.png")), "which opens with its banner: {:?}", h.state().body());
 
     h.state_mut().add_welcome();
     settle(&mut h);
@@ -2578,8 +2582,10 @@ fn deleting_a_box_with_a_picture_in_it_removes_the_picture_from_the_page() {
     assert!(!file(&s).contains("koala.png"), "the saved page no longer names the picture");
 }
 
-/// The first block's whole line selected, then a right click on it: the state the text menu and
-/// its toolbar are meant for.
+/// The first drawn line selected whole, then a right click on it: the state the text menu and
+/// its toolbar are meant for. Block 0 is the page's title heading, which the window does not draw
+/// because the title area above the page already shows it, so the caret lands on the line under
+/// it.
 fn right_click_on_selected_words(label: &str) -> (TempDir, Harness<'static, NoteCraftApp>) {
     let (t, mut h, _, (ox, oy)) = two_boxes(label);
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
@@ -2618,10 +2624,14 @@ fn right_click_on_selected_words_keeps_them_selected_and_shows_the_mini_toolbar(
 #[test]
 fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
     let (_t, mut h) = right_click_on_selected_words("ui-minibar-bold");
+    let was_bold = h.state().body().unwrap_or_default().matches("**").count();
     h.query_all_by_label("Bold").last().expect("the toolbar's Bold").click();
     settle(&mut h);
+    // Whichever words were selected: the page gained a bold run it did not have. Home and
+    // Shift+End select the drawn row the caret is on, and a line wraps inside a narrow
+    // box, so the test does not spell out where that row ends.
     let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains("**Format ideas**"), "the selected title is bold:\n{body}");
+    assert_eq!(body.matches("**").count(), was_bold + 2, "the selected words came back bold:\n{body}");
     assert_eq!(h.query_all_by_label("Italic").count(), 1, "the toolbar closed once a button was pressed");
 }
 
@@ -2631,7 +2641,7 @@ fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
 fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
     let (_t, mut h) = right_click_on_selected_words("ui-minibar-cut");
     let before = h.state().body().unwrap_or_default().to_string();
-    assert!(before.contains("Format ideas"));
+    assert!(before.contains("NoteCraft pages are"));
     h.query_all_by_label("Cut").last().expect("the menu's Cut").click();
     let mut copied = String::new();
     for _ in 0..8 {
@@ -2643,9 +2653,11 @@ fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
         }
     }
     settle(&mut h);
-    assert_eq!(copied.trim(), "Format ideas", "the selected words went to the clipboard");
+    let cut = copied.trim().to_string();
+    assert!(cut.len() > 8, "the selected words went to the clipboard: {cut:?}");
+    assert!(before.contains(&cut), "and they were on the page before: {cut:?}");
     let after = h.state().body().unwrap_or_default().to_string();
-    assert!(!after.contains("# Format ideas"), "and they are gone from the page:\n{after}");
+    assert!(!after.contains(&cut), "and they are gone from it now:\n{after}");
 }
 
 /// Escape closes the menu and the toolbar together.

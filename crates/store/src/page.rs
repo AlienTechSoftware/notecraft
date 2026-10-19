@@ -311,7 +311,8 @@ mod tests {
         let (_t, page) = setup("page1", PageFormat::Html);
         let loaded = load_page(&page).expect("load");
         assert_eq!((loaded.format, loaded.title.as_str()), (PageFormat::Html, "Page"));
-        assert!(loaded.body.starts_with("<h1>Page</h1>") && loaded.body.contains("page-date"), "{}", loaded.body);
+        // A new page's body is its date stamp; the title is in the head.
+        assert!(!loaded.body.contains("<h1>") && loaded.body.contains("page-date"), "{}", loaded.body);
         save_body(&page, "<h1>Page</h1><p>Hello</p>").expect("save");
         let again = load_page(&page).expect("load");
         assert_eq!(again.body, "<h1>Page</h1><p>Hello</p>");

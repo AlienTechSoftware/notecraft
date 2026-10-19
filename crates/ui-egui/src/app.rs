@@ -581,6 +581,11 @@ impl NoteCraftApp {
         self.editor.as_ref().map(|e| e.body.as_str())
     }
 
+    /// The title of the open page, which the window shows above it.
+    pub fn title(&self) -> Option<&str> {
+        self.editor.as_ref().map(|e| e.title.as_str())
+    }
+
     /// Replaces the text in the editor, as typing would, and marks the page changed.
     pub fn set_body(&mut self, body: &str) {
         if let Some(ed) = self.editor.as_mut() {
@@ -2487,6 +2492,8 @@ impl NoteCraftApp {
         let show_source = self.show_source;
         let full_page = self.full_page;
         let (hide_title, rules) = (self.hide_title, self.rules);
+        // What the title area is showing, so the page's words do not say it again.
+        let shown_title = self.editor.as_ref().map(|e| e.title.clone()).unwrap_or_default();
         let table_borders = self.table_borders;
         let (mut toggle_source, mut toggle_full_page, mut focus_search) = (false, false, false);
         let mut from_blocks = false;
@@ -2616,6 +2623,7 @@ impl NoteCraftApp {
                                 page_dir,
                                 table_borders,
                                 &mut ed.columns,
+                                if hide_title { "" } else { &shown_title },
                             );
                             page_acts.append(&mut moved.acts);
                             // The ink of a page sits over its words, anywhere on it, the
@@ -3159,6 +3167,9 @@ impl NoteCraftApp {
                     return Err("this page is read-only until the block editor can keep its markup".into());
                 }
                 let n = p.get("block").and_then(Value::as_u64).ok_or("missing block")? as usize;
+                // A heading that only repeats the page's title is not drawn, so the caret
+                // cannot go there: the next block is what a person would have clicked.
+                let n = if pageedit::is_title_echo(&ed.blocks, n, &ed.title) { n + 1 } else { n };
                 let block = ed.blocks.get(n).ok_or_else(|| format!("the page has no block {n}"))?;
                 if !pageedit::is_writable(block) {
                     return Err(format!("block {n} is a table, a rule or a picture; the caret cannot go in it yet"));

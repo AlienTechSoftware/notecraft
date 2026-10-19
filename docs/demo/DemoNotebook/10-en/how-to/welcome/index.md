@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Welcome
-
 ![The NoteCraft koala, writing in a notebook](assets/banner-en.png)
 
 *Notes as plain files, in plain folders.*

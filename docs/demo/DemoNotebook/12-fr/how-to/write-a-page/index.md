@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Écrire une page
-
 Cliquez dans une ligne et tapez. La page s'affiche telle qu'elle se lit : les titres en
 caractères de titre, le **gras** et l'*italique* avec leur propre allure, le `code` dans une
 boîte, le ~~barré~~ quand c'est réglé. Les marques qui les produisent restent dans le texte mais

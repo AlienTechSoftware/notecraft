@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Mirar dentro de una página
-
 Muchas aplicaciones de notas guardan un cuaderno entero en un único archivo binario, y un editor de texto solo muestra ruido. Una página de NoteCraft es una carpeta de archivos normales, y la vista de código te enseña esa carpeta, archivo por archivo. Pruébalo ahora: pulsa el botón `< >` junto a esta página.
 
 ## Qué verás

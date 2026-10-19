@@ -11,14 +11,18 @@ pub fn markdown_page(title: &str, id: &str, order: u32, now: &str) -> String {
     let stamp = long_from_iso(now).unwrap_or_else(|| now.to_string());
     // The stamp is plain words, not italics: the page draws it in its own quiet grey, and
     // marks round it would be shown as marks the moment the caret landed on the line.
-    format!("---\nid: {id}\ntitle: {}\norder: {order}\ncreated: {now}\nupdated: {now}\ntags: []\n---\n\n# {title}\n\n{stamp}\n\n", quote(title))
+    //
+    // The title is not in the body. A page carries its title in its head, and the window
+    // draws it in the title area above the words, the way OneNote does; writing it into
+    // the body as well showed every page its own name twice.
+    format!("---\nid: {id}\ntitle: {}\norder: {order}\ncreated: {now}\nupdated: {now}\ntags: []\n---\n\n{stamp}\n\n", quote(title))
 }
 
 pub fn html_page(title: &str, id: &str, order: u32, now: &str) -> String {
     let t = escape(title);
     let stamp = escape(&long_from_iso(now).unwrap_or_else(|| now.to_string()));
     format!(
-        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{t}</title>\n<meta name=\"notecraft:id\" content=\"{id}\">\n<meta name=\"notecraft:order\" content=\"{order}\">\n<meta name=\"notecraft:created\" content=\"{now}\">\n<meta name=\"notecraft:updated\" content=\"{now}\">\n</head>\n<body>\n<h1>{t}</h1>\n<p class=\"page-date\">{stamp}</p>\n</body>\n</html>\n"
+        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{t}</title>\n<meta name=\"notecraft:id\" content=\"{id}\">\n<meta name=\"notecraft:order\" content=\"{order}\">\n<meta name=\"notecraft:created\" content=\"{now}\">\n<meta name=\"notecraft:updated\" content=\"{now}\">\n</head>\n<body>\n<p class=\"page-date\">{stamp}</p>\n</body>\n</html>\n"
     )
 }
 
@@ -33,7 +37,9 @@ mod tests {
         let (front, body) = frontmatter::split_front(&page);
         assert_eq!(frontmatter::value(&front, "title").as_deref(), Some("My \"Page\""));
         assert_eq!(frontmatter::value(&front, "order").as_deref(), Some("20"));
-        assert!(body.contains("# My \"Page\""));
+        // The title is in the front matter and nowhere else: the window draws it above the
+        // page, so a body that said it again would show it twice.
+        assert!(!body.contains("# My"), "the body does not repeat the title: {body}");
         assert!(body.contains("\nSaturday, 17 October 2026, 00:00\n"), "the page starts with its date, in plain words: {body}");
     }
 

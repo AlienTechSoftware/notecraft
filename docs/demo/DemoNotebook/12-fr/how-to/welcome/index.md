@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Bienvenue
-
 ![Le koala de NoteCraft, en train d'écrire](assets/banner-fr.png)
 
 *Des notes en fichiers simples, dans des dossiers simples.*

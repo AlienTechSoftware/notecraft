@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# 동기화와 백업
-
 NoteCraft에는 자체 동기화도, 계정도 없습니다. 노트북은 작은 파일들이 든 폴더이므로, 노트북 폴더를 동기화 도구가 이미 보고 있는 곳에 두세요. OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, 네트워크 공유, git 저장소. 어느 것도 NoteCraft를 이해할 필요가 없습니다. 파일을 복사할 뿐입니다.
 
 ## 왜 되는가

@@ -470,7 +470,10 @@ mod tests {
         // The page is real: its title and the date it was started, like a new OneNote page.
         match s.run("page.load", &p(&[("path", page.path.to_str().expect("utf8"))])).expect("load") {
             Output::Page(pg) => {
-                assert!(pg.body.contains("<h1>Untitled page</h1>"), "{}", pg.body);
+                // The title is in the head, not repeated in the body: the window draws it
+                // above the page, the way OneNote does.
+                assert_eq!(pg.title, "Untitled page");
+                assert!(!pg.body.contains("<h1>"), "the body does not say the title again: {}", pg.body);
                 assert!(pg.body.contains("page-date"), "a new page carries its date: {}", pg.body);
             }
             other => panic!("{other:?}"),

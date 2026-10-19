@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Escribir una página
-
 Haz clic en una línea y escribe. La página se muestra tal como se lee: los títulos con letra de
 título, la **negrita** y la *cursiva* con su propio aspecto, el `código` en una caja, lo
 ~~tachado~~ cuando ya está hecho. Las marcas que los crean se quedan en el texto, pero se

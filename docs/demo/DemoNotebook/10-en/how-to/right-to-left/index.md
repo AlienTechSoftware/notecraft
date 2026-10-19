@@ -7,8 +7,6 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-# Right to left
-
 Arabic, Hebrew, Persian and Urdu read from the right. NoteCraft draws them that way: the letters
 join, a line of them hangs from the right edge, and a line that mixes the two directions is laid
 out by the Unicode algorithm, so a price keeps its number the right way round:
