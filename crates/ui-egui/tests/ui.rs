@@ -1930,7 +1930,46 @@ fn undo_takes_back_a_change_to_the_page_and_redo_puts_it_back() {
     assert!(state["page"]["history"]["steps"].as_u64().unwrap_or(0) >= 2, "{}", state["page"]["history"]);
 }
 
-/// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
+/// A file in the page's folder can be taken out again: the right button offers it, and
+/// the window asks before anything is deleted.
+#[test]
+fn a_file_in_the_pages_folder_can_be_deleted_from_the_page() {
+    let (t, app, s) = sample_app("ui-detach");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let page = s.md_page.to_string_lossy().into_owned();
+    let dropped = t.path().join("picture.png");
+    std::fs::write(&dropped, LOGO_PNG).expect("a file to attach");
+    ask(&mut h, "engine.execute", json!({"command": "page.attach", "params": {"path": page, "source": dropped.to_string_lossy()}})).expect("attach");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // The list of files sits under a whole sheet of paper, so scroll down to it first.
+    // The wheel goes to whatever is under the pointer, so the pointer goes to the page.
+    ask(&mut h, "ui.move", json!({"x": 700, "y": 400})).expect("pointer onto the page");
+    settle(&mut h);
+    for _ in 0..8 {
+        ask(&mut h, "ui.scroll", json!({"y": -400})).expect("scroll down");
+        settle(&mut h);
+    }
+    let row = h.query_all_by_label_contains("assets/picture.png").next().map(|n| n.rect()).expect("the file is listed");
+    // The Delete on that row, not on another file's.
+    let button =
+        h.query_all_by_label("Delete file").find(|n| (n.rect().center().y - row.center().y).abs() < 4.0).expect("the Delete beside that file");
+    button.click();
+    settle(&mut h);
+
+    // It asks first, and says plainly that undo will not bring a file back.
+    assert!(h.query_all_by_label_contains("Undo does not bring a file back").count() >= 1, "the warning is there");
+    h.get_by_label("Delete").click();
+    settle(&mut h);
+
+    assert_eq!(h.query_all_by_label_contains("assets/picture.png").count(), 0, "the file is off the page's list");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(state["status"]["text"].as_str().unwrap_or_default().contains("gone"), "{}", state["status"]);
+}
+
+/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.
 #[test]

@@ -111,6 +111,13 @@ fn page_save(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(page::save_body(&path, req(p, "body")?)?))
 }
 
+fn page_detach(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let name = req(p, "name")?;
+    assets::remove(&path, name)?;
+    Ok(Output::Text(format!("removed assets/{name}")))
+}
+
 fn page_attach(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     Ok(Output::Text(assets::attach_file(&path, std::path::Path::new(req(p, "source")?))?))
@@ -309,6 +316,13 @@ widths (optional): block:w,w,w per table, separated by semicolons; empty puts ev
         params: "path (required): the page\nsource (required): a file to copy into the page's assets folder",
         changes_tree: false,
         run: page_attach,
+    },
+    CommandSpec {
+        id: "page.detach",
+        label: "Take a file out of a page's folder",
+        params: "path (required): the page\nname (required): the file in the page's assets folder, as page.load reports it. The file is deleted; a line that linked to it is left alone",
+        changes_tree: false,
+        run: page_detach,
     },
     CommandSpec {
         id: "settings.default_format.get",

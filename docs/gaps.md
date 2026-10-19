@@ -145,6 +145,10 @@ it is fixed and tested, not when it is promised.
   the open page's: it starts when the page opens and goes when another is opened, and at
   most 200 steps or 16 MB are kept. Ink is not in it; a stroke is taken back with Undo
   Stroke on the Draw tab, because a drawing is its own file beside the page.
+- **A file in a page's folder** is listed under the page, and each row has a Delete that
+  asks before it removes the file from disk. Undo does not bring a file back: the page's
+  history holds the page, not the files beside it. A line that linked to the file is left
+  as it was written, and shows as a link to something no longer there.
 - **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
   the clipboard is read directly, because egui hands a window text only. The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab

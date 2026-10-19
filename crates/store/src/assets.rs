@@ -68,6 +68,24 @@ pub fn attach_bytes(page_dir: &Path, name: &str, bytes: &[u8]) -> Result<String>
     Ok(format!("assets/{name}"))
 }
 
+/// Takes a file out of the page's attachments folder.
+///
+/// `name` is a plain file name, as [`list`] reports it: anything with a separator or a
+/// `..` in it is refused, so this can never reach out of the page's own folder. The page
+/// is not touched; a line that linked to the file is left as the writer wrote it, and
+/// shows as a link to something that is no longer there.
+pub fn remove(page_dir: &Path, name: &str) -> Result<()> {
+    let safe = names::safe_file_name(name);
+    if name.is_empty() || safe != name {
+        return Err(StoreError::invalid("that is not a file in this page's folder"));
+    }
+    let file = page_dir.join("assets").join(name);
+    if !file.is_file() {
+        return Err(StoreError::NotFound(format!("no attachment called {name}")));
+    }
+    fs::remove_file(&file).map_err(|e| StoreError::io("remove", &file, e))
+}
+
 /// Copies a file into the page's attachments. Returns the relative link.
 pub fn attach_file(page_dir: &Path, source: &Path) -> Result<String> {
     let meta = fs::metadata(source).map_err(|e| StoreError::io("read", source, e))?;
@@ -110,6 +128,25 @@ mod tests {
         let s = Settings::at(t.path().join("s.toml"));
         let nb = ops::create_notebook(&t.path().join("nb"), "NB", None, &s).expect("nb");
         ops::create_node(&nb, "P", NodeKind::Page, None, &s).expect("page")
+    }
+
+    #[test]
+    fn a_file_can_be_taken_out_of_a_page_again() {
+        let t = TempDir::new("assets-remove");
+        let page = page(&t);
+        attach_bytes(&page, "note.txt", b"words").expect("attach");
+        assert_eq!(list(&page).len(), 1);
+
+        remove(&page, "note.txt").expect("remove");
+        assert!(list(&page).is_empty(), "the file is gone");
+        assert!(remove(&page, "note.txt").is_err(), "and asking twice says so rather than pretending");
+
+        // Nothing outside the page's own assets folder can be reached.
+        attach_bytes(&page, "keep.txt", b"words").expect("attach");
+        for name in ["../index.html", r"..\index.html", "a/b.txt", "", ".."] {
+            assert!(remove(&page, name).is_err(), "refused: {name:?}");
+        }
+        assert_eq!(list(&page).len(), 1, "and nothing was deleted trying");
     }
 
     #[test]

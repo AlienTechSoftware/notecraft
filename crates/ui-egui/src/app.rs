@@ -124,6 +124,11 @@ enum Dialog {
         path: PathBuf,
         title: String,
     },
+    /// A file in the page's own folder, about to be deleted.
+    DeleteFile {
+        page: PathBuf,
+        name: String,
+    },
     Delete {
         path: PathBuf,
         title: String,
@@ -2301,6 +2306,8 @@ impl NoteCraftApp {
         let mut from_blocks = false;
         let mut boxes_moved = false;
         let mut cols_moved = false;
+        // A file the writer asked to delete from the page's folder, confirmed first.
+        let mut delete_file: Option<String> = None;
         let mut save_boxes: Option<(String, String)> = None;
         let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
@@ -2385,6 +2392,7 @@ impl NoteCraftApp {
                             toggle: &mut bool,
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
+                            delete_file: &mut Option<String>,
                             follow: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
@@ -2492,7 +2500,17 @@ impl NoteCraftApp {
                             ui.separator();
                             ui.label(egui::RichText::new("Files in this page's folder").small().color(tokens.muted));
                             for (name, size) in &ed.attachments {
-                                ui.label(egui::RichText::new(format!("assets/{name}  ({} KB)", size.div_ceil(1024))).small().monospace());
+                                // A file in the page's folder can be taken out again. The
+                                // button is on the row rather than under the right
+                                // button, because the page's own menu answers a right
+                                // click anywhere on the sheet, this list included.
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(format!("assets/{name}  ({} KB)", size.div_ceil(1024))).small().monospace());
+                                    if ui.small_button("Delete file").on_hover_text(format!("Delete assets/{name} from this page's folder")).clicked()
+                                    {
+                                        *delete_file = Some(name.clone());
+                                    }
+                                });
                             }
                         }
                     });
@@ -2516,7 +2534,18 @@ impl NoteCraftApp {
                             source_changed = true;
                         }
                     });
-                    page(&mut cols[1], ed, false, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow);
+                    page(
+                        &mut cols[1],
+                        ed,
+                        false,
+                        &mut changed,
+                        &mut from_blocks,
+                        &mut toggle_source,
+                        &mut boxes_moved,
+                        &mut cols_moved,
+                        &mut delete_file,
+                        &mut follow,
+                    );
                 });
                 ed.body = left;
                 if source_changed {
@@ -2524,7 +2553,18 @@ impl NoteCraftApp {
                     cursor = source_cursor;
                 }
             } else {
-                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow);
+                page(
+                    ui,
+                    ed,
+                    true,
+                    &mut changed,
+                    &mut from_blocks,
+                    &mut toggle_source,
+                    &mut boxes_moved,
+                    &mut cols_moved,
+                    &mut delete_file,
+                    &mut follow,
+                );
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -2555,6 +2595,12 @@ impl NoteCraftApp {
         }
         if let Some((path, line)) = save_cols {
             self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
+        }
+        if let Some(name) = delete_file {
+            let page = self.editor.as_ref().map(|e| e.dir.clone());
+            if let Some(page) = page {
+                self.dialog = Some(Dialog::DeleteFile { page, name });
+            }
         }
         if toggle_source {
             self.set_show_source(!show_source);
@@ -2779,6 +2825,33 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::DeleteFile { page, name } => {
+                let mut go = false;
+                egui::Window::new("Delete file").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
+                    ui.label(format!("Delete \"assets/{name}\" from this page's folder?"));
+                    ui.colored_label(self.tokens.warn, "The file is removed from disk. Undo does not bring a file back.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            keep = false;
+                        }
+                        if ui.button("Delete").clicked() {
+                            go = true;
+                        }
+                    });
+                });
+                if go {
+                    let page = page.clone();
+                    if self.run("page.detach", &params(&[("path", &path_str(&page)), ("name", name)])).is_some() {
+                        if let Some(ed) = self.editor.as_mut() {
+                            ed.attachments = notecraft_store::assets::list(&page);
+                        }
+                        self.say("The file is gone");
+                        // The page may have named the drawing it no longer has.
+                        self.sync_ink_reference();
+                    }
+                    keep = false;
+                }
+            }
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
                 egui::Window::new("Delete").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
@@ -2986,6 +3059,20 @@ impl NoteCraftApp {
             }
             "ui.text" => {
                 self.event_frames.push_back(vec![egui::Event::Text(text("text").ok_or("missing text")?.to_string())]);
+                ctx.request_repaint();
+                Ok(json!({}))
+            }
+            // Scrolling, so a script can reach what is below the fold: the list of files
+            // in a page's folder sits under a whole sheet of paper, and nothing could
+            // reach it from here before.
+            "ui.scroll" => {
+                let (dx, dy) = (num("x").unwrap_or(0.0), num("y").ok_or("missing y")?);
+                self.event_frames.push_back(vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: vec2(dx, dy),
+                    modifiers: egui::Modifiers::NONE,
+                    phase: egui::TouchPhase::Move,
+                }]);
                 ctx.request_repaint();
                 Ok(json!({}))
             }
