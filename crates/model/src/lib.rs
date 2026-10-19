@@ -8,6 +8,7 @@ pub mod color;
 pub mod container;
 pub mod format;
 pub mod id;
+pub mod justify;
 pub mod kind;
 pub mod kv;
 pub mod names;

@@ -12,6 +12,7 @@ use notecraft_formats::html;
 use notecraft_formats::markdown::{self, Block, Span};
 use notecraft_model::Dir;
 use notecraft_model::PageFormat;
+use notecraft_model::justify::Justified;
 use std::path::Path;
 
 /// Blocks to draw for the editable part of a page in `format`.
@@ -125,7 +126,14 @@ pub fn dir_of(spans: &[Span], page: Dir) -> Dir {
 /// Draws spans as wrapped text. A paragraph with inline math flows text and formulas
 /// together; one without math is a single label. Right-to-left text hangs from the right
 /// edge, which is where a reader of Arabic or Hebrew starts.
-fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir) {
+///
+/// With `justify`, every line of the paragraph but the last is made to reach the column.
+/// Which way that is done follows the words. A paragraph that reads right to left is
+/// stretched by kashida, the way a scribe lengthens the joins inside the words, so the
+/// spaces stay as they were and the page keeps an even colour. A paragraph that reads left
+/// to right has no such joins, so it is justified the Latin way, by widening the spaces,
+/// which is what egui's own layout does.
+fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir, justify: bool) {
     if !spans.iter().any(|s| s.math) {
         // A line that mixes the two directions is drawn by egui in the wrong order, and a
         // paragraph that reads right to left is not wrapped by it, so both go through the
@@ -135,11 +143,17 @@ fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, toke
         if crate::bidi::paints(&text, page) {
             let pieces = pieces(spans, size, color, tokens);
             let width = ui.available_width();
-            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page);
+            // Kashida is for the joins of Arabic and Persian letters. A line that mixes the
+            // two directions and reads left to right has nothing to stretch, and the bidi
+            // painter has no way to widen its spaces, so it is drawn ragged; see
+            // `docs/gaps.md`.
+            let stretch = justify && dir_of(spans, page).is_rtl();
+            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch);
             let _ = rect;
             return;
         }
-        let job = job(ui, spans, size, color, tokens, page);
+        let mut job = job(ui, spans, size, color, tokens, page);
+        job.justify = justify;
         if dir_of(spans, page).is_rtl() {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| ui.label(job));
         } else {
@@ -265,10 +279,11 @@ pub fn is_rich(block: &Block) -> bool {
         || matches!(block, Block::Paragraph(spans) if spans.iter().any(|s| s.math || s.image.is_some()))
 }
 
-/// Draws only the blocks [`is_rich`] picks out.
+/// Draws only the blocks [`is_rich`] picks out. They are picked out of their page, so the
+/// page's justification does not follow them here; none of them is a paragraph of words.
 pub fn show_rich(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Dir) {
     let rich: Vec<Block> = blocks.iter().filter(|b| is_rich(b)).cloned().collect();
-    let _link = show(ui, &rich, page_dir, tokens, page);
+    let _link = show(ui, &rich, page_dir, tokens, page, &Justified::default());
 }
 
 /// What happened in one block this frame.
@@ -282,10 +297,10 @@ pub struct BlockResponse {
 /// Draws blocks into `ui`. `page_dir` is the page's folder, used to find attachments.
 /// Read only: to-do boxes are shown but not ticked (see [`show_block`]). A link is still
 /// live: the target of one clicked this frame is returned, as written in the page.
-pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Dir) -> Option<String> {
+pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Dir, justified: &Justified) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
-        let out = show_block(ui, block, i, page_dir, tokens, false, page);
+        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.has(i));
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
@@ -300,8 +315,11 @@ pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, pag
 }
 
 /// Draws one block and reports what happened in it. With `live` the to-do box can be
-/// ticked, which is what the page editor passes.
-pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens: &Tokens, live: bool, page: Dir) -> BlockResponse {
+/// ticked, which is what the page editor passes. With `justified` the block's lines are
+/// made to reach the column; the page says which blocks those are, and only a paragraph
+/// listens (see `notecraft_model::justify`).
+#[allow(clippy::too_many_arguments)]
+pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens: &Tokens, live: bool, page: Dir, justified: bool) -> BlockResponse {
     let start = ui.cursor().min;
     let body = ui.style().visuals.text_color();
     let mut task_set = None;
@@ -316,8 +334,8 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
                 };
                 ui.add_space(6.0);
                 match tagged(spans) {
-                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page)),
-                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page),
+                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page, false)),
+                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, false),
                 }
                 ui.add_space(2.0);
             }
@@ -326,14 +344,14 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page);
+                            draw_spans(ui, &spans, 14.5, body, tokens, page, justified);
                             draw_inline_images(ui, &spans, page_dir);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
-                            draw_spans(ui, spans, 14.5, body, tokens, page);
+                            draw_spans(ui, spans, 14.5, body, tokens, page, justified);
                         }
                         draw_inline_images(ui, spans, page_dir);
                         ui.add_space(4.0);
@@ -364,11 +382,11 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
                     }
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page);
+                            draw_spans(ui, &spans, 14.5, body, tokens, page, false);
                             draw_inline_images(ui, &spans, page_dir);
                         }),
                         None => {
-                            draw_spans(ui, spans, 14.5, body, tokens, page);
+                            draw_spans(ui, spans, 14.5, body, tokens, page, false);
                             draw_inline_images(ui, spans, page_dir);
                         }
                     });
@@ -378,7 +396,7 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     let rect = ui.available_rect_before_wrap();
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
-                    draw_spans(ui, spans, 14.5, tokens.muted, tokens, page);
+                    draw_spans(ui, spans, 14.5, tokens.muted, tokens, page, false);
                 });
                 ui.add_space(4.0);
             }
@@ -513,7 +531,7 @@ mod tests {
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
-                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, notecraft_model::Dir::Ltr);
+                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, notecraft_model::Dir::Ltr, false);
                 heights.push(out.response.rect.height());
             }
         });
@@ -618,7 +636,7 @@ mod tests {
                 let left = ui.available_height();
                 ui.allocate_space(egui::vec2(0.0, left));
                 let before = ui.cursor().min.y;
-                show(ui, &blocks, &page, &tokens, Dir::Ltr);
+                show(ui, &blocks, &page, &tokens, Dir::Ltr, &Justified::default());
                 tall = ui.cursor().min.y - before;
             });
             out.textures_delta.clear();
@@ -638,7 +656,7 @@ mod tests {
         egui_extras::install_image_loaders(&ctx);
         let tokens = crate::theme::Theme { mode: crate::theme::Mode::Dark, accent: crate::theme::Accent::Default }.tokens();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            show(ui, &blocks, Path::new("."), &tokens, Dir::Ltr);
+            show(ui, &blocks, Path::new("."), &tokens, Dir::Ltr, &Justified::default());
         });
         out.textures_delta.clear();
     }

@@ -141,7 +141,7 @@ fn a_number_inside_an_arabic_line_is_drawn_in_order() {
     // picture egui paints by itself, because egui puts the digits the other way round.
     let blocks = markdown::parse(line);
     let page = render(move |ui| {
-        notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &Theme::DEFAULT.tokens(), Dir::Rtl);
+        notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &Theme::DEFAULT.tokens(), Dir::Rtl, &Default::default());
     });
     let plain_egui = render(move |ui| {
         let t = Theme::DEFAULT.tokens();

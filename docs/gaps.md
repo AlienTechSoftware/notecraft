@@ -58,7 +58,7 @@ it is fixed and tested, not when it is promised.
   words backwards. A right-to-left title is drawn by the bidi painter now and becomes a
   text box when it is clicked. **Not built:** the words are still backwards while the title
   is being typed in, which needs the page's own caret in the title box.
-- **The demo has a page with right-to-left in every element** - العربية في كل عنصر, under
+- **The demo has a page with right-to-left in every element** - كل عنصر في العربية, under
   the Arabic How to - which is the corpus to look at after any change to text drawing.
   **Known from it, and not fixed:** a numbered item puts its number on the left of a
   right-to-left line (a bullet and a task box go to the right, as they should), and a line
@@ -111,10 +111,25 @@ it is fixed and tested, not when it is promised.
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, and
   Ctrl+Z brings it back: the page's history holds whole states of the page, boxes included.
-- **Table column widths are still on a metadata line.** The boxes of a page are elements in its text,
-  but the widths a table's columns were dragged to are kept in the head (`notecraft:columns`) or the
-  front matter (`columns:`), so the same disconnect remains for them: another program does not see
-  them. The code view does show them, because it shows the page file's head.
+- **Table column widths and justification are still on a metadata line.** The boxes of a page are
+  elements in its text, but the widths a table's columns were dragged to are kept in the head
+  (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
+  same way (`notecraft:justify`, `justify:`), so the same disconnect remains for both: another
+  program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
+  number against the wrong block. The code view does show them, because it shows the page file's
+  head. The reasoning, and what the alternatives cost, is in
+  [page-model.md](page-model.md) section 2.
+- **Justification: three things it does not do yet.** A justified paragraph is stretched when it is
+  drawn, which is what keeps the page file the writer's own words
+  (`crates/ui-egui/src/bidi.rs`, measured in `crates/ui-egui/tests/rtl_quality.rs`). Three edges
+  come with that. (1) A click inside a justified paragraph is placed against the unstretched
+  words, so it drifts towards the far end of a long line; the caret is put a letter or two off
+  where the eye expects. (2) A paragraph that mixes the two directions and reads left to right is
+  drawn ragged: kashida has nothing to stretch in Latin words, and the bidi painter has no way to
+  widen the spaces between them. A paragraph of one direction is justified either way. (3) The
+  stretching is measured in the paragraph's own type, so a line with a run of code or maths in it
+  may stop a little short of the column. A kashida also comes only in whole tatweels, because the
+  bundled face has no `JSTF` table or elongation axis; `crates/text/src/kashida.rs` says so.
 - **A drawing in the code view** is drawn, not shown as a wall of numbers: NoteCraft's own
   painter draws the strokes to fit the room, says how many there are, and Show the code puts
   the SVG one click away.

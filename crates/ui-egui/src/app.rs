@@ -83,6 +83,9 @@ struct Editor {
     boxes: Vec<notecraft_model::Container>,
     /// How wide the columns of this page's tables are drawn, from the same place.
     columns: notecraft_model::tablecols::Widths,
+    /// Which paragraphs of this page are stretched to fill the column, from the same place.
+    /// The words themselves are never touched; see `notecraft_model::justify`.
+    justified: notecraft_model::justify::Justified,
     /// The paper this page is drawn on and the colour behind it, as the page's own file
     /// keeps them. `None` means the page says nothing and the window's own choice stands.
     paper: Option<ribbon::RuleLines>,
@@ -687,6 +690,7 @@ impl NoteCraftApp {
                 boxes,
                 arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
+                justified: notecraft_store::page::justified(dir).unwrap_or_default(),
                 ink_files: notecraft_store::page::ink_files(dir),
                 paper: appearance.0,
                 colour: appearance.1,
@@ -1552,6 +1556,7 @@ impl NoteCraftApp {
             ribbon::Act::Indent(deeper) => self.indent_block(deeper),
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
+            ribbon::Act::Justify => self.apply_justify(),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
@@ -2152,6 +2157,40 @@ impl NoteCraftApp {
             Some(_) => "This paragraph reads left to right",
             None => "This paragraph reads whichever way its words do",
         });
+    }
+
+    /// Fill the column with the paragraph the caret is in, or stop filling it.
+    ///
+    /// Which paragraphs are justified is the page's own, like the arrangement of its boxes
+    /// and the width of its table columns, so it goes into the page's file and not into the
+    /// window. The words are not touched: the stretching happens when the paragraph is
+    /// drawn, so the file another program reads is the sentences the writer typed.
+    fn apply_justify(&mut self) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say("Open a page first");
+            return;
+        };
+        let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
+            self.status = "Click in the page first, then use the ribbon".into();
+            self.status_is_error = false;
+            return;
+        };
+        if !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Paragraph(_))) {
+            self.say("Justification goes on a paragraph of text");
+            return;
+        }
+        let on = !ed.justified.has(at);
+        let mut marked = ed.justified.clone();
+        marked.set(at, on);
+        let path = path_str(&ed.dir);
+        let line = notecraft_model::justify::write(&marked);
+        self.save_now();
+        if self.run("page.justify", &params(&[("path", &path), ("blocks", &line)])).is_some() {
+            if let Some(ed) = self.editor.as_mut() {
+                ed.justified = marked;
+            }
+            self.say(if on { "This paragraph fills the column" } else { "This paragraph is ragged again" });
+        }
     }
 
     /// Which way the whole page reads. It is written into the page's own file.
@@ -2927,6 +2966,7 @@ impl NoteCraftApp {
                                 page_dir,
                                 table_borders,
                                 &mut ed.columns,
+                                &ed.justified,
                                 if hide_title { "" } else { &shown_title },
                             );
                             page_acts.append(&mut moved.acts);
@@ -2978,7 +3018,7 @@ impl NoteCraftApp {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
                             // source. See docs/gaps.md.
-                            if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir) {
+                            if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
                                 *follow = Some(href);
                             }
                             ui.add_space(14.0);
@@ -2992,7 +3032,7 @@ impl NoteCraftApp {
                                     *toggle = true;
                                 }
                             });
-                        } else if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir) {
+                        } else if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
                             *follow = Some(href);
                         }
                         if !ed.attachments.is_empty() {

@@ -280,6 +280,67 @@ fn arabic_draws_and_the_direction_controls_work() {
     review(&mut h, "rtl");
 }
 
+/// The Justify button on the Home tab fills the column with the paragraph the caret is in,
+/// and the page remembers which paragraph that is without a tatweel reaching the file.
+///
+/// This is 1.8 of the owner's right-to-left bar, end to end: the button, the page file and
+/// the painter. What the stretching itself does is measured in `tests/rtl_quality.rs`.
+#[test]
+fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
+    // Long enough to wrap to several lines in the page's column, so there is something to
+    // fill: a paragraph that fits on one line is all last line, and the last line is never
+    // justified.
+    const PARAGRAPH: &str = "الملاحظات يجب أن تعيش أطول من البرنامج الذي كتبها، ولهذا تحفظ كل صفحة في مجلد من ملفات نصية عادية يقرؤها أي محرر. الدفتر مجلد، والقسم مجلد، والصفحة مجلد فيه ملف واحد وصوره ومرفقاته، ولا شيء غير ذلك. لا قاعدة بيانات، ولا صيغة لا يفتحها إلا برنامج واحد.";
+    let (_t, app, s) = sample_app("ui-justify");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Justified", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": PARAGRAPH}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify").click();
+    h.run();
+    h.run();
+
+    // The page knows which paragraph, and its words are the ones that were typed.
+    let file = PathBuf::from(&page).join("index.md");
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(text.contains("justify: 0"), "the page records the paragraph in its head:\n{text}");
+    assert!(!text.contains('\u{0640}'), "no tatweel is written into the file; the stretching is drawing only");
+    assert!(text.contains(PARAGRAPH), "the words are the ones that were typed");
+    assert_eq!(h.state().body().unwrap_or_default().trim(), PARAGRAPH, "and the window agrees with the folder");
+
+    // The caret leaves the paragraph, so the picture shows the paragraph as it is read
+    // rather than as it is written in: while the caret is in a block it is a text box of
+    // the plain words, and the stretching belongs to the painter.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the block");
+    settle(&mut h);
+    review(&mut h, "justify");
+
+    // Asking again puts it back the way it was, and takes the line out of the page.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(!text.contains("justify:"), "the line is gone, not left empty:\n{text}");
+}
+
 /// A table copied out of another note taking app arrives as tab-separated text. It must come
 /// back as a table, not as one long line.
 #[test]

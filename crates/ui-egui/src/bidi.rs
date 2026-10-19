@@ -214,8 +214,18 @@ fn spoken(text: &str) -> String {
 /// would describe by itself. The line is given its text as a label, the way `Label` does, or
 /// a screen reader would find nothing on a right-to-left page and the window tests could not
 /// look a line up by what it says.
-pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: notecraft_model::Dir) -> Rect {
-    let (drawn, used) = runs(ui, text, pieces, size, max_width);
+pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: notecraft_model::Dir, justify: bool) -> Rect {
+    // A justified paragraph is drawn from its stretched words, but it is still the words
+    // the writer typed that a screen reader is told and that the page file holds: a tatweel
+    // is the shape of a join, not a letter anybody meant to write.
+    let (drawn, used) = match justify {
+        true => {
+            let (long, moved) = stretched(ui, text, pieces, size, max_width);
+            let (drawn, used) = runs(ui, &long, &moved, size, max_width);
+            (drawn, used)
+        }
+        false => runs(ui, text, pieces, size, max_width),
+    };
     let full = vec2(max_width, used.y.max(size));
     let (rect, resp) = ui.allocate_exact_size(full, egui::Sense::hover());
     let enabled = ui.is_enabled();
@@ -224,6 +234,139 @@ pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32
     let origin = if notecraft_model::direction_or(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
     paint(ui, origin, &drawn);
     rect
+}
+
+/// A justified paragraph, ready to draw: its words with tatweels put into the joins, so
+/// every line but the last reaches the column.
+///
+/// This is where `notecraft_text::kashida` meets the page. Only the drawing is stretched -
+/// the page file keeps the words as they were typed - so this runs on the way to the
+/// painter, every time the paragraph is drawn, which is why the answer is remembered
+/// below.
+///
+/// **What is measured.** The joins are chosen from the line's words, but how much a
+/// candidate is worth is a question for the painter, not for parley: an egui galley is what
+/// ends up on the page. So a candidate is laid out the way the line will be drawn. Laid out
+/// in the column the painter reports the column's own width, so the number of lines is what
+/// says whether the stretched line still fits; the ink width comes from laying the same
+/// line out with nothing to wrap against.
+///
+/// **What it does not know.** The candidate is measured in the paragraph's own type, not in
+/// the mixture of faces a line of code or maths inside it would bring. parley breaks the
+/// lines from the size alone, so that is the same answer the line break itself was made on,
+/// but a line with a run of monospace in it may stop a little short of the column.
+pub fn stretched(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) -> (String, Vec<Piece>) {
+    let out = remembered(ui, text, size, max_width);
+    if out == text {
+        return (out, pieces.to_vec());
+    }
+    let moved = moved_pieces(pieces, text, &out);
+    (out, moved)
+}
+
+/// How many stretched paragraphs are kept. A page shows a few dozen at once; past that the
+/// oldest answers are dropped rather than grown into.
+const REMEMBERED: usize = 256;
+
+thread_local! {
+    /// The stretched text of a paragraph, against the paragraph, the type size and the
+    /// column it was stretched into. Stretching walks the joins of a line one tatweel at a
+    /// time and lays the line out again for each, which is far too much work to do on every
+    /// frame of a window that is only being scrolled.
+    static STRETCHED: RefCell<Vec<((String, u32, u32), String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The stretched paragraph, from the memory if it is there and worked out if it is not.
+fn remembered(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
+    let key = (text.to_string(), size.to_bits(), max_width.to_bits());
+    let known = STRETCHED.with(|c| c.try_borrow().ok().and_then(|c| c.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone())));
+    if let Some(known) = known {
+        return known;
+    }
+    let out = stretch(ui, text, size, max_width);
+    STRETCHED.with(|c| {
+        if let Ok(mut c) = c.try_borrow_mut() {
+            if c.len() >= REMEMBERED {
+                c.clear();
+            }
+            c.push((key, out.clone()));
+        }
+    });
+    out
+}
+
+/// Stretches every line of the paragraph but the last to `max_width`.
+fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
+    let Some(split) = split(text, size, max_width) else { return text.to_string() };
+    let lines = split.lines;
+    // One line is all last line, and the last line of a paragraph is never justified: a
+    // closing half-sentence pulled out to the margin is the mark of a bad typesetter.
+    if lines.len() < 2 || !max_width.is_finite() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() + lines.len() * 8);
+    let mut at = 0usize;
+    for (n, line) in lines.iter().enumerate() {
+        let range = line.text.start.max(at)..line.text.end.min(text.len());
+        if range.start > range.end {
+            continue;
+        }
+        // Anything the lines do not cover is copied across untouched.
+        let Some(before) = text.get(at..range.start) else { continue };
+        out.push_str(before);
+        at = range.end;
+        let Some(whole) = text.get(range) else { continue };
+        // The spaces and the break at the end of a line are not part of its words.
+        let core = whole.trim_end();
+        let tail = whole.get(core.len()..).unwrap_or("");
+        if n + 1 == lines.len() || core.is_empty() {
+            out.push_str(whole);
+            continue;
+        }
+        out.push_str(&stretch_line(ui, core, size, max_width));
+        out.push_str(tail);
+    }
+    out.push_str(text.get(at..).unwrap_or(""));
+    out
+}
+
+/// One line, stretched to the column by kashida.
+fn stretch_line(ui: &Ui, core: &str, size: f32, max_width: f32) -> String {
+    let format = TextFormat { font_id: egui::FontId::proportional(size), ..TextFormat::default() };
+    let mut width = |s: &str| -> f32 {
+        let pieces = [(0..s.len(), format.clone())];
+        // A stretch that wraps the line is no width at all, which is how the search stops.
+        if split(s, size, max_width).is_none_or(|l| l.lines.len() > 1) {
+            return f32::INFINITY;
+        }
+        runs(ui, s, &pieces, size, f32::INFINITY).1.x
+    };
+    notecraft_text::kashida::justify(core, max_width, &mut width)
+}
+
+/// The same pieces against the stretched text: every range moved past the tatweels that
+/// were put in before it.
+///
+/// `stretched` is `text` with tatweels inserted and nothing else changed, so walking the two
+/// together says where each byte of the original went. A tatweel falls to the piece before
+/// it, which is the piece of the letter whose join it lengthens.
+fn moved_pieces(pieces: &[Piece], text: &str, stretched: &str) -> Vec<Piece> {
+    let mut shift: Vec<usize> = Vec::with_capacity(text.len() + 1);
+    let (mut a, mut b) = (text.chars().peekable(), stretched.chars());
+    let mut extra = 0usize;
+    for c in b.by_ref() {
+        if a.peek() == Some(&c) {
+            let used = a.next().map(char::len_utf8).unwrap_or(0);
+            for _ in 0..used {
+                shift.push(extra);
+            }
+        } else {
+            extra += c.len_utf8();
+        }
+    }
+    shift.push(extra);
+    let at = |x: usize| x + shift.get(x).copied().unwrap_or(extra);
+    pieces.iter().map(|(r, f)| (at(r.start)..at(r.end), f.clone())).collect()
 }
 
 /// Where a character sits inside a drawn run, measured from the run's left edge.
@@ -603,5 +746,33 @@ mod tests {
         // A click near the right edge lands at the beginning of the text.
         let at = hit(PRICE, vec2(500.0, 8.0), 16.0, 400.0);
         assert!(at <= 4, "the right edge is the start of the line: {at}");
+    }
+    /// A justified paragraph is drawn from stretched words, so the formats of its pieces
+    /// have to move with them: a link or a word in bold must still be the link or the bold
+    /// word after the tatweels go in, not the letters beside it.
+    #[test]
+    fn the_formats_move_with_the_words_they_belong_to() {
+        let t = Theme::DEFAULT.tokens();
+        // Two pieces: the first word, then the rest of the line.
+        let text = "مسار كتاب";
+        let split_at = "مسار".len();
+        let one = TextFormat { font_id: egui::FontId::proportional(16.0), color: t.strong, ..TextFormat::default() };
+        let two = TextFormat { font_id: egui::FontId::proportional(16.0), color: t.link, ..TextFormat::default() };
+        let pieces = vec![(0..split_at, one), (split_at..text.len(), two)];
+
+        // What the painter would get back after a stretch that put one tatweel in each word.
+        let stretched = "مسـار كتـاب";
+        let moved = moved_pieces(&pieces, text, stretched);
+        assert_eq!(moved.len(), 2);
+        let first = stretched.get(moved[0].0.clone()).unwrap_or_default();
+        let second = stretched.get(moved[1].0.clone()).unwrap_or_default();
+        assert_eq!(first, "مسـار", "the first word, its own tatweel included");
+        assert_eq!(second, " كتـاب", "and the rest of the line");
+        assert_eq!(format!("{first}{second}"), stretched, "the pieces cover the stretched line exactly once");
+        assert_eq!(moved[0].1.color, t.strong, "and each keeps its own format");
+        assert_eq!(moved[1].1.color, t.link);
+
+        // A line that was not stretched at all comes back as it was.
+        assert_eq!(moved_pieces(&pieces, text, text), pieces);
     }
 }

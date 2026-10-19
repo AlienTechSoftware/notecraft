@@ -124,6 +124,10 @@ pub struct Line {
     /// Top of the line, down from the top of the text.
     pub y: f32,
     pub height: f32,
+    /// The bytes of the text this line holds, the break at its end included. The lines of a
+    /// layout cover the text once, in order, which is what lets a caller work on one line of
+    /// a wrapped paragraph and put the paragraph back together afterwards.
+    pub text: std::ops::Range<usize>,
 }
 
 /// Every line, each with its runs in the order they are drawn.
@@ -142,7 +146,7 @@ pub fn lines(layout: &Layout<Brush>) -> Vec<Line> {
                     _ => None,
                 })
                 .collect();
-            Line { runs, y: m.baseline - m.ascent, height: m.line_height }
+            Line { runs, y: m.baseline - m.ascent, height: m.line_height, text: line.text_range() }
         })
         .collect()
 }
