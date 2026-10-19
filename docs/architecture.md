@@ -82,6 +82,10 @@ See [`themes.md`](themes.md).
 and drive the window (click, type, theme, screenshot). The same methods run against an
 off-screen window in `ui_shot` and in the tests. See [`control-protocol.md`](control-protocol.md).
 
+## Pages, files and the two views
+
+A page is a folder, the page file names everything the page owns, and the live view and the code view are two ways of looking at the same files. The rules, the code view's design and the open questions are in [page-model.md](page-model.md).
+
 ## Writing on the page
 
 The page area is the page, not a code box. `ui-egui/src/pagetext.rs` lays the text out the
