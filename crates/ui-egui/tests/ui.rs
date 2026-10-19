@@ -56,6 +56,17 @@ fn settle(h: &mut Harness<'_, NoteCraftApp>) {
     h.run();
 }
 
+/// Steps frames without `Harness::run`, which gives up when the window asks to be
+/// repainted more than a few times. A page with unsaved changes asks for exactly that,
+/// once a second, until the autosave fires, so a test that has just drawn on a page has
+/// to wait this way rather than with `settle`.
+fn rest(h: &mut Harness<'_, NoteCraftApp>) {
+    for _ in 0..25 {
+        pump(h);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// Writes a review picture when `NOTECRAFT_UI_VISUAL_DIR` is set. Never asserts.
 fn review(h: &mut Harness<'_, NoteCraftApp>, name: &str) {
     if let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") {
@@ -1137,9 +1148,18 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
     }
     ask(&mut h, "ui.release", json!({"x": body.min.x + 220.0, "y": y})).expect("up");
     pump(&mut h);
-    settle(&mut h);
+    // Wait for the stroke to land rather than assuming one settle is enough: under the
+    // load of the whole suite the frames a synthetic drag needs do not always arrive in
+    // the same number of steps, and this test failed once that way and passed alone.
+    let mut ink = Value::Null;
+    for _ in 0..20 {
+        rest(&mut h);
+        ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+        if ink["strokes"].as_u64() == Some(1) {
+            break;
+        }
+    }
 
-    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the window says one stroke: {ink}");
     assert_eq!(ink["colour"].as_str(), Some("#d02121"), "in red");
     let written = std::fs::read_to_string(&file).expect("the ink was written beside the page");
@@ -1147,13 +1167,26 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
     assert!(written.contains("fill=\"#d02121\""), "drawn in the red that was picked");
     assert_eq!(written.matches("<path").count(), 1, "one stroke");
 
-    // The words of the page are untouched: ink is its own file beside them.
-    assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the page is as it was: {:?}", h.state().body());
+    // The page's words say it has ink, so the source and the page agree and another
+    // program opening the folder can see the handwriting.
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.starts_with("# Format ideas"), "the words are as they were: {body}");
+    assert!(
+        body.contains("![Ink](ink.svg)"),
+        "and the page names its ink:
+{body}"
+    );
 
     // Undo takes the stroke back, and with nothing left the file goes too.
     h.get_by_label("Undo stroke").click();
-    settle(&mut h);
+    rest(&mut h);
     assert!(!file.exists(), "a page rubbed clean keeps no empty ink file");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        !body.contains("ink.svg"),
+        "and stops claiming to have ink:
+{body}"
+    );
     review(&mut h, "draw_tab");
 }
 
@@ -1178,21 +1211,21 @@ fn ink_comes_back_when_the_page_is_opened_again() {
         pump(&mut h);
     }
     ask(&mut h, "ui.release", json!({"x": body.min.x + 130.0, "y": y + 16.0})).expect("up");
-    settle(&mut h);
+    rest(&mut h);
     assert!(s.html_page.join("ink.svg").exists(), "the ink is beside the HTML page too");
 
     // Away to another page and back: the strokes are strokes again, not a picture.
     ask(&mut h, "ui.open", json!({"path": &s.md_page.to_string_lossy()})).expect("another page");
-    settle(&mut h);
+    rest(&mut h);
     assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64(), Some(0), "the other page has no ink of its own");
     ask(&mut h, "ui.open", json!({"path": &s.html_page.to_string_lossy()})).expect("back");
-    settle(&mut h);
+    rest(&mut h);
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the stroke came back as a stroke: {ink}");
 
     // Saved as a plain picture it is beside the ink and holds no readings.
     h.get_by_label("Save picture").click();
-    settle(&mut h);
+    rest(&mut h);
     let plain = s.html_page.join("ink-picture.svg");
     assert!(plain.exists(), "the picture was written");
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");

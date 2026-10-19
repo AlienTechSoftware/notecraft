@@ -39,6 +39,13 @@ impl Default for Pen {
 /// The file a page's ink lives in, inside the page's own folder.
 pub const FILE: &str = "ink.svg";
 
+/// Whether an image block is the page's own ink, which the page names so that its words
+/// and what is on it agree, and so another program opening the page sees the handwriting.
+/// NoteCraft itself does not draw it as a picture: it draws the layer.
+pub fn is_page_ink(src: &str) -> bool {
+    src.trim() == FILE
+}
+
 /// An earlier version of NoteCraft put a drawing into the page as a picture, pointing at
 /// `assets/drawing-1.svg`. Nothing draws those now, so such a page showed a broken picture
 /// where its drawing had been. This says whether an image block is one of them.
@@ -49,8 +56,8 @@ pub fn is_old_sheet(src: &str) -> bool {
 
 /// How large a page's ink sheet is said to be in the file's `viewBox`. The pen may write
 /// past it; the number is only what another program uses to frame the picture.
-const SHEET_W: f32 = 820.0;
-const SHEET_H: f32 = 1100.0;
+pub const SHEET_W: f32 = 820.0;
+pub const SHEET_H: f32 = 1100.0;
 
 /// The ink of one page.
 #[derive(Clone, Debug)]
