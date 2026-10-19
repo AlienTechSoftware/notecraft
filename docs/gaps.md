@@ -126,8 +126,12 @@ it is fixed and tested, not when it is promised.
   HTML table that must match it has anywhere to put them. The Insert
   tab's Table button opens OneNote's size picker, where the pointer runs over a grid and
   names the size it would make. Not built, and greyed where a OneNote user looks for them:
-  merging and splitting cells, shading, alignment, sorting; dragging a row border to change
-  its height; and the Insert Table dialog.
+  merging and splitting cells, shading, alignment, sorting; and the Insert Table dialog.
+  A row has no height of its own on purpose: OneNote sizes a row by the text in it and
+  offers no handle for one, which Microsoft's own help for OneNote for the web says in so
+  many words, so a row here grows and shrinks with its words too. Word's Table Properties
+  can set a height; if NoteCraft ever does, it should be Word's "at least" rule, where
+  content taller than the height still pushes the row down rather than being cut off.
 - **A spreadsheet goes to GridCraft**, the open spreadsheet from the same workshop, where
   OneNote converts a table to Excel. The Table tab writes the table out as a CSV file
   beside the page and opens it; the Insert tab starts an empty one and links it from the
