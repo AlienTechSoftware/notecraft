@@ -84,6 +84,8 @@ pub enum Act {
     Redo,
     /// Hand the table the caret is in to GridCraft.
     ToGridCraft,
+    /// Read the spreadsheet back into the table it came from.
+    FromGridCraft,
     /// Start a spreadsheet beside the page and open it in GridCraft.
     NewGridCraft,
     /// A table of this many rows by this many columns, from the size picker.
@@ -1969,6 +1971,12 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if view.gridcraft {
             if big(ui, Icon::Spreadsheet, "Convert to\nGridCraft", "Write the table out and open it in GridCraft", t).clicked() {
                 acts.push(Act::ToGridCraft);
+            }
+            // The table went out as a file; this brings back what the spreadsheet made of
+            // it. Nothing watches the file, because a page being edited should not change
+            // under the writer's hands.
+            if big(ui, Icon::Spreadsheet, "Read back\nfrom it", "Put what the spreadsheet holds back into this table", t).clicked() {
+                acts.push(Act::FromGridCraft);
             }
         } else {
             let dim = Tokens { accent: t.muted, text: t.muted, ..*t };

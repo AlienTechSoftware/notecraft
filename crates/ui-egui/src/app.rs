@@ -1458,6 +1458,7 @@ impl NoteCraftApp {
             ribbon::Act::Undo => self.step_back(true),
             ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
+            ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
             ribbon::Act::NewGridCraft => self.new_gridcraft(),
             ribbon::Act::InsertTable(rows, columns) => self.insert_table(rows, columns),
             ribbon::Act::InkSensitivity(v) => {
@@ -1770,6 +1771,41 @@ impl NoteCraftApp {
         };
         let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
         ed.history.record(step);
+    }
+
+    /// Puts the spreadsheet back into the table it came from.
+    ///
+    /// The file is the one Convert wrote for this table, beside the page. Nothing watches
+    /// it: a page would be a strange thing to write in if its tables changed under the
+    /// writer's hands, so the way back is a button, as the way out is.
+    fn read_table_from_gridcraft(&mut self) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
+            self.say("Click in the table first");
+            return;
+        };
+        if !matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Table { .. })) {
+            self.say("Click in a table first");
+            return;
+        }
+        let file = ed.dir.join(format!("table-{}.csv", at + 1));
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            let name = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            self.complain(&format!("No {name} beside this page: hand the table over first"));
+            return;
+        };
+        let Some(table) = notecraft_formats::csv::to_table(&text) else {
+            self.complain("That file has nothing in it to put back");
+            return;
+        };
+        let (rows, columns) = pageedit::table_size(&table).unwrap_or((0, 0));
+        if let Some(block) = ed.blocks.get_mut(at) {
+            *block = table;
+        }
+        ed.caret = None;
+        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        Self::mark_dirty_from_blocks(ed);
+        self.say(format!("Read back {rows} rows and {columns} columns"));
     }
 
     /// Hands the table the caret is in to GridCraft, which is where a spreadsheet

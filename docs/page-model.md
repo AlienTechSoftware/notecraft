@@ -83,10 +83,10 @@ in section 8.
   - HTML and Markdown: shown as text, and editable.
   - Other text: shown as text, read-only.
   - Pictures: shown as pictures.
-  - Ink files: shown as SVG text, which **can be typed in** (owner, 2026-10-19, changing the line
-    above that every file but the page's own is read-only: a person debugging ink needs it, and the
-    view warns that the pen's readings are in that file). Not built: drawing the strokes in the
-    viewer with NoteCraft's own painter.
+  - Ink files: drawn as strokes by NoteCraft's own painter, with the SVG text one click away, and
+    that text **can be typed in** (owner, 2026-10-19, changing the line above that every file but
+    the page's own is read-only: a person debugging ink needs it, and the view warns that the pen's
+    readings are in that file).
   - Anything else: name, size and type, and a button to open it with the system.
 - **Orphans are marked** "not used by the page". Deleting one is on the page itself today, under
   the list of files; not built in this view.
