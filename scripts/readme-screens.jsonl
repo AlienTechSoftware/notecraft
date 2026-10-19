@@ -6,6 +6,13 @@
 {"method": "ui.open", "params": {"path": "my-notebook/ideas/format-ideas"}}
 {"wait": 800}
 {"shot": "docs/images/hero.png"}
+{"method": "ui.click", "params": {"x": 1343, "y": 227}}
+{"wait": 600}
+{"method": "ui.move", "params": {"x": 150, "y": 790}}
+{"wait": 300}
+{"shot": "docs/images/page-source.png"}
+{"method": "ui.click", "params": {"x": 1343, "y": 227}}
+{"wait": 400}
 {"method": "ui.open", "params": {"path": "my-notebook/work/projects/project-x"}}
 {"wait": 400}
 {"shot": "docs/images/html-page.png"}

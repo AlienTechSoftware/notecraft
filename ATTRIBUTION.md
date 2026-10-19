@@ -52,6 +52,7 @@ data.
 | File | What |
 |---|---|
 | `docs/images/hero.png` | The window as the README opens: tree, ribbon and a page |
+| `docs/images/page-source.png` | The page source view: the files of one page on the left, the page file with its head and body on the right | Rendered by `cargo xtask screenshots` from the real window (`scripts/readme-screens.jsonl`) on 2026-10-19 | NoteCraft's own work |
 | `docs/images/ribbon-home.png` | The Home tab of the ribbon |
 | `docs/images/ribbon-insert.png` | The Insert tab of the ribbon |
 | `docs/images/tags.png` | A page with to-do boxes and tags |

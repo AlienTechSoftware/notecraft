@@ -55,8 +55,10 @@ common symbols. Anything it does not know stays visible as text rather than disa
 
 ## The page source
 
-The page's file is one click away: the **`< >`** button beside the page, or **View**, then
-**Source**. The source opens beside the page, and what you type in either one lands in the file.
+The page's files are one click away: the **`< >`** button beside the page, or **View**, then
+**Source**. The code view lists every file the page owns and shows the one you pick. The page file's
+body can be typed in, and the page is drawn again from it when you close the view. See
+[Look inside a page](look-inside-a-page.md).
 
 Use it for anything the editor does not do yet: raw HTML, a Mermaid diagram, a table you would
 rather type than click.

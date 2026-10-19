@@ -60,7 +60,8 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
 
 ## 4. The code view
 
-Status: built on 2026-10-19, except the two lines marked below. Questions that are still open are
+Status: built on 2026-10-19, except the two lines marked below. How to use it, for a reader:
+[how-to/look-inside-a-page.md](how-to/look-inside-a-page.md). Questions that are still open are
 in section 8.
 
 - **A flat list of the page's files**, with a viewer beside it. The page file is first and is

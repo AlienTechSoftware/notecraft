@@ -40,4 +40,5 @@ side by side. Status words:
 | Look | Themes | Done | 14 themes, contrast checked. `themes.md`. |
 | Look | Ruled and grid page backgrounds | Done | View, Rule Lines: none, lines or squares behind the page, in colours each theme checks for contrast. Remembered between runs. |
 | Look | Office-style ribbon | Partial | Home, Insert and View with groups, a Styles gallery, a Tags gallery, a contextual Source tab and a File screen. Draw, History, Review and Help are not built, and say so. |
+| Files | See what a page is made of | Done | The code view lists every file of a page and shows what is in each. The other app keeps a section in one binary file that a text editor cannot read. `how-to/look-inside-a-page.md`. |
 | Look | Platforms | Partial | Windows built and tested; macOS and Linux not built. |

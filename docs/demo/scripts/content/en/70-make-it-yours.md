@@ -22,7 +22,7 @@ icon and on the edge of the row. The groups in this notebook each have one.
 
 | Button beside the page | What it does |
 |---|---|
-| `< >` | Shows the page source beside the page |
+| `< >` | Opens the page's files in the code view |
 | Magnifier | Search all pages |
 | Arrows | Full page: the notebooks step aside until you press it again |
 
@@ -38,4 +38,4 @@ NoteCraft reopens the page you closed on, with the sections above it expanded.
 All of this is a few lines in a small settings file outside your notebooks, so a notebook never
 carries one person's window settings into another person's sync folder.
 
-Next: [Right to left](../right-to-left/).
+Next: [Look inside a page](../look-inside-a-page/).

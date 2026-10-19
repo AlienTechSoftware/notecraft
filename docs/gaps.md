@@ -29,10 +29,12 @@ it is fixed and tested, not when it is promised.
   one weight each and with Simplified Chinese forms for characters the CJK scripts share; a
   Japanese or Korean reader may see a few unfamiliar shapes. Scripts outside these six still
   draw as boxes.
-- **The Welcome notebook speaks English only.** `docs/demo/DemoNotebook`, built by
-  `cargo xtask demo` and carried inside the app, appears in an empty notebooks folder on the
-  first start and comes back from the File screen. Twelve more languages are planned, four
-  of them right to left; the start page lists only what is built.
+- **The Welcome notebook is in thirteen languages, and twelve are machine translated.**
+  `docs/demo/DemoNotebook`, built by `cargo xtask demo` and carried inside the app, appears in an
+  empty notebooks folder on the first start and comes back from the File screen. English is the
+  source. The other twelve (four of them right to left) were translated by an AI model, and each
+  translated page says so at its foot and asks for corrections. Every language has the same pages in
+  the same order, including the one on the code view.
 - **No icons of the user's own** on a notebook or section. Colours are there (nine of them,
   on notebooks, section groups and sections); a chosen icon or picture is not.
 - **Rule lines are a window setting, not a page setting.** View, Rule Lines draws none, lines
