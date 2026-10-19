@@ -53,6 +53,11 @@ it is fixed and tested, not when it is promised.
   cannot be dragged inside a right-to-left line yet (the caret moves, the selection does not),
   and the isolates the Run buttons write are kept in the file but not yet honoured when the
   line is drawn.
+- **Each word of a right-to-left line is placed by NoteCraft.** egui lays the letters of an
+  Arabic or Hebrew word out the right way, but puts the next word to the right of the one
+  before it, so a line of them came out with its words backwards; the owner read one on
+  2026-10-19 and said so. `bidi.rs` draws each word on its own and places them from the
+  right edge of the run leftwards, with the gaps measured rather than left in a galley.
 - **The caret in a right-to-left line is NoteCraft's own, and it is new.** egui cannot place
   one there (`crates/ui-egui/tests/arabic_layout.rs` measures why: it counts glyphs where it
   means characters), so a line with Arabic in it is drawn by `crates/ui-egui/src/bidi.rs` and
