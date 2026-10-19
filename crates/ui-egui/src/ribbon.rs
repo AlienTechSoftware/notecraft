@@ -48,6 +48,10 @@ pub enum Act {
     Zoom(i8),
     /// Cut or copy what is selected.
     Clipboard(&'static str),
+    /// Put the clipboard into the page: a picture as a file beside it, anything else as
+    /// words. Its own act rather than `Clipboard("paste")`, because a picture is not a
+    /// clipboard operation on the text at all.
+    Paste,
     /// More or less indent on a list item.
     Indent(bool),
     /// Which way the line the caret is in reads. `None` lets the words decide again.
@@ -557,7 +561,7 @@ pub fn tag_label(tag: Tag) -> String {
 fn home_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, "Clipboard", t, |ui| {
         if big_mark(ui, Mark::Paste, "Paste", "Ctrl+V pastes into the page", t).clicked() {
-            acts.push(Act::NotBuilt("Paste from the ribbon"));
+            acts.push(Act::Paste);
         }
         rows(ui, |ui| {
             if mark_row(ui, Mark::Cut, "Cut", "Cut the selection", t).clicked() {

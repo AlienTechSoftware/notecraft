@@ -2148,6 +2148,7 @@ dependencies = [
  "notecraft-engine",
  "notecraft-store",
  "notecraft-ui-egui",
+ "rfd",
 ]
 
 [[package]]
@@ -2229,6 +2230,7 @@ dependencies = [
 name = "notecraft-ui-egui"
 version = "0.0.1"
 dependencies = [
+ "arboard",
  "egui",
  "egui_extras",
  "egui_kittest",

@@ -48,23 +48,18 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
 }
 
 /// Steps until pictures loaded in the background have arrived.
+///
+/// It steps frames rather than calling `Harness::run`, which gives up when a window asks
+/// to be repainted more than a few times. A page with unsaved changes asks for exactly
+/// that until its autosave fires, so any test that had typed, drawn or inserted anything
+/// tripped over `run` - four of them did, on four separate days, each looking like a
+/// flake because it passed when run alone. Not calling `run` here is what stops the fifth.
 fn settle(h: &mut Harness<'_, NoteCraftApp>) {
     for _ in 0..25 {
         pump(h);
         std::thread::sleep(Duration::from_millis(20));
     }
-    h.run();
-}
-
-/// Steps frames without `Harness::run`, which gives up when the window asks to be
-/// repainted more than a few times. A page with unsaved changes asks for exactly that,
-/// once a second, until the autosave fires, so a test that has just drawn on a page has
-/// to wait this way rather than with `settle`.
-fn rest(h: &mut Harness<'_, NoteCraftApp>) {
-    for _ in 0..25 {
-        pump(h);
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    pump(h);
 }
 
 /// Writes a review picture when `NOTECRAFT_UI_VISUAL_DIR` is set. Never asserts.
@@ -171,15 +166,13 @@ fn what_cannot_be_written_in_says_so() {
     app.open_path(&s.html_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
     settle(&mut h);
-    // The table in the sample page is a block the caret cannot enter.
+    // Every block of this page takes the caret, the table among them: its cells used to
+    // refuse it, which made the page a viewer rather than an editor.
     let rows = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["blocks"].as_u64().unwrap_or(0);
-    let mut refused = 0;
+    assert!(rows > 0);
     for n in 0..rows {
-        if ask(&mut h, "ui.caret", json!({"block": n})).is_err() {
-            refused += 1;
-        }
+        assert!(ask(&mut h, "ui.caret", json!({"block": n})).is_ok(), "block {n} takes the caret");
     }
-    assert!(refused > 0, "the table should refuse the caret");
     assert!(ask(&mut h, "ui.caret", json!({"block": 999})).is_err(), "a block that is not there is an error");
 
     // A page with markup the editor would drop is read-only, and says so rather than losing it.
@@ -1153,7 +1146,7 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
     // the same number of steps, and this test failed once that way and passed alone.
     let mut ink = Value::Null;
     for _ in 0..20 {
-        rest(&mut h);
+        settle(&mut h);
         ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
         if ink["strokes"].as_u64() == Some(1) {
             break;
@@ -1179,7 +1172,7 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
 
     // Undo takes the stroke back, and with nothing left the file goes too.
     h.get_by_label("Undo stroke").click();
-    rest(&mut h);
+    settle(&mut h);
     assert!(!file.exists(), "a page rubbed clean keeps no empty ink file");
     let body = h.state().body().unwrap_or_default().to_string();
     assert!(
@@ -1211,21 +1204,21 @@ fn ink_comes_back_when_the_page_is_opened_again() {
         pump(&mut h);
     }
     ask(&mut h, "ui.release", json!({"x": body.min.x + 130.0, "y": y + 16.0})).expect("up");
-    rest(&mut h);
+    settle(&mut h);
     assert!(s.html_page.join("ink.svg").exists(), "the ink is beside the HTML page too");
 
     // Away to another page and back: the strokes are strokes again, not a picture.
     ask(&mut h, "ui.open", json!({"path": &s.md_page.to_string_lossy()})).expect("another page");
-    rest(&mut h);
+    settle(&mut h);
     assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64(), Some(0), "the other page has no ink of its own");
     ask(&mut h, "ui.open", json!({"path": &s.html_page.to_string_lossy()})).expect("back");
-    rest(&mut h);
+    settle(&mut h);
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the stroke came back as a stroke: {ink}");
 
     // Saved as a plain picture it is beside the ink and holds no readings.
     h.get_by_label("Save picture").click();
-    rest(&mut h);
+    settle(&mut h);
     let plain = s.html_page.join("ink-picture.svg");
     assert!(plain.exists(), "the picture was written");
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
@@ -1354,7 +1347,7 @@ fn ink_can_be_picked_up_moved_and_deleted() {
     let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     let mut now = Value::Null;
     for _ in 0..20 {
-        rest(&mut h);
+        settle(&mut h);
         now = ink(&mut h);
         if now["strokes"].as_u64() == Some(2) {
             break;
@@ -1366,12 +1359,12 @@ fn ink_can_be_picked_up_moved_and_deleted() {
     h.get_by_label("Select").click();
     pump(&mut h);
     ask(&mut h, "ui.click", json!({"x": body.min.x + 80.0, "y": body.min.y + 120.0})).expect("pick");
-    rest(&mut h);
+    settle(&mut h);
     assert_eq!(ink(&mut h)["holding"].as_u64(), Some(1), "one stroke is held: {}", ink(&mut h));
 
     // Clicking bare page lets go again.
     ask(&mut h, "ui.click", json!({"x": body.min.x + 300.0, "y": body.min.y + 60.0})).expect("let go");
-    rest(&mut h);
+    settle(&mut h);
     assert_eq!(ink(&mut h)["holding"].as_u64(), Some(0), "and bare page lets go");
 
     // A lasso round the lower stroke takes that one and leaves the upper one alone.
@@ -1385,12 +1378,12 @@ fn ink_can_be_picked_up_moved_and_deleted() {
         pump(&mut h);
     }
     ask(&mut h, "ui.release", json!({"x": lx, "y": ly + 2.0})).expect("up");
-    rest(&mut h);
+    settle(&mut h);
     assert_eq!(ink(&mut h)["holding"].as_u64(), Some(1), "the lasso took the one inside it: {}", ink(&mut h));
 
     // Delete throws the held stroke away, and the other one stays.
     ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
-    rest(&mut h);
+    settle(&mut h);
     let after = ink(&mut h);
     assert_eq!(after["strokes"].as_u64(), Some(1), "one stroke left: {after}");
     assert_eq!(after["holding"].as_u64(), Some(0), "and nothing is held");
@@ -1437,6 +1430,71 @@ fn the_insert_tab_has_onenotes_groups_and_its_stamps_work() {
         "the date went in as words:
 {body}"
     );
+}
+
+/// The page has a menu under the right button, with the commands a page needs: paste,
+/// cut, copy, and the things the Insert tab can put there.
+#[test]
+fn the_page_has_a_right_click_menu() {
+    let (_t, mut app, s) = sample_app("ui-page-menu");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let body = h.state().page_rect().expect("the page");
+    ask(&mut h, "ui.click", json!({"x": body.min.x + 300.0, "y": body.min.y + 40.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    // Named apart from the Home tab's own Paste, Cut, Copy and Link, which are always on
+    // the screen: these are the ones the page's menu adds.
+    for item in ["Table", "Equation", "Date and time", "Picture from a file", "Attach a file"] {
+        assert!(h.query_all_by_label(item).count() >= 1, "{item} is on the page's menu");
+    }
+    for item in ["Paste", "Cut", "Copy"] {
+        assert!(h.query_all_by_label(item).count() >= 2, "{item} is on the menu as well as the ribbon");
+    }
+
+    // Picking one does what it says: a table goes into the page.
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    let page = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        page.contains("---"),
+        "a table went in:
+{page}"
+    );
+}
+
+/// A link inside a list item, which is how the Welcome pages are written. The owner
+/// found that clicking one did nothing in English and showed the raw markup in Arabic,
+/// where every earlier link test used a plain paragraph.
+#[test]
+fn a_link_in_a_list_item_opens_the_page_it_names() {
+    let (_t, app, s) = sample_app("ui-link-item");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Listed links", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "- [Open the format page](../format-ideas/): what it says
+- plain item
+";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    let rect = h.get_by_label("Open the format page: what it says").rect();
+    // The link is the first words of the item, after the bullet.
+    ask(&mut h, "ui.click", json!({"x": rect.min.x + 60.0, "y": rect.center().y})).expect("click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the linked page opened, not {:?}", h.state().body());
 }
 
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
