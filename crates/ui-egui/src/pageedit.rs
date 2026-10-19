@@ -1816,9 +1816,10 @@ pub fn round_trips(format: notecraft_model::PageFormat, body: &str) -> bool {
     if format == notecraft_model::PageFormat::Html && notecraft_formats::html::unsupported_tag(body).is_some() {
         return false;
     }
-    let blocks = preview::blocks_for(format, body);
-    let written = to_body(format, &blocks);
-    preview::blocks_for(format, &written) == blocks
+    // The boxes are part of the text, so they have to come back as they went in.
+    let (blocks, boxes) = notecraft_formats::boxes::read(format, body);
+    let written = notecraft_formats::boxes::write(format, &blocks, boxes.as_deref());
+    notecraft_formats::boxes::read(format, &written) == (blocks, boxes)
 }
 
 #[cfg(test)]

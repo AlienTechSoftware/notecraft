@@ -10,6 +10,7 @@
 //! items, block quotes, fenced code, math blocks, tables, rules, images, and inline
 //! emphasis, code, strikethrough, links and math). It never panics on odd input.
 
+pub mod boxes;
 pub mod frontmatter;
 pub mod html;
 pub mod markdown;

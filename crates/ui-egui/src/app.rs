@@ -87,9 +87,19 @@ struct Editor {
     history: crate::history::History,
     /// Where the page's area starts on screen, reported so a script can find a box.
     origin: egui::Pos2,
+    /// Whether the boxes are written into the page's text. A page nobody arranged stays plain
+    /// text, one column; moving, resizing or adding a box arranges it, and from then on the
+    /// boxes are elements around the blocks.
+    arranged: bool,
 }
 
 impl Editor {
+    /// Writes the page's text from its blocks, with the boxes around them when it is arranged.
+    fn rebuild_body(&mut self) {
+        let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
+        self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
+    }
+
     /// The direction a line falls back to when it says nothing itself.
     fn default_dir(&self) -> notecraft_model::Dir {
         self.page_dir.unwrap_or_default()
@@ -619,10 +629,13 @@ impl NoteCraftApp {
     fn open_page_inner(&mut self, dir: &Path) {
         self.save_now();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
-            let blocks = preview::blocks_for(page.format, &page.body);
+            let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
+            let older = notecraft_store::page::containers(dir).unwrap_or_default();
+            let arranged = in_the_text.is_some() || !older.is_empty();
+            let boxes = in_the_text.unwrap_or(older);
             // The page as it was opened is the first step of its history: undo goes back
             // this far and no further.
-            let first = (page.body.clone(), blocks.clone(), notecraft_store::page::containers(dir).unwrap_or_default());
+            let first = (page.body.clone(), blocks.clone(), boxes.clone());
             let attachments = notecraft_store::assets::list(dir);
             let writable = pageedit::round_trips(page.format, &page.body);
             self.editor = Some(Editor {
@@ -638,7 +651,8 @@ impl NoteCraftApp {
                 caret: None,
                 writable,
                 page_dir: page.dir,
-                boxes: notecraft_store::page::containers(dir).unwrap_or_default(),
+                boxes,
+                arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
@@ -687,7 +701,7 @@ impl NoteCraftApp {
         }
         if let Some(ed) = self.editor.as_mut() {
             ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_old_sheet(src)));
-            ed.body = pageedit::to_body(ed.format, &ed.blocks);
+            ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
         }
         self.sync_ink_reference();
@@ -730,7 +744,10 @@ impl NoteCraftApp {
     /// The page text changed: remember to save it, and read the blocks from it again.
     fn mark_dirty(ed: &mut Editor) {
         ed.dirty_since = Some(Instant::now());
-        ed.blocks = preview::blocks_for(ed.format, &ed.body);
+        let (blocks, in_the_text) = notecraft_formats::boxes::read(ed.format, &ed.body);
+        ed.blocks = blocks;
+        ed.arranged = in_the_text.is_some();
+        ed.boxes = in_the_text.unwrap_or_default();
         ed.caret = None;
     }
 
@@ -1448,7 +1465,7 @@ impl NoteCraftApp {
                     if let Some(ed) = self.editor.as_mut() {
                         let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
                         ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link });
-                        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+                        ed.rebuild_body();
                         Self::mark_dirty_from_blocks(ed);
                         ed.attachments = notecraft_store::assets::list(&dir);
                     }
@@ -1484,7 +1501,7 @@ impl NoteCraftApp {
         } else {
             ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_page_ink(src)));
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1547,7 +1564,6 @@ impl NoteCraftApp {
     /// the caret was. Ink is not part of this; a stroke is taken back with Undo Stroke on
     /// the Draw tab, because the drawing is its own file beside the page.
     fn step_back(&mut self, back: bool) {
-        let mut boxes: Option<(String, String)> = None;
         let mut nothing = false;
         if let Some(ed) = self.editor.as_mut() {
             if !ed.writable {
@@ -1561,7 +1577,8 @@ impl NoteCraftApp {
                         ed.boxes = step.boxes;
                         ed.caret = step.caret.map(|c| pageedit::Caret { focus: true, ..c });
                         ed.dirty_since = Some(std::time::Instant::now());
-                        boxes = Some((path_str(&ed.dir), notecraft_model::container::write(&ed.boxes)));
+                        // The restored text says whether the page was arranged.
+                        ed.arranged = notecraft_formats::boxes::has_boxes(ed.format, &ed.body);
                     }
                     None => nothing = true,
                 }
@@ -1569,10 +1586,6 @@ impl NoteCraftApp {
         }
         if nothing {
             self.say(if back { "Nothing to undo" } else { "Nothing to redo" });
-            return;
-        }
-        if let Some((path, line)) = boxes {
-            self.run("page.containers", &params(&[("path", &path), ("boxes", &line)]));
         }
     }
 
@@ -1624,7 +1637,7 @@ impl NoteCraftApp {
         let Some(ed) = self.editor.as_mut() else { return };
         let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len());
         pageedit::insert_table(&mut ed.blocks, at, rows, columns);
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         ed.caret = Some(pageedit::Caret {
             block: at.min(ed.blocks.len() - 1),
             text: String::new(),
@@ -1721,7 +1734,7 @@ impl NoteCraftApp {
             return;
         };
         let text = pageedit::cell_text(block, to).unwrap_or_default();
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None });
         Self::mark_dirty_from_blocks(ed);
     }
@@ -1772,7 +1785,7 @@ impl NoteCraftApp {
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             pageedit::set_block_text(b, &caret.text);
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1809,7 +1822,7 @@ impl NoteCraftApp {
             self.say("A direction goes on a paragraph of text");
             return;
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         if let Some(b) = ed.blocks.get(at) {
             let text = pageedit::caret_text(b);
             if let Some(c) = ed.caret.as_mut() {
@@ -1860,7 +1873,7 @@ impl NoteCraftApp {
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             pageedit::set_block_text(b, &caret.text);
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
         self.say(if dir.is_rtl() {
             "This run reads right to left. A mixed line is still drawn in one order; see the roadmap"
@@ -1881,7 +1894,7 @@ impl NoteCraftApp {
         if !pageedit::set_kind(&mut ed.blocks, at, kind) {
             return;
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         if let Some(b) = ed.blocks.get(at) {
             let text = pageedit::caret_text(b);
             if let Some(c) = ed.caret.as_mut() {
@@ -1903,7 +1916,7 @@ impl NoteCraftApp {
             self.say("A tag goes on a line of text");
             return;
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         if let Some(b) = ed.blocks.get(at) {
             let text = pageedit::caret_text(b);
             if let Some(c) = ed.caret.as_mut() {
@@ -1939,7 +1952,7 @@ impl NoteCraftApp {
             if let Some(b) = ed.blocks.get_mut(caret.block) {
                 pageedit::set_block_text(b, &caret.text);
             }
-            ed.body = pageedit::to_body(ed.format, &ed.blocks);
+            ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
         }
         self.say(if which == "cut" { "Cut" } else { "Copied" });
@@ -1957,7 +1970,7 @@ impl NoteCraftApp {
             self.say("Only a list item can be indented");
             return;
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1970,7 +1983,7 @@ impl NoteCraftApp {
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             pageedit::set_block_text(b, &caret.text);
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1982,7 +1995,7 @@ impl NoteCraftApp {
             self.say("That is not something a page can hold");
             return;
         }
-        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+        ed.rebuild_body();
         ed.caret = ed.blocks.get(at).map(|b| pageedit::Caret {
             block: at,
             text: pageedit::caret_text(b),
@@ -2009,7 +2022,7 @@ impl NoteCraftApp {
                 if let Some(b) = ed.blocks.get_mut(caret.block) {
                     pageedit::set_block_text(b, &caret.text);
                 }
-                ed.body = pageedit::to_body(ed.format, &ed.blocks);
+                ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
             }
             None => {
@@ -2424,7 +2437,6 @@ impl NoteCraftApp {
         let mut cols_moved = false;
         // A file the writer asked to delete from the page's folder, confirmed first.
         let mut delete_file: Option<String> = None;
-        let mut save_boxes: Option<(String, String)> = None;
         let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
         let mut follow: Option<String> = None;
@@ -2577,7 +2589,7 @@ impl NoteCraftApp {
                                 crate::pagemenu::show(ui, body, &mut page_acts, &tokens);
                             }
                             if moved.changed.blocks {
-                                ed.body = pageedit::to_body(ed.format, &ed.blocks);
+                                ed.rebuild_body();
                                 *from_blocks = true;
                             }
                             if moved.boxes {
@@ -2693,9 +2705,9 @@ impl NoteCraftApp {
             // A container was dragged or resized: the arrangement is the page's own, so it
             // is written into the page's file rather than kept in the window.
             if boxes_moved {
-                let path = path_str(&ed.dir);
-                let line = notecraft_model::container::write(&ed.boxes);
-                save_boxes = Some((path, line));
+                ed.arranged = true;
+                ed.rebuild_body();
+                Self::mark_dirty_from_blocks(ed);
             }
             // A column was dragged wider or narrower. Widths are layout, like the boxes,
             // so they go into the page's own file beside them.
@@ -2706,9 +2718,6 @@ impl NoteCraftApp {
             }
         }
         self.cursor = cursor;
-        if let Some((path, line)) = save_boxes {
-            self.run("page.containers", &params(&[("path", &path), ("boxes", &line)]));
-        }
         if let Some((path, line)) = save_cols {
             self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
         }

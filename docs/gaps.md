@@ -81,6 +81,13 @@ it is fixed and tested, not when it is promised.
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, but
   OneNote can undo it and NoteCraft cannot yet: only ink has an undo, and a page has none, so
   Delete is final once the page autosaves.
+- **Table column widths are still on a metadata line.** The boxes of a page are elements in its text,
+  but the widths a table's columns were dragged to are kept in the head (`notecraft:columns`) or the
+  front matter (`columns:`), so the same disconnect remains for them: the source pane does not show
+  them and another program does not see them.
+- **Writing a page's text without boxes makes it one column.** The boxes are part of the text, so
+  `page.save` with a plain body drops them. An agent that wants to keep an arrangement writes the box
+  elements, or calls `page.containers` afterwards.
 - **The Quick Access Toolbar is part of OneNote's.** It has Back, Forward, Undo and Redo, a menu to
   choose which show, to put it under the ribbon or to hide it, and the choices are kept. OneNote's
   menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands: none exist here, so they
