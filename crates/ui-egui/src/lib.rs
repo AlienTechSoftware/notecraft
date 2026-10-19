@@ -11,6 +11,7 @@
 pub mod app;
 pub mod backstage;
 pub mod bidi;
+pub mod clipboard;
 pub mod containers;
 pub mod control;
 pub mod fonts;
@@ -18,6 +19,7 @@ pub mod icons;
 pub mod inkpad;
 pub mod mathview;
 pub mod pageedit;
+pub mod pagemenu;
 pub mod pagetext;
 pub mod preview;
 pub mod ribbon;

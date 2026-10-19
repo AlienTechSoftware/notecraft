@@ -1080,9 +1080,14 @@ impl NoteCraftApp {
     /// the program the system has for it; a web address opens in the browser. A relative
     /// path can never reach outside the notebooks folder (`notecraft_store::links`).
     pub fn follow_link(&mut self, ctx: &Context, href: &str) {
-        use notecraft_store::links::{Link, resolve};
+        use notecraft_store::links::{Link, resolve_in};
         let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
-        match resolve(self.session.root(), &page, href) {
+        // Every folder a notebook is open from, not just the notebooks folder: a notebook
+        // opened from elsewhere is as much inside as one that lives there, and judging it
+        // by the notebooks folder alone made every link in it dead.
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        match resolve_in(&roots, &page, href) {
             Link::Web(url) => {
                 ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
                 self.say(format!("Opened {url} in the browser"));
@@ -1145,10 +1150,14 @@ impl NoteCraftApp {
             ribbon::Act::Insert(what) => match what {
                 "link" => self.insert_in_page("[text](https://)"),
                 "equation" => self.insert_in_page("$E = mc^2$"),
-                "date" => {
+                "date" | "time" | "datetime" => {
                     let now = notecraft_model::time::iso_now();
-                    let text = notecraft_model::time::long_from_iso(&now).unwrap_or(now);
-                    self.insert_in_page(&text);
+                    let stamp = match what {
+                        "time" => notecraft_model::time::clock_from_iso(&now),
+                        "datetime" => notecraft_model::time::long_from_iso(&now),
+                        _ => notecraft_model::time::date_from_iso(&now),
+                    };
+                    self.insert_in_page(&stamp.unwrap_or(now));
                 }
                 other => self.insert_block(other),
             },
@@ -1191,6 +1200,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::Tag(tag) => self.apply_tag(tag),
             ribbon::Act::Clipboard(which) => self.clipboard(which),
+            ribbon::Act::Paste => self.paste_here(),
             ribbon::Act::Indent(deeper) => self.indent_block(deeper),
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
@@ -1260,6 +1270,44 @@ impl NoteCraftApp {
             }
         }
         self.remember_rack();
+    }
+
+    /// Puts whatever is on the clipboard into the page: a picture becomes a file beside
+    /// the page and a line that shows it, anything else goes in as words.
+    ///
+    /// egui hands a window only `Paste(String)`, so a picture copied from a screen
+    /// clipper never arrived and Ctrl+V did nothing at all. The clipboard is read here
+    /// directly instead.
+    fn paste_here(&mut self) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.say("Open a page first");
+            return;
+        };
+        if let Some(picture) = crate::clipboard::picture() {
+            let name = crate::clipboard::picture_name();
+            let (w, h) = (picture.width, picture.height);
+            match notecraft_store::assets::attach_bytes(&dir, &name, &picture.png) {
+                Ok(link) => {
+                    if let Some(ed) = self.editor.as_mut() {
+                        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+                        ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link });
+                        ed.body = pageedit::to_body(ed.format, &ed.blocks);
+                        Self::mark_dirty_from_blocks(ed);
+                        ed.attachments = notecraft_store::assets::list(&dir);
+                    }
+                    self.say(format!("Pasted a picture, {w} by {h}"));
+                }
+                Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
+            }
+            return;
+        }
+        match crate::clipboard::text() {
+            Some(text) => {
+                self.insert_in_page(&text);
+                self.say("Pasted");
+            }
+            None => self.say("There is nothing on the clipboard to paste"),
+        }
     }
 
     /// Keeps the page's words honest about its ink: a page with ink names `ink.svg`, a
@@ -1585,8 +1633,14 @@ impl NoteCraftApp {
             return;
         }
         ed.body = pageedit::to_body(ed.format, &ed.blocks);
-        ed.caret =
-            ed.blocks.get(at).map(|b| pageedit::Caret { block: at, text: pageedit::caret_text(b), focus: true, selection: (0, 0), place: None });
+        ed.caret = ed.blocks.get(at).map(|b| pageedit::Caret {
+            block: at,
+            text: pageedit::caret_text(b),
+            focus: true,
+            selection: (0, 0),
+            place: None,
+            cell: None,
+        });
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1854,7 +1908,7 @@ impl NoteCraftApp {
     fn page_gap(&self, ui: &mut Ui, section: &Path, before: Option<u32>, after: Option<u32>, acts: &mut Vec<Act>) {
         /// How big the round "+" is. The gap itself is shorter than this on purpose: it is
         /// a thin strip between two pages, and the button stands out of it.
-        const PLUS: f32 = 6.5;
+        const PLUS: f32 = 8.0;
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::click());
         let hot = resp.hovered();
         if hot {
@@ -1867,10 +1921,12 @@ impl NoteCraftApp {
             let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(rect.expand(room));
             let y = rect.center().y;
             let t = &self.tokens;
-            painter.line_segment([egui::pos2(rect.min.x + 18.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
-            let c = egui::pos2(rect.min.x + 9.0, y);
+            painter.line_segment([egui::pos2(rect.min.x + 21.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
+            let c = egui::pos2(rect.min.x + 10.0, y);
             painter.circle_filled(c, PLUS, t.accent);
-            painter.text(c, Align2::CENTER_CENTER, "+", egui::FontId::proportional(12.0), t.panel);
+            // The glyph sits a hair above the middle of its own line box, so the circle is
+            // nudged down by that much to put the cross in its centre rather than near it.
+            painter.text(c + vec2(0.0, 0.5), Align2::CENTER_CENTER, "+", egui::FontId::proportional(13.0), t.panel);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let enabled = ui.is_enabled();
@@ -2022,6 +2078,8 @@ impl NoteCraftApp {
         let mut pad = self.pad.take();
         let mut ink_changed = false;
         let mut page_rect = None;
+        // What the page's right-click menu asked for, run once the page's borrow is over.
+        let mut page_acts: Vec<ribbon::Act> = Vec::new();
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
@@ -2141,6 +2199,13 @@ impl NoteCraftApp {
                                 if let Some(pad) = pad.as_mut() {
                                     ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens);
                                 }
+                                // The page's own right-click menu. No widget is laid
+                                // over the page for it: a widget that senses clicks would
+                                // take the primary click away from the words, the ink and
+                                // the caret, and one that does not sense clicks cannot
+                                // carry a context menu at all. So the secondary click is
+                                // watched for directly and the menu drawn where it fell.
+                                crate::pagemenu::show(ui, body, &mut page_acts);
                             }
                             if moved.changed.blocks {
                                 ed.body = pageedit::to_body(ed.format, &ed.blocks);
@@ -2244,6 +2309,9 @@ impl NoteCraftApp {
         self.pad = pad;
         if page_rect.is_some() {
             self.page_rect = page_rect;
+        }
+        for act in page_acts {
+            self.ribbon_act(act);
         }
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
@@ -2582,7 +2650,8 @@ impl NoteCraftApp {
                 if !pageedit::is_writable(block) {
                     return Err(format!("block {n} is a table, a rule or a picture; the caret cannot go in it yet"));
                 }
-                ed.caret = Some(pageedit::Caret { block: n, text: pageedit::caret_text(block), focus: true, selection: (0, 0), place: None });
+                ed.caret =
+                    Some(pageedit::Caret { block: n, text: pageedit::caret_text(block), focus: true, selection: (0, 0), place: None, cell: None });
                 ctx.request_repaint();
                 Ok(json!({"block": n, "text": ed.caret.as_ref().map(|c| c.text.clone())}))
             }
