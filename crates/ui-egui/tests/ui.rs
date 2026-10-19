@@ -683,9 +683,17 @@ fn the_ribbon_inserts_in_both_formats() {
     }
     h.get_by_label("Insert").click();
     h.run();
+    // The Table button opens OneNote's size picker, and a square in it says how big.
     h.get_by_label("Table").click();
     h.run();
-    assert!(h.state().body().is_some_and(|b| b.contains("| A | B | C |")), "{:?}", h.state().body());
+    review(&mut h, "table_picker");
+    h.get_by_label("3 x 2 Table").click();
+    h.run();
+    let empty = "|  |  |  |
+| --- | --- | --- |
+|  |  |  |
+";
+    assert!(h.state().body().is_some_and(|b| b.contains(empty)), "three columns and two rows, all empty: {:?}", h.state().body());
     assert!(h.state().is_dirty());
     h.state_mut().save();
     assert!(!h.state().is_dirty());
@@ -695,7 +703,9 @@ fn the_ribbon_inserts_in_both_formats() {
     h.run();
     h.get_by_label("Table").click();
     h.run();
-    assert!(h.state().body().is_some_and(|b| b.contains("<table>") && b.contains("<th>A</th>")), "{:?}", h.state().body());
+    h.get_by_label("3 x 2 Table").click();
+    h.run();
+    assert!(h.state().body().is_some_and(|b| b.contains("<table>") && b.contains("<th>")), "{:?}", h.state().body());
 }
 
 /// The ribbon's Styles and Basic Text buttons change the block the caret is in.
@@ -1684,6 +1694,7 @@ fn the_table_tab_comes_with_the_caret_and_changes_the_table() {
 
     h.get_by_label("Table").click();
     settle(&mut h);
+    review(&mut h, "tab_table");
     for group in ["Select", "Delete", "Insert", "Merge", "Format", "Alignment", "Data", "Convert"] {
         assert!(h.query_all_by_label(group).count() >= 1, "the {group} group is there");
     }

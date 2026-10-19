@@ -15,6 +15,7 @@ pub mod clipboard;
 pub mod containers;
 pub mod control;
 pub mod fonts;
+pub mod gridcraft;
 pub mod icons;
 pub mod inkpad;
 pub mod mathview;

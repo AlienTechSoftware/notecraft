@@ -75,6 +75,14 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// True for a line that reads like one of our long date stamps: the weekday, then the
+/// rest. Used to tell a page's date line from an ordinary paragraph, so it can be drawn
+/// as the stamp it is.
+pub fn is_long_date(text: &str) -> bool {
+    let text = text.trim();
+    WEEKDAYS.iter().any(|w| text.starts_with(w) && text[w.len()..].starts_with(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
