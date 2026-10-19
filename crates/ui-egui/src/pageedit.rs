@@ -35,6 +35,40 @@ pub struct Caret {
     /// Which cell of a table the caret is in, as (row, column), where row 0 is the
     /// heading. `None` for every other kind of block.
     pub cell: Option<(usize, usize)>,
+    /// The far corner of a block of cells dragged across, with `cell` as the near one.
+    /// `None` while one cell is being written in, which is the ordinary case.
+    pub span: Option<(usize, usize)>,
+}
+
+/// The block of cells a caret covers, as (top-left, bottom-right), or `None` when it is
+/// in one cell. Both corners are inclusive, and they come back sorted however the drag
+/// went: up and to the left is the same block as down and to the right.
+pub fn cell_range(caret: &Caret) -> Option<((usize, usize), (usize, usize))> {
+    let (from, to) = (caret.cell?, caret.span?);
+    Some(((from.0.min(to.0), from.1.min(to.1)), (from.0.max(to.0), from.1.max(to.1))))
+}
+
+/// Which way a selection reaches from the cell the caret is in, for the Table tab's
+/// Select buttons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableSpan {
+    /// The whole table, heading and all.
+    Whole,
+    /// The caret's row.
+    Row,
+    /// The caret's column.
+    Column,
+}
+
+/// The two corners of what a Select button picks, given the table and where the caret is.
+pub fn span_of(block: &Block, cell: (usize, usize), what: TableSpan) -> Option<((usize, usize), (usize, usize))> {
+    let (rows, columns) = table_size(block)?;
+    let (last_row, last_column) = (rows.max(1) - 1, columns.max(1) - 1);
+    Some(match what {
+        TableSpan::Whole => ((0, 0), (last_row, last_column)),
+        TableSpan::Row => ((cell.0, 0), (cell.0, last_column)),
+        TableSpan::Column => ((0, cell.1), (last_row, cell.1)),
+    })
 }
 
 /// The character of `text` a click at `x` lands on, given how the block is drawn. Used so a
@@ -325,10 +359,19 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
     // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
     // asking afterwards never sees it, and Tab did nothing in a table at all.
-    let (tab, shift, escape) = ui.input(|i| (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape)));
+    let (tab, shift, escape, rub) = ui.input(|i| {
+        (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape), i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    });
+    // A block of cells dragged across. While one is picked the cells are read, not
+    // written in: a text box in the middle of a selection would take the keyboard and
+    // the Delete that is meant for the whole block.
+    let picked = caret.as_ref().filter(|c| c.block == i).and_then(cell_range);
     // Keyed off which cell the caret is in, not off whether the text box still has the
     // keyboard: egui moves focus on Tab before any widget is drawn, so by the time the
     // cell is shown it has already lost focus and would never see its own Tab.
+    if picked.is_some() && rub {
+        action = Some(Action::ClearCells(i));
+    }
     if let Some(cell) = here {
         if tab {
             // Tab off the last cell adds a row and lands in it, the way OneNote grows a
@@ -346,13 +389,18 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1);
     let width = ((ui.available_width() - 24.0) / columns as f32).clamp(48.0, 320.0);
 
+    // Where every cell landed, so a drag can be read against them afterwards: the grid
+    // hands out no rectangles of its own, and a pointer between two cells has to find one.
+    let mut where_ = Vec::with_capacity((rows.len() + 1) * columns);
+
     egui::Grid::new(("table", i)).striped(true).spacing([10.0, 4.0]).min_col_width(width).show(ui, |ui| {
         let last = rows.len();
         for r in 0..=last {
             for c in 0..columns {
                 let cell = (r, c);
                 let text = cell_text(block, cell).unwrap_or_default();
-                if here == Some(cell) {
+                let before = ui.cursor().min;
+                if here == Some(cell) && picked.is_none() {
                     let Some(caret) = caret.as_mut() else { continue };
                     let id = ui.make_persistent_id(("table-cell", i, r, c));
                     let out = egui::TextEdit::singleline(&mut caret.text)
@@ -381,10 +429,59 @@ fn table(ui: &mut Ui, block: &Block, i: usize, caret: &mut Option<Caret>, t: &To
                         action = Some(Action::EnterCell(i, cell));
                     }
                 }
+                // Wide enough to cover the gap to the next cell, so a drag never falls
+                // between two of them, and tall enough to cover a cell with no words.
+                let after = ui.cursor().min;
+                where_.push((cell, egui::Rect::from_min_max(before, egui::pos2(after.x - 2.0, before.y + 20.0))));
             }
             ui.end_row();
         }
     });
+
+    // A drag from one cell to another picks the block between them. The cell the drag
+    // started in is remembered across frames, because the pointer may be over any cell by
+    // the time it is let go, and a press on its own is still only a click.
+    let anchor_id = ui.make_persistent_id(("table-drag", i));
+    let (pressed, down, at) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos()));
+    let over = at.and_then(|p| where_.iter().find(|(_, r)| r.contains(p)).map(|(c, _)| *c));
+    if pressed {
+        ui.memory_mut(|m| match over {
+            Some(cell) => {
+                m.data.insert_temp(anchor_id, cell);
+            }
+            None => {
+                m.data.remove_temp::<(usize, usize)>(anchor_id);
+            }
+        });
+    }
+    if down
+        && let Some(from) = ui.memory(|m| m.data.get_temp::<(usize, usize)>(anchor_id))
+        && let Some(to) = over
+        && to != from
+    {
+        action = Some(Action::Select(i, from, to));
+    }
+
+    // The picked block is washed over in the accent colour, the way a selection is shown
+    // anywhere else, and the words stay readable underneath.
+    if let Some((top_left, bottom_right)) = picked {
+        // One rectangle over the lot, not one per cell: washes that overlap darken where
+        // they meet, and the seams make a block of cells look like separate bands.
+        let mut whole: Option<egui::Rect> = None;
+        for (cell, rect) in &where_ {
+            let inside = (top_left.0..=bottom_right.0).contains(&cell.0) && (top_left.1..=bottom_right.1).contains(&cell.1);
+            if inside {
+                whole = Some(match whole {
+                    Some(w) => w.union(*rect),
+                    None => *rect,
+                });
+            }
+        }
+        if let Some(whole) = whole {
+            ui.painter().rect_filled(whole.expand2(egui::vec2(3.0, 2.0)), 2.0, t.accent.gamma_multiply(0.22));
+        }
+    }
+
     ui.add_space(6.0);
     action
 }
@@ -887,6 +984,10 @@ enum Action {
     SetCell(usize, (usize, usize), String),
     /// Add a row to the end of a table and put the caret in its first cell.
     AddRow(usize),
+    /// Pick a block of cells, from one corner to the other, as a drag across them does.
+    Select(usize, (usize, usize), (usize, usize)),
+    /// Empty every cell of the picked block, which is what Delete does to a selection.
+    ClearCells(usize),
 }
 
 /// What a pasted clipboard string should become on the page.
@@ -1175,7 +1276,8 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
     commit(blocks, caret);
     match action {
         Action::Move(to) => {
-            *caret = blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: None, cell: None });
+            *caret =
+                blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: None, cell: None, span: None });
             changed.caret = true;
         }
         Action::SetTask(at, done) => {
@@ -1184,7 +1286,8 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             }
         }
         Action::MoveTo(to, at) => {
-            *caret = blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: at, cell: None });
+            *caret =
+                blocks.get(to).map(|b| Caret { block: to, text: caret_text(b), focus: true, selection: (0, 0), place: at, cell: None, span: None });
             changed.caret = true;
         }
         Action::Leave => {
@@ -1211,7 +1314,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             let land = (start + n).saturating_sub(1).min(blocks.len().saturating_sub(1));
             let text = blocks.get(land).map(block_text).unwrap_or_default();
             let end = text.chars().count();
-            *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end), cell: None });
+            *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None });
             changed.blocks = true;
             changed.caret = true;
         }
@@ -1221,7 +1324,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 if let Some(b) = blocks.get_mut(at) {
                     *b = Block::Paragraph(Vec::new());
                 }
-                *caret = Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None });
+                *caret = Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
                 renumber(blocks);
                 changed.blocks = true;
                 changed.caret = true;
@@ -1243,7 +1346,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             set_block_text(&mut new, &after);
             blocks.insert(at + 1, new);
             renumber(blocks);
-            *caret = Some(Caret { block: at + 1, text: after, focus: true, selection: (0, 0), place: Some(0), cell: None });
+            *caret = Some(Caret { block: at + 1, text: after, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None });
             changed.blocks = true;
             changed.caret = true;
         }
@@ -1255,7 +1358,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                     if let Some(b) = blocks.get_mut(0) {
                         *b = Block::Paragraph(parse_inline(&text));
                     }
-                    *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None });
+                    *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None, span: None });
                     changed.blocks = true;
                 }
                 return;
@@ -1271,7 +1374,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                     }
                     blocks.remove(at);
                     renumber(blocks);
-                    *caret = Some(Caret { block: at - 1, text: joined, focus: true, selection: (0, 0), place: None, cell: None });
+                    *caret = Some(Caret { block: at - 1, text: joined, focus: true, selection: (0, 0), place: None, cell: None, span: None });
                     let _ = at_end;
                     changed.blocks = true;
                     changed.caret = true;
@@ -1288,8 +1391,27 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         }
         Action::EnterCell(i, cell) => {
             let text = blocks.get(i).and_then(|b| cell_text(b, cell)).unwrap_or_default();
-            *caret = Some(Caret { block: i, text, focus: true, selection: (0, 0), place: None, cell: Some(cell) });
+            *caret = Some(Caret { block: i, text, focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None });
             changed.caret = true;
+        }
+        Action::Select(i, from, to) => {
+            let text = blocks.get(i).and_then(|b| cell_text(b, from)).unwrap_or_default();
+            // No focus asked for: a block of cells is picked, not written in.
+            *caret = Some(Caret { block: i, text, focus: false, selection: (0, 0), place: None, cell: Some(from), span: Some(to) });
+            changed.caret = true;
+        }
+        Action::ClearCells(i) => {
+            let Some(((r0, c0), (r1, c1))) = caret.as_ref().and_then(cell_range) else { return };
+            if let Some(b) = blocks.get_mut(i) {
+                for r in r0..=r1 {
+                    for c in c0..=c1 {
+                        if cell_text(b, (r, c)).is_some() {
+                            set_cell_text(b, (r, c), "");
+                        }
+                    }
+                }
+                changed.blocks = true;
+            }
         }
         Action::AddRow(i) => {
             if let Some(Block::Table { head, rows }) = blocks.get_mut(i) {
@@ -1297,7 +1419,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 rows.push(vec![Vec::new(); columns]);
                 changed.blocks = true;
                 let cell = (rows.len(), 0);
-                *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: Some(cell) });
+                *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None });
                 changed.caret = true;
             }
         }
@@ -1312,11 +1434,19 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             match last_writable {
                 // An empty last block is where the caret goes; otherwise a new one is added.
                 Some(i) if blocks.get(i).map(block_text).unwrap_or_default().is_empty() => {
-                    *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None });
+                    *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
                 }
                 _ => {
                     blocks.push(Block::Paragraph(Vec::new()));
-                    *caret = Some(Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None });
+                    *caret = Some(Caret {
+                        block: blocks.len() - 1,
+                        text: String::new(),
+                        focus: true,
+                        selection: (0, 0),
+                        place: None,
+                        cell: None,
+                        span: None,
+                    });
                     changed.blocks = true;
                 }
             }
@@ -1726,6 +1856,26 @@ mod tests {
     }
 
     #[test]
+    fn a_block_of_cells_is_the_same_block_whichever_way_it_was_dragged() {
+        let caret = |cell, span| Caret { block: 0, text: String::new(), focus: false, selection: (0, 0), place: None, cell, span };
+        assert_eq!(cell_range(&caret(Some((1, 0)), Some((2, 3)))), Some(((1, 0), (2, 3))));
+        assert_eq!(cell_range(&caret(Some((2, 3)), Some((1, 0)))), Some(((1, 0), (2, 3))), "dragged back the other way");
+        assert_eq!(cell_range(&caret(Some((2, 0)), Some((1, 3)))), Some(((1, 0), (2, 3))), "and across the diagonal");
+        assert_eq!(cell_range(&caret(Some((1, 1)), None)), None, "one cell is not a block");
+        assert_eq!(cell_range(&caret(None, None)), None);
+    }
+
+    #[test]
+    fn the_select_buttons_reach_as_far_as_the_table_does() {
+        let b = blocks("| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |\n").remove(0);
+        assert_eq!(span_of(&b, (1, 1), TableSpan::Whole), Some(((0, 0), (2, 2))), "the heading is part of the table");
+        assert_eq!(span_of(&b, (1, 1), TableSpan::Row), Some(((1, 0), (1, 2))));
+        assert_eq!(span_of(&b, (1, 1), TableSpan::Column), Some(((0, 1), (2, 1))));
+        let p = blocks("just words\n").remove(0);
+        assert_eq!(span_of(&p, (0, 0), TableSpan::Whole), None, "nothing to pick outside a table");
+    }
+
+    #[test]
     fn a_ragged_table_is_squared_up_before_it_is_changed() {
         // A table read from a file can have rows of different lengths; an edit must not
         // leave it raggeder still.
@@ -1822,7 +1972,7 @@ mod tests {
     #[test]
     fn splitting_joining_and_indenting() {
         let mut b = blocks("- one\n- two\n");
-        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         let mut changed = Changed::default();
         apply(Action::Split(0), &mut b, &mut caret, &mut changed);
         assert_eq!(b.len(), 3, "a new item after the first");
@@ -1831,7 +1981,7 @@ mod tests {
 
         // Enter in the middle of a line splits it; the caret goes with the second half.
         let mut split = blocks("one two\n");
-        let mut caret = Some(Caret { block: 0, text: "one two".into(), focus: false, selection: (3, 3), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "one two".into(), focus: false, selection: (3, 3), place: None, cell: None, span: None });
         apply(Action::Split(0), &mut split, &mut caret, &mut changed);
         assert_eq!(block_text(split.first().expect("first")), "one");
         assert_eq!(block_text(split.get(1).expect("second")), " two");
@@ -1839,7 +1989,7 @@ mod tests {
 
         // Enter at the very start pushes the words down and leaves an empty line above.
         let mut start = blocks("words\n");
-        let mut caret = Some(Caret { block: 0, text: "words".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "words".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         apply(Action::Split(0), &mut start, &mut caret, &mut changed);
         assert_eq!(start.len(), 2);
         assert_eq!(block_text(start.first().expect("first")), "", "an empty line above");
@@ -1848,7 +1998,7 @@ mod tests {
 
         // Enter at the end of a heading starts a paragraph, not another heading.
         let mut head = blocks("# Title\n");
-        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (5, 5), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (5, 5), place: None, cell: None, span: None });
         apply(Action::Split(0), &mut head, &mut caret, &mut changed);
         assert!(matches!(head.first(), Some(Block::Heading { .. })));
         assert!(matches!(head.get(1), Some(Block::Paragraph(_))), "{:?}", head.get(1));
@@ -1864,7 +2014,7 @@ mod tests {
 
         // Backspace at the start joins the text onto the block above.
         let mut two = blocks("first\n\nsecond\n");
-        let mut caret = Some(Caret { block: 1, text: "second".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 1, text: "second".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         apply(Action::JoinBack(1), &mut two, &mut caret, &mut changed);
         assert_eq!(two.len(), 1);
         assert_eq!(block_text(two.first().expect("one")), "firstsecond");
@@ -1872,7 +2022,7 @@ mod tests {
 
         // Backspace at the start of the first block turns a heading into a paragraph.
         let mut head = blocks("# Title\n");
-        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         apply(Action::JoinBack(0), &mut head, &mut caret, &mut changed);
         assert!(matches!(head.first(), Some(Block::Paragraph(_))));
         assert_eq!(block_text(head.first().expect("one")), "Title");
@@ -1997,11 +2147,11 @@ mod tests {
     #[test]
     fn the_caret_never_points_outside_the_page() {
         let mut b = blocks("one\n");
-        let mut caret = Some(Caret { block: 9, text: "junk".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 9, text: "junk".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         let mut changed = Changed::default();
         apply(Action::Move(5), &mut b, &mut caret, &mut changed);
         assert_eq!(caret, None, "a move to a block that is not there leaves no caret");
-        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None });
+        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         apply(Action::JoinBack(0), &mut b, &mut caret, &mut changed);
         assert_eq!(b.len(), 1);
     }

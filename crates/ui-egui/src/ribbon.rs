@@ -73,6 +73,8 @@ pub enum Act {
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
     Table(crate::pageedit::TableEdit),
+    /// Pick a block of cells of the table the caret is in.
+    TableSelect(crate::pageedit::TableSpan),
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
     /// The pen at this place on the rack was picked up.
@@ -1677,10 +1679,17 @@ Help",
 /// do to a table is wired; the rest is greyed where a OneNote user looks for it.
 fn table_tab(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     use crate::pageedit::TableEdit as E;
+    use crate::pageedit::TableSpan as S;
     group(ui, "Select", t, |ui| {
-        soon(ui, Icon::Table, "Select\nTable", t);
-        soon(ui, Icon::TableColumn, "Select\nColumns", t);
-        soon(ui, Icon::TableRow, "Select\nRows", t);
+        if big(ui, Icon::Table, "Select\nTable", "Pick the whole table", t).clicked() {
+            acts.push(Act::TableSelect(S::Whole));
+        }
+        if big(ui, Icon::TableColumn, "Select\nColumns", "Pick the caret's column", t).clicked() {
+            acts.push(Act::TableSelect(S::Column));
+        }
+        if big(ui, Icon::TableRow, "Select\nRows", "Pick the caret's row", t).clicked() {
+            acts.push(Act::TableSelect(S::Row));
+        }
     });
     group(ui, "Delete", t, |ui| {
         soon(ui, Icon::Table, "Delete\nTable", t);

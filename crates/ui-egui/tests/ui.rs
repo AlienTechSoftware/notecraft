@@ -1722,6 +1722,64 @@ fn the_table_tab_comes_with_the_caret_and_changes_the_table() {
     );
 }
 
+/// Dragging across cells picks the block between them: Delete empties it, and the Table
+/// tab's Select buttons pick the same way.
+#[test]
+fn cells_dragged_across_are_picked_and_can_be_emptied() {
+    let (_t, app, s) = sample_app("ui-cell-range");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Range", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let table = "| A | B |\n|---|---|\n| one | two |\n| three | four |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": table}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Drag from the first cell of the first row to the last cell of the second.
+    let from = h.get_by_label("one").rect().center();
+    let to = h.get_by_label("four").rect().center();
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("let go");
+    settle(&mut h);
+    review(&mut h, "cell-range");
+
+    // Delete empties what was picked and leaves the heading alone.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("| A | B |"), "the heading is untouched:\n{body}");
+    for word in ["one", "two", "three", "four"] {
+        assert!(!body.contains(word), "{word} was emptied with the rest of the block:\n{body}");
+    }
+
+    // And Select Rows from the Table tab picks a whole row, which Delete Rows then takes.
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": table}})).expect("put it back");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open it again");
+    settle(&mut h);
+    let cell = h.get_by_label("three").rect().center();
+    ask(&mut h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+    settle(&mut h);
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    h.get_by_label("Select Rows").click();
+    settle(&mut h);
+    h.get_by_label("Delete Rows").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("one"), "the row that was not picked stayed:\n{body}");
+    assert!(!body.contains("three"), "the picked row went:\n{body}");
+}
+
 /// A tab with many groups in a narrow window:/// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,
 /// and they are wider than a small window. They scroll rather than being cut off, and every
 /// one of them is still there to be reached.

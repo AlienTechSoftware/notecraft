@@ -168,7 +168,8 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
     blocks.push(Block::Paragraph(Vec::new()));
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
-    *caret = Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None });
+    *caret =
+        Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
 }
 
 #[cfg(test)]
