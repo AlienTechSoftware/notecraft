@@ -196,6 +196,9 @@ pub struct NoteCraftApp {
     always_on_top: bool,
     /// Set when that has just changed and the window manager has not been told yet.
     window_level_pending: bool,
+    /// True when the window has no frame of the system's own (the app asked for none), so
+    /// the band across the top draws the window's buttons and moves and resizes it.
+    frameless: bool,
     editor: Option<Editor>,
     dialog: Option<Dialog>,
     status: String,
@@ -294,6 +297,7 @@ impl NoteCraftApp {
             organisers: true,
             always_on_top: false,
             window_level_pending: false,
+            frameless: false,
             editor: None,
             dialog: None,
             status: "Ready".into(),
@@ -555,10 +559,9 @@ impl NoteCraftApp {
     }
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.
-    fn quick_access(&mut self, ui: &mut Ui) {
+    fn quick_access(&mut self, ui: &mut Ui, tokens: Tokens) {
         let enabled =
             quickaccess::Enabled { back: self.nav.can_back(), forward: self.nav.can_forward(), undo: self.can_undo(), redo: self.can_redo() };
-        let tokens = self.tokens;
         let (pressed, changed) = quickaccess::show(ui, &mut self.qat, enabled, &tokens);
         if changed {
             self.qat.save(|k, v| {
@@ -1100,63 +1103,175 @@ impl NoteCraftApp {
     // ---------- panels ----------
 
     fn top_bar(&mut self, ui: &mut Ui) {
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(26.0, 26.0)));
-                ui.strong("NoteCraft");
-                if self.qat.hidden || !self.qat.below {
-                    self.quick_access(ui);
-                }
-                ui.separator();
-                // File opens the backstage, as it does in Office.
-                if ui.button("File").on_hover_text("Notebooks, and what is done to a whole notebook").clicked() {
-                    self.backstage = Some("Info");
-                }
-                if ui.button("New notebook").clicked() {
-                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
-                }
-                if ui.button("Expand all").on_hover_text("Open every level").clicked() {
-                    self.open = self.collect_branches().into_iter().collect();
-                }
-                if ui.button("Collapse all").clicked() {
-                    self.open.clear();
-                }
-                ui.separator();
-                let (current, source) = self.session.settings.global_format();
-                ui.label("Default format:");
-                let mut chosen = current;
-                egui::ComboBox::from_id_salt("default-format").selected_text(current.label()).show_ui(ui, |ui| {
-                    for f in PageFormat::ALL {
-                        ui.selectable_value(&mut chosen, f, f.label());
-                    }
-                });
-                ui.label(egui::RichText::new(format!("({})", source.label())).small().color(self.tokens.muted));
-                if chosen != current && self.run("settings.default_format.set", &params(&[("format", chosen.id())])).is_some() {
-                    self.say(format!("New pages use {} unless the notebook or section says otherwise", chosen.label()));
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    self.theme_menu(ui);
-                    let resp = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search all pages").desired_width(220.0));
-                    if self.focus_search {
-                        resp.request_focus();
-                        self.focus_search = false;
-                    }
-                    if resp.changed() && self.search != self.searched {
-                        self.searched = self.search.clone();
-                        self.hits = match self.session.run("search.query", &params(&[("q", &self.search), ("limit", "20")])) {
-                            Ok(Output::Hits(h)) => h,
-                            _ => Vec::new(),
-                        };
-                    }
-                });
-            });
-        });
+        self.title_band(ui, true);
         self.ribbon_bar(ui);
         // Below the ribbon, as OneNote can put it.
         if self.qat.below && !self.qat.hidden {
+            let tokens = self.tokens;
             egui::Panel::top("quick-access").show(ui, |ui| {
-                ui.horizontal(|ui| self.quick_access(ui));
+                ui.horizontal(|ui| self.quick_access(ui, tokens));
             });
+        }
+    }
+
+    /// Says that the window has no frame of the system's own, so this window draws its buttons
+    /// and takes care of moving and resizing it. The program calls this when it asked for no frame.
+    pub fn set_frameless(&mut self, on: bool) {
+        self.frameless = on;
+    }
+
+    /// The coloured band across the top of the window, as in Office: the Quick Access Toolbar,
+    /// the page's title, search and the window's buttons in one row, and under it the tab
+    /// names. The File screen shows the first row only.
+    fn title_band(&mut self, ui: &mut Ui, with_tabs: bool) {
+        let t = self.tokens;
+        let (tab, source, in_table) = (self.ribbon_tab.clone(), self.show_source, self.caret_in_table());
+        let title = self.editor.as_ref().map(|e| e.title.trim().to_owned()).filter(|s| !s.is_empty());
+        let mut acts = Vec::new();
+        egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
+            self.title_row(ui, title.as_deref());
+            if with_tabs {
+                ribbon::tab_strip(ui, &tab, source, in_table, &t, &mut acts);
+            }
+        });
+        for a in acts {
+            self.ribbon_act(a);
+        }
+    }
+
+    /// The band's first row. Anything on it that is not a control moves the window.
+    fn title_row(&mut self, ui: &mut Ui, title: Option<&str>) {
+        const H: f32 = 30.0;
+        let on = self.tokens.on_band();
+        let ctx = ui.ctx().clone();
+        let row = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), H));
+        // Added first, so the controls drawn over it win the pointer: only bare band is a handle.
+        let handle = ui.interact(row, ui.id().with("title-handle"), Sense::click_and_drag());
+        if self.frameless {
+            if handle.drag_started_by(egui::PointerButton::Primary) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if handle.double_clicked() {
+                let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+            }
+        }
+        // The choice between the system's title bar and this one, kept in the settings.
+        handle.context_menu(|ui| {
+            let label = if self.frameless { "Use the system title bar" } else { "Use NoteCraft's own title bar" };
+            if ui.button(label).clicked() {
+                self.frameless = !self.frameless;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!self.frameless));
+                let _ = self.session.settings.set("window_frame", if self.frameless { "own" } else { "system" });
+                ui.close();
+            }
+        });
+        let text = title.map_or_else(|| "NoteCraft".to_owned(), |t| format!("{t} - NoteCraft"));
+        ui.painter_at(row).text(row.center(), Align2::CENTER_CENTER, text, egui::FontId::proportional(12.5), on.text);
+        let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        left.add_space(8.0);
+        left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
+        left.add_space(6.0);
+        if self.qat.hidden || !self.qat.below {
+            self.quick_access(&mut left, on);
+        }
+        let mut right = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        if self.frameless {
+            self.window_buttons(&mut right, &on);
+        }
+        right.add_space(4.0);
+        self.theme_menu(&mut right, on);
+        let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search all pages").desired_width(200.0));
+        if self.focus_search {
+            resp.request_focus();
+            self.focus_search = false;
+        }
+        if resp.changed() && self.search != self.searched {
+            self.searched = self.search.clone();
+            self.hits = match self.session.run("search.query", &params(&[("q", &self.search), ("limit", "20")])) {
+                Ok(Output::Hits(h)) => h,
+                _ => Vec::new(),
+            };
+        }
+        ui.advance_cursor_after_rect(row);
+    }
+
+    /// Minimise, maximise or restore, and close: the buttons the system would have drawn.
+    fn window_buttons(&self, ui: &mut Ui, on: &Tokens) {
+        let ctx = ui.ctx().clone();
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        for kind in ["Close", "Maximize", "Minimize"] {
+            let (rect, resp) = ui.allocate_exact_size(vec2(46.0, 30.0), Sense::click());
+            let painter = ui.painter_at(rect);
+            if resp.hovered() {
+                let fill = if kind == "Close" { Color32::from_rgb(196, 43, 28) } else { on.row_hover };
+                painter.rect_filled(rect, 0.0, fill);
+            }
+            let c = rect.center();
+            let stroke = egui::Stroke::new(1.0, on.text);
+            match kind {
+                "Close" => {
+                    painter.line_segment([c + vec2(-5.0, -5.0), c + vec2(5.0, 5.0)], stroke);
+                    painter.line_segment([c + vec2(-5.0, 5.0), c + vec2(5.0, -5.0)], stroke);
+                }
+                "Maximize" if maximized => {
+                    painter.rect_stroke(egui::Rect::from_min_size(c + vec2(-5.0, -2.0), vec2(7.0, 7.0)), 0.0, stroke, egui::StrokeKind::Inside);
+                    painter.line_segment([c + vec2(-2.0, -5.0), c + vec2(5.0, -5.0)], stroke);
+                    painter.line_segment([c + vec2(5.0, -5.0), c + vec2(5.0, 2.0)], stroke);
+                }
+                "Maximize" => {
+                    painter.rect_stroke(egui::Rect::from_center_size(c, vec2(10.0, 10.0)), 0.0, stroke, egui::StrokeKind::Inside);
+                }
+                _ => {
+                    painter.line_segment([c + vec2(-5.0, 4.0), c + vec2(5.0, 4.0)], stroke);
+                }
+            }
+            let label = if kind == "Maximize" && maximized { "Restore" } else { kind };
+            let enabled = ui.is_enabled();
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+            if resp.on_hover_text(label).clicked() {
+                ctx.send_viewport_cmd(match kind {
+                    "Close" => egui::ViewportCommand::Close,
+                    "Maximize" => egui::ViewportCommand::Maximized(!maximized),
+                    _ => egui::ViewportCommand::Minimized(true),
+                });
+            }
+        }
+    }
+
+    /// With no frame of the system's own, the edges and corners of the window are ours: the
+    /// pointer shows the resize arrow there, and a press starts the resize.
+    fn frame_edges(&self, ctx: &Context) {
+        if !self.frameless || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let r = ctx.content_rect();
+        // A line round the window, so its edge shows against whatever is behind it.
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window-edge"))).rect_stroke(
+            r,
+            0.0,
+            egui::Stroke::new(1.0, self.tokens.band),
+            egui::StrokeKind::Inside,
+        );
+        let Some(pos) = ctx.pointer_latest_pos() else { return };
+        const E: f32 = 5.0;
+        let (west, east, north, south) = (pos.x - r.min.x < E, r.max.x - pos.x < E, pos.y - r.min.y < E, r.max.y - pos.y < E);
+        use egui::{CursorIcon as C, viewport::ResizeDirection as D};
+        let (dir, cursor) = match (west, east, north, south) {
+            (true, _, true, _) => (D::NorthWest, C::ResizeNorthWest),
+            (_, true, true, _) => (D::NorthEast, C::ResizeNorthEast),
+            (true, _, _, true) => (D::SouthWest, C::ResizeSouthWest),
+            (_, true, _, true) => (D::SouthEast, C::ResizeSouthEast),
+            (true, ..) => (D::West, C::ResizeWest),
+            (_, true, ..) => (D::East, C::ResizeEast),
+            (_, _, true, _) => (D::North, C::ResizeNorth),
+            (_, _, _, true) => (D::South, C::ResizeSouth),
+            _ => return,
+        };
+        ctx.set_cursor_icon(cursor);
+        if ctx.input(|i| i.pointer.primary_pressed()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
         }
     }
 
@@ -1356,9 +1471,13 @@ impl NoteCraftApp {
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
-        egui::Panel::top("ribbon").exact_size(ribbon::TAB_STRIP_H + ribbon::GROUP_H + 8.0).show(ui, |ui| {
-            acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
-        });
+        egui::Panel::top("ribbon")
+            .exact_size(ribbon::GROUP_H + 8.0)
+            .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+            });
         for a in acts {
             self.ribbon_act(a);
         }
@@ -1367,6 +1486,7 @@ impl NoteCraftApp {
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
+            ribbon::Act::File => self.backstage = Some("Info"),
             ribbon::Act::Tab(name) => self.ribbon_tab = name,
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),
@@ -2232,12 +2352,11 @@ impl NoteCraftApp {
 
     /// The theme switcher: 14 swatches (light and dark, seven accents each) and a switch to
     /// follow the system setting.
-    fn theme_menu(&mut self, ui: &mut Ui) {
+    fn theme_menu(&mut self, ui: &mut Ui, tokens: Tokens) {
         let current = self.theme();
         let mut pick: Option<(Mode, Accent)> = None;
         let mut follow = self.mode_pref == ModePref::System;
         let follow_before = follow;
-        let tokens = self.tokens;
         // A sun or a moon in the theme's accent colour, instead of a line of text.
         let (rect, resp) = ui.allocate_exact_size(vec2(28.0, 24.0), Sense::click());
         let painter = ui.painter_at(rect);
@@ -2387,6 +2506,17 @@ impl NoteCraftApp {
                 // notebooks, which is what pressing it in OneNote does.
                 split_now = Self::bars_button_at(ui).clicked();
                 ui.label(egui::RichText::new("NOTEBOOKS").small().color(self.tokens.muted));
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.small_button("New notebook").clicked() {
+                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
+                }
+                if ui.small_button("Expand all").on_hover_text("Open every level").clicked() {
+                    self.open = self.collect_branches().into_iter().collect();
+                }
+                if ui.small_button("Collapse all").clicked() {
+                    self.open.clear();
+                }
             });
             ui.add_space(2.0);
             // A drag in a pane must not scroll it: in the page a drag moves a container,
@@ -2985,6 +3115,19 @@ impl NoteCraftApp {
                         .small()
                         .color(self.tokens.muted),
                     );
+                    ui.separator();
+                    let (current, source) = self.session.settings.global_format();
+                    let mut chosen = current;
+                    egui::ComboBox::from_id_salt("default-format").selected_text(current.label()).show_ui(ui, |ui| {
+                        for f in PageFormat::ALL {
+                            ui.selectable_value(&mut chosen, f, f.label());
+                        }
+                    });
+                    ui.label(egui::RichText::new(format!("({})", source.label())).small().color(self.tokens.muted));
+                    ui.label(egui::RichText::new("New pages:").small().color(self.tokens.muted));
+                    if chosen != current && self.run("settings.default_format.set", &params(&[("format", chosen.id())])).is_some() {
+                        self.say(format!("New pages use {} unless the notebook or section says otherwise", chosen.label()));
+                    }
                 });
             });
         });
@@ -3476,6 +3619,7 @@ impl NoteCraftApp {
                 "forward": self.nav.forward_count(),
                 "current": self.nav.current().map(|p| self.shown(p)),
             },
+            "windowFrame": if self.frameless { "own" } else { "system" },
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
@@ -3591,8 +3735,10 @@ impl NoteCraftApp {
         self.attach_dropped(ctx);
         // The File screen takes the whole window while it is open, as it does in Office.
         if self.backstage.is_some() {
+            self.title_band(ui, false);
             self.backstage_screen(ui);
             self.dialogs(ctx);
+            self.frame_edges(ctx);
             return;
         }
         self.top_bar(ui);
@@ -3601,6 +3747,7 @@ impl NoteCraftApp {
         self.central(ui);
         self.search_popup(ctx);
         self.dialogs(ctx);
+        self.frame_edges(ctx);
         if let Some(since) = self.editor.as_ref().and_then(|e| e.dirty_since) {
             if since.elapsed() >= AUTOSAVE_AFTER {
                 self.save_now();

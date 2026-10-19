@@ -71,7 +71,7 @@ When something there should be scriptable, it becomes an engine command.
 
 14 themes: light and dark, each with seven accents (default, red, green, yellow, blue, gray,
 purple). `ui-egui/src/theme.rs` builds a `Tokens` set per theme, and every colour the UI uses
-comes from it. The switcher is in the top bar and also offers to follow the system's light or
+comes from it. The switcher is on the title band and also offers to follow the system's light or
 dark setting. The choice is saved in the settings file. Every text and accent colour is moved
 until it meets its contrast target when the tokens are built, and a test checks all 14 themes.
 See [`themes.md`](themes.md).

@@ -98,6 +98,8 @@ fn main() {
     session.refresh();
     let (tx, rx) = mpsc::channel::<ControlRequest>();
     let mut app = NoteCraftApp::new(session).with_requests(rx);
+    // The screenshots show the window as it is run: with the band as its title bar.
+    app.set_frameless(true);
     app.set_redact_paths(true);
     if let Some(t) = opt("theme").and_then(|v| v.as_str().map(str::to_string)) {
         match Theme::parse(&t) {

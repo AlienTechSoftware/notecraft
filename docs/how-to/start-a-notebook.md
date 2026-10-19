@@ -19,7 +19,7 @@ NoteCraft**, a tour of the app written as an ordinary notebook, and opens it on 
 It is yours to change or delete. **File**, then **New**, then **Add the welcome notebook**
 brings it back, or opens it if it is still there.
 
-For a notebook of your own, click **New notebook** in the top bar, or **File**, then **New**.
+For a notebook of your own, click **New notebook** above the notebook list, or **File**, then **New**.
 Give it a name.
 
 Like the app you are coming from, a new notebook is not empty: it gets a section called "New Section 1" with one
