@@ -26,10 +26,23 @@ pub enum Link {
     Outside,
 }
 
-/// Resolves `href`, as written in a page in `page_dir`, against the notebooks folder `root`.
-/// Both folders are expected absolute and `page_dir` inside `root`; a relative link is taken
-/// from the page's own folder, which is where its file lives.
+/// Resolves `href` against the notebooks folder alone. Most callers want [`resolve_in`],
+/// which also knows about notebooks opened from elsewhere.
 pub fn resolve(root: &Path, page_dir: &Path, href: &str) -> Link {
+    resolve_in(std::slice::from_ref(&root.to_path_buf()), page_dir, href)
+}
+
+/// Resolves `href`, as written in a page in `page_dir`, against every folder a notebook is
+/// open from: the notebooks folder, and any notebook opened from somewhere else.
+///
+/// A link may not leave all of them, however many `..` it has. It took more than one
+/// folder the day notebooks could be opened from outside the notebooks folder: until then
+/// `resolve` knew one root, so every link inside such a notebook was judged to point out
+/// of the notebooks folder and was refused, which is what the owner saw.
+///
+/// `page_dir` is expected absolute and inside one of `roots`; a relative link is taken
+/// from the page's own folder, which is where its file lives.
+pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
     let href = href.trim();
     if href.is_empty() {
         return Link::Missing(page_dir.to_path_buf());
@@ -62,7 +75,9 @@ pub fn resolve(root: &Path, page_dir: &Path, href: &str) -> Link {
     let Some(full) = normalise(if target.is_absolute() { target.to_path_buf() } else { page_dir.join(target) }) else {
         return Link::Outside;
     };
-    if !full.starts_with(root) {
+    // Inside any one of the open notebooks is inside. A link that leaves all of them is
+    // out, which is the rule that keeps a notebook from reaching into the rest of a disk.
+    if !roots.iter().any(|r| full.starts_with(r)) {
         return Link::Outside;
     }
     if full.is_dir() {
@@ -164,6 +179,36 @@ mod tests {
         assert_eq!(resolve(&root, &a, ".."), Link::Node(a.parent().expect("section").to_path_buf()));
         assert_eq!(resolve(&root, &a, "../../"), Link::Node(root.join("book")));
         assert_eq!(resolve(&root, &a, "#top"), Link::Node(a.clone()));
+    }
+
+    /// A notebook opened from outside the notebooks folder: its pages link to each other
+    /// exactly as they would inside it. Judging such a page by the notebooks folder alone
+    /// made every link in it dead, with "that link points outside the notebooks folder",
+    /// which is what the owner saw on the Welcome notebook.
+    #[test]
+    fn a_notebook_opened_from_elsewhere_can_link_inside_itself() {
+        let t = TempDir::new("links-elsewhere");
+        let root = t.path().join("notebooks");
+        let away = t.path().join("somewhere-else");
+        let settings = crate::Settings::at(t.path().join("settings.toml"));
+        std::fs::create_dir_all(&root).expect("root");
+        let nb = crate::ops::create_notebook(&away, "Away", None, &settings).expect("notebook");
+        let section = crate::ops::create_node(&nb, "Section", notecraft_model::NodeKind::Section, None, &settings).expect("section");
+        let a = crate::ops::create_node(&section, "Page A", notecraft_model::NodeKind::Page, None, &settings).expect("a");
+        let b = crate::ops::create_node(&section, "Page B", notecraft_model::NodeKind::Page, None, &settings).expect("b");
+
+        // Knowing only the notebooks folder, every link in it is refused.
+        assert_eq!(resolve(&root, &a, "../page-b/"), Link::Outside, "the fault, as it was");
+
+        // Knowing the notebook is open too, the link is the page next door.
+        let roots = vec![root.clone(), nb.clone()];
+        assert_eq!(resolve_in(&roots, &a, "../page-b/"), Link::Node(b));
+        assert_eq!(resolve_in(&roots, &a, "../../"), Link::Node(nb.clone()));
+
+        // A link that leaves every open notebook is still out, which is the rule that
+        // keeps a notebook from reaching into the rest of the disk.
+        assert_eq!(resolve_in(&roots, &a, "../../../"), Link::Outside);
+        assert_eq!(resolve_in(&roots, &a, "../../../../etc/passwd"), Link::Outside);
     }
 
     #[test]
