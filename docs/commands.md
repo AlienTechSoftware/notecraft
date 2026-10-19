@@ -112,6 +112,15 @@ Parameters:
 - path (required): the page
 - source (required): a file to copy into the page's assets folder
 
+## `page.detach`
+
+Take a file out of a page's folder.
+
+Parameters:
+
+- path (required): the page
+- name (required): the file in the page's assets folder, as page.load reports it. The file is deleted; a line that linked to it is left alone
+
 ## `settings.default_format.get`
 
 Show the global default format.

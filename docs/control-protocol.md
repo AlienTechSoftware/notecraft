@@ -59,6 +59,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `ui.key` | `key` (an egui key name), modifiers | `{}` |
 | `ui.text` | `text` | `{}` (typed into the focused widget) |
 | `ui.paste` | `text` | `{}` (pasted, so a tab-separated table becomes a table) |
+| `ui.scroll` | `y` (required), `x` | `{}` (scrolls the page: negative `y` moves down it) |
 | `ui.resize` | `width`, `height` | `{}` |
 | `ui.screenshot` | `path` (optional) | the PNG saved to `path`, or returned as base64 |
 | `app.quit` | none | `{}` (saves first) |
