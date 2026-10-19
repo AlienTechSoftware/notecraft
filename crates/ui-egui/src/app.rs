@@ -1216,6 +1216,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
             ribbon::Act::Table(what) => self.edit_table(what),
+            ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -1386,21 +1387,61 @@ impl NoteCraftApp {
             .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
     }
 
+    /// Picks a block of cells from the Table tab's Select buttons, as a drag across them
+    /// would.
+    fn select_in_table(&mut self, what: pageedit::TableSpan) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
+            return;
+        };
+        let Some(block) = ed.blocks.get(at) else { return };
+        let Some((from, to)) = pageedit::span_of(block, cell, what) else { return };
+        if let Some(caret) = ed.caret.as_mut() {
+            caret.cell = Some(from);
+            caret.span = Some(to);
+            caret.text = pageedit::cell_text(block, from).unwrap_or_default();
+            caret.focus = false;
+        }
+    }
+
     /// Changes the shape of the table the caret is in, from the Table tab.
+    ///
+    /// A block of cells picked across several rows or columns takes them all: Delete Rows
+    /// with three rows picked takes the three, the way it does in OneNote.
     fn edit_table(&mut self, what: pageedit::TableEdit) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
             return;
         };
+        // Deleting works from the top-left of what is picked, over and over: each one
+        // after the first falls into the place the one before it left. A picked block
+        // that takes in the heading row starts under it, so picking the whole table and
+        // asking for its rows empties the body and keeps the heading.
+        let picked = ed.caret.as_ref().and_then(pageedit::cell_range);
+        let (cell, times) = match (what, picked) {
+            (pageedit::TableEdit::DeleteRow, Some((a, b))) => {
+                let start = a.0.max(1);
+                ((start, a.1), (b.0 + 1).saturating_sub(start))
+            }
+            (pageedit::TableEdit::DeleteColumn, Some((a, b))) => (a, b.1 - a.1 + 1),
+            _ => (cell, 1),
+        };
         let Some(block) = ed.blocks.get_mut(at) else { return };
-        let Some(to) = pageedit::edit_table(block, cell, what) else {
+        let mut last = None;
+        for _ in 0..times {
+            match pageedit::edit_table(block, cell, what) {
+                Some(to) => last = Some(to),
+                None => break,
+            }
+        }
+        let Some(to) = last else {
             // The rules said no: a table keeps its heading row and at least one column.
             self.say("A table keeps its heading row and at least one column");
             return;
         };
         let text = pageedit::cell_text(block, to).unwrap_or_default();
         ed.body = pageedit::to_body(ed.format, &ed.blocks);
-        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to) });
+        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None });
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -1668,6 +1709,7 @@ impl NoteCraftApp {
             selection: (0, 0),
             place: None,
             cell: None,
+            span: None,
         });
         Self::mark_dirty_from_blocks(ed);
     }
@@ -2678,8 +2720,15 @@ impl NoteCraftApp {
                 if !pageedit::is_writable(block) {
                     return Err(format!("block {n} is a table, a rule or a picture; the caret cannot go in it yet"));
                 }
-                ed.caret =
-                    Some(pageedit::Caret { block: n, text: pageedit::caret_text(block), focus: true, selection: (0, 0), place: None, cell: None });
+                ed.caret = Some(pageedit::Caret {
+                    block: n,
+                    text: pageedit::caret_text(block),
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: None,
+                    span: None,
+                });
                 ctx.request_repaint();
                 Ok(json!({"block": n, "text": ed.caret.as_ref().map(|c| c.text.clone())}))
             }
