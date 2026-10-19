@@ -13,11 +13,11 @@ Muchas aplicaciones de notas guardan un cuaderno entero en un único archivo bin
 
 A la izquierda, **Archivos de esta página**: primero el archivo de la propia página, `index.md`, y después todo lo demás que haya en la carpeta. Un archivo que nada en la página usa aparece marcado como *no usado por la página*. A la derecha está el archivo que has elegido. Esta es la página que estás leyendo, así que el visor muestra su propio texto.
 
-El archivo de la página muestra su **cabecera** en gris: el id, el título, el orden y las fechas de la página. No puedes escribir en ella, así que una edición a mano no puede estropear el id de la página. Debajo está el **cuerpo**, que sí puedes editar. Pulsa el mismo botón otra vez para cerrar la vista, y la página se dibuja de nuevo a partir de lo que hay en el cuerpo.
+El archivo de la página se muestra entero: su **cabecera** (el id, el título, el orden, las fechas y los ajustes de la página) y debajo el **cuerpo**. Puedes editarlo todo. Vuelve a pulsar el mismo botón para cerrar la vista y la página se dibuja de nuevo con lo que escribiste.
 
 | Archivo | Qué muestra el visor | ¿Se puede escribir en él? |
 |---|---|---|
-| El archivo de la página, `index.md` o `index.html` | La cabecera y el cuerpo tal como se guardó | El cuerpo |
+| El archivo de la página, `index.md` o `index.html` | La cabecera y el cuerpo tal como se guardó | Todo |
 | Un dibujo, `ink.svg` | El texto SVG, con las lecturas propias del lápiz | Sí, con cuidado |
 | Una imagen | La imagen | No |
 | Otro texto | Su texto | No |

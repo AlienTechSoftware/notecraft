@@ -10,11 +10,11 @@ Viele Notiz-Apps halten ein ganzes Notizbuch in einer einzigen Binärdatei, und 
 
 Links stehen die **Dateien dieser Seite**: zuerst die Datei der Seite selbst, `index.md`, dann alles andere im Ordner. Eine Datei, die nichts auf der Seite verwendet, ist mit *von der Seite nicht verwendet* markiert. Rechts steht die Datei, die Sie gewählt haben. Das ist die Seite, die Sie gerade lesen, deshalb zeigt der Betrachter ihren eigenen Text.
 
-Die Seitendatei zeigt ihren **Kopf** in Grau: die ID, den Titel, die Reihenfolge und die Daten der Seite. Darin können Sie nicht schreiben, ein Eingriff von Hand kann also die ID der Seite nicht beschädigen. Darunter steht der **Inhalt**, den Sie bearbeiten können. Mit derselben Schaltfläche schließen Sie die Ansicht, und die Seite wird neu aus dem Inhalt gezeichnet.
+Die Seitendatei wird ganz gezeigt: ihr **Kopf** (Kennung, Titel, Reihenfolge, Daten und Einstellungen der Seite) und darunter der **Inhalt**. Sie können alles bearbeiten. Drücken Sie dieselbe Schaltfläche noch einmal, um die Ansicht zu schließen, und die Seite wird nach dem, was Sie geschrieben haben, neu gezeichnet.
 
 | Datei | Was der Betrachter zeigt | Kann man darin schreiben? |
 |---|---|---|
-| Die Seitendatei, `index.md` oder `index.html` | Den Kopf und den Inhalt genau wie gespeichert | Den Inhalt |
+| Die Seitendatei, `index.md` oder `index.html` | Den Kopf und den Inhalt genau wie gespeichert | Alles |
 | Eine Zeichnung, `ink.svg` | Den SVG-Text mit den eigenen Messwerten des Stifts | Ja, mit Vorsicht |
 | Ein Bild | Das Bild | Nein |
 | Anderer Text | Seinen Text | Nein |

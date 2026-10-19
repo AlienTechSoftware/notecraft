@@ -13,11 +13,11 @@ Beaucoup d'applications de notes gardent un carnet entier dans un seul fichier b
 
 À gauche, **Fichiers de cette page** : d'abord le fichier de la page elle-même, `index.md`, puis tout le reste du dossier. Un fichier que rien dans la page n'utilise est marqué *non utilisé par la page*. À droite se trouve le fichier que vous avez choisi. C'est la page que vous lisez, donc le visualiseur montre son propre texte.
 
-Le fichier de la page affiche son **en-tête** en gris : l'identifiant, le titre, l'ordre et les dates de la page. Vous ne pouvez pas y écrire, donc une modification à la main ne peut pas abîmer l'identifiant de la page. En dessous se trouve le **corps**, que vous pouvez modifier. Appuyez de nouveau sur le même bouton pour fermer la vue, et la page est redessinée à partir de ce que contient le corps.
+Le fichier de la page s'affiche en entier : son **en-tête** (l'identifiant, le titre, l'ordre, les dates et les réglages de la page) et, dessous, le **corps**. Vous pouvez tout modifier. Appuyez de nouveau sur le même bouton pour fermer la vue, et la page est redessinée d'après ce que vous avez écrit.
 
 | Fichier | Ce que montre le visualiseur | Peut-on y écrire ? |
 |---|---|---|
-| Le fichier de la page, `index.md` ou `index.html` | L'en-tête, et le corps tel qu'il a été enregistré | Le corps |
+| Le fichier de la page, `index.md` ou `index.html` | L'en-tête, et le corps tel qu'il a été enregistré | Tout |
 | Un dessin, `ink.svg` | Le texte SVG, avec les mesures propres du stylet | Oui, avec précaution |
 | Une image | L'image | Non |
 | Un autre texte | Son texte | Non |
