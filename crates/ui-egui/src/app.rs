@@ -2805,7 +2805,7 @@ impl NoteCraftApp {
                 // The boxes the blocks are arranged in, as the page keeps them.
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
-                "selectedContainer": crate::containers::selected(ctx),
+                "selectedContainer": crate::containers::selected(ctx, &e.dir),
                 "origin": [e.origin.x, e.origin.y],
             })),
         })
