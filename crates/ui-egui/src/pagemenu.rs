@@ -22,6 +22,12 @@ fn id() -> egui::Id {
 /// Draws the page's menu when the page has been right-clicked, and puts what was picked
 /// into `acts`.
 pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>) {
+    // A right click on a container belongs to the container's own menu. Close this one if it
+    // was open, and leave the click alone.
+    if crate::containers::took_right_click(ui.ctx()) {
+        ui.data_mut(|d| d.remove::<egui::Pos2>(id()));
+        return;
+    }
     let pointer = ui.ctx().pointer_latest_pos();
     if ui.input(|i| i.pointer.secondary_clicked())
         && let Some(at) = pointer.filter(|p| body.contains(*p))
@@ -37,23 +43,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>) {
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(176.0);
-                let mut item = |ui: &mut Ui, label: &str, act: Act| {
-                    if ui.button(label).clicked() {
-                        acts.push(act);
-                        picked = true;
-                    }
-                };
-                item(ui, "Paste", Act::Paste);
-                item(ui, "Cut", Act::Clipboard("cut"));
-                item(ui, "Copy", Act::Clipboard("copy"));
-                ui.separator();
-                item(ui, "Table", Act::Insert("table"));
-                item(ui, "Link", Act::Insert("link"));
-                item(ui, "Equation", Act::Insert("equation"));
-                item(ui, "Date and time", Act::Insert("datetime"));
-                ui.separator();
-                item(ui, "Picture from a file", Act::AddPicture);
-                item(ui, "Attach a file", Act::AddFile);
+                picked = items(ui, acts, true);
             });
         })
         .response;
@@ -62,4 +52,31 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>) {
     if picked || out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         ui.data_mut(|d| d.remove::<egui::Pos2>(id()));
     }
+}
+
+/// The page's menu entries: what a right click on the page offers. `clipboard` puts Paste, Cut
+/// and Copy first; a container's menu has its own Cut and Copy for the whole box, so it asks for
+/// the rest only. True when one was picked.
+pub fn items(ui: &mut Ui, acts: &mut Vec<Act>, clipboard: bool) -> bool {
+    let mut picked = false;
+    let mut item = |ui: &mut Ui, label: &str, act: Act| {
+        if ui.button(label).clicked() {
+            acts.push(act);
+            picked = true;
+        }
+    };
+    item(ui, "Paste", Act::Paste);
+    if clipboard {
+        item(ui, "Cut", Act::Clipboard("cut"));
+        item(ui, "Copy", Act::Clipboard("copy"));
+    }
+    ui.separator();
+    item(ui, "Table", Act::Insert("table"));
+    item(ui, "Link", Act::Insert("link"));
+    item(ui, "Equation", Act::Insert("equation"));
+    item(ui, "Date and time", Act::Insert("datetime"));
+    ui.separator();
+    item(ui, "Picture from a file", Act::AddPicture);
+    item(ui, "Attach a file", Act::AddFile);
+    picked
 }

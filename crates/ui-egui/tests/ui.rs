@@ -1776,3 +1776,92 @@ fn results_of_an_unused_output_variant_compile() {
     let _ = Output::None;
     let _ = params(&[("a", "b")]);
 }
+
+/// Two containers on the sample page, and where the first one is drawn: its top left corner.
+fn two_boxes(label: &str) -> (TempDir, Harness<'static, NoteCraftApp>, u64, (f64, f64)) {
+    let (t, mut app, s) = sample_app(label);
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks >= 4, "the sample page has blocks in it: {blocks}");
+    let line = format!("0,0,320,2; 360,30,300,{}", blocks - 2);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let at = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
+    assert!(at.0 > 0.0 && at.1 > 0.0, "the page knows where it is drawn: {origin:?}");
+    (t, h, blocks, at)
+}
+
+fn look_at(h: &mut Harness<'_, NoteCraftApp>) -> Value {
+    ask(h, "ui.inspect", json!({})).expect("inspect")
+}
+
+/// A right click on a container selects it, with everything in it, and its menu's Delete takes
+/// the box and its content off the page.
+#[test]
+fn right_click_selects_a_container_and_delete_removes_it_with_its_content() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-select");
+    let before = h.state().body().unwrap_or_default().to_string();
+
+    // Inside the first box, below its handle, on its words.
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box under the pointer is selected: {v}");
+    assert!(v.pointer("/page/caret").is_none_or(Value::is_null), "no caret: the whole box is selected, not a word in it");
+    assert!(h.query_all_by_label("Delete").count() >= 1, "the box has its own menu with Delete on it");
+    assert!(h.query_all_by_label("Table").count() >= 1, "and the page's own entries are on it too, so none were lost");
+
+    h.query_all_by_label("Delete").last().expect("a Delete item").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    let boxes = v.pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), 1, "one box is left: {boxes:?}");
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "the box's two blocks went with it");
+    assert_eq!(boxes.first().and_then(|b| b.get("blocks")).and_then(Value::as_u64), Some(blocks - 2), "and the other box holds what is left");
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "nothing is selected any more");
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert!(after.len() < before.len(), "the page is shorter: {} then {}", before.len(), after.len());
+}
+
+/// A click on the handle selects too, and the Delete key then removes the box and its content.
+#[test]
+fn the_handle_selects_a_container_and_the_delete_key_removes_it() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-key");
+    // The handle runs along the top of the box.
+    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": oy + 6.0})).expect("click the handle");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the handle selected the box: {v}");
+
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(1), "the box is gone: {v}");
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "with its blocks");
+}
+
+/// Escape lets go of the selection, and nothing is deleted.
+#[test]
+fn escape_lets_go_of_a_selected_container() {
+    let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-escape");
+    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": oy + 6.0})).expect("click the handle");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "selected");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("press Escape");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "no longer selected: {v}");
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "nothing was deleted");
+}
