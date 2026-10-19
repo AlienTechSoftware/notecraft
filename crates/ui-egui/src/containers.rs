@@ -51,9 +51,12 @@ fn words_id() -> Id {
     Id::new("container-words-selected")
 }
 
-/// The container that is selected, if there is one.
-pub fn selected(ctx: &egui::Context) -> Option<usize> {
-    ctx.data(|d| d.get_temp::<usize>(selected_id()))
+/// The container that is selected on `page`, if there is one. The selection is kept with the
+/// page it was made on: another page opened since has nothing selected, rather than inheriting
+/// a box number and a Delete key that would take a box out of a page nobody picked from.
+pub fn selected(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
+    let key = page.to_string_lossy();
+    ctx.data(|d| d.get_temp::<(usize, String)>(selected_id())).filter(|(_, on)| *on == key).map(|(i, _)| i)
 }
 
 /// True when a container took this frame's right click, so the page's own menu stays shut.
@@ -113,7 +116,8 @@ pub fn show(
 
     // The selection, and the menu that goes with it. A container that has gone (the page
     // was changed under it) cannot stay selected.
-    let mut sel = selected(ui.ctx()).filter(|i| *i < boxes.len());
+    let page_key = page_dir.to_string_lossy().into_owned();
+    let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
@@ -290,6 +294,10 @@ pub fn show(
         menu_at = None;
         ui.ctx().request_repaint();
     }
+    // A menu belongs to a selection: with none, there is no menu.
+    if sel.is_none() {
+        menu_at = None;
+    }
     // Remember where words are selected, but only while no button is down: a press moves the
     // selection, and what is wanted is how it stood before.
     if !ui.input(|i| i.pointer.any_down()) {
@@ -306,9 +314,11 @@ pub fn show(
     ui.data_mut(|d| {
         match sel {
             Some(i) => {
-                d.insert_temp(selected_id(), i);
+                d.insert_temp(selected_id(), (i, page_key.clone()));
             }
-            None => d.remove::<usize>(selected_id()),
+            None => {
+                d.remove::<(usize, String)>(selected_id());
+            }
         }
         match menu_at {
             Some(p) => {

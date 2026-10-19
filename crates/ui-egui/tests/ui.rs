@@ -2037,3 +2037,94 @@ fn clicking_into_words_lets_go_of_a_selected_box() {
     assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "the caret is in the words");
     assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks), "nothing was deleted");
 }
+
+/// Opens `page` arranged in two boxes: the first holds two blocks, the second the rest. Returns
+/// the page's block count and where its first box is drawn.
+fn arrange_in_two(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> (u64, (f64, f64)) {
+    ask(h, "ui.open", json!({"path": page})).expect("open");
+    settle(h);
+    let blocks = look_at(h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks >= 4, "{page} has blocks in it: {blocks}");
+    let line = format!("0,0,320,2; 360,30,300,{}", blocks - 2);
+    ask(h, "engine.execute", json!({"command": "page.containers", "params": {"path": page, "boxes": line}})).expect("arrange");
+    ask(h, "ui.open", json!({"path": page})).expect("open again");
+    settle(h);
+    let origin = look_at(h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    (blocks, (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0)))
+}
+
+/// A selected box belongs to the page it was selected on. Opening another page must not leave a
+/// box of that page shaded, with Delete ready to take it.
+#[test]
+fn a_selected_box_does_not_follow_you_to_another_page() {
+    let (_t, mut app, s) = sample_app("ui-box-other-page");
+    let md = s.md_page.to_string_lossy().to_string();
+    let html = s.html_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (_, (ox, oy)) = arrange_in_two(&mut h, &md);
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "selected on the first page");
+
+    ask(&mut h, "ui.open", json!({"path": html})).expect("open the other page");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "nothing is selected on the other page: {v}");
+
+    // And Delete there deletes nothing.
+    let blocks = v.pointer("/page/blocks").and_then(Value::as_u64);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), blocks, "the key deleted nothing");
+}
+
+/// Boxes work the same on an HTML page: the box goes, and the saved file loses its words.
+#[test]
+fn deleting_a_box_on_an_html_page_removes_it_from_the_file() {
+    let (_t, mut app, s) = sample_app("ui-box-html");
+    let html = s.html_page.to_string_lossy().to_string();
+    app.open_path(&html);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (blocks, (ox, oy)) = arrange_in_two(&mut h, &html);
+    let file = |s: &Sample| std::fs::read_to_string(s.html_page.join("index.html")).unwrap_or_default();
+    assert!(file(&s).contains("Project X"), "the first box holds the title");
+
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(blocks - 2), "its two blocks are gone: {v}");
+    // The page's own title stays in its <title>; what goes is the body's heading and paragraph.
+    let saved = file(&s);
+    assert!(!saved.contains("<h1>") && !saved.contains("Kickoff notes"), "the first box's words are gone from the saved page:\n{saved}");
+    assert!(saved.contains("Quality is not negotiable"), "the other box's words are still saved");
+}
+
+/// A box that holds a picture can be deleted like any other, and the page stops naming the file.
+#[test]
+fn deleting_a_box_with_a_picture_in_it_removes_the_picture_from_the_page() {
+    let (_t, mut app, s) = sample_app("ui-box-picture");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (blocks, (ox, oy)) = arrange_in_two(&mut h, &md);
+    let file = |s: &Sample| std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file(&s).contains("koala.png"), "the sample page has a picture, in the second box");
+
+    // The second box starts at x 360, y 30: its handle is along its top.
+    ask(&mut h, "ui.click", json!({"x": ox + 360.0 + 150.0, "y": oy + 30.0 + 6.0})).expect("click the second handle");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(1), "the second box is selected");
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("press Delete");
+    settle(&mut h);
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(2), "only the first box's two blocks are left of {blocks}: {v}");
+    assert!(!file(&s).contains("koala.png"), "the saved page no longer names the picture");
+}
