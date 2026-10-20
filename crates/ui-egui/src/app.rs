@@ -114,6 +114,59 @@ impl Editor {
     }
 }
 
+/// The page's own name, drawn on the sheet at the top of the page.
+///
+/// It used to sit in a strip above the page, beside the breadcrumb and the Saved line,
+/// which made it look like a field about the page rather than the first thing on it. In
+/// OneNote the name is part of the page, and the owner asked for the same here on
+/// 2026-10-19. So it is drawn inside the scroll area and inside the readable column: it
+/// scrolls with the words, it lines up with them, and the page colour and rule lines run
+/// behind it as they do behind everything else on the sheet.
+///
+/// It is drawn before the sheet's origin is taken, so ink keeps the coordinates it already
+/// has and a drawing made beside a paragraph stays beside it.
+///
+/// A title that reads right to left is drawn by the bidi painter rather than the text box:
+/// egui lays the letters of a word out the right way and then puts the next word to the
+/// right of it, so every Arabic page showed its own name with the words backwards. Clicking
+/// it hands the line to the text box, which is still where it is edited.
+fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id, rename: &mut Option<String>) {
+    let align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
+    let width = ui.available_width();
+    let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
+    let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl;
+    let r = if editing {
+        ui.add(
+            egui::TextEdit::singleline(&mut ed.title_buf)
+                .id(title_id)
+                .frame(egui::Frame::NONE)
+                .font(egui::FontId::proportional(26.0))
+                .horizontal_align(align)
+                .desired_width(width),
+        )
+    } else {
+        let pieces = crate::bidi::plain(&ed.title_buf, 26.0, tokens);
+        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0, width);
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y.max(34.0)), egui::Sense::click());
+        crate::bidi::paint(ui, rect.min, &drawn);
+        if resp.clicked() {
+            ui.memory_mut(|m| m.request_focus(title_id));
+        }
+        let name = ed.title_buf.clone();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
+        resp.on_hover_cursor(egui::CursorIcon::Text)
+    };
+    if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
+        *rename = Some(ed.title_buf.trim().to_string());
+    }
+    // The rule under the name, as OneNote draws one. The date the page carries sits under
+    // it already, as the first block of the page.
+    let y = ui.cursor().min.y + 2.0;
+    let (left, right) = (ui.max_rect().min.x, ui.max_rect().max.x);
+    ui.painter().hline(left..=right, y, egui::Stroke::new(1.0, tokens.faint));
+    ui.add_space(8.0);
+}
+
 /// What to do with a file the user dropped on a page.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FileChoice {
@@ -2956,42 +3009,11 @@ impl NoteCraftApp {
             let title_id = egui::Id::new("page-title-box");
             ui.label(egui::RichText::new(crumbs).small().color(tokens.muted));
             ui.horizontal(|ui| {
-                if !hide_title {
-                    // The title hangs from the same edge the page reads from.
-                    let title_align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
-                    let width = ui.available_width() - 260.0;
-                    // A title that reads right to left is drawn by the bidi painter, not
-                    // by the text box: egui lays the letters of a word out the right way
-                    // and then puts the next word to the right of it, so every Arabic page
-                    // showed its own name with the words backwards. Clicking it hands the
-                    // line to the text box, which is still where it is edited; that is the
-                    // same bargain the page itself made until its own caret was built.
-                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.page_dir);
-                    let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl_title;
-                    let r = if editing {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut ed.title_buf)
-                                .id(title_id)
-                                .font(egui::FontId::proportional(22.0))
-                                .horizontal_align(title_align)
-                                .desired_width(width),
-                        )
-                    } else {
-                        let pieces = crate::bidi::plain(&ed.title_buf, 22.0, &tokens);
-                        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 22.0, width);
-                        let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y.max(30.0)), egui::Sense::click());
-                        crate::bidi::paint(ui, rect.min, &drawn);
-                        if resp.clicked() {
-                            ui.memory_mut(|m| m.request_focus(title_id));
-                        }
-                        let name = ed.title_buf.clone();
-                        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
-                        resp.on_hover_cursor(egui::CursorIcon::Text)
-                    };
-                    if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
-                        rename = Some(ed.title_buf.trim().to_string());
-                    }
-                }
+                // The title is not here any more. It is drawn on the sheet itself, at the
+                // top of the page, because the page's name is part of the page: that is
+                // what OneNote does and what the owner asked for on 2026-10-19. What is
+                // left in this strip is the things that are about the file rather than in
+                // it, and they stay out of the page.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let state = if ed.dirty_since.is_some() {
                         "Editing...".to_string()
@@ -3047,7 +3069,8 @@ impl NoteCraftApp {
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
                             delete_file: &mut Option<String>,
-                            follow: &mut Option<String>| {
+                            follow: &mut Option<String>,
+                            rename: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
@@ -3073,6 +3096,12 @@ impl NoteCraftApp {
                     let margin = if wide { ((ui.available_width() - 780.0) / 2.0).max(8.0) } else { 0.0 };
                     egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: 4, bottom: 8 }).show(ui, |ui| {
                         ui.set_width(ui.available_width());
+                        // The page's own name, at the top of the sheet. Before the sheet's
+                        // origin is taken below, so the ink layer keeps its own coordinates
+                        // and a drawing stays beside the words it was made next to.
+                        if !hide_title {
+                            page_title(ui, ed, &tokens, title_id, rename);
+                        }
                         if wide && ed.writable {
                             // The caret lives in the page: every block is drawn the way it
                             // will be read, and the one being written in is a text box in
@@ -3207,6 +3236,7 @@ impl NoteCraftApp {
                     &mut cols_moved,
                     &mut delete_file,
                     &mut follow,
+                    &mut rename,
                 );
             }
             if changed {
