@@ -25,6 +25,8 @@ rfd = { workspace = true }
 image = { workspace = true }
 arboard = { workspace = true }
 serde_json = { workspace = true }
+# SystemTime::now()/Instant::now() panic on wasm32-unknown-unknown; see the workspace Cargo.toml.
+web-time = { workspace = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true }

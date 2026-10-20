@@ -12,6 +12,9 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
+// std's own SystemTime and Instant panic on wasm32-unknown-unknown, which has no clock;
+// web_time has the same types everywhere else and performance.now()/Date.now() there.
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// A request from a connection, waiting for the window to answer it.
 pub struct ControlRequest {
@@ -53,7 +56,7 @@ const IDLE: Duration = Duration::from_secs(30);
 fn random_key() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
     (0..4u64)
         .map(|i| {
             let mut h = RandomState::new().build_hasher();
@@ -113,7 +116,7 @@ fn serve_connection(mut stream: TcpStream, key: &str, tx: &Sender<ControlRequest
     let Ok(read_half) = stream.try_clone() else { return };
     let mut reader = BufReader::new(read_half);
     let mut authed = false;
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     loop {
         let mut line = String::new();
         match reader.by_ref().take(MAX_LINE as u64 + 1).read_line(&mut line) {

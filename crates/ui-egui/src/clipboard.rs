@@ -71,6 +71,9 @@ pub fn picture_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is
+    // the same type everywhere else and performance.now()/Date.now() there.
+    use web_time::Instant;
 
     #[test]
     fn a_pasted_pictures_name_is_a_plain_file_name() {
@@ -85,7 +88,7 @@ mod tests {
     /// is there, which is the part that would break a window.
     #[test]
     fn asking_the_clipboard_is_always_safe() {
-        let before = std::time::Instant::now();
+        let before = Instant::now();
         let _ = has_picture();
         let _ = picture();
         let _ = text();
