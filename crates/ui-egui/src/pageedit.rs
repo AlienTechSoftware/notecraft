@@ -1216,10 +1216,25 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.strength_of(i))
+                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.strength_of(i), ui.make_persistent_id(("page-block", i)))
                 })
                 .inner;
             let resp = out.response;
+            // Dragging across words is how a reader selects them, and until now a drag that
+            // began on a paragraph the caret was not already in did nothing at all: the
+            // block answered a click and nothing answered a press that moved. So the caret
+            // never arrived, no selection was made, and the page looked inert under the
+            // pointer. The drag is read from the pointer itself rather than by sensing it
+            // on a widget: a second `interact` over the same rectangle takes the pointer
+            // from the one underneath whatever it is asked to sense, and five tests about
+            // following a link said so twice. So the caret lands where the press fell, and
+            // `write_rtl` carries the same drag on from the same reading.
+            if is_writable(&block)
+                && out.task_set.is_none()
+                && let Some(p) = drag_began_in(ui, resp.rect)
+            {
+                action = Some(Action::MoveTo(i, Some(char_under(ui, &block, &resp, p, t, page))));
+            }
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
             } else if resp.clicked() && is_writable(&block) {
@@ -1243,6 +1258,17 @@ pub fn show_blocks(
         apply(a, blocks, caret, &mut changed);
     }
     changed
+}
+
+/// Where a drag began, when it began inside `rect` and is still going.
+///
+/// Read from the pointer rather than from a widget on purpose. A drag across words starts
+/// on a block that is still finished text and ends in the text box that block turns into,
+/// so no one widget sees the whole of it; and a widget laid over the words to watch for it
+/// takes the pointer away from the words themselves, links included. The pointer knows
+/// where it was pressed and whether it has moved since, which is all either end needs.
+fn drag_began_in(ui: &Ui, rect: egui::Rect) -> Option<egui::Pos2> {
+    ui.input(|i| i.pointer.press_origin().filter(|p| rect.contains(*p) && i.pointer.is_decidedly_dragging()))
 }
 
 /// What a key or a click asked for.
@@ -1445,7 +1471,13 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
 
     // A click puts the caret under the pointer, which only parley can work out here. A
     // double click takes the word, and a drag extends the selection from where it began.
-    if let Some(p) = resp.interact_pointer_pos() {
+    //
+    // The drag may have begun before this text box existed, on the finished block the
+    // caret has just landed in, and egui tracks a drag against the widget that was
+    // pressed. So the pointer is read directly as well: `carried` is a drag that started
+    // inside this line and is still going, whoever was under it at the time.
+    let carried = drag_began_in(ui, rect).and(ui.ctx().pointer_latest_pos());
+    if let Some(p) = resp.interact_pointer_pos().or(carried) {
         let point = p - rect.min;
         if resp.double_clicked() {
             let word = crate::bidi::word_at(&c.text, point, size, width);
@@ -1456,7 +1488,7 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
             at = crate::bidi::hit(&c.text, point, size, width);
             anchor = at;
             resp.request_focus();
-        } else if resp.dragged() {
+        } else if resp.dragged() || carried.is_some() {
             at = crate::bidi::hit(&c.text, point, size, width);
             resp.request_focus();
         }
