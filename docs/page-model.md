@@ -109,6 +109,26 @@ which is egui's own layout (`LayoutJob::justify`). Kashida does nothing for Lati
 they do not join. What is not done is a paragraph that mixes the two directions and reads
 left to right; it is drawn ragged, and that is in [gaps.md](gaps.md).
 
+### 2.2 The page's name is drawn on the page
+
+Decided by the owner on 2026-10-19, in a picture with "move to page" written across the
+strip the name used to sit in.
+
+The name is drawn at the top of the sheet, inside the readable column, with a rule under
+it and the page's date line below that, which is how OneNote draws one. It scrolls with
+the words and the page colour and rule lines run behind it, because it is part of the
+page and not a field beside it. The strip above the page keeps only what is about the
+file rather than in it: where the page sits, its format, and whether it is saved.
+
+It is drawn before the sheet's origin is taken, so the ink layer keeps the coordinates it
+already has and a drawing made beside a paragraph stays beside it.
+
+Where the name is **stored** has not changed yet. It is still a line in the head, and rule
+4 still holds. The owner has decided that it should become page content, so that a name
+can carry a hyperlink while the page list still shows plain words, and that is written up
+with its steps in the planning repository at `work\expected-page-title.md`. Rule 4
+changes when that lands, not before.
+
 ## 3. The live view
 
 - It draws the blocks and boxes that were read from the page file (`notecraft_formats::boxes`).
