@@ -219,7 +219,9 @@ fn page_justify(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     };
     let marked = notecraft_model::justify::parse(want);
     if marked.is_empty() && !want.trim().is_empty() {
-        return Err(EngineError::BadParam("blocks is the paragraphs' positions among the page's blocks, separated by commas".into()));
+        return Err(EngineError::BadParam(
+            "blocks is the paragraphs' positions among the page's blocks, separated by commas, each with an optional :low, :medium or :high".into(),
+        ));
     }
     page::set_justified(&path, &marked)?;
     Ok(Output::Text(notecraft_model::justify::write(&marked)))
@@ -359,7 +361,7 @@ widths (optional): block:w,w,w per table, separated by semicolons; empty puts ev
         id: "page.justify",
         label: "Which paragraphs of a page are stretched to fill the column",
         params: "path (required): the page
-blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas; empty draws every paragraph ragged. Without it, the page's own are reported",
+blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; empty draws every paragraph ragged. Without it, the page's own are reported",
         changes_tree: false,
         run: page_justify,
     },
@@ -684,6 +686,11 @@ mod tests {
         s.run("page.save", &p(&[("path", path), ("body", body)])).expect("save");
         s.run("page.justify", &p(&[("path", path), ("blocks", "1")])).expect("set");
         assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "1");
+
+        // A strength rides with the block number, and a number on its own is the middle one.
+        s.run("page.justify", &p(&[("path", path), ("blocks", "1:high, 2")])).expect("set");
+        assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "1:high, 2");
+        s.run("page.justify", &p(&[("path", path), ("blocks", "1")])).expect("set");
 
         // It is in the file, so it travels with the folder, and the words are as they were.
         let file = s.resolve(path).expect("path").join("index.md");

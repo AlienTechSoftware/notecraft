@@ -188,7 +188,10 @@ fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
             bidi::runs(ui, s, &pieces, 18.0, f32::INFINITY).1.x
         };
         let natural = width(SENTENCE);
-        let out = notecraft_text::kashida::justify(SENTENCE, COLUMN, &mut width);
+        // The strongest of Word's three: this test is about whether kashida can fill a
+        // line at all, and Low and Medium are deliberate ceilings that may leave one
+        // short. Which setting leaves what is measured in the test below.
+        let out = notecraft_text::kashida::justify(SENTENCE, COLUMN, notecraft_model::justify::Strength::High, &mut width);
         let step = width("ـ");
         (natural, width(&out), step, out)
     });
@@ -225,7 +228,7 @@ fn a_whole_paragraph_is_justified_except_its_last_line() {
     let t = Theme::DEFAULT.tokens();
     let (lines, stretched, tatweels) = in_frame(|ui| {
         let pieces = bidi::plain(PARAGRAPH, SIZE, &t);
-        let (out, moved) = bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN);
+        let (out, moved) = bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN, notecraft_model::justify::Strength::High);
         // Every line as it is drawn: its left edge and its right edge in the column.
         let (drawn, _) = bidi::runs(ui, &out, &moved, SIZE, COLUMN);
         let mut rows: Vec<(f32, f32, f32)> = Vec::new();
@@ -453,6 +456,133 @@ fn a_page_set_right_to_left_lays_out_english_that_way() {
     assert_eq!(direction_in(ENGLISH, Some(Dir::Rtl)), Dir::Rtl, "the page decides for a paragraph with no mark");
     assert_eq!(direction_in(&set_direction(ENGLISH, Some(Dir::Ltr)), Some(Dir::Rtl)), Dir::Ltr, "the paragraph's own mark wins");
     assert_eq!(direction_in(ENGLISH, None), Dir::Ltr, "and a page that says nothing leaves it to the words");
+}
+
+/// 1.8 of the bar again, at Word's three strengths. Justify Low, Justify Medium and
+/// Justify High decide how many kashidas a line may take, and NoteCraft has all three under
+/// those names (`docs/rtl-in-word-and-onenote.md`).
+///
+/// Measured: **the bar**, drawn through the page painter. Each strength is a ceiling rather
+/// than a target, so a line the weakest setting can already fill looks the same at all
+/// three; the three part company on a hungry line, which is what this paragraph of long
+/// words in a narrow column gives. At every strength only tatweels are added, no space is
+/// touched and the last line is left where it fell. Set `NOTECRAFT_UI_VISUAL_DIR` to see
+/// them side by side.
+#[test]
+fn the_three_justify_strengths_differ_on_the_page() {
+    const COLUMN: f32 = 300.0;
+    const SIZE: f32 = 16.0;
+    // Long words, so each line is left well short of the margin when it wraps and the
+    // weaker settings cannot close the gap. A paragraph of short words fills easily and
+    // then all three settings draw the same line, which is the point of a ceiling.
+    const PARAGRAPH: &str = "الاستخدام المعلومات البرمجيات الملاحظات التطبيقات المستندات الاحتياطي الصفحات المرفقات الاستعراض";
+    use notecraft_model::justify::Strength;
+    let t = Theme::DEFAULT.tokens();
+
+    let stretched_at = |strength: Strength| -> String {
+        in_frame(|ui| {
+            let pieces = bidi::plain(PARAGRAPH, SIZE, &t);
+            bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN, strength).0
+        })
+    };
+    let counts: Vec<usize> =
+        Strength::ALL.iter().map(|s| stretched_at(*s).chars().filter(|c| *c == notecraft_text::kashida::TATWEEL).count()).collect();
+    let (low, medium, high) = (counts[0], counts[1], counts[2]);
+    assert!(low > 0, "even the weakest setting stretches the lines: {counts:?}");
+    assert!(low < medium && medium < high, "the three are three: {counts:?}");
+
+    for strength in Strength::ALL {
+        let out = stretched_at(strength);
+        // Only tatweels were added, and no space was widened or taken away.
+        let stripped: String = out.chars().filter(|c| *c != notecraft_text::kashida::TATWEEL).collect();
+        assert_eq!(stripped, PARAGRAPH, "{strength:?} added nothing but tatweels");
+        assert_eq!(out.matches(' ').count(), PARAGRAPH.matches(' ').count(), "{strength:?} widened no space");
+
+        let lines = drawn_lines(&out, SIZE, COLUMN, &t);
+        assert!(lines.len() >= 3, "{strength:?}: the paragraph wraps: {}", lines.len());
+        let (_, last_left, _) = lines.last().copied().unwrap_or_default();
+        assert!(last_left > 20.0, "{strength:?}: the last line is left where it fell: {last_left}");
+        for (n, (_, _, right)) in lines.iter().enumerate().take(lines.len() - 1) {
+            assert!((COLUMN - *right).abs() < 14.0, "{strength:?} line {n} still hangs from the near edge: {right}");
+        }
+    }
+
+    // The strongest setting carries every line but the last to the far edge. The weakest is
+    // not asked to: it leaves a join alone rather than stretch one that would look wrong,
+    // and a line it cannot fill stays a little short. That is the difference, measured.
+    let far_edge = |strength: Strength| -> f32 {
+        let out = stretched_at(strength);
+        let lines = drawn_lines(&out, SIZE, COLUMN, &t);
+        lines.iter().take(lines.len().saturating_sub(1)).map(|(_, left, _)| *left).fold(0.0_f32, f32::max)
+    };
+    let ragged = {
+        let lines = drawn_lines(PARAGRAPH, SIZE, COLUMN, &t);
+        lines.iter().take(lines.len().saturating_sub(1)).map(|(_, left, _)| *left).fold(0.0_f32, f32::max)
+    };
+    assert!(far_edge(Strength::High) < 18.0, "high reaches the far edge on every line it justifies: {}", far_edge(Strength::High));
+    assert!(far_edge(Strength::Low) < ragged, "low still closes some of the gap: {} against {ragged} ragged", far_edge(Strength::Low));
+
+    strengths_picture(PARAGRAPH, &Strength::ALL.map(stretched_at), COLUMN, SIZE);
+}
+
+/// Each drawn line of `text` in a column: its top, its left edge and its right edge.
+fn drawn_lines(text: &str, size: f32, column: f32, t: &notecraft_ui_egui::theme::Tokens) -> Vec<(f32, f32, f32)> {
+    in_frame(|ui| {
+        let pieces = bidi::plain(text, size, t);
+        let (drawn, _) = bidi::runs(ui, text, &pieces, size, column);
+        let mut rows: Vec<(f32, f32, f32)> = Vec::new();
+        for d in &drawn {
+            let (left, right) = (d.at.x, d.at.x + d.galley.rect.width());
+            match rows.iter_mut().find(|(y, _, _)| (*y - d.at.y).abs() < 1.0) {
+                Some((_, l, r)) => {
+                    *l = l.min(left);
+                    *r = r.max(right);
+                }
+                None => rows.push((d.at.y, left, right)),
+            }
+        }
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        rows
+    })
+}
+
+/// The ragged paragraph and then the three strengths, one under another.
+fn strengths_picture(plain: &str, stretched: &[String; 3], column: f32, size: f32) {
+    let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let t = Theme { mode: notecraft_ui_egui::theme::Mode::Light, accent: notecraft_ui_egui::theme::Accent::Default }.tokens();
+    let labels = ["ragged", "low", "medium", "high"];
+    let all: Vec<String> = std::iter::once(plain.to_string()).chain(stretched.iter().cloned()).collect();
+    let mut h = Harness::builder().with_size(egui::vec2(column + 90.0, 560.0)).with_pixels_per_point(2.0).wgpu().build_ui(move |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().rect_filled(ui.max_rect(), 0.0, t.editor);
+        ui.add_space(14.0);
+        for (label, text) in labels.iter().zip(&all) {
+            let pieces = bidi::plain(text, size, &t);
+            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(column + 70.0, used.y.max(24.0)), egui::Sense::hover());
+            bidi::paint(ui, rect.min, &drawn);
+            ui.painter().text(
+                egui::pos2(rect.min.x + column + 8.0, rect.min.y),
+                egui::Align2::LEFT_TOP,
+                label,
+                egui::FontId::proportional(11.0),
+                t.muted,
+            );
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(rect.min, egui::vec2(column, used.y.max(24.0))),
+                0.0,
+                egui::Stroke::new(1.0, t.muted),
+                egui::StrokeKind::Outside,
+            );
+            ui.add_space(18.0);
+        }
+    });
+    h.run();
+    if let Ok(img) = h.render() {
+        let _ = img.save(dir.join("kashida-strengths.png"));
+    }
 }
 
 /// 4.3 of the bar. Pages and sections are listed in the order a reader of the script

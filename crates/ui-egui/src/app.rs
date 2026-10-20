@@ -1559,7 +1559,7 @@ impl NoteCraftApp {
             ribbon::Act::Indent(deeper) => self.indent_block(deeper),
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
-            ribbon::Act::Justify => self.apply_justify(),
+            ribbon::Act::Justify(strength) => self.apply_justify(strength),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
@@ -2168,7 +2168,7 @@ impl NoteCraftApp {
     /// and the width of its table columns, so it goes into the page's file and not into the
     /// window. The words are not touched: the stretching happens when the paragraph is
     /// drawn, so the file another program reads is the sentences the writer typed.
-    fn apply_justify(&mut self) {
+    fn apply_justify(&mut self, strength: notecraft_model::justify::Strength) {
         let Some(ed) = self.editor.as_ref() else {
             self.say("Open a page first");
             return;
@@ -2182,9 +2182,11 @@ impl NoteCraftApp {
             self.say("Justification goes on a paragraph of text");
             return;
         }
-        let on = !ed.justified.has(at);
+        // Asking for the strength a paragraph already has turns justification off, which
+        // is how a menu of three gives a way back to a ragged edge without a fourth entry.
+        let want = (ed.justified.strength_of(at) != Some(strength)).then_some(strength);
         let mut marked = ed.justified.clone();
-        marked.set(at, on);
+        marked.set(at, want);
         let path = path_str(&ed.dir);
         let line = notecraft_model::justify::write(&marked);
         self.save_now();
@@ -2192,7 +2194,12 @@ impl NoteCraftApp {
             if let Some(ed) = self.editor.as_mut() {
                 ed.justified = marked;
             }
-            self.say(if on { "This paragraph fills the column" } else { "This paragraph is ragged again" });
+            self.say(match want {
+                Some(notecraft_model::justify::Strength::Low) => "This paragraph fills the column, stretched lightly",
+                Some(notecraft_model::justify::Strength::Medium) => "This paragraph fills the column",
+                Some(notecraft_model::justify::Strength::High) => "This paragraph fills the column, stretched hard",
+                None => "This paragraph is ragged again",
+            });
         }
     }
 

@@ -32,11 +32,36 @@
 //! character, so the stretch comes in steps of one tatweel. A face with a `JSTF` table or a
 //! variable elongation axis would do it smoothly, and that is a later question.
 
+use notecraft_model::justify::Strength;
+
 /// The tatweel, U+0640: the character that *is* the stretched join.
 pub const TATWEEL: char = '\u{0640}';
 
-/// How many tatweels one join may take before the word starts to look silly.
-const MAX_PER_SPOT: usize = 6;
+/// What a strength allows: how many tatweels one join may take, and the worst join rank it
+/// will stretch at all.
+///
+/// Word's Justify Low, Medium and High change how many kashidas a line is given
+/// (`docs/rtl-in-word-and-onenote.md`), and these are NoteCraft's reading of that. Each
+/// setting is a **ceiling**, not a target: how long one join may grow, and how far down the
+/// ranking the line may reach for another join. A line that the weakest setting can already
+/// fill looks the same at all three, which is right - there is no reason to stretch a join
+/// further once the line meets the margin - so the three only part company on a line that
+/// is hungry, and then they part widely. Measured on one paragraph of long words at four
+/// column widths: 4, 8 and 35 tatweels; 4, 6 and 18; 3, 6 and 17; 4, 8 and 16.
+///
+/// Low keeps off ranks 7 and 8, the final letters with a short entry stroke and the join in
+/// the middle of a word, so it may leave a line short of the margin rather than stretch
+/// somewhere that looks wrong. It is not stricter than that: a setting that refused every
+/// join but the best did nothing at all on an ordinary sentence, which was the first thing
+/// tried here. These are a judgement about how the bundled Naskh face looks, not a rule
+/// from anywhere: see the module note on what this cannot know.
+fn allowance(strength: Strength) -> (usize, u8) {
+    match strength {
+        Strength::Low => (1, 6),
+        Strength::Medium => (2, 7),
+        Strength::High => (6, 8),
+    }
+}
 
 /// How a letter joins the letters on each side of it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -201,7 +226,8 @@ fn inside_allah(ls: &[Letter], i: usize) -> bool {
     ls.get(i + 1).is_some_and(|next| next.word == word)
 }
 
-/// Every place in the line where a kashida could go, in the order they appear.
+/// Every place in the line where a kashida could go, in the order they appear. Every rank
+/// is included; [`order`] is what drops the ones a strength will not use.
 pub fn spots(line: &str) -> Vec<Spot> {
     let ls = letters(line);
     let mut out = Vec::new();
@@ -232,8 +258,12 @@ pub fn spots(line: &str) -> Vec<Spot> {
 ///
 /// This is Sakkal's spreading rule. A line that puts three kashidas into one word and none
 /// into the rest is worse than no justification at all.
-pub fn order(line: &str) -> Vec<Spot> {
-    let all = spots(line);
+///
+/// `strength` decides how far down the ranking this is willing to go. A weak setting keeps
+/// to the joins that take elongation best and leaves the rest of the line alone.
+pub fn order(line: &str, strength: Strength) -> Vec<Spot> {
+    let worst = allowance(strength).1;
+    let all: Vec<Spot> = spots(line).into_iter().filter(|s| s.rank <= worst).collect();
     let mut rounds: Vec<Vec<Spot>> = Vec::new();
     let mut left: Vec<Spot> = all;
     while !left.is_empty() {
@@ -276,24 +306,27 @@ fn build(line: &str, order: &[Spot], counts: &[usize]) -> String {
 /// Stretches one line towards `target` points wide by elongating its joins.
 ///
 /// `measure` is how wide a string is drawn; the caller owns the font, so this crate does
-/// not have to. Tatweels are added one at a time, best join first and spread across the
-/// words, until the line reaches the target or there is nowhere decent left to stretch.
+/// not have to. `strength` is Word's Justify Low, Medium or High: how many tatweels the
+/// line may be given and how far down the ranking of joins it may go. Tatweels are added
+/// one at a time, best join first and spread across the words, until the line reaches the
+/// target or there is nowhere left that the strength allows.
 /// The result never overshoots by more than it would undershoot: whichever of the last two
 /// tries lands closer to the target is the one returned.
 ///
 /// A line with no Arabic in it, or with no join worth stretching, comes back unchanged -
 /// the caller then has nothing but the spaces, which is where it started.
-pub fn justify(line: &str, target: f32, measure: &mut dyn FnMut(&str) -> f32) -> String {
-    let order = order(line);
+pub fn justify(line: &str, target: f32, strength: Strength, measure: &mut dyn FnMut(&str) -> f32) -> String {
+    let order = order(line, strength);
     if order.is_empty() || !target.is_finite() {
         return line.to_string();
     }
     if measure(line) >= target {
         return line.to_string();
     }
+    let most = allowance(strength).0;
     let mut counts = vec![0usize; order.len()];
     let mut best = line.to_string();
-    for _ in 0..MAX_PER_SPOT {
+    for _ in 0..most {
         for i in 0..order.len() {
             counts[i] += 1;
             let next = build(line, &order, &counts);
@@ -349,7 +382,8 @@ mod tests {
             assert_ne!(joining(at), Join::None, "a tatweel would land beside something that is not a letter");
         }
         // And the marks are still there afterwards.
-        let out = build(line, &order(line), &vec![1; order(line).len()]);
+        let spots = order(line, Strength::High);
+        let out = build(line, &spots, &vec![1; spots.len()]);
         assert!(out.contains('\u{0650}') && out.contains('\u{064E}'), "{out}");
     }
 
@@ -396,7 +430,7 @@ mod tests {
     #[test]
     fn the_kashidas_spread_across_the_words() {
         let line = "كتاب مسار جديد";
-        let got = order(line);
+        let got = order(line, Strength::High);
         let words: Vec<usize> = got.iter().take(3).map(|s| s.word).collect();
         let mut sorted = words.clone();
         sorted.sort_unstable();
@@ -411,7 +445,7 @@ mod tests {
         // A measure that is the character count: enough to test the search itself.
         let mut measure = |s: &str| s.chars().count() as f32;
         let plain = measure(line);
-        let out = justify(line, plain + 6.0, &mut measure);
+        let out = justify(line, plain + 6.0, Strength::High, &mut measure);
         assert_eq!(measure(&out), plain + 6.0, "{out}");
         assert_eq!(out.chars().filter(|c| *c == TATWEEL).count(), 6);
         // The words are all still there, in order, with nothing but tatweels added.
@@ -436,7 +470,7 @@ mod tests {
         assert!(natural > 100.0, "the line has glyphs: {natural}");
         for extra in [8.0_f32, 24.0, 60.0] {
             let target = natural + extra;
-            let out = justify(line, target, &mut width);
+            let out = justify(line, target, Strength::High, &mut width);
             let got = width(&out);
             let tatweels = out.chars().filter(|c| *c == TATWEEL).count();
             assert!(tatweels > 0, "nothing was stretched for {extra} points");
@@ -464,15 +498,51 @@ mod tests {
         assert_eq!(glyphs("مسـار"), glyphs("مسار") + 1, "one glyph more, which is the stretch itself");
     }
 
+    /// The three strengths really are three. Low gives a line fewer tatweels than High, and
+    /// keeps to the joins that take elongation best; High will go down to the last resort.
+    ///
+    /// This is the behaviour Word names Justify Low, Medium and High. What each one allows
+    /// here is `allowance`, and it is a judgement about the bundled Naskh face rather than
+    /// a rule from anywhere.
+    #[test]
+    fn low_stretches_a_line_less_than_high() {
+        let mut t = crate::Text::new();
+        let line = "\u{627}\u{644}\u{645}\u{644}\u{627}\u{62d}\u{638}\u{627}\u{62a} \u{62a}\u{639}\u{64a}\u{634} \u{623}\u{637}\u{648}\u{644} \u{645}\u{646} \u{627}\u{644}\u{628}\u{631}\u{646}\u{627}\u{645}\u{62c}";
+        let mut width = |s: &str| t.layout(s, 18.0, None).width();
+        let natural = width(line);
+        let target = natural + 90.0;
+
+        let counts: Vec<usize> =
+            Strength::ALL.iter().map(|s| justify(line, target, *s, &mut width).chars().filter(|c| *c == TATWEEL).count()).collect();
+        let (low, medium, high) = (counts[0], counts[1], counts[2]);
+        assert!(low > 0, "even the weakest setting stretches something: {counts:?}");
+        assert!(low < high, "low takes fewer kashidas than high: {counts:?}");
+        assert!(low <= medium && medium <= high, "and the middle is in the middle: {counts:?}");
+
+        // Every setting adds tatweels and nothing else, and none of them widens a space.
+        for s in Strength::ALL {
+            let out = justify(line, target, s, &mut width);
+            let stripped: String = out.chars().filter(|c| *c != TATWEEL).collect();
+            assert_eq!(stripped, line, "{s:?} added nothing but tatweels");
+            assert_eq!(out.matches(' ').count(), line.matches(' ').count(), "{s:?} widened no space");
+        }
+
+        // Low keeps off the joins of last resort; high is allowed them.
+        let worst_low = order(line, Strength::Low).iter().map(|s| s.rank).max().unwrap_or(0);
+        let worst_high = order(line, Strength::High).iter().map(|s| s.rank).max().unwrap_or(0);
+        assert!(worst_low <= 6, "low keeps off the joins it would not flatter: worst rank {worst_low}");
+        assert!(worst_high > worst_low, "high goes further down the ranking: {worst_high} against {worst_low}");
+    }
+
     /// A line that is already wide enough, or has nowhere to stretch, comes back as it was.
     #[test]
     fn a_line_that_cannot_or_need_not_stretch_is_left_alone() {
         let mut measure = |s: &str| s.chars().count() as f32;
-        assert_eq!(justify("كتاب", 2.0, &mut measure), "كتاب");
-        assert_eq!(justify("Hello world", 40.0, &mut measure), "Hello world");
-        assert_eq!(justify("", 40.0, &mut measure), "");
+        assert_eq!(justify("كتاب", 2.0, Strength::Medium, &mut measure), "كتاب");
+        assert_eq!(justify("Hello world", 40.0, Strength::Medium, &mut measure), "Hello world");
+        assert_eq!(justify("", 40.0, Strength::Medium, &mut measure), "");
         // Nowhere decent to stretch: every join is capped, so it stops instead of looping.
-        let out = justify("كتاب", 1000.0, &mut measure);
-        assert!(out.chars().filter(|c| *c == TATWEEL).count() <= 2 * MAX_PER_SPOT, "{out}");
+        let out = justify("كتاب", 1000.0, Strength::High, &mut measure);
+        assert!(out.chars().filter(|c| *c == TATWEEL).count() <= 2 * allowance(Strength::High).0, "{out}");
     }
 }

@@ -48,8 +48,12 @@ which overrides the document.
 Word has had this for years and it is the one place where the documentation is ahead of
 NoteCraft.
 
-- **Three strengths**, not one: **Justify Low**, **Justify Medium** and **Justify High**,
-  which change how many kashidas a line is allowed. NoteCraft has a single strength.
+- ~~**Three strengths**, not one~~: **Justify Low**, **Justify Medium** and **Justify
+  High**, which change how many kashidas a line is allowed. **Built on 2026-10-19**, under
+  the same three names, in the alignment menu. Each is a ceiling rather than a target, so a
+  line the weakest can already fill looks the same at all three and the difference shows on
+  a hungry line; `crates/text/src/kashida.rs` has what each one allows and
+  `crates/ui-egui/tests/rtl_quality.rs` measures the three apart.
 - **Kashidas can be typed by hand**, with **Shift+J** between two Arabic letters on an
   Arabic keyboard, and several in a row give a longer stretch. NoteCraft inserts them only
   when it justifies, and `notecraft_text::kashida` already treats a kashida the author typed
@@ -82,9 +86,8 @@ NoteCraft.
 
 ## 6. What to build next, in the order the owner would feel it
 
-1. **Three strengths of kashida justification**, matching Word's Low, Medium and High. The
-   engine takes a target width already, so this is a ribbon choice and a stored value, not
-   new typography.
+1. ~~**Three strengths of kashida justification**~~, matching Word's Low, Medium and High.
+   Built on 2026-10-19.
 2. **A typed kashida.** A key that inserts a tatweel between two joined letters. The ranking
    already prefers one the author put in.
 3. **Digit substitution**, at least as a page setting. A writer of Arabic who types `123`

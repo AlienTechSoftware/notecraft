@@ -1216,7 +1216,7 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.has(i))
+                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.strength_of(i))
                 })
                 .inner;
             let resp = out.response;

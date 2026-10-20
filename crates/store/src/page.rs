@@ -435,10 +435,11 @@ mod tests {
             };
             save_body(&dir, body).expect("save");
             let mut marked = justify::Justified::default();
-            marked.set(1, true);
+            marked.set(1, Some(justify::Strength::High));
             set_justified(&dir, &marked).expect("write");
 
             assert_eq!(justified(&dir).expect("read"), marked, "{format:?}");
+            assert_eq!(justified(&dir).expect("read").strength_of(1), Some(justify::Strength::High), "{format:?}: and the strength with it");
             // The words are untouched: no tatweel, no marker, nothing but what was typed.
             assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the body is the same text");
 
@@ -447,7 +448,7 @@ mod tests {
             assert_eq!(justified(&dir).expect("read"), marked, "{format:?}: an edit elsewhere does not lose it");
 
             // And taking the mark off takes the line out again.
-            marked.set(1, false);
+            marked.set(1, None);
             set_justified(&dir, &marked).expect("write");
             assert!(justified(&dir).expect("read").is_empty(), "{format:?}");
             let raw = fs::read_to_string(page_file(&dir).expect("page").1).expect("raw");
