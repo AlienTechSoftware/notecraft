@@ -288,7 +288,15 @@ pub fn show(
             )
         });
         if copy_key || cut_key {
-            let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
+            // The heading that merely repeats the page's title is not content. It is the
+            // title showing through, the title area is already drawing it, and the editor
+            // hides it where it stands. Copying it carries a second copy of the title into
+            // whatever box the words are pasted into, and that copy is not hidden, because
+            // the rule that hides one only looks at the first block of the page. That is
+            // the page with two titles the owner found.
+            let whole = container::blocks_of(boxes, i);
+            let range = if pageedit::is_title_echo(blocks, whole.start, shown_title) { whole.start + 1..whole.end } else { whole };
+            let held = blocks.get(range).unwrap_or_default();
             let markdown = notecraft_formats::render::blocks_to_markdown(held);
             pageedit::remember_copied(&markdown, held);
             ui.ctx().copy_text(markdown);
@@ -502,6 +510,44 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
 
 #[cfg(test)]
 mod tests {
+    /// A box that holds the heading repeating the page title does not carry it when copied.
+    ///
+    /// The editor hides that heading where it stands, because the title area is already
+    /// drawing it, but the rule that hides one only looks at the first block of the page.
+    /// A copy pasted anywhere else is no longer the first block, so it was drawn, and the
+    /// page showed its title twice. The owner found a page with two boxes doing exactly
+    /// that, one showing the heading and one not.
+    #[test]
+    fn a_copied_box_leaves_the_title_behind() {
+        use notecraft_formats::markdown::{self, Block};
+        let blocks = markdown::parse(
+            "# My page
+
+words
+
+more
+",
+        );
+        assert!(matches!(blocks.first(), Some(Block::Heading { level: 1, .. })), "the page starts with its title: {blocks:?}");
+        assert!(crate::pageedit::is_title_echo(&blocks, 0, "My page"), "and that heading repeats the title");
+        assert!(!crate::pageedit::is_title_echo(&blocks, 1, "My page"), "the words after it are not the title");
+        // A box starting at block 0 hands on everything after the heading.
+        let whole = 0..blocks.len();
+        let kept = if crate::pageedit::is_title_echo(&blocks, whole.start, "My page") { whole.start + 1..whole.end } else { whole };
+        let held = blocks.get(kept).unwrap_or_default();
+        let markdown = notecraft_formats::render::blocks_to_markdown(held);
+        assert!(
+            !markdown.contains("My page"),
+            "the title is not in what was copied:
+{markdown}"
+        );
+        assert!(
+            markdown.contains("words") && markdown.contains("more"),
+            "but the words are:
+{markdown}"
+        );
+    }
+
     use super::*;
     use crate::theme::Theme;
     use notecraft_formats::markdown;
