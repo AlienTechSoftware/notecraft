@@ -66,6 +66,10 @@ impl Session {
     /// already open. Opening one that is already there changes nothing.
     pub fn open_notebook(&mut self, path: &Path) -> Result<PathBuf, EngineError> {
         let path = std::fs::canonicalize(path).map_err(|_| StoreError::NotFound(path.display().to_string()))?;
+        if tree::read_node(&path).is_none() {
+            let title = tree::folder_name(&path);
+            notecraft_store::ops::initialize_notebook(&path, &title, None, &self.settings)?;
+        }
         let info = tree::read_node(&path).ok_or_else(|| EngineError::BadParam(format!("{} is not a notebook", path.display())))?;
         if info.kind != notecraft_store::NodeKind::Notebook {
             return Err(EngineError::BadParam(format!("{} is a {}, not a notebook", path.display(), info.kind.label().to_lowercase())));

@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 51] = [
+const ALL: [Icon; 55] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -66,6 +66,10 @@ const ALL: [Icon; 51] = [
     Icon::Help,
     Icon::Pen,
     Icon::Plus,
+    Icon::Minus,
+    Icon::ZoomOut,
+    Icon::ZoomIn,
+    Icon::PageWidth,
     Icon::Calendar,
     Icon::Clock,
     Icon::Video,
@@ -104,6 +108,10 @@ fn name(icon: Icon) -> &'static str {
         Icon::Help => "help",
         Icon::Pen => "pen",
         Icon::Plus => "plus",
+        Icon::Minus => "minus",
+        Icon::ZoomOut => "zoom-out",
+        Icon::ZoomIn => "zoom-in",
+        Icon::PageWidth => "page-width",
         Icon::Calendar => "calendar",
         Icon::Clock => "clock",
         Icon::Video => "video",
@@ -287,6 +295,22 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             seg((14.5, 5.5), (14.5, 19.0)),
         ],
         Icon::Plus => vec![seg((12.0, 4.5), (12.0, 19.5)), seg((4.5, 12.0), (19.5, 12.0))],
+        Icon::Minus => vec![seg((4.5, 12.0), (19.5, 12.0))],
+        Icon::ZoomOut => {
+            vec![Shape::circle_stroke(at(10.0, 10.0), SIZE * 6.0 / 24.0, stroke), seg((14.5, 14.5), (20.0, 20.0)), seg((6.5, 10.0), (13.5, 10.0))]
+        }
+        Icon::ZoomIn => vec![
+            Shape::circle_stroke(at(10.0, 10.0), SIZE * 6.0 / 24.0, stroke),
+            seg((14.5, 14.5), (20.0, 20.0)),
+            seg((6.5, 10.0), (13.5, 10.0)),
+            seg((10.0, 6.5), (10.0, 13.5)),
+        ],
+        Icon::PageWidth => vec![
+            closed(&[(5.0, 3.5), (19.0, 3.5), (19.0, 20.5), (5.0, 20.5)]),
+            seg((8.0, 8.0), (16.0, 8.0)),
+            open(&[(8.0, 12.0), (5.5, 14.0), (8.0, 16.0)]),
+            open(&[(16.0, 12.0), (18.5, 14.0), (16.0, 16.0)]),
+        ],
         Icon::Pen => vec![
             poly(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
             Shape::line_segment([at(6.0, 18.0), at(13.5, 10.5)], Stroke::new((SIZE / 18.0).max(1.0), shade(color, 45))),
@@ -510,7 +534,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 102);
+    assert_eq!(pairs, 110);
 }
 
 #[test]

@@ -165,11 +165,11 @@ Parameters:
 
 ## `notebook.open`
 
-Open a notebook kept somewhere else (changes the tree).
+Open a notebook or initialize an empty folder (changes the tree).
 
 Parameters:
 
-- path (required): the notebook's folder, anywhere on this machine. The notebooks already open stay open, and this one is opened again next time
+- path (required): a notebook folder anywhere on this machine, or an empty folder to initialize as a notebook named after the folder. The notebooks already open stay open, and this one is opened again next time
 
 ## `notebook.close`
 

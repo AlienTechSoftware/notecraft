@@ -139,6 +139,11 @@ pub fn counts(ctx: &egui::Context, sources: &[String], t: &Tokens) -> (usize, us
 /// Draws the diagram `source` in `ui`, as wide as its own size or the room allows, and says what
 /// came of it. The caller scrolls: a tall drawing is not squeezed to fit.
 pub fn show(ui: &mut Ui, source: &str, t: &Tokens) -> Shown {
+    show_zoomed(ui, source, t, 1.0)
+}
+
+/// Draws the diagram at page zoom while keeping the available layout and ribbon unchanged.
+pub fn show_zoomed(ui: &mut Ui, source: &str, t: &Tokens, zoom: f32) -> Shown {
     let palette = palette(t);
     let shown = state(ui.ctx(), source, &palette);
     match &shown {
@@ -155,8 +160,8 @@ pub fn show(ui: &mut Ui, source: &str, t: &Tokens) -> Shown {
                 // graphics card can hold (a window that asks for that panics). The size is given
                 // outright, so the loader never works one out for itself.
                 let (ppp, side) = (ui.ctx().pixels_per_point(), ui.ctx().input(|i| i.max_texture_side) as f32);
-                let scale = notecraft_diagram::fit(w, h, ui.available_width(), side, ppp);
-                ui.add(egui::Image::from_bytes(uri, egui::load::Bytes::Shared(bytes)).fit_to_exact_size(vec2(w * scale, h * scale)));
+                let scale = notecraft_diagram::fit(w * zoom, h * zoom, ui.available_width(), side, ppp);
+                ui.add(egui::Image::from_bytes(uri, egui::load::Bytes::Shared(bytes)).fit_to_exact_size(vec2(w * zoom * scale, h * zoom * scale)));
             }
         }
         Shown::Drawing => {

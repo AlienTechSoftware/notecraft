@@ -66,6 +66,12 @@ it is fixed and tested, not when it is promised.
   gallery, a Tags gallery and a File screen. Missing: fonts and sizes, text colour and
   highlight, alignment, and the Draw, History, Review and Help tabs. Controls that are not
   built say so rather than doing nothing.
+- **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
+  a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
+  Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule
+  spacing scale together. Container move handles sit above the outline so they do not cover
+  its border. Very wide zoom levels can extend beyond the reading column; horizontal panning
+  is still a separate improvement.
 - **Right-to-left text works; the window around it does not know yet.** Arabic and the other
   right-to-left scripts draw, joined and in the right order; a page, a paragraph or a run can
   be given a direction; a right-to-left line hangs from the right edge with its bullet, box
@@ -259,8 +265,8 @@ it is fixed and tested, not when it is promised.
   its pictures, Copy Link to Paragraph, Select, Order, Move and Resize.
 - **Containers are a first pass.** A page can hold several boxes, each with its own place,
   width and blocks; a box is moved by the bar along its top and resized by its right edge,
-  and the arrangement is kept in the page's own file. What is missing: making a new box by
-  clicking an empty part of the page, moving blocks from one box to another, boxes that know
+  and the arrangement is kept in the page's own file. Clicking open paper starts a new box
+  where clicked. What is missing: moving blocks from one box to another, boxes that know
   how tall they are (the room under them is guessed), and a picture as a box of its own. The
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box

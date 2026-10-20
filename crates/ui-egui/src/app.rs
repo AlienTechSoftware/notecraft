@@ -133,7 +133,7 @@ impl Editor {
 /// egui lays the letters of a word out the right way and then puts the next word to the
 /// right of it, so every Arabic page showed its own name with the words backwards. Clicking
 /// it hands the line to the text box, which is still where it is edited.
-fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id, rename: &mut Option<String>) {
+fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id, rename: &mut Option<String>, zoom: f32) {
     let align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
     let width = ui.available_width();
     let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
@@ -143,13 +143,13 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
             egui::TextEdit::singleline(&mut ed.title_buf)
                 .id(title_id)
                 .frame(egui::Frame::NONE)
-                .font(egui::FontId::proportional(26.0))
+                .font(egui::FontId::proportional(26.0 * zoom))
                 .horizontal_align(align)
                 .desired_width(width),
         )
     } else {
-        let pieces = crate::bidi::plain(&ed.title_buf, 26.0, tokens);
-        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0, width);
+        let pieces = crate::bidi::plain(&ed.title_buf, 26.0 * zoom, tokens);
+        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0 * zoom, width);
         let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y.max(34.0)), egui::Sense::click());
         crate::bidi::paint(ui, rect.min, &drawn);
         if resp.clicked() {
@@ -307,8 +307,10 @@ pub struct NoteCraftApp {
     gridcraft: Option<std::path::PathBuf>,
     /// The page title line is hidden (OneNote: View, Hide Page Title).
     hide_title: bool,
-    /// A zoom step asked for this frame: 1 larger, -1 smaller, 0 back to 100%.
-    zoom: i8,
+    /// The page's zoom. The ribbon and the rest of the window keep their own size.
+    zoom_percent: u32,
+    /// Recalculate the page zoom from the reading area's width on the next frame.
+    fit_page_width: bool,
     /// The theme chooser is open as a window (the ribbon's Theme button).
     theme_window: bool,
     /// The window of direction controls that are not everyday ones.
@@ -389,7 +391,8 @@ impl NoteCraftApp {
             table_borders: session_borders,
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
-            zoom: 0,
+            zoom_percent: 100,
+            fit_page_width: false,
             theme_window: false,
             direction_window: false,
             pending_copy: None,
@@ -1396,13 +1399,22 @@ impl NoteCraftApp {
     /// is already open. A folder that is itself a notebook opens as one; a folder that
     /// holds notebooks opens all of them. Nothing is closed and nothing is moved.
     fn choose_notebooks_folder(&mut self) {
-        let Some(picked) = rfd::FileDialog::new().set_title("Choose a notebook, or a folder of notebooks").pick_folder() else { return };
+        let Some(picked) =
+            rfd::FileDialog::new().set_title("Choose a notebook, a folder of notebooks, or an empty folder for a new notebook").pick_folder()
+        else {
+            return;
+        };
         let is_notebook = notecraft_store::tree::read_node(&picked).is_some_and(|i| i.kind == NodeKind::Notebook);
         let wanted: Vec<std::path::PathBuf> =
             if is_notebook { vec![picked.clone()] } else { notecraft_store::tree::load_notebooks(&picked).into_iter().map(|n| n.path).collect() };
         if wanted.is_empty() {
-            self.status = format!("No notebooks in {}", self.shown(&picked));
-            self.status_is_error = true;
+            let p = path_str(&picked);
+            if let Some(Output::Path(opened)) = self.run("notebook.open", &params(&[("path", &p)])) {
+                self.open.insert(opened.clone());
+                self.selected = Some(opened);
+                self.backstage = None;
+                self.say(format!("{} opened as an empty notebook", self.shown(&picked)));
+            }
             return;
         }
         let mut opened = 0;
@@ -1528,7 +1540,7 @@ impl NoteCraftApp {
             full_page: self.full_page,
             rules: self.rules,
             hide_title: self.hide_title,
-            zoom_percent: (ui.ctx().zoom_factor() * 100.0).round() as u32,
+            zoom_percent: self.zoom_percent,
             pointer: self.pointer,
             rack: &self.rack,
             nib: self.nib,
@@ -1613,7 +1625,19 @@ impl NoteCraftApp {
                 self.hide_title = !self.hide_title;
                 let _ = self.session.settings.set("hide_title", if self.hide_title { "true" } else { "false" });
             }
-            ribbon::Act::Zoom(step) => self.zoom = step,
+            ribbon::Act::Zoom(step) => {
+                self.zoom_percent = match step {
+                    1 => (self.zoom_percent + 10).min(250),
+                    -1 => self.zoom_percent.saturating_sub(10).max(50),
+                    _ => 100,
+                };
+                self.fit_page_width = false;
+            }
+            ribbon::Act::ZoomTo(percent) => {
+                self.zoom_percent = percent.clamp(50, 250);
+                self.fit_page_width = false;
+            }
+            ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::NotBuilt(what) => {
                 self.status = format!("{what} is not built yet. See the roadmap for what is coming.");
                 self.status_is_error = false;
@@ -2973,6 +2997,24 @@ impl NoteCraftApp {
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
+        let editor_rect = ui.max_rect();
+        let wheel_zoom = ui.input(|i| i.pointer.hover_pos().filter(|p| editor_rect.contains(*p)).map_or(1.0, |_| i.zoom_delta()));
+        if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
+            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                self.zoom_percent = (self.zoom_percent as f32 * wheel_zoom).round().clamp(50.0, 250.0) as u32;
+            }
+            self.fit_page_width = false;
+        }
+        if self.fit_page_width {
+            let width = ui.available_width();
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let percent = (width / 780.0 * 100.0).round().clamp(50.0, 250.0) as u32;
+            self.zoom_percent = percent;
+            self.fit_page_width = false;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let zoom_scale = self.zoom_percent as f32 / 100.0;
         let root = self.session.root().to_path_buf();
         let tokens = self.tokens;
         let mut rename: Option<String> = None;
@@ -3097,19 +3139,23 @@ impl NoteCraftApp {
                     }
                     if wide && rules.on() {
                         let area = ui.max_rect();
-                        crate::ribbon::paint_paper(&ui.painter_at(area), area, rules, 1.0, tokens.rule_line, tokens.rule_line_strong);
+                        crate::ribbon::paint_paper(&ui.painter_at(area), area, rules, zoom_scale, tokens.rule_line, tokens.rule_line_strong);
                     }
                     // Which way lines fall when they say nothing themselves: the page's own
                     // direction, if the writer gave it one.
                     let page_dir = ed.page_dir;
-                    let margin = if wide { ((ui.available_width() - 780.0) / 2.0).max(8.0) } else { 0.0 };
+                    let available_width = ui.available_width();
+                    let page_column = 780.0 * zoom_scale;
+                    let margin = if wide { ((available_width - page_column) / 2.0).max(8.0) } else { 0.0 };
                     egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: 4, bottom: 8 }).show(ui, |ui| {
-                        ui.set_width(ui.available_width());
+                        let column = if available_width >= page_column { page_column } else { (available_width - 16.0).max(1.0) };
+                        ui.set_min_width(column);
+                        ui.set_width(column);
                         // The page's own name, at the top of the sheet. Before the sheet's
                         // origin is taken below, so the ink layer keeps its own coordinates
                         // and a drawing stays beside the words it was made next to.
                         if !hide_title {
-                            page_title(ui, ed, &tokens, title_id, rename);
+                            page_title(ui, ed, &tokens, title_id, rename, zoom_scale);
                         }
                         if wide && ed.writable {
                             // The caret lives in the page: every block is drawn the way it
@@ -3137,6 +3183,7 @@ impl NoteCraftApp {
                                 &ed.justified,
                                 &mut ed.across,
                                 if hide_title { "" } else { &shown_title },
+                                zoom_scale,
                             );
                             page_acts.append(&mut moved.acts);
                             // The ink of a page sits over its words, anywhere on it, the
@@ -3159,7 +3206,7 @@ impl NoteCraftApp {
                                     egui::Rect::from_min_max(egui::pos2(ui.max_rect().min.x, top.y), egui::pos2(ui.max_rect().max.x, top.y + want));
                                 page_rect = Some(body);
                                 if let Some(pad) = pad.as_mut() {
-                                    ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens);
+                                    ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens, zoom_scale);
                                 }
                                 // The page's own right-click menu. No widget is laid
                                 // over the page for it: a widget that senses clicks would
@@ -3187,7 +3234,7 @@ impl NoteCraftApp {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
                             // source. See docs/gaps.md.
-                            if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
+                            if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                                 *follow = Some(href);
                             }
                             ui.add_space(14.0);
@@ -3201,7 +3248,7 @@ impl NoteCraftApp {
                                     *toggle = true;
                                 }
                             });
-                        } else if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
+                        } else if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                             *follow = Some(href);
                         }
                         if !ed.attachments.is_empty() {
@@ -3981,17 +4028,6 @@ impl NoteCraftApp {
             ctx.copy_text(text);
         }
         self.clipboard_keys(ctx);
-        // A zoom step the ribbon asked for: egui scales the whole window, as Office does.
-        if self.zoom != 0 {
-            let now = ctx.zoom_factor();
-            let next = match self.zoom {
-                1 => (now + 0.1).min(2.5),
-                -1 => (now - 0.1).max(0.5),
-                _ => 1.0,
-            };
-            ctx.set_zoom_factor(next);
-            self.zoom = 0;
-        }
         self.poll_control(ctx);
         if !self.event_frames.is_empty() {
             ctx.request_repaint();

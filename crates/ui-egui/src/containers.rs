@@ -109,11 +109,12 @@ pub fn show(
     justified: &notecraft_model::justify::Justified,
     across: &mut Option<pageedit::Across>,
     shown_title: &str,
+    zoom: f32,
 ) -> Moved {
     let mut out = Moved::default();
     let area = ui.available_rect_before_wrap();
     out.origin = area.min;
-    *boxes = container::fit(boxes, blocks.len(), (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+    *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
 
     // Which container the caret is in, so that a block added or removed inside it is
     // counted against the right one.
@@ -156,19 +157,24 @@ pub fn show(
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
-        let at = pos2(area.min.x + b.x, area.min.y + b.y);
+        // Positions and widths are stored in page-space points, like the content. Scale them
+        // together so the outline remains attached to its text as the page zooms.
+        let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
+        let pad = PAD * zoom;
+        let handle = HANDLE * zoom;
+        let grip_width = GRIP * zoom;
         let editing = caret.as_ref().is_some_and(|c| range.contains(&c.block));
 
         // A place kept behind the words for the selection's shading, filled in below once the
         // box's size is known. Shading painted after the words washes them out.
         let shading = ui.painter().add(egui::Shape::Noop);
         // The blocks of this container, drawn in a column of its own width.
-        let inner = Rect::from_min_size(pos2(at.x + PAD, at.y + HANDLE), vec2(b.width, 0.0));
+        let inner = Rect::from_min_size(pos2(at.x + pad, at.y + handle), vec2(b.width * zoom, 0.0));
         let mut child =
-            ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width, area.height()))).layout(*ui.layout()));
-        child.set_width(b.width);
+            ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width * zoom, area.height()))).layout(*ui.layout()));
+        child.set_width(b.width * zoom);
         let changed =
-            pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols, justified, across, shown_title);
+            pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols, justified, across, shown_title, zoom);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
         out.changed.columns |= changed.columns;
@@ -176,7 +182,9 @@ pub fn show(
             out.changed.link = changed.link;
         }
         let used = child.min_rect().height().max(18.0);
-        let frame = Rect::from_min_size(at, vec2(b.width + 2.0 * PAD, used + HANDLE + PAD));
+        // The move handle sits above the content frame, so it can never cover its top border.
+        let frame_at = pos2(at.x, at.y + handle);
+        let frame = Rect::from_min_size(frame_at, vec2(b.width * zoom + 2.0 * pad, used + pad));
         frames.push(frame);
         bottom = bottom.max(frame.max.y);
 
@@ -185,7 +193,7 @@ pub fn show(
         // nowhere and no caret appeared. The whole of it, below the handle, is a place to start
         // writing: the click gives it a line and puts the caret there.
         if range.is_empty() {
-            let hole = Rect::from_min_max(pos2(frame.min.x, frame.min.y + HANDLE), frame.max);
+            let hole = frame;
             let start = ui.interact(hole, ui.id().with(("container-start", i)), Sense::click());
             if start.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -198,9 +206,9 @@ pub fn show(
         // every frame, whether or not they are drawn: a widget that comes and goes with the
         // pointer loses the drag the moment the pointer leaves it, which is what made
         // moving a box feel like it slipped out of the hand.
-        let bar = Rect::from_min_size(frame.min, vec2(frame.width(), HANDLE));
+        let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
-        let edge = Rect::from_min_size(pos2(frame.max.x - GRIP, frame.min.y + HANDLE), vec2(GRIP, (frame.height() - HANDLE).max(GRIP)));
+        let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
 
         // A click on the handle selects the container. A right click anywhere in it does too,
@@ -235,7 +243,7 @@ pub fn show(
             sel_frame = Some(frame);
             // Everything in the box is selected: shade it all, behind the words.
             ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
-            ui.painter().rect_stroke(frame, 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
             if caret.is_none() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
                 delete_at = Some(i);
             }
@@ -245,11 +253,11 @@ pub fn show(
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
-            ui.painter().rect_stroke(frame, 3.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
-            ui.painter().rect_filled(bar, 3.0, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
+            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+            ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
             for n in 0..3 {
-                let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0, bar.center().y);
-                ui.painter().circle_filled(c, 1.2, t.muted);
+                let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0 * zoom, bar.center().y);
+                ui.painter().circle_filled(c, 1.2 * zoom, t.muted);
             }
             if grip.hovered() || grip.dragged() {
                 ui.painter().rect_filled(edge.shrink2(vec2(2.0, 4.0)), 2.0, t.row_hover);
@@ -258,13 +266,13 @@ pub fn show(
         if drag.dragged() {
             let d = drag.drag_delta();
             if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x + d.x, c.y + d.y, c.width, c.blocks);
+                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
             }
             out.boxes = true;
         }
         if grip.dragged() {
             if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x, c.y, c.width + grip.drag_delta().x, c.blocks);
+                *c = Container::new(c.x, c.y, c.width + grip.drag_delta().x / zoom, c.blocks);
             }
             out.boxes = true;
         }
@@ -602,6 +610,7 @@ more
                 &Default::default(),
                 &mut None,
                 "",
+                1.0,
             );
             assert!(!out.boxes, "nothing was dragged");
         });
@@ -632,6 +641,7 @@ more
                 &Default::default(),
                 &mut None,
                 "",
+                1.0,
             );
         });
         frame.textures_delta.clear();
@@ -664,6 +674,7 @@ more
                 &Default::default(),
                 &mut None,
                 "",
+                1.0,
             );
         });
         frame.textures_delta.clear();

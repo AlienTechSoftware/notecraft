@@ -92,6 +92,30 @@ pub fn create_notebook(root: &Path, title: &str, explicit: Option<PageFormat>, s
     Ok(dir)
 }
 
+/// Turns an existing, empty folder into a notebook in place. The folder is left alone if it
+/// already contains anything, so opening an ordinary folder cannot absorb its files.
+pub fn initialize_notebook(dir: &Path, title: &str, explicit: Option<PageFormat>, settings: &Settings) -> Result<PathBuf> {
+    let title = clean_title(title)?;
+    if !dir.is_dir() {
+        return Err(StoreError::NotFound(dir.display().to_string()));
+    }
+    let mut entries = fs::read_dir(dir).map_err(|e| StoreError::io("read", dir, e))?;
+    if entries.next().is_some() {
+        return Err(StoreError::invalid(format!("{} is not an empty folder", dir.display())));
+    }
+    let (format, _) = effective_format(None, explicit, settings);
+    let file = dir.join("_node.toml");
+    let node = node_file(NodeKind::Notebook, &title, &new_id(), None, Some(format));
+    let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&file).map_err(|e| StoreError::io("create", &file, e))?;
+    use std::io::Write;
+    if let Err(e) = output.write_all(node.as_bytes()) {
+        drop(output);
+        let _ = fs::remove_file(&file);
+        return Err(StoreError::io("write", &file, e));
+    }
+    Ok(dir.to_path_buf())
+}
+
 /// Creates a section group, section or page inside `parent`. The parent must be a
 /// notebook, section group, section or page that may contain `kind`.
 ///
