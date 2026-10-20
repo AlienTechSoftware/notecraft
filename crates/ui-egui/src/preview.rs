@@ -88,7 +88,7 @@ fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> Text
     }
 }
 
-pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir) -> LayoutJob {
+pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Option<Dir>) -> LayoutJob {
     let mut job = LayoutJob { halign: crate::pagetext::halign(&text_of(spans), page), ..LayoutJob::default() };
     job.wrap.max_width = ui.available_width();
     for s in spans {
@@ -119,8 +119,8 @@ pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &To
 }
 
 /// Which way a block's words read, given the direction of the page they are on.
-pub fn dir_of(spans: &[Span], page: Dir) -> Dir {
-    notecraft_model::direction_or(&text_of(spans), page)
+pub fn dir_of(spans: &[Span], page: Option<Dir>) -> Dir {
+    notecraft_model::direction_in(&text_of(spans), page)
 }
 
 /// Draws spans as wrapped text. A paragraph with inline math flows text and formulas
@@ -133,7 +133,7 @@ pub fn dir_of(spans: &[Span], page: Dir) -> Dir {
 /// spaces stay as they were and the page keeps an even colour. A paragraph that reads left
 /// to right has no such joins, so it is justified the Latin way, by widening the spaces,
 /// which is what egui's own layout does.
-fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Dir, justify: bool) {
+fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Option<Dir>, justify: bool) {
     if !spans.iter().any(|s| s.math) {
         // A line that mixes the two directions is drawn by egui in the wrong order, and a
         // paragraph that reads right to left is not wrapped by it, so both go through the
@@ -203,7 +203,7 @@ fn size_of_block(block: &Block) -> f32 {
 /// block egui drew (the caller maps those through egui's own layout) and for a point on no
 /// link. The lookup goes through parley, the same way the drawing did, so a click on a
 /// right-to-left or mixed line lands on the word under the pointer.
-pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Dir) -> Option<String> {
+pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir>) -> Option<String> {
     let spans = match block {
         Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
         _ => return None,
@@ -281,7 +281,7 @@ pub fn is_rich(block: &Block) -> bool {
 
 /// Draws only the blocks [`is_rich`] picks out. They are picked out of their page, so the
 /// page's justification does not follow them here; none of them is a paragraph of words.
-pub fn show_rich(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Dir) {
+pub fn show_rich(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Option<Dir>) {
     let rich: Vec<Block> = blocks.iter().filter(|b| is_rich(b)).cloned().collect();
     let _link = show(ui, &rich, page_dir, tokens, page, &Justified::default());
 }
@@ -297,7 +297,7 @@ pub struct BlockResponse {
 /// Draws blocks into `ui`. `page_dir` is the page's folder, used to find attachments.
 /// Read only: to-do boxes are shown but not ticked (see [`show_block`]). A link is still
 /// live: the target of one clicked this frame is returned, as written in the page.
-pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Dir, justified: &Justified) -> Option<String> {
+pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Option<Dir>, justified: &Justified) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
         let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.has(i));
@@ -319,7 +319,16 @@ pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, pag
 /// made to reach the column; the page says which blocks those are, and only a paragraph
 /// listens (see `notecraft_model::justify`).
 #[allow(clippy::too_many_arguments)]
-pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens: &Tokens, live: bool, page: Dir, justified: bool) -> BlockResponse {
+pub fn show_block(
+    ui: &mut Ui,
+    block: &Block,
+    i: usize,
+    page_dir: &Path,
+    tokens: &Tokens,
+    live: bool,
+    page: Option<Dir>,
+    justified: bool,
+) -> BlockResponse {
     let start = ui.cursor().min;
     let body = ui.style().visuals.text_color();
     let mut task_set = None;
@@ -531,7 +540,7 @@ mod tests {
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
-                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, notecraft_model::Dir::Ltr, false);
+                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, Some(notecraft_model::Dir::Ltr), false);
                 heights.push(out.response.rect.height());
             }
         });
@@ -594,7 +603,7 @@ mod tests {
         let blocks = blocks_for(PageFormat::Cmgfm, "مرحبا بالعالم [هذه صفحة](../page-b/) والباقي كلام عادي\n");
         let block = blocks.first().expect("a paragraph");
         let hits: Vec<(i32, Option<String>)> =
-            (0..400).step_by(8).map(|x| (x, link_at_point(block, egui::vec2(x as f32, 8.0), 400.0, Dir::Ltr))).collect();
+            (0..400).step_by(8).map(|x| (x, link_at_point(block, egui::vec2(x as f32, 8.0), 400.0, Some(Dir::Ltr)))).collect();
         let on: Vec<i32> = hits.iter().filter(|(_, h)| h.is_some()).map(|(x, _)| *x).collect();
         assert!(!on.is_empty(), "the link is somewhere on the line: {hits:?}");
         assert!(hits.iter().all(|(_, h)| h.is_none() || h.as_deref() == Some("../page-b/")));
@@ -605,7 +614,7 @@ mod tests {
         assert!(last_on < 392 && last_on - first_on > 30, "a contiguous stretch: {first_on}..{last_on}");
         // A left-to-right paragraph is not this painter's; the caller uses egui's layout.
         let ltr = blocks_for(PageFormat::Cmgfm, "Hello [there](../x/) world\n");
-        assert_eq!(link_at_point(&ltr[0], egui::vec2(50.0, 8.0), 400.0, Dir::Ltr), None);
+        assert_eq!(link_at_point(&ltr[0], egui::vec2(50.0, 8.0), 400.0, Some(Dir::Ltr)), None);
     }
 
     /// A picture is drawn at its full size even when the layout has no height left.
@@ -636,7 +645,7 @@ mod tests {
                 let left = ui.available_height();
                 ui.allocate_space(egui::vec2(0.0, left));
                 let before = ui.cursor().min.y;
-                show(ui, &blocks, &page, &tokens, Dir::Ltr, &Justified::default());
+                show(ui, &blocks, &page, &tokens, Some(Dir::Ltr), &Justified::default());
                 tall = ui.cursor().min.y - before;
             });
             out.textures_delta.clear();
@@ -656,7 +665,7 @@ mod tests {
         egui_extras::install_image_loaders(&ctx);
         let tokens = crate::theme::Theme { mode: crate::theme::Mode::Dark, accent: crate::theme::Accent::Default }.tokens();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            show(ui, &blocks, Path::new("."), &tokens, Dir::Ltr, &Justified::default());
+            show(ui, &blocks, Path::new("."), &tokens, Some(Dir::Ltr), &Justified::default());
         });
         out.textures_delta.clear();
     }

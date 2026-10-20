@@ -360,7 +360,8 @@ fn the_words_of_an_arabic_name_are_drawn_in_reading_order_in_the_window() {
             NAME,
             14.0,
             egui::Color32::BLACK,
-            notecraft_model::Dir::default(),
+            // A tree row and the window's band have no page to follow: the name decides.
+            None,
         );
     });
     let words: Vec<(f32, String)> = frame
@@ -397,6 +398,61 @@ fn the_words_of_an_arabic_name_are_drawn_in_reading_order_in_the_window() {
     frame.textures_delta.clear();
     let (a, b) = plain.first().copied().unwrap_or_default();
     assert!(a < b, "egui on its own still draws the words the other way round: {a} then {b}");
+}
+
+/// 1.1 of the bar: a page the writer has set to right to left is laid out that way, words
+/// and all, and not only the lines that happen to be in Arabic.
+///
+/// Measured: **the bar**, from 2026-10-19, and **a gap before that day**. The page
+/// direction was read from the file and carried into the painter, but the rule that used it
+/// asked the line's own first letter first, so any line with a letter in it answered for
+/// itself and the page was consulted only for a line of digits or an empty one. Setting a
+/// page of English to right to left moved nothing on the screen; setting a page of Arabic
+/// to left to right moved nothing either. The owner reported it in those words.
+///
+/// What it does now is what `dir` on a containing element does in a browser, and what a
+/// section direction does in Word: the paragraph's own mark wins, then the page, then the
+/// paragraph's first strong letter. `notecraft_model::direction_in` is the rule, and this
+/// test drives the page painter itself rather than the rule, so the wiring is measured too.
+#[test]
+fn a_page_set_right_to_left_lays_out_english_that_way() {
+    const ENGLISH: &str = "Notes outlive the program.";
+    let t = Theme::DEFAULT.tokens();
+    // The left edge of the words as they are drawn, and whether the page painter drew them.
+    let edge_of = |page: Option<notecraft_model::Dir>| -> f32 {
+        let h = harness();
+        let blocks = notecraft_ui_egui::preview::blocks_for(notecraft_model::PageFormat::Cmgfm, ENGLISH);
+        let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+            fonts::install_once(ui.ctx());
+            ui.set_width(560.0);
+            notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &t, page, &Default::default());
+        });
+        let left = frame
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(text) if text.galley.text().contains("Notes") || text.galley.text().contains("outlive") => Some(text.pos.x),
+                _ => None,
+            })
+            .fold(f32::INFINITY, f32::min);
+        frame.textures_delta.clear();
+        left
+    };
+
+    let loose = edge_of(None);
+    let right_to_left = edge_of(Some(notecraft_model::Dir::Rtl));
+    let left_to_right = edge_of(Some(notecraft_model::Dir::Ltr));
+    assert!(loose.is_finite() && right_to_left.is_finite(), "the words were drawn both ways: {loose} and {right_to_left}");
+    // A page that says nothing leaves English where English goes, and so does a page set
+    // the same way. A page set the other way moves the line across to the far edge.
+    assert!((loose - left_to_right).abs() < 1.0, "a page set left to right draws English where it already was: {loose} then {left_to_right}");
+    assert!(right_to_left > loose + 100.0, "the page carries the paragraph to the right edge: {loose} then {right_to_left}");
+
+    // And the rule underneath, in the three cases that matter.
+    use notecraft_model::{Dir, direction_in, text::set_direction};
+    assert_eq!(direction_in(ENGLISH, Some(Dir::Rtl)), Dir::Rtl, "the page decides for a paragraph with no mark");
+    assert_eq!(direction_in(&set_direction(ENGLISH, Some(Dir::Ltr)), Some(Dir::Rtl)), Dir::Ltr, "the paragraph's own mark wins");
+    assert_eq!(direction_in(ENGLISH, None), Dir::Ltr, "and a page that says nothing leaves it to the words");
 }
 
 /// 4.3 of the bar. Pages and sections are listed in the order a reader of the script

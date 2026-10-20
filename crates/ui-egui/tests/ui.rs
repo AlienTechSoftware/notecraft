@@ -249,6 +249,9 @@ fn arabic_draws_and_the_direction_controls_work() {
     // The paragraph's direction sits where OneNote keeps it: in the alignment menu.
     h.get_by_label("Alignment and direction").click();
     h.run();
+    // A picture of the open menu: the two direction entries carry the pilcrow and arrow
+    // that Word, LibreOffice and the Office web apps all use for paragraph direction.
+    review(&mut h, "alignment-menu");
     h.get_by_label("Right-to-Left").click();
     h.run();
     h.run();
@@ -261,6 +264,36 @@ fn arabic_draws_and_the_direction_controls_work() {
     h.run();
     h.run();
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "auto takes the mark off");
+
+    // The paragraph's direction is also in the Direction group, with the pilcrow-and-arrow
+    // mark Word uses for it, so a writer looking for the direction controls finds them all
+    // in one place instead of under an alignment button.
+    h.get_by_label("Paragraph right to left").click();
+    h.run();
+    h.run();
+    assert_eq!(
+        h.state().body().unwrap_or_default().lines().filter(|l| l.starts_with('\u{200F}')).count(),
+        1,
+        "the group's button marks the paragraph the menu's entry does"
+    );
+    h.get_by_label("Paragraph direction from the words").click();
+    h.run();
+    h.run();
+    assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "and takes it off again");
+
+    // The page's own direction is written into the page's file, and the window redraws by
+    // it: before this was fixed the file changed and nothing on the screen moved.
+    h.get_by_label("Page right to left").click();
+    h.run();
+    h.run();
+    let file = s.md_page.join("index.md");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(text.contains("dir: rtl"), "the page records it:\n{text}");
+    h.get_by_label("Page direction from the words").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(!text.contains("dir: rtl"), "and auto takes it out again:\n{text}");
 
     // The run direction is behind the launcher, with the options that are not built.
     h.get_by_label("Advanced direction").click();

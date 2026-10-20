@@ -48,10 +48,27 @@ it is fixed and tested, not when it is promised.
   right-to-left scripts draw, joined and in the right order; a page, a paragraph or a run can
   be given a direction; a right-to-left line hangs from the right edge with its bullet, box
   and tag mark on that side; and a line that mixes the two directions is laid out by the
-  Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. What is missing: the
-  window is not mirrored (the tree stays on the left whatever the page says), and the
-  isolates the Run buttons write are kept in the file but not yet honoured when the line is
-  drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+  Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. **Fixed on 2026-10-19:
+  the page's direction now reaches the paragraphs on it.** It was read from the file and
+  carried into the painter, but the rule that used it asked the paragraph's own first letter
+  first, so every line with a letter in it answered for itself and the page was consulted
+  only for a line of digits or an empty one: setting a page of English to right to left
+  moved nothing, and setting a page of Arabic to left to right moved nothing either. The
+  order is now the paragraph's own mark, then the page, then the paragraph's first strong
+  letter, which is what `dir` on a containing element does in a browser and what a section
+  direction does in Word. `notecraft_model::direction_in` is the rule and
+  `crates/ui-egui/tests/rtl_quality.rs` measures it through the page painter. What is still
+  missing: the window is not mirrored (the tree stays on the left whatever the page says),
+  and the isolates the Run buttons write are kept in the file but not yet honoured when the
+  line is drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+- **Paragraph direction is in two places on the Home tab**, as of 2026-10-19: in the
+  alignment menu, where Word and OneNote keep it, and in the Direction group beside the
+  page's own, because a writer who has gone looking for the direction controls should find
+  all of them together rather than be sent back to a menu under an alignment button. Both
+  carry the pilcrow with an arrow that Word, LibreOffice and the Office web apps use for it;
+  the lines-with-an-arrow pair stays for the whole page. Not built: a keyboard shortcut for
+  either. Word's are Ctrl with the left or the right Shift, which tells the two Shift keys
+  apart, and egui reports one modifier for both.
 - **A right-to-left page title is drawn, not typed into, until it is clicked.** The title
   is an egui text box, which lays the letters of an Arabic word out the right way and then
   puts the next word to the right of it, so every Arabic page showed its own name with the

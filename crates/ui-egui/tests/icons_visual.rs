@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 49] = [
+const ALL: [Icon; 51] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -49,6 +49,8 @@ const ALL: [Icon; 49] = [
     Icon::Quote,
     Icon::DirLtr,
     Icon::DirRtl,
+    Icon::ParaLtr,
+    Icon::ParaRtl,
     Icon::Bars,
     Icon::Eraser,
     Icon::Undo,
@@ -126,6 +128,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::Diagram => "diagram",
         Icon::Quote => "quote",
         Icon::Bars => "bars",
+        Icon::ParaLtr => "para-ltr",
+        Icon::ParaRtl => "para-rtl",
         Icon::DirLtr => "dir-ltr",
         Icon::DirRtl => "dir-rtl",
         Icon::Sun => "sun",
@@ -400,6 +404,22 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(19.0, 19.0), (5.0, 19.0)]),
             open(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
         ],
+        // A pilcrow with an arrow beside it: the bowl filled, two stems, then the arrow on
+        // the side the paragraph starts from.
+        Icon::ParaLtr => vec![
+            poly(&[(13.0, 4.5), (20.0, 4.5), (20.0, 12.5), (13.0, 12.5)], color),
+            open(&[(17.0, 4.5), (17.0, 20.0)]),
+            open(&[(20.0, 4.5), (20.0, 20.0)]),
+            open(&[(3.5, 12.0), (10.0, 12.0)]),
+            open(&[(7.5, 9.0), (10.5, 12.0), (7.5, 15.0)]),
+        ],
+        Icon::ParaRtl => vec![
+            poly(&[(4.0, 4.5), (11.0, 4.5), (11.0, 12.5), (4.0, 12.5)], color),
+            open(&[(7.0, 4.5), (7.0, 20.0)]),
+            open(&[(4.0, 4.5), (4.0, 20.0)]),
+            open(&[(20.5, 12.0), (14.0, 12.0)]),
+            open(&[(16.5, 9.0), (13.5, 12.0), (16.5, 15.0)]),
+        ],
     };
     for s in shapes {
         painter.add(s);
@@ -490,7 +510,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 98);
+    assert_eq!(pairs, 102);
 }
 
 #[test]
