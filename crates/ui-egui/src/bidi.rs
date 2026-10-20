@@ -477,10 +477,10 @@ fn caret_in(text: &str, drawn: &[Drawn], at: usize, size: f32) -> Option<Rect> {
 /// both directions is more than one rectangle, one per run it touches.
 pub fn selection(ui: &Ui, text: &str, pieces: &[Piece], from: usize, to: usize, size: f32, max_width: f32) -> Vec<Rect> {
     let (drawn, _) = runs(ui, text, pieces, size, max_width);
-    selection_in(text, &drawn, from, to, size)
+    selection_in(text, &drawn, from, to, size, space_width(ui, size))
 }
 
-fn selection_in(text: &str, drawn: &[Drawn], from: usize, to: usize, size: f32) -> Vec<Rect> {
+fn selection_in(text: &str, drawn: &[Drawn], from: usize, to: usize, size: f32, space: f32) -> Vec<Rect> {
     let (a, b) = (from.min(to), from.max(to));
     if a == b {
         return Vec::new();
@@ -495,6 +495,32 @@ fn selection_in(text: &str, drawn: &[Drawn], from: usize, to: usize, size: f32) 
         let x1 = run.at.x + x_in_run(&run.galley, chars_before(text, &run.text, e), run.rtl);
         let (left, right) = (x0.min(x1), x0.max(x1));
         out.push(Rect::from_min_max(pos2(left, run.at.y), pos2(right.max(left + 1.0), run.at.y + run.galley.rect.height().max(size))));
+    }
+    joined(out, space)
+}
+
+/// The rectangles of a line joined into one band where they are only a space apart.
+///
+/// A line that reads right to left is drawn word by word, with the gaps between the words
+/// measured and left empty rather than kept inside a galley, so a selection across it comes
+/// back as a rectangle per word and is drawn as a row of separate blocks with the spaces
+/// showing through. OneNote, Word and a browser all draw one unbroken band, and so should
+/// this: the owner put the two side by side on 2026-10-19 and the difference is plain.
+///
+/// Only a gap no wider than a space is closed. A wider one is left alone, because on a line
+/// that mixes the two directions the selected text really is in two places and a band drawn
+/// across the middle would cover words that are not selected.
+fn joined(mut rects: Vec<Rect>, space: f32) -> Vec<Rect> {
+    rects.sort_by(|a, b| a.min.y.total_cmp(&b.min.y).then(a.min.x.total_cmp(&b.min.x)));
+    let mut out: Vec<Rect> = Vec::new();
+    for r in rects {
+        match out.last_mut() {
+            // The same line, and close enough that what lies between is a space.
+            Some(last) if (last.min.y - r.min.y).abs() < 1.0 && r.min.x - last.max.x <= space * 1.5 => {
+                *last = Rect::from_min_max(last.min, pos2(last.max.x.max(r.max.x), last.max.y.max(r.max.y)));
+            }
+            _ => out.push(r),
+        }
     }
     out
 }
@@ -746,8 +772,15 @@ mod tests {
         frame.textures_delta.clear();
     }
 
+    /// A selection is drawn as one unbroken band to a line, not a block to a word.
+    ///
+    /// A right-to-left line is drawn word by word with the gaps measured and left empty, so
+    /// a selection across it starts life as a rectangle per word. Painted like that it
+    /// shows the page through every space, which is not what OneNote, Word or a browser
+    /// draw and not what the owner saw beside them on 2026-10-19. The rectangles of a line
+    /// are joined where the gap between them is only a space wide.
     #[test]
-    fn a_selection_is_one_rectangle_for_each_run_it_covers() {
+    fn a_selection_is_one_band_to_a_line_and_covers_the_spaces() {
         let t = Theme::DEFAULT.tokens();
         let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -755,18 +788,23 @@ mod tests {
             let pieces = plain(PRICE, 16.0, &t);
             // Nothing selected, nothing painted.
             assert!(selection(ui, PRICE, &pieces, 4, 4, 16.0, 400.0).is_empty());
-            // The whole line: one rectangle per run, together covering what is drawn.
+
             let (drawn, size) = runs(ui, PRICE, &pieces, 16.0, 400.0);
+            assert!(drawn.len() > 2, "the line is drawn as several runs: {}", drawn.len());
             let all = selection(ui, PRICE, &pieces, 0, PRICE.len(), 16.0, 400.0);
-            assert_eq!(all.len(), drawn.len(), "a rectangle for each run: {all:?}");
-            let covered: f32 = all.iter().map(egui::Rect::width).sum();
-            let extent = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(0.0f32, f32::max) - drawn.first().map(|d| d.at.x).unwrap_or(0.0);
-            assert!(covered > extent * 0.75, "they cover the line: {covered} of {extent}");
-            for r in &all {
-                assert!(r.min.x >= -1.0 && r.max.x <= size.x + 1.0, "inside the line: {r:?}");
-                assert!(r.height() > 4.0);
-            }
-            // A selection of the digits alone is one rectangle, over the digits.
+            assert_eq!(all.len(), 1, "the whole of one line is one band: {all:?}");
+
+            // The band runs the length of the drawn line, spaces and all, where the
+            // rectangles it was made from together covered less.
+            let left = drawn.iter().map(|d| d.at.x).fold(f32::INFINITY, f32::min);
+            let right = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(0.0f32, f32::max);
+            let band = all.first().copied().unwrap_or(Rect::ZERO);
+            assert!(band.min.x <= left + 1.0 && band.max.x >= right - 1.0, "end to end: {band:?} against {left}..{right}");
+            assert!(band.min.x >= -1.0 && band.max.x <= size.x + 1.0, "and inside the line: {band:?}");
+            assert!(band.height() > 4.0);
+
+            // A selection of the digits alone is still only the digits: joining a line's
+            // rectangles must not reach past what was asked for.
             let start = PRICE.find("123").unwrap_or(0);
             let digits = selection(ui, PRICE, &pieces, start, start + 3, 16.0, 400.0);
             assert_eq!(digits.len(), 1, "the digits are one run: {digits:?}");
@@ -776,6 +814,23 @@ mod tests {
             }
         });
         frame.textures_delta.clear();
+    }
+
+    /// Joining closes a space and leaves a real gap alone.
+    #[test]
+    fn a_gap_wider_than_a_space_is_not_painted_over() {
+        let line = |x0: f32, x1: f32, y: f32| Rect::from_min_max(pos2(x0, y), pos2(x1, y + 18.0));
+        // Two words a space apart on one line: one band.
+        assert_eq!(joined(vec![line(0.0, 40.0, 0.0), line(45.0, 90.0, 0.0)], 6.0).len(), 1);
+        // The same two with a gap no space could fill: left as they are.
+        assert_eq!(joined(vec![line(0.0, 40.0, 0.0), line(200.0, 240.0, 0.0)], 6.0).len(), 2);
+        // Two lines, however close their edges: never joined to each other.
+        assert_eq!(joined(vec![line(0.0, 40.0, 0.0), line(41.0, 90.0, 18.0)], 6.0).len(), 2);
+        // The band spans from the first to the last, and keeps the taller height.
+        let one = joined(vec![line(0.0, 40.0, 0.0), line(45.0, 90.0, 0.0)], 6.0);
+        let band = one.first().copied().unwrap_or(Rect::ZERO);
+        assert_eq!((band.min.x, band.max.x), (0.0, 90.0));
+        assert!(joined(Vec::new(), 6.0).is_empty());
     }
 
     #[test]
