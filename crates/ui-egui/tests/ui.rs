@@ -2107,6 +2107,58 @@ fn drawn_in_page(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
     }
 }
 
+/// Every kind of chart and diagram the renderer is expected to draw is drawn in the page, from either
+/// format, with the characters written raw: `-->` and `->>` are not escaped in an HTML `pre`.
+#[test]
+fn every_chart_and_diagram_type_is_drawn_in_both_formats() {
+    let charts: [(&str, &str); 10] = [
+        ("pie", "pie title Pages by format\n  \"HTML\" : 62\n  \"CommonMark\" : 31\n  \"Other\" : 7"),
+        (
+            "xychart",
+            "xychart-beta\n    title \"Pages per month\"\n    x-axis [jan, feb, mar, apr, may]\n    y-axis \"Pages\" 0 --> 100\n    bar [20, 45, 60, 80, 95]\n    line [20, 45, 60, 80, 95]",
+        ),
+        (
+            "quadrant",
+            "quadrantChart\n    title What to build next\n    x-axis Low effort --> High effort\n    y-axis Low value --> High value\n    quadrant-1 Do next\n    quadrant-2 Plan\n    quadrant-3 Skip\n    quadrant-4 Maybe\n    Charts: [0.8, 0.9]\n    Icons: [0.2, 0.3]",
+        ),
+        (
+            "gantt",
+            "gantt\n  title Release\n  dateFormat YYYY-MM-DD\n  section Build\n  Band :done, a1, 2026-10-12, 5d\n  Charts :active, a2, after a1, 14d",
+        ),
+        ("sankey", "sankey-beta\nPages,HTML,62\nPages,Markdown,31\nHTML,Fast,40"),
+        ("sequence", "sequenceDiagram\n  U->>N: Type\n  N-->>U: Saved"),
+        ("state", "stateDiagram-v2\n  [*] --> Clean\n  Clean --> Dirty: type"),
+        ("mindmap", "mindmap\n  root((NoteCraft))\n    Pages\n    Ink"),
+        ("timeline", "timeline\n  title History\n  2026 : Band : Charts"),
+        ("journey", "journey\n  title A day\n  section Work\n    Write: 5: Me\n    Test: 3: Me"),
+    ];
+    let (_t, app, s) = sample_app("ui-all-charts");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let md: String = charts.iter().map(|(name, src)| format!("## {name}\n\n```mermaid\n{src}\n```\n\n")).collect();
+    let html: String = charts.iter().map(|(name, src)| format!("<h2>{name}</h2>\n<pre class=\"mermaid\">{src}</pre>\n")).collect();
+    for (title, format, body) in [("ChartsMd", "cmgfm", md), ("ChartsHtml", "html", html)] {
+        let made = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": format}}),
+        )
+        .expect("a page");
+        let dir = made.as_str().expect("its path").to_string();
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": body}})).expect("save it");
+        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+        settle(&mut h);
+        let d = drawn_in_page(&mut h).expect("drawn within twenty seconds");
+        assert_eq!(
+            (d["found"].clone(), d["drawn"].clone(), d["failed"].clone()),
+            (json!(charts.len()), json!(charts.len()), json!(0)),
+            "{title}: all {} kinds are found and drawn: {d}",
+            charts.len()
+        );
+    }
+}
+
 /// A diagram is drawn in the page itself, in either format, without the code view; one that cannot
 /// be drawn shows its source and says why; and clicking a drawn diagram puts the caret in it, so
 /// its source can be edited, with the drawing following what is typed.
