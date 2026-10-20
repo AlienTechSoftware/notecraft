@@ -3700,6 +3700,17 @@ impl NoteCraftApp {
                 "open": self.show_source,
                 "picked": self.code.picked,
                 "characters": self.code.text.chars().count(),
+                // The colours the picked file is shown in, and the Find bar: whether it is open,
+                // what it looks for, how many matches there are and which one (from 1) it is on.
+                "language": self.code.picked.as_deref().map_or("none", |n| crate::highlight::Lang::of_file(n).label()),
+                "colouredStretches": self.code.coloured.len(),
+                "find": {
+                    "open": self.code.find.open,
+                    "query": self.code.find.query,
+                    "matchCase": self.code.find.case,
+                    "matches": self.code.find.matches.len(),
+                    "current": if self.code.find.matches.is_empty() { Value::Null } else { json!(self.code.find.current + 1) },
+                },
             },
             "pageDiagrams": {
                 "found": in_page.len(),

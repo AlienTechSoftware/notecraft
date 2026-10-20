@@ -39,6 +39,19 @@ The viewer, on the right, shows the file you pick:
 
 A file over 256 KB shows its first part and says so.
 
+## Colours, and finding text
+
+Each file is coloured by what it is, so the shape of a page is easy to read: Markdown (headings, lists,
+links, code, the head at the top, and the fenced blocks inside it in their own language), HTML and SVG
+(tags, attributes, strings, comments), JSON, TOML, YAML, and Mermaid diagrams. The colours help you read;
+they do not check the file, and a half-typed tag is coloured as far as it goes. A file over 160 KB is
+shown plain, so typing in it stays quick. Every colour reads on the editor in all fourteen themes.
+
+**Ctrl+F** opens a Find bar under the editor. Type to find: every match is highlighted and the one the
+bar is on is underlined, with how many there are (`3 of 12`). **Enter** or **F3** goes to the next match,
+**Shift+Enter** or **Shift+F3** to the one before, and the search wraps round. **Match case** makes the
+case count. **Escape** closes the bar and leaves the match you were on selected in the text.
+
 ## What you can learn from it
 
 This is the head of a Markdown page, as the view shows it:
