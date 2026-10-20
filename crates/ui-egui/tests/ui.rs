@@ -1070,13 +1070,25 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     assert_eq!(h.state().session().tree().len(), 1);
     assert_eq!(h.state().session().tree()[0].info.title, "Welcome to NoteCraft");
     assert_eq!(h.state().status(), "Added the welcome notebook");
-    // The start page's title is in its head and the window shows it above the page, so the
-    // body opens with the first thing the page says.
+    // The start page's title is in its head and the window shows it above the page. Its
+    // large banner is the first thing in the body.
     assert_eq!(h.state().title(), Some("Welcome to NoteCraft"), "opened on the start page");
-    assert!(h.state().body().is_some_and(|b| b.starts_with("This notebook is NoteCraft")), "{:?}", h.state().body());
+    assert!(
+        h.state().body().is_some_and(
+            |b| b.starts_with("![NoteCraft, notes as plain files in plain folders](assets/banner-start.png)\n\nThis notebook is NoteCraft")
+        ),
+        "{:?}",
+        h.state().body()
+    );
     review(&mut h, "welcome_start");
 
     // The start page links to the English group, and the group opens on its first page.
+    // The large banner puts the link below the fold, so scroll the page to it first.
+    ask(&mut h, "ui.move", json!({"x": 700, "y": 400})).expect("pointer onto the page");
+    settle(&mut h);
+    ask(&mut h, "ui.scroll", json!({"y": -400})).expect("scroll to the language links");
+    settle(&mut h);
+    review(&mut h, "welcome_language_links");
     // "English" is on screen twice, once as a row of the tree and once in the page, so the
     // one further right is the page's own, and the click lands on its first word.
     let rect =

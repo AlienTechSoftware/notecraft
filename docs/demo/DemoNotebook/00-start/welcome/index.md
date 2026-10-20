@@ -7,6 +7,8 @@ updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
+![NoteCraft, notes as plain files in plain folders](assets/banner-start.png)
+
 This notebook is NoteCraft showing itself. Every page in it is an ordinary page: open it,
 change it, delete it.
 

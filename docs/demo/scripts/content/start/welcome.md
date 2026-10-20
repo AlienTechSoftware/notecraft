@@ -2,6 +2,8 @@
 title: Welcome to NoteCraft
 ---
 
+![NoteCraft, notes as plain files in plain folders](assets/banner-start.png)
+
 # Welcome to NoteCraft
 
 This notebook is NoteCraft showing itself. Every page in it is an ordinary page: open it,

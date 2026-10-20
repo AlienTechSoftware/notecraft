@@ -273,10 +273,22 @@ fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: 
 
 /// A body without the heading that only repeats the page's title.
 fn without_title_heading(body: &str, title: &str) -> String {
-    let rest = body.trim_start();
-    let Some(line) = rest.lines().next() else { return body.to_string() };
-    let is_echo = line.strip_prefix("# ").map(str::trim) == Some(title.trim());
-    if is_echo { rest[line.len()..].trim_start_matches('\n').to_string() } else { body.to_string() }
+    let mut offset = 0;
+    for line_with_end in body.split_inclusive('\n') {
+        let line = line_with_end.trim_end_matches(['\r', '\n']).trim();
+        if line.is_empty() || (line.starts_with("![") && line.ends_with(')')) {
+            offset += line_with_end.len();
+            continue;
+        }
+        let is_echo = line.strip_prefix("# ").map(str::trim) == Some(title.trim());
+        if !is_echo {
+            return body.to_string();
+        }
+        let after_heading = offset + line_with_end.len();
+        let tail = body[after_heading..].trim_start_matches(['\r', '\n']);
+        return format!("{}{tail}", &body[..offset]);
+    }
+    body.to_string()
 }
 
 /// Copies every `assets/...` a page names into that page's own `assets` folder.
@@ -681,6 +693,12 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(orders, sorted, "files are read in order");
         assert!(read_source(&content_dir().join("start").join("welcome.md"), 10).expect("start page").body.contains(LANGUAGES_MARK));
+    }
+
+    #[test]
+    fn a_leading_banner_stays_first_without_repeating_the_page_title() {
+        let body = "![Banner](assets/banner-start.png)\n\n# Welcome to NoteCraft\n\nWords on the page.\n";
+        assert_eq!(without_title_heading(body, "Welcome to NoteCraft"), "![Banner](assets/banner-start.png)\n\nWords on the page.\n");
     }
 
     #[test]
