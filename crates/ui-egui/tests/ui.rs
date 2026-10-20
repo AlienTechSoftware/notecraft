@@ -2088,66 +2088,6 @@ fn a_page_names_the_ink_in_its_folder_and_no_ink_that_is_gone() {
     );
 }
 
-/// What the code view says of the diagrams in the text in hand, once the worker threads that draw
-/// them have had their say, or `None` if they have not within twenty seconds.
-fn drawn_diagrams(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
-    let began = std::time::Instant::now();
-    loop {
-        for _ in 0..4 {
-            pump(h);
-        }
-        let state = ask(h, "ui.inspect", json!({})).ok()?;
-        let d = state["codeView"]["diagrams"].clone();
-        if d["drawing"].as_u64() == Some(0) {
-            return Some(d);
-        }
-        if began.elapsed() > std::time::Duration::from_secs(20) {
-            return None;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-}
-
-/// A Markdown page and an HTML page that hold the same diagram are drawn alike in the code view,
-/// each diagram once, and one that cannot be drawn is counted and does not stop the others.
-#[test]
-fn the_code_view_draws_the_diagrams_of_a_markdown_page_and_an_html_page_alike() {
-    let (_t, app, s) = sample_app("ui-diagrams");
-    let mut h = harness(app, LIGHT);
-    h.run();
-    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
-    let flow = "flowchart TD\n  A[Start] --> B{Plain?}\n  B -->|yes| C[Keep it]";
-    let md_body = format!(
-        "# One\n\n```mermaid\n{flow}\n```\n\ntext\n\n```mermaid\npie\n  \"a\" : 1\n  \"b\" : 2\n```\n\n```mermaid\nflowchart TD\n  A[unclosed --> B(\n  C -->\n```\n"
-    );
-    let html_body = format!(
-        "<h1>Two</h1>\n<pre class=\"diagram\">{}</pre>\n<pre class=\"mermaid\">pie\n  \"a\" : 1\n  \"b\" : 2</pre>\n<pre class=\"diagram\">flowchart TD\n  A[unclosed --&gt; B(\n  C --&gt;</pre>\n",
-        flow.replace("-->", "--&gt;")
-    );
-    for (title, format, body) in [("One", "cmgfm", md_body), ("Two", "html", html_body)] {
-        let made = ask(
-            &mut h,
-            "engine.execute",
-            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": format}}),
-        )
-        .expect("a page");
-        let dir = made.as_str().expect("its path").to_string();
-        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": body}})).expect("save it");
-        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
-        settle(&mut h);
-        h.state_mut().set_show_source(true);
-        settle(&mut h);
-        let d = drawn_diagrams(&mut h).expect("the diagrams were drawn or failed within twenty seconds");
-        assert_eq!(d["found"], json!(3), "{title}: three diagrams in the text: {d}");
-        assert_eq!(d["drawn"], json!(2), "{title}: the flowchart and the pie are drawn: {d}");
-        assert_eq!(d["failed"], json!(1), "{title}: the broken one is counted, and does not stop the others: {d}");
-        assert!(h.query_all_by_label_contains("Diagrams (3)").count() >= 1, "{title}: the strip says so");
-        assert!(h.query_all_by_label_contains("Not drawn:").count() >= 1, "{title}: the one that failed says why");
-        h.state_mut().set_show_source(false);
-        settle(&mut h);
-    }
-}
-
 /// What the page says of its own diagrams, once the threads that draw them have had their say.
 fn drawn_in_page(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
     let began = std::time::Instant::now();
@@ -2179,9 +2119,9 @@ fn a_diagram_is_drawn_in_the_page_and_its_source_opens_when_it_is_clicked() {
     let md_body =
         "# Live\n\n```mermaid\nflowchart TD\n  A[Start] --> B[Keep it]\n```\n\n```mermaid\nflowchart TD\n  A[unclosed --> B(\n  C -->\n```\n"
             .to_string();
-    let html_body = "<h1>Live</h1>\n<pre class=\"mermaid\">flowchart TD\n  A[Start] --&gt; B[Keep it]</pre>\n".to_string();
+    let html_body = "<h1>Live</h1>\n<pre class=\"mermaid\">flowchart TD\n  A[Start] --&gt; B[Keep it]</pre>\n<div class=\"mermaid\">pie\n  \"a\" : 1\n  \"b\" : 2</div>\n".to_string();
     let mut md_dir = String::new();
-    for (title, format, body, found, failed) in [("LiveMd", "cmgfm", md_body, 2, 1), ("LiveHtml", "html", html_body, 1, 0)] {
+    for (title, format, body, found, failed) in [("LiveMd", "cmgfm", md_body, 2, 1), ("LiveHtml", "html", html_body, 2, 0)] {
         let made = ask(
             &mut h,
             "engine.execute",
@@ -2245,14 +2185,16 @@ fn a_diagram_is_drawn_in_the_page_and_its_source_opens_when_it_is_clicked() {
     );
 }
 
-/// A diagram kept as a file of its own beside the page is listed, picked like any file, drawn above
-/// its source, and what is typed in it is written to that file.
+/// A diagram kept as a file of its own beside the page is listed in the code view as a file, shown as
+/// its source, and what is typed in it is written to that file. The code view shows code, not the
+/// drawing.
 #[test]
-fn a_diagram_file_beside_the_page_is_drawn_and_can_be_edited() {
+fn a_diagram_file_beside_the_page_is_listed_and_its_source_can_be_edited() {
     let (_t, app, s) = sample_app("ui-diagram-file");
     let mut h = harness(app, LIGHT);
     h.run();
-    std::fs::write(s.md_page.join("flow.mmd"), "flowchart LR\n  A[Source file] --> B[Drawing]\n").expect("a diagram file");
+    let source = "flowchart LR\n  A[Source file] --> B[Drawing]\n";
+    std::fs::write(s.md_page.join("flow.mmd"), source).expect("a diagram file");
     ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
     settle(&mut h);
     h.state_mut().set_show_source(true);
@@ -2260,15 +2202,20 @@ fn a_diagram_file_beside_the_page_is_drawn_and_can_be_edited() {
     let row = h.query_all_by_label_contains("flow.mmd").next().expect("the diagram file is in the list").rect();
     ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick it");
     settle(&mut h);
-    let d = drawn_diagrams(&mut h).expect("drawn within twenty seconds");
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state["codeView"]["picked"], json!("flow.mmd"), "{}", state["codeView"]);
-    assert_eq!((d["found"].clone(), d["drawn"].clone()), (json!(1), json!(1)), "its one diagram is drawn: {d}");
+    assert_eq!(
+        state["codeView"]["characters"].as_u64().unwrap_or(0) as usize,
+        source.chars().count(),
+        "its source is in hand: {}",
+        state["codeView"]
+    );
     assert!(h.query_all_by_label_contains("read-only").count() == 0, "it can be typed in");
+    assert!(h.query_all_by_label_contains("Diagram").count() == 0, "the code view shows the code and no drawing");
 }
 
-/// A diagram too long to be drawn is refused at once, with its source kept, and does not set the
-/// renderer to work.
+/// A diagram too long to be drawn is refused at once, with its source kept in the page, and does not
+/// set the renderer to work.
 #[test]
 fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
     let (_t, app, s) = sample_app("ui-diagram-limit");
@@ -2281,12 +2228,11 @@ fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
     ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": s.md_page.to_string_lossy(), "body": body}})).expect("save it");
     ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
     settle(&mut h);
-    h.state_mut().set_show_source(true);
-    settle(&mut h);
     let began = std::time::Instant::now();
-    let d = drawn_diagrams(&mut h).expect("settled");
+    let d = drawn_in_page(&mut h).expect("settled");
     assert!(began.elapsed() < std::time::Duration::from_secs(5), "refused at once, not after the renderer's two seconds: {:?}", began.elapsed());
     assert_eq!((d["found"].clone(), d["failed"].clone()), (json!(1), json!(1)), "{d}");
+    assert!(h.query_all_by_label_contains("Not drawn:").count() >= 1, "the page says why");
     let text = std::fs::read_to_string(s.md_page.join("index.md")).expect("the page file");
     assert!(text.contains("N300[Node 300]"), "the source is untouched");
 }

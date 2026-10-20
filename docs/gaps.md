@@ -15,7 +15,7 @@ it is fixed and tested, not when it is promised.
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
   one version, and a smaller engine of our own is the fallback. Arabic, Hebrew and Chinese inside
   `\text{}` are drawn in the page's font; how they line up with the maths is judged by eye only.
-- **Mermaid diagrams are drawn in the page and the code view.** Saving the drawn picture beside the page
+- **Mermaid diagrams are drawn in the page.** The code view shows their source as text, and a diagram kept as a file of its own (`.mmd`) is listed there and is not drawn by the page. Saving the drawn picture beside the page
   is not built, nor are zoom and pan, nor a double click: a single click opens the source. The renderer (`mermaid-rs-renderer`) is young, with one
   main author, and pinned to one version. Large graphs are refused (150 lines), its pie, Gantt and
   chart styling is plainer than Mermaid's own, and only what it can read is drawn. Vega-Lite charts

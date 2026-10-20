@@ -263,6 +263,8 @@ struct Writer {
     lists: Vec<(bool, usize)>, // (ordered, counter)
     in_pre: bool,
     pre_diagram: bool,
+    /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
+    div_diagram: bool,
     in_math: bool,
     href: Vec<Option<String>>,
     row: Option<Vec<String>>,
@@ -340,6 +342,23 @@ impl Writer {
                 self.block_break();
                 let level = name.get(1..2).and_then(|d| d.parse::<usize>().ok()).unwrap_or(1);
                 self.push(&format!("{} ", "#".repeat(level)));
+            }
+            // A div with the class `mermaid` holds a diagram, as a pre does. Its text is the source.
+            ("div", false) if !self.in_pre && attrs.to_lowercase().contains("mermaid") => {
+                self.block_break();
+                self.push("```mermaid\n");
+                self.in_pre = true;
+                self.pre_diagram = true;
+                self.div_diagram = true;
+            }
+            ("div", true) if self.div_diagram => {
+                self.div_diagram = false;
+                self.in_pre = false;
+                if !self.out.ends_with('\n') {
+                    self.out.push('\n');
+                }
+                self.out.push_str("```");
+                self.block_break();
             }
             ("h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div" | "blockquote", true) => {
                 if name == "blockquote" {
@@ -582,6 +601,25 @@ mod tests {
         let md = to_markdown("<span class=\"math\">$ E = mc^2 $</span><pre class=\"diagram\">graph TD; A--&gt;B;</pre>");
         assert!(md.contains("$ E = mc^2 $"), "{md}");
         assert!(md.contains("```mermaid\ngraph TD; A-->B;\n```"), "{md}");
+    }
+
+    #[test]
+    fn a_diagram_is_read_from_a_pre_or_a_div_by_either_name() {
+        let want = "```mermaid\ngraph TD; A-->B;\n```";
+        for html in [
+            "<pre class=\"diagram\">graph TD; A--&gt;B;</pre>",
+            "<pre class=\"mermaid\">graph TD; A--&gt;B;</pre>",
+            "<div class=\"mermaid\">graph TD; A--&gt;B;</div>",
+            "<p>before</p><div class=\"mermaid\">graph TD; A--&gt;B;</div><p>after</p>",
+        ] {
+            let md = to_markdown(html);
+            assert!(md.contains(want), "{html} gave {md}");
+        }
+        let md = to_markdown("<p>before</p><div class=\"mermaid\">graph TD; A--&gt;B;</div><p>after</p>");
+        assert!(md.contains("before") && md.contains("after"), "the words round it are kept: {md}");
+        // An ordinary div is still just a block of text.
+        let md = to_markdown("<div class=\"note\">plain words</div>");
+        assert!(!md.contains("mermaid") && md.contains("plain words"), "{md}");
     }
 
     #[test]

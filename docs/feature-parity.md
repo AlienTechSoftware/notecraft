@@ -22,7 +22,7 @@ side by side. Status words:
 | Authoring | Right-to-left text | Partial | Arabic and Hebrew draw, and the page, the line and the run each take a direction, written into the text so it travels. A line that mixes the two directions is still drawn in one order, and the window is not mirrored. |
 | Authoring | Tags | Partial | Twelve tags, stored as plain text in the page and drawn as marks. No tag summary page. |
 | Authoring | Equations | Done | KaTeX-style TeX drawn natively in real maths fonts, with a gallery on the Insert tab. A formula the engine cannot take stays visible as text. `how-to/write-equations.md`. |
-| Authoring | Diagrams (Mermaid) | Partial | Drawn in the code view (flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line, quadrant), in both page formats, in the page and in the code view; a click opens the source. `how-to/draw-diagrams.md`. |
+| Authoring | Diagrams (Mermaid) | Partial | Drawn in the page (flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line, quadrant), in both page formats; a click opens the source, and the code view shows it as text. `how-to/draw-diagrams.md`. |
 | Authoring | Free-form canvas boxes | Later | Not representable in Markdown. |
 | Authoring | Ink | Later | Possible as SVG strokes per page. |
 | Embedding | Images, files, video | Partial | A dropped file asks whether to copy it into the page folder or link to it where it is, as the other app asks. Printouts are not built. |

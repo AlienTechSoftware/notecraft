@@ -46,13 +46,9 @@
 {"method": "ui.click", "params": {"x": 33, "y": 70}}
 {"wait": 300}
 {"method": "engine.execute", "params": {"command": "node.create", "params": {"parent": "my-notebook/ideas", "kind": "page", "title": "Diagrams", "format": "cmgfm"}}}
-{"method": "engine.execute", "params": {"command": "page.save", "params": {"path": "my-notebook/ideas/diagrams", "body": "# Diagrams\n\nA diagram is Mermaid source in the page. The code view draws it above the text:\n\n```mermaid\npie title Pages by format\n  \"HTML\" : 62\n  \"CommonMark\" : 31\n  \"Other\" : 7\n```\n\n```mermaid\nxychart-beta\n    title \"Pages per month\"\n    x-axis [jan, feb, mar, apr, may]\n    y-axis \"Pages\" 0 --> 100\n    bar [20, 45, 60, 80, 95]\n    line [20, 45, 60, 80, 95]\n```\n"}}}
+{"method": "engine.execute", "params": {"command": "page.save", "params": {"path": "my-notebook/ideas/diagrams", "body": "# Diagrams\n\nA diagram is Mermaid source in the page. It is drawn where it stands; click one to edit its source:\n\n```mermaid\npie title Pages by format\n  \"HTML\" : 62\n  \"CommonMark\" : 31\n  \"Other\" : 7\n```\n\n```mermaid\nxychart-beta\n    title \"Pages per month\"\n    x-axis [jan, feb, mar, apr, may]\n    y-axis \"Pages\" 0 --> 100\n    bar [20, 45, 60, 80, 95]\n    line [20, 45, 60, 80, 95]\n```\n"}}}
 {"method": "ui.open", "params": {"path": "my-notebook/ideas/diagrams"}}
-{"wait": 400}
-{"method": "ui.click", "params": {"x": 1343, "y": 227}}
 {"wait": 2500}
 {"method": "ui.move", "params": {"x": 150, "y": 790}}
 {"wait": 300}
 {"shot": "docs/images/diagrams.png"}
-{"method": "ui.click", "params": {"x": 1343, "y": 227}}
-{"wait": 400}

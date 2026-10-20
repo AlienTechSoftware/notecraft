@@ -105,7 +105,9 @@ NoteCraft edits only what is inside `<body>`. The head is kept as it is, except 
 Embedded things, in the body:
 
 - Equations: `<span class="math">$ E = mc^2 $</span>` (TeX between dollar signs).
-- Diagrams: `<pre class="diagram">graph TD; A--&gt;B;</pre>` (Mermaid source).
+- Diagrams: `<pre class="diagram">graph TD; A--&gt;B;</pre>` (Mermaid source). A page from another tool may write
+  `<pre class="mermaid">` or `<div class="mermaid">`; all three are read as a diagram, and NoteCraft writes
+  `class="diagram"` when it saves the page.
 - To-do lines: a paragraph that starts with `&#9744;` (open) or `&#9745;` (done).
 - Attachments: relative links such as `<img src="assets/diagram.png">`.
 

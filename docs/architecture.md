@@ -132,7 +132,7 @@ driven from the command line as easily as from the window.
   texture is refused, so nothing a page holds can crash the window. `ui-egui/diagramview.rs` draws
   on a thread of its own, so no frame waits, and keeps each drawing by source and colours. The page
   draws a diagram block as its picture (`preview.rs`); the block under the caret shows its source to
-  edit, with the drawing above it, and the code view shows the drawings above the whole file. See
+  edit, with the drawing above it; the code view shows the page's text as it is, with no drawing. See
   [how-to/draw-diagrams.md](how-to/draw-diagrams.md) and [`gaps.md`](gaps.md).
 
 ## Testing and gates
