@@ -58,6 +58,6 @@ Die Datei hinter dieser Seite ist einen Klick entfernt: die Schaltfläche `< >` 
 Was Sie in einer der beiden tippen, landet in der Datei. Nutzen Sie ihn für alles, was der
 Editor noch nicht kann.
 
-Weiter: [Eine Zeile markieren](../tag-a-line/).
+Weiter: [Formeln](../equations/).
 
 *Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.*

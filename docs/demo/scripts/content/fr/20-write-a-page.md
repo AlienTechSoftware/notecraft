@@ -54,6 +54,6 @@ Le fichier derrière cette page est à un clic : le bouton `< >` à côté de la
 tapez dans l'un ou l'autre arrive dans le fichier. Servez-vous-en pour tout ce que l'éditeur ne
 fait pas encore.
 
-Suite : [Étiqueter une ligne](../tag-a-line/).
+Suite : [Équations](../equations/).
 
 *Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.*

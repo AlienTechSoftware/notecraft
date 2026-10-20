@@ -54,6 +54,6 @@ El archivo detrás de esta página está a un clic: el botón `< >` junto a la p
 escribas en cualquiera de los dos acaba en el archivo. Úsalo para todo lo que el editor aún no
 hace.
 
-Siguiente: [Etiquetar una línea](../tag-a-line/).
+Siguiente: [Ecuaciones](../equations/).
 
 *Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.*
