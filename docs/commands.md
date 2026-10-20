@@ -120,7 +120,7 @@ Which paragraphs of a page are stretched to fill the column.
 Parameters:
 
 - path (required): the page
-- blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas; empty draws every paragraph ragged. Without it, the page's own are reported
+- blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; empty draws every paragraph ragged. Without it, the page's own are reported
 
 ## `page.attach`
 

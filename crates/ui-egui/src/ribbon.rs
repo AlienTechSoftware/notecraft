@@ -61,9 +61,10 @@ pub enum Act {
     Indent(bool),
     /// Which way the line the caret is in reads. `None` lets the words decide again.
     Direction(Option<notecraft_model::Dir>),
-    /// Stretch the paragraph the caret is in to fill the column, or stop. An Arabic
-    /// paragraph is stretched by kashida, a Latin one by its spaces.
-    Justify,
+    /// Stretch the paragraph the caret is in to fill the column, at this strength, or stop
+    /// when it is already at that strength. An Arabic paragraph is stretched by kashida, a
+    /// Latin one by its spaces.
+    Justify(notecraft_model::justify::Strength),
     /// Which way the whole page reads. `None` lets every line decide for itself.
     PageDirection(Option<notecraft_model::Dir>),
     /// Which way the selection, or what is typed next, reads: an isolated run inside the line.
@@ -877,13 +878,23 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                             picked = true;
                         }
                     }
-                    if ui
-                        .button("Justify")
-                        .on_hover_text("Fill the column. Arabic is stretched at the joins of its letters, not at its spaces")
-                        .clicked()
-                    {
-                        acts.push(Act::Justify);
-                        picked = true;
+                    // Word's three, under the names Word gives them, so a writer of Arabic
+                    // meets what they already know. They decide how many kashidas a line
+                    // may take; `docs/rtl-in-word-and-onenote.md` has the comparison.
+                    for strength in notecraft_model::justify::Strength::ALL {
+                        let label = match strength {
+                            notecraft_model::justify::Strength::Low => "Justify Low",
+                            notecraft_model::justify::Strength::Medium => "Justify Medium",
+                            notecraft_model::justify::Strength::High => "Justify High",
+                        };
+                        if ui
+                            .button(label)
+                            .on_hover_text("Fill the column. Arabic is stretched at the joins of its letters, not at its spaces")
+                            .clicked()
+                        {
+                            acts.push(Act::Justify(strength));
+                            picked = true;
+                        }
                     }
                     ui.separator();
                     if direction_row(ui, Some(Icon::ParaLtr), "Left-to-Right", t).clicked() {

@@ -343,14 +343,15 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     pump(&mut h);
     h.get_by_label("Alignment and direction").click();
     h.run();
-    h.get_by_label("Justify").click();
+    h.get_by_label("Justify High").click();
     h.run();
     h.run();
 
-    // The page knows which paragraph, and its words are the ones that were typed.
+    // The page knows which paragraph and how hard it is stretched, and its words are the
+    // ones that were typed. The three strengths are Word's Justify Low, Medium and High.
     let file = PathBuf::from(&page).join("index.md");
     let text = std::fs::read_to_string(&file).expect("the page file");
-    assert!(text.contains("justify: 0"), "the page records the paragraph in its head:\n{text}");
+    assert!(text.contains("justify: 0:high"), "the page records the paragraph and its strength:\n{text}");
     assert!(!text.contains('\u{0640}'), "no tatweel is written into the file; the stretching is drawing only");
     assert!(text.contains(PARAGRAPH), "the words are the ones that were typed");
     assert_eq!(h.state().body().unwrap_or_default().trim(), PARAGRAPH, "and the window agrees with the folder");
@@ -364,12 +365,22 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     // band drawing that name in reading order; `tests/rtl_quality.rs` measures it.
     review(&mut h, "justify");
 
-    // Asking again puts it back the way it was, and takes the line out of the page.
+    // A different strength changes the paragraph rather than adding a second entry.
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     h.get_by_label("Alignment and direction").click();
     h.run();
-    h.get_by_label("Justify").click();
+    h.get_by_label("Justify Low").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(text.contains("justify: 0:low"), "another strength changes it rather than adding a second entry:\n{text}");
+
+    // Asking for the strength it already has puts the paragraph back the way it was, which
+    // is how a menu of three gives a way to a ragged edge without a fourth entry.
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify Low").click();
     h.run();
     h.run();
     let text = std::fs::read_to_string(&file).expect("the page file");

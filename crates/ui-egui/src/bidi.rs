@@ -17,6 +17,7 @@
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Align, Align2, Color32, Pos2, Rect, Ui, Vec2, pos2, vec2};
+use notecraft_model::justify::Strength;
 use std::cell::RefCell;
 
 thread_local! {
@@ -269,17 +270,24 @@ fn spoken(text: &str) -> String {
 /// would describe by itself. The line is given its text as a label, the way `Label` does, or
 /// a screen reader would find nothing on a right-to-left page and the window tests could not
 /// look a line up by what it says.
-pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: Option<notecraft_model::Dir>, justify: bool) -> Rect {
+pub fn show(
+    ui: &mut Ui,
+    text: &str,
+    pieces: &[Piece],
+    size: f32,
+    max_width: f32,
+    page: Option<notecraft_model::Dir>,
+    justify: Option<Strength>,
+) -> Rect {
     // A justified paragraph is drawn from its stretched words, but it is still the words
     // the writer typed that a screen reader is told and that the page file holds: a tatweel
     // is the shape of a join, not a letter anybody meant to write.
     let (drawn, used) = match justify {
-        true => {
-            let (long, moved) = stretched(ui, text, pieces, size, max_width);
-            let (drawn, used) = runs(ui, &long, &moved, size, max_width);
-            (drawn, used)
+        Some(strength) => {
+            let (long, moved) = stretched(ui, text, pieces, size, max_width, strength);
+            runs(ui, &long, &moved, size, max_width)
         }
-        false => runs(ui, text, pieces, size, max_width),
+        None => runs(ui, text, pieces, size, max_width),
     };
     let full = vec2(max_width, used.y.max(size));
     let (rect, resp) = ui.allocate_exact_size(full, egui::Sense::hover());
@@ -310,8 +318,8 @@ pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32
 /// the mixture of faces a line of code or maths inside it would bring. parley breaks the
 /// lines from the size alone, so that is the same answer the line break itself was made on,
 /// but a line with a run of monospace in it may stop a little short of the column.
-pub fn stretched(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) -> (String, Vec<Piece>) {
-    let out = remembered(ui, text, size, max_width);
+pub fn stretched(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, strength: Strength) -> (String, Vec<Piece>) {
+    let out = remembered(ui, text, size, max_width, strength);
     if out == text {
         return (out, pieces.to_vec());
     }
@@ -324,21 +332,21 @@ pub fn stretched(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f3
 const REMEMBERED: usize = 256;
 
 thread_local! {
-    /// The stretched text of a paragraph, against the paragraph, the type size and the
-    /// column it was stretched into. Stretching walks the joins of a line one tatweel at a
+    /// The stretched text of a paragraph, against the paragraph, the type size, the
+    /// column it was stretched into and the strength it was stretched to. Stretching walks the joins of a line one tatweel at a
     /// time and lays the line out again for each, which is far too much work to do on every
     /// frame of a window that is only being scrolled.
-    static STRETCHED: RefCell<Vec<((String, u32, u32), String)>> = const { RefCell::new(Vec::new()) };
+    static STRETCHED: RefCell<Vec<((String, u32, u32, Strength), String)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The stretched paragraph, from the memory if it is there and worked out if it is not.
-fn remembered(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
-    let key = (text.to_string(), size.to_bits(), max_width.to_bits());
+fn remembered(ui: &Ui, text: &str, size: f32, max_width: f32, strength: Strength) -> String {
+    let key = (text.to_string(), size.to_bits(), max_width.to_bits(), strength);
     let known = STRETCHED.with(|c| c.try_borrow().ok().and_then(|c| c.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone())));
     if let Some(known) = known {
         return known;
     }
-    let out = stretch(ui, text, size, max_width);
+    let out = stretch(ui, text, size, max_width, strength);
     STRETCHED.with(|c| {
         if let Ok(mut c) = c.try_borrow_mut() {
             if c.len() >= REMEMBERED {
@@ -351,7 +359,7 @@ fn remembered(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
 }
 
 /// Stretches every line of the paragraph but the last to `max_width`.
-fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
+fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32, strength: Strength) -> String {
     let Some(split) = split(text, size, max_width) else { return text.to_string() };
     let lines = split.lines;
     // One line is all last line, and the last line of a paragraph is never justified: a
@@ -378,7 +386,7 @@ fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
             out.push_str(whole);
             continue;
         }
-        out.push_str(&stretch_line(ui, core, size, max_width));
+        out.push_str(&stretch_line(ui, core, size, max_width, strength));
         out.push_str(tail);
     }
     out.push_str(text.get(at..).unwrap_or(""));
@@ -386,7 +394,7 @@ fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32) -> String {
 }
 
 /// One line, stretched to the column by kashida.
-fn stretch_line(ui: &Ui, core: &str, size: f32, max_width: f32) -> String {
+fn stretch_line(ui: &Ui, core: &str, size: f32, max_width: f32, strength: Strength) -> String {
     let format = TextFormat { font_id: egui::FontId::proportional(size), ..TextFormat::default() };
     let mut width = |s: &str| -> f32 {
         let pieces = [(0..s.len(), format.clone())];
@@ -396,7 +404,7 @@ fn stretch_line(ui: &Ui, core: &str, size: f32, max_width: f32) -> String {
         }
         runs(ui, s, &pieces, size, f32::INFINITY).1.x
     };
-    notecraft_text::kashida::justify(core, max_width, &mut width)
+    notecraft_text::kashida::justify(core, max_width, strength, &mut width)
 }
 
 /// The same pieces against the stretched text: every range moved past the tatweels that

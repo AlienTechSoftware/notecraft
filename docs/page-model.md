@@ -64,9 +64,14 @@ not by pulling the words apart, which is the part no other note taking applicati
 position among the page's blocks:
 
 ```text
-Markdown   justify: 4, 11
-HTML       <meta name="notecraft:justify" content="4, 11">
+Markdown   justify: 4, 11:high, 15:low
+HTML       <meta name="notecraft:justify" content="4, 11:high, 15:low">
 ```
+
+Each number may carry a strength after a colon: `low`, `medium` or `high`, which are Word's
+Justify Low, Justify Medium and Justify High and decide how many kashidas a line may take.
+A number on its own is `medium`, so a page written before the strengths existed reads the
+same and writes the same line back.
 
 The reader and writer are `notecraft_model::justify`; the store reads and writes it in
 `notecraft_store::page` (`justified`, `set_justified`) and the command is `page.justify`.
