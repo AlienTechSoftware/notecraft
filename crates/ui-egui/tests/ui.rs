@@ -3442,3 +3442,108 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
     assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");
 }
+
+/// A page with one paragraph of `line` on it, opened and ready to write in.
+fn page_of(h: &mut Harness<'_, NoteCraftApp>, s: &Sample, title: &str, line: &str) -> String {
+    let section = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made =
+        ask(h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": "cmgfm"}}))
+            .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(h, "engine.execute", json!({"command": "page.save", "params": {"path": &page, "body": line}})).expect("save");
+    ask(h, "ui.open", json!({"path": &page})).expect("open");
+    settle(h);
+    page
+}
+
+/// Enter at the end of an Arabic paragraph starts a new one, and what is typed next goes
+/// into it.
+///
+/// The owner hit this writing a numbered list in Arabic: lines three, four and five ran
+/// together into one paragraph while one and two came out separately. The caret arriving in
+/// a right-to-left line was left at character nought instead of at the end of the words, so
+/// Enter split the line in front of its first letter: the whole sentence moved down into the
+/// new paragraph and the next thing typed ran on to the end of it. A line without
+/// right-to-left text in it never showed this, because egui's own text box puts an arriving
+/// caret at the end of the line. Both do now.
+#[test]
+fn enter_in_an_arabic_paragraph_starts_the_next_one() {
+    const LINE: &str = "هذا اختبار بسيط";
+    for (label, line) in [("arabic", LINE), ("english", "this is a test")] {
+        let (_t, app, s) = sample_app("ui-rtl-enter");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        page_of(&mut h, &s, "Enter", line);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+
+        for n in 1..=3 {
+            ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("enter");
+            settle(&mut h);
+            let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+            let text = caret.get("text").and_then(Value::as_str).unwrap_or("<none>").to_string();
+            assert_eq!(text, "", "{label}: Enter {n} left the caret in an empty new paragraph, not holding the old line");
+            assert_eq!(caret.get("block").and_then(Value::as_u64), Some(n), "{label}: and the caret is in it");
+            ask(&mut h, "ui.text", json!({"text": line})).expect("type");
+            settle(&mut h);
+        }
+        // Four paragraphs, each the line once: nothing ran on to the end of another.
+        let body = h.state().body().unwrap_or_default().to_string();
+        let written: Vec<&str> = body.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('<')).collect();
+        assert_eq!(written, vec![line; 4], "{label}: four separate paragraphs:\n{body}");
+    }
+}
+
+/// Dragging across an Arabic line selects it, and the words it covers can still be read.
+///
+/// Two things, because the second is what the owner saw. The selection is made - that much
+/// was true before - but it was painted after the words and is opaque, so a drag across an
+/// Arabic sentence left a row of blank boxes where the sentence had been. It looked exactly
+/// like a selection that did not work. The fill goes behind the words now, in a place kept
+/// for it before they are drawn.
+#[test]
+fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
+    const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
+    let (_t, app, s) = sample_app("ui-rtl-drag");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Drag", LINE);
+
+    let rect = h.get_by_label(LINE).rect();
+    let y = rect.center().y;
+    // The line hangs from the right edge, so the drag runs leftwards from near that edge.
+    let (from, to) = (rect.max.x - 30.0, rect.max.x - 170.0);
+    ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": y})).expect("click in");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": from, "y": y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": to, "y": y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": to, "y": y})).expect("release");
+    settle(&mut h);
+
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
+    assert_ne!(at, anchor, "the drag selected something: at {at}, anchor {anchor}");
+
+    // And the words under the selection are still drawn. The fill is a pale tint of the
+    // page; a glyph is far darker than either, so the band the drag covered must still
+    // hold dark pixels. Measured on 2026-10-19: 225 of them with the fill behind the
+    // words, and 23 with it painted over them, which is the stray edge of the word the
+    // drag stopped short of. The threshold sits between the two.
+    let image = h.render().expect("a picture of the window");
+    let scale = image.width() as f32 / 1200.0;
+    let (x0, x1) = ((to * scale) as u32, (from * scale) as u32);
+    let (y0, y1) = (((y - 8.0) * scale) as u32, ((y + 8.0) * scale) as u32);
+    let mut dark = 0;
+    for py in y0..y1.min(image.height()) {
+        for px in x0..x1.min(image.width()) {
+            let p = image.get_pixel(px, py);
+            if p[0] < 120 && p[1] < 120 && p[2] < 120 {
+                dark += 1;
+            }
+        }
+    }
+    assert!(dark > 40, "the selected words are still legible under the selection: {dark} dark pixels in the band");
+    review(&mut h, "rtl-drag-selection");
+}
