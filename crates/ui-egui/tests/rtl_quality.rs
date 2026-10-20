@@ -603,3 +603,69 @@ fn arabic_names_sort_by_code_point_not_by_collation() {
         "code point order: the hamza form sorts before the plain alef because U+0623 is below U+0627,          and a reader expects the two spellings of the same name to collate together"
     );
 }
+
+/// 2.1 of the bar. An arrow key moves the caret the way it points, through a line that
+/// mixes Arabic and Latin, and reaches the other end of it.
+///
+/// Measured: **the bar**, from 2026-10-19, and a plain fault before that. The caret is kept
+/// as a byte offset and nothing else, and parley's own visual step is sensitive to
+/// affinity, meaning which side of a direction boundary the caret sits on, so a step built
+/// on it read the wrong side back. Holding the right arrow in `السعر 123 ريال` cycled bytes
+/// 12, 13 and 14 for ever: the caret entered the digits and never left them. The owner
+/// reported it as the caret jumping the wrong way and skipping.
+///
+/// The step is taken by where the caret is drawn now: the nearest stop on the line further
+/// along in the direction asked for. It cannot cycle, because every step moves strictly one
+/// way across the line, and that is the whole of what this test checks - the caret never
+/// goes backwards, and it gets to the far end.
+#[test]
+fn an_arrow_key_walks_a_mixed_line_the_way_it_points() {
+    const W: f32 = 400.0;
+    for line in [LINE, "السعر 123 ريال", "مرحبا hello بك", "price 45 ريال"] {
+        let t = Theme::DEFAULT.tokens();
+        let x_at = |at: usize| -> f32 {
+            in_frame(|ui| {
+                let pieces = bidi::plain(line, 16.0, &t);
+                bidi::caret(ui, line, &pieces, at, 16.0, W).map(|r| r.min.x).unwrap_or(f32::NAN)
+            })
+        };
+        for right in [false, true] {
+            // Start at the far end of the line from where the arrow points, which is a
+            // question of where the ends are drawn and not of which byte comes first: in a
+            // left-to-right line byte nought is already the leftmost place to stand.
+            let (first, last) = (0usize, line.len());
+            let mut at = if (x_at(first) < x_at(last)) == right { first } else { last };
+            let mut was = x_at(at);
+            let mut stops = 1;
+            for _ in 0..64 {
+                let next = bidi::step(line, at, right, 16.0, W);
+                if next == at {
+                    break;
+                }
+                let x = x_at(next);
+                let name = if right { "right" } else { "left" };
+                assert!(
+                    if right { x > was - 0.5 } else { x < was + 0.5 },
+                    "{line:?}: the {name} arrow carried the caret the other way, from {was} to {x} (byte {at} to {next})"
+                );
+                at = next;
+                was = x;
+                stops += 1;
+            }
+            // It walked the line rather than stopping at the first boundary it met. Every
+            // line here has at least six places to stand.
+            assert!(stops >= 6, "{line:?}: the walk crossed the line: {stops} stops");
+        }
+    }
+
+    // And the two directions are each other's undo: one step and back is where it began.
+    for line in ["السعر 123 ريال", "مرحبا hello بك"] {
+        let mut at = line.len();
+        for _ in 0..6 {
+            let forward = bidi::step(line, at, true, 16.0, W);
+            let back = bidi::step(line, forward, false, 16.0, W);
+            assert_eq!(back, at, "{line:?}: right then left came back to {at}, not {back}");
+            at = forward;
+        }
+    }
+}
