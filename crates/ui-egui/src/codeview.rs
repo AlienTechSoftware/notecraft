@@ -593,16 +593,16 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0 - bar_room).max(120.0)).show(
                         ui,
                         |ui| {
-                            let edit = ui.add_enabled_ui(editable, |ui| {
-                                egui::TextEdit::multiline(&mut state.text)
-                                    .id(text_id)
-                                    .code_editor()
-                                    .layouter(&mut layouter)
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(26)
-                                    .show(ui)
-                            });
-                            let edit = edit.inner;
+                            // Read only is a text box that cannot be typed in, not a disabled one: a disabled
+                            // box fades every colour, which is the opposite of what colouring a file is for.
+                            let edit = egui::TextEdit::multiline(&mut state.text)
+                                .id(text_id)
+                                .code_editor()
+                                .interactive(editable)
+                                .layouter(&mut layouter)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(26)
+                                .show(ui);
                             if edit.response.changed() {
                                 state.dirty = true;
                                 out.wrote = Some((entry.name.clone(), state.text.clone()));
