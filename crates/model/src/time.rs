@@ -1,6 +1,8 @@
 //! UTC timestamps without a date library.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+// std's own SystemTime panics on wasm32-unknown-unknown, which has no clock; web_time is
+// the same type everywhere else and Date.now() there. See the workspace Cargo.toml.
+use web_time::{SystemTime, UNIX_EPOCH};
 
 pub fn iso_now() -> String {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| i64::try_from(d.as_secs()).unwrap_or(0)).unwrap_or(0);

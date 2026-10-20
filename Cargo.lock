@@ -2364,6 +2364,9 @@ dependencies = [
 [[package]]
 name = "notecraft-model"
 version = "0.0.2"
+dependencies = [
+ "web-time",
+]
 
 [[package]]
 name = "notecraft-onenote"
