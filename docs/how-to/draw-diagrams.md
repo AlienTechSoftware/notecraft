@@ -1,19 +1,22 @@
 # Draw diagrams and charts
 
 A diagram in NoteCraft is Mermaid source: plain text that says what to draw. The page keeps the
-text, and the code view draws it for you, above the text, in your theme's colours. Nothing is a
-picture until you look at it, and nothing is sent anywhere.
+text, and NoteCraft draws it where it stands, in your theme's colours. Nothing is a picture until
+you look at it, and nothing is sent anywhere.
 
 ![The code view with a pie chart, a bar and line chart and a quadrant chart drawn above their source](../images/diagrams.png)
 
-## See one
+## See one, and change it
 
 1. Put a diagram in a page. Insert, then **Diagram**, adds a starter one; or write your own.
-2. Press the **`< >`** button beside the page. The code view opens, and the diagrams of the page
-   are drawn at the top, one under another, with the page's text under them.
-3. Edit the text. The drawing follows what you type. Press the button again to go back to the page.
+2. It is drawn in the page, where it stands. A diagram that cannot be drawn shows its source, and
+   says why.
+3. **Click the drawing** to put the caret in it. Its source opens to edit, with the drawing still
+   above it, and the drawing follows what you type. Click away and it is the drawing again.
 
-The live page does not draw them yet. It shows the source, as it always has. See "Not built yet".
+The **`< >`** button opens the page's files in the code view. There the diagrams of the page are
+drawn at the top, one under another, with the whole page file under them, which is the place to fix
+a page by hand.
 
 ## How a diagram is kept
 
@@ -41,19 +44,19 @@ tool; a Vega-Lite chart from data in a file is planned and not built.
 
 ## When it cannot be drawn
 
-- **A mistake in the source.** The code view says "Not drawn" and the reason, in one line, and the
+- **A mistake in the source.** The page says "Not drawn" and the reason, in one line, above the source, and the
   text is still there to fix.
 - **Too big.** A diagram of more than 150 lines or 20,000 characters is not drawn, and says so
   at once. A very large graph can take the renderer seconds to lay out.
 - **Slow.** Drawing happens off to one side, so the window never waits: you see "Drawing..." and
   then the picture. A diagram that takes more than eight seconds is given up on.
+- **Wider than the room.** It is made smaller to fit. A very tall one is kept at its own size, and
+  the page scrolls.
 
 A diagram is never lost. Whatever happens, the text is the page's.
 
 ## Not built yet
 
-- The live page drawing a diagram where it stands, with a double click to open its code, as an
-  embedded object in an old word processor did.
 - Saving the drawn picture beside the page, for other programs to show.
 - Vega-Lite charts, and other diagram languages.
 - Zoom and pan on a large drawing.

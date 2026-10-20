@@ -1086,6 +1086,14 @@ pub fn show_blocks(
                 }
                 continue;
             }
+            // A diagram being edited stays drawn above its source, and follows what is typed.
+            if matches!(&block, Block::Code { lang, .. } if lang == "mermaid") {
+                egui::Frame::new().fill(t.editor).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    crate::diagramview::show(ui, &c.text, t);
+                });
+                ui.add_space(4.0);
+            }
             let resp = ui
                 .with_layout(row, |ui| {
                     if let Some(done) = lead(ui, &block, t) {

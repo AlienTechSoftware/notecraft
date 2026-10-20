@@ -130,8 +130,9 @@ driven from the command line as easily as from the window.
   exact version, named only there), in the page's colours. A source is cut by size before the
   renderer sees it (150 lines, 20,000 characters), a panic is caught, and a drawing too large for a
   texture is refused, so nothing a page holds can crash the window. `ui-egui/diagramview.rs` draws
-  on a thread of its own, so no frame waits, and keeps each drawing by source and colours. The code
-  view shows the drawings above the text. The live page does not draw them yet; see
+  on a thread of its own, so no frame waits, and keeps each drawing by source and colours. The page
+  draws a diagram block as its picture (`preview.rs`); the block under the caret shows its source to
+  edit, with the drawing above it, and the code view shows the drawings above the whole file. See
   [how-to/draw-diagrams.md](how-to/draw-diagrams.md) and [`gaps.md`](gaps.md).
 
 ## Testing and gates
