@@ -601,16 +601,61 @@ fn inside_a_letter(text: &str, at: usize) -> bool {
 
 /// One step left or right on a mixed line, as the eye moves.
 ///
-/// parley steps by shaped cluster, and a letter with a haraka on it is two of those, so a
-/// plain step would stop inside the letter. The step carries on in the same direction
-/// until it is between two letters.
+/// The caret is kept as a byte offset and nothing else, which is what makes this harder
+/// than asking parley. parley's own `next_visual` is sensitive to affinity, meaning which
+/// side of a direction boundary the caret is on, and a byte offset cannot carry that, so a step
+/// built on it reads the wrong side back and the caret ping-pongs. Measured on 2026-10-19:
+/// holding the right arrow in `السعر 123 ريال` cycled bytes 12, 13 and 14 for ever and the
+/// caret never left the digits. The owner reported it as the caret jumping the wrong way
+/// and skipping.
+///
+/// So a step is taken by where the caret is drawn rather than by what parley calls next:
+/// the nearest stop on the same line that is further along in the direction asked for.
+/// That is what "as the eye moves" means, it cannot cycle because every step moves strictly
+/// one way across the line, and it needs no affinity. A step off the end of a line has
+/// nowhere further to go on it, and parley answers that one, which is the case affinity
+/// does not arise in.
+///
+/// A stop is a boundary between letters: the insides of a letter are left out, so a step
+/// never lands between a letter and the mark that hangs on it.
 pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32) -> usize {
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return at };
         let layout = engine.layout(text, size, Some(max_width));
+        let place = |b: usize| {
+            let r = notecraft_text::caret_rect(&layout, notecraft_text::Caret::at(b), 1.0);
+            (r.x0, r.y0)
+        };
+        let (here_x, here_y) = place(at);
+
+        // The nearest stop that is further along the line in the direction asked for. Only
+        // stops on the same line are considered: a step off the end of one is a change of
+        // line, which parley works out below.
+        let mut best: Option<(f32, usize)> = None;
+        for stop in stops(text) {
+            if stop == at {
+                continue;
+            }
+            let (x, y) = place(stop);
+            if (y - here_y).abs() > 1.0 {
+                continue;
+            }
+            let ahead = if right { x > here_x + 0.5 } else { x < here_x - 0.5 };
+            if !ahead {
+                continue;
+            }
+            let away = (x - here_x).abs();
+            if best.is_none_or(|(near, _)| away < near) {
+                best = Some((away, stop));
+            }
+        }
+        if let Some((_, stop)) = best {
+            return stop;
+        }
+
+        // Nothing further along this line: the caret is at one end of it, so parley says
+        // where the next line begins. The marks are stepped past the same way as before.
         let mut now = at;
-        // At most a few marks hang off one letter; the bound is there so a strange string
-        // cannot spin here.
         for _ in 0..8 {
             let caret = notecraft_text::Caret::at(now);
             let moved = if right { notecraft_text::step_right(&layout, caret) } else { notecraft_text::step_left(&layout, caret) };
@@ -625,6 +670,14 @@ pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32) -> us
         }
         now
     })
+}
+
+/// Every place on the line the caret may stand: the boundaries between letters, with the
+/// insides of a letter left out so a step never lands between a letter and its mark.
+fn stops(text: &str) -> Vec<usize> {
+    let mut out: Vec<usize> = (0..=text.len()).filter(|b| text.is_char_boundary(*b) && !inside_a_letter(text, *b)).collect();
+    out.dedup();
+    out
 }
 
 /// The word under a point: what a double click takes.

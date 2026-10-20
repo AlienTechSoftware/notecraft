@@ -108,6 +108,16 @@ it is fixed and tested, not when it is promised.
   has none once the blocks above have filled the view. It was not a right-to-left fault -
   it hit every language - and it stayed hidden because every other picture in the demo sits
   near the top of its page.
+- **An arrow key moves the caret the way it points**, through a line that mixes Arabic and
+  Latin, since 2026-10-19. It did not before: the caret is kept as a byte offset and nothing
+  else, parley's own visual step is sensitive to affinity, meaning which side of a direction
+  boundary the caret sits on, and a byte offset cannot carry that, so the step read the
+  wrong side back. Holding the right arrow in `السعر 123 ريال` cycled bytes 12, 13 and 14
+  for ever and the caret never left the digits. A step is now taken by where the caret is
+  drawn - the nearest place to stand further along the line the way the arrow points - which
+  cannot cycle and needs no affinity; a step off the end of a line is still parley's, and
+  affinity does not arise there. `crates/ui-egui/tests/rtl_quality.rs` walks four lines both
+  ways and checks the caret never goes backwards and reaches the far end.
 - **The caret keeps off the vowels.** A letter with a haraka on it is two shaped clusters,
   so the arrow keys used to stop inside it and a click could land there: a caret in a place
   the eye cannot see, and a Backspace that takes the vowel off a letter that looks
