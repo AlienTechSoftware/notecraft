@@ -13,6 +13,13 @@ Point at a box and its edges appear:
 
 Both are saved into the page as soon as you let go.
 
+## Start a new box
+
+Click open paper, anywhere that is not in a box: under the last words, or beside and between the
+boxes that are there. A new empty box starts where you clicked, with the caret in it, and you can write.
+A click on a box's own words is a click in that box and starts nothing. A click that only lets go of a
+selected box, or closes its menu, starts nothing either.
+
 ## Selecting and deleting a box
 
 Click the **bar along the top**, or **right-click anywhere in the box**, and the whole box is
@@ -60,5 +67,4 @@ notecraft-cli run page.containers path=work/notes boxes=""     # back to one col
 
 ## What is not built yet
 
-Clicking an empty part of the page to start a new box, dragging a paragraph from one box to
-another, and a picture in a box of its own. [docs/gaps.md](../gaps.md) keeps that list.
+Dragging a paragraph from one box to another, and a picture in a box of its own. [docs/gaps.md](../gaps.md) keeps that list.

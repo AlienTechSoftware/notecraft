@@ -2088,6 +2088,77 @@ fn a_page_names_the_ink_in_its_folder_and_no_ink_that_is_gone() {
     );
 }
 
+/// Open paper takes a click and starts a new empty box where the pointer is, as it does in OneNote:
+/// under the last words of a short page, and also beside or between boxes that are already there,
+/// which only the strip under the last box did.
+#[test]
+fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
+    let (_t, app, s) = sample_app("ui-click-paper");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+
+    // A short page: clicks well under the last words, high and low in the window.
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Short", "format": "cmgfm"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": "# Short\n\nA few words.\n"}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = h.state().page_rect().expect("the page");
+    for y in [450.0, 600.0] {
+        ask(&mut h, "ui.click", json!({"x": page.min.x + 200.0, "y": y})).expect("click the open paper");
+        settle(&mut h);
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        assert!(state["caret"] != Value::Null, "a click at y={y} under the words put the caret in a block: {state}");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+        settle(&mut h);
+    }
+
+    // An arranged page: two boxes side by side, and open paper to the right of them, at their height.
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"260\"><p>left box</p></div>\n<div class=\"nc-box\" data-x=\"280\" data-y=\"0\" data-width=\"200\"><p>right box</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Boxes", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let boxes_before = before["containers"].as_array().map_or(0, Vec::len);
+    assert_eq!(boxes_before, 2, "two boxes to begin with: {before}");
+    let origin = &before["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+    // To the right of both boxes (they end at 480 across), at the height of the words.
+    ask(&mut h, "ui.click", json!({"x": ox + 600.0, "y": oy + 24.0})).expect("click the open paper beside the boxes");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(after["containers"].as_array().map_or(0, Vec::len), 3, "a click beside the boxes started a third: {after}");
+    assert!(after["caret"] != Value::Null, "and the caret is in it: {after}");
+    // Where it was made: its left edge is near the click, not at the end of the page.
+    let third = &after["containers"][2];
+    assert!((third["x"].as_f64().unwrap_or(0.0) - 594.0).abs() < 12.0, "at the pointer, across: {third}");
+    assert!(third["y"].as_f64().unwrap_or(999.0) < 60.0, "at the pointer, down: {third}");
+
+    // A click on a box's own words is still a click in that box, and starts nothing.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+    settle(&mut h);
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it again");
+    settle(&mut h);
+    let boxes_now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["containers"].as_array().map_or(0, Vec::len);
+    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 24.0})).expect("click in the left box");
+    settle(&mut h);
+    let inside = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
+}
+
 /// What the page says of its own diagrams, once the threads that draw them have had their say.
 fn drawn_in_page(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
     let began = std::time::Instant::now();
