@@ -83,6 +83,12 @@ struct Editor {
     boxes: Vec<notecraft_model::Container>,
     /// How wide the columns of this page's tables are drawn, from the same place.
     columns: notecraft_model::tablecols::Widths,
+    /// Which paragraphs of this page are stretched to fill the column, from the same place.
+    /// The words themselves are never touched; see `notecraft_model::justify`.
+    justified: notecraft_model::justify::Justified,
+    /// A selection dragged across more than one block. A caret belongs to one block, so a
+    /// selection that leaves it is kept here; `None` is the ordinary case.
+    across: Option<pageedit::Across>,
     /// The paper this page is drawn on and the colour behind it, as the page's own file
     /// keeps them. `None` means the page says nothing and the window's own choice stands.
     paper: Option<ribbon::RuleLines>,
@@ -105,11 +111,6 @@ impl Editor {
     fn rebuild_body(&mut self) {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
         self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
-    }
-
-    /// The direction a line falls back to when it says nothing itself.
-    fn default_dir(&self) -> notecraft_model::Dir {
-        self.page_dir.unwrap_or_default()
     }
 }
 
@@ -687,6 +688,8 @@ impl NoteCraftApp {
                 boxes,
                 arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
+                justified: notecraft_store::page::justified(dir).unwrap_or_default(),
+                across: None,
                 ink_files: notecraft_store::page::ink_files(dir),
                 paper: appearance.0,
                 colour: appearance.1,
@@ -973,7 +976,11 @@ impl NoteCraftApp {
         let text_pos = egui::pos2(x0 + 40.0, cy);
         let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
         let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x - 52.0, rect.max.y));
-        painter.with_clip_rect(text_clip).text(text_pos, Align2::LEFT_CENTER, &node.info.title, egui::FontId::proportional(14.0), text_color);
+        // The tree is on screen all the time, so this is the most visible place the words
+        // of an Arabic name would come out backwards. Each row's name decides its own
+        // direction; the row keeps its place and its clip either way.
+        let clipped = painter.with_clip_rect(text_clip);
+        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &node.info.title, 14.0, text_color, None);
         let plus_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x - 24.0, rect.min.y + 2.0), vec2(20.0, ROW_HEIGHT - 4.0));
         if node.info.kind == NodeKind::Page
             && let Some(f) = node.info.format
@@ -1168,7 +1175,11 @@ impl NoteCraftApp {
             }
         });
         let text = title.map_or_else(|| "NoteCraft".to_owned(), |t| format!("{t} - NoteCraft"));
-        ui.painter_at(row).text(row.center(), Align2::CENTER_CENTER, text, egui::FontId::proportional(12.5), on.text);
+        // A page named in Arabic puts the band's words in the wrong order if the whole
+        // string is handed to egui, so the band goes through the bidi painter like the page
+        // does. The name decides its own direction here; there is no page to follow.
+        let band = ui.painter_at(row);
+        crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
@@ -1553,6 +1564,7 @@ impl NoteCraftApp {
             ribbon::Act::Indent(deeper) => self.indent_block(deeper),
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
+            ribbon::Act::Justify(strength) => self.apply_justify(strength),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
@@ -2170,6 +2182,47 @@ impl NoteCraftApp {
         });
     }
 
+    /// Fill the column with the paragraph the caret is in, or stop filling it.
+    ///
+    /// Which paragraphs are justified is the page's own, like the arrangement of its boxes
+    /// and the width of its table columns, so it goes into the page's file and not into the
+    /// window. The words are not touched: the stretching happens when the paragraph is
+    /// drawn, so the file another program reads is the sentences the writer typed.
+    fn apply_justify(&mut self, strength: notecraft_model::justify::Strength) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say("Open a page first");
+            return;
+        };
+        let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
+            self.status = "Click in the page first, then use the ribbon".into();
+            self.status_is_error = false;
+            return;
+        };
+        if !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Paragraph(_))) {
+            self.say("Justification goes on a paragraph of text");
+            return;
+        }
+        // Asking for the strength a paragraph already has turns justification off, which
+        // is how a menu of three gives a way back to a ragged edge without a fourth entry.
+        let want = (ed.justified.strength_of(at) != Some(strength)).then_some(strength);
+        let mut marked = ed.justified.clone();
+        marked.set(at, want);
+        let path = path_str(&ed.dir);
+        let line = notecraft_model::justify::write(&marked);
+        self.save_now();
+        if self.run("page.justify", &params(&[("path", &path), ("blocks", &line)])).is_some() {
+            if let Some(ed) = self.editor.as_mut() {
+                ed.justified = marked;
+            }
+            self.say(match want {
+                Some(notecraft_model::justify::Strength::Low) => "This paragraph fills the column, stretched lightly",
+                Some(notecraft_model::justify::Strength::Medium) => "This paragraph fills the column",
+                Some(notecraft_model::justify::Strength::High) => "This paragraph fills the column, stretched hard",
+                None => "This paragraph is ragged again",
+            });
+        }
+    }
+
     /// Which way the whole page reads. It is written into the page's own file.
     fn apply_page_direction(&mut self, dir: Option<notecraft_model::Dir>) {
         let Some(ed) = self.editor.as_ref() else {
@@ -2263,6 +2316,26 @@ impl NoteCraftApp {
     /// Cut or copy what is selected in the block the caret is in.
     fn clipboard(&mut self, which: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
+        // A selection that runs across blocks is not any one block's, so it is taken from
+        // the blocks themselves. Cut takes the words out and joins what is left.
+        if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let picked = pageedit::span_text(&ed.blocks, open);
+            if picked.is_empty() {
+                self.say("Select some words first");
+                return;
+            }
+            self.pending_copy = Some(picked);
+            if which == "cut" {
+                let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+                let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
+                ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+                ed.across = None;
+                ed.rebuild_body();
+                Self::mark_dirty_from_blocks(ed);
+            }
+            self.say(if which == "cut" { "Cut" } else { "Copied" });
+            return;
+        }
         let Some(caret) = ed.caret.as_mut() else {
             self.status = "Click in the page first".into();
             self.status_is_error = false;
@@ -2812,7 +2885,7 @@ impl NoteCraftApp {
             ui.horizontal(|ui| {
                 if !hide_title {
                     // The title hangs from the same edge the page reads from.
-                    let title_align = crate::pagetext::halign(&ed.title_buf, ed.default_dir());
+                    let title_align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
                     let width = ui.available_width() - 260.0;
                     // A title that reads right to left is drawn by the bidi painter, not
                     // by the text box: egui lays the letters of a word out the right way
@@ -2820,7 +2893,7 @@ impl NoteCraftApp {
                     // showed its own name with the words backwards. Clicking it hands the
                     // line to the text box, which is still where it is edited; that is the
                     // same bargain the page itself made until its own caret was built.
-                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.default_dir());
+                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.page_dir);
                     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl_title;
                     let r = if editing {
                         ui.add(
@@ -2923,7 +2996,7 @@ impl NoteCraftApp {
                     }
                     // Which way lines fall when they say nothing themselves: the page's own
                     // direction, if the writer gave it one.
-                    let page_dir = ed.default_dir();
+                    let page_dir = ed.page_dir;
                     let margin = if wide { ((ui.available_width() - 780.0) / 2.0).max(8.0) } else { 0.0 };
                     egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: 4, bottom: 8 }).show(ui, |ui| {
                         ui.set_width(ui.available_width());
@@ -2933,6 +3006,13 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
+                            // A press lets go of whatever was selected: the drag that may
+                            // follow it builds a new one. Done here, once a frame, rather
+                            // than inside the blocks, where a container drawn later would
+                            // clear what an earlier one had just set.
+                            if ui.input(|i| i.pointer.any_pressed()) {
+                                ed.across = None;
+                            }
                             let mut moved = crate::containers::show(
                                 ui,
                                 &mut ed.blocks,
@@ -2943,6 +3023,8 @@ impl NoteCraftApp {
                                 page_dir,
                                 table_borders,
                                 &mut ed.columns,
+                                &ed.justified,
+                                &mut ed.across,
                                 if hide_title { "" } else { &shown_title },
                             );
                             page_acts.append(&mut moved.acts);
@@ -2994,7 +3076,7 @@ impl NoteCraftApp {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
                             // source. See docs/gaps.md.
-                            if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir) {
+                            if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
                                 *follow = Some(href);
                             }
                             ui.add_space(14.0);
@@ -3008,7 +3090,7 @@ impl NoteCraftApp {
                                     *toggle = true;
                                 }
                             });
-                        } else if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir) {
+                        } else if let Some(href) = preview::show(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified) {
                             *follow = Some(href);
                         }
                         if !ed.attachments.is_empty() {
@@ -3748,6 +3830,9 @@ impl NoteCraftApp {
                 // `selection` is (where the caret is, where the selection began), in
                 // characters: the two are equal when nothing is selected.
                 "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
+                // A selection dragged across more than one block, as block and byte at each
+                // end. Null for the ordinary selection inside one block, which `caret` has.
+                "across": e.across.map(|a| json!({"from": [a.from.0, a.from.1], "to": [a.to.0, a.to.1]})),
                 // The boxes the blocks are arranged in, as the page keeps them.
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.

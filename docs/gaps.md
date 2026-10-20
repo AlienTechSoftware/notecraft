@@ -6,11 +6,13 @@ it is fixed and tested, not when it is promised.
 ## Product
 
 - **Import is not finished.** It is a requirement, and the scope is import only
-  (owner's decision, 2026-10-17). `crates/onenote` reads a `.one` section file: the container
-  and the objects in it, down to pages, outlines, text runs, pictures and attachments, tested
-  against synthetic files. What is missing is the other half, writing that out as notebook
-  folders, so nothing can be imported yet. Notebook structure (`.onetoc2`) is not read, and
-  neither are password-protected sections or ink.
+  (owner's decision, 2026-10-17). `notecraft-cli import onenote` turns a folder of `.one`
+  section files into notebooks, section groups, sections, pages and sub-pages, with pictures
+  and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
+  `docs/research/onenote-file-format/real-files.md`). Missing: ink, tags, page dates, the
+  notebook table of contents (`.onetoc2`, so section order and colours), `.onepkg` packages,
+  password-protected sections, and an import command in the window. Underline and equation
+  structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
   one version, and a smaller engine of our own is the fallback. Arabic, Hebrew and Chinese inside
@@ -55,17 +57,62 @@ it is fixed and tested, not when it is promised.
   right-to-left scripts draw, joined and in the right order; a page, a paragraph or a run can
   be given a direction; a right-to-left line hangs from the right edge with its bullet, box
   and tag mark on that side; and a line that mixes the two directions is laid out by the
-  Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. What is missing: the
-  window is not mirrored (the tree stays on the left whatever the page says), and the
-  isolates the Run buttons write are kept in the file but not yet honoured when the line is
-  drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+  Unicode algorithm, so `السعر 123 ريال` keeps the number as `123`. **Fixed on 2026-10-19:
+  the page's direction now reaches the paragraphs on it.** It was read from the file and
+  carried into the painter, but the rule that used it asked the paragraph's own first letter
+  first, so every line with a letter in it answered for itself and the page was consulted
+  only for a line of digits or an empty one: setting a page of English to right to left
+  moved nothing, and setting a page of Arabic to left to right moved nothing either. The
+  order is now the paragraph's own mark, then the page, then the paragraph's first strong
+  letter, which is what `dir` on a containing element does in a browser and what a section
+  direction does in Word. `notecraft_model::direction_in` is the rule and
+  `crates/ui-egui/tests/rtl_quality.rs` measures it through the page painter. What is still
+  missing: the window is not mirrored (the tree stays on the left whatever the page says),
+  and the isolates the Run buttons write are kept in the file but not yet honoured when the
+  line is drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+- **Two faults a writer of Arabic hit at once, both fixed on 2026-10-19.** The owner typed a
+  numbered list in Arabic and dragged across a sentence, and found both. (1) **Enter split
+  the line in the wrong place.** A caret arriving in a right-to-left line was left at
+  character nought instead of at the end of the words, so Enter cut in front of the first
+  letter: the whole sentence moved down into the new paragraph, an empty one was left above
+  it, and the next thing typed ran on to the end of the sentence rather than starting a
+  line. Three numbered lines came out crammed into one paragraph. A line with no
+  right-to-left text in it never showed this, because egui's own text box puts an arriving
+  caret at the end; `write_rtl` does the same now. (2) **A selection hid the words it
+  covered.** The fill is opaque and was painted after the glyphs, so a drag across an
+  Arabic sentence left a row of blank boxes where the sentence had been - which reads as a
+  selection that does not work, and is what was reported. It is painted into a place kept
+  for it behind the words now, the same way the shading behind a container is. **And a
+  third thing had to be right before any of that could be seen:** the wash was drawn in
+  `row_selected`, which is tinted from the panel because a selected row of the tree sits on
+  the panel, while the page is drawn on `editor`. In a theme that keeps those two colours
+  apart the band landed on the page in a colour the page already was, so the words were
+  selected, the band was painted and nothing could be seen. The page has its own
+  `selection` token now, tinted from `editor`, and the contrast test checks for all 14
+  themes that it can be seen against the page and that the words on it stay readable. Both are
+  measured in `crates/ui-egui/tests/ui.rs`, the second by counting the glyph pixels that
+  survive under the selection. **A third, found the same evening and fixed with them:** a
+  drag that began on a paragraph the caret was not already in did nothing whatever - no
+  caret, no selection - because a finished block answered a click and nothing answered a
+  press that moved. That is how a reader selects words, so the first drag on any paragraph
+  was inert. The drag is now read from the pointer itself at both ends rather than sensed on
+  a widget: a widget laid over the words to watch for it takes the pointer away from the
+  words underneath, links included, which five tests said twice.
+- **Paragraph direction is in two places on the Home tab**, as of 2026-10-19: in the
+  alignment menu, where Word and OneNote keep it, and in the Direction group beside the
+  page's own, because a writer who has gone looking for the direction controls should find
+  all of them together rather than be sent back to a menu under an alignment button. Both
+  carry the pilcrow with an arrow that Word, LibreOffice and the Office web apps use for it;
+  the lines-with-an-arrow pair stays for the whole page. Not built: a keyboard shortcut for
+  either. Word's are Ctrl with the left or the right Shift, which tells the two Shift keys
+  apart, and egui reports one modifier for both.
 - **A right-to-left page title is drawn, not typed into, until it is clicked.** The title
   is an egui text box, which lays the letters of an Arabic word out the right way and then
   puts the next word to the right of it, so every Arabic page showed its own name with the
   words backwards. A right-to-left title is drawn by the bidi painter now and becomes a
   text box when it is clicked. **Not built:** the words are still backwards while the title
   is being typed in, which needs the page's own caret in the title box.
-- **The demo has a page with right-to-left in every element** - العربية في كل عنصر, under
+- **The demo has a page with right-to-left in every element** - كل عنصر في العربية, under
   the Arabic How to - which is the corpus to look at after any change to text drawing.
   **Known from it, and not fixed:** a numbered item puts its number on the left of a
   right-to-left line (a bullet and a task box go to the right, as they should), and a line
@@ -75,6 +122,16 @@ it is fixed and tested, not when it is promised.
   has none once the blocks above have filled the view. It was not a right-to-left fault -
   it hit every language - and it stayed hidden because every other picture in the demo sits
   near the top of its page.
+- **An arrow key moves the caret the way it points**, through a line that mixes Arabic and
+  Latin, since 2026-10-19. It did not before: the caret is kept as a byte offset and nothing
+  else, parley's own visual step is sensitive to affinity, meaning which side of a direction
+  boundary the caret sits on, and a byte offset cannot carry that, so the step read the
+  wrong side back. Holding the right arrow in `السعر 123 ريال` cycled bytes 12, 13 and 14
+  for ever and the caret never left the digits. A step is now taken by where the caret is
+  drawn - the nearest place to stand further along the line the way the arrow points - which
+  cannot cycle and needs no affinity; a step off the end of a line is still parley's, and
+  affinity does not arise there. `crates/ui-egui/tests/rtl_quality.rs` walks four lines both
+  ways and checks the caret never goes backwards and reaches the far end.
 - **The caret keeps off the vowels.** A letter with a haraka on it is two shaped clusters,
   so the arrow keys used to stop inside it and a click could land there: a caret in a place
   the eye cannot see, and a Backspace that takes the vowel off a letter that looks
@@ -89,17 +146,36 @@ it is fixed and tested, not when it is promised.
   before it, so a line of them came out with its words backwards; the owner read one on
   2026-10-19 and said so. `bidi.rs` draws each word on its own and places them from the
   right edge of the run leftwards, with the gaps measured rather than left in a galley.
+  **That now covers the window as well as the page**, from 2026-10-19: every row of the
+  notebook tree and the window's title band draw their label through `bidi::line_at`, so a
+  section called `الصور والملفات` is no longer listed as `والملفات الصور`. The tree was the
+  most visible instance left, because it is on screen all the time. Anywhere else that hands
+  a whole string to `Painter::text` still has the fault; `line_at` is the fix, and
+  `crates/ui-egui/tests/rtl_quality.rs` measures both halves of it.
 - **The caret in a right-to-left line is NoteCraft's own, and it is new.** egui cannot place
   one there (`crates/ui-egui/tests/arabic_layout.rs` measures why: it counts glyphs where it
   means characters), so a line with Arabic in it is drawn by `crates/ui-egui/src/bidi.rs` and
   written in with a caret of ours: parley says which character a click landed on and which
   way a step moves, egui still draws. Selecting works there too, by dragging, with Shift and
-  the arrows, and a double click takes the word under the pointer. What it does not do yet:
-  a selection that spans two paragraphs, which no block can do, and Ctrl with the arrows to
-  step by word.
+  the arrows, and a double click takes the word under the pointer. **The selection is drawn
+  as one unbroken band to a line** since 2026-10-19: a right-to-left line is drawn word by
+  word with the gaps left empty, so the selection began life as a rectangle per word and
+  showed the page through every space. A gap no wider than a space is closed now; a wider
+  one is left, because on a line of two directions the selected text really is in two
+  places. **A selection spans paragraphs** since 2026-10-19, which is the
+  difference the owner saw beside OneNote that day: a drag that leaves the paragraph it
+  began in keeps going, every paragraph it covers is drawn with a band behind it, and Copy,
+  Cut and Delete act on the whole of it. A caret belongs to one block, so a selection that
+  leaves it is kept beside the caret as `pageedit::Across` and reported by `ui.inspect` as
+  `across`; while one is open no block is a text box, because a text box would hold a
+  selection of its own and fight with it. What it does not do yet: typing over such a
+  selection replaces it (today the keys that are not Delete or Backspace are ignored while
+  it is open), dragging past the top or bottom of the page does not scroll, and Ctrl with
+  the arrows to step by word is still missing.
 - **The caret is egui's, not ours.** Each block is an egui text box, so there is no caret of
-  our own across blocks: no selection spanning two blocks, and no caret movement by visible
-  step in mixed text. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
+  our own across blocks: no caret movement by visible step in mixed text. A selection may
+  span blocks now (see above), but it is kept beside the caret rather than by it, and while
+  one is open the page stops being text boxes altogether. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
   hit testing) and gets this right; matching a mature editor means a text crate of our own
   over parley or the same house stack. Decision pending.
 - **A dropped file can be copied in or linked.** A printout (a document rendered to pictures,
@@ -118,10 +194,25 @@ it is fixed and tested, not when it is promised.
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, and
   Ctrl+Z brings it back: the page's history holds whole states of the page, boxes included.
-- **Table column widths are still on a metadata line.** The boxes of a page are elements in its text,
-  but the widths a table's columns were dragged to are kept in the head (`notecraft:columns`) or the
-  front matter (`columns:`), so the same disconnect remains for them: another program does not see
-  them. The code view does show them, because it shows the page file's head.
+- **Table column widths and justification are still on a metadata line.** The boxes of a page are
+  elements in its text, but the widths a table's columns were dragged to are kept in the head
+  (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
+  same way (`notecraft:justify`, `justify:`), so the same disconnect remains for both: another
+  program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
+  number against the wrong block. The code view does show them, because it shows the page file's
+  head. The reasoning, and what the alternatives cost, is in
+  [page-model.md](page-model.md) section 2.
+- **Justification: three things it does not do yet.** A justified paragraph is stretched when it is
+  drawn, which is what keeps the page file the writer's own words
+  (`crates/ui-egui/src/bidi.rs`, measured in `crates/ui-egui/tests/rtl_quality.rs`). Three edges
+  come with that. (1) A click inside a justified paragraph is placed against the unstretched
+  words, so it drifts towards the far end of a long line; the caret is put a letter or two off
+  where the eye expects. (2) A paragraph that mixes the two directions and reads left to right is
+  drawn ragged: kashida has nothing to stretch in Latin words, and the bidi painter has no way to
+  widen the spaces between them. A paragraph of one direction is justified either way. (3) The
+  stretching is measured in the paragraph's own type, so a line with a run of code or maths in it
+  may stop a little short of the column. A kashida also comes only in whole tatweels, because the
+  bundled face has no `JSTF` table or elongation axis; `crates/text/src/kashida.rs` says so.
 - **A drawing in the code view** is drawn, not shown as a wall of numbers: NoteCraft's own
   painter draws the strokes to fit the room, says how many there are, and Show the code puts
   the SVG one click away.

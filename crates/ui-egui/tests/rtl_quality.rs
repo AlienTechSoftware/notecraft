@@ -6,6 +6,15 @@
 //! records what the app does today - whether that is the bar or a gap - and says which it
 //! is. A test that fails after a change is an answer that moved, not necessarily a
 //! regression: read the comment and decide.
+//!
+//! What it has found so far, in the order the tests sit below: the caret keeps off the
+//! vowels and Home and End go to the visual ends of the line; a bracket reaches egui as it
+//! was typed and is mirrored there; a line, and then a whole paragraph, is justified by
+//! stretching the letters rather than the spaces, which is the line of the bar no other
+//! note taking application answers at all; and the words of an Arabic name are drawn in
+//! reading order in the window around the page - the notebook tree and the title band -
+//! and not only inside the page. Still gaps: a triple click that takes the line, and
+//! sorting names by Arabic collation rather than by code point.
 
 use egui_kittest::Harness;
 use notecraft_ui_egui::{bidi, fonts, theme::Theme};
@@ -15,6 +24,10 @@ const LINE: &str = "ما الذي يمكنك فعله هنا";
 /// The same with harakat on the first word, and a word with a bracket in it.
 const VOWELLED: &str = "كِتَاب";
 const BRACKETED: &str = "النص (مثال) هنا";
+/// A page of the demo notebook, as the tree lists it: "pictures and files". The two words
+/// have a letter each that is in neither of the others, which is how a glyph is found again
+/// after shaping: `ص` in the first word, `ف` in the second.
+const NAME: &str = "الصور والملفات";
 
 fn harness() -> Harness<'static> {
     let mut h = Harness::builder().with_size(egui::vec2(600.0, 200.0)).build_ui(|ui| fonts::install_once(ui.ctx()));
@@ -145,8 +158,10 @@ fn a_bracket_in_a_right_to_left_line_reaches_egui_as_it_was_typed() {
 /// reaches the column within one tatweel of the target with every space exactly as wide as
 /// it was. Set `NOTECRAFT_UI_VISUAL_DIR` to look at it.
 ///
-/// Not wired into the window yet: nothing in the ribbon asks for a justified paragraph,
-/// and the page format has nowhere to record that a paragraph is one.
+/// Wired into the window on 2026-10-19: the Home tab's alignment menu has a Justify
+/// entry, the page records which paragraphs are justified on a line in its head
+/// (`notecraft_model::justify`), and the painter stretches them. This test is the engine
+/// on one line; the next one is the paragraph as the page draws it.
 #[test]
 fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
     const COLUMN: f32 = 520.0;
@@ -173,7 +188,10 @@ fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
             bidi::runs(ui, s, &pieces, 18.0, f32::INFINITY).1.x
         };
         let natural = width(SENTENCE);
-        let out = notecraft_text::kashida::justify(SENTENCE, COLUMN, &mut width);
+        // The strongest of Word's three: this test is about whether kashida can fill a
+        // line at all, and Low and Medium are deliberate ceilings that may leave one
+        // short. Which setting leaves what is measured in the test below.
+        let out = notecraft_text::kashida::justify(SENTENCE, COLUMN, notecraft_model::justify::Strength::High, &mut width);
         let step = width("ـ");
         (natural, width(&out), step, out)
     });
@@ -187,6 +205,98 @@ fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
     assert_eq!(out.matches(' ').count(), SENTENCE.matches(' ').count(), "no space was widened or added");
     assert!(out.contains(notecraft_text::kashida::TATWEEL), "something was stretched");
     picture(SENTENCE, &out, COLUMN);
+}
+
+/// 1.8 of the bar, as a page draws it: a whole paragraph of Arabic, several lines long,
+/// with every line but the last reaching the column and the last one left as it fell.
+///
+/// Measured: **it works**. `bidi::stretched` is what the painter calls for a paragraph the
+/// page has marked justified. It walks the paragraph's lines, stretches each but the last,
+/// and leaves the words alone: what comes back is the same sentences with tatweels in the
+/// joins. Set `NOTECRAFT_UI_VISUAL_DIR` to look at it.
+///
+/// The last line is the part worth saying out loud. A justified paragraph whose closing
+/// half-sentence is pulled out to the margin is the mark of a bad typesetter, and every
+/// word processor that gets Arabic justification wrong gets this wrong too.
+#[test]
+fn a_whole_paragraph_is_justified_except_its_last_line() {
+    const COLUMN: f32 = 420.0;
+    const SIZE: f32 = 16.0;
+    // Four sentences, long enough to wrap several times in a column of that width.
+    const PARAGRAPH: &str = "الملاحظات يجب أن تعيش أطول من البرنامج الذي كتبها، ولهذا تحفظ نوت كرافت كل صفحة في مجلد من ملفات نصية عادية يقرؤها أي محرر. الدفتر مجلد، والقسم مجلد، والصفحة مجلد فيه ملف واحد وصوره ومرفقاته.";
+
+    let t = Theme::DEFAULT.tokens();
+    let (lines, stretched, tatweels) = in_frame(|ui| {
+        let pieces = bidi::plain(PARAGRAPH, SIZE, &t);
+        let (out, moved) = bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN, notecraft_model::justify::Strength::High);
+        // Every line as it is drawn: its left edge and its right edge in the column.
+        let (drawn, _) = bidi::runs(ui, &out, &moved, SIZE, COLUMN);
+        let mut rows: Vec<(f32, f32, f32)> = Vec::new();
+        for d in &drawn {
+            let (left, right) = (d.at.x, d.at.x + d.galley.rect.width());
+            match rows.iter_mut().find(|(y, _, _)| (*y - d.at.y).abs() < 1.0) {
+                Some((_, l, r)) => {
+                    *l = l.min(left);
+                    *r = r.max(right);
+                }
+                None => rows.push((d.at.y, left, right)),
+            }
+        }
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let count = out.chars().filter(|c| *c == notecraft_text::kashida::TATWEEL).count();
+        (rows, out, count)
+    });
+
+    assert!(lines.len() >= 3, "the paragraph wraps to several lines: {}", lines.len());
+    // One tatweel is the smallest step a plain face has, so a line is as full as it can be
+    // when it is within a few points of the column. A little over is the search landing on
+    // the nearer side of the target, which is what `kashida::justify` is asked to do.
+    // The paragraph reads right to left, so every line hangs from the right edge of the
+    // column and it is the left edge that says whether a line was filled.
+    let (_, last_left, _) = lines.last().copied().unwrap_or_default();
+    for (n, (_, left, right)) in lines.iter().enumerate().take(lines.len() - 1) {
+        assert!(*left < 14.0, "line {n} was stretched all the way to the far edge: it starts at {left}");
+        assert!((COLUMN - *right).abs() < 14.0, "line {n} still hangs from the near edge: {left} to {right} of {COLUMN}");
+    }
+    assert!(last_left > 20.0, "the last line is left where it fell, not pulled out: it starts at {last_left} of {COLUMN}");
+
+    // Nothing but tatweels was added, and no space was widened or taken away.
+    assert!(tatweels > 0, "something was stretched");
+    let stripped: String = stretched.chars().filter(|c| *c != notecraft_text::kashida::TATWEEL).collect();
+    assert_eq!(stripped, PARAGRAPH, "the words are the writer's own");
+    assert_eq!(stretched.matches(' ').count(), PARAGRAPH.matches(' ').count(), "no space was widened or added");
+    paragraph_picture(PARAGRAPH, &stretched, COLUMN, SIZE);
+}
+
+/// Draws the ragged paragraph above the justified one.
+fn paragraph_picture(plain: &str, justified: &str, column: f32, size: f32) {
+    let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let t = Theme { mode: notecraft_ui_egui::theme::Mode::Light, accent: notecraft_ui_egui::theme::Accent::Default }.tokens();
+    let (plain, justified) = (plain.to_string(), justified.to_string());
+    let mut h = Harness::builder().with_size(egui::vec2(column + 48.0, 320.0)).with_pixels_per_point(2.0).wgpu().build_ui(move |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().rect_filled(ui.max_rect(), 0.0, t.editor);
+        ui.add_space(16.0);
+        for text in [plain.as_str(), justified.as_str()] {
+            let pieces = bidi::plain(text, size, &t);
+            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(column, used.y.max(24.0)), egui::Sense::hover());
+            bidi::paint(ui, rect.min, &drawn);
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(rect.min, egui::vec2(column, used.y.max(24.0))),
+                0.0,
+                egui::Stroke::new(1.0, t.muted),
+                egui::StrokeKind::Outside,
+            );
+            ui.add_space(22.0);
+        }
+    });
+    h.run();
+    if let Ok(img) = h.render() {
+        let _ = img.save(dir.join("kashida-paragraph.png"));
+    }
 }
 
 /// Draws the ragged line above the justified one, so the difference can be looked at
@@ -223,6 +333,258 @@ fn picture(plain: &str, justified: &str, column: f32) {
     }
 }
 
+/// 1.2 of the bar, in the window rather than in the page. Every label the window draws
+/// around the page - a row of the notebook tree, the title band above it - puts the words
+/// of an Arabic name in the order they are read.
+///
+/// Measured: **the bar**, from 2026-10-19. Before that day it was a gap, and the most
+/// visible one left in the app: `Painter::text` shapes the letters of each word correctly
+/// and then puts the next word to the right of the one before it, so the demo notebook's
+/// Arabic section listed `الصور والملفات` as `والملفات الصور` in a tree that is on screen
+/// all the time. `bidi::line_at` is what the window now draws a label with, and the second
+/// half of this test is the fault it was built for, still there in egui underneath.
+#[test]
+fn the_words_of_an_arabic_name_are_drawn_in_reading_order_in_the_window() {
+    let first = 'ص'; // in الصور, the word that is read first
+    let second = 'ف'; // in والملفات, the word that is read second
+    assert_eq!(NAME.matches(first).count(), 1, "the letter is in one word only");
+    assert_eq!(NAME.matches(second).count(), 1);
+
+    // What the window now draws: one galley per word, each placed where it belongs.
+    let h = harness();
+    let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+        fonts::install_once(ui.ctx());
+        let painter = ui.painter().clone();
+        bidi::line_at(
+            ui,
+            &painter,
+            egui::pos2(40.0, 40.0),
+            egui::Align2::LEFT_CENTER,
+            NAME,
+            14.0,
+            egui::Color32::BLACK,
+            // A tree row and the window's band have no page to follow: the name decides.
+            None,
+        );
+    });
+    let words: Vec<(f32, String)> = frame
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => Some((t.pos.x, t.galley.text().to_string())),
+            _ => None,
+        })
+        .collect();
+    frame.textures_delta.clear();
+    assert_eq!(words.len(), 2, "a word to a galley, placed one by one: {words:?}");
+    let x_of = |needle: char| words.iter().find(|(_, t)| t.contains(needle)).map(|(x, _)| *x);
+    let (a, b) = (x_of(first).unwrap_or(0.0), x_of(second).unwrap_or(0.0));
+    assert!(a > b, "the word that is read first is drawn to the right of the second: {a} then {b} in {words:?}");
+
+    // And the fault underneath, so this test says why the helper exists: handed the whole
+    // string, egui draws the first word to the left of the second, which is backwards.
+    let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().text(egui::pos2(40.0, 40.0), egui::Align2::LEFT_CENTER, NAME, egui::FontId::proportional(14.0), egui::Color32::BLACK);
+    });
+    let plain: Vec<(f32, f32)> = frame
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => {
+                let at = |needle: char| t.galley.rows.first().and_then(|r| r.glyphs.iter().find(|g| g.chr == needle)).map(|g| g.pos.x);
+                Some((at(first)?, at(second)?))
+            }
+            _ => None,
+        })
+        .collect();
+    frame.textures_delta.clear();
+    let (a, b) = plain.first().copied().unwrap_or_default();
+    assert!(a < b, "egui on its own still draws the words the other way round: {a} then {b}");
+}
+
+/// 1.1 of the bar: a page the writer has set to right to left is laid out that way, words
+/// and all, and not only the lines that happen to be in Arabic.
+///
+/// Measured: **the bar**, from 2026-10-19, and **a gap before that day**. The page
+/// direction was read from the file and carried into the painter, but the rule that used it
+/// asked the line's own first letter first, so any line with a letter in it answered for
+/// itself and the page was consulted only for a line of digits or an empty one. Setting a
+/// page of English to right to left moved nothing on the screen; setting a page of Arabic
+/// to left to right moved nothing either. The owner reported it in those words.
+///
+/// What it does now is what `dir` on a containing element does in a browser, and what a
+/// section direction does in Word: the paragraph's own mark wins, then the page, then the
+/// paragraph's first strong letter. `notecraft_model::direction_in` is the rule, and this
+/// test drives the page painter itself rather than the rule, so the wiring is measured too.
+#[test]
+fn a_page_set_right_to_left_lays_out_english_that_way() {
+    const ENGLISH: &str = "Notes outlive the program.";
+    let t = Theme::DEFAULT.tokens();
+    // The left edge of the words as they are drawn, and whether the page painter drew them.
+    let edge_of = |page: Option<notecraft_model::Dir>| -> f32 {
+        let h = harness();
+        let blocks = notecraft_ui_egui::preview::blocks_for(notecraft_model::PageFormat::Cmgfm, ENGLISH);
+        let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+            fonts::install_once(ui.ctx());
+            ui.set_width(560.0);
+            notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &t, page, &Default::default());
+        });
+        let left = frame
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(text) if text.galley.text().contains("Notes") || text.galley.text().contains("outlive") => Some(text.pos.x),
+                _ => None,
+            })
+            .fold(f32::INFINITY, f32::min);
+        frame.textures_delta.clear();
+        left
+    };
+
+    let loose = edge_of(None);
+    let right_to_left = edge_of(Some(notecraft_model::Dir::Rtl));
+    let left_to_right = edge_of(Some(notecraft_model::Dir::Ltr));
+    assert!(loose.is_finite() && right_to_left.is_finite(), "the words were drawn both ways: {loose} and {right_to_left}");
+    // A page that says nothing leaves English where English goes, and so does a page set
+    // the same way. A page set the other way moves the line across to the far edge.
+    assert!((loose - left_to_right).abs() < 1.0, "a page set left to right draws English where it already was: {loose} then {left_to_right}");
+    assert!(right_to_left > loose + 100.0, "the page carries the paragraph to the right edge: {loose} then {right_to_left}");
+
+    // And the rule underneath, in the three cases that matter.
+    use notecraft_model::{Dir, direction_in, text::set_direction};
+    assert_eq!(direction_in(ENGLISH, Some(Dir::Rtl)), Dir::Rtl, "the page decides for a paragraph with no mark");
+    assert_eq!(direction_in(&set_direction(ENGLISH, Some(Dir::Ltr)), Some(Dir::Rtl)), Dir::Ltr, "the paragraph's own mark wins");
+    assert_eq!(direction_in(ENGLISH, None), Dir::Ltr, "and a page that says nothing leaves it to the words");
+}
+
+/// 1.8 of the bar again, at Word's three strengths. Justify Low, Justify Medium and
+/// Justify High decide how many kashidas a line may take, and NoteCraft has all three under
+/// those names (`docs/rtl-in-word-and-onenote.md`).
+///
+/// Measured: **the bar**, drawn through the page painter. Each strength is a ceiling rather
+/// than a target, so a line the weakest setting can already fill looks the same at all
+/// three; the three part company on a hungry line, which is what this paragraph of long
+/// words in a narrow column gives. At every strength only tatweels are added, no space is
+/// touched and the last line is left where it fell. Set `NOTECRAFT_UI_VISUAL_DIR` to see
+/// them side by side.
+#[test]
+fn the_three_justify_strengths_differ_on_the_page() {
+    const COLUMN: f32 = 300.0;
+    const SIZE: f32 = 16.0;
+    // Long words, so each line is left well short of the margin when it wraps and the
+    // weaker settings cannot close the gap. A paragraph of short words fills easily and
+    // then all three settings draw the same line, which is the point of a ceiling.
+    const PARAGRAPH: &str = "الاستخدام المعلومات البرمجيات الملاحظات التطبيقات المستندات الاحتياطي الصفحات المرفقات الاستعراض";
+    use notecraft_model::justify::Strength;
+    let t = Theme::DEFAULT.tokens();
+
+    let stretched_at = |strength: Strength| -> String {
+        in_frame(|ui| {
+            let pieces = bidi::plain(PARAGRAPH, SIZE, &t);
+            bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN, strength).0
+        })
+    };
+    let counts: Vec<usize> =
+        Strength::ALL.iter().map(|s| stretched_at(*s).chars().filter(|c| *c == notecraft_text::kashida::TATWEEL).count()).collect();
+    let (low, medium, high) = (counts[0], counts[1], counts[2]);
+    assert!(low > 0, "even the weakest setting stretches the lines: {counts:?}");
+    assert!(low < medium && medium < high, "the three are three: {counts:?}");
+
+    for strength in Strength::ALL {
+        let out = stretched_at(strength);
+        // Only tatweels were added, and no space was widened or taken away.
+        let stripped: String = out.chars().filter(|c| *c != notecraft_text::kashida::TATWEEL).collect();
+        assert_eq!(stripped, PARAGRAPH, "{strength:?} added nothing but tatweels");
+        assert_eq!(out.matches(' ').count(), PARAGRAPH.matches(' ').count(), "{strength:?} widened no space");
+
+        let lines = drawn_lines(&out, SIZE, COLUMN, &t);
+        assert!(lines.len() >= 3, "{strength:?}: the paragraph wraps: {}", lines.len());
+        let (_, last_left, _) = lines.last().copied().unwrap_or_default();
+        assert!(last_left > 20.0, "{strength:?}: the last line is left where it fell: {last_left}");
+        for (n, (_, _, right)) in lines.iter().enumerate().take(lines.len() - 1) {
+            assert!((COLUMN - *right).abs() < 14.0, "{strength:?} line {n} still hangs from the near edge: {right}");
+        }
+    }
+
+    // The strongest setting carries every line but the last to the far edge. The weakest is
+    // not asked to: it leaves a join alone rather than stretch one that would look wrong,
+    // and a line it cannot fill stays a little short. That is the difference, measured.
+    let far_edge = |strength: Strength| -> f32 {
+        let out = stretched_at(strength);
+        let lines = drawn_lines(&out, SIZE, COLUMN, &t);
+        lines.iter().take(lines.len().saturating_sub(1)).map(|(_, left, _)| *left).fold(0.0_f32, f32::max)
+    };
+    let ragged = {
+        let lines = drawn_lines(PARAGRAPH, SIZE, COLUMN, &t);
+        lines.iter().take(lines.len().saturating_sub(1)).map(|(_, left, _)| *left).fold(0.0_f32, f32::max)
+    };
+    assert!(far_edge(Strength::High) < 18.0, "high reaches the far edge on every line it justifies: {}", far_edge(Strength::High));
+    assert!(far_edge(Strength::Low) < ragged, "low still closes some of the gap: {} against {ragged} ragged", far_edge(Strength::Low));
+
+    strengths_picture(PARAGRAPH, &Strength::ALL.map(stretched_at), COLUMN, SIZE);
+}
+
+/// Each drawn line of `text` in a column: its top, its left edge and its right edge.
+fn drawn_lines(text: &str, size: f32, column: f32, t: &notecraft_ui_egui::theme::Tokens) -> Vec<(f32, f32, f32)> {
+    in_frame(|ui| {
+        let pieces = bidi::plain(text, size, t);
+        let (drawn, _) = bidi::runs(ui, text, &pieces, size, column);
+        let mut rows: Vec<(f32, f32, f32)> = Vec::new();
+        for d in &drawn {
+            let (left, right) = (d.at.x, d.at.x + d.galley.rect.width());
+            match rows.iter_mut().find(|(y, _, _)| (*y - d.at.y).abs() < 1.0) {
+                Some((_, l, r)) => {
+                    *l = l.min(left);
+                    *r = r.max(right);
+                }
+                None => rows.push((d.at.y, left, right)),
+            }
+        }
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        rows
+    })
+}
+
+/// The ragged paragraph and then the three strengths, one under another.
+fn strengths_picture(plain: &str, stretched: &[String; 3], column: f32, size: f32) {
+    let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let t = Theme { mode: notecraft_ui_egui::theme::Mode::Light, accent: notecraft_ui_egui::theme::Accent::Default }.tokens();
+    let labels = ["ragged", "low", "medium", "high"];
+    let all: Vec<String> = std::iter::once(plain.to_string()).chain(stretched.iter().cloned()).collect();
+    let mut h = Harness::builder().with_size(egui::vec2(column + 90.0, 560.0)).with_pixels_per_point(2.0).wgpu().build_ui(move |ui| {
+        fonts::install_once(ui.ctx());
+        ui.painter().rect_filled(ui.max_rect(), 0.0, t.editor);
+        ui.add_space(14.0);
+        for (label, text) in labels.iter().zip(&all) {
+            let pieces = bidi::plain(text, size, &t);
+            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(column + 70.0, used.y.max(24.0)), egui::Sense::hover());
+            bidi::paint(ui, rect.min, &drawn);
+            ui.painter().text(
+                egui::pos2(rect.min.x + column + 8.0, rect.min.y),
+                egui::Align2::LEFT_TOP,
+                label,
+                egui::FontId::proportional(11.0),
+                t.muted,
+            );
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_size(rect.min, egui::vec2(column, used.y.max(24.0))),
+                0.0,
+                egui::Stroke::new(1.0, t.muted),
+                egui::StrokeKind::Outside,
+            );
+            ui.add_space(18.0);
+        }
+    });
+    h.run();
+    if let Ok(img) = h.render() {
+        let _ = img.save(dir.join("kashida-strengths.png"));
+    }
+}
+
 /// 4.3 of the bar. Pages and sections are listed in the order a reader of the script
 /// expects.
 ///
@@ -240,4 +602,70 @@ fn arabic_names_sort_by_code_point_not_by_collation() {
         ["أحمد", "احمد", "بيت", "تاج"],
         "code point order: the hamza form sorts before the plain alef because U+0623 is below U+0627,          and a reader expects the two spellings of the same name to collate together"
     );
+}
+
+/// 2.1 of the bar. An arrow key moves the caret the way it points, through a line that
+/// mixes Arabic and Latin, and reaches the other end of it.
+///
+/// Measured: **the bar**, from 2026-10-19, and a plain fault before that. The caret is kept
+/// as a byte offset and nothing else, and parley's own visual step is sensitive to
+/// affinity, meaning which side of a direction boundary the caret sits on, so a step built
+/// on it read the wrong side back. Holding the right arrow in `السعر 123 ريال` cycled bytes
+/// 12, 13 and 14 for ever: the caret entered the digits and never left them. The owner
+/// reported it as the caret jumping the wrong way and skipping.
+///
+/// The step is taken by where the caret is drawn now: the nearest stop on the line further
+/// along in the direction asked for. It cannot cycle, because every step moves strictly one
+/// way across the line, and that is the whole of what this test checks - the caret never
+/// goes backwards, and it gets to the far end.
+#[test]
+fn an_arrow_key_walks_a_mixed_line_the_way_it_points() {
+    const W: f32 = 400.0;
+    for line in [LINE, "السعر 123 ريال", "مرحبا hello بك", "price 45 ريال"] {
+        let t = Theme::DEFAULT.tokens();
+        let x_at = |at: usize| -> f32 {
+            in_frame(|ui| {
+                let pieces = bidi::plain(line, 16.0, &t);
+                bidi::caret(ui, line, &pieces, at, 16.0, W).map(|r| r.min.x).unwrap_or(f32::NAN)
+            })
+        };
+        for right in [false, true] {
+            // Start at the far end of the line from where the arrow points, which is a
+            // question of where the ends are drawn and not of which byte comes first: in a
+            // left-to-right line byte nought is already the leftmost place to stand.
+            let (first, last) = (0usize, line.len());
+            let mut at = if (x_at(first) < x_at(last)) == right { first } else { last };
+            let mut was = x_at(at);
+            let mut stops = 1;
+            for _ in 0..64 {
+                let next = bidi::step(line, at, right, 16.0, W);
+                if next == at {
+                    break;
+                }
+                let x = x_at(next);
+                let name = if right { "right" } else { "left" };
+                assert!(
+                    if right { x > was - 0.5 } else { x < was + 0.5 },
+                    "{line:?}: the {name} arrow carried the caret the other way, from {was} to {x} (byte {at} to {next})"
+                );
+                at = next;
+                was = x;
+                stops += 1;
+            }
+            // It walked the line rather than stopping at the first boundary it met. Every
+            // line here has at least six places to stand.
+            assert!(stops >= 6, "{line:?}: the walk crossed the line: {stops} stops");
+        }
+    }
+
+    // And the two directions are each other's undo: one step and back is where it began.
+    for line in ["السعر 123 ريال", "مرحبا hello بك"] {
+        let mut at = line.len();
+        for _ in 0..6 {
+            let forward = bidi::step(line, at, true, 16.0, W);
+            let back = bidi::step(line, forward, false, 16.0, W);
+            assert_eq!(back, at, "{line:?}: right then left came back to {at}, not {back}");
+            at = forward;
+        }
+    }
 }

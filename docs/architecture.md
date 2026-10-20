@@ -18,8 +18,9 @@ and nothing below L6 may depend on egui, eframe, winit or rfd.
 | L1 | `formats` | Text handling for HTML and CommonMark + GFM: front matter, the body of an HTML page, page templates, HTML to Markdown-like text for previews, and a Markdown parser into a block model. |
 | L1 | `math` | TeX maths typeset into drawing items (glyphs, text runs, lines, rectangles, paths) given a way to measure text. RaTeX does it; a small engine of its own is the fallback. No UI dependency. |
 | L1 | `text` | The text layer, started: parley for the runs of a line, their order, their direction and which character a click is on. No egui, no drawing: the UI paints the runs egui's way. |
-| L1 | `onenote` | Reads `.one` section files: the revision store container, its objects and their property sets. Read only, no file system of its own. |
+| L1 | `onenote` | Reads `.one` section files: the revision store container, its objects and their property sets, and what they mean (pages, text, pictures, tables). Read only, no file system of its own. |
 | L2 | `store` | Notebooks as plain folders: the tree, creating and deleting nodes, page content, attachments, settings, search, and the folder checker. |
+| L3 | `import` | Turns a folder of `.one` files into a notebook tree: finds the files, picks the newest copy of each section, converts pages to blocks, and asks the store to write them. The source is only read. |
 | L4 | `engine` | `Session` and the **command registry**. Every user-visible action is a `CommandSpec`. |
 | L5 | `mcp` | NoteCraft as an MCP server: the command registry over the Model Context Protocol, headless or against a running window. |
 | L6 | `ui-egui` | The egui front end: tree with code-drawn icons, the page and how it is written on (`pagetext`), themes, math drawing. Swappable. |
@@ -109,9 +110,20 @@ page. See [`page-model.md`](page-model.md) and [`gaps.md`](gaps.md).
    is how a revision store states the current version.
 4. An object's data is a property set ([MS-ONESTORE] 2.6) or a reference to an inserted file.
 
-What the objects mean ([MS-ONE]: sections, pages, outlines, text runs) is the next layer and
-is not built yet. The crate never writes and has no UI dependency, so the importer can be
-driven from the command line as easily as from the window.
+What the objects mean ([MS-ONE]: sections, pages, outlines, text runs, pictures, tables) is
+the layer above: `section()` returns pages with their levels and lines. The crate never writes
+and has no UI dependency, so the importer can be driven from the command line as easily as from
+the window. Where real files differ from the specification, see
+[`research/onenote-file-format/real-files.md`](research/onenote-file-format/real-files.md).
+
+## Importing
+
+`crates/import` runs `discover -> plan -> read -> convert -> write -> report`. It reads one
+section file at a time, so memory is bounded by the largest file, and a file that cannot be
+read costs that file and not the run. The tree it writes comes from `store` (notebook, section
+group, section, page, and sub-pages nested to any depth), and the pages from `formats`, so an
+imported page is the same as a typed one. Run it with `notecraft-cli import onenote`; see
+[`how-to/move-your-notes.md`](how-to/move-your-notes.md).
 
 ## Equations and diagrams
 

@@ -81,7 +81,16 @@ pub fn span_of(block: &Block, cell: (usize, usize), what: TableSpan) -> Option<(
 
 /// The character of `text` a click at `x` lands on, given how the block is drawn. Used so a
 /// click puts the caret where the pointer is, the way it does in any editor.
-pub fn char_at(ui: &Ui, text: &str, size: f32, strong: bool, t: &Tokens, width: f32, offset: egui::Vec2, page: notecraft_model::Dir) -> usize {
+pub fn char_at(
+    ui: &Ui,
+    text: &str,
+    size: f32,
+    strong: bool,
+    t: &Tokens,
+    width: f32,
+    offset: egui::Vec2,
+    page: Option<notecraft_model::Dir>,
+) -> usize {
     let job = pagetext::inline_job(text, size, strong, t, width.max(1.0), page);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let chars = text.chars().count();
@@ -497,7 +506,7 @@ fn table(
     i: usize,
     caret: &mut Option<Caret>,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     changed: &mut Changed,
@@ -934,13 +943,15 @@ pub fn show(
     caret: &mut Option<Caret>,
     page_dir: &std::path::Path,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    justified: &notecraft_model::justify::Justified,
+    across: &mut Option<Across>,
     shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, shown_title);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -961,10 +972,14 @@ pub fn show_blocks(
     caret: &mut Option<Caret>,
     page_dir: &std::path::Path,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     range: std::ops::Range<usize>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    // Which blocks are stretched to reach the column; see `notecraft_model::justify`.
+    justified: &notecraft_model::justify::Justified,
+    // A selection that runs across more than one block, grown here as the drag moves.
+    across: &mut Option<Across>,
     // The title the window is already showing, so the body does not repeat it.
     shown_title: &str,
 ) -> Changed {
@@ -992,13 +1007,30 @@ pub fn show_blocks(
             }
         }
     }
+    // A selection across blocks is nobody's text box, so the keys that act on a selection
+    // are answered here. Delete and Backspace both take it out, as they do everywhere.
+    if let Some(open) = across.filter(|a| !a.inside_one_block())
+        && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    {
+        let (block, at) = delete_span(blocks, open);
+        let text = blocks.get(block).map(caret_text).unwrap_or_default();
+        *caret = Some(Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+        *across = None;
+        changed.blocks = true;
+        changed.caret = true;
+        return changed;
+    }
+
     for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
         // The title area above the page is already showing this; see `is_title_echo`.
         if is_title_echo(blocks, i, shown_title) {
             continue;
         }
-        let editing = caret.as_ref().is_some_and(|c| c.block == i);
+        // While a selection runs across blocks the page is all finished words: a text box
+        // would own a selection of its own and fight with this one.
+        let spanning = across.is_some_and(|a| !a.inside_one_block());
+        let editing = !spanning && caret.as_ref().is_some_and(|c| c.block == i);
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
@@ -1021,7 +1053,7 @@ pub fn show_blocks(
             let id = ui.make_persistent_id(("page-block", i));
             // A line that reads right to left is written from the right: its bullet, box or
             // tag mark sits on the right, and the words hang from that edge.
-            let align = if notecraft_model::direction_or(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
+            let align = if notecraft_model::direction_in(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
             let row = if align == egui::Align::RIGHT {
                 egui::Layout::right_to_left(egui::Align::Min)
             } else {
@@ -1212,10 +1244,63 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(ui, &block, i, page_dir, t, true, page)
+                    preview::show_block(
+                        ui,
+                        &block,
+                        i,
+                        page_dir,
+                        t,
+                        true,
+                        page,
+                        justified.strength_of(i),
+                        across.filter(|a| !a.inside_one_block()).and_then(|a| a.covering(i, block_text(&block).len())),
+                        ui.make_persistent_id(("page-block", i)),
+                    )
                 })
                 .inner;
             let resp = out.response;
+            // Dragging across words is how a reader selects them, and until now a drag that
+            // began on a paragraph the caret was not already in did nothing at all: the
+            // block answered a click and nothing answered a press that moved. So the caret
+            // never arrived, no selection was made, and the page looked inert under the
+            // pointer. The drag is read from the pointer itself rather than by sensing it
+            // on a widget: a second `interact` over the same rectangle takes the pointer
+            // from the one underneath whatever it is asked to sense, and five tests about
+            // following a link said so twice. So the caret lands where the press fell, and
+            // `write_rtl` carries the same drag on from the same reading.
+            if is_writable(&block)
+                && out.task_set.is_none()
+                && let Some(p) = drag_began_in(ui, resp.rect)
+            {
+                let at = char_under(ui, &block, &resp, p, t, page);
+                if across.is_none() {
+                    let byte = byte_of(&block_text(&block), at);
+                    *across = Some(Across { from: (i, byte), to: (i, byte) });
+                }
+                action = Some(Action::MoveTo(i, Some(at)));
+            }
+            // The drag has reached this block from another one.
+            if is_writable(&block)
+                && dragging(ui)
+                && let Some(p) = ui.ctx().pointer_latest_pos()
+                && resp.rect.contains(p)
+            {
+                let at = byte_of(&block_text(&block), char_under(ui, &block, &resp, p, t, page));
+                match across.as_mut() {
+                    // Already open: this is where it reaches now, the block it began in
+                    // included, so dragging back the way it came shortens it again.
+                    Some(open) => open.to = (i, at),
+                    // Not open yet, so the drag began inside the block the caret is in -
+                    // a text box, which handles its own selection and knows nothing of the
+                    // page. It has now left that block, so the selection becomes the page's
+                    // and keeps the anchor the text box was holding.
+                    None => {
+                        if let Some(c) = caret.as_ref().filter(|c| c.block != i) {
+                            *across = Some(Across { from: (c.block, byte_of(&c.text, c.selection.1)), to: (i, at) });
+                        }
+                    }
+                }
+            }
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
             } else if resp.clicked() && is_writable(&block) {
@@ -1239,6 +1324,106 @@ pub fn show_blocks(
         apply(a, blocks, caret, &mut changed);
     }
     changed
+}
+
+/// A selection that runs across more than one block: where the drag began and where it has
+/// reached, each a block and a byte in that block's own words.
+///
+/// A caret belongs to one block, which is why this is kept beside it rather than inside it.
+/// While a selection like this is open no block is a text box: the whole page is drawn as
+/// finished words with the bands painted behind them, and the keys that act on a selection
+/// act on the whole of it. That is how OneNote and Word behave, and until 2026-10-19 a drag
+/// here simply stopped at the end of the paragraph it began in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Across {
+    pub from: (usize, usize),
+    pub to: (usize, usize),
+}
+
+impl Across {
+    /// The two ends in page order, first then last.
+    pub fn ends(&self) -> ((usize, usize), (usize, usize)) {
+        if self.from <= self.to { (self.from, self.to) } else { (self.to, self.from) }
+    }
+
+    /// The blocks it touches, in page order.
+    pub fn blocks(&self) -> std::ops::RangeInclusive<usize> {
+        let (a, b) = self.ends();
+        a.0..=b.0
+    }
+
+    /// True while both ends are in the same block, which is the ordinary selection a text
+    /// box handles by itself.
+    pub fn inside_one_block(&self) -> bool {
+        self.from.0 == self.to.0
+    }
+
+    /// What of block `at` is covered, in bytes of that block's words. `whole` is how long
+    /// those words are, for the blocks the selection runs through completely.
+    pub fn covering(&self, at: usize, whole: usize) -> Option<(usize, usize)> {
+        let (a, b) = self.ends();
+        if at < a.0 || at > b.0 {
+            return None;
+        }
+        let start = if at == a.0 { a.1.min(whole) } else { 0 };
+        let end = if at == b.0 { b.1.min(whole) } else { whole };
+        (start < end).then_some((start, end))
+    }
+}
+
+/// The words a selection across blocks covers, a paragraph to a line.
+///
+/// A blank line between them, which is what the page itself puts between paragraphs, so
+/// what is copied out pastes back as the same paragraphs.
+pub fn span_text(blocks: &[Block], across: Across) -> String {
+    across
+        .blocks()
+        .filter_map(|i| {
+            let whole = blocks.get(i).map(block_text)?;
+            let (a, b) = across.covering(i, whole.len())?;
+            Some(whole.get(a..b)?.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Takes out everything a selection across blocks covers and joins what is left.
+///
+/// What is left of the first block and what is left of the last become one paragraph, the
+/// blocks between them go, and the caret lands where the two halves meet - which is what
+/// deleting a selection does in every editor. Returns the block the caret belongs in and
+/// the character it belongs at.
+pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
+    let ((first, from), (last, to)) = across.ends();
+    let head = blocks.get(first).map(block_text).unwrap_or_default();
+    let tail = blocks.get(last).map(block_text).unwrap_or_default();
+    let kept_head = head.get(..from.min(head.len())).unwrap_or("").to_string();
+    let kept_tail = tail.get(to.min(tail.len())..).unwrap_or("").to_string();
+    let at = kept_head.chars().count();
+    if let Some(b) = blocks.get_mut(first) {
+        set_block_text(b, &format!("{kept_head}{kept_tail}"));
+    }
+    if last > first {
+        let end = last.min(blocks.len().saturating_sub(1));
+        blocks.drain(first + 1..=end);
+    }
+    renumber(blocks);
+    (first, at)
+}
+
+/// Where a drag began, when it began inside `rect` and is still going.
+///
+/// Read from the pointer rather than from a widget on purpose. A drag across words starts
+/// on a block that is still finished text and ends in the text box that block turns into,
+/// so no one widget sees the whole of it; and a widget laid over the words to watch for it
+/// takes the pointer away from the words themselves, links included. The pointer knows
+/// where it was pressed and whether it has moved since, which is all either end needs.
+fn dragging(ui: &Ui) -> bool {
+    ui.input(|i| i.pointer.is_decidedly_dragging())
+}
+
+fn drag_began_in(ui: &Ui, rect: egui::Rect) -> Option<egui::Pos2> {
+    ui.input(|i| i.pointer.press_origin().filter(|p| rect.contains(*p) && i.pointer.is_decidedly_dragging()))
 }
 
 /// What a key or a click asked for.
@@ -1441,14 +1626,27 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     // being one under the caret.
     let (rect, _) = ui.allocate_exact_size(vec2(width, used.y.max(size * 1.3)), Sense::hover());
     let resp = ui.interact(rect, id, Sense::click_and_drag());
+    // A place kept behind the words for the selection, filled in below once the drag has
+    // been read. The selection is opaque, so painting it after the words hid every word it
+    // covered: a drag across an Arabic line left a row of empty boxes where the sentence
+    // had been, which is what a reader took for a selection that did not work. The same
+    // trick, for the same reason, as the shading behind a container in `containers.rs`.
+    let behind = ui.painter().add(egui::Shape::Noop);
     crate::bidi::paint(ui, rect.min, &drawn);
 
     if c.focus {
         c.focus = false;
-        if let Some(place) = c.place.take() {
-            let at = place.min(c.text.chars().count());
-            c.selection = (at, at);
-        }
+        // Where the caret lands when it arrives in this line: where the click was, and
+        // otherwise the end of the words, which is what egui's text box does for a line
+        // without right-to-left in it and what every editor does when you step into a
+        // line. Leaving it at nought instead put the caret at the START of an Arabic
+        // paragraph, so Enter split the line in front of its first letter: the whole
+        // sentence moved down into the new paragraph, an empty one was left above it, and
+        // the next thing typed ran on to the end of the sentence instead of starting a
+        // new line. That is how a page of numbered Arabic lines ends up with three of
+        // them crammed into one paragraph.
+        let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
+        c.selection = (at, at);
     }
     // The caret is in this block, so this is where the typing goes.
     if !resp.has_focus() {
@@ -1462,18 +1660,34 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
 
     // A click puts the caret under the pointer, which only parley can work out here. A
     // double click takes the word, and a drag extends the selection from where it began.
-    if let Some(p) = resp.interact_pointer_pos() {
+    //
+    // The drag may have begun before this text box existed, on the finished block the
+    // caret has just landed in, and egui tracks a drag against the widget that was
+    // pressed. So the pointer is read directly as well: `carried` is a drag that started
+    // inside this line and is still going, whoever was under it at the time.
+    let carried = drag_began_in(ui, rect).and(ui.ctx().pointer_latest_pos());
+    if let Some(p) = resp.interact_pointer_pos().or(carried) {
         let point = p - rect.min;
         if resp.double_clicked() {
             let word = crate::bidi::word_at(&c.text, point, size, width);
             anchor = word.start;
             at = word.end;
             resp.request_focus();
-        } else if resp.drag_started() || (resp.clicked() && !resp.dragged()) {
+        } else if resp.drag_started() {
+            // egui calls a drag a drag only once the pointer has moved a little way, so by
+            // now it is no longer where it was pressed. The selection has to begin where
+            // the press fell, not here, or it collapses to a caret the moment the drag is
+            // recognised and nothing is ever selected inside a block the caret already sat
+            // in. That is what the owner saw.
+            let began = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
+            anchor = crate::bidi::hit(&c.text, began - rect.min, size, width);
+            at = crate::bidi::hit(&c.text, point, size, width);
+            resp.request_focus();
+        } else if resp.clicked() && !resp.dragged() {
             at = crate::bidi::hit(&c.text, point, size, width);
             anchor = at;
             resp.request_focus();
-        } else if resp.dragged() {
+        } else if resp.dragged() || carried.is_some() {
             at = crate::bidi::hit(&c.text, point, size, width);
             resp.request_focus();
         }
@@ -1559,10 +1773,14 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
 
     // What is selected, painted behind the words, one rectangle per run it covers.
     if resp.has_focus() && anchor != at {
-        for r in crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width) {
-            let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
-            ui.painter().rect_filled(r, 1.0, t.row_selected);
-        }
+        let shapes: Vec<egui::Shape> = crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width)
+            .into_iter()
+            .map(|r| {
+                let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
+                egui::Shape::rect_filled(r, 1.0, t.selection)
+            })
+            .collect();
+        ui.painter().set(behind, egui::Shape::Vec(shapes));
     }
     // The caret itself, drawn where parley says it belongs on the line.
     if resp.has_focus()
@@ -1767,7 +1985,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
 }
 
 /// The character of a finished block under `pos`, given the area `resp` it was drawn in.
-fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> usize {
+fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> usize {
     if let Some(at) = char_under_drawn(ui, block, resp, pos, t, page) {
         return at;
     }
@@ -1784,7 +2002,7 @@ fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t:
 /// the text and invisible on the page. So the pointer is measured against what was drawn and
 /// the answer is carried back over the marks. `None` when that carrying back cannot be
 /// trusted, and the caller measures the old way.
-fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<usize> {
+fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> Option<usize> {
     let spans = match block {
         Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
         _ => return None,
@@ -1840,7 +2058,7 @@ fn over_marks(spans: &[Span], drawn: usize) -> usize {
 /// The link the character `at` of `block` sits in, if any, for a block egui laid out. Code
 /// and equations hold no links. A block the bidi painter drew is not mapped this way (see
 /// `link_under`).
-fn link_in(block: &Block, at: usize, page: notecraft_model::Dir) -> Option<String> {
+fn link_in(block: &Block, at: usize, page: Option<notecraft_model::Dir>) -> Option<String> {
     if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
         return None;
     }
@@ -1854,7 +2072,7 @@ fn link_in(block: &Block, at: usize, page: notecraft_model::Dir) -> Option<Strin
 /// The link under the pointer at `pos` in a finished block, if the pointer is on one. A
 /// right-to-left or mixed line is asked through the painter that drew it; any other line
 /// through egui's layout of its text.
-pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<String> {
+pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> Option<String> {
     if !is_writable(block) {
         return None;
     }

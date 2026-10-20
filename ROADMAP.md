@@ -46,9 +46,10 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 
 ## Next (in this order)
 
-1. **Import, part three**: turn what the reader returns into notebook folders, with
-   pictures and attachments, then try it on real backup files. The reader is done; this is the
-   writing half.
+1. **Import, the rest**: the importer runs (`notecraft-cli import onenote`) and has been tried on
+   a real set of 443 backup files. Still to do: ink, tags and page dates, the notebook table of
+   contents (`.onetoc2`) for section order and colours, `.onepkg` packages, an import command in
+   the window, and password protected sections.
 2. **Pasting what other apps really put on the clipboard**: a picture (Bitmap, DIB or PNG,
    which needs a clipboard crate such as `arboard`) and the HTML flavour, which keeps the
    formatting inside a pasted table. The plain-text flavour already comes back as a table.

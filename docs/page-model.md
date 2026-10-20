@@ -40,8 +40,10 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
    the head alone: a new page does not repeat it in its body, and a page that does - an
    older one, or one written by hand - has that heading left out of the live view, because
    the title area above the page is already showing it. The file is not changed; the code
-   view shows it as it is. The one exception today
-   is the width of table columns, which is on a metadata line; see [gaps.md](gaps.md).
+   view shows it as it is. Two things are kept there that belong to a block rather than to
+   the page: the width of a table's columns (`columns`) and which paragraphs are justified
+   (`justify`). Both name their block by its position among the page's blocks. Section 2.1
+   says why, and [gaps.md](gaps.md) records what it costs.
 5. **What the window shows and what the folder holds never disagree.** Open a page, change
    nothing, save it: the folder is the same. Close the window and read the folder: it says what
    the window showed. Each kind of content has a test for this.
@@ -49,6 +51,63 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
    writer in `notecraft_formats`, so the store, the engine and the window share one, (c) appear
    in the code view's list, and (d) have a round-trip test. Content the page file does not name
    is not finished.
+
+### 2.1 Where justification is written, and why
+
+Decided on 2026-10-19, building requirement 7's line 1.8 (the private host's
+`work/rtl-and-caret-bar.md`). A justified paragraph fills its column instead of leaving a
+ragged edge. Arabic is justified by lengthening the joins inside the words - the kashida -
+not by pulling the words apart, which is the part no other note taking application does;
+`crates/text/src/kashida.rs` has the typography and the sources.
+
+**Where it is recorded.** A line in the page's head, naming the justified paragraphs by their
+position among the page's blocks:
+
+```text
+Markdown   justify: 4, 11:high, 15:low
+HTML       <meta name="notecraft:justify" content="4, 11:high, 15:low">
+```
+
+Each number may carry a strength after a colon: `low`, `medium` or `high`, which are Word's
+Justify Low, Justify Medium and Justify High and decide how many kashidas a line may take.
+A number on its own is `medium`, so a page written before the strengths existed reads the
+same and writes the same line back.
+
+The reader and writer are `notecraft_model::justify`; the store reads and writes it in
+`notecraft_store::page` (`justified`, `set_justified`) and the command is `page.justify`.
+
+**Why there and not in the words.** Three places were weighed.
+
+| | A line in the head (chosen) | In the markup of the block | A mark in the text |
+|---|---|---|---|
+| CommonMark | has no alignment at all, so nothing is lost by keeping it out | would need raw HTML in the Markdown, which stops being CommonMark | a marker the writer did not type, in the words they did |
+| The two formats stay the same page | yes | no: an HTML page could carry `style="text-align: justify"` and the Markdown copy could not, so the two would say different things | yes, but both formats would carry a marker no other program knows |
+| Another program reading the file | sees plain sentences, and one metadata line it may ignore | sees a `style` it may or may not honour | sees a stray character in the middle of the words |
+| What a block editor must learn | nothing: the blocks are unchanged | a new attribute on every block, through the reader, the writer and the model | a new escape in the inline parser |
+| When blocks are rearranged outside NoteCraft | a number may find the wrong paragraph | travels with the block | travels with the block |
+
+The last row is the price, and it is the price the width of a table's column already pays
+(`crates/model/src/tablecols.rs` says so in its own note). The worst it does is justify a
+paragraph nobody asked for, which one click puts right; nothing the page says is lost. The
+first four rows are what buys it, and the fourth is the honest one: this is the option that
+needs no change to the block model at all. Whether both of these move into the markup is
+open question 6.
+
+**The words are never touched.** The tatweels that fill a line live only in the drawing.
+The page file holds the sentences the writer typed, so a page saved and reopened comes back
+the same text, a screen reader is told the same text, and another program reading the
+Markdown sees no stretched words. The painter stretches the paragraph each time it is drawn
+and remembers the answer against the column it was drawn into
+(`crates/ui-egui/src/bidi.rs`). While the caret is in the paragraph it is shown as it is
+written, unstretched, because that is the text being typed in.
+
+**The last line of a paragraph is never justified**, in either direction. A closing
+half-sentence pulled out to the margin is the mark of a bad typesetter.
+
+**A paragraph that reads left to right** is justified the Latin way, by widening the spaces,
+which is egui's own layout (`LayoutJob::justify`). Kashida does nothing for Latin letters:
+they do not join. What is not done is a paragraph that mixes the two directions and reads
+left to right; it is drawn ragged, and that is in [gaps.md](gaps.md).
 
 ## 3. The live view
 
@@ -252,6 +311,7 @@ text does not name.
 | The page file is editable whole, head included | 2026-10-19 | yes |
 | Ink is a file the page links to, not inline text; a setting is being weighed | current behaviour | yes, with the faults in 5.2 |
 | The folder decides what ink a page has: the page's text is made to name every ink file beside it, and none that is gone | 2026-10-19 | yes |
+| Which paragraphs are justified is a line in the page's head, by block number, and the stretching happens when the page is drawn so the words in the file are the writer's own (section 2.1) | 2026-10-19 | yes |
 
 Known faults are listed in 5.2.
 
@@ -273,7 +333,8 @@ read-only.
    unnamed. Say so if you would rather it were the other way.
 5. **Ink undo.** Whether Undo Stroke should have a redo, and whether ink should join the page's own
    history.
-6. **Whether the width of table columns** moves from a metadata line to the markup of the table.
+6. **Whether the width of table columns, and which paragraphs are justified,** move from a
+   metadata line to the markup of the block. Section 2.1 has the table of what each place costs.
 7. **An Options window** for settings that today are spread around.
 
 ## 9. Where it lives in the code
@@ -281,7 +342,9 @@ read-only.
 | Part | Where |
 |---|---|
 | Reading and writing a body with boxes | `crates/formats/src/boxes.rs` |
-| Page file, head and body, boxes, direction | `crates/store/src/page.rs` |
+| Page file, head and body, boxes, direction, justification | `crates/store/src/page.rs` |
+| Which paragraphs are justified, read and written | `crates/model/src/justify.rs` |
+| Justifying a paragraph when it is drawn | `crates/ui-egui/src/bidi.rs` (`stretched`), `crates/text/src/kashida.rs` |
 | Pictures and attachments | `crates/store/src/assets.rs` |
 | Blocks drawn and edited | `crates/ui-egui/src/pageedit.rs`, `containers.rs`, `preview.rs` |
 | Ink | `crates/ink`, `crates/ui-egui/src/inkpad.rs` |

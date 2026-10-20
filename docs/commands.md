@@ -113,6 +113,15 @@ Parameters:
 - path (required): the page
 - widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported
 
+## `page.justify`
+
+Which paragraphs of a page are stretched to fill the column.
+
+Parameters:
+
+- path (required): the page
+- blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; empty draws every paragraph ragged. Without it, the page's own are reported
+
 ## `page.attach`
 
 Attach a file to a page.
