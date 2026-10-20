@@ -74,6 +74,9 @@ const MAX_BLOCKS: usize = 100_000;
 pub struct Section {
     /// The pages, in the order the section lists them.
     pub pages: Vec<Page>,
+    /// True when the file did not declare its section node and the page order is a guess
+    /// from creation order.
+    pub recovered: bool,
 }
 
 /// A page. `level` is OneNote's page level, 1 to 3: 1 is a page, 2 and 3 are sub-pages of
@@ -91,9 +94,9 @@ pub enum Content {
     /// Text, with its runs and, if it is a list item, what kind of list.
     Text { runs: Vec<Run>, list: Option<List>, depth: usize },
     /// A picture. `file` names the data in the store ([MS-ONESTORE] file data reference).
-    Picture { name: String, alt: String, file: Option<String> },
+    Picture { name: String, alt: String, file: Option<String>, ext: String },
     /// A file someone put on the page.
-    File { name: String, file: Option<String> },
+    File { name: String, file: Option<String>, ext: String },
     /// A table of cells, each cell a list of lines.
     Table { rows: Vec<Vec<Vec<Content>>> },
 }
@@ -122,12 +125,23 @@ pub struct Run {
 pub fn section(store: &Store) -> Section {
     let mut pages = Vec::new();
     let Some(root) = store.spaces.first() else { return Section::default() };
-    let Some(section_node) = root.content_root().filter(|o| o.kind() == SECTION_NODE) else {
-        return Section::default();
-    };
-    let Some(props) = section_node.props() else { return Section::default() };
-    for series_id in props.object_ids(ELEMENT_CHILD_NODES) {
-        let Some(series) = resolve(root, *series_id) else { continue };
+    let mut recovered = false;
+    let mut series_list: Vec<&Object> = Vec::new();
+    if let Some(props) = root.content_root().filter(|o| o.kind() == SECTION_NODE).and_then(Object::props) {
+        for series_id in props.object_ids(ELEMENT_CHILD_NODES) {
+            if let Some(series) = resolve(root, *series_id) {
+                series_list.push(series);
+            }
+        }
+    } else {
+        // Some backups do not declare the section node at all (seen in real desktop files).
+        // The page series are still there, so take them in the order they were created, which
+        // the sequence number of their identity follows.
+        recovered = true;
+        series_list = root.objects.values().filter(|o| o.kind() == PAGE_SERIES_NODE).collect();
+        series_list.sort_by_key(|o| (o.oid.n, o.oid.guid));
+    }
+    for series in series_list {
         if series.kind() != PAGE_SERIES_NODE {
             continue;
         }
@@ -137,7 +151,7 @@ pub fn section(store: &Store) -> Section {
         let metas = series_props.object_ids(META_DATA_OBJECTS_ABOVE_GRAPH_SPACE);
         for (i, space_id) in spaces.iter().enumerate() {
             if pages.len() >= MAX_PAGES {
-                return Section { pages };
+                return Section { pages, recovered };
             }
             let meta = metas.get(i).and_then(|m| resolve(root, *m)).and_then(Object::props);
             if let Some(page) = page_of(store, root, *space_id, meta) {
@@ -145,16 +159,18 @@ pub fn section(store: &Store) -> Section {
             }
         }
     }
-    Section { pages }
+    Section { pages, recovered }
 }
 
 /// One page: its object space, with the metadata the section keeps beside it.
 fn page_of(store: &Store, root: &ObjectSpace, space_id: CompactId, meta: Option<&PropertySet>) -> Option<Page> {
     let space = space_by_compact(store, root, space_id)?;
-    let manifest = space.content_root()?;
-    if manifest.kind() != PAGE_MANIFEST_NODE {
-        return None;
-    }
+    // The spec makes the manifest the content root. Desktop files put a version history
+    // node (0x3C) there and keep the manifest beside it, so look for it by kind.
+    let manifest = space
+        .content_root()
+        .filter(|o| o.kind() == PAGE_MANIFEST_NODE)
+        .or_else(|| space.objects.values().find(|o| o.kind() == PAGE_MANIFEST_NODE))?;
     let page_object =
         manifest.props()?.object_ids(CONTENT_CHILD_NODES).iter().filter_map(|id| resolve(space, *id)).find(|o| o.kind() == PAGE_NODE)?;
     let props = page_object.props()?;
@@ -259,15 +275,19 @@ fn content(space: &ObjectSpace, id: CompactId, depth: usize, indent: usize, list
                 out.push(Content::Text { runs, list, depth: indent });
             }
         }
-        IMAGE_NODE => out.push(Content::Picture {
-            name: props.text(IMAGE_FILENAME).unwrap_or_default(),
-            alt: props.text(IMAGE_ALT_TEXT).unwrap_or_default(),
-            file: file_reference(space, props, PICTURE_CONTAINER),
-        }),
-        EMBEDDED_FILE_NODE => out.push(Content::File {
-            name: props.text(EMBEDDED_FILE_NAME).unwrap_or_default(),
-            file: file_reference(space, props, EMBEDDED_FILE_CONTAINER),
-        }),
+        IMAGE_NODE => {
+            let (file, ext) = file_reference(space, props, PICTURE_CONTAINER).unzip();
+            out.push(Content::Picture {
+                name: props.text(IMAGE_FILENAME).unwrap_or_default(),
+                alt: props.text(IMAGE_ALT_TEXT).unwrap_or_default(),
+                file,
+                ext: ext.unwrap_or_default(),
+            })
+        }
+        EMBEDDED_FILE_NODE => {
+            let (file, ext) = file_reference(space, props, EMBEDDED_FILE_CONTAINER).unzip();
+            out.push(Content::File { name: props.text(EMBEDDED_FILE_NAME).unwrap_or_default(), file, ext: ext.unwrap_or_default() })
+        }
         TABLE_NODE => {
             if let Some(t) = table(space, props, depth) {
                 out.push(t);
@@ -318,7 +338,9 @@ fn list_kind(space: &ObjectSpace, props: &PropertySet) -> Option<List> {
 
 /// The text of a rich text node, split into runs by their formatting.
 fn runs_of(space: &ObjectSpace, props: &PropertySet) -> Vec<Run> {
-    let text = props.text(RICH_EDIT_TEXT_UNICODE).or_else(|| props.text(TEXT_EXTENDED_ASCII)).unwrap_or_default();
+    // Two properties can hold the words: UTF-16, or one byte per character. The one-byte form
+    // must not be read as UTF-16, which turns plain English into unrelated characters.
+    let text = props.text(RICH_EDIT_TEXT_UNICODE).or_else(|| props.bytes(TEXT_EXTENDED_ASCII).map(crate::bytes::extended_ascii)).unwrap_or_default();
     if text.is_empty() {
         return Vec::new();
     }
@@ -359,10 +381,10 @@ fn runs_of(space: &ObjectSpace, props: &PropertySet) -> Vec<Run> {
 }
 
 /// The file data reference behind a picture or an embedded file.
-fn file_reference(space: &ObjectSpace, props: &PropertySet, which: u32) -> Option<String> {
+fn file_reference(space: &ObjectSpace, props: &PropertySet, which: u32) -> Option<(String, String)> {
     let container = props.object_ids(which).first().copied()?;
     match &resolve(space, container)?.data {
-        ObjectData::File { reference, .. } => Some(reference.clone()),
+        ObjectData::File { reference, extension } => Some((reference.clone(), extension.clone())),
         ObjectData::Props(_) => None,
     }
 }

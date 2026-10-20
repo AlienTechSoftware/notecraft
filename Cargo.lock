@@ -2158,6 +2158,7 @@ name = "notecraft-cli"
 version = "0.0.2"
 dependencies = [
  "notecraft-engine",
+ "notecraft-import",
  "notecraft-mcp",
  "notecraft-store",
  "winresource",
@@ -2188,6 +2189,16 @@ name = "notecraft-formats"
 version = "0.0.2"
 dependencies = [
  "notecraft-model",
+]
+
+[[package]]
+name = "notecraft-import"
+version = "0.0.2"
+dependencies = [
+ "notecraft-formats",
+ "notecraft-model",
+ "notecraft-onenote",
+ "notecraft-store",
 ]
 
 [[package]]

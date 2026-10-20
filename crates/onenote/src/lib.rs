@@ -15,6 +15,12 @@ mod one;
 mod props;
 mod store;
 
+/// Builders for synthetic section files, for tests in this and other crates.
+#[cfg(feature = "testing")]
+pub mod testing {
+    pub use crate::store::build::{Line, One, OneNote};
+}
+
 pub use error::{OneError, Result};
 pub use guid::{CompactId, ExtendedGuid, Guid};
 pub use one::{Content, List, Page, Run, Section, section};

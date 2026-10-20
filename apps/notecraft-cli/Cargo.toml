@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 notecraft-engine = { workspace = true }
+notecraft-import = { workspace = true }
 notecraft-mcp = { workspace = true }
 notecraft-store = { workspace = true }
 
