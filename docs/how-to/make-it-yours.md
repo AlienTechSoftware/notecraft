@@ -47,7 +47,9 @@ Beside the page, three buttons:
 | Arrows | Full page view: the notebooks step aside until you press it again |
 
 **View** adds rule lines (none, lines or squares behind the page), hiding the page title, and
-zoom (smaller, larger, back to 100%). Rule lines and the zoom are remembered.
+zoom with the View tab's Zoom Out, Zoom In, percentage selector, 100% reset and Page Width
+controls. Zoom changes page text, the title and rule spacing while the ribbon stays the same
+size. Some page elements do not scale yet; see [what is missing](../gaps.md).
 
 ## Two columns, or one tree
 

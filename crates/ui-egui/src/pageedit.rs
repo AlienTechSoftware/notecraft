@@ -510,6 +510,7 @@ fn table(
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     changed: &mut Changed,
+    zoom: f32,
 ) -> Option<Action> {
     let Block::Table { head, rows } = block else { return None };
     let mut action = None;
@@ -554,6 +555,7 @@ fn table(
                 .clamp(notecraft_model::tablecols::MIN_WIDTH, notecraft_model::tablecols::MAX_WIDTH)
         })
         .collect();
+    let screen_widths: Vec<f32> = widths.iter().map(|w| w * zoom).collect();
 
     // Laid out by hand rather than with a grid, because a grid gives every column the
     // same width and these are each their own. Rows butt up against each other, and the
@@ -568,14 +570,16 @@ fn table(
             tops.push(ui.cursor().min.y);
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                for (c, &w) in widths.iter().enumerate() {
+                for (c, &w) in screen_widths.iter().enumerate() {
                     let cell = (r, c);
                     let text = cell_text(block, cell).unwrap_or_default();
                     ui.allocate_ui_with_layout(vec2(w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                         ui.set_min_width(w);
                         ui.set_max_width(w);
-                        let inner = (w - 2.0 * PAD_X).max(8.0);
-                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(PAD_X as i8, PAD_Y as i8)).show(ui, |ui| {
+                        let pad_x = PAD_X * zoom;
+                        let pad_y = PAD_Y * zoom;
+                        let inner = (w - 2.0 * pad_x).max(8.0 * zoom);
+                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(pad_x as i8, pad_y as i8)).show(ui, |ui| {
                             ui.set_min_width(inner);
                             ui.set_max_width(inner);
                             if here == Some(cell) && picked.is_none() {
@@ -585,7 +589,7 @@ fn table(
                                     .id(id)
                                     .frame(egui::Frame::NONE)
                                     .desired_width(inner)
-                                    .font(egui::FontId::proportional(14.5))
+                                    .font(egui::FontId::proportional(14.5 * zoom))
                                     .show(ui);
                                 if caret.focus {
                                     out.response.request_focus();
@@ -598,7 +602,7 @@ fn table(
                                 let strong = r == 0;
                                 let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
                                 let spans = notecraft_formats::markdown::parse_inline(&text);
-                                let job = preview::job(ui, &spans, 14.5, colour, t, page);
+                                let job = preview::job(ui, &spans, 14.5 * zoom, colour, t, page);
                                 let resp = ui.add(egui::Label::new(job).sense(Sense::click()).selectable(false).wrap());
                                 if resp.hovered() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -613,13 +617,13 @@ fn table(
             });
         }
         bottom = ui.cursor().min.y;
-        let used = egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + widths.iter().sum::<f32>(), bottom));
+        let used = egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + screen_widths.iter().sum::<f32>(), bottom));
         ui.advance_cursor_after_rect(used);
     }
-    ui.advance_cursor_after_rect(egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + widths.iter().sum::<f32>(), bottom)));
+    ui.advance_cursor_after_rect(egui::Rect::from_min_max(egui::pos2(left, tops[0]), egui::pos2(left + screen_widths.iter().sum::<f32>(), bottom)));
 
     // The lines of the table, which are also where a cell begins and ends.
-    let edge_x: Vec<f32> = (0..=columns).map(|c| left + widths.iter().take(c).sum::<f32>()).collect();
+    let edge_x: Vec<f32> = (0..=columns).map(|c| left + screen_widths.iter().take(c).sum::<f32>()).collect();
     let mut edge_y: Vec<f32> = tops.clone();
     edge_y.push(bottom);
     let cell_rect = |r: usize, c: usize| match (edge_x.get(c), edge_x.get(c + 1), edge_y.get(r), edge_y.get(r + 1)) {
@@ -687,7 +691,7 @@ fn table(
     // a plain grey line round every cell, and a table with none reads as loose columns of
     // words rather than as a table.
     if borders && let (Some(&x0), Some(&x1), Some(&y0), Some(&y1)) = (edge_x.first(), edge_x.last(), edge_y.first(), edge_y.last()) {
-        let line = egui::Stroke::new(1.0, t.table_line);
+        let line = egui::Stroke::new(1.0 * zoom, t.table_line);
         let paint = ui.painter();
         for x in &edge_x {
             paint.vline(*x, y0..=y1, line);
@@ -703,21 +707,21 @@ fn table(
     let mut on_handle = false;
     for c in 0..columns {
         let Some(&x) = edge_x.get(c + 1) else { continue };
-        let handle = egui::Rect::from_min_max(egui::pos2(x - GRAB, edge_y[0]), egui::pos2(x + GRAB, bottom));
+        let handle = egui::Rect::from_min_max(egui::pos2(x - GRAB * zoom, edge_y[0]), egui::pos2(x + GRAB * zoom, bottom));
         let grip = ui.interact(handle, ui.make_persistent_id(("table-column", i, c)), Sense::drag());
         if grip.hovered() || grip.dragged() {
             on_handle = true;
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if grip.dragged() {
-            let want = widths[c] + grip.drag_delta().x;
+            let want = widths[c] + grip.drag_delta().x / zoom;
             cols.set(i, c, want, &widths);
             changed.columns = true;
         }
         // While a column is being dragged its line is drawn in the accent colour, so it
         // is plain which one is moving.
         if grip.dragged() {
-            ui.painter().vline(x, edge_y[0]..=bottom, egui::Stroke::new(1.5, t.accent));
+            ui.painter().vline(x, edge_y[0]..=bottom, egui::Stroke::new(1.5 * zoom, t.accent));
         }
     }
     if on_handle {
@@ -732,13 +736,16 @@ fn table(
 /// A light frame around the block the caret is in, the way a container is outlined in
 /// OneNote, so it is plain which block is being written in and where it ends. Blocks that
 /// are only being read get nothing, so a page at rest stays quiet.
-fn frame_block(ui: &Ui, top: f32, editing: bool, t: &Tokens) {
+fn frame_block(ui: &Ui, top: f32, editing: bool, t: &Tokens, zoom: f32) {
     if !editing {
         return;
     }
     let bottom = ui.cursor().min.y;
-    let rect = egui::Rect::from_min_max(egui::pos2(ui.max_rect().min.x - 6.0, top - 3.0), egui::pos2(ui.max_rect().max.x + 6.0, bottom + 1.0));
-    ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(ui.max_rect().min.x - 6.0 * zoom, top - 3.0 * zoom),
+        egui::pos2(ui.max_rect().max.x + 6.0 * zoom, bottom + 1.0 * zoom),
+    );
+    ui.painter().rect_stroke(rect, 2.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
 }
 
 /// The text the caret writes in: the words of the block without the tag marker, because
@@ -951,7 +958,7 @@ pub fn show(
     shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title, 1.0);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -982,6 +989,7 @@ pub fn show_blocks(
     across: &mut Option<Across>,
     // The title the window is already showing, so the body does not repeat it.
     shown_title: &str,
+    zoom: f32,
 ) -> Changed {
     let mut changed = Changed::default();
     let mut action: Option<Action> = None;
@@ -1035,14 +1043,15 @@ pub fn show_blocks(
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
         if matches!(block, Block::Table { .. }) {
-            if let Some(what) = table(ui, &block, i, caret, t, page, borders, cols, &mut changed) {
+            if let Some(what) = table(ui, &block, i, caret, t, page, borders, cols, &mut changed, zoom) {
                 action = Some(what);
             }
-            frame_block(ui, top, editing, t);
+            frame_block(ui, top, editing, t, zoom);
             continue;
         }
         if editing && is_writable(&block) {
             let (size, strong) = size_of(&block);
+            let size = size * zoom;
             let Some(c) = caret.as_mut() else { continue };
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
                 ui.fonts_mut(|f| f.layout_job(pagetext::inline_job(text.as_str(), size, strong, t, width, page)))
@@ -1112,7 +1121,7 @@ pub fn show_blocks(
                         action = Some(Action::Move(i + 1));
                     }
                 }
-                frame_block(ui, top, true, t);
+                frame_block(ui, top, true, t, zoom);
                 if let Some(a) = action.take() {
                     apply(a, blocks, caret, &mut changed);
                 }
@@ -1122,7 +1131,7 @@ pub fn show_blocks(
             if matches!(&block, Block::Code { lang, .. } if lang == "mermaid") {
                 egui::Frame::new().fill(t.editor).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    crate::diagramview::show(ui, &c.text, t);
+                    crate::diagramview::show_zoomed(ui, &c.text, t, zoom);
                 });
                 ui.add_space(4.0);
             }
@@ -1232,7 +1241,7 @@ pub fn show_blocks(
                     action = Some(Action::Move(i + 1));
                 }
             }
-            frame_block(ui, top, true, t);
+            frame_block(ui, top, true, t, zoom);
         } else {
             // A finished block. Clicking it puts the caret in it, under the pointer, and a
             // to-do box on it can be ticked without putting the caret anywhere.
@@ -1244,7 +1253,7 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(
+                    preview::show_block_zoomed(
                         ui,
                         &block,
                         i,
@@ -1255,6 +1264,7 @@ pub fn show_blocks(
                         justified.strength_of(i),
                         across.filter(|a| !a.inside_one_block()).and_then(|a| a.covering(i, block_text(&block).len())),
                         ui.make_persistent_id(("page-block", i)),
+                        zoom,
                     )
                 })
                 .inner;
@@ -1317,7 +1327,7 @@ pub fn show_blocks(
                 let over_link = resp.hover_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)).is_some();
                 ui.ctx().set_cursor_icon(if over_link { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Text });
             }
-            frame_block(ui, top, false, t);
+            frame_block(ui, top, false, t, zoom);
         }
     }
     if let Some(a) = action {

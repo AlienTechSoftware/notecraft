@@ -53,6 +53,10 @@ pub enum Act {
     ToggleAlwaysOnTop,
     /// Larger (1), smaller (-1) or back to 100% (0).
     Zoom(i8),
+    /// Set the page zoom to this percentage.
+    ZoomTo(u32),
+    /// Fit the page width to the available reading area.
+    PageWidth,
     /// Cut or copy what is selected.
     Clipboard(&'static str),
     /// Put the clipboard into the page: a picture as a file beside it, anything else as
@@ -534,7 +538,7 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
     let colour = if ui.is_enabled() { t.accent } else { t.muted };
-    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(21.0, 21.0)), icon, colour);
+    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
     for (i, line) in lines.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
         let y = rect.min.y + LABEL_Y + i as f32 * LINE_H;
@@ -580,6 +584,22 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
     let enabled = ui.is_enabled();
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
+    resp.on_hover_text(tip)
+}
+
+/// A compact Office-style row control with a clear icon and its visible label.
+fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
+    let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 34.0, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.min.x + 13.0, rect.center().y), vec2(18.0, 18.0)), icon, t.accent);
+    painter.text(egui::pos2(rect.min.x + 27.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, false, name.clone()));
     resp.on_hover_text(tip)
 }
 
@@ -2180,19 +2200,28 @@ view",
         });
     });
     group(ui, "Zoom", t, |ui| {
-        rows(ui, |ui| {
-            ui.horizontal(|ui| {
-                if small(ui, None, "-", "Zoom out", "Smaller", false, t).clicked() {
-                    acts.push(Act::Zoom(-1));
+        ui.horizontal(|ui| {
+            if big(ui, Icon::ZoomOut, "Zoom Out", "Make the page smaller", t).clicked() {
+                acts.push(Act::Zoom(-1));
+            }
+            if big(ui, Icon::ZoomIn, "Zoom In", "Make the page larger", t).clicked() {
+                acts.push(Act::Zoom(1));
+            }
+            rows(ui, |ui| {
+                egui::ComboBox::from_id_salt("page-zoom-percent").width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
+                    for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
+                        if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
+                            acts.push(Act::ZoomTo(percent));
+                        }
+                    }
+                });
+                if small(ui, None, "100%", "Zoom to 100%", "Show the page at 100%", false, t).clicked() {
+                    acts.push(Act::Zoom(0));
                 }
-                if small(ui, None, "+", "Zoom in", "Larger", false, t).clicked() {
-                    acts.push(Act::Zoom(1));
+                if small_labeled_icon(ui, Icon::PageWidth, "Page Width", "Fit the page to the available width", t).clicked() {
+                    acts.push(Act::PageWidth);
                 }
             });
-            if small(ui, None, &format!("{}%", view.zoom_percent), "Zoom to 100%", "Back to 100%", false, t).clicked() {
-                acts.push(Act::Zoom(0));
-            }
-            not_built(ui, "Page width", t);
         });
     });
     group(ui, "Window", t, |ui| {

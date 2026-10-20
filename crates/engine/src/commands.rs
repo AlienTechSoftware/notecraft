@@ -409,8 +409,8 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
     },
     CommandSpec {
         id: "notebook.open",
-        label: "Open a notebook kept somewhere else",
-        params: "path (required): the notebook's folder, anywhere on this machine. The notebooks already open stay open, and this one is opened again next time",
+        label: "Open a notebook or initialize an empty folder",
+        params: "path (required): a notebook folder anywhere on this machine, or an empty folder to initialize as a notebook named after the folder. The notebooks already open stay open, and this one is opened again next time",
         changes_tree: true,
         run: notebook_open,
     },
@@ -586,6 +586,28 @@ mod tests {
         // What is not a notebook is refused, and so is nothing at all.
         assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
         assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    #[test]
+    fn opening_an_empty_folder_initializes_a_notebook_but_leaves_other_folders_alone() {
+        let t = TempDir::new("engine-open-empty-folder");
+        let mut s = session(&t);
+        let empty = t.path().join("Testing");
+        std::fs::create_dir(&empty).expect("empty folder");
+
+        let opened = path_of(s.run("notebook.open", &p(&[("path", &empty.to_string_lossy())])).expect("open empty folder"));
+        assert_eq!(opened, empty.canonicalize().expect("canonical path"));
+        assert_eq!(s.tree().first().map(|n| n.info.title.as_str()), Some("Testing"));
+        assert!(opened.join("_node.toml").is_file(), "the chosen folder is now a notebook");
+        assert_eq!(std::fs::read_dir(&opened).expect("read notebook").count(), 1, "it remains empty apart from notebook metadata");
+
+        let ordinary = t.path().join("Ordinary");
+        std::fs::create_dir(&ordinary).expect("ordinary folder");
+        let keep = ordinary.join("keep.txt");
+        std::fs::write(&keep, "leave this file alone").expect("write user file");
+        assert!(s.run("notebook.open", &p(&[("path", &ordinary.to_string_lossy())])).is_err());
+        assert_eq!(std::fs::read_to_string(&keep).expect("preserved file"), "leave this file alone");
+        assert!(!ordinary.join("_node.toml").exists(), "an ordinary nonempty folder stays untouched");
     }
 
     #[test]

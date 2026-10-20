@@ -327,16 +327,17 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir
 /// a box of no height: it drew nothing at all, and a picture low on a long page was a gap
 /// where a picture should be. Measured on 2026-10-19 on the Arabic showcase page, where the
 /// same picture drew at the top of one page and vanished at the bottom of another.
-fn picture_box(ui: &Ui) -> egui::Vec2 {
-    egui::vec2(ui.available_width(), 480.0)
+fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
+    // Parent columns already carry the page zoom; the picture's height is its own size.
+    egui::vec2(ui.available_width(), 480.0 * zoom)
 }
 
-fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path) {
+fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
                 Some(uri) => {
-                    ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui)));
+                    ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)));
                 }
                 None => {
                     ui.weak(format!("[image: {} ({src})]", s.text));
@@ -372,9 +373,22 @@ pub struct BlockResponse {
 /// Read only: to-do boxes are shown but not ticked (see [`show_block`]). A link is still
 /// live: the target of one clicked this frame is returned, as written in the page.
 pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Option<Dir>, justified: &Justified) -> Option<String> {
+    show_zoomed(ui, blocks, page_dir, tokens, page, justified, 1.0)
+}
+
+/// Draws blocks at a page zoom while keeping the surrounding window unchanged.
+pub fn show_zoomed(
+    ui: &mut Ui,
+    blocks: &[Block],
+    page_dir: &Path,
+    tokens: &Tokens,
+    page: Option<Dir>,
+    justified: &Justified,
+    zoom: f32,
+) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
-        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), None, ui.id().with(("block", i)));
+        let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
@@ -410,6 +424,23 @@ pub fn show_block(
     // id that started it, and a different id here would drop the drag on the floor.
     id: egui::Id,
 ) -> BlockResponse {
+    show_block_zoomed(ui, block, i, page_dir, tokens, live, page, justified, selected, id, 1.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn show_block_zoomed(
+    ui: &mut Ui,
+    block: &Block,
+    i: usize,
+    page_dir: &Path,
+    tokens: &Tokens,
+    live: bool,
+    page: Option<Dir>,
+    justified: Option<Strength>,
+    selected: Option<(usize, usize)>,
+    id: egui::Id,
+    zoom: f32,
+) -> BlockResponse {
     let start = ui.cursor().min;
     let body = ui.style().visuals.text_color();
     let mut task_set = None;
@@ -421,7 +452,7 @@ pub fn show_block(
                     2 => 22.0,
                     3 => 18.0,
                     _ => 16.0,
-                };
+                } * zoom;
                 ui.add_space(6.0);
                 match tagged(spans) {
                     Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page, None, selected)),
@@ -434,16 +465,16 @@ pub fn show_block(
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page, justified, selected);
-                            draw_inline_images(ui, &spans, page_dir);
+                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
+                            draw_inline_images(ui, &spans, page_dir, zoom);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
-                            draw_spans(ui, spans, 14.5, body, tokens, page, justified, selected);
+                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
-                        draw_inline_images(ui, spans, page_dir);
+                        draw_inline_images(ui, spans, page_dir, zoom);
                         ui.add_space(4.0);
                     }
                 }
@@ -472,12 +503,12 @@ pub fn show_block(
                     }
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page, None, selected);
-                            draw_inline_images(ui, &spans, page_dir);
+                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
+                            draw_inline_images(ui, &spans, page_dir, zoom);
                         }),
                         None => {
-                            draw_spans(ui, spans, 14.5, body, tokens, page, None, selected);
-                            draw_inline_images(ui, spans, page_dir);
+                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
+                            draw_inline_images(ui, spans, page_dir, zoom);
                         }
                     });
                 });
@@ -486,7 +517,7 @@ pub fn show_block(
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     let rect = ui.available_rect_before_wrap();
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
-                    draw_spans(ui, spans, 14.5, tokens.muted, tokens, page, None, selected);
+                    draw_spans(ui, spans, 14.5 * zoom, tokens.muted, tokens, page, None, selected);
                 });
                 ui.add_space(4.0);
             }
@@ -496,8 +527,8 @@ pub fn show_block(
             Block::Code { lang, text } if lang == "mermaid" => {
                 egui::Frame::new().fill(tokens.editor).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    if let crate::diagramview::Shown::Failed(_) = crate::diagramview::show(ui, text, tokens) {
-                        ui.label(RichText::new(text).monospace());
+                    if let crate::diagramview::Shown::Failed(_) = crate::diagramview::show_zoomed(ui, text, tokens, zoom) {
+                        ui.label(RichText::new(text).monospace().size(14.5 * zoom));
                     }
                 });
                 ui.add_space(4.0);
@@ -506,28 +537,28 @@ pub fn show_block(
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     if !lang.is_empty() {
-                        ui.label(RichText::new(lang).small().color(tokens.muted));
+                        ui.label(RichText::new(lang).size(12.0 * zoom).color(tokens.muted));
                     }
-                    ui.label(RichText::new(text).monospace());
+                    ui.label(RichText::new(text).monospace().size(14.5 * zoom));
                 });
                 ui.add_space(4.0);
             }
             Block::MathBlock(tex) => {
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    crate::mathview::display(ui, tex, 22.0, tokens.strong);
+                    crate::mathview::display(ui, tex, 22.0 * zoom, tokens.strong);
                 });
                 ui.add_space(4.0);
             }
             Block::Table { head, rows } => {
                 egui::Grid::new(("table", i)).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
                     for cell in head {
-                        ui.label(job(ui, cell, 14.5, tokens.strong, tokens, page));
+                        ui.label(job(ui, cell, 14.5 * zoom, tokens.strong, tokens, page));
                     }
                     ui.end_row();
                     for row in rows {
                         for cell in row {
-                            ui.label(job(ui, cell, 14.5, body, tokens, page));
+                            ui.label(job(ui, cell, 14.5 * zoom, body, tokens, page));
                         }
                         ui.end_row();
                     }
@@ -545,7 +576,7 @@ pub fn show_block(
             Block::Image { alt, src } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {
-                        ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui)));
+                        ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)));
                     }
                     None => {
                         ui.weak(format!("[image: {alt} ({src})]"));

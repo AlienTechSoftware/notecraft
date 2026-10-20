@@ -95,6 +95,14 @@ pub enum Icon {
     Pen,
     /// A plain plus: add one more of something.
     Plus,
+    /// A plain minus: zoom out.
+    Minus,
+    /// A magnifying glass with a minus sign: zoom out of the page.
+    ZoomOut,
+    /// A magnifying glass with a plus sign: zoom into the page.
+    ZoomIn,
+    /// A page fitted across the available view width.
+    PageWidth,
     /// A calendar page with two rings: a date.
     Calendar,
     /// A clock face with two hands: a time.
@@ -411,6 +419,23 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         ],
         // A plain plus.
         Icon::Plus => vec![line((12.0, 4.5), (12.0, 19.5)), line((4.5, 12.0), (19.5, 12.0))],
+        // A plain minus, the companion to the plus above.
+        Icon::Minus => vec![line((4.5, 12.0), (19.5, 12.0))],
+        Icon::ZoomOut => {
+            vec![Shape::circle_stroke(g.p(10.0, 10.0), w * 6.0 / 24.0, stroke), line((14.5, 14.5), (20.0, 20.0)), line((6.5, 10.0), (13.5, 10.0))]
+        }
+        Icon::ZoomIn => vec![
+            Shape::circle_stroke(g.p(10.0, 10.0), w * 6.0 / 24.0, stroke),
+            line((14.5, 14.5), (20.0, 20.0)),
+            line((6.5, 10.0), (13.5, 10.0)),
+            line((10.0, 6.5), (10.0, 13.5)),
+        ],
+        Icon::PageWidth => vec![
+            closed(&[(5.0, 3.5), (19.0, 3.5), (19.0, 20.5), (5.0, 20.5)]),
+            line((8.0, 8.0), (16.0, 8.0)),
+            path(&[(8.0, 12.0), (5.5, 14.0), (8.0, 16.0)]),
+            path(&[(16.0, 12.0), (18.5, 14.0), (16.0, 16.0)]),
+        ],
         Icon::Pen => vec![
             fill(&[(16.0, 3.5), (20.5, 8.0), (9.0, 19.5), (3.5, 20.5), (4.5, 15.0)], color),
             Shape::line_segment([g.p(6.0, 18.0), g.p(13.5, 10.5)], Stroke::new((w / 18.0).max(1.0), shade(color, 0.45))),
@@ -475,7 +500,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 51] = [
+    pub const ALL: [Icon; 55] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -517,6 +542,10 @@ mod tests {
         Icon::Help,
         Icon::Pen,
         Icon::Plus,
+        Icon::Minus,
+        Icon::ZoomOut,
+        Icon::ZoomIn,
+        Icon::PageWidth,
         Icon::Calendar,
         Icon::Clock,
         Icon::Video,
