@@ -50,6 +50,10 @@ arboard = { version = "3.7", default-features = false, features = ["image-data"]
 # The log facade. The app routes it into its log file (apps/notecraft/src/applog.rs).
 log = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# A drop-in SystemTime/Instant: std's own panics with "time not implemented on this
+# platform" on wasm32-unknown-unknown, which has no clock. This is std's types everywhere
+# else and Date.now() there, with no wasm-bindgen glue needed in notecraft-model itself.
+web-time = "1.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

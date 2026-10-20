@@ -11,3 +11,5 @@ description = "NoteCraft model: node kinds, page formats, names and folder rules
 workspace = true
 
 [dependencies]
+# SystemTime::now() panics on wasm32-unknown-unknown; see the workspace Cargo.toml.
+web-time = { workspace = true }

@@ -2,7 +2,9 @@
 //! unique on one machine. Replace with a ULID before notebooks are merged across devices.
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+// std's own SystemTime panics on wasm32-unknown-unknown, which has no clock; web_time is
+// the same type everywhere else and Date.now() there. See the workspace Cargo.toml.
+use web_time::{SystemTime, UNIX_EPOCH};
 
 pub fn new_id() -> String {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
