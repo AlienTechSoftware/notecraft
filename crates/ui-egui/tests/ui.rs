@@ -2360,6 +2360,75 @@ fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
     assert!(text.contains("N300[Node 300]"), "the source is untouched");
 }
 
+/// The code view names the language of the file it shows and colours it, and a Find bar under the
+/// editor looks in that file: Ctrl+F opens it, typing finds, Enter and Shift+Enter step through the
+/// matches, and Escape closes it with the match selected in the text.
+#[test]
+fn the_code_view_colours_the_file_and_finds_text_in_it() {
+    let (_t, app, s) = sample_app("ui-code-find");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    let view = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["codeView"].clone();
+    let v = view(&mut h);
+    assert_eq!(v["language"], json!("Markdown"), "{v}");
+    assert!(v["colouredStretches"].as_u64().unwrap_or(0) > 10, "the file is coloured: {v}");
+    assert_eq!(v["find"]["open"], json!(false), "no Find bar until it is asked for: {v}");
+
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("Ctrl+F");
+    settle(&mut h);
+    assert_eq!(view(&mut h)["find"]["open"], json!(true), "Ctrl+F opened the bar");
+    assert!(h.query_all_by_label_contains("Match case").count() >= 1, "the bar is on the screen");
+
+    // The word in the sample page that comes more than once.
+    ask(&mut h, "ui.text", json!({"text": "page"})).expect("type the query");
+    settle(&mut h);
+    let f = view(&mut h)["find"].clone();
+    assert_eq!(f["query"], json!("page"), "{f}");
+    let count = f["matches"].as_u64().unwrap_or(0);
+    assert!(count >= 2, "the word is found more than once: {f}");
+    assert_eq!(f["current"], json!(1), "it starts on the first match: {f}");
+
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+    settle(&mut h);
+    assert_eq!(view(&mut h)["find"]["current"], json!(2), "Enter goes to the next match");
+    ask(&mut h, "ui.key", json!({"key": "Enter", "shift": true})).expect("Shift+Enter");
+    settle(&mut h);
+    assert_eq!(view(&mut h)["find"]["current"], json!(1), "Shift+Enter goes back");
+    ask(&mut h, "ui.key", json!({"key": "Enter", "shift": true})).expect("Shift+Enter again");
+    settle(&mut h);
+    assert_eq!(view(&mut h)["find"]["current"], json!(count), "and from the first it wraps to the last");
+
+    // Case: the capital P of "Page" is not the word unless the case is asked for.
+    let before = view(&mut h)["find"]["matches"].as_u64().unwrap_or(0);
+    let button = h.get_by_label("Match case").rect();
+    ask(&mut h, "ui.click", json!({"x": button.center().x, "y": button.center().y})).expect("Match case");
+    settle(&mut h);
+    let f = view(&mut h)["find"].clone();
+    assert_eq!(f["matchCase"], json!(true), "{f}");
+    assert!(f["matches"].as_u64().unwrap_or(0) <= before, "matching case cannot find more: {f}");
+
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(view(&mut h)["find"]["open"], json!(false), "Escape closed the bar");
+    assert!(h.query_all_by_label_contains("Match case").count() == 0, "and it is gone from the screen");
+
+    // The page file is Markdown, its drawing is XML, and a file nobody has a name for is plain.
+    std::fs::write(s.md_page.join("data.json"), "{\"a\": [1, true, null]}").expect("a json file");
+    std::fs::write(s.md_page.join("notes.txt"), "plain words").expect("a text file");
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open again");
+    settle(&mut h);
+    for (file, language) in [("data.json", "JSON"), ("notes.txt", "Plain text")] {
+        let row = h.query_all_by_label_contains(file).next().expect("the file is listed").rect();
+        ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick it");
+        settle(&mut h);
+        assert_eq!(view(&mut h)["language"], json!(language), "{file}");
+    }
+}
+
 /// The code view stays open while another page is picked in the tree. It must then show that
 /// page's file: the text of the last page, kept under the same name, would be shown as the new
 /// page's own, and whatever was typed would be written over the new page.

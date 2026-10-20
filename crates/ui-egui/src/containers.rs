@@ -138,6 +138,17 @@ pub fn show(
     let paper =
         ui.interact(Rect::from_min_size(area.min, vec2(area.width(), area.height().min(20_000.0))), ui.id().with("open-paper"), Sense::click());
     let selection_was_up = sel.is_some() || menu_at.is_some();
+    // A page with nothing on it shows nothing, which looks like a page that did not load. Say what
+    // to do: the paper takes a click, and the words start where it was made.
+    if blocks.is_empty() && caret.is_none() {
+        ui.painter().text(
+            pos2(area.min.x + PAD + 14.0, area.min.y + 30.0),
+            egui::Align2::LEFT_TOP,
+            "Click anywhere on the page to start writing.",
+            egui::FontId::proportional(14.0),
+            t.muted,
+        );
+    }
     let mut frames: Vec<Rect> = Vec::with_capacity(boxes.len());
 
     for i in 0..boxes.len() {

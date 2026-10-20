@@ -13,8 +13,10 @@
 //! Everything else is read-only, because a hand edit to a picture or to a `_node.toml`
 //! is not something to do with a text box.
 
-use crate::theme::Tokens;
-use egui::{Sense, Ui, vec2};
+use crate::highlight::{self, Class, Lang, Span};
+use crate::theme::{Tokens, mix};
+use egui::text::{CCursor, CCursorRange, LayoutJob, TextFormat};
+use egui::{Color32, Key, Modifiers, Sense, Ui, vec2};
 use std::path::Path;
 
 /// How much of a file is read for the viewer. A larger file shows its first part and says
@@ -78,9 +80,235 @@ pub struct State {
     /// from the last one is dropped: its text would otherwise be shown, and typed over, as this
     /// page's own.
     pub dir: Option<std::path::PathBuf>,
+    /// The Find bar under the editor.
+    pub find: Find,
+    /// The colour spans of `text`, and a fingerprint of the text and format they were made for.
+    pub coloured: Vec<Span>,
+    pub coloured_for: u64,
 }
 
-/// What the view did this frame.
+/// The Find bar: what is being looked for, and where it was found in the text in hand.
+#[derive(Clone, Debug, Default)]
+pub struct Find {
+    pub open: bool,
+    pub query: String,
+    /// Match the case of the letters.
+    pub case: bool,
+    /// Where the query was found, as character positions `(from, to)` in the text, which is how
+    /// the text box counts.
+    pub matches: Vec<(usize, usize)>,
+    /// Which of them is the one the bar is on.
+    pub current: usize,
+    /// A fingerprint of the text, query and case the matches were found in.
+    pub found_in: u64,
+    /// Put the caret in the query box on the next frame.
+    pub focus: bool,
+    /// Scroll the current match into view on the next frame.
+    pub jump: bool,
+    /// Select the current match in the text and give it the caret on the next frame: closing the
+    /// bar leaves you where the search ended.
+    pub select: bool,
+}
+
+/// The most matches kept. A search for one letter in a big file would otherwise be thousands of
+/// highlights that nobody reads.
+pub const MAX_MATCHES: usize = 5_000;
+
+fn lower(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
+}
+
+/// Where `query` is in `text`, as character positions `(from, to)`, none overlapping, in order.
+pub fn find_matches(text: &str, query: &str, case: bool) -> Vec<(usize, usize)> {
+    let needle: Vec<char> = query.chars().collect();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let hay: Vec<char> = text.chars().collect();
+    let mut out = Vec::new();
+    if hay.len() < needle.len() {
+        return out;
+    }
+    let same = |a: char, b: char| a == b || (!case && lower(a) == lower(b));
+    let mut i = 0;
+    while i + needle.len() <= hay.len() && out.len() < MAX_MATCHES {
+        if needle.iter().enumerate().all(|(j, n)| same(hay[i + j], *n)) {
+            out.push((i, i + needle.len()));
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+fn fingerprint(parts: &[&str], flag: bool) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for p in parts {
+        p.hash(&mut h);
+    }
+    flag.hash(&mut h);
+    h.finish()
+}
+
+/// The colour a kind of text is drawn in. All are tokens, so every theme has them readable.
+pub fn class_colour(class: Class, t: &Tokens) -> Color32 {
+    // Four hues that differ from each other in every theme: the accent for what structures a file
+    // (tags, keywords, headings), teal for names (attributes, keys, code), green for strings and
+    // amber for numbers and emphasis; the rest is the quiet colour.
+    match class {
+        Class::Tag | Class::Keyword | Class::Heading => t.accent,
+        Class::Attr | Class::Code => t.section,
+        Class::Str => t.ok,
+        Class::Number | Class::Emphasis => t.group,
+        Class::Link => t.link,
+        Class::Comment | Class::Punct | Class::Meta => t.muted,
+    }
+}
+
+/// The background of every match, and of the one the bar is on.
+pub fn match_colours(t: &Tokens) -> (Color32, Color32) {
+    (t.row_selected, mix(t.row_selected, t.accent, 0.15))
+}
+
+/// Byte ranges for character ranges, in one pass. The ranges are in order.
+fn byte_ranges(text: &str, chars: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let mut out = Vec::with_capacity(chars.len());
+    let mut at = text.char_indices().map(|(b, _)| b).chain(std::iter::once(text.len()));
+    let mut seen = 0usize;
+    let mut last = 0usize;
+    let mut next = |want: usize, seen: &mut usize, last: &mut usize| {
+        while *seen < want {
+            match at.next() {
+                Some(b) => {
+                    *last = b;
+                    *seen += 1;
+                }
+                None => break,
+            }
+        }
+        *last
+    };
+    for (from, to) in chars {
+        // `seen` counts characters passed, so the byte of character `n` is the n-th boundary.
+        let a = if *from == 0 { 0 } else { next(*from + 1, &mut seen, &mut last) };
+        let b = next(*to + 1, &mut seen, &mut last);
+        out.push((a, b));
+    }
+    out
+}
+
+/// The text as one laid out job: syntax colours, with the matches of the Find bar behind them.
+#[allow(clippy::too_many_arguments)]
+pub fn colour_job(
+    text: &str,
+    spans: &[Span],
+    matches: &[(usize, usize)],
+    current: Option<usize>,
+    t: &Tokens,
+    font: egui::FontId,
+    base: Color32,
+    wrap: f32,
+) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    job.wrap.max_width = wrap;
+    let found = byte_ranges(text, matches);
+    let mut cuts: Vec<usize> = vec![0, text.len()];
+    for s in spans {
+        cuts.push(s.range.start);
+        cuts.push(s.range.end);
+    }
+    for (a, b) in &found {
+        cuts.push(*a);
+        cuts.push(*b);
+    }
+    cuts.retain(|c| *c <= text.len() && text.is_char_boundary(*c));
+    cuts.sort_unstable();
+    cuts.dedup();
+    let (all, here) = match_colours(t);
+    let (mut si, mut mi) = (0, 0);
+    for w in cuts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        while si < spans.len() && spans[si].range.end <= a {
+            si += 1;
+        }
+        let class = spans.get(si).filter(|s| s.range.start <= a && a < s.range.end).map(|s| s.class);
+        while mi < found.len() && found[mi].1 <= a {
+            mi += 1;
+        }
+        let hit = found.get(mi).filter(|r| r.0 <= a && a < r.1).map(|_| mi);
+        let mut f = TextFormat::simple(font.clone(), class.map_or(base, |c| class_colour(c, t)));
+        f.italics = class == Some(Class::Comment);
+        if let Some(k) = hit {
+            let this = Some(k) == current;
+            f.background = if this { here } else { all };
+            if this {
+                f.underline = egui::Stroke::new(1.5, t.accent);
+            }
+        }
+        job.append(&text[a..b], 0.0, f);
+    }
+    job
+}
+
+/// What the Find bar asked for.
+enum FindAct {
+    None,
+    Next,
+    Previous,
+    Close,
+    Edited,
+}
+
+/// The bar under the editor: a box to type in, Previous and Next, a case switch, how many were found.
+fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
+    let mut act = FindAct::None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Find").small().color(t.muted));
+        let query = ui.add(egui::TextEdit::singleline(&mut find.query).id(id).desired_width(240.0).hint_text("Find in this file"));
+        if find.focus {
+            query.request_focus();
+            find.focus = false;
+        }
+        if query.changed() {
+            act = FindAct::Edited;
+        }
+        // Shift is read from the key press itself as well as from the held keys: a press that is sent
+        // in (by a script, or a remote desktop) carries its own modifiers.
+        let (enter, shift) = ui.input(|i| {
+            let shifted = i.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Enter, pressed: true, modifiers, .. } if modifiers.shift));
+            (i.key_pressed(Key::Enter), i.modifiers.shift || shifted)
+        });
+        if (query.has_focus() || query.lost_focus()) && enter {
+            act = if shift { FindAct::Previous } else { FindAct::Next };
+            query.request_focus();
+        }
+        if ui.small_button("Previous").on_hover_text("Previous match (Shift+Enter)").clicked() {
+            act = FindAct::Previous;
+        }
+        if ui.small_button("Next").on_hover_text("Next match (Enter, F3)").clicked() {
+            act = FindAct::Next;
+        }
+        if ui.selectable_label(find.case, "Match case").clicked() {
+            find.case = !find.case;
+            act = FindAct::Edited;
+        }
+        let count = if find.query.is_empty() {
+            String::new()
+        } else if find.matches.is_empty() {
+            "No matches".to_string()
+        } else {
+            let more = if find.matches.len() >= MAX_MATCHES { "+" } else { "" };
+            format!("{} of {}{more}", find.current + 1, find.matches.len())
+        };
+        ui.label(egui::RichText::new(count).small().color(if find.matches.is_empty() && !find.query.is_empty() { t.warn } else { t.muted }));
+        if ui.small_button("Close").on_hover_text("Close the Find bar (Escape)").clicked() {
+            act = FindAct::Close;
+        }
+    });
+    act
+}
 #[derive(Clone, Debug, Default)]
 pub struct Out {
     /// A file was typed in: its name and its new text, for the window to write.
@@ -299,16 +527,118 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     if let Some(words) = warning {
                         ui.label(egui::RichText::new(words).small().color(t.muted));
                     }
-                    egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0).max(120.0)).show(ui, |ui| {
-                        let edit = ui.add_enabled(
-                            entry.kind.editable(),
-                            egui::TextEdit::multiline(&mut state.text).code_editor().desired_width(f32::INFINITY).desired_rows(26),
-                        );
-                        if edit.changed() {
-                            state.dirty = true;
-                            out.wrote = Some((entry.name.clone(), state.text.clone()));
+                    let lang = Lang::of_file(&entry.name);
+                    let text_id = egui::Id::new(("code-text-edit", entry.name.as_str()));
+                    let find_id = egui::Id::new("code-find-query");
+                    // Keys for the Find bar, taken before any box sees them.
+                    if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F)) {
+                        state.find.open = true;
+                        state.find.focus = true;
+                    }
+                    // Escape closes the bar from anywhere in the view, not only from its own box: a click
+                    // on one of its buttons has already taken the caret out of the box.
+                    if state.find.open && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                        state.find.open = false;
+                        state.find.select = !state.find.matches.is_empty();
+                    }
+                    if state.find.open {
+                        let (next, prev) = ui.input_mut(|i| {
+                            let prev = i.consume_key(Modifiers::SHIFT, Key::F3);
+                            (i.consume_key(Modifiers::NONE, Key::F3), prev)
+                        });
+                        if next && !state.find.matches.is_empty() {
+                            state.find.current = (state.find.current + 1) % state.find.matches.len();
+                            state.find.jump = true;
                         }
-                    });
+                        if prev && !state.find.matches.is_empty() {
+                            state.find.current = (state.find.current + state.find.matches.len() - 1) % state.find.matches.len();
+                            state.find.jump = true;
+                        }
+                    }
+                    // Colours and matches are found again only when the text, the format or the query changed.
+                    let colours_for = fingerprint(&[&state.text, lang.label()], false);
+                    if state.coloured_for != colours_for {
+                        state.coloured = highlight::spans(lang, &state.text);
+                        state.coloured_for = colours_for;
+                    }
+                    let found_in = fingerprint(&[&state.text, &state.find.query], state.find.case);
+                    if state.find.open && state.find.found_in != found_in {
+                        let before = state.find.matches.get(state.find.current).map(|m| m.0);
+                        state.find.matches = find_matches(&state.text, &state.find.query, state.find.case);
+                        state.find.found_in = found_in;
+                        // Stay on the match that was current if it is still there; else the first at or after the caret.
+                        let caret =
+                            egui::TextEdit::load_state(ui.ctx(), text_id).and_then(|s| s.cursor.char_range()).map_or(0, |r| r.primary.index.0);
+                        state.find.current = before
+                            .and_then(|b| state.find.matches.iter().position(|m| m.0 == b))
+                            .or_else(|| state.find.matches.iter().position(|m| m.0 >= caret))
+                            .unwrap_or(0);
+                        if !state.find.query.is_empty() {
+                            state.find.jump = true;
+                        }
+                    }
+                    let bar_room = if state.find.open { 34.0 } else { 0.0 };
+                    let font = egui::TextStyle::Monospace.resolve(ui.style());
+                    let base = ui.visuals().text_color();
+                    let shown: Vec<(usize, usize)> = if state.find.open { state.find.matches.clone() } else { Vec::new() };
+                    let current = (state.find.open && !shown.is_empty()).then_some(state.find.current);
+                    let spans = &state.coloured;
+                    let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap: f32| {
+                        ui.fonts_mut(|f| f.layout_job(colour_job(text.as_str(), spans, &shown, current, t, font.clone(), base, wrap)))
+                    };
+                    let jump = std::mem::take(&mut state.find.jump);
+                    let select = std::mem::take(&mut state.find.select);
+                    let target = state.find.matches.get(state.find.current).copied();
+                    let editable = entry.kind.editable();
+                    egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0 - bar_room).max(120.0)).show(
+                        ui,
+                        |ui| {
+                            let edit = ui.add_enabled_ui(editable, |ui| {
+                                egui::TextEdit::multiline(&mut state.text)
+                                    .id(text_id)
+                                    .code_editor()
+                                    .layouter(&mut layouter)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(26)
+                                    .show(ui)
+                            });
+                            let edit = edit.inner;
+                            if edit.response.changed() {
+                                state.dirty = true;
+                                out.wrote = Some((entry.name.clone(), state.text.clone()));
+                            }
+                            if let Some((from, to)) = target {
+                                if jump {
+                                    let r = edit.galley.pos_from_cursor(CCursor::new(from)).translate(edit.galley_pos.to_vec2());
+                                    ui.scroll_to_rect(r.expand2(vec2(0.0, 24.0)), Some(egui::Align::Center));
+                                }
+                                if select {
+                                    let mut st = egui::TextEdit::load_state(ui.ctx(), text_id).unwrap_or_default();
+                                    st.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(from), CCursor::new(to))));
+                                    st.store(ui.ctx(), text_id);
+                                    ui.memory_mut(|m| m.request_focus(text_id));
+                                }
+                            }
+                        },
+                    );
+                    if state.find.open {
+                        match find_bar(ui, &mut state.find, find_id, t) {
+                            FindAct::Next if !state.find.matches.is_empty() => {
+                                state.find.current = (state.find.current + 1) % state.find.matches.len();
+                                state.find.jump = true;
+                            }
+                            FindAct::Previous if !state.find.matches.is_empty() => {
+                                state.find.current = (state.find.current + state.find.matches.len() - 1) % state.find.matches.len();
+                                state.find.jump = true;
+                            }
+                            FindAct::Close => {
+                                state.find.open = false;
+                                state.find.select = !state.find.matches.is_empty();
+                            }
+                            FindAct::Edited => state.find.found_in = 0,
+                            _ => {}
+                        }
+                    }
                 }
             }
         });
@@ -382,5 +712,101 @@ mod tests {
 
         assert!(Kind::PageFile.editable() && Kind::Ink.editable(), "ours can be typed in");
         assert!(!Kind::Picture.editable() && !Kind::Text.editable() && !Kind::Other.editable());
+    }
+
+    use crate::theme::Theme;
+
+    /// The text one section of a job covers.
+    fn piece<'a>(job: &'a LayoutJob, s: &egui::text::LayoutSection) -> &'a str {
+        &job.text[s.byte_range.start.0..s.byte_range.end.0]
+    }
+
+    #[test]
+    fn matches_are_found_by_character_position_in_order_and_do_not_overlap() {
+        assert_eq!(find_matches("one two one", "one", false), vec![(0, 3), (8, 11)]);
+        assert_eq!(find_matches("aaaa", "aa", false), vec![(0, 2), (2, 4)], "not overlapping");
+        assert_eq!(find_matches("abc", "", false), Vec::<(usize, usize)>::new(), "an empty query finds nothing");
+        assert_eq!(find_matches("ab", "abc", false), Vec::<(usize, usize)>::new());
+        // Positions are characters, which is how the text box counts: 'é' is one.
+        assert_eq!(find_matches("é-é", "é", false), vec![(0, 1), (2, 3)]);
+        assert_eq!(find_matches("日本語 日本語", "日本", false), vec![(0, 2), (4, 6)]);
+    }
+
+    #[test]
+    fn case_matters_only_when_asked() {
+        assert_eq!(find_matches("Diagram diagram DIAGRAM", "diagram", false).len(), 3);
+        assert_eq!(find_matches("Diagram diagram DIAGRAM", "diagram", true), vec![(8, 15)]);
+        assert_eq!(find_matches("ÉCOLE école", "école", false).len(), 2, "accented letters fold too");
+    }
+
+    #[test]
+    fn a_search_for_one_letter_in_a_big_file_is_cut_short() {
+        let text = "a".repeat(MAX_MATCHES * 3);
+        assert_eq!(find_matches(&text, "a", false).len(), MAX_MATCHES);
+    }
+
+    #[test]
+    fn byte_ranges_follow_the_characters_across_multibyte_letters() {
+        let text = "añb日c";
+        // characters: a=0 ñ=1 b=2 日=3 c=4
+        assert_eq!(byte_ranges(text, &[(0, 1), (1, 2), (3, 4)]), vec![(0, 1), (1, 3), (4, 7)]);
+        for (a, b) in byte_ranges(text, &[(0, 5), (2, 3)]) {
+            assert!(text.is_char_boundary(a) && text.is_char_boundary(b), "{a} {b}");
+        }
+        assert_eq!(byte_ranges(text, &[(0, 5)]), vec![(0, text.len())]);
+    }
+
+    #[test]
+    fn the_coloured_text_is_the_same_text_and_marks_the_matches() {
+        let t = Theme::DEFAULT.tokens();
+        let text = "<p class=\"nc\">héllo hé</p>";
+        let spans = highlight::spans(Lang::Html, text);
+        let found = find_matches(text, "hé", false);
+        let job = colour_job(text, &spans, &found, Some(1), &t, egui::FontId::monospace(13.0), Color32::BLACK, 500.0);
+        assert_eq!(job.text, text, "nothing is added or lost by colouring");
+        let (all, here) = match_colours(&t);
+        let marked: Vec<(&str, Color32)> =
+            job.sections.iter().filter(|s| s.format.background != Color32::TRANSPARENT).map(|s| (piece(&job, s), s.format.background)).collect();
+        assert_eq!(marked, vec![("hé", all), ("hé", here)], "two matches, the second the current one");
+        assert!(job.sections.iter().any(|s| piece(&job, s) == "class" && s.format.color == class_colour(Class::Attr, &t)));
+    }
+
+    #[test]
+    fn colouring_plain_text_and_empty_text_makes_a_valid_job() {
+        let t = Theme::DEFAULT.tokens();
+        let job = colour_job("", &[], &[], None, &t, egui::FontId::monospace(13.0), Color32::BLACK, 100.0);
+        assert!(job.text.is_empty());
+        let job = colour_job("plain words", &[], &[], None, &t, egui::FontId::monospace(13.0), Color32::BLACK, 100.0);
+        assert_eq!(job.text, "plain words");
+    }
+
+    #[test]
+    fn every_syntax_colour_and_match_background_reads_in_every_theme() {
+        use crate::theme::contrast;
+        let classes = [
+            Class::Tag,
+            Class::Attr,
+            Class::Str,
+            Class::Comment,
+            Class::Number,
+            Class::Keyword,
+            Class::Punct,
+            Class::Heading,
+            Class::Emphasis,
+            Class::Code,
+            Class::Link,
+            Class::Meta,
+        ];
+        for theme in Theme::all() {
+            let t = theme.tokens();
+            for c in classes {
+                let got = contrast(class_colour(c, &t), t.editor);
+                assert!(got >= 3.0, "{}: {c:?} on the editor is {got:.2}", theme.label());
+            }
+            let (all, here) = match_colours(&t);
+            for (name, bg) in [("a match", all), ("the current match", here)] {
+                assert!(contrast(t.text, bg) >= 4.5, "{}: the text on {name} is {:.2}", theme.label(), contrast(t.text, bg));
+            }
+        }
     }
 }
