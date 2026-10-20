@@ -15,8 +15,12 @@ it is fixed and tested, not when it is promised.
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
   one version, and a smaller engine of our own is the fallback. Arabic, Hebrew and Chinese inside
   `\text{}` are drawn in the page's font; how they line up with the maths is judged by eye only.
-- **Mermaid diagrams are not drawn.** They are kept as source and shown as source. Mermaid is
-  JavaScript; options are a pure-Rust renderer for a subset, or an optional external tool.
+- **Mermaid diagrams are drawn in the code view only.** The live page still shows the source; the
+  embedded-object look (the drawing in the page, a double click to open its code) is not built, nor is
+  saving the drawn picture beside the page. The renderer (`mermaid-rs-renderer`) is young, with one
+  main author, and pinned to one version. Large graphs are refused (150 lines), its pie, Gantt and
+  chart styling is plainer than Mermaid's own, and only what it can read is drawn. Vega-Lite charts
+  from data are not built.
 - **The page editor has edges.** Both formats are written on in their finished look, block by
   block, and written back to the page's own format. But a page whose markup the writer cannot
   reproduce exactly is opened read-only rather than risking it, and a table, a picture or a

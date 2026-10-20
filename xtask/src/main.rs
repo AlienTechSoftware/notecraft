@@ -27,6 +27,7 @@ mod version;
 const LAYERS: &[(&str, u8)] = &[
     ("notecraft-model", 0),
     ("notecraft-math", 1),
+    ("notecraft-diagram", 1),
     ("notecraft-ink", 1),
     ("notecraft-onenote", 1),
     ("notecraft-formats", 1),

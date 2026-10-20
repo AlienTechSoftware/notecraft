@@ -6,6 +6,7 @@ Short guides for getting work done. Each one is a page; none is longer than a sc
 |---|---|
 | [Start a notebook](start-a-notebook.md) | The first notebook, sections, pages and sub-pages |
 | [Arrange a page in boxes](arrange-a-page.md) | Containers: moving and resizing them, and where the arrangement is kept |
+| [Draw diagrams and charts](draw-diagrams.md) | Mermaid diagrams and charts: where they are kept, how to see them drawn, and what happens when one cannot be |
 | [Write equations](write-equations.md) | TeX maths in a page: the gallery, inline and block, what is drawn, and what happens when it cannot |
 | [Write a page](write-a-page.md) | Writing on the page, headings, lists, links, equations, the page source |
 | [Look inside a page](look-inside-a-page.md) | The code view: every file a page owns, what each one shows, and what you can edit |

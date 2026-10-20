@@ -387,7 +387,10 @@ impl Writer {
             ("code", _) if !self.in_pre => self.push("`"),
             ("pre", false) => {
                 self.block_break();
-                self.pre_diagram = attrs.to_lowercase().contains("diagram");
+                // `diagram` is how NoteCraft has always written one; `mermaid` is how Mermaid's own
+                // pages and most other tools do, so a page from elsewhere is read the same.
+                let attrs = attrs.to_lowercase();
+                self.pre_diagram = attrs.contains("diagram") || attrs.contains("mermaid");
                 self.push(if self.pre_diagram { "```mermaid\n" } else { "```\n" });
                 self.in_pre = true;
             }

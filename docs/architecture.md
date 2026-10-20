@@ -124,9 +124,15 @@ driven from the command line as easily as from the window.
   (`mathview.rs`) with the KaTeX faces registered as `katex-<face>` fonts. RaTeX is pinned to an
   exact version in the workspace manifest and is named only in `crates/math/src/tex.rs`. See
   [how-to/write-equations.md](how-to/write-equations.md).
-- **Diagrams** (Mermaid) are stored as source, in a fenced block or `<pre class="diagram">`,
-  and shown as source. Rendering is not built. Mermaid is JavaScript; a pure-Rust renderer or
-  another approach is an open question in [`gaps.md`](gaps.md).
+- **Diagrams** (Mermaid) are stored as source, in a fenced block or `<pre class="diagram">` or
+  `<pre class="mermaid">`, and drawn by `crates/diagram`: `find` reads them out of a page's text in
+  either format, and `draw` turns one into an SVG with `mermaid-rs-renderer` (pure Rust, pinned to an
+  exact version, named only there), in the page's colours. A source is cut by size before the
+  renderer sees it (150 lines, 20,000 characters), a panic is caught, and a drawing too large for a
+  texture is refused, so nothing a page holds can crash the window. `ui-egui/diagramview.rs` draws
+  on a thread of its own, so no frame waits, and keeps each drawing by source and colours. The code
+  view shows the drawings above the text. The live page does not draw them yet; see
+  [how-to/draw-diagrams.md](how-to/draw-diagrams.md) and [`gaps.md`](gaps.md).
 
 ## Testing and gates
 

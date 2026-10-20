@@ -3618,6 +3618,7 @@ impl NoteCraftApp {
 
     /// What the window shows now: the visible tree rows, the open page, the theme and the size.
     pub fn inspect(&self, ctx: &Context) -> Value {
+        let diagrams = crate::diagramview::counts(ctx, &self.code.diagrams, &self.tokens);
         let mut rows = Vec::new();
         fn walk(app: &NoteCraftApp, n: &Node, depth: usize, rows: &mut Vec<Value>) {
             let open = app.open.contains(&n.path);
@@ -3684,6 +3685,14 @@ impl NoteCraftApp {
                 "open": self.show_source,
                 "picked": self.code.picked,
                 "characters": self.code.text.chars().count(),
+                // The Mermaid diagrams the text in hand holds: how many, and how many of them
+                // are drawn, still being drawn, or could not be.
+                "diagrams": {
+                    "found": self.code.diagrams.len(),
+                    "drawn": diagrams.0,
+                    "drawing": diagrams.1,
+                    "failed": diagrams.2,
+                },
             },
             "notebooksFolder": self.shown(self.session.root()),
             "status": {"text": self.status, "error": self.status_is_error},

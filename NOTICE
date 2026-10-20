@@ -21,6 +21,7 @@ is, where it came from, its license status) is in ATTRIBUTION.md.
   Design Science, Inc. and 2014-2018 Khan Academy, with Reserved Font Names KaTeX_*. Bundled
   unmodified so equations draw in real maths fonts; the licence text is
   assets/fonts/katex/OFL-KaTeX.txt, written from the licence strings inside the fonts.
+- mermaid-rs-renderer - MIT License, by its authors, linked into the program to draw Mermaid diagrams.
 - RaTeX (ratex-parser, ratex-layout, ratex-types, ratex-font) - MIT License, by the RaTeX
   authors, linked into the program to typeset equations.
 - The window also uses the fonts bundled with egui, which carry their own licenses; those ship
