@@ -61,6 +61,21 @@ it is fixed and tested, not when it is promised.
   missing: the window is not mirrored (the tree stays on the left whatever the page says),
   and the isolates the Run buttons write are kept in the file but not yet honoured when the
   line is drawn. Selecting inside a right-to-left line does work; see the caret entry below.
+- **Two faults a writer of Arabic hit at once, both fixed on 2026-10-19.** The owner typed a
+  numbered list in Arabic and dragged across a sentence, and found both. (1) **Enter split
+  the line in the wrong place.** A caret arriving in a right-to-left line was left at
+  character nought instead of at the end of the words, so Enter cut in front of the first
+  letter: the whole sentence moved down into the new paragraph, an empty one was left above
+  it, and the next thing typed ran on to the end of the sentence rather than starting a
+  line. Three numbered lines came out crammed into one paragraph. A line with no
+  right-to-left text in it never showed this, because egui's own text box puts an arriving
+  caret at the end; `write_rtl` does the same now. (2) **A selection hid the words it
+  covered.** The fill is opaque and was painted after the glyphs, so a drag across an
+  Arabic sentence left a row of blank boxes where the sentence had been - which reads as a
+  selection that does not work, and is what was reported. It is painted into a place kept
+  for it behind the words now, the same way the shading behind a container is. Both are
+  measured in `crates/ui-egui/tests/ui.rs`, the second by counting the glyph pixels that
+  survive under the selection.
 - **Paragraph direction is in two places on the Home tab**, as of 2026-10-19: in the
   alignment menu, where Word and OneNote keep it, and in the Direction group beside the
   page's own, because a writer who has gone looking for the direction controls should find

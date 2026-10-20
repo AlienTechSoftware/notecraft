@@ -1411,14 +1411,27 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     // being one under the caret.
     let (rect, _) = ui.allocate_exact_size(vec2(width, used.y.max(size * 1.3)), Sense::hover());
     let resp = ui.interact(rect, id, Sense::click_and_drag());
+    // A place kept behind the words for the selection, filled in below once the drag has
+    // been read. The selection is opaque, so painting it after the words hid every word it
+    // covered: a drag across an Arabic line left a row of empty boxes where the sentence
+    // had been, which is what a reader took for a selection that did not work. The same
+    // trick, for the same reason, as the shading behind a container in `containers.rs`.
+    let behind = ui.painter().add(egui::Shape::Noop);
     crate::bidi::paint(ui, rect.min, &drawn);
 
     if c.focus {
         c.focus = false;
-        if let Some(place) = c.place.take() {
-            let at = place.min(c.text.chars().count());
-            c.selection = (at, at);
-        }
+        // Where the caret lands when it arrives in this line: where the click was, and
+        // otherwise the end of the words, which is what egui's text box does for a line
+        // without right-to-left in it and what every editor does when you step into a
+        // line. Leaving it at nought instead put the caret at the START of an Arabic
+        // paragraph, so Enter split the line in front of its first letter: the whole
+        // sentence moved down into the new paragraph, an empty one was left above it, and
+        // the next thing typed ran on to the end of the sentence instead of starting a
+        // new line. That is how a page of numbered Arabic lines ends up with three of
+        // them crammed into one paragraph.
+        let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
+        c.selection = (at, at);
     }
     // The caret is in this block, so this is where the typing goes.
     if !resp.has_focus() {
@@ -1529,10 +1542,14 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
 
     // What is selected, painted behind the words, one rectangle per run it covers.
     if resp.has_focus() && anchor != at {
-        for r in crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width) {
-            let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
-            ui.painter().rect_filled(r, 1.0, t.row_selected);
-        }
+        let shapes: Vec<egui::Shape> = crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width)
+            .into_iter()
+            .map(|r| {
+                let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
+                egui::Shape::rect_filled(r, 1.0, t.row_selected)
+            })
+            .collect();
+        ui.painter().set(behind, egui::Shape::Vec(shapes));
     }
     // The caret itself, drawn where parley says it belongs on the line.
     if resp.has_focus()
