@@ -133,9 +133,16 @@ it is fixed and tested, not when it is promised.
   means characters), so a line with Arabic in it is drawn by `crates/ui-egui/src/bidi.rs` and
   written in with a caret of ours: parley says which character a click landed on and which
   way a step moves, egui still draws. Selecting works there too, by dragging, with Shift and
-  the arrows, and a double click takes the word under the pointer. What it does not do yet:
-  a selection that spans two paragraphs, which no block can do, and Ctrl with the arrows to
-  step by word.
+  the arrows, and a double click takes the word under the pointer. **The selection is drawn
+  as one unbroken band to a line** since 2026-10-19: a right-to-left line is drawn word by
+  word with the gaps left empty, so the selection began life as a rectangle per word and
+  showed the page through every space. A gap no wider than a space is closed now; a wider
+  one is left, because on a line of two directions the selected text really is in two
+  places. What it does not do yet: **a selection that spans two paragraphs**, which no block
+  can do, and Ctrl with the arrows to step by word. The owner put NoteCraft beside OneNote
+  on 2026-10-19 and that is the difference left in the picture: OneNote highlights both
+  paragraphs of a drag that crosses them, and here the drag stops at the end of the one it
+  began in.
 - **The caret is egui's, not ours.** Each block is an egui text box, so there is no caret of
   our own across blocks: no selection spanning two blocks, and no caret movement by visible
   step in mixed text. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
