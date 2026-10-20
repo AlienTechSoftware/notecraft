@@ -3618,7 +3618,6 @@ impl NoteCraftApp {
 
     /// What the window shows now: the visible tree rows, the open page, the theme and the size.
     pub fn inspect(&self, ctx: &Context) -> Value {
-        let diagrams = crate::diagramview::counts(ctx, &self.code.diagrams, &self.tokens);
         // The Mermaid diagrams of the page as it is drawn, not of the code view: how many, and how
         // many of them are drawn, still being drawn, or could not be.
         let in_page: Vec<String> = self
@@ -3701,14 +3700,6 @@ impl NoteCraftApp {
                 "open": self.show_source,
                 "picked": self.code.picked,
                 "characters": self.code.text.chars().count(),
-                // The Mermaid diagrams the text in hand holds: how many, and how many of them
-                // are drawn, still being drawn, or could not be.
-                "diagrams": {
-                    "found": self.code.diagrams.len(),
-                    "drawn": diagrams.0,
-                    "drawing": diagrams.1,
-                    "failed": diagrams.2,
-                },
             },
             "pageDiagrams": {
                 "found": in_page.len(),

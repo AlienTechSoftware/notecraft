@@ -28,7 +28,7 @@ pub enum Kind {
     PageFile,
     /// A drawing of ours: SVG carrying the ink namespace.
     Ink,
-    /// A Mermaid diagram kept as a file of its own (`.mmd`), drawn above its source.
+    /// A Mermaid diagram's source kept as a file of its own (`.mmd`): text, and it can be typed in.
     Diagram,
     /// A picture the window can draw.
     Picture,
@@ -78,10 +78,6 @@ pub struct State {
     /// from the last one is dropped: its text would otherwise be shown, and typed over, as this
     /// page's own.
     pub dir: Option<std::path::PathBuf>,
-    /// The Mermaid diagrams found in the text on view, kept until the text changes.
-    pub diagrams: Vec<String>,
-    /// A fingerprint of the text `diagrams` were found in.
-    pub diagrams_of: u64,
 }
 
 /// What the view did this frame.
@@ -297,36 +293,16 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     }
                     let warning = match entry.kind {
                         Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
-                        Kind::Diagram => Some("The diagram's source. It is drawn above as you type."),
                         Kind::Ink => Some("The pen's own readings are in this file. An edit that breaks them cannot be undone by the pen."),
                         _ => None,
                     };
                     if let Some(words) = warning {
                         ui.label(egui::RichText::new(words).small().color(t.muted));
                     }
-                    // Diagrams are drawn above their source: in the page file, each Mermaid
-                    // diagram the text holds, in either format; in a `.mmd` file, the one it is.
-                    if matches!(entry.kind, Kind::PageFile | Kind::Diagram) {
-                        let mut h = std::collections::hash_map::DefaultHasher::new();
-                        std::hash::Hash::hash(&(entry.kind == Kind::Diagram, &state.text), &mut h);
-                        let fingerprint = std::hash::Hasher::finish(&h);
-                        if state.diagrams_of != fingerprint {
-                            state.diagrams =
-                                if entry.kind == Kind::Diagram { vec![state.text.clone()] } else { notecraft_diagram::find(&state.text) };
-                            state.diagrams_of = fingerprint;
-                        }
-                    }
-                    // With diagrams, the drawings and the source are one column that scrolls
-                    // together, the drawings first; without, the source has the room to itself.
-                    let with_diagrams = !state.diagrams.is_empty() && matches!(entry.kind, Kind::PageFile | Kind::Diagram);
-                    let rows = if with_diagrams { 22 } else { 26 };
                     egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0).max(120.0)).show(ui, |ui| {
-                        if with_diagrams {
-                            diagram_strip(ui, &state.diagrams, t);
-                        }
                         let edit = ui.add_enabled(
                             entry.kind.editable(),
-                            egui::TextEdit::multiline(&mut state.text).code_editor().desired_width(f32::INFINITY).desired_rows(rows),
+                            egui::TextEdit::multiline(&mut state.text).code_editor().desired_width(f32::INFINITY).desired_rows(26),
                         );
                         if edit.changed() {
                             state.dirty = true;
@@ -341,25 +317,6 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
 }
 
 /// The same stroke at a different size, for drawing a whole sheet in a small space.
-/// The diagrams of the page on view, drawn, above its source. Each says so when it cannot be
-/// drawn, and the source below it is still the page's.
-fn diagram_strip(ui: &mut Ui, diagrams: &[String], t: &Tokens) {
-    let title = if diagrams.len() == 1 { "Diagram".to_string() } else { format!("Diagrams ({})", diagrams.len()) };
-    egui::CollapsingHeader::new(egui::RichText::new(title).strong()).default_open(true).id_salt("code-diagrams-header").show(ui, |ui| {
-        for (i, source) in diagrams.iter().enumerate() {
-            if diagrams.len() > 1 {
-                ui.label(egui::RichText::new(format!("Diagram {}", i + 1)).small().color(t.muted));
-            }
-            egui::Frame::new().fill(t.editor).inner_margin(6.0).corner_radius(4.0).show(ui, |ui| {
-                crate::diagramview::show(ui, source, t);
-            });
-            ui.add_space(4.0);
-        }
-    });
-    ui.add_space(4.0);
-    ui.label(egui::RichText::new("Source").small().color(t.muted));
-}
-
 fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::Stroke {
     let mut out = notecraft_ink::Stroke::with_gain(stroke.tool, stroke.colour, (stroke.width * scale).max(0.4), stroke.gain);
     for dab in &stroke.dabs {

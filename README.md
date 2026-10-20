@@ -65,7 +65,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 <td colspan="2" valign="top"><img src="docs/images/page-source.png" alt="The page source view: a list of the page's files on the left, index.md and assets/koala.png, and on the right the whole page file as text, its head with the id, title, order and dates above its Markdown body" width="100%"><p align="center"><sub><b>Inside a page.</b> The files a page owns, and what is in each: the whole page file, head and body, to read and to edit.</sub></p></td>
 </tr>
 <tr>
-<td colspan="2" valign="top"><img src="docs/images/diagrams.png" alt="The code view of a page with two Mermaid diagrams drawn above their source: a pie chart of pages by format, and a bar and line chart of pages per month, in the theme's colours" width="100%"><p align="center"><sub><b>Diagrams and charts.</b> Mermaid source in the page, drawn where it stands and above its source in the code view: flowcharts, sequence, pie, bar and line, and more.</sub></p></td>
+<td colspan="2" valign="top"><img src="docs/images/diagrams.png" alt="A page with two Mermaid diagrams drawn where they stand: a pie chart of pages by format, and a bar and line chart of pages per month, in the theme's colours" width="100%"><p align="center"><sub><b>Diagrams and charts.</b> Mermaid source in the page, drawn where it stands; click one to edit it: flowcharts, sequence, pie, bar and line, and more.</sub></p></td>
 </tr>
 </table>
 
@@ -102,7 +102,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 | **Page source** | The `< >` button opens the page's folder: every file the page owns on the left, the one you pick on the right. The page file shows its head (id, title, dates) above its body, which you can edit; a drawing's SVG shows as text, pictures as pictures, and a file nothing on the page uses is marked |
 | **Right to left** | Arabic, Hebrew and the rest draw, with a direction for the page, the line or the run, kept in the text itself so it travels. Mixed lines are not reordered yet |
 | **Tags** | To Do, Important, Question, Remember, Definition, Highlight, Contact, Address, Phone, Web site, Idea, Critical: stored as plain text in the page, drawn as the marks you know |
-| **Diagrams and charts** | Mermaid diagrams, in a fenced block (Markdown) or `<pre class="mermaid">` (HTML), drawn in the page where they stand, and in the code view above their source: flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line charts. Click one to edit its source. A diagram that cannot be drawn says why and stays as text |
+| **Diagrams and charts** | Mermaid diagrams, in a fenced block (Markdown) or `<pre class="mermaid">` (HTML), drawn in the page where they stand: flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line charts. Click one to edit its source. A diagram that cannot be drawn says why and stays as text |
 | **Equations** | KaTeX-style TeX maths drawn natively in real maths fonts, inline and display: fractions, roots, sums, integrals, matrices, cases, accents, with a gallery to start from |
 | **Pictures and files** | Drop a file on the page: copy it into the page's folder or link to it where it is, and it asks which |
 | **Colours** | Nine colours for notebooks, section groups and sections, saved in the folder |
