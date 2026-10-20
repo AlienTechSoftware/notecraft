@@ -113,6 +113,33 @@ pub fn create_node_at(
     want_order: Option<u32>,
 ) -> Result<PathBuf> {
     let title = clean_title(title)?;
+    create_node_inner(parent, &title, kind, explicit, settings, want_order, Some(&title))
+}
+
+/// A page with no title of its own: the "Add Page" case. The folder is still named from
+/// `tree::UNTITLED_PAGE`, the way a page always needs some name, but nothing is written
+/// into its head. The tree, the page list and the window's title bar show
+/// `tree::UNTITLED_PAGE` as a stand-in for it, the way OneNote calls a page that with
+/// nothing typed in it "Untitled Page", and the title area on the page itself is drawn
+/// blank. The page stops being untitled the moment a title is written in, however short;
+/// see `set_title`.
+pub fn create_untitled_page(parent: &Path, explicit: Option<PageFormat>, settings: &Settings) -> Result<PathBuf> {
+    create_node_inner(parent, tree::UNTITLED_PAGE, NodeKind::Page, explicit, settings, None, None)
+}
+
+/// Shared by `create_node_at` and `create_untitled_page`. `slug_title` names the folder;
+/// `page_title` is what is written into a page's own head, `None` leaving it out
+/// entirely. A section group or section always gets `slug_title` as its real title: only a
+/// page can be nameless.
+fn create_node_inner(
+    parent: &Path,
+    slug_title: &str,
+    kind: NodeKind,
+    explicit: Option<PageFormat>,
+    settings: &Settings,
+    want_order: Option<u32>,
+    page_title: Option<&str>,
+) -> Result<PathBuf> {
     let parent_info =
         read_node(parent).ok_or_else(|| StoreError::NotFound(format!("{} is not a notebook, section, group or page", parent.display())))?;
     if !parent_info.kind.may_contain().contains(&kind) {
@@ -122,15 +149,15 @@ pub fn create_node_at(
         Some(o) => o,
         None => u32::try_from(child_dirs(parent).len()).unwrap_or(0).saturating_mul(10).saturating_add(10),
     };
-    let dir = unique_child(parent, &names::slug(&title));
+    let dir = unique_child(parent, &names::slug(slug_title));
     let (now, id) = (iso_now(), new_id());
     fs::create_dir(&dir).map_err(|e| StoreError::io("create", &dir, e))?;
     let written = (|| -> Result<()> {
         if kind == NodeKind::Page {
             let (format, _) = effective_format(Some(parent), explicit, settings);
             let body = match format {
-                PageFormat::Html => templates::html_page(&title, &id, order, &now),
-                PageFormat::Cmgfm => templates::markdown_page(&title, &id, order, &now),
+                PageFormat::Html => templates::html_page(page_title, &id, order, &now),
+                PageFormat::Cmgfm => templates::markdown_page(page_title, &id, order, &now),
             };
             let file = dir.join(format.file_name());
             fs::write(&file, body).map_err(|e| StoreError::io("write", &file, e))?;
@@ -138,7 +165,7 @@ pub fn create_node_at(
             fs::create_dir(&assets).map_err(|e| StoreError::io("create", &assets, e))?;
         } else {
             let file = dir.join("_node.toml");
-            fs::write(&file, node_file(kind, &title, &id, Some(order), explicit)).map_err(|e| StoreError::io("write", &file, e))?;
+            fs::write(&file, node_file(kind, slug_title, &id, Some(order), explicit)).map_err(|e| StoreError::io("write", &file, e))?;
         }
         Ok(())
     })();

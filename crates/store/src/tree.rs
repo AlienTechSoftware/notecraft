@@ -57,6 +57,24 @@ pub fn folder_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
+/// What an untitled page is called in the tree, the page list and the window's title bar.
+/// Never written into a page's own file as real content: a page with no title of its own
+/// has nothing in its head that says so, and this is only ever the fallback shown for it.
+/// A page carrying a `title` key is never untitled, however short or plain that title is.
+pub const UNTITLED_PAGE: &str = "Untitled page";
+
+/// The title written in a page's own file, with no fallback: `None` when there is no
+/// title key at all, or the key is there but empty once trimmed. Shared by `read_node`,
+/// which falls back to [`UNTITLED_PAGE`] for display, and by `page::load_page`, which
+/// needs to tell a real title from the fallback so the title area can be drawn blank.
+pub(crate) fn raw_title(format: PageFormat, text: &str) -> Option<String> {
+    let title = match format {
+        PageFormat::Html => html::title(text),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(text).0, "title"),
+    };
+    title.filter(|t| !t.trim().is_empty())
+}
+
 /// The content file of a page. If a folder has both `index.html` and `index.md`
 /// (which `check` reports), HTML wins.
 pub fn page_file(dir: &Path) -> Option<(PageFormat, PathBuf)> {
@@ -66,22 +84,20 @@ pub fn page_file(dir: &Path) -> Option<(PageFormat, PathBuf)> {
 pub fn read_node(dir: &Path) -> Option<NodeInfo> {
     if let Some((format, file)) = page_file(dir) {
         let text = fs::read_to_string(&file).unwrap_or_default();
-        let (title, id, order) = match format {
-            PageFormat::Html => {
-                (html::title(&text), html::meta(&text, "notecraft:id"), html::meta(&text, "notecraft:order").and_then(|v| v.parse().ok()))
-            }
+        let (id, order) = match format {
+            PageFormat::Html => (html::meta(&text, "notecraft:id"), html::meta(&text, "notecraft:order").and_then(|v| v.parse().ok())),
             PageFormat::Cmgfm => {
                 let (front, _) = frontmatter::split_front(&text);
-                (
-                    frontmatter::value(&front, "title"),
-                    frontmatter::value(&front, "id"),
-                    frontmatter::value(&front, "order").and_then(|v| v.parse().ok()),
-                )
+                (frontmatter::value(&front, "id"), frontmatter::value(&front, "order").and_then(|v| v.parse().ok()))
             }
         };
+        // A page with no title of its own is called "Untitled page" here, not by the
+        // folder's slug: the owner asked for a page with nothing typed yet to read as
+        // untitled, the same way it does in OneNote, rather than show the name the folder
+        // happened to be given at creation.
         return Some(NodeInfo {
             kind: NodeKind::Page,
-            title: title.unwrap_or_else(|| folder_name(dir)),
+            title: raw_title(format, &text).unwrap_or_else(|| UNTITLED_PAGE.to_string()),
             color: None,
             format: Some(format),
             id: id.unwrap_or_default(),
