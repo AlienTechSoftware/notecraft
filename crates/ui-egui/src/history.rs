@@ -17,7 +17,10 @@
 
 use notecraft_formats::Block;
 use notecraft_model::Container;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+// std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is the
+// same type everywhere else and performance.now()/Date.now() there.
+use web_time::Instant;
 
 /// A run of typing into one block folds into one step until the writer pauses this long.
 pub const PAUSE: Duration = Duration::from_millis(700);
