@@ -3505,13 +3505,20 @@ fn enter_in_an_arabic_paragraph_starts_the_next_one() {
     }
 }
 
-/// Dragging across an Arabic line selects it, and the words it covers can still be read.
+/// Dragging across an Arabic line selects it, the highlight is drawn, and the words it
+/// covers can still be read.
 ///
-/// Two things, because the second is what the owner saw. The selection is made - that much
-/// was true before - but it was painted after the words and is opaque, so a drag across an
-/// Arabic sentence left a row of blank boxes where the sentence had been. It looked exactly
-/// like a selection that did not work. The fill goes behind the words now, in a place kept
-/// for it before they are drawn.
+/// Three things, because the owner reported all three in turn as "dragging does not
+/// select". The drag begins on a paragraph the caret is not in, which is how a reader
+/// actually selects: they do not click first.
+///
+/// 1. **The caret arrives and the selection grows.** A finished block answered a click and
+///    nothing answered a press that moved, so a first drag did nothing whatever - no caret,
+///    no selection. The drag is sensed under the same id the editor uses for the block, so
+///    the caret lands where the press fell and egui carries the drag into the text box.
+/// 2. **The highlight is drawn.** Compared against the same page with nothing selected.
+/// 3. **The words stay readable.** The fill is opaque and used to be painted after the
+///    glyphs, which left a row of blank boxes where the sentence had been.
 #[test]
 fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
@@ -3524,8 +3531,8 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     let y = rect.center().y;
     // The line hangs from the right edge, so the drag runs leftwards from near that edge.
     let (from, to) = (rect.max.x - 30.0, rect.max.x - 170.0);
-    ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": y})).expect("click in");
-    settle(&mut h);
+
+    // No click first. This is the press, the drag and the release, and nothing else.
     ask(&mut h, "ui.press", json!({"x": from, "y": y})).expect("press");
     settle(&mut h);
     ask(&mut h, "ui.move", json!({"x": to, "y": y})).expect("drag");
@@ -3534,27 +3541,39 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     settle(&mut h);
 
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret.get("block").and_then(Value::as_u64), Some(0), "the drag put the caret in the paragraph it began on");
     let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
-    assert_ne!(at, anchor, "the drag selected something: at {at}, anchor {anchor}");
+    assert_ne!(at, anchor, "and the drag selected something: at {at}, anchor {anchor}");
 
-    // And the words under the selection are still drawn. The fill is a pale tint of the
-    // page; a glyph is far darker than either, so the band the drag covered must still
-    // hold dark pixels. Measured on 2026-10-19: 225 of them with the fill behind the
-    // words, and 23 with it painted over them, which is the stray edge of the word the
-    // drag stopped short of. The threshold sits between the two.
-    let image = h.render().expect("a picture of the window");
-    let scale = image.width() as f32 / 1200.0;
+    let selected = h.render().expect("a picture of the window");
+    review(&mut h, "rtl-drag-selection");
+
+    // The same page with nothing selected, to compare against.
+    ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("drop the selection");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret.get("at").and_then(Value::as_u64), caret.get("anchor").and_then(Value::as_u64), "an arrow without Shift drops the selection");
+    let plain = h.render().expect("a picture of the window");
+
+    // The band the drag covered, in the rendered picture's own pixels.
+    let scale = selected.width() as f32 / 1200.0;
     let (x0, x1) = ((to * scale) as u32, (from * scale) as u32);
     let (y0, y1) = (((y - 8.0) * scale) as u32, ((y + 8.0) * scale) as u32);
-    let mut dark = 0;
-    for py in y0..y1.min(image.height()) {
-        for px in x0..x1.min(image.width()) {
-            let p = image.get_pixel(px, py);
-            if p[0] < 120 && p[1] < 120 && p[2] < 120 {
+    let (mut changed, mut dark) = (0u32, 0u32);
+    for py in y0..y1.min(selected.height()) {
+        for px in x0..x1.min(selected.width()) {
+            let (a, b) = (selected.get_pixel(px, py), plain.get_pixel(px, py));
+            if a != b {
+                changed += 1;
+            }
+            if a[0] < 120 && a[1] < 120 && a[2] < 120 {
                 dark += 1;
             }
         }
     }
+    assert!(changed > 400, "the highlight is drawn: {changed} pixels differ from the same line unselected");
+    // The fill is a pale tint of the page and a glyph is far darker than either, so the
+    // band must still hold dark pixels. Measured on 2026-10-19: 225 of them with the fill
+    // behind the words, and 23 with it painted over them.
     assert!(dark > 40, "the selected words are still legible under the selection: {dark} dark pixels in the band");
-    review(&mut h, "rtl-drag-selection");
 }

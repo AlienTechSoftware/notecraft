@@ -6,11 +6,13 @@ it is fixed and tested, not when it is promised.
 ## Product
 
 - **Import is not finished.** It is a requirement, and the scope is import only
-  (owner's decision, 2026-10-17). `crates/onenote` reads a `.one` section file: the container
-  and the objects in it, down to pages, outlines, text runs, pictures and attachments, tested
-  against synthetic files. What is missing is the other half, writing that out as notebook
-  folders, so nothing can be imported yet. Notebook structure (`.onetoc2`) is not read, and
-  neither are password-protected sections or ink.
+  (owner's decision, 2026-10-17). `notecraft-cli import onenote` turns a folder of `.one`
+  section files into notebooks, section groups, sections, pages and sub-pages, with pictures
+  and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
+  `docs/research/onenote-file-format/real-files.md`). Missing: ink, tags, page dates, the
+  notebook table of contents (`.onetoc2`, so section order and colours), `.onepkg` packages,
+  password-protected sections, and an import command in the window. Underline and equation
+  structure have nowhere to go in the page formats.
 - **Mermaid diagrams are not drawn.** They are kept as source and shown as source. Mermaid is
   JavaScript; options are a pure-Rust renderer for a subset, or an optional external tool.
 - **The page editor has edges.** Both formats are written on in their finished look, block by
@@ -75,7 +77,13 @@ it is fixed and tested, not when it is promised.
   selection that does not work, and is what was reported. It is painted into a place kept
   for it behind the words now, the same way the shading behind a container is. Both are
   measured in `crates/ui-egui/tests/ui.rs`, the second by counting the glyph pixels that
-  survive under the selection.
+  survive under the selection. **A third, found the same evening and fixed with them:** a
+  drag that began on a paragraph the caret was not already in did nothing whatever - no
+  caret, no selection - because a finished block answered a click and nothing answered a
+  press that moved. That is how a reader selects words, so the first drag on any paragraph
+  was inert. The drag is now read from the pointer itself at both ends rather than sensed on
+  a widget: a widget laid over the words to watch for it takes the pointer away from the
+  words underneath, links included, which five tests said twice.
 - **Paragraph direction is in two places on the Home tab**, as of 2026-10-19: in the
   alignment menu, where Word and OneNote keep it, and in the Direction group beside the
   page's own, because a writer who has gone looking for the direction controls should find

@@ -303,7 +303,7 @@ pub struct BlockResponse {
 pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Option<Dir>, justified: &Justified) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
-        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i));
+        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), ui.id().with(("block", i)));
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
@@ -331,6 +331,11 @@ pub fn show_block(
     live: bool,
     page: Option<Dir>,
     justified: Option<Strength>,
+    // The id the block senses under. The page editor passes the one its text box uses for
+    // this block, so a drag that begins on the finished block carries straight on into the
+    // text box when the caret lands in it on the next frame; egui tracks a drag against the
+    // id that started it, and a different id here would drop the drag on the floor.
+    id: egui::Id,
 ) -> BlockResponse {
     let start = ui.cursor().min;
     let body = ui.style().visuals.text_color();
@@ -484,7 +489,7 @@ pub fn show_block(
     }
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
-    let response = ui.interact(rect, ui.id().with(("block", i)), egui::Sense::click());
+    let response = ui.interact(rect, id, egui::Sense::click());
     BlockResponse { response, task_set }
 }
 
@@ -543,7 +548,8 @@ mod tests {
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
-                let out = show_block(ui, &block, 0, std::path::Path::new("."), &t, true, Some(notecraft_model::Dir::Ltr), None);
+                let out =
+                    show_block(ui, &block, 0, std::path::Path::new("."), &t, true, Some(notecraft_model::Dir::Ltr), None, ui.id().with("block"));
                 heights.push(out.response.rect.height());
             }
         });
