@@ -22,7 +22,10 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+// std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is the
+// same type everywhere else and performance.now()/Date.now() there.
+use web_time::Instant;
 
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
@@ -1939,7 +1942,7 @@ impl NoteCraftApp {
                         ed.blocks = step.blocks;
                         ed.boxes = step.boxes;
                         ed.caret = step.caret.map(|c| pageedit::Caret { focus: true, ..c });
-                        ed.dirty_since = Some(std::time::Instant::now());
+                        ed.dirty_since = Some(Instant::now());
                         // The restored text says whether the page was arranged.
                         ed.arranged = notecraft_formats::boxes::has_boxes(ed.format, &ed.body);
                     }

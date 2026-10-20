@@ -10,10 +10,13 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use egui::{Color32, Ui, vec2};
 use notecraft_diagram::{Palette, draw};
+// std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is the
+// same type everywhere else and performance.now()/Date.now() there.
+use web_time::Instant;
 
 use crate::theme::{Tokens, mix};
 
