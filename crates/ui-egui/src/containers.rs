@@ -267,6 +267,33 @@ pub fn show(
         }
     }
 
+    // Ctrl+C and Ctrl+X on a selected box, as the menu's Cut and Copy: the whole of it goes on the
+    // clipboard. With the caret in some words they are those words', and the text box takes them.
+    if let Some(i) = sel
+        && caret.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
+    {
+        // The window's own Copy and Cut events, or the keys themselves, which is how a script or a
+        // remote session sends them. Both in one frame do it once.
+        let pressed = |i: &egui::InputState, which: Key| {
+            i.events.iter().any(|e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == which && modifiers.command))
+        };
+        let (copy_key, cut_key) = ui.input(|i| {
+            (
+                i.events.iter().any(|e| matches!(e, egui::Event::Copy)) || pressed(i, Key::C),
+                i.events.iter().any(|e| matches!(e, egui::Event::Cut)) || pressed(i, Key::X),
+            )
+        });
+        if copy_key || cut_key {
+            let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
+            let markdown = notecraft_formats::render::blocks_to_markdown(held);
+            pageedit::remember_copied(&markdown, held);
+            ui.ctx().copy_text(markdown);
+            if cut_key {
+                delete_at = Some(i);
+            }
+        }
+    }
     // The selected container's menu, where the right click fell.
     let mut menu_rect: Option<Rect> = None;
     if let (Some(i), Some(at)) = (sel, menu_at) {
@@ -303,7 +330,9 @@ pub fn show(
         menu_rect = Some(area.rect);
         if copy {
             let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
-            ui.ctx().copy_text(notecraft_formats::render::blocks_to_markdown(held));
+            let markdown = notecraft_formats::render::blocks_to_markdown(held);
+            pageedit::remember_copied(&markdown, held);
+            ui.ctx().copy_text(markdown);
         }
         let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !area.rect.contains(pointer.unwrap_or_default());
         if picked || outside || ui.input(|i| i.key_pressed(Key::Escape)) {
