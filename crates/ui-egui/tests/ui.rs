@@ -4144,3 +4144,85 @@ fn a_drag_can_select_across_paragraphs() {
     assert!(paragraphs[0].ends_with("wrote them"), "and is joined to what came after it: {:?}", paragraphs[0]);
     assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
 }
+
+/// Ctrl+A, Ctrl+C and Ctrl+V work in an Arabic paragraph, where no egui text box listens.
+///
+/// The owner reported all three: Ctrl+C did nothing, Ctrl+A selected nothing, and nothing
+/// could be pasted. None of those keys was bound anywhere in the window for words. A
+/// left-to-right paragraph is an egui text box and egui answers them by itself, which is
+/// why it was only ever seen in Arabic.
+///
+/// Paste is checked against the real clipboard, because `paste_here` reads it directly
+/// through `arboard`. Copy cannot be checked the same way: `ctx.copy_text` hands the text
+/// to the platform layer, and in a harness there is no platform layer to take it. So the
+/// copy half checks that the key reached the handler, and the window itself is where the
+/// round trip is seen.
+#[test]
+fn the_clipboard_keys_work_in_an_arabic_paragraph() {
+    const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
+    let (_t, app, s) = sample_app("ui-keys");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Keys", LINE);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+
+    let caret = |h: &mut Harness<'_, NoteCraftApp>| -> (u64, u64) {
+        let c = ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+        (c.get("at").and_then(Value::as_u64).unwrap_or(0), c.get("anchor").and_then(Value::as_u64).unwrap_or(0))
+    };
+    let status = |h: &mut Harness<'_, NoteCraftApp>| -> String {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/status/text").and_then(|v| v.as_str()).unwrap_or("").to_string()
+    };
+
+    // Ctrl+A takes the whole paragraph.
+    ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("ctrl+a");
+    settle(&mut h);
+    let (at, anchor) = caret(&mut h);
+    let whole = LINE.chars().count() as u64;
+    assert_eq!((at.max(anchor), at.min(anchor)), (whole, 0), "Ctrl+A took the whole paragraph: {at} and {anchor} of {whole}");
+
+    // Ctrl+C reaches the handler, which says so.
+    ask(&mut h, "ui.key", json!({"key": "C", "ctrl": true})).expect("ctrl+c");
+    settle(&mut h);
+    assert_eq!(status(&mut h), "Copied", "Ctrl+C reached the copy handler");
+
+    // Ctrl+V puts what is really on the clipboard into the page.
+    const PASTED: &str = "سطر ملصوق";
+    if notecraft_ui_egui::clipboard::set_text(PASTED).is_err() {
+        eprintln!("no clipboard on this machine; the paste half is skipped");
+        return;
+    }
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("ctrl+v");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains(PASTED), "Ctrl+V put the clipboard into the page:\n{body}");
+}
+
+/// Ctrl+V with nothing holding the keyboard, which is the case a picked box leaves.
+///
+/// The owner copied a box, made an empty one and found paste did nothing. Nothing was
+/// listening: boxes answer Ctrl+C and Ctrl+X in `containers.rs` and no key anywhere
+/// answered paste, so the ribbon's Paste button was the only way in.
+#[test]
+fn ctrl_v_works_when_no_paragraph_has_the_keyboard() {
+    const PASTED: &str = "pasted with no caret";
+    let (_t, app, s) = sample_app("ui-keys-nobody");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "NoCaret", "first line");
+    // No caret anywhere: nothing has been clicked into.
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret, Value::Null, "nothing holds the keyboard to begin with");
+
+    if notecraft_ui_egui::clipboard::set_text(PASTED).is_err() {
+        eprintln!("no clipboard on this machine; skipped");
+        return;
+    }
+    ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("ctrl+v");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains(PASTED), "Ctrl+V reached the page with no caret in it:\n{body}");
+}

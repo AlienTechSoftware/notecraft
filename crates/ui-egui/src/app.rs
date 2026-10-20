@@ -2314,6 +2314,79 @@ impl NoteCraftApp {
     }
 
     /// Cut or copy what is selected in the block the caret is in.
+    /// Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+A for the words on a page.
+    ///
+    /// egui's own text box answers these for a paragraph it is drawing, and it is left to
+    /// do so. Nothing answered them anywhere else, and that is a lot of places: not in a
+    /// right-to-left paragraph, which NoteCraft draws itself; not for a selection that
+    /// spans paragraphs, which no text box owns; and not when a box is picked or nothing
+    /// has the keyboard at all. So Ctrl+C did nothing in Arabic, Ctrl+A selected nothing,
+    /// and a box that had been copied could not be pasted into an empty one. The owner
+    /// reported all three.
+    ///
+    /// The keys are read here and sent to the same `clipboard` and `paste_here` the ribbon
+    /// buttons use, so there is one path and not two. Nothing is done when egui's text box
+    /// is holding the keyboard, or both would act and the words would be pasted twice.
+    fn clipboard_keys(&mut self, ctx: &egui::Context) {
+        let (copy, cut, paste, all) = ctx.input(|i| {
+            let hit = |want: egui::Key| {
+                i.events.iter().any(|e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && modifiers.command))
+            };
+            (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
+        });
+        if !(copy || cut || paste || all) {
+            return;
+        }
+        let ours = self.words_are_ours();
+        // Paste has one more case than the others: with a box picked, or with the caret
+        // nowhere, no text box is listening and the ribbon's Paste is the only way in.
+        let nobody = self.editor.as_ref().is_some_and(|e| e.caret.is_none());
+        if copy && ours {
+            self.clipboard("copy");
+        }
+        if cut && ours {
+            self.clipboard("cut");
+        }
+        if paste && (ours || nobody) {
+            self.paste_here();
+        }
+        if all && ours {
+            self.select_all_in_block();
+        }
+    }
+
+    /// True when the words the caret is in are drawn by NoteCraft rather than by an egui
+    /// text box, so the keys above are ours to answer.
+    fn words_are_ours(&self) -> bool {
+        let Some(ed) = self.editor.as_ref() else { return false };
+        // A selection across paragraphs belongs to no text box at all.
+        if ed.across.is_some_and(|a| !a.inside_one_block()) {
+            return true;
+        }
+        let Some(caret) = ed.caret.as_ref() else { return false };
+        // The same question `show_blocks` asks when it decides which painter draws the
+        // block: a line with right-to-left in it is ours, and code and maths never are.
+        pageedit::needs_our_caret(&caret.text)
+            && !matches!(
+                ed.blocks.get(caret.block),
+                Some(notecraft_formats::markdown::Block::Code { .. }) | Some(notecraft_formats::markdown::Block::MathBlock(_))
+            )
+    }
+
+    /// Ctrl+A: take the whole of the paragraph the caret is in.
+    ///
+    /// The paragraph and not the page. That is what a text box does, and it is the step
+    /// OneNote takes first as well; pressing again there widens to the box and then to the
+    /// page, which is not built here and is written down in `work\expected`.
+    fn select_all_in_block(&mut self) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let end = caret.text.chars().count();
+        caret.selection = (end, 0);
+        caret.place = None;
+        self.say("Paragraph selected");
+    }
+
     fn clipboard(&mut self, which: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
         // A selection that runs across blocks is not any one block's, so it is taken from
@@ -3865,6 +3938,7 @@ impl NoteCraftApp {
         if let Some(text) = self.pending_copy.take() {
             ctx.copy_text(text);
         }
+        self.clipboard_keys(ctx);
         // A zoom step the ribbon asked for: egui scales the whole window, as Office does.
         if self.zoom != 0 {
             let now = ctx.zoom_factor();

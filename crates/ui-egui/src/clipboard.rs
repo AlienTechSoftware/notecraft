@@ -47,6 +47,14 @@ pub fn has_picture() -> bool {
 }
 
 /// The text on the clipboard, for the menu item that pastes without the keyboard.
+/// Puts text on the clipboard. The window itself does not need this - egui writes the
+/// clipboard through its own platform layer - but a test that wants to prove a copy
+/// happened has to be able to put something else there first.
+pub fn set_text(text: &str) -> Result<(), String> {
+    let mut board = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    board.set_text(text.to_string()).map_err(|e| e.to_string())
+}
+
 pub fn text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok().filter(|t| !t.is_empty())
 }
