@@ -17,6 +17,7 @@ recorded as data.
 | `ms-one-notes.md` | Concrete notes on what the objects mean: notebook, section, page, subpage levels, outline, text, tables, images, embedded files, audio and video, tags, and the ink gap. Includes a mapping to plain files. |
 | `check-against-real-file.md` | The spec checked against a real OneNote desktop backup. Structure only. |
 | `wikipedia-onenote-format.md` | Wikipedia's "File format" section, a correction, and a trace of its references 21 to 26. |
+| `real-files.md` | What real desktop backups look like, and where they differ from the specification. Counts only. |
 | `import-sources.md` | Where users can import OneNote data from: local backups, cache, OneDrive, Graph API, `.onepkg`. Includes counts from the owner's machine (no names). |
 | `fileformat-com-one.md` | Summary of the docs.fileformat.com page. A secondary source. |
 | `README.md` | This index. |

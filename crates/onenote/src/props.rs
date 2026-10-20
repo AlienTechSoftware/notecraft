@@ -256,7 +256,8 @@ fn count_from_data(r: &mut Reader<'_>) -> Result<usize> {
     Ok(n)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
 pub mod tests_support {
     //! Property sets built by hand, for the tests of this crate. Every method takes the
     //! documented PropertyID (type bits included), so a test reads like the specification.

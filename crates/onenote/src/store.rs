@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use crate::bytes::{Reader, slice};
 use crate::error::{OneError, Result};
 use crate::guid::{CompactId, ExtendedGuid, FILE_DATA_FOOTER, FILE_DATA_HEADER, FILE_FORMAT, FILE_TYPE_ONE, FILE_TYPE_TOC, Guid};
-use crate::props::{PropertySet, parse_object_prop_set};
+use crate::props::{PropertySet, Value, parse_object_prop_set};
 
 const LIST_MAGIC: u64 = 0xA456_7AB1_F5F7_F4C4;
 const LIST_FOOTER: u64 = 0x8BC2_15C3_8233_BA4B;
@@ -20,7 +20,7 @@ const HEADER_SIZE: u64 = 1024;
 pub const MAX_FILE: u64 = 512 * 1024 * 1024;
 /// Guards against a damaged file that points its lists at each other.
 const MAX_FRAGMENTS: usize = 100_000;
-const MAX_OBJECTS: usize = 500_000;
+const MAX_OBJECTS: usize = 4_000_000;
 
 /// The parts of the 1024-byte header this reader uses. [MS-ONESTORE] 2.3.1.
 #[derive(Clone, Copy, Debug)]
@@ -96,6 +96,54 @@ pub struct ObjectSpace {
     pub ids: BTreeMap<u32, Guid>,
     /// True when the object space is password protected, so its property sets are unreadable.
     pub encrypted: bool,
+    /// Objects whose property sets could not be read (a cut-short or damaged file) and were
+    /// left out, so the rest of the space can still be used.
+    pub damaged: usize,
+    /// The index this space gave each GUID in `ids`, so a reference read under one group's
+    /// table can be rewritten to an index that means the same thing everywhere in the space.
+    canon: BTreeMap<Guid, u32>,
+}
+
+impl ObjectSpace {
+    /// The space-wide index for a GUID, allocated on first use.
+    fn canonical_index(&mut self, guid: Guid) -> u32 {
+        if let Some(i) = self.canon.get(&guid) {
+            return *i;
+        }
+        let index = self.canon.len() as u32 + 1;
+        self.canon.insert(guid, index);
+        self.ids.insert(index, guid);
+        index
+    }
+
+    /// Rewrites every reference in a property set from the group's table to the space's.
+    /// Each group reuses small indexes for different GUIDs, so one merged table would
+    /// send a reference to the wrong object. A reference the table cannot resolve is left
+    /// as it is and simply finds nothing.
+    fn rebase(&mut self, set: &mut PropertySet, table: &GlobalIds) {
+        for property in &mut set.properties {
+            match &mut property.value {
+                Value::ObjectIds(v) | Value::ObjectSpaceIds(v) | Value::ContextIds(v) => {
+                    for id in v.iter_mut() {
+                        if id.is_zero() {
+                            continue;
+                        }
+                        if let Some(guid) = table.by_index.get(&id.index).copied() {
+                            id.index = self.canonical_index(guid);
+                        } else {
+                            id.index = u32::MAX;
+                        }
+                    }
+                }
+                Value::Sets(sets) => {
+                    for inner in sets {
+                        self.rebase(inner, table);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 impl ObjectSpace {
@@ -349,6 +397,12 @@ impl Walk<'_> {
                     break;
                 }
                 if size < 4 || start + size > body_end {
+                    // Fragments are padded to a multiple of 8 bytes, and in lists the
+                    // transaction log does not cover the padding is not always zero (seen in
+                    // real desktop backups). Fewer than 8 bytes left over is padding, not a node.
+                    if body_end - start < 8 {
+                        break;
+                    }
                     return Err(OneError::Corrupt(format!("a file node of {size} bytes does not fit its fragment")));
                 }
                 let base = (word >> 27) & 0xF;
@@ -363,7 +417,10 @@ impl Walk<'_> {
                 out.push(Node { id, data: body.to_vec(), ref_len, chunk });
                 r.skip(size - 4)?;
             }
-            if !terminated || next.is_empty(64) || (out.len() as u32) >= allowed {
+            // A fragment that ran out of room ends without a terminator node, and its footer
+            // still names the next fragment; only a nil next pointer ends the list.
+            let _ = terminated;
+            if next.is_empty(64) || (out.len() as u32) >= allowed {
                 return Ok(out);
             }
             at = next;
@@ -403,7 +460,11 @@ impl Walk<'_> {
                         node.data.get(42).copied().unwrap_or(0),
                         node.data.get(43).copied().unwrap_or(0),
                     ]);
-                    // Role 1 is the view the app shows. Other roles are version history.
+                    // Role 1 holds the roots the app opens. In real desktop files a page's
+                    // content is declared in the role 4 revisions, one per edit, and role 1
+                    // only holds a version history node that points at them. So objects are
+                    // read from every revision, in order, and the last declaration wins; only
+                    // the roots come from role 1.
                     skip = role != 1;
                     space.encrypted |= encrypted && !skip;
                 }
@@ -411,7 +472,7 @@ impl Walk<'_> {
                 0x01C => in_revision = false,
                 0x022 => table = GlobalIds::default(),
                 0x024 => table.add(&node.data)?,
-                0x0B0 if in_revision && !skip => {
+                0x0B0 if in_revision => {
                     let group = node.chunk;
                     self.object_group(group, &mut table, space)?;
                 }
@@ -435,9 +496,6 @@ impl Walk<'_> {
     fn object_group(&mut self, at: ChunkRef, table: &mut GlobalIds, space: &mut ObjectSpace) -> Result<()> {
         let mut group_table = table.clone();
         for node in self.list(at)? {
-            // The space keeps every entry it sees, so a property's compact id can be
-            // followed after the walk, when the table itself is long gone.
-            space.ids.extend(group_table.by_index.iter().map(|(k, v)| (*k, *v)));
             match node.id {
                 0x0B4 | 0x0B8 => {} // group start and end
                 0x022 => group_table = GlobalIds::default(),
@@ -451,8 +509,14 @@ impl Walk<'_> {
                     let data = if space.encrypted {
                         ObjectData::Props(PropertySet::default())
                     } else {
-                        let bytes = slice(self.data, node.chunk.stp, node.chunk.cb, "an object's property set")?;
-                        ObjectData::Props(parse_object_prop_set(bytes)?)
+                        // A property set that cannot be read costs that object, not the file.
+                        let read = slice(self.data, node.chunk.stp, node.chunk.cb, "an object's property set").and_then(parse_object_prop_set);
+                        let Ok(mut props) = read else {
+                            space.damaged += 1;
+                            continue;
+                        };
+                        space.rebase(&mut props, &group_table);
+                        ObjectData::Props(props)
                     };
                     self.insert(space, Object { oid, jcid, data })?;
                 }
@@ -469,7 +533,6 @@ impl Walk<'_> {
                 _ => {}
             }
         }
-        space.ids.extend(group_table.by_index.iter().map(|(k, v)| (*k, *v)));
         Ok(())
     }
 
@@ -500,9 +563,11 @@ impl Walk<'_> {
             if slice(self.data, start, length, "an inserted file")?.len() as u64 != length {
                 return Err(OneError::Truncated("an inserted file"));
             }
-            // The whole structure ends on an 8-byte boundary, so the footer starts at the next
-            // multiple of 8 after the data. [MS-ONESTORE] 2.6.13.
-            let footer_at = (start + length).next_multiple_of(8);
+            // The whole structure is padded to a multiple of 8 bytes, counted from where it
+            // starts (which need not be aligned in the file: real files start it at odd
+            // offsets), and the footer follows the padding. [MS-ONESTORE] 2.6.13. Checked
+            // against real desktop backups: the footer is at `stp + roundup(36 + length, 8)`.
+            let footer_at = file_data_footer_at(node.chunk.stp, length);
             let footer = slice(self.data, footer_at, 16, "the end of an inserted file")?;
             if Guid(<[u8; 16]>::try_from(footer).unwrap_or([0; 16])) != FILE_DATA_FOOTER {
                 return Err(OneError::Corrupt("an inserted file has the wrong footer".into()));
@@ -511,6 +576,12 @@ impl Walk<'_> {
         }
         Ok(())
     }
+}
+
+/// Where the footer of an inserted file starts: the structure is padded to a multiple of 8
+/// bytes counted from its own start, which is not always an aligned offset in the file.
+fn file_data_footer_at(stp: u64, length: u64) -> u64 {
+    stp + (36 + length).next_multiple_of(8)
 }
 
 /// The table that turns a 4-byte compact id into a full identity. [MS-ONESTORE] 2.1.3.
@@ -571,7 +642,7 @@ fn string_in_storage(r: &mut Reader<'_>) -> Result<String> {
     Ok(crate::bytes::utf16(r.take(bytes)?))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub mod build {
     //! A builder for synthetic `.one` files, so the tests do not need a real notebook (the
     //! owner's files hold personal data and stay off the repository).
@@ -917,6 +988,34 @@ pub mod build {
 
 #[cfg(test)]
 mod tests {
+    use crate::props::Property;
+    #[test]
+    fn the_file_data_footer_counts_padding_from_the_start_of_the_structure() {
+        // Seen in real files: a structure at an odd offset, padded to 8 from its own start.
+        assert_eq!(file_data_footer_at(352_865, 19_731), 372_633);
+        assert_eq!(file_data_footer_at(1024, 4), 1024 + 40);
+        assert_eq!(file_data_footer_at(1024, 12), 1024 + 48);
+    }
+
+    #[test]
+    fn a_reference_follows_the_table_of_the_group_that_declared_it() {
+        // Two groups reuse index 1 for different GUIDs. One merged table would send a
+        // reference made in the first group to the second group's object.
+        let (a, b) = (Guid([1; 16]), Guid([2; 16]));
+        let mut space = ObjectSpace::default();
+        let mut first = GlobalIds::default();
+        first.by_index.insert(1, a);
+        let mut second = GlobalIds::default();
+        second.by_index.insert(1, b);
+        let make = || PropertySet { properties: vec![Property { id: 7, value: Value::ObjectIds(vec![CompactId { n: 3, index: 1 }]) }] };
+        let (mut from_first, mut from_second) = (make(), make());
+        space.rebase(&mut from_first, &first);
+        space.rebase(&mut from_second, &second);
+        let (x, y) = (from_first.object_ids(7)[0], from_second.object_ids(7)[0]);
+        assert_eq!(space.identity(x), Some(ExtendedGuid { guid: a, n: 3 }));
+        assert_eq!(space.identity(y), Some(ExtendedGuid { guid: b, n: 3 }));
+    }
+
     use super::build::{Decl, JCID_PROP_SET, One};
     use super::*;
     use crate::props::tests_support::Build;

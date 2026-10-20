@@ -35,7 +35,7 @@ side by side. Status words:
 | Sync | Section passwords | Later | |
 | Collaboration | Sharing | By design | A shared folder. Live co-authoring is Later. |
 | Output | Export | Later | Export scope is undecided. |
-| Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). The `.one` reader is done, container and objects; writing them out as notebook folders is not. |
+| Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). `notecraft-cli import onenote` reads `.one` files and writes notebook folders in either page format. Not done: ink, tags, `.onetoc2`, the window. |
 | Output | Add-ins, AI | Later | |
 | Look | Themes | Done | 14 themes, contrast checked. `themes.md`. |
 | Look | Ruled and grid page backgrounds | Done | View, Rule Lines: none, lines or squares behind the page, in colours each theme checks for contrast. Remembered between runs. |
