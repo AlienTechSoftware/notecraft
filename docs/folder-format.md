@@ -144,7 +144,7 @@ tags: []
 | Key | Meaning | Required |
 |---|---|---|
 | `id` | Stable identity. Today a timestamp plus a counter (20 hex characters), unique on one machine. To be replaced by a ULID before notebooks merge across devices. | yes |
-| `title` | The title shown in the tree. The folder name is a slug of the title at creation and does not follow later renames. | no (falls back to the folder name) |
+| `title` | The title shown in the tree. A page with no title displays `Untitled page`; this fallback is not written into the page file. Sections and section groups fall back to the folder name. The folder name is a slug of the title at creation and does not follow later renames. | no (pages display `Untitled page`; sections and groups use the folder name) |
 | `order` | Position among siblings (integers; new nodes get 10, 20, 30, ...). Ties and missing values sort by folder name. | no |
 | `created`, `updated` | UTC time, `YYYY-MM-DDTHH:MM:SSZ`. | no |
 | `tags` | Reserved. | no |

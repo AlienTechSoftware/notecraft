@@ -666,6 +666,17 @@ fn a_page_can_be_added_between_two_others() {
     let pages: Vec<&String> = after.iter().filter(|t| *t == "Untitled page").collect();
     assert!(!pages.is_empty(), "the new page is there: {after:?}");
     assert_ne!(after.last(), Some(&"Untitled page".to_string()), "and not merely appended: {after:?}");
+
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect the new page");
+    assert_eq!(state.pointer("/page/titleArea").and_then(Value::as_str), Some(""), "the title area is blank");
+    let path = state.pointer("/page/path").and_then(Value::as_str).expect("the open page path");
+    let rows = state.pointer("/rows").and_then(Value::as_array).expect("tree rows");
+    assert!(
+        rows.iter().any(|row| {
+            row.get("path").and_then(Value::as_str) == Some(path) && row.get("title").and_then(Value::as_str) == Some("Untitled page")
+        }),
+        "the tree shows the fallback for the newly added page: {rows:?}"
+    );
 }
 
 /// The "+" between two pages is a circle. It is wider than the thin gap it sits in, so it
