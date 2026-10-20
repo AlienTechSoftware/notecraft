@@ -24,11 +24,22 @@ thread_local! {
     static TEXT: RefCell<notecraft_text::Text> = RefCell::new(notecraft_text::Text::new());
 }
 
-/// True when this painter should draw `text` rather than egui: a line of both directions,
-/// or a paragraph that reads right to left (given the page's direction for a line with no
-/// strong letters of its own).
-pub fn paints(text: &str, page: notecraft_model::Dir) -> bool {
-    is_mixed(text) || (notecraft_model::direction_or(text, page).is_rtl() && !text.trim().is_empty())
+/// True when this painter should draw `text` rather than egui.
+///
+/// Three reasons, and any one of them is enough.
+///
+/// 1. The line has both directions in it, which egui draws in the wrong order.
+/// 2. The line's own words are right to left, so they must be ordered right to left
+///    whatever the paragraph's base direction is. A Hebrew sentence inside a page set to
+///    left to right still reads right to left as a sentence; what the page decides is which
+///    edge the line hangs from, not the order of the words in it.
+/// 3. The paragraph's base direction is right to left, from its own mark or from the page,
+///    so the line hangs from the right edge even if its words are Latin.
+pub fn paints(text: &str, page: Option<notecraft_model::Dir>) -> bool {
+    if text.trim().is_empty() {
+        return false;
+    }
+    is_mixed(text) || notecraft_model::direction(text).is_rtl() || notecraft_model::direction_in(text, page).is_rtl()
 }
 
 /// True when a line has strong characters of both directions in it, which is the only case
@@ -221,7 +232,7 @@ pub fn paint_with(painter: &egui::Painter, origin: Pos2, drawn: &[Drawn]) {
 /// line is measured and then anchored the same way, so a label that needs none of this is
 /// drawn exactly as it was before. A line too long for the painter's clip is cut by it, as
 /// it was before.
-pub fn line_at(ui: &Ui, painter: &egui::Painter, at: Pos2, align: Align2, text: &str, size: f32, color: Color32, page: notecraft_model::Dir) {
+pub fn line_at(ui: &Ui, painter: &egui::Painter, at: Pos2, align: Align2, text: &str, size: f32, color: Color32, page: Option<notecraft_model::Dir>) {
     let font = egui::FontId::proportional(size);
     if !paints(text, page) {
         painter.text(at, align, text, font, color);
@@ -258,7 +269,7 @@ fn spoken(text: &str) -> String {
 /// would describe by itself. The line is given its text as a label, the way `Label` does, or
 /// a screen reader would find nothing on a right-to-left page and the window tests could not
 /// look a line up by what it says.
-pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: notecraft_model::Dir, justify: bool) -> Rect {
+pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: Option<notecraft_model::Dir>, justify: bool) -> Rect {
     // A justified paragraph is drawn from its stretched words, but it is still the words
     // the writer typed that a screen reader is told and that the page file holds: a tatweel
     // is the shape of a join, not a letter anybody meant to write.
@@ -275,7 +286,7 @@ pub fn show(ui: &mut Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32
     let enabled = ui.is_enabled();
     let said = spoken(text);
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
-    let origin = if notecraft_model::direction_or(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
+    let origin = if notecraft_model::direction_in(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
     paint(ui, origin, &drawn);
     rect
 }
@@ -684,10 +695,17 @@ mod tests {
             assert!(ltr.first().is_some_and(|d| d.at.x.abs() < 1.0), "a left-to-right line starts at the left");
         });
         frame.textures_delta.clear();
-        assert!(paints("שלום עולם", notecraft_model::Dir::Ltr), "a right-to-left paragraph is painted here");
-        assert!(paints("123", notecraft_model::Dir::Rtl), "a line with no letters follows the page");
-        assert!(!paints("123", notecraft_model::Dir::Ltr));
-        assert!(!paints("Hello world", notecraft_model::Dir::Rtl), "a left-to-right line is egui's even on a right-to-left page");
+        assert!(paints("שלום עולם", Some(notecraft_model::Dir::Ltr)), "Hebrew words are ordered here whatever the page says");
+        assert!(paints("שלום עולם", None), "and on a page that says nothing");
+        assert!(paints("123", Some(notecraft_model::Dir::Rtl)), "a line with no letters follows the page");
+        assert!(!paints("123", Some(notecraft_model::Dir::Ltr)));
+        // A page that was given a direction gives it to its paragraphs, so English on a
+        // right-to-left page hangs from the right edge and is drawn here rather than by
+        // egui. Until the page direction was fixed this line said the opposite, because
+        // the words beat the page and the page setting did nothing.
+        assert!(paints("Hello world", Some(notecraft_model::Dir::Rtl)), "a left-to-right line follows the page it is on");
+        assert!(!paints("Hello world", None), "and on a page that says nothing it is egui's, as it always was");
+        assert!(!paints("Hello world", Some(notecraft_model::Dir::Ltr)));
     }
 
     #[test]

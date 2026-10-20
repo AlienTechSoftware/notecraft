@@ -59,6 +59,14 @@ pub enum Icon {
     DirLtr,
     /// The same, mirrored: this reads right to left.
     DirRtl,
+    /// A pilcrow with an arrow beside it pointing right: this paragraph reads left to
+    /// right. Word, LibreOffice and the Office web apps all mark paragraph direction with
+    /// a pilcrow and an arrow, and a writer of Arabic looks for that shape, so NoteCraft
+    /// draws one too. The lines-and-arrow pair above is the whole page; this pair is one
+    /// paragraph.
+    ParaLtr,
+    /// The same, mirrored: this paragraph reads right to left.
+    ParaRtl,
     /// A block rubber held at an angle, with the worn end on the page: the ink eraser.
     Eraser,
     /// An arrow curving back to the left: take the last thing back.
@@ -427,6 +435,23 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             path(&[(19.0, 19.0), (5.0, 19.0)]),
             path(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
         ],
+        // A pilcrow with an arrow beside it, the way Word marks a paragraph's direction:
+        // the arrow on the side the paragraph starts from, pointing the way it is read.
+        // The bowl is filled, because a hollow one closes up at this size.
+        Icon::ParaLtr => vec![
+            fill(&[(13.0, 4.5), (20.0, 4.5), (20.0, 12.5), (13.0, 12.5)], color),
+            path(&[(17.0, 4.5), (17.0, 20.0)]),
+            path(&[(20.0, 4.5), (20.0, 20.0)]),
+            path(&[(3.5, 12.0), (10.0, 12.0)]),
+            path(&[(7.5, 9.0), (10.5, 12.0), (7.5, 15.0)]),
+        ],
+        Icon::ParaRtl => vec![
+            fill(&[(4.0, 4.5), (11.0, 4.5), (11.0, 12.5), (4.0, 12.5)], color),
+            path(&[(7.0, 4.5), (7.0, 20.0)]),
+            path(&[(4.0, 4.5), (4.0, 20.0)]),
+            path(&[(20.5, 12.0), (14.0, 12.0)]),
+            path(&[(16.5, 9.0), (13.5, 12.0), (16.5, 15.0)]),
+        ],
         // A crescent: the outer circle, with the inner edge drawn across it.
         Icon::Moon => vec![
             Shape::circle_stroke(g.p(12.0, 12.0), w * 7.4 / 24.0, stroke),
@@ -450,7 +475,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 49] = [
+    pub const ALL: [Icon; 51] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -475,6 +500,8 @@ mod tests {
         Icon::Quote,
         Icon::DirLtr,
         Icon::DirRtl,
+        Icon::ParaLtr,
+        Icon::ParaRtl,
         Icon::Bars,
         Icon::Eraser,
         Icon::Undo,

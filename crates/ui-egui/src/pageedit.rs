@@ -81,7 +81,16 @@ pub fn span_of(block: &Block, cell: (usize, usize), what: TableSpan) -> Option<(
 
 /// The character of `text` a click at `x` lands on, given how the block is drawn. Used so a
 /// click puts the caret where the pointer is, the way it does in any editor.
-pub fn char_at(ui: &Ui, text: &str, size: f32, strong: bool, t: &Tokens, width: f32, offset: egui::Vec2, page: notecraft_model::Dir) -> usize {
+pub fn char_at(
+    ui: &Ui,
+    text: &str,
+    size: f32,
+    strong: bool,
+    t: &Tokens,
+    width: f32,
+    offset: egui::Vec2,
+    page: Option<notecraft_model::Dir>,
+) -> usize {
     let job = pagetext::inline_job(text, size, strong, t, width.max(1.0), page);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let chars = text.chars().count();
@@ -497,7 +506,7 @@ fn table(
     i: usize,
     caret: &mut Option<Caret>,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     changed: &mut Changed,
@@ -934,7 +943,7 @@ pub fn show(
     caret: &mut Option<Caret>,
     page_dir: &std::path::Path,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     justified: &notecraft_model::justify::Justified,
@@ -962,7 +971,7 @@ pub fn show_blocks(
     caret: &mut Option<Caret>,
     page_dir: &std::path::Path,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     range: std::ops::Range<usize>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
@@ -1024,7 +1033,7 @@ pub fn show_blocks(
             let id = ui.make_persistent_id(("page-block", i));
             // A line that reads right to left is written from the right: its bullet, box or
             // tag mark sits on the right, and the words hang from that edge.
-            let align = if notecraft_model::direction_or(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
+            let align = if notecraft_model::direction_in(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
             let row = if align == egui::Align::RIGHT {
                 egui::Layout::right_to_left(egui::Align::Min)
             } else {
@@ -1728,7 +1737,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
 }
 
 /// The character of a finished block under `pos`, given the area `resp` it was drawn in.
-fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> usize {
+fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> usize {
     if let Some(at) = char_under_drawn(ui, block, resp, pos, t, page) {
         return at;
     }
@@ -1745,7 +1754,7 @@ fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t:
 /// the text and invisible on the page. So the pointer is measured against what was drawn and
 /// the answer is carried back over the marks. `None` when that carrying back cannot be
 /// trusted, and the caller measures the old way.
-fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<usize> {
+fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> Option<usize> {
     let spans = match block {
         Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
         _ => return None,
@@ -1801,7 +1810,7 @@ fn over_marks(spans: &[Span], drawn: usize) -> usize {
 /// The link the character `at` of `block` sits in, if any, for a block egui laid out. Code
 /// and equations hold no links. A block the bidi painter drew is not mapped this way (see
 /// `link_under`).
-fn link_in(block: &Block, at: usize, page: notecraft_model::Dir) -> Option<String> {
+fn link_in(block: &Block, at: usize, page: Option<notecraft_model::Dir>) -> Option<String> {
     if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
         return None;
     }
@@ -1815,7 +1824,7 @@ fn link_in(block: &Block, at: usize, page: notecraft_model::Dir) -> Option<Strin
 /// The link under the pointer at `pos` in a finished block, if the pointer is on one. A
 /// right-to-left or mixed line is asked through the painter that drew it; any other line
 /// through egui's layout of its text.
-pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: notecraft_model::Dir) -> Option<String> {
+pub fn link_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t: &Tokens, page: Option<notecraft_model::Dir>) -> Option<String> {
     if !is_writable(block) {
         return None;
     }

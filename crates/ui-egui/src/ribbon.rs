@@ -684,8 +684,10 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     // Page direction is NoteCraft's own: OneNote has no such thing, and a notebook written
-    // in Arabic wants one. The paragraph's direction lives where OneNote keeps it, in the
-    // alignment menu above; the rarer run direction is behind the launcher.
+    // in Arabic wants one. The paragraph's direction is in the alignment menu above, where
+    // OneNote and Word keep it, and here as well: a writer who has come looking for the
+    // direction controls should find all of them in one place rather than be sent back to
+    // a menu under an alignment button. The rarer run direction is behind the launcher.
     group(ui, "Direction", t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
@@ -699,6 +701,22 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
                 if small(ui, None, "Auto", "Page direction from the words", "Every paragraph decides for itself", false, t).clicked() {
                     acts.push(Act::PageDirection(None));
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Para").size(10.5).color(t.muted));
+                if small(ui, Some(Icon::ParaLtr), "", "Paragraph left to right", "This paragraph reads left to right", false, t).clicked() {
+                    acts.push(Act::Direction(Some(notecraft_model::Dir::Ltr)));
+                }
+                if small(ui, Some(Icon::ParaRtl), "", "Paragraph right to left", "This paragraph reads right to left (Arabic, Hebrew)", false, t)
+                    .clicked()
+                {
+                    acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
+                }
+                if small(ui, None, "Auto", "Paragraph direction from the words", "This paragraph decides from its own first letter", false, t)
+                    .clicked()
+                {
+                    acts.push(Act::Direction(None));
                 }
             });
             ui.horizontal(|ui| {
@@ -868,15 +886,15 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         picked = true;
                     }
                     ui.separator();
-                    if ui.button("Left-to-Right").clicked() {
+                    if direction_row(ui, Some(Icon::ParaLtr), "Left-to-Right", t).clicked() {
                         acts.push(Act::Direction(Some(notecraft_model::Dir::Ltr)));
                         picked = true;
                     }
-                    if ui.button("Right-to-Left").clicked() {
+                    if direction_row(ui, Some(Icon::ParaRtl), "Right-to-Left", t).clicked() {
                         acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
                         picked = true;
                     }
-                    if ui.button("Direction from the words").clicked() {
+                    if direction_row(ui, None, "Direction from the words", t).clicked() {
                         acts.push(Act::Direction(None));
                         picked = true;
                     }
@@ -890,6 +908,26 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
         }
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+/// One entry of the alignment menu that sets a paragraph's direction, with the mark Word
+/// and LibreOffice use for it: a pilcrow with an arrow pointing the way the paragraph is
+/// read. The shape is the convention a writer of Arabic looks for, so the words beside it
+/// are read as confirmation rather than as the only clue.
+fn direction_row(ui: &mut Ui, icon: Option<Icon>, label: &str, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(150.0), 22.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    if let Some(icon) = icon {
+        icons::paint(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 3.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
+    }
+    painter.text(egui::pos2(rect.min.x + 25.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
+    let enabled = ui.is_enabled();
+    let said = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &said));
+    resp
 }
 
 /// One line of the Styles gallery, drawn the way the style looks.

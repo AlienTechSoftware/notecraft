@@ -109,11 +109,6 @@ impl Editor {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
         self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
     }
-
-    /// The direction a line falls back to when it says nothing itself.
-    fn default_dir(&self) -> notecraft_model::Dir {
-        self.page_dir.unwrap_or_default()
-    }
 }
 
 /// What to do with a file the user dropped on a page.
@@ -981,7 +976,7 @@ impl NoteCraftApp {
         // of an Arabic name would come out backwards. Each row's name decides its own
         // direction; the row keeps its place and its clip either way.
         let clipped = painter.with_clip_rect(text_clip);
-        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &node.info.title, 14.0, text_color, notecraft_model::Dir::default());
+        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &node.info.title, 14.0, text_color, None);
         let plus_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x - 24.0, rect.min.y + 2.0), vec2(20.0, ROW_HEIGHT - 4.0));
         if node.info.kind == NodeKind::Page
             && let Some(f) = node.info.format
@@ -1180,7 +1175,7 @@ impl NoteCraftApp {
         // string is handed to egui, so the band goes through the bidi painter like the page
         // does. The name decides its own direction here; there is no page to follow.
         let band = ui.painter_at(row);
-        crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, notecraft_model::Dir::default());
+        crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
@@ -2843,7 +2838,7 @@ impl NoteCraftApp {
             ui.horizontal(|ui| {
                 if !hide_title {
                     // The title hangs from the same edge the page reads from.
-                    let title_align = crate::pagetext::halign(&ed.title_buf, ed.default_dir());
+                    let title_align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
                     let width = ui.available_width() - 260.0;
                     // A title that reads right to left is drawn by the bidi painter, not
                     // by the text box: egui lays the letters of a word out the right way
@@ -2851,7 +2846,7 @@ impl NoteCraftApp {
                     // showed its own name with the words backwards. Clicking it hands the
                     // line to the text box, which is still where it is edited; that is the
                     // same bargain the page itself made until its own caret was built.
-                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.default_dir());
+                    let rtl_title = crate::bidi::paints(&ed.title_buf, ed.page_dir);
                     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl_title;
                     let r = if editing {
                         ui.add(
@@ -2954,7 +2949,7 @@ impl NoteCraftApp {
                     }
                     // Which way lines fall when they say nothing themselves: the page's own
                     // direction, if the writer gave it one.
-                    let page_dir = ed.default_dir();
+                    let page_dir = ed.page_dir;
                     let margin = if wide { ((ui.available_width() - 780.0) / 2.0).max(8.0) } else { 0.0 };
                     egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: 4, bottom: 8 }).show(ui, |ui| {
                         ui.set_width(ui.available_width());
