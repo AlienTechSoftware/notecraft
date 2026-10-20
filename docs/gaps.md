@@ -75,7 +75,14 @@ it is fixed and tested, not when it is promised.
   covered.** The fill is opaque and was painted after the glyphs, so a drag across an
   Arabic sentence left a row of blank boxes where the sentence had been - which reads as a
   selection that does not work, and is what was reported. It is painted into a place kept
-  for it behind the words now, the same way the shading behind a container is. Both are
+  for it behind the words now, the same way the shading behind a container is. **And a
+  third thing had to be right before any of that could be seen:** the wash was drawn in
+  `row_selected`, which is tinted from the panel because a selected row of the tree sits on
+  the panel, while the page is drawn on `editor`. In a theme that keeps those two colours
+  apart the band landed on the page in a colour the page already was, so the words were
+  selected, the band was painted and nothing could be seen. The page has its own
+  `selection` token now, tinted from `editor`, and the contrast test checks for all 14
+  themes that it can be seen against the page and that the words on it stay readable. Both are
   measured in `crates/ui-egui/tests/ui.rs`, the second by counting the glyph pixels that
   survive under the selection. **A third, found the same evening and fixed with them:** a
   drag that began on a paragraph the caret was not already in did nothing whatever - no

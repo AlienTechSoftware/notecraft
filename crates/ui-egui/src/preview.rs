@@ -202,7 +202,7 @@ fn draw_spans(
             // painter has no way to widen its spaces, so it is drawn ragged; see
             // `docs/gaps.md`.
             let stretch = justify.filter(|_| dir_of(spans, page).is_rtl());
-            let sel = selected.map(|range| crate::bidi::Selected { range, color: tokens.row_selected });
+            let sel = selected.map(|range| crate::bidi::Selected { range, color: tokens.selection });
             let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch, sel);
             let _ = rect;
             return;
@@ -228,7 +228,7 @@ fn draw_spans(
                 let (enabled, said) = (ui.is_enabled(), galley.text().to_string());
                 resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
                 for band in selection_bands(&galley, a, b) {
-                    ui.painter().rect_filled(band.translate(rect.min.to_vec2()), 1.0, tokens.row_selected);
+                    ui.painter().rect_filled(band.translate(rect.min.to_vec2()), 1.0, tokens.selection);
                 }
                 ui.painter().galley(rect.min, galley, color);
             }

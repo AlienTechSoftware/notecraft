@@ -1631,7 +1631,17 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
             anchor = word.start;
             at = word.end;
             resp.request_focus();
-        } else if resp.drag_started() || (resp.clicked() && !resp.dragged()) {
+        } else if resp.drag_started() {
+            // egui calls a drag a drag only once the pointer has moved a little way, so by
+            // now it is no longer where it was pressed. The selection has to begin where
+            // the press fell, not here, or it collapses to a caret the moment the drag is
+            // recognised and nothing is ever selected inside a block the caret already sat
+            // in. That is what the owner saw.
+            let began = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
+            anchor = crate::bidi::hit(&c.text, began - rect.min, size, width);
+            at = crate::bidi::hit(&c.text, point, size, width);
+            resp.request_focus();
+        } else if resp.clicked() && !resp.dragged() {
             at = crate::bidi::hit(&c.text, point, size, width);
             anchor = at;
             resp.request_focus();
@@ -1725,7 +1735,7 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
             .into_iter()
             .map(|r| {
                 let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
-                egui::Shape::rect_filled(r, 1.0, t.row_selected)
+                egui::Shape::rect_filled(r, 1.0, t.selection)
             })
             .collect();
         ui.painter().set(behind, egui::Shape::Vec(shapes));
