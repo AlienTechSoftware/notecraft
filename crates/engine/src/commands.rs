@@ -46,16 +46,16 @@ fn opt_format(p: &Params) -> Result<Option<PageFormat>, EngineError> {
 
 /// What a new notebook starts with, the way OneNote does it: one section and one empty page.
 /// Microsoft's accessibility documentation describes a new notebook as getting a section named
-/// "New Section 1" and one empty, unnamed page. NoteCraft gives that page a visible title
-/// because a page here is a folder and needs a name.
+/// "New Section 1" and one empty, unnamed page. The page itself carries no title: this is
+/// only the word shown in its place, the same one `tree::UNTITLED_PAGE` falls back to
+/// everywhere else a page with nothing typed in it is displayed.
 pub const FIRST_SECTION: &str = "New Section 1";
-pub const FIRST_PAGE: &str = "Untitled page";
 
 fn notebook_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let dir = ops::create_notebook(s.root(), req(p, "name")?, opt_format(p)?, &s.settings)?;
     if p.get("empty").map(String::as_str) != Some("true") {
         let section = ops::create_node(&dir, FIRST_SECTION, NodeKind::Section, None, &s.settings)?;
-        ops::create_node(&section, FIRST_PAGE, NodeKind::Page, None, &s.settings)?;
+        ops::create_untitled_page(&section, None, None, &s.settings)?;
     }
     Ok(Output::Path(dir))
 }
@@ -72,7 +72,14 @@ fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         Some(o) => Some(o.parse::<u32>().map_err(|_| EngineError::BadParam("order must be a whole number".into()))?),
         None => None,
     };
-    let dir = ops::create_node_at(&parent, req(p, "title")?, kind, opt_format(p)?, &s.settings, order)?;
+    let title = p.get("title").map(|t| t.trim()).filter(|t| !t.is_empty());
+    // A section group or section always needs a real title. A page does not: leaving
+    // `title` out (or blank) creates it untitled, the "Add Page" case.
+    let dir = match title {
+        Some(title) => ops::create_node_at(&parent, title, kind, opt_format(p)?, &s.settings, order)?,
+        None if kind == NodeKind::Page => ops::create_untitled_page(&parent, opt_format(p)?, order, &s.settings)?,
+        None => return Err(EngineError::MissingParam("title")),
+    };
     Ok(Output::Path(dir))
 }
 
@@ -291,7 +298,7 @@ static REGISTRY: &[CommandSpec] = &[
     CommandSpec {
         id: "node.create",
         label: "New section group, section or page",
-        params: "parent (required): path of the notebook, group, section or page to add to\nkind (required): section-group, section or page\ntitle (required)\nformat (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below",
+        params: "parent (required): path of the notebook, group, section or page to add to\nkind (required): section-group, section or page\ntitle (required for section-group and section; optional for page, which is created untitled if left out)\nformat (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below",
         changes_tree: true,
         run: node_create,
     },
@@ -518,15 +525,16 @@ mod tests {
         assert_eq!(section.info.title, FIRST_SECTION);
         assert_eq!(section.info.kind, notecraft_model::NodeKind::Section);
         let page = section.children.first().expect("a page");
-        assert_eq!(page.info.title, FIRST_PAGE);
+        assert_eq!(page.info.title, tree::UNTITLED_PAGE);
         assert_eq!(page.info.kind, notecraft_model::NodeKind::Page);
         assert!(page.children.is_empty());
         assert_eq!(tree.first().map(notecraft_store::Node::count), Some(3), "the notebook, the section and the page");
         // The page is real: its title and the date it was started, like a new OneNote page.
         match s.run("page.load", &p(&[("path", page.path.to_str().expect("utf8"))])).expect("load") {
             Output::Page(pg) => {
-                // The title is in the head, not repeated in the body: the window draws it
-                // above the page, the way OneNote does.
+                // No title key was ever written: `has_title` says so, and the fallback
+                // display word is not mistaken for a real title.
+                assert!(!pg.has_title, "a page nobody has named yet carries no title key");
                 assert_eq!(pg.title, "Untitled page");
                 assert!(!pg.body.contains("<h1>"), "the body does not say the title again: {}", pg.body);
                 assert!(pg.body.contains("page-date"), "a new page carries its date: {}", pg.body);
@@ -535,7 +543,9 @@ mod tests {
         }
         // The page follows the notebook's format.
         let md = path_of(s.run("notebook.create", &p(&[("name", "Notes"), ("format", "cmgfm")])).expect("nb"));
-        assert!(md.join(notecraft_model::names::slug(FIRST_SECTION)).join(notecraft_model::names::slug(FIRST_PAGE)).join("index.md").is_file());
+        assert!(
+            md.join(notecraft_model::names::slug(FIRST_SECTION)).join(notecraft_model::names::slug(tree::UNTITLED_PAGE)).join("index.md").is_file()
+        );
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
@@ -599,6 +609,51 @@ mod tests {
 {tree}"
         );
         assert!(s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", "Bad"), ("order", "soon")])).is_err());
+    }
+
+    /// `node.create` for a page with no `title` at all, or a blank one, is the "Add Page"
+    /// case: it must not be confused with a real title that happens to say "Untitled page".
+    #[test]
+    fn a_page_added_with_no_title_is_untitled() {
+        let t = TempDir::new("engine-untitled");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("empty", "true"), ("format", "cmgfm")])).expect("notebook");
+        let sec = path_of(s.run("node.create", &p(&[("parent", "work"), ("kind", "section"), ("title", "Notes")])).expect("section"));
+        let sec = sec.to_str().expect("utf8");
+        let page = path_of(s.run("node.create", &p(&[("parent", sec), ("kind", "page"), ("order", "40")])).expect("page"));
+        match s.run("page.load", &p(&[("path", page.to_str().expect("utf8"))])).expect("load") {
+            Output::Page(pg) => {
+                assert!(!pg.has_title, "nothing was typed for it, so it carries no title key");
+                assert_eq!(pg.title, "Untitled page");
+            }
+            other => panic!("{other:?}"),
+        }
+        let info = notecraft_store::tree::read_node(&page).expect("node info");
+        assert_eq!(info.title, "Untitled page", "the tree shows the same fallback");
+        assert_eq!(info.order, 40, "an untitled page still takes the order it was asked for");
+        let text = std::fs::read_to_string(page.join("index.md")).expect("page file");
+        assert!(!text.contains("title:"), "no title key was written at all:\n{text}");
+
+        // A blank title is the same as no title at all.
+        let blank = path_of(s.run("node.create", &p(&[("parent", sec), ("kind", "page"), ("title", "   ")])).expect("page"));
+        match s.run("page.load", &p(&[("path", blank.to_str().expect("utf8"))])).expect("load") {
+            Output::Page(pg) => assert!(!pg.has_title, "a blank title is treated as none"),
+            other => panic!("{other:?}"),
+        }
+
+        // A section or section group still needs a real title.
+        assert!(matches!(s.run("node.create", &p(&[("parent", "work"), ("kind", "section")])), Err(EngineError::MissingParam("title"))));
+
+        // The page stops being untitled the moment it is given a real title, the same way
+        // typing a name into the title area would.
+        s.run("node.title", &p(&[("path", page.to_str().expect("utf8")), ("title", "Shopping List")])).expect("rename");
+        match s.run("page.load", &p(&[("path", page.to_str().expect("utf8"))])).expect("load") {
+            Output::Page(pg) => {
+                assert!(pg.has_title, "a title was just given to it");
+                assert_eq!(pg.title, "Shopping List");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

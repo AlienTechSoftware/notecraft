@@ -123,8 +123,8 @@ pub fn create_node_at(
 /// nothing typed in it "Untitled Page", and the title area on the page itself is drawn
 /// blank. The page stops being untitled the moment a title is written in, however short;
 /// see `set_title`.
-pub fn create_untitled_page(parent: &Path, explicit: Option<PageFormat>, settings: &Settings) -> Result<PathBuf> {
-    create_node_inner(parent, tree::UNTITLED_PAGE, NodeKind::Page, explicit, settings, None, None)
+pub fn create_untitled_page(parent: &Path, explicit: Option<PageFormat>, want_order: Option<u32>, settings: &Settings) -> Result<PathBuf> {
+    create_node_inner(parent, tree::UNTITLED_PAGE, NodeKind::Page, explicit, settings, want_order, None)
 }
 
 /// Shared by `create_node_at` and `create_untitled_page`. `slug_title` names the folder;
@@ -231,24 +231,51 @@ pub fn set_title(dir: &Path, title: &str) -> Result<()> {
     let title = clean_title(title)?;
     if let Some((format, file)) = page_file(dir) {
         let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
-        let out = match format {
-            PageFormat::Html => {
-                let was = html::title(&text).unwrap_or_default();
-                let renamed = html::replace_between(&text, "<title>", "</title>", &html::escape(&title));
-                retitle_heading(&renamed, &was, &title, PageFormat::Html)
-            }
-            PageFormat::Cmgfm => {
-                let (front, rest) = frontmatter::split_front(&text);
-                let was = frontmatter::value(&front, "title").unwrap_or_default();
-                let front = kv::replace_line(&front, "title:", &format!("title: {}", kv::quote(&title)));
-                format!("{front}{}", retitle_heading(&rest, &was, &title, PageFormat::Cmgfm))
-            }
-        };
+        let was = tree::raw_title(format, &text).unwrap_or_default();
+        let renamed = write_page_title(format, &text, &title);
+        let out = retitle_heading(&renamed, &was, &title, format);
         write_atomic(&file, &out)
     } else {
         let file = dir.join("_node.toml");
         let text = fs::read_to_string(&file).map_err(|_| StoreError::NotFound(format!("{} is not a NoteCraft folder", dir.display())))?;
         write_atomic(&file, &kv::replace_line(&text, "title =", &format!("title = {}", kv::quote(&title))))
+    }
+}
+
+/// Writes `title` into a page's head: replaces its existing title key, or inserts one if
+/// it has none yet, in the same spot a new page would have written it (see
+/// `notecraft_formats::templates`). A page with no title of its own needs this path the
+/// first time it is given one, which a plain find-and-replace cannot do.
+fn write_page_title(format: PageFormat, text: &str, title: &str) -> String {
+    match format {
+        PageFormat::Html => {
+            if html::between(text, "<title>", "</title>").is_some() {
+                html::replace_between(text, "<title>", "</title>", &html::escape(title))
+            } else {
+                match text.find("<meta name=\"notecraft:id\"") {
+                    Some(i) => format!("{}<title>{}</title>\n{}", &text[..i], html::escape(title), &text[i..]),
+                    None => text.to_string(),
+                }
+            }
+        }
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(text);
+            let front = if frontmatter::value(&front, "title").is_some() {
+                kv::replace_line(&front, "title:", &format!("title: {}", kv::quote(title)))
+            } else {
+                let mut out = String::with_capacity(front.len() + title.len() + 16);
+                let mut inserted = false;
+                for line in front.split_inclusive('\n') {
+                    out.push_str(line);
+                    if !inserted && line.starts_with("id:") {
+                        out.push_str(&format!("title: {}\n", kv::quote(title)));
+                        inserted = true;
+                    }
+                }
+                out
+            };
+            format!("{front}{rest}")
+        }
     }
 }
 

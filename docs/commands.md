@@ -30,7 +30,7 @@ Parameters:
 
 - parent (required): path of the notebook, group, section or page to add to
 - kind (required): section-group, section or page
-- title (required)
+- title (required for section-group and section; optional for page, which is created untitled if left out)
 - format (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below
 
 ## `node.color`

@@ -728,10 +728,15 @@ impl NoteCraftApp {
                 .unwrap_or((None, None));
             let attachments = notecraft_store::assets::list(dir);
             let writable = pageedit::round_trips(page.format, &page.body);
+            // A page with no title of its own starts with a blank title area, not with
+            // "Untitled page" sitting there as if it had been typed. `title` keeps the
+            // display fallback, so losing focus on an empty box is correctly seen as "no
+            // change" rather than a rename to the fallback word itself.
+            let title_buf = if page.has_title { page.title.clone() } else { String::new() };
             self.editor = Some(Editor {
                 dir: dir.to_path_buf(),
                 format: page.format,
-                title_buf: page.title.clone(),
+                title_buf,
                 title: page.title,
                 body: page.body,
                 dirty_since: None,
@@ -944,11 +949,10 @@ impl NoteCraftApp {
             }
             Act::AddPageAt(section, order) => {
                 let path = path_str(&section);
-                let title = String::from("Untitled page");
                 let order = order.to_string();
-                if let Some(Output::Path(dir)) =
-                    self.run("node.create", &params(&[("parent", &path), ("kind", "page"), ("title", &title), ("order", &order)]))
-                {
+                // No title: the page is created genuinely untitled, like a new OneNote page.
+                // "Untitled page" is only ever the display fallback, never real content.
+                if let Some(Output::Path(dir)) = self.run("node.create", &params(&[("parent", &path), ("kind", "page"), ("order", &order)])) {
                     self.open_page(&dir);
                     self.say("New page");
                 }
@@ -2833,9 +2837,11 @@ impl NoteCraftApp {
             painter.line_segment([egui::pos2(rect.min.x + 21.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
             let c = egui::pos2(rect.min.x + 10.0, y);
             painter.circle_filled(c, PLUS, t.accent);
-            // The glyph sits a hair above the middle of its own line box, so the circle is
-            // nudged down by that much to put the cross in its centre rather than near it.
-            painter.text(c + vec2(0.0, 0.5), Align2::CENTER_CENTER, "+", egui::FontId::proportional(13.0), t.panel);
+            // Draw the cross as two equal strokes around the circle's center. A font glyph's
+            // baseline and line box can make a visually off-center plus even with centered text.
+            let cross = egui::Stroke::new(2.0, t.panel);
+            painter.line_segment([c - vec2(4.0, 0.0), c + vec2(4.0, 0.0)], cross);
+            painter.line_segment([c - vec2(0.0, 4.0), c + vec2(0.0, 4.0)], cross);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let enabled = ui.is_enabled();
@@ -3927,6 +3933,9 @@ impl NoteCraftApp {
             "page": self.editor.as_ref().map(|e| json!({
                 "path": e.dir.strip_prefix(self.session.root()).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default(),
                 "title": e.title,
+                // What the title area actually shows: blank for a page with no title of its
+                // own, unlike `title`, which is always at least the "Untitled page" fallback.
+                "titleArea": e.title_buf,
                 "format": e.format.id(),
                 "dirty": e.dirty_since.is_some(),
                 "bodyCharacters": e.body.chars().count(),
