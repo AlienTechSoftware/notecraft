@@ -132,6 +132,13 @@ pub fn show(
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
     let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
+    // The open paper: the whole page area, made first so that every box and every block, which
+    // are made after it, sit on top of it and take their own clicks. A click that reaches it
+    // landed on no box at all.
+    let paper =
+        ui.interact(Rect::from_min_size(area.min, vec2(area.width(), area.height().min(20_000.0))), ui.id().with("open-paper"), Sense::click());
+    let selection_was_up = sel.is_some() || menu_at.is_some();
+    let mut frames: Vec<Rect> = Vec::with_capacity(boxes.len());
 
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
@@ -156,6 +163,7 @@ pub fn show(
         }
         let used = child.min_rect().height().max(18.0);
         let frame = Rect::from_min_size(at, vec2(b.width + 2.0 * PAD, used + HANDLE + PAD));
+        frames.push(frame);
         bottom = bottom.max(frame.max.y);
 
         let hovered = ui.rect_contains_pointer(frame);
@@ -385,6 +393,25 @@ pub fn show(
     // is under them: allocated at the cursor it would sit on top of the first container and
     // take every click meant for a block.
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
+    // Open paper beside or between the boxes: a click there starts a box of its own where the pointer
+    // is, as it does under them. It does nothing when it only lets go of a selected box or a menu,
+    // or when it landed in a box's own margin.
+    if paper.clicked()
+        && !selection_was_up
+        && let Some(at) = paper.interact_pointer_pos()
+        && at.y < bottom
+        && !frames.iter().any(|f| f.expand(3.0).contains(at))
+    {
+        let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
+        start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+        out.changed.caret = true;
+        out.changed.blocks = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+    if paper.hovered() && at_open_paper(ui, &frames) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
     // Bare page: a click starts a box of its own where the pointer is, which is how
     // OneNote treats a click on open paper - the words begin where you pointed, not at
     // the end of whatever was written last.
@@ -408,6 +435,11 @@ pub fn show(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
     out
+}
+
+/// Whether the pointer is over open paper, not over a box.
+fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
+    ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
 }
 
 /// Starts an empty box at `at`, in the page's own coordinates, and puts the caret in it.
