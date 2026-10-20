@@ -16,6 +16,9 @@ workspace = true
 
 [dependencies]
 notecraft-model = { workspace = true }
+# To check that a page's justified paragraph really is a paragraph, with the same reader
+# the editor uses.
+notecraft-formats = { workspace = true }
 notecraft-store = { workspace = true }
 # The demo ships real handwriting, drawn with the same crate the pen uses.
 notecraft-ink = { workspace = true }

@@ -10,4 +10,9 @@ description = "NoteCraft OneNote reader: reads .one section files (MS-ONESTORE, 
 [lints]
 workspace = true
 
+[features]
+# Builders for synthetic `.one` files, so other crates can test against a section file without
+# a real notebook.
+testing = []
+
 [dependencies]

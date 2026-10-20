@@ -276,12 +276,12 @@ pub fn inline_pieces(text: &str) -> Vec<(std::ops::Range<usize>, Style)> {
 
 /// Which edge a line hangs from: the right one when it reads right to left. A line with
 /// no letters of its own follows `page`, the direction the whole page was given.
-pub fn halign(text: &str, page: notecraft_model::Dir) -> egui::Align {
-    if notecraft_model::direction_or(text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT }
+pub fn halign(text: &str, page: Option<notecraft_model::Dir>) -> egui::Align {
+    if notecraft_model::direction_in(text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT }
 }
 
 /// The layout for one block being written in: inline marks styled, in the block's own size.
-pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f32, page: notecraft_model::Dir) -> LayoutJob {
+pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f32, page: Option<notecraft_model::Dir>) -> LayoutJob {
     let mut job = LayoutJob {
         wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() },
         halign: halign(text, page),
@@ -307,7 +307,7 @@ pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f
 }
 
 /// The layout egui draws: the pieces above, turned into one job.
-pub fn job(format: PageFormat, text: &str, base: f32, t: &Tokens, wrap_width: f32, page: notecraft_model::Dir) -> LayoutJob {
+pub fn job(format: PageFormat, text: &str, base: f32, t: &Tokens, wrap_width: f32, page: Option<notecraft_model::Dir>) -> LayoutJob {
     let mut job = LayoutJob {
         wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() },
         halign: halign(text, page),
@@ -474,10 +474,10 @@ mod tests {
     fn the_job_holds_every_character() {
         let t = crate::theme::Theme::DEFAULT.tokens();
         let text = "# Title\n\n- one **two**\n";
-        let laid = job(PageFormat::Cmgfm, text, 15.0, &t, 400.0, notecraft_model::Dir::Ltr);
+        let laid = job(PageFormat::Cmgfm, text, 15.0, &t, 400.0, Some(notecraft_model::Dir::Ltr));
         assert_eq!(laid.text, text);
         assert!(laid.sections.len() > 3);
-        let empty = job(PageFormat::Cmgfm, "", 15.0, &t, 400.0, notecraft_model::Dir::Ltr);
+        let empty = job(PageFormat::Cmgfm, "", 15.0, &t, 400.0, Some(notecraft_model::Dir::Ltr));
         assert_eq!(empty.sections.len(), 1, "an empty page still has one section to type into");
     }
 }

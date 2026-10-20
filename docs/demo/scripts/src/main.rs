@@ -85,6 +85,11 @@ struct Source {
     html: bool,
     /// `rtl` or `ltr` when the front matter says; otherwise the language decides.
     dir: Option<String>,
+    /// The paragraphs this page justifies, by their position among its blocks, as the
+    /// page's head records them (`notecraft_model::justify`). Checked against the body when
+    /// the file is read, so a page edited without moving the number fails the build rather
+    /// than quietly justifying the wrong paragraph.
+    justify: Option<String>,
     body: String,
 }
 
@@ -260,9 +265,9 @@ fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: 
     copy_assets(dir, &s.body, art)?;
     let look = look_of(&s.slug);
     if s.html {
-        write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body, look))
+        write(&dir.join("index.html"), &html_page(&s.title, id, s.order, dir_value, &s.body, look, s.justify.as_deref()))
     } else {
-        write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body, look))
+        write(&dir.join("index.md"), &markdown_page(&s.title, id, s.order, dir_value, &s.body, look, s.justify.as_deref()))
     }
 }
 
@@ -346,10 +351,13 @@ fn node_toml(kind: &str, title: &str, id: &str, order: u32, format: Option<&str>
 }
 
 /// A Markdown page with the front matter the store writes (section 3.2 of the format).
-fn markdown_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look) -> String {
+fn markdown_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look, justify: Option<&str>) -> String {
     let mut front = format!("---\nid: {id}\ntitle: {}\norder: {order}\ncreated: {DATE}\nupdated: {DATE}\n", kv::quote(title));
     if let Some(d) = dir {
         front.push_str(&format!("dir: {d}\n"));
+    }
+    if let Some(j) = justify {
+        front.push_str(&format!("justify: {j}\n"));
     }
     if let Some(p) = look.paper {
         front.push_str(&format!("paper: {p}\n"));
@@ -385,13 +393,16 @@ fn look_of(slug: &str) -> Look {
 }
 
 /// An HTML page with the metadata in `<meta>` tags (section 3.1 of the format).
-fn html_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look) -> String {
+fn html_page(title: &str, id: &str, order: u32, dir: Option<&str>, body: &str, look: Look, justify: Option<&str>) -> String {
     let t = escape(title);
     let mut head = format!(
         "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{t}</title>\n<meta name=\"notecraft:id\" content=\"{id}\">\n<meta name=\"notecraft:order\" content=\"{order}\">\n<meta name=\"notecraft:created\" content=\"{DATE}\">\n<meta name=\"notecraft:updated\" content=\"{DATE}\">\n"
     );
     if let Some(d) = dir {
         head.push_str(&format!("<meta name=\"notecraft:dir\" content=\"{d}\">\n"));
+    }
+    if let Some(j) = justify {
+        head.push_str(&format!("<meta name=\"notecraft:justify\" content=\"{j}\">\n"));
     }
     if let Some(p) = look.paper {
         head.push_str(&format!("<meta name=\"notecraft:paper\" content=\"{p}\">\n"));
@@ -445,7 +456,49 @@ fn read_source(path: &Path, order: u32) -> Result<Source, String> {
     }
     let html = path.extension().is_some_and(|x| x == "html");
     let slug = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    Ok(Source { order, slug, title, html, dir, body: body.trim_start_matches('\n').to_string() })
+    let body = body.trim_start_matches('\n').to_string();
+    let justify = front_value(front, "justify");
+    if let Some(line) = &justify {
+        check_justify(path, line, html, &body)?;
+    }
+    Ok(Source { order, slug, title, html, dir, justify, body })
+}
+
+/// A page says which of its paragraphs fill the column by their position among its blocks.
+/// A number is only as good as the body it was counted against, so it is counted again here,
+/// with the reader the editor itself uses: a number that has drifted onto a heading, a table
+/// or off the end of the page stops the build.
+fn check_justify(path: &Path, line: &str, html: bool, body: &str) -> Result<(), String> {
+    let marked = notecraft_model::justify::parse(line);
+    if marked.is_empty() {
+        return Err(format!("{}: justify is block numbers separated by commas, not '{line}'", path.display()));
+    }
+    let format = if html { notecraft_model::PageFormat::Html } else { notecraft_model::PageFormat::Cmgfm };
+    let blocks = notecraft_formats::boxes::read(format, body).0;
+    for (at, _) in marked.blocks() {
+        match blocks.get(*at) {
+            Some(notecraft_formats::Block::Paragraph(_)) => {}
+            Some(other) => return Err(format!("{}: justify names block {at}, which is a {}, not a paragraph", path.display(), name_of(other))),
+            None => return Err(format!("{}: justify names block {at}, and the page has {} blocks", path.display(), blocks.len())),
+        }
+    }
+    Ok(())
+}
+
+/// What a block is, for an error message.
+fn name_of(block: &notecraft_formats::Block) -> &'static str {
+    use notecraft_formats::Block;
+    match block {
+        Block::Heading { .. } => "heading",
+        Block::Paragraph(_) => "paragraph",
+        Block::Item { .. } => "list item",
+        Block::Quote(_) => "quote",
+        Block::Code { .. } => "code block",
+        Block::Table { .. } => "table",
+        Block::Image { .. } => "picture",
+        Block::MathBlock(_) => "equation",
+        _ => "block of another kind",
+    }
 }
 
 /// The lines between the first two `---` lines, and the rest.
@@ -632,11 +685,12 @@ mod tests {
 
     #[test]
     fn the_page_files_have_the_metadata_the_store_reads() {
-        let md = markdown_page("A \"quoted\" title", "abc", 20, Some("rtl"), "# Body\n", Look::default());
+        let md = markdown_page("A \"quoted\" title", "abc", 20, Some("rtl"), "# Body\n", Look::default(), Some("2, 5"));
         assert!(md.starts_with("---\nid: abc\ntitle: \"A \\\"quoted\\\" title\"\norder: 20\n"));
         assert!(md.contains("\ndir: rtl\n"));
+        assert!(md.contains("\njustify: 2, 5\n"), "the justified paragraphs are a line in the head: {md}");
         assert!(md.ends_with("---\n\n# Body\n"));
-        let html = html_page("A <b>", "abc", 10, None, "<p>x</p>", Look::default());
+        let html = html_page("A <b>", "abc", 10, None, "<p>x</p>", Look::default(), Some("0"));
 
         // A page given paper and a colour of its own carries both in its head.
         let dressed = markdown_page(
@@ -647,6 +701,7 @@ mod tests {
             "words
 ",
             Look { paper: Some("college"), colour: Some("yellow") },
+            None,
         );
         assert!(
             dressed.contains(
@@ -660,12 +715,13 @@ page-color: yellow
             ),
             "{dressed}"
         );
-        let dressed_html = html_page("T", "id", 10, None, "<p>x</p>", Look { paper: Some("grid-medium"), colour: None });
+        let dressed_html = html_page("T", "id", 10, None, "<p>x</p>", Look { paper: Some("grid-medium"), colour: None }, None);
         assert!(dressed_html.contains("notecraft:paper"), "{dressed_html}");
         assert!(!dressed_html.contains("page-color"), "and says nothing about a colour it was not given");
         assert!(html.contains("<title>A &lt;b&gt;</title>"));
         assert!(html.contains("name=\"notecraft:id\" content=\"abc\""));
         assert!(!html.contains("notecraft:dir"));
+        assert!(html.contains("notecraft:justify\" content=\"0\""), "the justified paragraphs are a meta tag: {html}");
         let node = node_toml("section-group", "Español", "id1", 30, None, Some("blue"));
         assert_eq!(
             node,

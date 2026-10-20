@@ -103,12 +103,22 @@ pub fn direction(text: &str) -> Dir {
     Dir::Ltr
 }
 
-/// Which way a line reads when the page it is on has a direction of its own: the line's
-/// own mark or first strong letter wins, and text with nothing strong in it follows the
-/// page instead of falling back to left to right.
-pub fn direction_or(text: &str, page: Dir) -> Dir {
-    let strong = text.chars().any(|c| c == RLM || c == LRM || strong_rtl(c) || c.is_alphabetic());
-    if strong { direction(text) } else { page }
+/// Which way a paragraph reads on a page that may have a direction of its own.
+///
+/// Three things can say, and they are asked in this order.
+///
+/// 1. **The paragraph's own mark**, if the writer set one with the direction buttons. They
+///    said so about this paragraph, so nothing overrules it.
+/// 2. **The page**, if the writer gave the page a direction. This is the step that used to
+///    be missing, and without it "the whole page reads right to left" meant nothing at all:
+///    every line with a letter in it answered for itself, so a page of English stayed left
+///    to right however the page was set, and a page of Arabic stayed right to left. A
+///    section or document direction works this way in Word, in LibreOffice and in a browser
+///    (`dir` on an element is inherited by the paragraphs inside it).
+/// 3. **The paragraph's first strong letter.** This is what "auto" means, and it is what a
+///    page with no direction of its own leaves every paragraph to do.
+pub fn direction_in(text: &str, page: Option<Dir>) -> Dir {
+    explicit(text).or(page).unwrap_or_else(|| direction(text))
 }
 
 #[cfg(test)]
@@ -157,14 +167,28 @@ mod tests {
         assert_eq!(direction("مرحبا"), Dir::Rtl, "with no mark, the words decide");
     }
 
+    /// A page that was given a direction gives it to every paragraph that has not said
+    /// otherwise, which is what makes the Page buttons mean anything.
     #[test]
-    fn a_page_direction_only_decides_for_lines_that_say_nothing() {
-        assert_eq!(direction_or("123", Dir::Rtl), Dir::Rtl, "nothing strong: the page decides");
-        assert_eq!(direction_or("", Dir::Rtl), Dir::Rtl);
-        assert_eq!(direction_or("- ", Dir::Rtl), Dir::Rtl, "an empty list item on an Arabic page");
-        assert_eq!(direction_or("Hello", Dir::Rtl), Dir::Ltr, "the words win");
-        assert_eq!(direction_or("مرحبا", Dir::Ltr), Dir::Rtl);
-        assert_eq!(direction_or(&set_direction("Hello", Some(Dir::Rtl)), Dir::Ltr), Dir::Rtl, "the mark wins");
+    fn the_page_decides_for_every_paragraph_that_has_no_mark_of_its_own() {
+        // The page was given one: English on a right-to-left page reads right to left, the
+        // way a `dir` on a containing element works in a browser. Before this was fixed the
+        // words won and the page direction did nothing at all on a page with words on it.
+        assert_eq!(direction_in("Hello", Some(Dir::Rtl)), Dir::Rtl, "the page decides");
+        assert_eq!(direction_in("مرحبا", Some(Dir::Ltr)), Dir::Ltr);
+        assert_eq!(direction_in("123", Some(Dir::Rtl)), Dir::Rtl, "nothing strong: the page decides too");
+        assert_eq!(direction_in("", Some(Dir::Rtl)), Dir::Rtl);
+        assert_eq!(direction_in("- ", Some(Dir::Rtl)), Dir::Rtl, "an empty list item on an Arabic page");
+
+        // The paragraph's own mark beats the page, because the writer set it on this line.
+        assert_eq!(direction_in(&set_direction("Hello", Some(Dir::Rtl)), Some(Dir::Ltr)), Dir::Rtl, "the mark wins over the page");
+        assert_eq!(direction_in(&set_direction("مرحبا", Some(Dir::Ltr)), Some(Dir::Rtl)), Dir::Ltr);
+
+        // The page said nothing, so every paragraph decides from its own first letter.
+        assert_eq!(direction_in("Hello", None), Dir::Ltr);
+        assert_eq!(direction_in("مرحبا", None), Dir::Rtl, "auto: the words decide");
+        assert_eq!(direction_in("123", None), Dir::Ltr, "and nothing strong reads left to right");
+        assert_eq!(direction_in(&set_direction("Hello", Some(Dir::Rtl)), None), Dir::Rtl, "the mark still wins");
     }
 
     #[test]

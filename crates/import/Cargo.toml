@@ -1,0 +1,20 @@
+[package]
+name = "notecraft-import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft importer: turns a folder of OneNote section files into a NoteCraft notebook tree, in HTML or CommonMark + GFM pages. Read only on the source"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-model = { workspace = true }
+notecraft-formats = { workspace = true }
+notecraft-onenote = { workspace = true }
+notecraft-store = { workspace = true }
+
+[dev-dependencies]
+notecraft-onenote = { workspace = true, features = ["testing"] }

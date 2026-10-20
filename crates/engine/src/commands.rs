@@ -212,6 +212,21 @@ fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(notecraft_model::tablecols::write(&widths)))
 }
 
+fn page_justify(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let Some(want) = p.get("blocks") else {
+        return Ok(Output::Text(notecraft_model::justify::write(&page::justified(&path)?)));
+    };
+    let marked = notecraft_model::justify::parse(want);
+    if marked.is_empty() && !want.trim().is_empty() {
+        return Err(EngineError::BadParam(
+            "blocks is the paragraphs' positions among the page's blocks, separated by commas, each with an optional :low, :medium or :high".into(),
+        ));
+    }
+    page::set_justified(&path, &marked)?;
+    Ok(Output::Text(notecraft_model::justify::write(&marked)))
+}
+
 /// Opens a notebook that lives outside the notebooks folder, keeping the open ones.
 fn notebook_open(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = std::path::PathBuf::from(req(p, "path")?);
@@ -341,6 +356,14 @@ color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray,
 widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported",
         changes_tree: false,
         run: page_columns,
+    },
+    CommandSpec {
+        id: "page.justify",
+        label: "Which paragraphs of a page are stretched to fill the column",
+        params: "path (required): the page
+blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; empty draws every paragraph ragged. Without it, the page's own are reported",
+        changes_tree: false,
+        run: page_justify,
     },
     CommandSpec {
         id: "page.attach",
@@ -646,6 +669,42 @@ mod tests {
         s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "auto")])).expect("auto");
         assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "auto");
         assert!(s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "sideways")])).is_err());
+    }
+
+    /// Justification is told to the page by the paragraph's place among its blocks, and the
+    /// page's words are not touched by it.
+    #[test]
+    fn a_page_can_be_told_which_paragraphs_are_justified() {
+        let t = TempDir::new("engine-justify");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("format", "cmgfm")])).expect("notebook");
+        let path = "work/new-section-1/untitled-page";
+        let page = p(&[("path", path)]);
+        assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "", "nothing is justified until it is asked for");
+
+        let body = "واحد\n\nاثنان\n\nثلاثة\n";
+        s.run("page.save", &p(&[("path", path), ("body", body)])).expect("save");
+        s.run("page.justify", &p(&[("path", path), ("blocks", "1")])).expect("set");
+        assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "1");
+
+        // A strength rides with the block number, and a number on its own is the middle one.
+        s.run("page.justify", &p(&[("path", path), ("blocks", "1:high, 2")])).expect("set");
+        assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "1:high, 2");
+        s.run("page.justify", &p(&[("path", path), ("blocks", "1")])).expect("set");
+
+        // It is in the file, so it travels with the folder, and the words are as they were.
+        let file = s.resolve(path).expect("path").join("index.md");
+        assert!(std::fs::read_to_string(&file).expect("read").contains("justify: 1"));
+        match s.run("page.load", &page).expect("load") {
+            Output::Page(loaded) => assert_eq!(loaded.body.trim_end(), body.trim_end(), "no tatweel is written into the page"),
+            other => panic!("expected a page, got {other:?}"),
+        }
+
+        // Saving the page keeps it; an empty list draws every paragraph ragged again.
+        s.run("page.save", &p(&[("path", path), ("body", body)])).expect("save");
+        assert_eq!(text_of(s.run("page.justify", &page).expect("read")), "1", "a save must not lose it");
+        assert_eq!(text_of(s.run("page.justify", &p(&[("path", path), ("blocks", "")])).expect("clear")), "");
+        assert!(s.run("page.justify", &p(&[("path", path), ("blocks", "sideways")])).is_err());
     }
 
     /// An HTML page keeps it too, in a meta tag.

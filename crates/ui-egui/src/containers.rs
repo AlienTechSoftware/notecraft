@@ -103,9 +103,11 @@ pub fn show(
     caret: &mut Option<Caret>,
     page_dir: &std::path::Path,
     t: &Tokens,
-    page: notecraft_model::Dir,
+    page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
+    justified: &notecraft_model::justify::Justified,
+    across: &mut Option<pageedit::Across>,
     shown_title: &str,
 ) -> Moved {
     let mut out = Moved::default();
@@ -165,7 +167,8 @@ pub fn show(
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width, area.height()))).layout(*ui.layout()));
         child.set_width(b.width);
-        let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols, shown_title);
+        let changed =
+            pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols, justified, across, shown_title);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
         out.changed.columns |= changed.columns;
@@ -547,9 +550,11 @@ mod tests {
                 &mut caret,
                 std::path::Path::new("."),
                 &t,
-                notecraft_model::Dir::Ltr,
+                Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
+                &Default::default(),
+                &mut None,
                 "",
             );
             assert!(!out.boxes, "nothing was dragged");
@@ -575,9 +580,11 @@ mod tests {
                 &mut caret,
                 std::path::Path::new("."),
                 &t,
-                notecraft_model::Dir::Ltr,
+                Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
+                &Default::default(),
+                &mut None,
                 "",
             );
         });
@@ -605,9 +612,11 @@ mod tests {
                 &mut caret,
                 std::path::Path::new("."),
                 &t,
-                notecraft_model::Dir::Ltr,
+                Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
+                &Default::default(),
+                &mut None,
                 "",
             );
         });

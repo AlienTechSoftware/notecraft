@@ -251,6 +251,9 @@ fn arabic_draws_and_the_direction_controls_work() {
     // The paragraph's direction sits where OneNote keeps it: in the alignment menu.
     h.get_by_label("Alignment and direction").click();
     h.run();
+    // A picture of the open menu: the two direction entries carry the pilcrow and arrow
+    // that Word, LibreOffice and the Office web apps all use for paragraph direction.
+    review(&mut h, "alignment-menu");
     h.get_by_label("Right-to-Left").click();
     h.run();
     h.run();
@@ -263,6 +266,36 @@ fn arabic_draws_and_the_direction_controls_work() {
     h.run();
     h.run();
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "auto takes the mark off");
+
+    // The paragraph's direction is also in the Direction group, with the pilcrow-and-arrow
+    // mark Word uses for it, so a writer looking for the direction controls finds them all
+    // in one place instead of under an alignment button.
+    h.get_by_label("Paragraph right to left").click();
+    h.run();
+    h.run();
+    assert_eq!(
+        h.state().body().unwrap_or_default().lines().filter(|l| l.starts_with('\u{200F}')).count(),
+        1,
+        "the group's button marks the paragraph the menu's entry does"
+    );
+    h.get_by_label("Paragraph direction from the words").click();
+    h.run();
+    h.run();
+    assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "and takes it off again");
+
+    // The page's own direction is written into the page's file, and the window redraws by
+    // it: before this was fixed the file changed and nothing on the screen moved.
+    h.get_by_label("Page right to left").click();
+    h.run();
+    h.run();
+    let file = s.md_page.join("index.md");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(text.contains("dir: rtl"), "the page records it:\n{text}");
+    h.get_by_label("Page direction from the words").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    assert!(!text.contains("dir: rtl"), "and auto takes it out again:\n{text}");
 
     // The run direction is behind the launcher, with the options that are not built.
     h.get_by_label("Advanced direction").click();
@@ -280,6 +313,80 @@ fn arabic_draws_and_the_direction_controls_work() {
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("dir: rtl"), "the page's own direction is in its front matter:\n{file}");
     review(&mut h, "rtl");
+}
+
+/// The Justify button on the Home tab fills the column with the paragraph the caret is in,
+/// and the page remembers which paragraph that is without a tatweel reaching the file.
+///
+/// This is 1.8 of the owner's right-to-left bar, end to end: the button, the page file and
+/// the painter. What the stretching itself does is measured in `tests/rtl_quality.rs`.
+#[test]
+fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
+    // Long enough to wrap to several lines in the page's column, so there is something to
+    // fill: a paragraph that fits on one line is all last line, and the last line is never
+    // justified.
+    const PARAGRAPH: &str = "الملاحظات يجب أن تعيش أطول من البرنامج الذي كتبها، ولهذا تحفظ كل صفحة في مجلد من ملفات نصية عادية يقرؤها أي محرر. الدفتر مجلد، والقسم مجلد، والصفحة مجلد فيه ملف واحد وصوره ومرفقاته، ولا شيء غير ذلك. لا قاعدة بيانات، ولا صيغة لا يفتحها إلا برنامج واحد.";
+    let (_t, app, s) = sample_app("ui-justify");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "من اليمين إلى اليسار", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": PARAGRAPH}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify High").click();
+    h.run();
+    h.run();
+
+    // The page knows which paragraph and how hard it is stretched, and its words are the
+    // ones that were typed. The three strengths are Word's Justify Low, Medium and High.
+    let file = PathBuf::from(&page).join("index.md");
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(text.contains("justify: 0:high"), "the page records the paragraph and its strength:\n{text}");
+    assert!(!text.contains('\u{0640}'), "no tatweel is written into the file; the stretching is drawing only");
+    assert!(text.contains(PARAGRAPH), "the words are the ones that were typed");
+    assert_eq!(h.state().body().unwrap_or_default().trim(), PARAGRAPH, "and the window agrees with the folder");
+
+    // The caret leaves the paragraph, so the picture shows the paragraph as it is read
+    // rather than as it is written in: while the caret is in a block it is a text box of
+    // the plain words, and the stretching belongs to the painter.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the block");
+    settle(&mut h);
+    // The page is named in Arabic, so the same picture shows the tree row and the title
+    // band drawing that name in reading order; `tests/rtl_quality.rs` measures it.
+    review(&mut h, "justify");
+
+    // A different strength changes the paragraph rather than adding a second entry.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify Low").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(text.contains("justify: 0:low"), "another strength changes it rather than adding a second entry:\n{text}");
+
+    // Asking for the strength it already has puts the paragraph back the way it was, which
+    // is how a menu of three gives a way to a ragged edge without a fourth entry.
+    h.get_by_label("Alignment and direction").click();
+    h.run();
+    h.get_by_label("Justify Low").click();
+    h.run();
+    h.run();
+    let text = std::fs::read_to_string(&file).expect("the page file");
+    assert!(!text.contains("justify:"), "the line is gone, not left empty:\n{text}");
 }
 
 /// A table copied out of another note taking app arrives as tab-separated text. It must come
@@ -3828,4 +3935,212 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     let now = std::fs::read_to_string(&file_path).unwrap_or_default();
     assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
     assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");
+}
+
+/// A page with one paragraph of `line` on it, opened and ready to write in.
+fn page_of(h: &mut Harness<'_, NoteCraftApp>, s: &Sample, title: &str, line: &str) -> String {
+    let section = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made =
+        ask(h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": "cmgfm"}}))
+            .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(h, "engine.execute", json!({"command": "page.save", "params": {"path": &page, "body": line}})).expect("save");
+    ask(h, "ui.open", json!({"path": &page})).expect("open");
+    settle(h);
+    page
+}
+
+/// Enter at the end of an Arabic paragraph starts a new one, and what is typed next goes
+/// into it.
+///
+/// The owner hit this writing a numbered list in Arabic: lines three, four and five ran
+/// together into one paragraph while one and two came out separately. The caret arriving in
+/// a right-to-left line was left at character nought instead of at the end of the words, so
+/// Enter split the line in front of its first letter: the whole sentence moved down into the
+/// new paragraph and the next thing typed ran on to the end of it. A line without
+/// right-to-left text in it never showed this, because egui's own text box puts an arriving
+/// caret at the end of the line. Both do now.
+#[test]
+fn enter_in_an_arabic_paragraph_starts_the_next_one() {
+    const LINE: &str = "هذا اختبار بسيط";
+    for (label, line) in [("arabic", LINE), ("english", "this is a test")] {
+        let (_t, app, s) = sample_app("ui-rtl-enter");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        page_of(&mut h, &s, "Enter", line);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+
+        for n in 1..=3 {
+            ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("enter");
+            settle(&mut h);
+            let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+            let text = caret.get("text").and_then(Value::as_str).unwrap_or("<none>").to_string();
+            assert_eq!(text, "", "{label}: Enter {n} left the caret in an empty new paragraph, not holding the old line");
+            assert_eq!(caret.get("block").and_then(Value::as_u64), Some(n), "{label}: and the caret is in it");
+            ask(&mut h, "ui.text", json!({"text": line})).expect("type");
+            settle(&mut h);
+        }
+        // Four paragraphs, each the line once: nothing ran on to the end of another.
+        let body = h.state().body().unwrap_or_default().to_string();
+        let written: Vec<&str> = body.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('<')).collect();
+        assert_eq!(written, vec![line; 4], "{label}: four separate paragraphs:\n{body}");
+    }
+}
+
+/// Dragging across an Arabic line selects it, the highlight is drawn, and the words it
+/// covers can still be read.
+///
+/// Three things, because the owner reported all three in turn as "dragging does not
+/// select". The drag begins on a paragraph the caret is not in, which is how a reader
+/// actually selects: they do not click first.
+///
+/// 1. **The caret arrives and the selection grows.** A finished block answered a click and
+///    nothing answered a press that moved, so a first drag did nothing whatever - no caret,
+///    no selection. The drag is sensed under the same id the editor uses for the block, so
+///    the caret lands where the press fell and egui carries the drag into the text box.
+/// 2. **The highlight is drawn.** Compared against the same page with nothing selected.
+/// 3. **The words stay readable.** The fill is opaque and used to be painted after the
+///    glyphs, which left a row of blank boxes where the sentence had been.
+#[test]
+fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
+    const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
+    let (_t, app, s) = sample_app("ui-rtl-drag");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Drag", LINE);
+
+    let rect = h.get_by_label(LINE).rect();
+    let y = rect.center().y;
+    // The line hangs from the right edge, so the drag runs leftwards from near that edge.
+    let (from, to) = (rect.max.x - 30.0, rect.max.x - 170.0);
+
+    // No click first. This is the press, the drag and the release, and nothing else.
+    ask(&mut h, "ui.press", json!({"x": from, "y": y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": to, "y": y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": to, "y": y})).expect("release");
+    settle(&mut h);
+
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret.get("block").and_then(Value::as_u64), Some(0), "the drag put the caret in the paragraph it began on");
+    let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
+    assert_ne!(at, anchor, "and the drag selected something: at {at}, anchor {anchor}");
+
+    let selected = h.render().expect("a picture of the window");
+    review(&mut h, "rtl-drag-selection");
+
+    // The same page with nothing selected, to compare against.
+    ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("drop the selection");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!(caret.get("at").and_then(Value::as_u64), caret.get("anchor").and_then(Value::as_u64), "an arrow without Shift drops the selection");
+    let plain = h.render().expect("a picture of the window");
+
+    // The band the drag covered, in the rendered picture's own pixels.
+    let scale = selected.width() as f32 / 1200.0;
+    let (x0, x1) = ((to * scale) as u32, (from * scale) as u32);
+    let (y0, y1) = (((y - 8.0) * scale) as u32, ((y + 8.0) * scale) as u32);
+    let (mut changed, mut dark) = (0u32, 0u32);
+    for py in y0..y1.min(selected.height()) {
+        for px in x0..x1.min(selected.width()) {
+            let (a, b) = (selected.get_pixel(px, py), plain.get_pixel(px, py));
+            if a != b {
+                changed += 1;
+            }
+            if a[0] < 120 && a[1] < 120 && a[2] < 120 {
+                dark += 1;
+            }
+        }
+    }
+    assert!(changed > 400, "the highlight is drawn: {changed} pixels differ from the same line unselected");
+    // The fill is a pale tint of the page and a glyph is far darker than either, so the
+    // band must still hold dark pixels. Measured on 2026-10-19: 225 of them with the fill
+    // behind the words, and 23 with it painted over them.
+    assert!(dark > 40, "the selected words are still legible under the selection: {dark} dark pixels in the band");
+}
+
+/// A drag that leaves the paragraph it began in keeps going: both paragraphs are
+/// highlighted, and Copy and Delete act on the whole of it.
+///
+/// The owner put NoteCraft beside OneNote on 2026-10-19 and this was the difference left:
+/// there a drag across two paragraphs highlights both, here it stopped dead at the end of
+/// the one it began in. Measured before the change: 2118 pixels of the first paragraph
+/// highlighted and 0 of the second.
+///
+/// A caret belongs to one block, so a selection that leaves it is kept beside the caret as
+/// `pageedit::Across` and reported by `ui.inspect` as `across`. While one is open no block
+/// is a text box, which is why Delete is answered by the page rather than by egui.
+#[test]
+fn a_drag_can_select_across_paragraphs() {
+    const FIRST: &str = "الملاحظات تعيش أطول من البرنامج";
+    const SECOND: &str = "Notes outlive the program that wrote them";
+    const THIRD: &str = "سطر ثالث للقياس";
+    let body = format!("{FIRST}\n\n{SECOND}\n\n{THIRD}");
+    let (_t, app, s) = sample_app("ui-cross");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Cross", &body);
+
+    let across = |h: &mut Harness<'_, NoteCraftApp>| -> Value {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null)
+    };
+    let first = h.get_by_label(FIRST).rect();
+    let second = h.get_by_label(SECOND).rect();
+
+    // Press in the Arabic paragraph and drag down into the English one.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 60.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag down");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+
+    let open = across(&mut h);
+    assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "it begins in the paragraph the press fell on: {open}");
+    assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "and reaches the one the drag ended in: {open}");
+    let selected = h.render().expect("picture");
+    review(&mut h, "cross-block");
+
+    // Both paragraphs are drawn with a band behind them. Compared against the same page
+    // with nothing selected, which a press on the empty room below the page gives.
+    ask(&mut h, "ui.click", json!({"x": 600.0, "y": first.min.y - 40.0})).expect("let go");
+    settle(&mut h);
+    assert_eq!(across(&mut h), Value::Null, "a press somewhere else lets the selection go");
+    let plain = h.render().expect("picture");
+    let scale = selected.width() as f32 / 1200.0;
+    let band = |rect: egui::Rect| -> u32 {
+        let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
+        let (y0, y1) = ((rect.min.y * scale) as u32, (rect.max.y * scale) as u32);
+        let mut n = 0;
+        for py in y0..y1.min(selected.height()) {
+            for px in x0..x1.min(selected.width()) {
+                if selected.get_pixel(px, py) != plain.get_pixel(px, py) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    assert!(band(first) > 400, "the first paragraph is highlighted: {} pixels", band(first));
+    assert!(band(second) > 400, "and so is the second, which is the whole point: {} pixels", band(second));
+
+    // Drag it again and Delete: what was covered goes, and the halves either side join.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 60.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag down");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+
+    assert_eq!(across(&mut h), Value::Null, "the selection is gone with the words");
+    let left = h.state().body().unwrap_or_default().to_string();
+    let paragraphs: Vec<&str> = left.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('<')).collect();
+    assert_eq!(paragraphs.len(), 2, "three paragraphs became two:\n{left}");
+    assert!(paragraphs[0].starts_with("الملاحظات"), "the first keeps what came before the selection: {:?}", paragraphs[0]);
+    assert!(paragraphs[0].ends_with("wrote them"), "and is joined to what came after it: {:?}", paragraphs[0]);
+    assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
 }

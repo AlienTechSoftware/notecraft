@@ -205,6 +205,13 @@ pub struct Tokens {
     pub quote_bar: Color32,
     pub row_hover: Color32,
     pub row_selected: Color32,
+    /// The wash behind selected words on the page. Not `row_selected`: that one is tinted
+    /// from the panel, because a selected row of the tree sits on the panel, and the page
+    /// is drawn on `editor`. Where a theme puts those two colours far apart the panel's
+    /// tint lands on top of the page's own colour and the selection is invisible, which is
+    /// what the owner saw on 2026-10-19 in a green theme: the words were selected, the
+    /// band was painted, and nothing could be seen.
+    pub selection: Color32,
     pub ok: Color32,
     pub warn: Color32,
     /// Rule lines and grid lines drawn on the page itself (OneNote's View, Rule Lines).
@@ -297,6 +304,28 @@ fn tint_keeping_contrast(base: Color32, tint: Color32, t_max: f32, text: Color32
     base
 }
 
+/// The wash behind selected words on the page: the page's own colour carried towards the
+/// accent, far enough to be seen against the page and not so far that the words on it stop
+/// being readable.
+///
+/// The accent is tried first, because a selection in the theme's own colour is what a
+/// reader expects. A pale accent on a pale page cannot be told apart from it, and then the
+/// text colour is used instead, which every theme keeps well away from the page by
+/// definition.
+fn selection_wash(editor: Color32, acc: Color32, text: Color32) -> Color32 {
+    for tint in [acc, text] {
+        let mut t = 0.30;
+        while t > 0.04 {
+            let c = mix(editor, tint, t);
+            if contrast(text, c) >= 7.0 && contrast(c, editor) >= 1.25 {
+                return c;
+            }
+            t -= 0.02;
+        }
+    }
+    editor
+}
+
 impl Tokens {
     pub fn for_theme(theme: Theme) -> Tokens {
         let dark = theme.mode.is_dark();
@@ -336,6 +365,7 @@ impl Tokens {
             quote_bar: accent,
             row_hover: tint_keeping_contrast(panel, acc, 0.10, text, 7.0),
             row_selected: tint_keeping_contrast(panel, acc, 0.24, text, 7.0),
+            selection: selection_wash(editor, acc, text),
             ok: ensure_contrast(if dark { rgb((0x6c, 0xd0, 0x8a)) } else { rgb((0x1e, 0x8a, 0x44)) }, panel, 3.0, dark),
             warn: ensure_contrast(if dark { rgb((0xff, 0x8a, 0x80)) } else { rgb((0xb3, 0x26, 0x1e)) }, panel, 4.5, dark),
             rule_line: faint_line(editor, acc, 1.25),
@@ -359,6 +389,7 @@ impl Tokens {
             strong: self.band_text,
             row_hover: self.band_hover,
             row_selected: self.band_hover,
+            selection: self.band_hover,
             ..*self
         }
     }
@@ -411,6 +442,14 @@ mod tests {
                 assert!(contrast(c, t.panel) >= 3.0, "{name}: {what} {:.2}", contrast(c, t.panel));
             }
             assert!(contrast(t.warn, t.panel) >= 4.5, "{name}: warning text {:.2}", contrast(t.warn, t.panel));
+            // A selection on the page must be seen against the page and still be readable.
+            assert!(
+                contrast(t.selection, t.editor) >= 1.25,
+                "{name}: the selection on the page is {:.2} against it, which cannot be seen",
+                contrast(t.selection, t.editor)
+            );
+            assert!(contrast(t.text, t.selection) >= 7.0, "{name}: text on a selection {:.2}", contrast(t.text, t.selection));
+            assert!(contrast(t.strong, t.selection) >= 7.0, "{name}: strong text on a selection");
             assert!(contrast(t.text, t.row_selected) >= 7.0, "{name}: text on the selected row {:.2}", contrast(t.text, t.row_selected));
             assert!(contrast(t.strong, t.row_selected) >= 7.0, "{name}: strong text on the selected row");
             assert!(contrast(t.text, t.row_hover) >= 7.0, "{name}: text on a hovered row");

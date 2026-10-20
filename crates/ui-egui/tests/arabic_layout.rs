@@ -20,11 +20,11 @@ const LINE: &str = "١. هذا اختبار بسيط لعرض الجمل الع�
 fn egui_lays_an_arabic_row_out_to_the_left_of_the_origin() {
     let t = Theme::DEFAULT.tokens();
     let h = harness();
-    let latin = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job("Hello world", 16.0, false, &t, 400.0, Dir::Ltr)));
+    let latin = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job("Hello world", 16.0, false, &t, 400.0, Some(Dir::Ltr))));
     assert_eq!(latin.rect.min.x, 0.0, "a left-to-right row starts at the origin");
     assert!(latin.rect.max.x > 0.0);
 
-    let arabic = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Dir::Rtl)));
+    let arabic = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Some(Dir::Rtl))));
     assert!(arabic.rect.max.x <= 0.0, "a right-to-left row ends at the origin: {:?}", arabic.rect);
     assert!(arabic.rect.width() > 100.0);
 }
@@ -33,7 +33,7 @@ fn egui_lays_an_arabic_row_out_to_the_left_of_the_origin() {
 fn eguis_cursor_index_counts_glyphs_and_the_advancing_ones_are_the_characters() {
     let t = Theme::DEFAULT.tokens();
     let h = harness();
-    let galley = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Dir::Rtl)));
+    let galley = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Some(Dir::Rtl))));
     let row = galley.rows.first().expect("one row");
     let chars = LINE.chars().count();
     assert!(row.glyphs.len() > chars, "shaping makes more glyphs than characters: {} vs {chars}", row.glyphs.len());
@@ -50,11 +50,11 @@ fn a_click_in_an_arabic_line_lands_on_the_character_under_it() {
     let t = Theme::DEFAULT.tokens();
     let h = harness();
     let chars = LINE.chars().count();
-    let width = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Dir::Rtl))).rect.width();
+    let width = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(LINE, 16.0, false, &t, 400.0, Some(Dir::Rtl)))).rect.width();
     let at = |fraction: f32| {
         let mut out = 0;
         let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
-            out = pageedit::char_at(ui, LINE, 16.0, false, &t, width, egui::vec2(fraction * width, 8.0), Dir::Rtl);
+            out = pageedit::char_at(ui, LINE, 16.0, false, &t, width, egui::vec2(fraction * width, 8.0), Some(Dir::Rtl));
         });
         frame.textures_delta.clear();
         out
@@ -79,7 +79,7 @@ fn latin_hit_testing_is_unchanged() {
     let at = |x: f32| {
         let mut out = 0;
         let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
-            out = pageedit::char_at(ui, text, 16.0, false, &t, 400.0, egui::vec2(x, 8.0), Dir::Ltr);
+            out = pageedit::char_at(ui, text, 16.0, false, &t, 400.0, egui::vec2(x, 8.0), Some(Dir::Ltr));
         });
         frame.textures_delta.clear();
         out
@@ -104,7 +104,7 @@ fn parley_and_egui_agree_on_the_width_of_an_arabic_run() {
     for sample in ["مرحبا", "مرحبا بالعالم", LINE] {
         for size in [14.0f32, 16.0, 22.0] {
             let parley = text.layout(sample, size, None).width();
-            let egui = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(sample, size, false, &t, 4000.0, Dir::Rtl))).rect.width();
+            let egui = h.ctx.fonts_mut(|f| f.layout_job(pagetext::inline_job(sample, size, false, &t, 4000.0, Some(Dir::Rtl)))).rect.width();
             let off = (parley - egui).abs();
             // Both shape with HarfRust and the same bundled face, so what is left is egui
             // rounding each advance to a whole pixel: half a percent over a long sentence.
@@ -141,11 +141,11 @@ fn a_number_inside_an_arabic_line_is_drawn_in_order() {
     // picture egui paints by itself, because egui puts the digits the other way round.
     let blocks = markdown::parse(line);
     let page = render(move |ui| {
-        notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &Theme::DEFAULT.tokens(), Dir::Rtl);
+        notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &Theme::DEFAULT.tokens(), Some(Dir::Rtl), &Default::default());
     });
     let plain_egui = render(move |ui| {
         let t = Theme::DEFAULT.tokens();
-        let job = pagetext::inline_job("السعر 17 ريال", 14.5, false, &t, 380.0, Dir::Rtl);
+        let job = pagetext::inline_job("السعر 17 ريال", 14.5, false, &t, 380.0, Some(Dir::Rtl));
         ui.label(job);
     });
     let differs = page.pixels().zip(plain_egui.pixels()).filter(|(a, b)| a != b).count();
