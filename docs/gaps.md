@@ -5,6 +5,19 @@ it is fixed and tested, not when it is promised.
 
 ## Product
 
+- **Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V reach the words**, from 2026-10-19. None of them was
+  bound anywhere in the window before that: a left-to-right paragraph is an egui text box
+  and egui answered them by itself, so the gap only showed where egui was not drawing. That
+  is a lot of places. In a right-to-left paragraph, which NoteCraft draws itself, Ctrl+C did
+  nothing and Ctrl+A selected nothing. A selection spanning paragraphs belongs to no text
+  box, so neither did it. And nothing at all answered paste: boxes answer Ctrl+C and Ctrl+X
+  in `containers.rs`, no key answered Ctrl+V, so a box that had been copied could not be
+  pasted into an empty one and the ribbon's Paste button was the only way in. The keys are
+  read once a frame in `app::clipboard_keys` and sent to the same handlers the ribbon uses.
+  Nothing is done while an egui text box holds the keyboard, or the words would be pasted
+  twice. **Not built:** Ctrl+A widening from the paragraph to the box and then to the page,
+  the way OneNote does; here it takes the paragraph and stops.
+
 - **Import is not finished.** It is a requirement, and the scope is import only
   (owner's decision, 2026-10-17). `notecraft-cli import onenote` turns a folder of `.one`
   section files into notebooks, section groups, sections, pages and sub-pages, with pictures
