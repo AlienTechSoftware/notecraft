@@ -138,14 +138,20 @@ it is fixed and tested, not when it is promised.
   word with the gaps left empty, so the selection began life as a rectangle per word and
   showed the page through every space. A gap no wider than a space is closed now; a wider
   one is left, because on a line of two directions the selected text really is in two
-  places. What it does not do yet: **a selection that spans two paragraphs**, which no block
-  can do, and Ctrl with the arrows to step by word. The owner put NoteCraft beside OneNote
-  on 2026-10-19 and that is the difference left in the picture: OneNote highlights both
-  paragraphs of a drag that crosses them, and here the drag stops at the end of the one it
-  began in.
+  places. **A selection spans paragraphs** since 2026-10-19, which is the
+  difference the owner saw beside OneNote that day: a drag that leaves the paragraph it
+  began in keeps going, every paragraph it covers is drawn with a band behind it, and Copy,
+  Cut and Delete act on the whole of it. A caret belongs to one block, so a selection that
+  leaves it is kept beside the caret as `pageedit::Across` and reported by `ui.inspect` as
+  `across`; while one is open no block is a text box, because a text box would hold a
+  selection of its own and fight with it. What it does not do yet: typing over such a
+  selection replaces it (today the keys that are not Delete or Backspace are ignored while
+  it is open), dragging past the top or bottom of the page does not scroll, and Ctrl with
+  the arrows to step by word is still missing.
 - **The caret is egui's, not ours.** Each block is an egui text box, so there is no caret of
-  our own across blocks: no selection spanning two blocks, and no caret movement by visible
-  step in mixed text. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
+  our own across blocks: no caret movement by visible step in mixed text. A selection may
+  span blocks now (see above), but it is kept beside the caret rather than by it, and while
+  one is open the page stops being text boxes altogether. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
   hit testing) and gets this right; matching a mature editor means a text crate of our own
   over parley or the same house stack. Decision pending.
 - **A dropped file can be copied in or linked.** A printout (a document rendered to pictures,

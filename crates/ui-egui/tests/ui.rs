@@ -3577,3 +3577,87 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     // behind the words, and 23 with it painted over them.
     assert!(dark > 40, "the selected words are still legible under the selection: {dark} dark pixels in the band");
 }
+
+/// A drag that leaves the paragraph it began in keeps going: both paragraphs are
+/// highlighted, and Copy and Delete act on the whole of it.
+///
+/// The owner put NoteCraft beside OneNote on 2026-10-19 and this was the difference left:
+/// there a drag across two paragraphs highlights both, here it stopped dead at the end of
+/// the one it began in. Measured before the change: 2118 pixels of the first paragraph
+/// highlighted and 0 of the second.
+///
+/// A caret belongs to one block, so a selection that leaves it is kept beside the caret as
+/// `pageedit::Across` and reported by `ui.inspect` as `across`. While one is open no block
+/// is a text box, which is why Delete is answered by the page rather than by egui.
+#[test]
+fn a_drag_can_select_across_paragraphs() {
+    const FIRST: &str = "الملاحظات تعيش أطول من البرنامج";
+    const SECOND: &str = "Notes outlive the program that wrote them";
+    const THIRD: &str = "سطر ثالث للقياس";
+    let body = format!("{FIRST}\n\n{SECOND}\n\n{THIRD}");
+    let (_t, app, s) = sample_app("ui-cross");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Cross", &body);
+
+    let across = |h: &mut Harness<'_, NoteCraftApp>| -> Value {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null)
+    };
+    let first = h.get_by_label(FIRST).rect();
+    let second = h.get_by_label(SECOND).rect();
+
+    // Press in the Arabic paragraph and drag down into the English one.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 60.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag down");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+
+    let open = across(&mut h);
+    assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "it begins in the paragraph the press fell on: {open}");
+    assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "and reaches the one the drag ended in: {open}");
+    let selected = h.render().expect("picture");
+    review(&mut h, "cross-block");
+
+    // Both paragraphs are drawn with a band behind them. Compared against the same page
+    // with nothing selected, which a press on the empty room below the page gives.
+    ask(&mut h, "ui.click", json!({"x": 600.0, "y": first.min.y - 40.0})).expect("let go");
+    settle(&mut h);
+    assert_eq!(across(&mut h), Value::Null, "a press somewhere else lets the selection go");
+    let plain = h.render().expect("picture");
+    let scale = selected.width() as f32 / 1200.0;
+    let band = |rect: egui::Rect| -> u32 {
+        let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
+        let (y0, y1) = ((rect.min.y * scale) as u32, (rect.max.y * scale) as u32);
+        let mut n = 0;
+        for py in y0..y1.min(selected.height()) {
+            for px in x0..x1.min(selected.width()) {
+                if selected.get_pixel(px, py) != plain.get_pixel(px, py) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    assert!(band(first) > 400, "the first paragraph is highlighted: {} pixels", band(first));
+    assert!(band(second) > 400, "and so is the second, which is the whole point: {} pixels", band(second));
+
+    // Drag it again and Delete: what was covered goes, and the halves either side join.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 60.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag down");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+
+    assert_eq!(across(&mut h), Value::Null, "the selection is gone with the words");
+    let left = h.state().body().unwrap_or_default().to_string();
+    let paragraphs: Vec<&str> = left.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('<')).collect();
+    assert_eq!(paragraphs.len(), 2, "three paragraphs became two:\n{left}");
+    assert!(paragraphs[0].starts_with("الملاحظات"), "the first keeps what came before the selection: {:?}", paragraphs[0]);
+    assert!(paragraphs[0].ends_with("wrote them"), "and is joined to what came after it: {:?}", paragraphs[0]);
+    assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
+}

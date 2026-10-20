@@ -86,6 +86,9 @@ struct Editor {
     /// Which paragraphs of this page are stretched to fill the column, from the same place.
     /// The words themselves are never touched; see `notecraft_model::justify`.
     justified: notecraft_model::justify::Justified,
+    /// A selection dragged across more than one block. A caret belongs to one block, so a
+    /// selection that leaves it is kept here; `None` is the ordinary case.
+    across: Option<pageedit::Across>,
     /// The paper this page is drawn on and the colour behind it, as the page's own file
     /// keeps them. `None` means the page says nothing and the window's own choice stands.
     paper: Option<ribbon::RuleLines>,
@@ -686,6 +689,7 @@ impl NoteCraftApp {
                 arranged,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 justified: notecraft_store::page::justified(dir).unwrap_or_default(),
+                across: None,
                 ink_files: notecraft_store::page::ink_files(dir),
                 paper: appearance.0,
                 colour: appearance.1,
@@ -2296,6 +2300,26 @@ impl NoteCraftApp {
     /// Cut or copy what is selected in the block the caret is in.
     fn clipboard(&mut self, which: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
+        // A selection that runs across blocks is not any one block's, so it is taken from
+        // the blocks themselves. Cut takes the words out and joins what is left.
+        if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let picked = pageedit::span_text(&ed.blocks, open);
+            if picked.is_empty() {
+                self.say("Select some words first");
+                return;
+            }
+            self.pending_copy = Some(picked);
+            if which == "cut" {
+                let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+                let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
+                ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+                ed.across = None;
+                ed.rebuild_body();
+                Self::mark_dirty_from_blocks(ed);
+            }
+            self.say(if which == "cut" { "Cut" } else { "Copied" });
+            return;
+        }
         let Some(caret) = ed.caret.as_mut() else {
             self.status = "Click in the page first".into();
             self.status_is_error = false;
@@ -2966,6 +2990,13 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
+                            // A press lets go of whatever was selected: the drag that may
+                            // follow it builds a new one. Done here, once a frame, rather
+                            // than inside the blocks, where a container drawn later would
+                            // clear what an earlier one had just set.
+                            if ui.input(|i| i.pointer.any_pressed()) {
+                                ed.across = None;
+                            }
                             let mut moved = crate::containers::show(
                                 ui,
                                 &mut ed.blocks,
@@ -2977,6 +3008,7 @@ impl NoteCraftApp {
                                 table_borders,
                                 &mut ed.columns,
                                 &ed.justified,
+                                &mut ed.across,
                                 if hide_title { "" } else { &shown_title },
                             );
                             page_acts.append(&mut moved.acts);
@@ -3749,6 +3781,9 @@ impl NoteCraftApp {
                 // `selection` is (where the caret is, where the selection began), in
                 // characters: the two are equal when nothing is selected.
                 "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
+                // A selection dragged across more than one block, as block and byte at each
+                // end. Null for the ordinary selection inside one block, which `caret` has.
+                "across": e.across.map(|a| json!({"from": [a.from.0, a.from.1], "to": [a.to.0, a.to.1]})),
                 // The boxes the blocks are arranged in, as the page keeps them.
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
