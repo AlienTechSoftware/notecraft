@@ -3,6 +3,44 @@
 Rules for AI agents working in this folder. The project-wide contract is one level up
 (`p-NoteCraft/AGENTS.md`); this file adds what is specific to the code.
 
+## Shared agent workflow
+
+- **Understand first.** Read the host contract and this file, inspect status and
+  branch, then read relevant code, design docs, tests and existing work notes.
+  State the issue and likely cause before changing code.
+- **Plan before implementation.** Share scope, acceptance criteria, likely
+  files, risks and verification. For substantial work, include the estimate
+  required by the host guide and wait for the owner's CHECKPOINT nod.
+- **Track work.** NoteCraft planning, progress, decisions, handoffs and
+  remaining work belong in the private host repo's `work/` folder. Add to
+  existing notes without replacing another session's work. Keep public repo
+  issues and pull requests clear enough for external review.
+- **Managed checkout worktrees are prohibited for automated agents.** Do not
+  create, use, move, lock or remove linked Git worktrees in these managed
+  checkouts, and do not invoke a mode that creates one silently. Work in the
+  normal repository folders. This rule applies to automated agents in the
+  managed workspace only. External contributors may use their own forks,
+  clones, branches and worktrees.
+- **Branches and user work.** Follow the branch the owner names. Otherwise use
+  one branch for one feature and keep one active branch at a time. Check status
+  before switching. If Git reports a branch checked out elsewhere, stop,
+  inspect and preserve that work, and report the path. Never force a checkout,
+  delete a folder, reset, clean or stash unrelated changes. Stage only files
+  changed for this task.
+- **Keep repositories distinct.** Planning and discussion belong in the
+  private host; NoteCraft implementation and its design docs belong here.
+  Other repositories in the workspace remain separate projects.
+- **Quality and delivery.** Run relevant repository checks before committing
+  or claiming completion. Fix failures or report them clearly. Commit
+  substantial tested work in coherent chunks when authorized. Do not push,
+  merge, publish or release without explicit authorization.
+- **External contribution path.** Contributors may use their own fork or clone
+  and submit a pull request to this repository. Pull requests are reviewed
+  against the relevant design docs and tests; run `cargo xtask ci` and focused
+  checks for changed behavior before requesting review.
+- **Completion report.** State the branch, files changed, checks and results,
+  commits, and remaining work. Do not report unverified work as complete.
+
 ## What this is
 
 NoteCraft is a pure-Rust, clean-room note taking app. Notebooks, section groups,
