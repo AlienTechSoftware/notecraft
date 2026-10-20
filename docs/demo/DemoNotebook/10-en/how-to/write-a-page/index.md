@@ -55,4 +55,4 @@ search, rule lines, zoom, the theme and the page source.
 The file behind this page is one click away: the `< >` button beside the page. What you type in
 either one lands in the file. Use it for anything the editor does not do yet.
 
-Next: [Tag a line](../tag-a-line/).
+Next: [Equations](../equations/).
