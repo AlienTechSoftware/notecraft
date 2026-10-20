@@ -3619,6 +3619,22 @@ impl NoteCraftApp {
     /// What the window shows now: the visible tree rows, the open page, the theme and the size.
     pub fn inspect(&self, ctx: &Context) -> Value {
         let diagrams = crate::diagramview::counts(ctx, &self.code.diagrams, &self.tokens);
+        // The Mermaid diagrams of the page as it is drawn, not of the code view: how many, and how
+        // many of them are drawn, still being drawn, or could not be.
+        let in_page: Vec<String> = self
+            .editor
+            .as_ref()
+            .map(|e| {
+                e.blocks
+                    .iter()
+                    .filter_map(|b| match b {
+                        notecraft_formats::markdown::Block::Code { lang, text } if lang == "mermaid" => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let in_page_counts = crate::diagramview::counts(ctx, &in_page, &self.tokens);
         let mut rows = Vec::new();
         fn walk(app: &NoteCraftApp, n: &Node, depth: usize, rows: &mut Vec<Value>) {
             let open = app.open.contains(&n.path);
@@ -3693,6 +3709,12 @@ impl NoteCraftApp {
                     "drawing": diagrams.1,
                     "failed": diagrams.2,
                 },
+            },
+            "pageDiagrams": {
+                "found": in_page.len(),
+                "drawn": in_page_counts.0,
+                "drawing": in_page_counts.1,
+                "failed": in_page_counts.2,
             },
             "notebooksFolder": self.shown(self.session.root()),
             "status": {"text": self.status, "error": self.status_is_error},

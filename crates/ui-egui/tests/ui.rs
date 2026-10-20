@@ -106,12 +106,14 @@ fn clicking_a_page_opens_it_and_a_container_toggles() {
     let (_t, mut app, _s) = sample_app("ui-click");
     app.expand_all();
     let mut h = harness(app, LIGHT);
-    h.run();
+    settle(&mut h);
     h.get_by_label("Project X").click();
-    h.run();
+    settle(&mut h);
     assert!(h.state().body().is_some_and(|b| b.contains("Kickoff notes")), "the HTML page is open");
+    // This page holds a diagram, which is drawn on a thread of its own and keeps the window
+    // asking to be repainted until it is done, so the frames are stepped and not `run`.
     h.get_by_label("Format ideas").click();
-    h.run();
+    settle(&mut h);
     assert!(h.state().body().is_some_and(|b| b.starts_with("# Format ideas")), "the Markdown page is open");
     review(&mut h, "markdown_page");
 }
@@ -2144,6 +2146,103 @@ fn the_code_view_draws_the_diagrams_of_a_markdown_page_and_an_html_page_alike() 
         h.state_mut().set_show_source(false);
         settle(&mut h);
     }
+}
+
+/// What the page says of its own diagrams, once the threads that draw them have had their say.
+fn drawn_in_page(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
+    let began = std::time::Instant::now();
+    loop {
+        for _ in 0..4 {
+            pump(h);
+        }
+        let state = ask(h, "ui.inspect", json!({})).ok()?;
+        let d = state["pageDiagrams"].clone();
+        if d["drawing"].as_u64() == Some(0) {
+            return Some(d);
+        }
+        if began.elapsed() > std::time::Duration::from_secs(20) {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// A diagram is drawn in the page itself, in either format, without the code view; one that cannot
+/// be drawn shows its source and says why; and clicking a drawn diagram puts the caret in it, so
+/// its source can be edited, with the drawing following what is typed.
+#[test]
+fn a_diagram_is_drawn_in_the_page_and_its_source_opens_when_it_is_clicked() {
+    let (_t, app, s) = sample_app("ui-diagram-live");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let md_body =
+        "# Live\n\n```mermaid\nflowchart TD\n  A[Start] --> B[Keep it]\n```\n\n```mermaid\nflowchart TD\n  A[unclosed --> B(\n  C -->\n```\n"
+            .to_string();
+    let html_body = "<h1>Live</h1>\n<pre class=\"mermaid\">flowchart TD\n  A[Start] --&gt; B[Keep it]</pre>\n".to_string();
+    let mut md_dir = String::new();
+    for (title, format, body, found, failed) in [("LiveMd", "cmgfm", md_body, 2, 1), ("LiveHtml", "html", html_body, 1, 0)] {
+        let made = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": format}}),
+        )
+        .expect("a page");
+        let dir = made.as_str().expect("its path").to_string();
+        if title == "LiveMd" {
+            md_dir = dir.clone();
+        }
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": body}})).expect("save it");
+        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+        settle(&mut h);
+        assert!(!h.state().show_source(), "this is the live page, not the code view");
+        let d = drawn_in_page(&mut h).expect("drawn within twenty seconds");
+        assert_eq!(d["found"], json!(found), "{title}: {d}");
+        assert_eq!(d["failed"], json!(failed), "{title}: {d}");
+        assert_eq!(d["drawn"], json!(found - failed), "{title}: every diagram that can be drawn is: {d}");
+        if failed > 0 {
+            assert!(h.query_all_by_label_contains("Not drawn:").count() >= 1, "{title}: the one that failed says why, in the page");
+            assert!(h.query_all_by_label_contains("unclosed").count() >= 1, "{title}: and shows its source");
+        } else {
+            assert!(h.query_all_by_label_contains("flowchart TD").count() == 0, "{title}: a drawn diagram does not also show its source");
+        }
+    }
+
+    // The caret in a drawn diagram shows its source to edit; what is typed is drawn as it goes.
+    ask(&mut h, "ui.open", json!({"path": md_dir})).expect("open the Markdown page again");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.caret", json!({"block": 1})).expect("put the caret in the first diagram");
+    assert!(caret["text"].as_str().unwrap_or("").contains("flowchart TD"), "the caret is in the diagram's source: {caret}");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert!(h.query_all_by_label_contains("flowchart TD").count() >= 1, "its source is shown to edit");
+    let d = drawn_in_page(&mut h).expect("still drawn");
+    assert_eq!((d["found"].clone(), d["drawn"].clone()), (json!(2), json!(1)), "the drawing stays while its source is edited: {d}");
+    ask(&mut h, "ui.key", json!({"key": "End", "ctrl": true})).expect("to the end of the source");
+    ask(
+        &mut h,
+        "ui.text",
+        json!({"text": "
+  B --> D[Typed word]"}),
+    )
+    .expect("type a line");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let d = drawn_in_page(&mut h).expect("drawn again");
+    assert_eq!(
+        (d["found"].clone(), d["drawn"].clone(), d["failed"].clone()),
+        (json!(2), json!(1), json!(1)),
+        "the edited diagram is drawn again: {d}"
+    );
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(
+        body.contains("Typed word"),
+        "what was typed is in the page:
+{body}"
+    );
 }
 
 /// A diagram kept as a file of its own beside the page is listed, picked like any file, drawn above

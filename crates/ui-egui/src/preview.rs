@@ -2,8 +2,8 @@
 //!
 //! Bold is shown in a stronger colour because the default egui fonts have no bold
 //! face (adding one means adding a font file and its licence). A click on a link is
-//! reported by [`show`] for the window to follow. Diagram blocks show their
-//! source: diagrams are not rendered yet. Equations are drawn from a TeX subset.
+//! reported by [`show`] for the window to follow. Equations and Mermaid diagrams are drawn;
+//! a diagram that cannot be drawn shows its source and says why.
 
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
@@ -382,12 +382,22 @@ pub fn show_block(ui: &mut Ui, block: &Block, i: usize, page_dir: &Path, tokens:
                 });
                 ui.add_space(4.0);
             }
+            // A Mermaid diagram is shown as the drawing, in the page, and a click puts the caret in
+            // it, which shows its source to edit. One that cannot be drawn says why and shows its
+            // source instead, so nothing the page holds is ever hidden.
+            Block::Code { lang, text } if lang == "mermaid" => {
+                egui::Frame::new().fill(tokens.editor).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    if let crate::diagramview::Shown::Failed(_) = crate::diagramview::show(ui, text, tokens) {
+                        ui.label(RichText::new(text).monospace());
+                    }
+                });
+                ui.add_space(4.0);
+            }
             Block::Code { lang, text } => {
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    if lang == "mermaid" {
-                        ui.label(RichText::new("Diagram (mermaid). Not rendered yet: the source is shown.").small().color(tokens.muted));
-                    } else if !lang.is_empty() {
+                    if !lang.is_empty() {
                         ui.label(RichText::new(lang).small().color(tokens.muted));
                     }
                     ui.label(RichText::new(text).monospace());
