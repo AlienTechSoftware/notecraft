@@ -1,7 +1,7 @@
 //! Reading and writing the content of a page.
 
 use crate::error::{Result, StoreError};
-use crate::tree::{page_file, read_node};
+use crate::tree::{page_file, raw_title, read_node};
 use notecraft_formats::{boxes, frontmatter, html};
 use notecraft_model::{Container, Dir, PageFormat, container, justify, kv, tablecols, time::iso_now};
 use std::fs;
@@ -13,7 +13,15 @@ pub const MAX_PAGE_BYTES: usize = 50 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Page {
     pub format: PageFormat,
+    /// The title shown for this page: a real title, or `tree::UNTITLED_PAGE` when it has
+    /// none. For the window's title area, which is drawn blank rather than showing that
+    /// fallback as if it were content, see `has_title`.
     pub title: String,
+    /// True when the page carries a title of its own. `false` means `title` is only the
+    /// fallback shown in the tree and the page list; the window draws its title area blank
+    /// in that case rather than putting `tree::UNTITLED_PAGE` into an editable box, which
+    /// would read as content someone had typed.
+    pub has_title: bool,
     /// The editable part: the inside of the HTML body, or the Markdown after the front matter.
     pub body: String,
     /// Which way the whole page reads, if the writer said. `None` means each line decides
@@ -29,8 +37,9 @@ pub fn load_page(dir: &Path) -> Result<Page> {
     }
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let body = body_of(format, &text);
+    let has_title = raw_title(format, &text).is_some();
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
-    Ok(Page { format, title, body, dir: read_direction(&text, format) })
+    Ok(Page { format, title, has_title, body, dir: read_direction(&text, format) })
 }
 
 /// The editable part of a page's file: the inside of the HTML body, or the Markdown after the
