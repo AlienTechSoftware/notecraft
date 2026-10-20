@@ -947,10 +947,11 @@ pub fn show(
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     justified: &notecraft_model::justify::Justified,
+    across: &mut Option<Across>,
     shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, shown_title);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -977,6 +978,8 @@ pub fn show_blocks(
     cols: &mut notecraft_model::tablecols::Widths,
     // Which blocks are stretched to reach the column; see `notecraft_model::justify`.
     justified: &notecraft_model::justify::Justified,
+    // A selection that runs across more than one block, grown here as the drag moves.
+    across: &mut Option<Across>,
     // The title the window is already showing, so the body does not repeat it.
     shown_title: &str,
 ) -> Changed {
@@ -1004,13 +1007,30 @@ pub fn show_blocks(
             }
         }
     }
+    // A selection across blocks is nobody's text box, so the keys that act on a selection
+    // are answered here. Delete and Backspace both take it out, as they do everywhere.
+    if let Some(open) = across.filter(|a| !a.inside_one_block())
+        && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    {
+        let (block, at) = delete_span(blocks, open);
+        let text = blocks.get(block).map(caret_text).unwrap_or_default();
+        *caret = Some(Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+        *across = None;
+        changed.blocks = true;
+        changed.caret = true;
+        return changed;
+    }
+
     for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
         // The title area above the page is already showing this; see `is_title_echo`.
         if is_title_echo(blocks, i, shown_title) {
             continue;
         }
-        let editing = caret.as_ref().is_some_and(|c| c.block == i);
+        // While a selection runs across blocks the page is all finished words: a text box
+        // would own a selection of its own and fight with this one.
+        let spanning = across.is_some_and(|a| !a.inside_one_block());
+        let editing = !spanning && caret.as_ref().is_some_and(|c| c.block == i);
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
@@ -1216,7 +1236,18 @@ pub fn show_blocks(
                     if stamp {
                         ui.style_mut().visuals.override_text_color = Some(t.muted);
                     }
-                    preview::show_block(ui, &block, i, page_dir, t, true, page, justified.strength_of(i), ui.make_persistent_id(("page-block", i)))
+                    preview::show_block(
+                        ui,
+                        &block,
+                        i,
+                        page_dir,
+                        t,
+                        true,
+                        page,
+                        justified.strength_of(i),
+                        across.filter(|a| !a.inside_one_block()).and_then(|a| a.covering(i, block_text(&block).len())),
+                        ui.make_persistent_id(("page-block", i)),
+                    )
                 })
                 .inner;
             let resp = out.response;
@@ -1233,7 +1264,34 @@ pub fn show_blocks(
                 && out.task_set.is_none()
                 && let Some(p) = drag_began_in(ui, resp.rect)
             {
-                action = Some(Action::MoveTo(i, Some(char_under(ui, &block, &resp, p, t, page))));
+                let at = char_under(ui, &block, &resp, p, t, page);
+                if across.is_none() {
+                    let byte = byte_of(&block_text(&block), at);
+                    *across = Some(Across { from: (i, byte), to: (i, byte) });
+                }
+                action = Some(Action::MoveTo(i, Some(at)));
+            }
+            // The drag has reached this block from another one.
+            if is_writable(&block)
+                && dragging(ui)
+                && let Some(p) = ui.ctx().pointer_latest_pos()
+                && resp.rect.contains(p)
+            {
+                let at = byte_of(&block_text(&block), char_under(ui, &block, &resp, p, t, page));
+                match across.as_mut() {
+                    // Already open: this is where it reaches now, the block it began in
+                    // included, so dragging back the way it came shortens it again.
+                    Some(open) => open.to = (i, at),
+                    // Not open yet, so the drag began inside the block the caret is in -
+                    // a text box, which handles its own selection and knows nothing of the
+                    // page. It has now left that block, so the selection becomes the page's
+                    // and keeps the anchor the text box was holding.
+                    None => {
+                        if let Some(c) = caret.as_ref().filter(|c| c.block != i) {
+                            *across = Some(Across { from: (c.block, byte_of(&c.text, c.selection.1)), to: (i, at) });
+                        }
+                    }
+                }
             }
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
@@ -1260,6 +1318,91 @@ pub fn show_blocks(
     changed
 }
 
+/// A selection that runs across more than one block: where the drag began and where it has
+/// reached, each a block and a byte in that block's own words.
+///
+/// A caret belongs to one block, which is why this is kept beside it rather than inside it.
+/// While a selection like this is open no block is a text box: the whole page is drawn as
+/// finished words with the bands painted behind them, and the keys that act on a selection
+/// act on the whole of it. That is how OneNote and Word behave, and until 2026-10-19 a drag
+/// here simply stopped at the end of the paragraph it began in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Across {
+    pub from: (usize, usize),
+    pub to: (usize, usize),
+}
+
+impl Across {
+    /// The two ends in page order, first then last.
+    pub fn ends(&self) -> ((usize, usize), (usize, usize)) {
+        if self.from <= self.to { (self.from, self.to) } else { (self.to, self.from) }
+    }
+
+    /// The blocks it touches, in page order.
+    pub fn blocks(&self) -> std::ops::RangeInclusive<usize> {
+        let (a, b) = self.ends();
+        a.0..=b.0
+    }
+
+    /// True while both ends are in the same block, which is the ordinary selection a text
+    /// box handles by itself.
+    pub fn inside_one_block(&self) -> bool {
+        self.from.0 == self.to.0
+    }
+
+    /// What of block `at` is covered, in bytes of that block's words. `whole` is how long
+    /// those words are, for the blocks the selection runs through completely.
+    pub fn covering(&self, at: usize, whole: usize) -> Option<(usize, usize)> {
+        let (a, b) = self.ends();
+        if at < a.0 || at > b.0 {
+            return None;
+        }
+        let start = if at == a.0 { a.1.min(whole) } else { 0 };
+        let end = if at == b.0 { b.1.min(whole) } else { whole };
+        (start < end).then_some((start, end))
+    }
+}
+
+/// The words a selection across blocks covers, a paragraph to a line.
+///
+/// A blank line between them, which is what the page itself puts between paragraphs, so
+/// what is copied out pastes back as the same paragraphs.
+pub fn span_text(blocks: &[Block], across: Across) -> String {
+    across
+        .blocks()
+        .filter_map(|i| {
+            let whole = blocks.get(i).map(block_text)?;
+            let (a, b) = across.covering(i, whole.len())?;
+            Some(whole.get(a..b)?.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Takes out everything a selection across blocks covers and joins what is left.
+///
+/// What is left of the first block and what is left of the last become one paragraph, the
+/// blocks between them go, and the caret lands where the two halves meet - which is what
+/// deleting a selection does in every editor. Returns the block the caret belongs in and
+/// the character it belongs at.
+pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
+    let ((first, from), (last, to)) = across.ends();
+    let head = blocks.get(first).map(block_text).unwrap_or_default();
+    let tail = blocks.get(last).map(block_text).unwrap_or_default();
+    let kept_head = head.get(..from.min(head.len())).unwrap_or("").to_string();
+    let kept_tail = tail.get(to.min(tail.len())..).unwrap_or("").to_string();
+    let at = kept_head.chars().count();
+    if let Some(b) = blocks.get_mut(first) {
+        set_block_text(b, &format!("{kept_head}{kept_tail}"));
+    }
+    if last > first {
+        let end = last.min(blocks.len().saturating_sub(1));
+        blocks.drain(first + 1..=end);
+    }
+    renumber(blocks);
+    (first, at)
+}
+
 /// Where a drag began, when it began inside `rect` and is still going.
 ///
 /// Read from the pointer rather than from a widget on purpose. A drag across words starts
@@ -1267,6 +1410,10 @@ pub fn show_blocks(
 /// so no one widget sees the whole of it; and a widget laid over the words to watch for it
 /// takes the pointer away from the words themselves, links included. The pointer knows
 /// where it was pressed and whether it has moved since, which is all either end needs.
+fn dragging(ui: &Ui) -> bool {
+    ui.input(|i| i.pointer.is_decidedly_dragging())
+}
+
 fn drag_began_in(ui: &Ui, rect: egui::Rect) -> Option<egui::Pos2> {
     ui.input(|i| i.pointer.press_origin().filter(|p| rect.contains(*p) && i.pointer.is_decidedly_dragging()))
 }

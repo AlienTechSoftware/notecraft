@@ -270,6 +270,14 @@ fn spoken(text: &str) -> String {
 /// would describe by itself. The line is given its text as a label, the way `Label` does, or
 /// a screen reader would find nothing on a right-to-left page and the window tests could not
 /// look a line up by what it says.
+/// What of a line is selected, and the colour to lay behind it.
+#[derive(Clone, Copy, Debug)]
+pub struct Selected {
+    /// The bytes of the line, as the writer typed them: a stretched line is mapped on to.
+    pub range: (usize, usize),
+    pub color: Color32,
+}
+
 pub fn show(
     ui: &mut Ui,
     text: &str,
@@ -278,16 +286,23 @@ pub fn show(
     max_width: f32,
     page: Option<notecraft_model::Dir>,
     justify: Option<Strength>,
+    selected: Option<Selected>,
 ) -> Rect {
     // A justified paragraph is drawn from its stretched words, but it is still the words
     // the writer typed that a screen reader is told and that the page file holds: a tatweel
     // is the shape of a join, not a letter anybody meant to write.
-    let (drawn, used) = match justify {
+    // A justified line is drawn from its stretched words, so what is selected has to be
+    // moved on to them the same way the formats are.
+    let (long, drawn, used) = match justify {
         Some(strength) => {
             let (long, moved) = stretched(ui, text, pieces, size, max_width, strength);
-            runs(ui, &long, &moved, size, max_width)
+            let (drawn, used) = runs(ui, &long, &moved, size, max_width);
+            (long, drawn, used)
         }
-        None => runs(ui, text, pieces, size, max_width),
+        None => {
+            let (drawn, used) = runs(ui, text, pieces, size, max_width);
+            (text.to_string(), drawn, used)
+        }
     };
     let full = vec2(max_width, used.y.max(size));
     let (rect, resp) = ui.allocate_exact_size(full, egui::Sense::hover());
@@ -295,8 +310,36 @@ pub fn show(
     let said = spoken(text);
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
     let origin = if notecraft_model::direction_in(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
+    // Behind the words, never over them: the fill is opaque.
+    if let Some(sel) = selected {
+        let (a, b) = (moved_to(text, &long, sel.range.0), moved_to(text, &long, sel.range.1));
+        for band in selection_in(&long, &drawn, a, b, size, space_width(ui, size)) {
+            ui.painter().rect_filled(band.translate(origin.to_vec2()), 1.0, sel.color);
+        }
+    }
     paint(ui, origin, &drawn);
     rect
+}
+
+/// Where a byte of `text` ended up in `stretched`, which is `text` with tatweels put in.
+/// The two are the same string when nothing was stretched, and then this is the identity.
+fn moved_to(text: &str, stretched: &str, at: usize) -> usize {
+    if text.len() == stretched.len() {
+        return at;
+    }
+    let (mut a, mut b) = (text.chars().peekable(), stretched.chars());
+    let (mut seen, mut extra) = (0usize, 0usize);
+    for c in b.by_ref() {
+        if seen >= at {
+            break;
+        }
+        if a.peek() == Some(&c) {
+            seen += a.next().map(char::len_utf8).unwrap_or(0);
+        } else {
+            extra += c.len_utf8();
+        }
+    }
+    at + extra
 }
 
 /// A justified paragraph, ready to draw: its words with tatweels put into the joins, so

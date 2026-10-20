@@ -118,6 +118,48 @@ pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &To
     job
 }
 
+/// The rectangles to lay behind a selection inside a galley egui laid out: one to a row,
+/// so a paragraph wrapped over three lines gets three bands and not one tall box.
+///
+/// `a` and `b` are bytes of the galley's own text. A row that the selection does not touch
+/// gives nothing; a row it covers end to end gives the whole row.
+fn selection_bands(galley: &egui::Galley, a: usize, b: usize) -> Vec<egui::Rect> {
+    let text = galley.text();
+    // epaint counts in characters, the page counts in bytes.
+    let chars_to = |at: usize| text.get(..at.min(text.len())).map(|t| t.chars().count()).unwrap_or(0);
+    let (a, b) = (chars_to(a.min(b)), chars_to(a.max(b)));
+    if a == b {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut before = 0usize;
+    for placed in &galley.rows {
+        let mut covered: Option<(f32, f32)> = None;
+        for (n, glyph) in placed.row.glyphs.iter().enumerate() {
+            let at = before + n;
+            if at < a || at >= b {
+                continue;
+            }
+            let (x0, x1) = (glyph.pos.x, glyph.pos.x + glyph.advance_width);
+            covered = Some(match covered {
+                Some((l, r)) => (l.min(x0), r.max(x1)),
+                None => (x0, x1),
+            });
+        }
+        // A row that ends a paragraph swallowed its newline, which still counts as a
+        // character of the text; otherwise the next row would start one short.
+        before += placed.char_count_including_newline().0;
+        if let Some((left, right)) = covered {
+            let top = placed.pos.y;
+            out.push(egui::Rect::from_min_max(
+                egui::pos2(placed.pos.x + left, top),
+                egui::pos2(placed.pos.x + right.max(left + 1.0), top + placed.row.size.y),
+            ));
+        }
+    }
+    out
+}
+
 /// Which way a block's words read, given the direction of the page they are on.
 pub fn dir_of(spans: &[Span], page: Option<Dir>) -> Dir {
     notecraft_model::direction_in(&text_of(spans), page)
@@ -133,7 +175,19 @@ pub fn dir_of(spans: &[Span], page: Option<Dir>) -> Dir {
 /// spaces stay as they were and the page keeps an even colour. A paragraph that reads left
 /// to right has no such joins, so it is justified the Latin way, by widening the spaces,
 /// which is what egui's own layout does.
-fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Option<Dir>, justify: Option<Strength>) {
+#[allow(clippy::too_many_arguments)]
+fn draw_spans(
+    ui: &mut Ui,
+    spans: &[Span],
+    size: f32,
+    color: egui::Color32,
+    tokens: &Tokens,
+    page: Option<Dir>,
+    justify: Option<Strength>,
+    // The bytes of this block's words that are selected, when a selection reaches into it
+    // from a drag that crossed more than one paragraph.
+    selected: Option<(usize, usize)>,
+) {
     if !spans.iter().any(|s| s.math) {
         // A line that mixes the two directions is drawn by egui in the wrong order, and a
         // paragraph that reads right to left is not wrapped by it, so both go through the
@@ -148,7 +202,8 @@ fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, toke
             // painter has no way to widen its spaces, so it is drawn ragged; see
             // `docs/gaps.md`.
             let stretch = justify.filter(|_| dir_of(spans, page).is_rtl());
-            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch);
+            let sel = selected.map(|range| crate::bidi::Selected { range, color: tokens.row_selected });
+            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch, sel);
             let _ = rect;
             return;
         }
@@ -157,10 +212,26 @@ fn draw_spans(ui: &mut Ui, spans: &[Span], size: f32, color: egui::Color32, toke
         // egui does it, by widening the spaces. The strength is about kashidas and has
         // nothing to say here.
         job.justify = justify.is_some();
-        if dir_of(spans, page).is_rtl() {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| ui.label(job));
-        } else {
-            ui.label(job);
+        match selected {
+            // Nothing selected here: egui's own label, which is what this has always been.
+            None if !dir_of(spans, page).is_rtl() => {
+                ui.label(job);
+            }
+            None => {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| ui.label(job));
+            }
+            // Something is. The galley is laid out here so the selection can go behind the
+            // words rather than over them, which a label gives no way to do.
+            Some((a, b)) => {
+                let galley = ui.fonts_mut(|f| f.layout_job(job));
+                let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                let (enabled, said) = (ui.is_enabled(), galley.text().to_string());
+                resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
+                for band in selection_bands(&galley, a, b) {
+                    ui.painter().rect_filled(band.translate(rect.min.to_vec2()), 1.0, tokens.row_selected);
+                }
+                ui.painter().galley(rect.min, galley, color);
+            }
         }
         return;
     }
@@ -303,7 +374,7 @@ pub struct BlockResponse {
 pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, page: Option<Dir>, justified: &Justified) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
-        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), ui.id().with(("block", i)));
+        let out = show_block(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), None, ui.id().with(("block", i)));
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
@@ -331,6 +402,8 @@ pub fn show_block(
     live: bool,
     page: Option<Dir>,
     justified: Option<Strength>,
+    // What of this block's words a selection reaching across paragraphs covers, in bytes.
+    selected: Option<(usize, usize)>,
     // The id the block senses under. The page editor passes the one its text box uses for
     // this block, so a drag that begins on the finished block carries straight on into the
     // text box when the caret lands in it on the next frame; egui tracks a drag against the
@@ -351,8 +424,8 @@ pub fn show_block(
                 };
                 ui.add_space(6.0);
                 match tagged(spans) {
-                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page, None)),
-                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, None),
+                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page, None, selected)),
+                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, None, selected),
                 }
                 ui.add_space(2.0);
             }
@@ -361,14 +434,14 @@ pub fn show_block(
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page, justified);
+                            draw_spans(ui, &spans, 14.5, body, tokens, page, justified, selected);
                             draw_inline_images(ui, &spans, page_dir);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
-                            draw_spans(ui, spans, 14.5, body, tokens, page, justified);
+                            draw_spans(ui, spans, 14.5, body, tokens, page, justified, selected);
                         }
                         draw_inline_images(ui, spans, page_dir);
                         ui.add_space(4.0);
@@ -399,11 +472,11 @@ pub fn show_block(
                     }
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5, body, tokens, page, None);
+                            draw_spans(ui, &spans, 14.5, body, tokens, page, None, selected);
                             draw_inline_images(ui, &spans, page_dir);
                         }),
                         None => {
-                            draw_spans(ui, spans, 14.5, body, tokens, page, None);
+                            draw_spans(ui, spans, 14.5, body, tokens, page, None, selected);
                             draw_inline_images(ui, spans, page_dir);
                         }
                     });
@@ -413,7 +486,7 @@ pub fn show_block(
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     let rect = ui.available_rect_before_wrap();
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
-                    draw_spans(ui, spans, 14.5, tokens.muted, tokens, page, None);
+                    draw_spans(ui, spans, 14.5, tokens.muted, tokens, page, None, selected);
                 });
                 ui.add_space(4.0);
             }
@@ -548,8 +621,18 @@ mod tests {
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
-                let out =
-                    show_block(ui, &block, 0, std::path::Path::new("."), &t, true, Some(notecraft_model::Dir::Ltr), None, ui.id().with("block"));
+                let out = show_block(
+                    ui,
+                    &block,
+                    0,
+                    std::path::Path::new("."),
+                    &t,
+                    true,
+                    Some(notecraft_model::Dir::Ltr),
+                    None,
+                    None,
+                    ui.id().with("block"),
+                );
                 heights.push(out.response.rect.height());
             }
         });
