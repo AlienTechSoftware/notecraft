@@ -2086,6 +2086,161 @@ fn a_page_names_the_ink_in_its_folder_and_no_ink_that_is_gone() {
     );
 }
 
+/// What the code view says of the diagrams in the text in hand, once the worker threads that draw
+/// them have had their say, or `None` if they have not within twenty seconds.
+fn drawn_diagrams(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
+    let began = std::time::Instant::now();
+    loop {
+        for _ in 0..4 {
+            pump(h);
+        }
+        let state = ask(h, "ui.inspect", json!({})).ok()?;
+        let d = state["codeView"]["diagrams"].clone();
+        if d["drawing"].as_u64() == Some(0) {
+            return Some(d);
+        }
+        if began.elapsed() > std::time::Duration::from_secs(20) {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// A Markdown page and an HTML page that hold the same diagram are drawn alike in the code view,
+/// each diagram once, and one that cannot be drawn is counted and does not stop the others.
+#[test]
+fn the_code_view_draws_the_diagrams_of_a_markdown_page_and_an_html_page_alike() {
+    let (_t, app, s) = sample_app("ui-diagrams");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let flow = "flowchart TD\n  A[Start] --> B{Plain?}\n  B -->|yes| C[Keep it]";
+    let md_body = format!(
+        "# One\n\n```mermaid\n{flow}\n```\n\ntext\n\n```mermaid\npie\n  \"a\" : 1\n  \"b\" : 2\n```\n\n```mermaid\nflowchart TD\n  A[unclosed --> B(\n  C -->\n```\n"
+    );
+    let html_body = format!(
+        "<h1>Two</h1>\n<pre class=\"diagram\">{}</pre>\n<pre class=\"mermaid\">pie\n  \"a\" : 1\n  \"b\" : 2</pre>\n<pre class=\"diagram\">flowchart TD\n  A[unclosed --&gt; B(\n  C --&gt;</pre>\n",
+        flow.replace("-->", "--&gt;")
+    );
+    for (title, format, body) in [("One", "cmgfm", md_body), ("Two", "html", html_body)] {
+        let made = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": title, "format": format}}),
+        )
+        .expect("a page");
+        let dir = made.as_str().expect("its path").to_string();
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": body}})).expect("save it");
+        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+        settle(&mut h);
+        h.state_mut().set_show_source(true);
+        settle(&mut h);
+        let d = drawn_diagrams(&mut h).expect("the diagrams were drawn or failed within twenty seconds");
+        assert_eq!(d["found"], json!(3), "{title}: three diagrams in the text: {d}");
+        assert_eq!(d["drawn"], json!(2), "{title}: the flowchart and the pie are drawn: {d}");
+        assert_eq!(d["failed"], json!(1), "{title}: the broken one is counted, and does not stop the others: {d}");
+        assert!(h.query_all_by_label_contains("Diagrams (3)").count() >= 1, "{title}: the strip says so");
+        assert!(h.query_all_by_label_contains("Not drawn:").count() >= 1, "{title}: the one that failed says why");
+        h.state_mut().set_show_source(false);
+        settle(&mut h);
+    }
+}
+
+/// A diagram kept as a file of its own beside the page is listed, picked like any file, drawn above
+/// its source, and what is typed in it is written to that file.
+#[test]
+fn a_diagram_file_beside_the_page_is_drawn_and_can_be_edited() {
+    let (_t, app, s) = sample_app("ui-diagram-file");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    std::fs::write(s.md_page.join("flow.mmd"), "flowchart LR\n  A[Source file] --> B[Drawing]\n").expect("a diagram file");
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    let row = h.query_all_by_label_contains("flow.mmd").next().expect("the diagram file is in the list").rect();
+    ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick it");
+    settle(&mut h);
+    let d = drawn_diagrams(&mut h).expect("drawn within twenty seconds");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["codeView"]["picked"], json!("flow.mmd"), "{}", state["codeView"]);
+    assert_eq!((d["found"].clone(), d["drawn"].clone()), (json!(1), json!(1)), "its one diagram is drawn: {d}");
+    assert!(h.query_all_by_label_contains("read-only").count() == 0, "it can be typed in");
+}
+
+/// A diagram too long to be drawn is refused at once, with its source kept, and does not set the
+/// renderer to work.
+#[test]
+fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
+    let (_t, app, s) = sample_app("ui-diagram-limit");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let big: String = std::iter::once("flowchart TD\n".to_string())
+        .chain((1..=300).map(|i| format!("  N{i}[Node {i}] --> N{}[Node {}]\n", i + 1, i + 1)))
+        .collect();
+    let body = format!("# Big\n\n```mermaid\n{big}```\n");
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": s.md_page.to_string_lossy(), "body": body}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    let began = std::time::Instant::now();
+    let d = drawn_diagrams(&mut h).expect("settled");
+    assert!(began.elapsed() < std::time::Duration::from_secs(5), "refused at once, not after the renderer's two seconds: {:?}", began.elapsed());
+    assert_eq!((d["found"].clone(), d["failed"].clone()), (json!(1), json!(1)), "{d}");
+    let text = std::fs::read_to_string(s.md_page.join("index.md")).expect("the page file");
+    assert!(text.contains("N300[Node 300]"), "the source is untouched");
+}
+
+/// The code view stays open while another page is picked in the tree. It must then show that
+/// page's file: the text of the last page, kept under the same name, would be shown as the new
+/// page's own, and whatever was typed would be written over the new page.
+#[test]
+fn the_code_view_follows_the_page_it_is_open_on() {
+    let (_t, app, s) = sample_app("ui-code-follows");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open the first page");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    let first = std::fs::read_to_string(s.md_page.join("index.md")).expect("the first page's file");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["codeView"]["characters"].as_u64().unwrap_or(0) as usize, first.chars().count(), "{}", state["codeView"]);
+
+    // A second page of the same format: its file has the same name, `index.md`, which is the case
+    // where the name alone cannot tell the two pages apart.
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Second", "format": "cmgfm"}}),
+    )
+    .expect("a second page");
+    let second_dir = made.as_str().expect("its path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": second_dir, "body": "# Second
+
+A page of its own, much shorter than the first.
+"}}),
+    )
+    .expect("save it");
+    ask(&mut h, "ui.open", json!({"path": second_dir})).expect("open the second page with the view open");
+    settle(&mut h);
+    let second = std::fs::read_to_string(std::path::Path::new(&second_dir).join("index.md")).expect("the second page's file");
+    assert_ne!(first.chars().count(), second.chars().count(), "the two pages differ, or this test proves nothing");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["codeView"]["picked"], json!("index.md"), "{}", state["codeView"]);
+    assert_eq!(
+        state["codeView"]["characters"].as_u64().unwrap_or(0) as usize,
+        second.chars().count(),
+        "the second page's own file is in hand, not the first's: {}",
+        state["codeView"]
+    );
+}
+
 /// The code view: the page's files down the left, the one that is picked on the right.
 /// The page file's body can be typed in, a drawing's SVG can be typed in, and a picture
 /// nothing names is marked as not used.

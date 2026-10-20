@@ -28,6 +28,8 @@ pub enum Kind {
     PageFile,
     /// A drawing of ours: SVG carrying the ink namespace.
     Ink,
+    /// A Mermaid diagram kept as a file of its own (`.mmd`), drawn above its source.
+    Diagram,
     /// A picture the window can draw.
     Picture,
     /// Anything else we can show as text.
@@ -39,7 +41,7 @@ pub enum Kind {
 impl Kind {
     /// Whether what is shown can be typed in.
     pub fn editable(self) -> bool {
-        matches!(self, Kind::PageFile | Kind::Ink)
+        matches!(self, Kind::PageFile | Kind::Ink | Kind::Diagram)
     }
 }
 
@@ -72,6 +74,14 @@ pub struct State {
     pub page_edited: bool,
     /// A drawing is shown as its strokes; this is the one the code is shown for instead.
     pub as_code: bool,
+    /// The page folder the state belongs to. Another page is another folder, so everything held
+    /// from the last one is dropped: its text would otherwise be shown, and typed over, as this
+    /// page's own.
+    pub dir: Option<std::path::PathBuf>,
+    /// The Mermaid diagrams found in the text on view, kept until the text changes.
+    pub diagrams: Vec<String>,
+    /// A fingerprint of the text `diagrams` were found in.
+    pub diagrams_of: u64,
 }
 
 /// What the view did this frame.
@@ -130,6 +140,7 @@ fn kind_of(path: &Path, name: &str, page_file: &str) -> Kind {
                 Kind::Text
             }
         }
+        "mmd" | "mermaid" => Kind::Diagram,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" => Kind::Picture,
         "md" | "html" | "htm" | "txt" | "json" | "toml" | "csv" | "xml" | "yaml" | "yml" => Kind::Text,
         _ => Kind::Other,
@@ -169,6 +180,11 @@ pub fn size_text(bytes: u64) -> String {
 /// Draws the view.
 pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &Tokens, height: f32) -> Out {
     let mut out = Out::default();
+    if state.dir.as_deref() != Some(dir) {
+        // Every page's file is `index.md` or `index.html`, so the name alone cannot say that
+        // the text in hand is from this page.
+        *state = State { dir: Some(dir.to_path_buf()), ..State::default() };
+    }
     let page_file = entries.first().filter(|e| e.kind == Kind::PageFile).map(|e| e.name.clone());
     if state.picked.is_none() || !entries.iter().any(|e| Some(&e.name) == state.picked.as_ref()) {
         state.picked = page_file.clone().or_else(|| entries.first().map(|e| e.name.clone()));
@@ -266,7 +282,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         }
                     }
                 }
-                Kind::PageFile | Kind::Ink | Kind::Text => {
+                Kind::PageFile | Kind::Ink | Kind::Text | Kind::Diagram => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
@@ -281,16 +297,36 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     }
                     let warning = match entry.kind {
                         Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
+                        Kind::Diagram => Some("The diagram's source. It is drawn above as you type."),
                         Kind::Ink => Some("The pen's own readings are in this file. An edit that breaks them cannot be undone by the pen."),
                         _ => None,
                     };
                     if let Some(words) = warning {
                         ui.label(egui::RichText::new(words).small().color(t.muted));
                     }
-                    egui::ScrollArea::vertical().id_salt("code-text").max_height(height - 70.0).show(ui, |ui| {
+                    // Diagrams are drawn above their source: in the page file, each Mermaid
+                    // diagram the text holds, in either format; in a `.mmd` file, the one it is.
+                    if matches!(entry.kind, Kind::PageFile | Kind::Diagram) {
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        std::hash::Hash::hash(&(entry.kind == Kind::Diagram, &state.text), &mut h);
+                        let fingerprint = std::hash::Hasher::finish(&h);
+                        if state.diagrams_of != fingerprint {
+                            state.diagrams =
+                                if entry.kind == Kind::Diagram { vec![state.text.clone()] } else { notecraft_diagram::find(&state.text) };
+                            state.diagrams_of = fingerprint;
+                        }
+                    }
+                    // With diagrams, the drawings and the source are one column that scrolls
+                    // together, the drawings first; without, the source has the room to itself.
+                    let with_diagrams = !state.diagrams.is_empty() && matches!(entry.kind, Kind::PageFile | Kind::Diagram);
+                    let rows = if with_diagrams { 22 } else { 26 };
+                    egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0).max(120.0)).show(ui, |ui| {
+                        if with_diagrams {
+                            diagram_strip(ui, &state.diagrams, t);
+                        }
                         let edit = ui.add_enabled(
                             entry.kind.editable(),
-                            egui::TextEdit::multiline(&mut state.text).code_editor().desired_width(f32::INFINITY).desired_rows(26),
+                            egui::TextEdit::multiline(&mut state.text).code_editor().desired_width(f32::INFINITY).desired_rows(rows),
                         );
                         if edit.changed() {
                             state.dirty = true;
@@ -305,6 +341,25 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
 }
 
 /// The same stroke at a different size, for drawing a whole sheet in a small space.
+/// The diagrams of the page on view, drawn, above its source. Each says so when it cannot be
+/// drawn, and the source below it is still the page's.
+fn diagram_strip(ui: &mut Ui, diagrams: &[String], t: &Tokens) {
+    let title = if diagrams.len() == 1 { "Diagram".to_string() } else { format!("Diagrams ({})", diagrams.len()) };
+    egui::CollapsingHeader::new(egui::RichText::new(title).strong()).default_open(true).id_salt("code-diagrams-header").show(ui, |ui| {
+        for (i, source) in diagrams.iter().enumerate() {
+            if diagrams.len() > 1 {
+                ui.label(egui::RichText::new(format!("Diagram {}", i + 1)).small().color(t.muted));
+            }
+            egui::Frame::new().fill(t.editor).inner_margin(6.0).corner_radius(4.0).show(ui, |ui| {
+                crate::diagramview::show(ui, source, t);
+            });
+            ui.add_space(4.0);
+        }
+    });
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new("Source").small().color(t.muted));
+}
+
 fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::Stroke {
     let mut out = notecraft_ink::Stroke::with_gain(stroke.tool, stroke.colour, (stroke.width * scale).max(0.4), stroke.gain);
     for dab in &stroke.dabs {
