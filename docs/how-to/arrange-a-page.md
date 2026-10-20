@@ -13,6 +13,10 @@ Point at a box and its edges appear:
 
 Both are saved into the page as soon as you let go.
 
+## Copy and paste a box
+
+Select a box (click its bar), then **Ctrl+C** copies the whole of it and **Ctrl+X** cuts it, as the right-click menu's Copy and Cut do. Put the caret in the place it should go, a new box started on open paper for instance, and **Ctrl+V**, or the ribbon's Paste, puts the box back as it was: its headings are headings, its links links, its diagrams diagrams. Pasted into another program, or into another window of NoteCraft, it is its Markdown text. Text from elsewhere is read as it arrives: several lines are lines of their own, and text with tabs between cells is a table.
+
 ## Start a new box
 
 Click open paper, anywhere that is not in a box: under the last words, or beside and between the
