@@ -984,7 +984,7 @@ pub fn show_blocks(
                 .collect()
         });
         if let Some(text) = pastes.first() {
-            let blocks_in = pasted_blocks(pasted(text));
+            let blocks_in = blocks_to_paste(text);
             if !blocks_in.is_empty() {
                 // Take it out of the queue, so the text box does not paste it as well.
                 ui.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Paste(_))));
@@ -1344,6 +1344,40 @@ pub fn pasted(text: &str) -> Pasted {
         }
     }
     Pasted::Paragraphs(lines)
+}
+
+thread_local! {
+    /// The blocks last copied from a box in this window, with the Markdown that went on the clipboard
+    /// for them. The clipboard holds only text, so a heading, a link and a diagram copied as Markdown
+    /// would come back as lines of words with their marks showing; the blocks themselves come back
+    /// whole.
+    static COPIED: std::cell::RefCell<Option<(String, Vec<Block>)>> = const { std::cell::RefCell::new(None) };
+}
+
+fn same_clipboard_text(text: &str) -> String {
+    text.replace("\r\n", "\n").trim_end().to_string()
+}
+
+/// Remembers the blocks that were put on the clipboard as `markdown`.
+pub fn remember_copied(markdown: &str, blocks: &[Block]) {
+    COPIED.with(|c| *c.borrow_mut() = Some((same_clipboard_text(markdown), blocks.to_vec())));
+}
+
+/// What pasting `text` puts in the page: the blocks that were copied, when `text` is still what they
+/// put on the clipboard; otherwise the text read as paragraphs, a table or a fragment of HTML.
+/// Nothing when it is one line of words, which goes into the line the caret is in.
+pub fn blocks_to_paste(text: &str) -> Vec<Block> {
+    let want = same_clipboard_text(text);
+    let copied = COPIED.with(|c| c.borrow().as_ref().filter(|(t, _)| *t == want).map(|(_, b)| b.clone()));
+    copied.unwrap_or_else(|| pasted_blocks(pasted(text)))
+}
+
+/// Puts `new` into the page after block `at`, or in place of it if it is empty, with the caret after
+/// the last of them. This is what Ctrl+V does with several blocks, for the ribbon's Paste to use too.
+pub fn paste_at(blocks: &mut Vec<Block>, caret: &mut Option<Caret>, at: usize, new: Vec<Block>) -> Changed {
+    let mut changed = Changed::default();
+    apply(Action::Paste(at, new), blocks, caret, &mut changed);
+    changed
 }
 
 /// The blocks a pasted table or paragraph list becomes.
@@ -2503,5 +2537,41 @@ A note to self.
         let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
         apply(Action::JoinBack(0), &mut b, &mut caret, &mut changed);
         assert_eq!(b.len(), 1);
+    }
+
+    #[test]
+    fn blocks_that_were_copied_come_back_whole_and_other_text_is_read_as_text() {
+        let original =
+            notecraft_formats::markdown::parse("# Copy me\n\n*the date*\n\n[a link](https://example.org)\n\n```mermaid\ngraph TD;\n  A-->B;\n```\n");
+        let markdown = notecraft_formats::render::blocks_to_markdown(&original);
+        remember_copied(&markdown, &original);
+        // What comes back is the blocks, not lines of words with their marks showing.
+        assert_eq!(blocks_to_paste(&markdown), original);
+        assert_eq!(blocks_to_paste(&markdown.replace('\n', "\r\n")), original, "whatever the line ends of the clipboard");
+        assert!(blocks_to_paste(&markdown).iter().any(|b| matches!(b, Block::Heading { .. })), "the heading is still a heading");
+        assert!(blocks_to_paste(&markdown).iter().any(|b| matches!(b, Block::Code { lang, .. } if lang == "mermaid")), "and the diagram a diagram");
+        // Other text, even one that starts alike, is read as the text it is.
+        let other = format!("{markdown}and more");
+        assert_ne!(blocks_to_paste(&other), original);
+        assert!(blocks_to_paste("one line of words").is_empty(), "one line goes into the line the caret is in");
+        let lines = blocks_to_paste("first\nsecond");
+        assert_eq!(lines.len(), 2, "two lines are two blocks");
+    }
+
+    #[test]
+    fn pasting_blocks_takes_the_place_of_an_empty_line_and_goes_after_a_full_one() {
+        let new = notecraft_formats::markdown::parse("# Title\n\nbody\n");
+        let mut blocks = vec![Block::Paragraph(Vec::new())];
+        let mut caret = None;
+        paste_at(&mut blocks, &mut caret, 0, new.clone());
+        assert_eq!(blocks.len(), 2, "the empty line is replaced by the two blocks");
+        assert!(matches!(blocks[0], Block::Heading { .. }));
+        assert_eq!(caret.as_ref().map(|c| c.block), Some(1), "the caret is after the last of them");
+
+        let mut blocks = notecraft_formats::markdown::parse("words\n");
+        let mut caret = None;
+        paste_at(&mut blocks, &mut caret, 0, new);
+        assert_eq!(blocks.len(), 3, "after the line that has words");
+        assert!(matches!(blocks[1], Block::Heading { .. }));
     }
 }

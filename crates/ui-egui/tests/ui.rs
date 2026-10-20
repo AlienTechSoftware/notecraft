@@ -2159,6 +2159,61 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
     assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
 }
 
+/// A box copied with Ctrl+C and pasted into another comes back as it was: its heading a heading, its link a
+/// link, its diagram a diagram. The clipboard holds only Markdown text, and pasting that text as one
+/// paragraph, as the ribbon's Paste once did, made a page of lines with their marks showing, blank lines
+/// inside a paragraph and stray `<code>` pieces.
+#[test]
+fn a_box_that_is_copied_and_pasted_comes_back_as_it_was() {
+    let (_t, app, s) = sample_app("ui-copy-paste");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\">\n<h1>Copy me</h1>\n<p><a href=\"https://example.org\">a link</a></p>\n<pre class=\"diagram\">graph TD;\n  A--&gt;B;</pre>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Copy", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0), page["origin"][1].as_f64().unwrap_or(0.0));
+
+    // Select the box by its bar, and copy it with the keys.
+    ask(&mut h, "ui.click", json!({"x": ox + 200.0, "y": oy + 6.0})).expect("select the box by its bar");
+    settle(&mut h);
+    let selected = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["selectedContainer"].clone();
+    assert_eq!(selected, json!(0), "the box is selected: {selected}");
+    ask(&mut h, "ui.key", json!({"key": "C", "ctrl": true})).expect("Ctrl+C");
+    settle(&mut h);
+
+    // What that put on the clipboard: the Markdown of the box's blocks.
+    let body = h.state().body().unwrap_or_default().to_string();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Html, &body);
+    let markdown = notecraft_formats::render::blocks_to_markdown(&blocks);
+    assert!(markdown.contains("# Copy me") && markdown.contains("mermaid"), "the box as Markdown: {markdown}");
+
+    // A new box on the open paper to the right, and paste into it.
+    ask(&mut h, "ui.click", json!({"x": ox + 600.0, "y": oy + 120.0})).expect("start a box on the open paper");
+    settle(&mut h);
+    let started = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert!(started["caret"] != Value::Null, "the new box has the caret: {started}");
+    ask(&mut h, "ui.paste", json!({"text": markdown})).expect("paste");
+    settle(&mut h);
+
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(after.matches("<h1>Copy me</h1>").count(), 2, "the heading came back as a heading:\n{after}");
+    assert_eq!(after.matches("class=\"diagram\"").count(), 2, "and the diagram as a diagram:\n{after}");
+    assert_eq!(after.matches("href=\"https://example.org\"").count(), 2, "and the link as a link:\n{after}");
+    assert!(!after.contains("# Copy me"), "no Markdown marks showing as words:\n{after}");
+    assert!(!after.contains("<code>"), "and no stray code pieces:\n{after}");
+    assert!(!after.contains("<p>\n\n") && !after.contains("\n\n\n"), "no blank lines inside a paragraph:\n{after}");
+}
+
 /// What the page says of its own diagrams, once the threads that draw them have had their say.
 fn drawn_in_page(h: &mut Harness<'_, NoteCraftApp>) -> Option<Value> {
     let began = std::time::Instant::now();

@@ -1671,7 +1671,22 @@ impl NoteCraftApp {
         }
         match crate::clipboard::text() {
             Some(text) => {
-                self.insert_in_page(&text);
+                // The same reading as Ctrl+V: a box that was copied comes back whole, several lines
+                // become lines of their own, a table stays a table. Put in as one text, as this once
+                // did, the lines ran together in a single paragraph with their Markdown showing.
+                let new = pageedit::blocks_to_paste(&text);
+                match self.editor.as_mut() {
+                    Some(ed) if !new.is_empty() && ed.writable => {
+                        let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
+                        if ed.blocks.is_empty() {
+                            ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
+                        }
+                        pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
+                        ed.rebuild_body();
+                        Self::mark_dirty_from_blocks(ed);
+                    }
+                    _ => self.insert_in_page(&text),
+                }
                 self.say("Pasted");
             }
             None => self.say("There is nothing on the clipboard to paste"),
