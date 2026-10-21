@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Right to left</title>
+<meta name="notecraft:id" content="d2036763a6dcb9ec037e">
+<meta name="notecraft:order" content="80">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>Arabic, Hebrew, Persian and Urdu read from the right. NoteCraft draws them that way: the letters join, a line of them hangs from the right edge, and a line that mixes the two directions is laid out by the Unicode algorithm, so a price keeps its number the right way round:</p>
+<p>السعر 123 ريال</p>
+<p>The fonts that make this possible ship with the app, so the line above looks the same on a machine with no Arabic font installed. Hebrew and Hindi have their own bundled fonts too:</p>
+<p>שלום עולם</p>
+<p>नमस्ते दुनिया</p>
+<h2>Three directions, three controls</h2>
+<table>
+<tr><th>Control</th><th>Where</th><th>What it sets</th></tr>
+<tr><td><b>Page</b></td><td><b>Home</b>, then <b>Direction</b></td><td>Which way the whole page reads. A line with no letters of its own follows it</td></tr>
+<tr><td><b>Paragraph</b></td><td>The alignment menu in <b>Basic Text</b></td><td>Which way the paragraph the caret is in reads</td></tr>
+<tr><td><b>Run</b></td><td><b>More...</b> in the Direction group</td><td>Which way the selection reads, or what you type next</td></tr>
+</table>
+<p>Page direction is NoteCraft's own; the apps people come from have no such setting, and a notebook written in Arabic wants one.</p>
+<h2>Where the setting is kept</h2>
+<p>In the text itself. A page direction is <code>dir: rtl</code> in the front matter of a Markdown page or a meta tag in an HTML page. A paragraph direction is one invisible character at its start, the Unicode right-to-left or left-to-right mark. Both survive any other editor.</p>
+<p>The Arabic, Persian, Urdu and Hebrew groups of this notebook are written right to left throughout. Open one from <a href="../../../00-start/welcome/">the start page</a> and compare.</p>
+</body>
+</html>

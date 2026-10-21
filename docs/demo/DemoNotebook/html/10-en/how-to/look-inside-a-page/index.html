@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Look inside a page</title>
+<meta name="notecraft:id" content="21b2be1e3e8b89723162">
+<meta name="notecraft:order" content="75">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>Many note taking apps keep a whole notebook in one binary file, and a text editor shows noise. A NoteCraft page is a folder of plain files, and the code view shows you that folder, file by file. Try it now: press the <code>&lt; &gt;</code> button beside this page.</p>
+<h2>What you will see</h2>
+<p>On the left, <b>Files in this page</b>: the page's own file, <code>index.md</code>, first, then anything else in the folder. A file that nothing on the page uses is marked <i>not used by the page</i>. On the right is the file you picked. This is the page you are reading, so the viewer shows its own text.</p>
+<p>The page file is shown whole: its <b>head</b> (the page's id, title, order, dates and settings) and under it the <b>body</b>. You can edit all of it. Press the same button again to close the view, and the page is drawn again from what you wrote.</p>
+<table>
+<tr><th>File</th><th>What the viewer shows</th><th>Can you type in it?</th></tr>
+<tr><td>The page file, <code>index.md</code> or <code>index.html</code></td><td>The head, and the body exactly as saved</td><td>All of it</td></tr>
+<tr><td>A drawing, <code>ink.svg</code></td><td>The SVG text, with the pen's own readings</td><td>Yes, with care</td></tr>
+<tr><td>A picture</td><td>The picture</td><td>No</td></tr>
+<tr><td>Other text</td><td>Its text</td><td>No</td></tr>
+<tr><td>Anything else</td><td>Its name, size and type</td><td>No</td></tr>
+</table>
+<p>A file over 256 KB shows its first part and says so.</p>
+<h2>What it shows you</h2>
+<ul>
+<li>A page arranged in boxes has a <code>div</code> with <code>class=&quot;nc-box&quot;</code> around each box.</li>
+<li>A drawing is a file, <code>ink.svg</code>, and the page's text names it with one line.</li>
+<li>Tags and links are plain text.</li>
+</ul>
+<p>Nothing is hidden: if the page shows it, a file in this folder holds it.</p>
+<p>Next: <a href="../right-to-left/">Right to left</a>.</p>
+</body>
+</html>

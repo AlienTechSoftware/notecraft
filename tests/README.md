@@ -1,16 +1,19 @@
 # Notebook fixtures
 
-`test-notebook` is a small notebook for checking HTML and CMGFM rendering side by side. The
-`HTML` and `CMGFM` folders keep each format's sample page and assets together. The pages have
-the same content and differ only in their page format and identifying title. Open the
+`docs/demo/DemoNotebook/html/` and `docs/demo/DemoNotebook/cmgfm/` are complete copies of the
+Welcome demo notebook. They contain the same pages, languages, links, diagrams, images, and
+ink, serialized entirely as HTML or CMGFM. The app embeds the full HTML notebook; the CMGFM
+notebook stays in the repository for manual comparison and regression checks.
+
+`test-notebook` is a small, quick fixture for checking the two renderers side by side. Open the
 repository's `tests` folder as the notebooks folder, then open both pages under
 **Format parity test** > **Format examples**.
 
-The automated comparison reads the same fixture:
+The automated comparison checks all pages in both full demo notebooks:
 
 ```text
 cargo test -p notecraft-formats --test format_parity
 cargo run -p notecraft-cli -- --notebooks tests check test-notebook
 ```
 
-The built-in Welcome notebook remains the user-facing demo and opens on its HTML start page.
+The built-in Welcome notebook opens on its HTML start page.

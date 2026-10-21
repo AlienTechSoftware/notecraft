@@ -21,6 +21,48 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
 | **Live view** | The page drawn the way it will be read, edited in place. |
 | **Code view** | The page's files as they are, with a list and a viewer. Opened by the Source button. |
 
+## 1.1 The canonical content model and its mappings
+
+There is one semantic content model, `notecraft_formats::markdown::{Block, Span}`, shared by
+HTML pages, CMGFM pages, and the egui editor. Despite its module name, it is not a Markdown-only
+model. `notecraft_model` owns notebook metadata and layout types such as `Container`; it does not
+own rich-text blocks. The editor is not a browser DOM: HTML is one persisted serialization, and
+the UI reads it into the shared model before drawing or editing it.
+
+The mapping is:
+
+```text
+index.html body ── HTML reader ─┐
+                               ├─ Block + Span model ─ editor / live view
+index.md body ─── CMGFM reader ─┘                 │
+                                                  ├─ HTML writer ── index.html body
+                                                  └─ CMGFM writer ─ index.md body
+```
+
+`formats::boxes` wraps that content pipeline. It reads and writes page containers around ordered
+blocks. The store owns the file boundary: it separates and preserves the HTML head or Markdown
+front matter, reads the body, and writes the edited body back into the same page format. Ink,
+attachments, page metadata, table widths, and paragraph justification have their own persistence
+rules below; they must not become hidden editor-only state.
+
+| Semantic model | CMGFM serialization | HTML body serialization |
+|---|---|---|
+| `Heading`, `Paragraph`, `Quote`, `Rule` | Markdown heading, text, quote, thematic break | `h1`-`h6`, `p`, `blockquote`, `hr` |
+| `Item` | Bullet/number marker, task marker, indentation | `ul`/`ol`, `li`, task glyph, nested lists |
+| `Code` | Fenced block; `mermaid` identifies a diagram | `pre`, with a class identifying the language or diagram |
+| `MathBlock` | `$$` display-math fence | `p.math` |
+| `Table` | GFM table | `table`, rows, header and data cells |
+| `Image` and inline image `Span` | Markdown image/link syntax | `img` with `src` and `alt` |
+| Inline `Span` marks and links | Emphasis, code, strike, math and link syntax | `b`, `i`, `s`, `code`, `span.math`, `a` |
+| `Container` layout | `div.nc-box` with `data-x`, `data-y`, `data-width` | `div.nc-box` with the same data attributes and browser positioning style |
+
+This table is the contract, not a claim that every arbitrary HTML or full CommonMark document is
+supported. The accepted subset is specified in [folder-format.md](folder-format.md); unknown
+markup must remain intact or make the page read-only if a live edit would lose it. Changes to a
+mapping require round-trip tests in both formats and a whole-page parity check. The repository
+skill [nc-dom-ser](../SKILLS/nc-dom-ser/SKILL.md) makes this review and verification workflow
+reusable.
+
 ## 2. The rules
 
 1. **The folder is the page.** Everything the page owns is a file directly in its folder, or in
@@ -372,3 +414,5 @@ read-only.
 | Undo and Redo of the page | `crates/ui-egui/src/history.rs` |
 | The code view | `crates/ui-egui/src/codeview.rs` |
 | Which files of a page are ink | `crates/store/src/page.rs` (`ink_files`), `crates/ink/src/svg.rs` (`is_ink`) |
+| Semantic content model and HTML/CMGFM readers and writers | `crates/formats/src/markdown.rs`, `html.rs`, `render.rs`, `boxes.rs` |
+| Complete cross-format demo parity regression | `crates/formats/tests/format_parity.rs` |

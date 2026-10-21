@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Regarder à l'intérieur d'une page</title>
+<meta name="notecraft:id" content="2f36e0a86a2107d3577b">
+<meta name="notecraft:order" content="75">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>Beaucoup d'applications de notes gardent un carnet entier dans un seul fichier binaire, et un éditeur de texte n'y montre que du bruit. Une page NoteCraft est un dossier de fichiers ordinaires, et la vue code vous montre ce dossier, fichier par fichier. Essayez maintenant : appuyez sur le bouton <code>&lt; &gt;</code> à côté de cette page.</p>
+<h2>Ce que vous verrez</h2>
+<p>À gauche, <b>Fichiers de cette page</b> : d'abord le fichier de la page elle-même, <code>index.md</code>, puis tout le reste du dossier. Un fichier que rien dans la page n'utilise est marqué <i>non utilisé par la page</i>. À droite se trouve le fichier que vous avez choisi. C'est la page que vous lisez, donc le visualiseur montre son propre texte.</p>
+<p>Le fichier de la page s'affiche en entier : son <b>en-tête</b> (l'identifiant, le titre, l'ordre, les dates et les réglages de la page) et, dessous, le <b>corps</b>. Vous pouvez tout modifier. Appuyez de nouveau sur le même bouton pour fermer la vue, et la page est redessinée d'après ce que vous avez écrit.</p>
+<table>
+<tr><th>Fichier</th><th>Ce que montre le visualiseur</th><th>Peut-on y écrire ?</th></tr>
+<tr><td>Le fichier de la page, <code>index.md</code> ou <code>index.html</code></td><td>L'en-tête, et le corps tel qu'il a été enregistré</td><td>Tout</td></tr>
+<tr><td>Un dessin, <code>ink.svg</code></td><td>Le texte SVG, avec les mesures propres du stylet</td><td>Oui, avec précaution</td></tr>
+<tr><td>Une image</td><td>L'image</td><td>Non</td></tr>
+<tr><td>Un autre texte</td><td>Son texte</td><td>Non</td></tr>
+<tr><td>Tout le reste</td><td>Son nom, sa taille et son type</td><td>Non</td></tr>
+</table>
+<p>Un fichier de plus de 256 Ko montre son début et le dit.</p>
+<h2>Ce que cela vous montre</h2>
+<ul>
+<li>Une page organisée en cadres a un <code>div</code> avec <code>class=&quot;nc-box&quot;</code> autour de chaque cadre.</li>
+<li>Un dessin est un fichier, <code>ink.svg</code>, et le texte de la page le nomme en une ligne.</li>
+<li>Les étiquettes et les liens sont du texte simple.</li>
+</ul>
+<p>Rien n'est caché : si la page le montre, un fichier de ce dossier le contient.</p>
+<p>Suite : <a href="../right-to-left/">De droite à gauche</a>.</p>
+<p><i>Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.</i></p>
+</body>
+</html>

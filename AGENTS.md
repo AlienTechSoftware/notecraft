@@ -61,6 +61,25 @@ sections and pages are plain folders. See [`docs/architecture.md`](docs/architec
   `cfg`-gated module wiring; the suffix alone does not select a file. Preserve a
   shared implementation or fallback for platforms without a specialized one.
 
+## Bundled notebook and browser playground
+
+- The Welcome notebook's authored content lives in `docs/demo/scripts/content`.
+  `cargo xtask demo` generates `docs/demo/DemoNotebook`, and
+  `crates/engine/build.rs` embeds that generated folder into the app. Edit the
+  authored content, regenerate the notebook, and use `cargo xtask demo-check`
+  to confirm the checked-in bundle matches its source. Inspect Git status first
+  and preserve unrelated edits to the source or generated notebook.
+- The owner's OpenPlayground fork is checked out at `../openplayground` from
+  this repository. Use it to inspect browser deployment and integration.
+  `tools.yaml` currently identifies NoteCraft as slug `onenote`, builds from
+  `AlienTechSoftware/notecraft` on the head channel, watches
+  `docs/demo/DemoNotebook` among its rebuild paths, and applies
+  `patches/onenote.yaml` for the web build. Regenerate the notebook after
+  content changes so the watched output is current. For browser-only behavior,
+  inspect the patch rules and coordinate changes in the OpenPlayground repo
+  with the upstream NoteCraft source they target. Check status in both repos
+  before editing; never push or publish without an explicit GO.
+
 ## Commands
 
 ```bash
@@ -92,6 +111,7 @@ git config core.hooksPath .githooks   # once per clone: turn the hooks on
 - **Clean room.** Use only Microsoft's published specifications for the `.one` format.
 - **Versions.** The version is 0.0.2, and it changes only when the owner says so, in words, for that change. No agent bumps it, runs `cargo xtask version set`, tags a release or starts a release with a version override on its own judgement, and an earlier approval does not cover the next bump. Semantic versioning, `MAJOR.MINOR.PATCH`, as the sibling Craft apps do. Still 0.x. A patch (0.1.0 to 0.1.1) is bug fixes only, or a rebuild after a packaging or workflow fix, and never changes the folder format. A minor (0.1.x to 0.2.0) adds features or changes behaviour, and resets the patch to 0. A pre-release adds a tag, `0.2.0-rc.1`. The version lives only in `[workspace.package]`; change it with `cargo xtask version set`. Tags are `v<version>`. Details in [`docs/releasing.md`](docs/releasing.md).
 - **Page model.** Read [`docs/page-model.md`](docs/page-model.md) before changing how a page is stored, edited on screen or shown as code. The page file names everything the page owns, and what the window shows and what the folder holds must never disagree. A new kind of page content is named in the page file, has a reader and writer in `notecraft_formats`, appears in the code view's list and has a round-trip test.
+- **Page representation changes.** Apply [`SKILLS/nc-dom-ser/SKILL.md`](SKILLS/nc-dom-ser/SKILL.md) for changes crossing the page model, HTML/CMGFM, rendering, storage, or editor. `cargo xtask ci` must keep the cross-format and whole-demo parity checks green.
 - **One feature at a time.** One feature, one branch. Do not start a second branch, or work on a second feature, unless the owner asks for more than one. A request that arrives while a branch is open is answered or written down and waits; it does not start another branch. Land the branch before the next one begins: rebase it onto `origin/main`, run `cargo xtask ci`, check out `main`, pull it, and fast-forward the branch in, so the history stays a straight line. The owner says when to push. Delete the branch once it is merged.
 - **Git.** Do not commit, push or publish without explicit permission.
 - **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs the cheap gates (fmt, layers,

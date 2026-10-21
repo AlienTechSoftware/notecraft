@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Open a page from a link</title>
+<meta name="notecraft:id" content="0c30c7f4bda230c55775">
+<meta name="notecraft:order" content="90">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<h2>Planned: links that open NoteCraft</h2>
+<p>NoteCraft is planned to support links that open a specific notebook page from a browser, email, chat, or another application. The operating system will use the <code>notecraft:</code> link type to launch NoteCraft and pass it the page to open. Depending on your operating system and browser, you may be asked to confirm before the app opens.</p>
+<p>This feature is <b>not available yet</b>. NoteCraft does not currently register <code>notecraft:</code> with your operating system or handle an external link by navigating to its page. Copying a NoteCraft page link does not mean it can be opened from a browser today.</p>
+<h2>How registration is planned to work</h2>
+<ul>
+<li><b>Windows installer:</b> register NoteCraft during installation and remove that registration</li>
+</ul>
+<p>when NoteCraft is uninstalled.</p>
+<ul>
+<li><b>Windows portable ZIP:</b> provide a separate <b>Register NoteCraft links</b> action that you</li>
+</ul>
+<p>choose to run, plus a way to undo it. Extracting the ZIP alone will not register the link.</p>
+<ul>
+<li><b>macOS:</b> declare the link type in the NoteCraft app bundle.</li>
+<li><b>Linux:</b> install a desktop application association for the link type.</li>
+</ul>
+<p>Registration only tells the operating system which application can receive a link. NoteCraft must also find the matching notebook and page, handle links when it is already running, and explain clearly when a notebook or page cannot be found. That handling is part of the planned feature too.</p>
+</body>
+</html>

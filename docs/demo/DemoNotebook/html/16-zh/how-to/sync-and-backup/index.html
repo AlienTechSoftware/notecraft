@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>同步与备份</title>
+<meta name="notecraft:id" content="b2b32453b938159f1f0f">
+<meta name="notecraft:order" content="60">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft 没有自己的同步，也没有账户。笔记本是一个装着小文件的文件夹，所以把你的笔记本文件夹放在同步工具已经在看的地方：OneDrive、Dropbox、Google Drive、iCloud Drive、Syncthing、网络共享或 git 仓库。它们都不需要理解 NoteCraft。它们只是复制文件。</p>
+<h2>为什么行得通</h2>
+<ul>
+<li><b>每页一个文件。</b> 编辑一页只重写一个小文件，所以两台机器很少碰到同样的字节。</li>
+<li><b>原子写入。</b> 页面先写到临时文件，再改名覆盖旧文件，所以同步客户端永远看不到写了一半的页面。</li>
+<li><b>短而安全的名字。</b> 文件夹名最多 64 个字符，路径最多 255 个，Windows 拒绝的字符一概不写。</li>
+<li><b>会发现冲突副本。</b> 当同步工具在页面旁边留下冲突副本时，检查器会报告：<b>文件</b>，然后<b>检查</b>，或者在终端运行 <code>notecraft-cli check</code>。</li>
+</ul>
+<h2>备份</h2>
+<p>备份就是文件夹的一份拷贝。没有别的东西需要导出。</p>
+<h2>页面历史</h2>
+<p>打开 <b>History</b>，再选 <b>Page Versions</b>，即可查看并恢复此页已保存的副本。要恢复已删除的 页面、分区或分区组，请打开 <b>History</b>，再选 <b>Notebook Recycle Bin</b>。这些功能在本设备上 运行，不能替代单独备份整个笔记本。</p>
+<h2>不处理的情况</h2>
+<p>NoteCraft 不会合并同一页的两个版本。如果同步工具生成了冲突副本，请自行决定保留哪个版本。</p>
+<p>下一页：<a href="../make-it-yours/">按你的喜好设置</a>。</p>
+<p><i>本页由人工智能模型翻译。欢迎指正。</i></p>
+</body>
+</html>
