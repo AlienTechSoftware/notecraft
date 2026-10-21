@@ -289,6 +289,12 @@ impl Writer {
         }
         let trimmed = self.out.trim_end_matches([' ', '\t']).len();
         self.out.truncate(trimmed);
+        // Opening a paragraph inside a blockquote follows the quote's empty `> ` prefix.
+        // It is already a valid start for that paragraph; breaking it here creates empty
+        // quote blocks around the actual text.
+        if self.quote && self.out.lines().last() == Some(">") {
+            return;
+        }
         if !self.out.is_empty() && !self.out.ends_with("\n\n") {
             if self.out.ends_with('\n') {
                 self.out.push('\n');
@@ -363,6 +369,11 @@ impl Writer {
             ("h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div" | "blockquote", true) => {
                 if name == "blockquote" {
                     self.quote = false;
+                    // A paragraph end leaves a quote prefix ready for another paragraph.
+                    // Drop that unused prefix when the blockquote itself ends.
+                    if self.out.ends_with("> ") {
+                        self.out.truncate(self.out.len().saturating_sub(2));
+                    }
                 }
                 self.block_break();
             }

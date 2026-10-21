@@ -1065,10 +1065,8 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     // large banner is the first thing in the body.
     assert_eq!(h.state().title(), Some("Welcome to NoteCraft"), "opened on the start page");
     assert!(
-        h.state().body().is_some_and(
-            |b| b.starts_with("![NoteCraft, notes as plain files in plain folders](assets/banner-start.png)\n\nThis notebook is NoteCraft")
-        ),
-        "{:?}",
+        h.state().body().is_some_and(|b| b.starts_with("<p><img src=\"assets/banner-start.png\"")),
+        "the first page is bundled as HTML: {:?}",
         h.state().body()
     );
     review(&mut h, "welcome_start");

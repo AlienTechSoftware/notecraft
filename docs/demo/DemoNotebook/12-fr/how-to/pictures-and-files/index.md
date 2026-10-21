@@ -33,9 +33,9 @@ de 512 Mo est refusé.
 
 ## Coller
 
-Un tableau copié depuis une autre application de notes ou un tableur se colle en tableau.
-Coller une image depuis le presse-papiers n'est pas encore fait : enregistrez-la et déposez le
-fichier.
+Un tableau copié depuis une autre application de notes ou un tableur se colle en tableau. Pour
+coller une image, cliquez dans la page et appuyez sur **Ctrl+V**. NoteCraft enregistre une copie
+dans le dossier `assets` de la page et l'insère dans la note.
 
 ## Impressions
 

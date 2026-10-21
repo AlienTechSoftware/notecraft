@@ -25,11 +25,17 @@ Aucun n'a besoin de comprendre NoteCraft. Ils copient des fichiers.
 
 Une sauvegarde est une copie du dossier. Il n'y a rien d'autre à exporter.
 
+## Historique des pages
+
+Ouvrez **Historique**, puis **Versions de page**, pour consulter et restaurer les copies
+enregistrées de cette page. Pour récupérer des pages, sections ou groupes de sections supprimés,
+ouvrez **Historique**, puis **Corbeille du bloc-notes**. Ces outils fonctionnent sur cet appareil
+et ne remplacent pas une sauvegarde séparée du bloc-notes.
+
 ## Ce qui n'est pas pris en charge
 
-NoteCraft ne fusionne pas deux versions d'une page ; votre outil crée une copie en conflit et
-vous décidez. Il n'a pas d'historique de pages à lui : utilisez un dossier synchronisé qui garde
-les versions, ou git.
+NoteCraft ne fusionne pas deux versions d'une page. Si votre outil de synchronisation crée une
+copie en conflit, vous choisissez la version à conserver.
 
 Suite : [À votre goût](../make-it-yours/).
 

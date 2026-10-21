@@ -27,11 +27,17 @@ oder ein git-Repository. Keiner davon muss NoteCraft verstehen. Sie kopieren Dat
 
 Eine Sicherung ist eine Kopie des Ordners. Es gibt nichts anderes zu exportieren.
 
+## Seitenverlauf
+
+Öffnen Sie **Verlauf** und dann **Seitenversionen**, um gespeicherte Fassungen dieser Seite
+anzusehen und wiederherzustellen. Gelöschte Seiten, Abschnitte und Abschnittsgruppen lassen sich
+über **Verlauf** und **Notebook-Papierkorb** wiederherstellen. Diese Funktionen ersetzen keine
+separate Sicherung des Notebooks.
+
 ## Was nicht behandelt wird
 
-NoteCraft führt zwei Fassungen einer Seite nicht zusammen; Ihr Dienst legt eine Konfliktkopie
-an, und Sie entscheiden. Es hat keinen eigenen Seitenverlauf: Nutzen Sie einen synchronisierten
-Ordner, der Versionen behält, oder git.
+NoteCraft führt zwei Fassungen einer Seite nicht zusammen. Wenn Ihr Sync-Dienst eine
+Konfliktkopie erstellt, entscheiden Sie, welche Fassung Sie behalten.
 
 Weiter: [Nach Ihrem Geschmack](../make-it-yours/).
 

@@ -176,7 +176,9 @@ fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
 fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
     let mut built = Built::default();
     fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
-    write(&out.join("_node.toml"), &node_toml("notebook", NOTEBOOK_TITLE, &id_for("notebook"), 10, Some("cmgfm"), Some("purple")))?;
+    // HTML is the Welcome notebook's preferred format for new pages. Individual examples
+    // still carry their own format, so the notebook demonstrates both HTML and CMGFM.
+    write(&out.join("_node.toml"), &node_toml("notebook", NOTEBOOK_TITLE, &id_for("notebook"), 10, Some("html"), Some("purple")))?;
 
     // The languages with content, in table order.
     let present: Vec<&Language> = LANGUAGES.iter().filter(|l| content.join(l.code).is_dir()).collect();
@@ -188,7 +190,7 @@ fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
     let start = out.join(START_FOLDER);
     fs::create_dir_all(&start).map_err(|e| format!("cannot create {}: {e}", start.display()))?;
     write(&start.join("_node.toml"), &node_toml("section", START_TITLE, &id_for(START_FOLDER), 10, None, None))?;
-    let start_page = read_source(&content.join("start").join("welcome.md"), 10)?;
+    let start_page = read_source(&content.join("start").join("welcome.html"), 10)?;
     let list = language_list(&present);
     let body = start_page.body.replace(LANGUAGES_MARK, &list);
     write_page(&start.join("welcome"), &Source { body, ..start_page }, &id_for("start/welcome"), None, art)?;
@@ -248,7 +250,7 @@ fn language_list(present: &[&Language]) -> String {
         let note = if l.rtl { ", right to left" } else { "" };
         // The English name only when it adds something: "English, English" would not.
         let english = if l.english == l.name { String::new() } else { format!(", {}", l.english) };
-        out.push_str(&format!("- [{}](../../{}/){english}{note}\n", l.name, l.folder()));
+        out.push_str(&format!("<li><a href=\"../../{}/\">{}</a>{english}{note}</li>\n", l.folder(), l.name));
     }
     out.trim_end().to_string()
 }
@@ -692,7 +694,9 @@ mod tests {
         let mut sorted = orders.clone();
         sorted.sort_unstable();
         assert_eq!(orders, sorted, "files are read in order");
-        assert!(read_source(&content_dir().join("start").join("welcome.md"), 10).expect("start page").body.contains(LANGUAGES_MARK));
+        let start = read_source(&content_dir().join("start").join("welcome.html"), 10).expect("HTML start page");
+        assert!(start.html, "the notebook opens on its preferred format");
+        assert!(start.body.contains(LANGUAGES_MARK));
     }
 
     #[test]
@@ -766,6 +770,7 @@ page-color: yellow
         assert!(built.languages.contains(&"en".to_string()));
         let tree = notecraft_store::tree::load_tree(&out).expect("tree");
         assert_eq!(tree.info.title, NOTEBOOK_TITLE);
+        assert_eq!(tree.info.format, Some(notecraft_model::PageFormat::Html), "new demo pages prefer HTML");
         let first = tree.children.first().expect("a first child");
         assert_eq!(first.info.title, START_TITLE, "the start section sorts first, so the notebook opens on it");
         assert_eq!(first.children.len(), 1);
@@ -774,10 +779,12 @@ page-color: yellow
             assert_eq!(group.children.len(), 1, "one How to section in {}", group.path.display());
             assert!(group.children[0].children.len() >= 8, "the same pages in every language");
         }
-        let start = fs::read_to_string(out.join(START_FOLDER).join("welcome").join("index.md")).expect("start page");
-        assert!(start.contains("- [English](../../10-en/)\n"), "{start}");
-        assert!(start.contains("- [العربية](../../20-ar/), Arabic, right to left"), "{start}");
+        let start = fs::read_to_string(out.join(START_FOLDER).join("welcome").join("index.html")).expect("HTML start page");
+        assert!(start.contains("<li><a href=\"../../10-en/\">English</a></li>"), "{start}");
+        assert!(start.contains("<li><a href=\"../../20-ar/\">العربية</a>, Arabic, right to left</li>"), "{start}");
         assert!(!start.contains(LANGUAGES_MARK));
+        assert!(out.join("10-en").join("how-to").join("write-a-page").join("index.md").is_file(), "the notebook also includes CMGFM pages");
+        assert!(out.join("10-en").join("how-to").join("page-formats").join("index.html").is_file(), "the format guide is an HTML example");
         let first_build = snapshot(&out).expect("snapshot");
         let again = dir.join("Again");
         build(&content_dir(), &again, &art_dir()).expect("build again");
