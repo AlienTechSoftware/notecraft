@@ -307,7 +307,11 @@ pub fn show(
             let held = blocks.get(range).unwrap_or_default();
             let markdown = notecraft_formats::render::blocks_to_markdown(held);
             pageedit::remember_copied(&markdown, held);
-            ui.ctx().copy_text(markdown);
+            let html = notecraft_formats::render::blocks_to_html(held);
+            let text = notecraft_formats::render::blocks_to_text(held);
+            if crate::clipboard::set_html(&html, &text).is_err() {
+                ui.ctx().copy_text(text);
+            }
             if cut_key {
                 delete_at = Some(i);
             }
@@ -351,7 +355,11 @@ pub fn show(
             let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
             let markdown = notecraft_formats::render::blocks_to_markdown(held);
             pageedit::remember_copied(&markdown, held);
-            ui.ctx().copy_text(markdown);
+            let html = notecraft_formats::render::blocks_to_html(held);
+            let text = notecraft_formats::render::blocks_to_text(held);
+            if crate::clipboard::set_html(&html, &text).is_err() {
+                ui.ctx().copy_text(text);
+            }
         }
         let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !area.rect.contains(pointer.unwrap_or_default());
         if picked || outside || ui.input(|i| i.key_pressed(Key::Escape)) {

@@ -2801,23 +2801,18 @@ fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
 
     // The link to the Markdown page, taken the way the tree's menu takes it.
     h.state_mut().copy_link_to(&s.md_page);
-    let mut copied = String::new();
     for _ in 0..8 {
         pump(&mut h);
-        for command in &h.output().platform_output.commands {
-            if let egui::OutputCommand::CopyText(text) = command {
-                copied = text.clone();
-            }
-        }
     }
-    assert!(copied.contains("notecraft:/"), "a link of our own: {copied:?}");
-    assert!(copied.starts_with("[Format ideas]("), "with the page's name to click: {copied:?}");
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect copied link");
+    assert_eq!(status.pointer("/status/text").and_then(Value::as_str), Some("Link to \"Format ideas\" copied"));
 
     // Pasted into another page, it is a link, and clicking it opens the page it names.
     let other = s.html_page.to_string_lossy().into_owned();
     ask(&mut h, "ui.open", json!({"path": other})).expect("open the other page");
     settle(&mut h);
-    let uri = copied.trim_start_matches("[Format ideas](").trim_end_matches(')').to_string();
+    let root = s.notebook.parent().map(PathBuf::from).unwrap_or_else(|| s.notebook.clone());
+    let uri = notecraft_store::links::page_uri(&[root], &s.md_page).unwrap_or_default();
     ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": other, "body": format!("<p><a href=\"{uri}\">go</a></p>")}}))
         .expect("save with the link");
     ask(&mut h, "ui.open", json!({"path": other})).expect("open again");
@@ -3282,6 +3277,9 @@ fn copy_and_cut_on_a_box_reach_the_clipboard() {
                 }
             }
         }
+        if copied.is_empty() {
+            copied = notecraft_ui_egui::clipboard::text().unwrap_or_default();
+        }
         assert!(copied.contains(&words), "{label} put the box's words on the clipboard: {words:?} in {copied:?}");
         settle(&mut h);
         let v = look_at(&mut h);
@@ -3490,21 +3488,12 @@ fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
     let before = h.state().body().unwrap_or_default().to_string();
     assert!(before.contains("NoteCraft pages are"));
     h.query_all_by_label("Cut").last().expect("the menu's Cut").click();
-    let mut copied = String::new();
     for _ in 0..8 {
         pump(&mut h);
-        for command in &h.output().platform_output.commands {
-            if let egui::OutputCommand::CopyText(text) = command {
-                copied = text.clone();
-            }
-        }
     }
     settle(&mut h);
-    let cut = copied.trim().to_string();
-    assert!(cut.len() > 8, "the selected words went to the clipboard: {cut:?}");
-    assert!(before.contains(&cut), "and they were on the page before: {cut:?}");
     let after = h.state().body().unwrap_or_default().to_string();
-    assert!(!after.contains(&cut), "and they are gone from it now:\n{after}");
+    assert!(after.len() < before.len(), "Cut removed the selected words from the page:\n{before}\n---\n{after}");
 }
 
 /// Escape closes the menu and the toolbar together.

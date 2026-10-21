@@ -201,15 +201,13 @@ it is fixed and tested, not when it is promised.
   over parley or the same house stack. Decision pending.
 - **A dropped file can be copied in or linked.** A printout (a document rendered to pictures,
   as other apps insert one) is not built: it needs a renderer for PDF and Office files.
-- **Pasting reads only the flavour egui hands over, which is text.** An app that copies a
-  table puts several on the clipboard at once: HTML (the richest, with the cells, the marks
-  inside them and even `direction:ltr`), plain text with a tab between cells, and pictures
-  (Bitmap, DIB, PNG). NoteCraft understands both text flavours: tab-separated lines come
-  back as a table, and if the HTML reaches it as text, header and all, it is parsed the way
-  a page is. What it cannot do is ask the clipboard for the HTML or the picture flavour,
-  because egui exposes text only; that needs a clipboard crate (`clipboard-rs` reads HTML
-  and pictures on all three systems, `arboard` pictures alone), which is a decision for the
-  owner.
+- **The clipboard supports HTML and plain text together for copy and paste.** A copied
+  selection is one logical clipboard item: rich-text clients receive HTML with headings,
+  marks, links, lists and tables; plain-text clients receive readable text without Markdown
+  syntax. NoteCraft reads HTML before falling back to plain text. The shared `arboard` writer
+  keeps clipboard ownership alive on X11 and Wayland, and enables Wayland data-control.
+  RTF output, copy-as-image for selected visual blocks, and paste of copied file lists are
+  still open; image paste is already supported.
 - **A box's right-click menu is short.** It has Cut, Copy and Delete, then the page's entries. OneNote's also has
   Paste Options, Copy Link to Paragraph, Select, Order, Move and Resize, and a small formatting
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and

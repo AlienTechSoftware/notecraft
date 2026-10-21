@@ -77,6 +77,55 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
     out
 }
 
+/// Blocks as readable plain text for clipboard consumers that cannot accept rich content.
+/// Formatting marks are omitted, while link targets remain visible when they differ from
+/// their labels. This is deliberately distinct from Markdown source.
+pub fn blocks_to_text(blocks: &[Block]) -> String {
+    blocks.iter().map(block_to_text).collect::<Vec<_>>().join("\n")
+}
+
+fn block_to_text(block: &Block) -> String {
+    match block {
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) => spans_to_text(spans),
+        Block::Item { ordered, number, task, depth, spans } => {
+            let marker = match task {
+                Some(true) => "[x] ",
+                Some(false) => "[ ] ",
+                None if *ordered => return format!("{}{number}. {}", "  ".repeat(*depth), spans_to_text(spans)),
+                None => "- ",
+            };
+            format!("{}{marker}{}", "  ".repeat(*depth), spans_to_text(spans))
+        }
+        Block::Code { text, .. } | Block::MathBlock(text) => text.trim_end_matches('\n').to_string(),
+        Block::Table { head, rows } => std::iter::once(head)
+            .chain(rows.iter())
+            .map(|row| row.iter().map(|cell| spans_to_text(cell)).collect::<Vec<_>>().join("\t"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Block::Rule => String::new(),
+        Block::Image { alt, src } => readable_link(alt, src),
+    }
+}
+
+fn spans_to_text(spans: &[Span]) -> String {
+    spans
+        .iter()
+        .map(|span| {
+            if let Some(image) = &span.image {
+                readable_link(&span.text, image)
+            } else if let Some(target) = &span.link {
+                readable_link(&span.text, target)
+            } else {
+                span.text.clone()
+            }
+        })
+        .collect()
+}
+
+fn readable_link(label: &str, target: &str) -> String {
+    if label.is_empty() || label == target { target.to_string() } else { format!("{label} ({target})") }
+}
+
 fn row_to_markdown(cells: &[Vec<Span>]) -> String {
     let mut s = String::from("|");
     for c in cells {
@@ -341,5 +390,15 @@ mod tests {
         for word in ["T", "A", "b", "c", "x"] {
             assert!(md.contains(word) && html.contains(word), "{word} is missing");
         }
+    }
+
+    #[test]
+    fn clipboard_plain_text_omits_markup_but_keeps_link_targets() {
+        let blocks = parse("# Title\n\nA **bold** word and [a link](https://example.com).\n\n- item\n");
+        assert_eq!(blocks_to_text(&blocks), "Title\nA bold word and a link (https://example.com).\n- item");
+        let html = blocks_to_html(&blocks);
+        assert!(html.contains("<h1>Title</h1>"), "{html}");
+        assert!(html.contains("<b>bold</b>"), "{html}");
+        assert!(html.contains("<a href=\"https://example.com\">a link</a>"), "{html}");
     }
 }
