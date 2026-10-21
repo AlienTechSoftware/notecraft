@@ -1,0 +1,73 @@
+flowchart LR
+  subgraph RegionA
+    subgraph AZ1
+      A1[Gateway A1]
+      A2[API A1]
+      A3[Worker A1]
+    end
+    subgraph AZ2
+      A4[Gateway A2]
+      A5[API A2]
+      A6[Worker A2]
+    end
+  end
+
+  subgraph RegionB
+    subgraph AZ3
+      B1[Gateway B1]
+      B2[API B1]
+      B3[Worker B1]
+    end
+    subgraph AZ4
+      B4[Gateway B2]
+      B5[API B2]
+      B6[Worker B2]
+    end
+  end
+
+  L1[Global LB]
+  M1[(Primary DB)]
+  M2[(Replica DB)]
+  M3[(Cache Grid)]
+  M4[(Audit Log)]
+  O1[Ops Control]
+  O2[Incident Bot]
+
+  L1 --> A1
+  L1 --> A4
+  L1 --> B1
+  L1 --> B4
+
+  A1 --> A2 --> A3
+  A4 --> A5 --> A6
+  B1 --> B2 --> B3
+  B4 --> B5 --> B6
+
+  A3 --> M1
+  A6 --> M1
+  B3 --> M2
+  B6 --> M2
+
+  A2 --> M3
+  A5 --> M3
+  B2 --> M3
+  B5 --> M3
+
+  M1 --> M4
+  M2 --> M4
+  M3 --> M4
+
+  M4 --> O1
+  O1 --> O2
+
+  O1 -.drain AZ.-> A1
+  O1 -.drain AZ.-> A4
+  O1 -.drain AZ.-> B1
+  O1 -.drain AZ.-> B4
+
+  A3 -.replication catchup.-> M2
+  B3 -.replication catchup.-> M1
+  A6 -.replication catchup.-> M2
+  B6 -.replication catchup.-> M1
+
+  O2 -.route failover.-> L1

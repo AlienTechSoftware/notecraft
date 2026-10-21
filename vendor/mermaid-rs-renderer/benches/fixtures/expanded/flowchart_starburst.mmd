@@ -1,0 +1,31 @@
+flowchart TD
+  H((Hub))
+  S[Sink]
+  H --> A1[Node A1]
+  H --> A2[Node A2]
+  H --> A3[Node A3]
+  H --> A4[Node A4]
+  H --> A5[Node A5]
+  H --> A6[Node A6]
+  H --> A7[Node A7]
+  H --> A8[Node A8]
+  H --> A9[Node A9]
+  H --> A10[Node A10]
+
+  A1 --> S
+  A2 --> S
+  A3 --> S
+  A4 --> S
+  A5 --> S
+  A6 --> S
+  A7 --> S
+  A8 --> S
+  A9 --> S
+  A10 --> S
+
+  A1 -.audit.-> A6
+  A2 -.audit.-> A7
+  A3 -.audit.-> A8
+  A4 -.audit.-> A9
+  A5 -.audit.-> A10
+  A6 -.audit.-> A1

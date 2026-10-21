@@ -1,0 +1,58 @@
+flowchart LR
+  subgraph Intake
+    I1[Ingress A] --> I2[Ingress B] --> I3[Ingress C] --> I4[Ingress D]
+  end
+
+  subgraph Validate
+    V1[Schema] --> V2[Policy] --> V3[Fraud] --> V4[Quota]
+  end
+
+  subgraph Execute
+    E1[Planner] --> E2[Allocator] --> E3[Dispatcher] --> E4[Commit]
+  end
+
+  subgraph Observe
+    O1[Trace] --> O2[Metrics] --> O3[Alerts] --> O4[Audit]
+  end
+
+  subgraph ControlWalls
+    W1[Policy Wall]
+    W2[Risk Wall]
+    W3[Quota Wall]
+  end
+
+  I1 --> V1
+  I2 --> V4
+  I3 --> E4
+  I4 --> O4
+
+  V1 --> E3
+  V2 --> O3
+  V3 --> O2
+  V4 --> E1
+
+  E1 --> O1
+  E2 --> O4
+  E3 --> I4
+  E4 --> I1
+
+  O1 --> I3
+  O2 --> V1
+  O3 --> E2
+  O4 --> V2
+
+  I2 -.retry.-> I1
+  V3 -.recheck.-> V1
+  E4 -.rollback.-> E1
+  O4 -.reopen.-> O2
+
+  I3 --> W1
+  V2 --> W1
+  V4 --> W2
+  E2 --> W2
+  E3 --> W3
+  O2 --> W3
+
+  W1 --> E1
+  W2 --> O3
+  W3 --> I2

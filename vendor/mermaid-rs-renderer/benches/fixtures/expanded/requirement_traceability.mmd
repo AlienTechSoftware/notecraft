@@ -1,0 +1,25 @@
+requirementDiagram
+  requirement req1 {
+    id: 1
+    text: Users can register
+    risk: medium
+  }
+  functionalRequirement req2 {
+    id: 2
+    text: Email verification
+  }
+  performanceRequirement req3 {
+    id: 3
+    text: 95% under 300ms
+  }
+  element web {
+    type: system
+  }
+  element db {
+    type: database
+  }
+
+  req1 - satisfies -> req2
+  req2 - traces -> web
+  req3 - verifies -> web
+  req3 - traces -> db

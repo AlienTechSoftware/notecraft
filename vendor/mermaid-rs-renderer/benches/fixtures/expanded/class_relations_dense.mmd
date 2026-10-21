@@ -1,0 +1,17 @@
+classDiagram
+  class User
+  class Account
+  class Profile
+  class Session
+  class Permission
+  class Role
+  class AuditLog
+
+  User "1" --> "1" Account
+  User "1" --> "1" Profile
+  User "1" --> "0..*" Session
+  Role "1" --> "0..*" Permission
+  User "0..*" --> "0..*" Role
+  Account "1" --> "0..*" AuditLog
+  Session ..> Account : refresh
+  Profile ..> Permission : view

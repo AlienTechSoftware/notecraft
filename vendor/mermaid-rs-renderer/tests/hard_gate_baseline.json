@@ -1,0 +1,4 @@
+{
+  "_comment": "Known hard-gate RED fixtures; gate fails on new reds or worse counts vs this baseline. Lower is better.",
+  "fixtures": {}
+}

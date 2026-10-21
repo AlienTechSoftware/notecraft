@@ -1,0 +1,13 @@
+classDiagram
+    Animal <|-- Dog
+    Animal <|-- Cat
+    Animal : +String name
+    Animal : +int age
+    Animal : +makeSound()
+    Dog : +String breed
+    Dog : +bark()
+    Cat : +bool indoor
+    Cat : +meow()
+    Owner --> Animal : owns
+    Owner : +String name
+    Owner : +feed()

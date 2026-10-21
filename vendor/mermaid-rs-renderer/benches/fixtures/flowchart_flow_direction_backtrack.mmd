@@ -1,0 +1,17 @@
+flowchart LR
+  S[Start] --> A[Acquire] --> B[Validate] --> C[Plan] --> D[Execute] --> E[Finalize]
+
+  B --> Q1[Quick Check]
+  C --> Q2[Capacity Check]
+  D --> Q3[Risk Check]
+
+  E --> R[Report]
+  R --> END[Done]
+
+  D --> B
+  E --> C
+  R --> A
+  Q3 -.rollback.-> B
+  Q2 -.replan.-> A
+  Q1 -.retry.-> S
+  END -.reopen.-> C

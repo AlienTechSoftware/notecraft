@@ -55,6 +55,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # else and Date.now() there, with no wasm-bindgen glue needed in notecraft-model itself.
 web-time = "1.1"
 
+# Mermaid 0.3.1 uses std::time::Instant in its layout metrics on the ordinary render path.
+# Those metrics are discarded by NoteCraft, but Instant::now() panics on wasm32-unknown-unknown.
+# Keep the upstream crate local until its WASM-safe timer fix is released.
+[patch.crates-io]
+mermaid-rs-renderer = { path = "vendor/mermaid-rs-renderer" }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 

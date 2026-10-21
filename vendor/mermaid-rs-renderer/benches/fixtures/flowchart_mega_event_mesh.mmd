@@ -1,0 +1,82 @@
+flowchart TD
+  subgraph Producers
+    P1[Checkout]
+    P2[Catalog]
+    P3[Payments]
+    P4[Shipping]
+    P5[Support]
+  end
+
+  subgraph Bus
+    T1[(Topic Orders)]
+    T2[(Topic Inventory)]
+    T3[(Topic Payments)]
+    T4[(Topic Delivery)]
+    T5[(Topic Incidents)]
+  end
+
+  subgraph Consumers
+    C1[Fraud Service]
+    C2[Inventory Sync]
+    C3[Billing Service]
+    C4[ETA Service]
+    C5[Customer Timeline]
+    C6[Search Sync]
+    C7[Ops Dashboard]
+  end
+
+  subgraph ControlPlane
+    K1[Schema Registry]
+    K2[Replay Manager]
+    K3[Partition Rebalancer]
+    K4[Retention Manager]
+    K5[DLQ Replayer]
+    D1[(DLQ A)]
+    D2[(DLQ B)]
+  end
+
+  P1 --> T1
+  P2 --> T2
+  P3 --> T3
+  P4 --> T4
+  P5 --> T5
+
+  T1 --> C1
+  T1 --> C3
+  T1 --> C5
+  T2 --> C2
+  T2 --> C6
+  T3 --> C1
+  T3 --> C3
+  T4 --> C4
+  T4 --> C5
+  T5 --> C7
+
+  C1 --> D1
+  C2 --> D1
+  C3 --> D2
+  C4 --> D2
+
+  D1 --> K5
+  D2 --> K5
+  K5 --> T1
+  K5 --> T2
+  K5 --> T3
+
+  K1 --> T1
+  K1 --> T2
+  K1 --> T3
+  K1 --> T4
+  K1 --> T5
+
+  K2 --> T1
+  K2 --> T3
+  K3 --> C1
+  K3 --> C2
+  K3 --> C3
+  K4 --> T4
+  K4 --> T5
+
+  C7 -.hot partition.-> K3
+  C7 -.schema mismatch.-> K1
+  C7 -.backfill request.-> K2

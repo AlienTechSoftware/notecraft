@@ -1,0 +1,58 @@
+flowchart LR
+  H[Dispatch Hub]
+  N[North]
+  S[South]
+  E[East]
+  W[West]
+  NE[North East]
+  NW[North West]
+  SE[South East]
+  SW[South West]
+
+  L1[Lane L1]
+  L2[Lane L2]
+  R1[Lane R1]
+  R2[Lane R2]
+  T1[Top 1]
+  T2[Top 2]
+  B1[Bottom 1]
+  B2[Bottom 2]
+
+  H --> N
+  H --> S
+  H --> E
+  H --> W
+  H --> NE
+  H --> NW
+  H --> SE
+  H --> SW
+
+  N --> H
+  S --> H
+  E --> H
+  W --> H
+  NE --> H
+  NW --> H
+  SE --> H
+  SW --> H
+
+  L1 --> H
+  L2 --> H
+  H --> R1
+  H --> R2
+  T1 --> H
+  T2 --> H
+  H --> B1
+  H --> B2
+
+  L1 --> T1
+  L2 --> T2
+  B1 --> R1
+  B2 --> R2
+
+  T1 --> E
+  T2 --> W
+  B1 --> NE
+  B2 --> NW
+  N --> R2
+  S --> L1

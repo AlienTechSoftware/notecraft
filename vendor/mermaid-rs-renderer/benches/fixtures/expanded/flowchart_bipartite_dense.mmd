@@ -1,0 +1,30 @@
+flowchart LR
+  subgraph Sources
+    S1[Source 1]
+    S2[Source 2]
+    S3[Source 3]
+    S4[Source 4]
+  end
+  subgraph Targets
+    T1[Target 1]
+    T2[Target 2]
+    T3[Target 3]
+    T4[Target 4]
+    T5[Target 5]
+  end
+
+  S1 --> T1
+  S1 --> T2
+  S1 --> T3
+  S2 --> T2
+  S2 --> T3
+  S2 --> T4
+  S3 --> T1
+  S3 --> T4
+  S3 --> T5
+  S4 --> T1
+  S4 --> T3
+  S4 --> T5
+
+  S1 -.feedback.-> S3
+  S2 -.feedback.-> S4

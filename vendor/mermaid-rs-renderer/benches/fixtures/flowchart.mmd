@@ -1,0 +1,11 @@
+flowchart TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Process 1]
+    B -->|No| D[Process 2]
+    C --> E[Step 3]
+    D --> E
+    E --> F{Another Check}
+    F -->|Pass| G[Success]
+    F -->|Fail| H[Retry]
+    H --> B
+    G --> I[End]
