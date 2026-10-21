@@ -7,6 +7,7 @@
 .env
 out/
 /out/
+/my-notebooks/
 # Pictures a failing visual test writes next to the one it compared.
 /crates/*/tests/**/*.diff.png
 /crates/*/tests/**/*.new.png

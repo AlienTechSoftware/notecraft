@@ -14,6 +14,7 @@
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  line coverage with cargo-llvm-cov, if it is installed
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
+//! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format to ignored ./my-notebooks
 //! ```
 
 use std::collections::BTreeMap;
@@ -258,7 +259,7 @@ fn text_problems(name: &str, bytes: &[u8]) -> Vec<String> {
 fn text(root: &Path) -> Result<(), String> {
     let mut files = Vec::new();
     files_under(root, &mut files);
-    let skip = ["target", ".git", "out", "prototypes", "snapshots"];
+    let skip = ["target", ".git", "out", "prototypes", "snapshots", "my-notebooks"];
     let mut problems = Vec::new();
     let mut n = 0;
     for f in files {
@@ -283,6 +284,116 @@ fn text(root: &Path) -> Result<(), String> {
 fn screenshots(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root.join("docs").join("images")).map_err(|e| e.to_string())?;
     cargo(root, &["run", "-q", "-p", "notecraft-ui-egui", "--example", "ui_shot", "--", "scripts/readme-screens.jsonl"])
+}
+
+/// Copies one checked-in demo format to the ignored test notebooks folder.
+/// The source is read-only; `--replace` only replaces the dedicated test copy.
+fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
+    let mut format: Option<&str> = None;
+    let mut replace = false;
+    for arg in args {
+        match arg.as_str() {
+            "html" | "cmgfm" if format.is_none() => format = Some(arg),
+            "--replace" if !replace => replace = true,
+            _ => return Err(format!("unknown or repeated demo-copy argument '{arg}'. Usage: cargo xtask demo-copy [html|cmgfm] [--replace]")),
+        }
+    }
+    let format = format.unwrap_or("html");
+    let source = root.join("docs").join("demo").join("DemoNotebook").join(format);
+    if !source.is_dir() {
+        return Err(format!("demo source folder is missing: {} (run `cargo xtask demo` first)", source.display()));
+    }
+
+    let notebooks = root.join("my-notebooks");
+    match fs::symlink_metadata(&notebooks) {
+        Ok(meta) if meta.file_type().is_symlink() => return Err(format!("refusing to copy through a symlink: {}", notebooks.display())),
+        Ok(meta) if !meta.is_dir() => return Err(format!("not a folder: {}", notebooks.display())),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(&notebooks).map_err(|e| format!("create {}: {e}", notebooks.display()))?
+        }
+        Err(e) => return Err(format!("inspect {}: {e}", notebooks.display())),
+    }
+
+    let target = notebooks.join("welcome-notebook");
+    match fs::symlink_metadata(&target) {
+        Ok(meta) if meta.file_type().is_symlink() => return Err(format!("refusing to replace a symlink: {}", target.display())),
+        Ok(meta) if !meta.is_dir() => return Err(format!("not a folder: {}", target.display())),
+        Ok(_) if !replace => return Err(format!("{} already exists; pass --replace to refresh this test copy", target.display())),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("inspect {}: {e}", target.display())),
+    }
+
+    let staging = notebooks.join(format!(".demo-copy-{}", std::process::id()));
+    if staging.exists() {
+        return Err(format!("temporary copy folder already exists: {}", staging.display()));
+    }
+    fs::create_dir(&staging).map_err(|e| format!("create {}: {e}", staging.display()))?;
+    let staged_notebook = staging.join("welcome-notebook");
+    if let Err(e) = copy_directory(&source, &staged_notebook) {
+        return Err(match fs::remove_dir_all(&staging) {
+            Ok(()) => e,
+            Err(cleanup) => format!("{e}; partial copy remains at {} because cleanup failed: {cleanup}", staging.display()),
+        });
+    }
+
+    let backup = staging.join("previous-copy");
+    if target.exists() {
+        if let Err(e) = fs::rename(&target, &backup) {
+            return Err(match fs::remove_dir_all(&staging) {
+                Ok(()) => format!("move existing test copy to staging: {e}"),
+                Err(cleanup) => format!(
+                    "move existing test copy to staging: {e}; temporary folder remains at {} because cleanup failed: {cleanup}",
+                    staging.display()
+                ),
+            });
+        }
+    }
+    if let Err(e) = fs::rename(&staged_notebook, &target) {
+        if backup.exists() {
+            if let Err(restore) = fs::rename(&backup, &target) {
+                return Err(format!(
+                    "install new test copy failed ({e}); restoring the previous copy also failed ({restore}); it remains at {}",
+                    backup.display()
+                ));
+            }
+        }
+        return Err(match fs::remove_dir_all(&staging) {
+            Ok(()) => format!("install new test copy: {e}"),
+            Err(cleanup) => {
+                format!("install new test copy: {e}; temporary folder remains at {} because cleanup failed: {cleanup}", staging.display())
+            }
+        });
+    }
+    fs::remove_dir_all(&staging)
+        .map_err(|e| format!("copy is ready at {}, but temporary cleanup failed at {}: {e}", target.display(), staging.display()))?;
+    println!("copied {} to {} (source unchanged)", source.display(), target.display());
+    Ok(())
+}
+
+/// Copies a directory tree without following or reproducing symlinks.
+fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
+    let meta = fs::symlink_metadata(source).map_err(|e| format!("inspect {}: {e}", source.display()))?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err(format!("not a regular directory: {}", source.display()));
+    }
+    fs::create_dir(target).map_err(|e| format!("create {}: {e}", target.display()))?;
+    let entries = fs::read_dir(source).map_err(|e| format!("read {}: {e}", source.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("read an entry in {}: {e}", source.display()))?;
+        let from = entry.path();
+        let to = target.join(entry.file_name());
+        let kind = entry.file_type().map_err(|e| format!("inspect {}: {e}", from.display()))?;
+        if kind.is_dir() {
+            copy_directory(&from, &to)?;
+        } else if kind.is_file() {
+            fs::copy(&from, &to).map_err(|e| format!("copy {} to {}: {e}", from.display(), to.display()))?;
+        } else {
+            return Err(format!("refusing to copy a special file: {}", from.display()));
+        }
+    }
+    Ok(())
 }
 
 fn coverage(root: &Path) -> Result<(), String> {
@@ -311,6 +422,7 @@ fn run(task: &str) -> Result<(), String> {
         // the checked-in copy is current.
         "demo" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"]),
         "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
+        "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
         "ci" => {
             for t in ["fmt", "clippy", "test", "layers", "assets", "docs", "text", "demo-check"] {
                 println!("\n== {t} ==");
@@ -319,16 +431,20 @@ fn run(task: &str) -> Result<(), String> {
             println!("\nci: all checks passed");
             Ok(())
         }
-        other => {
-            Err(format!("unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage version demo demo-check"))
-        }
+        other => Err(format!(
+            "unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage version demo demo-check demo-copy"
+        )),
     }
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let task = args.first().cloned().unwrap_or_else(|| "ci".into());
-    let result = if task == "version" { version::run(&root(), &args[1..]) } else { run(&task) };
+    let result = match task.as_str() {
+        "version" => version::run(&root(), &args[1..]),
+        "demo-copy" => demo_copy(&root(), &args[1..]),
+        _ => run(&task),
+    };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
