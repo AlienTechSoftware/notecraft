@@ -7,9 +7,10 @@ name or mark.
 ## Versions
 
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
-- **The version is 0.0.2 and stays there until the owner approves a change, in words, each time.** The
+- **The version is 0.0.3 and stays there until the owner approves a change, in words, each time.** The
   rules below say what a number would mean once one is approved; they do not authorise a bump. The
-  first release was `v0.0.1`. The owner approved 0.0.2 in words on 2026-10-19, for the title band.
+  first release was `v0.0.1`. The owner approved 0.0.2 on 2026-10-19 for the title band and 0.0.3
+  on 2026-10-21 for the current release.
 - Plain semantic versioning: `MAJOR.MINOR.PATCH`, with an optional `-rc.1` style tag. The Craft
   apps do the same, and they are all in the 0.x range today.
 - **Patch** (0.1.0 to 0.1.1): bug fixes only, or a rebuild after a packaging or workflow fix. No new
