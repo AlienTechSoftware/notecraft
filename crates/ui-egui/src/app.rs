@@ -1141,12 +1141,9 @@ impl NoteCraftApp {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
             }
-            if node.info.kind == NodeKind::Notebook {
-                let can_close = self.session.opened_elsewhere().contains(&node.path);
-                if ui.add_enabled(can_close, egui::Button::new("Close notebook")).clicked() {
-                    acts.push(Act::CloseNotebook(node.path.clone()));
-                    ui.close();
-                }
+            if node.info.kind == NodeKind::Notebook && ui.button("Close notebook").clicked() {
+                acts.push(Act::CloseNotebook(node.path.clone()));
+                ui.close();
             }
             if has_kids && ui.button(if open { "Collapse" } else { "Expand" }).clicked() {
                 acts.push(Act::Toggle(node.path.clone()));

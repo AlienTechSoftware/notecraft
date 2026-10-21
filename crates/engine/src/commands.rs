@@ -278,11 +278,11 @@ fn notebook_open(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(s.open_notebook(&path)?))
 }
 
-/// Puts one of those away again. The folder and its notes are untouched.
+/// Puts a notebook away again. The folder and its notes are untouched.
 fn notebook_close(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = std::path::PathBuf::from(req(p, "path")?);
     let closed = s.close_notebook(&path);
-    Ok(Output::Text(if closed { "closed".into() } else { "that notebook was not open from elsewhere".into() }))
+    Ok(Output::Text(if closed { "closed".into() } else { "that notebook is not open".into() }))
 }
 
 fn tree_refresh(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
@@ -489,7 +489,7 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
     },
     CommandSpec {
         id: "notebook.close",
-        label: "Put away a notebook opened from somewhere else",
+        label: "Put away a notebook without deleting it",
         params: "path (required): the notebook's folder. Nothing is deleted",
         changes_tree: true,
         run: notebook_close,
@@ -659,6 +659,27 @@ mod tests {
         // What is not a notebook is refused, and so is nothing at all.
         assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
         assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    #[test]
+    fn a_notebook_in_the_notebooks_folder_can_be_closed_and_reopened() {
+        let t = TempDir::new("engine-close-root-notebook");
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let mut s = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let made = path_of(s.run("notebook.create", &p(&[("name", "Testing")])).expect("notebook"));
+        let metadata = made.join("_node.toml");
+        let original = std::fs::read(&metadata).expect("notebook metadata exists");
+
+        assert!(
+            matches!(s.run("notebook.close", &p(&[("path", &made.to_string_lossy())])).expect("close"), Output::Text(result) if result == "closed")
+        );
+        assert!(s.tree().is_empty(), "the notebook is put away from the tree");
+        assert_eq!(std::fs::read(&metadata).expect("notebook remains on disk"), original, "its files are untouched");
+
+        let mut again = Session::new(&t.path().join("notebooks"), settings).expect("reopen session");
+        assert!(again.tree().is_empty(), "the closed notebook stays put away after restart");
+        again.run("notebook.open", &p(&[("path", &made.to_string_lossy())])).expect("reopen notebook");
+        assert_eq!(again.tree().first().map(|n| n.info.title.as_str()), Some("Testing"));
     }
 
     #[test]

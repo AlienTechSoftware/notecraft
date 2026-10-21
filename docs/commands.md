@@ -216,7 +216,7 @@ Parameters:
 
 ## `notebook.close`
 
-Put away a notebook opened from somewhere else (changes the tree).
+Put away a notebook without deleting it (changes the tree).
 
 Parameters:
 
