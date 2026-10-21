@@ -126,17 +126,11 @@ pub fn spans_to_markdown(spans: &[Span]) -> String {
 /// Blocks as the HTML body of a page: the inside of `<body>`, one block per line.
 pub fn blocks_to_html(blocks: &[Block]) -> String {
     let mut out = String::new();
-    let mut open_list: Option<bool> = None; // Some(ordered)
-    for block in blocks {
-        // Close a list when the next block is not an item of the same kind.
-        let wanted = match block {
-            Block::Item { ordered, .. } => Some(*ordered),
-            _ => None,
-        };
-        if open_list != wanted
-            && let Some(ordered) = open_list.take()
-        {
-            out.push_str(if ordered { "</ol>\n" } else { "</ul>\n" });
+    let mut at = 0;
+    while let Some(block) = blocks.get(at) {
+        if let Block::Item { ordered, depth, .. } = block {
+            render_html_list(blocks, &mut at, *depth, *ordered, &mut out);
+            continue;
         }
         match block {
             Block::Heading { level, spans } => {
@@ -144,18 +138,7 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                 out.push_str(&format!("<h{l}>{}</h{l}>\n", spans_to_html(spans)));
             }
             Block::Paragraph(spans) => out.push_str(&format!("<p>{}</p>\n", spans_to_html(spans))),
-            Block::Item { ordered, task, spans, .. } => {
-                if open_list.is_none() {
-                    out.push_str(if *ordered { "<ol>\n" } else { "<ul>\n" });
-                    open_list = Some(*ordered);
-                }
-                let box_text = match task {
-                    Some(true) => "&#9745; ",
-                    Some(false) => "&#9744; ",
-                    None => "",
-                };
-                out.push_str(&format!("<li>{box_text}{}</li>\n", spans_to_html(spans)));
-            }
+            Block::Item { .. } => {}
             Block::Quote(spans) => out.push_str(&format!("<blockquote>{}</blockquote>\n", spans_to_html(spans))),
             Block::Code { lang, text } => {
                 // `class="diagram"` is how a page says "this is a Mermaid diagram"; the
@@ -167,7 +150,7 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                 };
                 out.push_str(&format!("<pre{class}>{}</pre>\n", escape(text.trim_end_matches('\n'))));
             }
-            Block::MathBlock(tex) => out.push_str(&format!("<p class=\"math\">$$ {} $$</p>\n", escape(tex.trim()))),
+            Block::MathBlock(tex) => out.push_str(&format!("<p class=\"math\">{}</p>\n", escape(tex.trim_end_matches('\n')))),
             Block::Table { head, rows } => {
                 out.push_str("<table>\n");
                 if !head.is_empty() {
@@ -189,11 +172,33 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
             Block::Rule => out.push_str("<hr>\n"),
             Block::Image { alt, src } => out.push_str(&format!("<p><img src=\"{}\" alt=\"{}\"></p>\n", escape(src), escape(alt))),
         }
-    }
-    if let Some(ordered) = open_list {
-        out.push_str(if ordered { "</ol>\n" } else { "</ul>\n" });
+        at += 1;
     }
     out
+}
+
+/// Writes one contiguous list level, nesting child items inside their parent list item.
+fn render_html_list(blocks: &[Block], at: &mut usize, depth: usize, ordered: bool, out: &mut String) {
+    out.push_str(if ordered { "<ol>\n" } else { "<ul>\n" });
+    while let Some(Block::Item { ordered: item_ordered, task, depth: item_depth, spans, .. }) = blocks.get(*at) {
+        if *item_depth != depth || *item_ordered != ordered {
+            break;
+        }
+        let box_text = match task {
+            Some(true) => "&#9745; ",
+            Some(false) => "&#9744; ",
+            None => "",
+        };
+        out.push_str(&format!("<li>{box_text}{}", spans_to_html(spans)));
+        *at += 1;
+        if let Some(Block::Item { depth: child_depth, ordered: child_ordered, .. }) = blocks.get(*at)
+            && *child_depth > depth
+        {
+            render_html_list(blocks, at, depth + 1, *child_ordered, out);
+        }
+        out.push_str("</li>\n");
+    }
+    out.push_str(if ordered { "</ol>\n" } else { "</ul>\n" });
 }
 
 /// Inline spans as HTML.
@@ -269,8 +274,10 @@ mod tests {
         for body in [
             "<h1>Title</h1>\n<p>Words with <b>bold</b> and <i>slant</i>.</p>\n",
             "<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n",
+            "<ul>\n<li>parent<ul>\n<li>nested</li>\n</ul></li>\n<li>sibling</li>\n</ul>\n",
             "<ol>\n<li>first</li>\n<li>second</li>\n</ol>\n",
             "<p>A <a href=\"x.md\">link</a> and <code>code</code>.</p>\n",
+            "<p class=\"math\">x^2 +\ny^2</p>\n",
             "<blockquote>Quality is not negotiable.</blockquote>\n",
             "<table>\n<tr><th>Phase</th><th>Status</th></tr>\n<tr><td>Format</td><td>done</td></tr>\n</table>\n",
             "<p><img src=\"assets/koala.png\" alt=\"A koala\"></p>\n",

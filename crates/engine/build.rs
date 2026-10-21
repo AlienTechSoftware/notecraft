@@ -1,6 +1,6 @@
-//! Embeds the Welcome notebook (`docs/demo/DemoNotebook`, built by `cargo xtask demo`) into
-//! the engine, so `notebook.welcome` can write it into any notebooks folder without the
-//! repository at hand. The generated file is a list of (relative path, bytes).
+//! Embeds the complete HTML Welcome notebook (`docs/demo/DemoNotebook/html`, built by
+//! `cargo xtask demo`) into the engine, so `notebook.welcome` can write it into any notebooks
+//! folder without the repository at hand. The CMGFM sibling remains source-only for comparison.
 //!
 //! Without the folder (a build from a copy of the crate alone) the list is empty and the
 //! command says so at run time; the build does not fail.
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into()));
-    let notebook = manifest.join("..").join("..").join("docs").join("demo").join("DemoNotebook");
+    let notebook = manifest.join("..").join("..").join("docs").join("demo").join("DemoNotebook").join("html");
     println!("cargo:rerun-if-changed={}", notebook.display());
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap_or_else(|_| ".".into())).join("welcome_files.rs");
 

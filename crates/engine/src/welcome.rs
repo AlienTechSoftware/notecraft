@@ -86,7 +86,8 @@ mod tests {
         assert!(available(), "docs/demo/DemoNotebook was not embedded; run `cargo xtask demo`");
         assert!(FILES.iter().any(|(p, _)| *p == "_node.toml"));
         assert!(FILES.iter().any(|(p, _)| *p == "00-start/welcome/index.html"), "the HTML start page");
-        assert!(FILES.iter().any(|(p, _)| p.starts_with("10-en/how-to/")), "the English pages");
+        assert!(FILES.iter().any(|(p, _)| p.starts_with("10-en/how-to/")), "the full English demo pages");
+        assert!(FILES.iter().all(|(p, _)| !p.ends_with("index.md")), "the bundled notebook is fully HTML");
         let mut paths: Vec<&str> = FILES.iter().map(|(p, _)| *p).collect();
         paths.dedup();
         assert_eq!(paths.len(), FILES.len(), "no path twice");

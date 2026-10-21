@@ -1,18 +1,15 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-//! Builds the Welcome notebook: `docs/demo/DemoNotebook`, from `docs/demo/scripts/content`.
+//! Builds full HTML and CMGFM Welcome notebooks under `docs/demo/DemoNotebook` from `docs/demo/scripts/content`.
 //!
-//! The notebook is a tour of NoteCraft that ships with the app. It is built by code so that
-//! thirteen languages stay in step: one section group per language, each with a "How to"
-//! section holding the same pages in the same order, and a "Start here" section with one page
-//! that links to every group. The content is Markdown and HTML files with a small front
-//! matter; this program only arranges them, writes the `_node.toml` files, gives every node a
-//! stable id and date, and checks the result with the store's own checker and link resolver.
+//! The two notebooks contain the same tour in thirteen languages. Every page and asset is
+//! converted to the notebook's one format. The HTML copy is embedded in the app; the CMGFM
+//! copy stays in the repository for comparison and testing.
 //!
 //! The output is deterministic: the same content gives the same bytes, so `cargo xtask
 //! demo-check` can fail when the checked-in notebook is older than its content.
 //!
 //! ```text
-//! cargo xtask demo          # build docs/demo/DemoNotebook
+//! cargo xtask demo          # build docs/demo/DemoNotebook/html and /cmgfm
 //! cargo xtask demo-check    # build to a scratch folder and compare, without writing
 //! ```
 
@@ -126,8 +123,15 @@ fn main() -> ExitCode {
 /// nothing) is replaced, so a wrong path cannot delete someone's notes.
 fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> {
     if out.exists() {
-        let node = notecraft_store::tree::read_node(out);
-        let ours = node.as_ref().is_some_and(|n| n.title == NOTEBOOK_TITLE);
+        let old_node = notecraft_store::tree::read_node(out);
+        let old_layout = old_node.as_ref().is_some_and(|n| n.title == NOTEBOOK_TITLE);
+        let html_node = notecraft_store::tree::read_node(&out.join("html"));
+        let cmgfm_node = notecraft_store::tree::read_node(&out.join("cmgfm"));
+        let paired_layout = html_node.as_ref().is_some_and(|node| node.title == NOTEBOOK_TITLE)
+            && cmgfm_node.as_ref().is_some_and(|node| node.title == NOTEBOOK_TITLE);
+        let partial_layout = html_node.as_ref().is_some_and(|node| node.title == NOTEBOOK_TITLE)
+            || cmgfm_node.as_ref().is_some_and(|node| node.title == NOTEBOOK_TITLE);
+        let ours = old_layout || paired_layout || partial_layout;
         let empty = fs::read_dir(out).map(|mut rd| rd.next().is_none()).unwrap_or(false);
         if !ours && !empty {
             return Err(format!("{} exists and is not the Welcome notebook; not touching it", out.display()));
@@ -135,8 +139,14 @@ fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
         fs::remove_dir_all(out).map_err(|e| format!("cannot clear {}: {e}", out.display()))?;
     }
     let built = build(content, out, art)?;
-    verify(out)?;
-    println!("demo: built {} with {} languages ({}) and {} pages", out.display(), built.languages.len(), built.languages.join(", "), built.pages);
+    verify_pair(out)?;
+    println!(
+        "demo: built {} with {} languages ({}) and {} pages in each format",
+        out.display(),
+        built.languages.len(),
+        built.languages.join(", "),
+        built.pages
+    );
     Ok(())
 }
 
@@ -145,7 +155,7 @@ fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
     let scratch = std::env::temp_dir().join(format!("notecraft-demo-check-{}", std::process::id()));
     let _ = fs::remove_dir_all(&scratch);
     let fresh = scratch.join("DemoNotebook");
-    let result = build(content, &fresh, art).and_then(|_| verify(&fresh)).and_then(|()| {
+    let result = build(content, &fresh, art).and_then(|_| verify_pair(&fresh)).and_then(|()| {
         let want = snapshot(&fresh)?;
         let have = snapshot(out)?;
         let mut differences: Vec<String> = Vec::new();
@@ -174,11 +184,26 @@ fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
 
 /// Writes the notebook under `out`, which must not exist yet.
 fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
+    fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
+    let mut full = Built::default();
+    for (folder, format) in [("html", notecraft_model::PageFormat::Html), ("cmgfm", notecraft_model::PageFormat::Cmgfm)] {
+        let variant = build_variant(content, &out.join(folder), art, format)?;
+        if full.languages.is_empty() {
+            full.languages = variant.languages.clone();
+        }
+        full.pages = variant.pages;
+    }
+    Ok(full)
+}
+
+fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraft_model::PageFormat) -> Result<Built, String> {
     let mut built = Built::default();
     fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
-    // HTML is the Welcome notebook's preferred format for new pages. Individual examples
-    // still carry their own format, so the notebook demonstrates both HTML and CMGFM.
-    write(&out.join("_node.toml"), &node_toml("notebook", NOTEBOOK_TITLE, &id_for("notebook"), 10, Some("html"), Some("purple")))?;
+    let format_name = match target_format {
+        notecraft_model::PageFormat::Html => "html",
+        notecraft_model::PageFormat::Cmgfm => "cmgfm",
+    };
+    write(&out.join("_node.toml"), &node_toml("notebook", NOTEBOOK_TITLE, &id_for("notebook"), 10, Some(format_name), Some("purple")))?;
 
     // The languages with content, in table order.
     let present: Vec<&Language> = LANGUAGES.iter().filter(|l| content.join(l.code).is_dir()).collect();
@@ -193,7 +218,8 @@ fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
     let start_page = read_source(&content.join("start").join("welcome.html"), 10)?;
     let list = language_list(&present);
     let body = start_page.body.replace(LANGUAGES_MARK, &list);
-    write_page(&start.join("welcome"), &Source { body, ..start_page }, &id_for("start/welcome"), None, art)?;
+    let start_page = convert_source(Source { body, ..start_page }, target_format, &content.join("start").join("welcome.html"))?;
+    write_page(&start.join("welcome"), &start_page, &id_for("start/welcome"), None, art)?;
     built.pages += 1;
 
     for (n, lang) in present.iter().enumerate() {
@@ -215,7 +241,7 @@ fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
             // A page with ink names it, as every page with ink must: the folder and the
             // page's own words have to agree. See docs/page-model.md section 5.
             let inked = s.slug == "pictures-and-files";
-            let s = &if inked {
+            let s = if inked {
                 Source {
                     body: format!(
                         "{}
@@ -229,7 +255,9 @@ fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
             } else {
                 s.clone()
             };
-            write_page(&page, s, &id, default_dir, art)?;
+            let source_path = content.join(lang.code).join(format!("{}-{}.{}", s.order, s.slug, if s.html { "html" } else { "md" }));
+            let s = convert_source(s, target_format, &source_path)?;
+            write_page(&page, &s, &id, default_dir, art)?;
             // The page about pictures and files is the one that shows handwriting, so a
             // reader meets the pen on the page that talks about what a page can hold.
             if s.slug == "pictures-and-files" {
@@ -273,6 +301,36 @@ fn write_page(dir: &Path, s: &Source, id: &str, default_dir: Option<&str>, art: 
     }
 }
 
+/// Converts a source page into the selected notebook format without changing its blocks or layout.
+fn convert_source(mut source: Source, target: notecraft_model::PageFormat, path: &Path) -> Result<Source, String> {
+    let input = if source.html { notecraft_model::PageFormat::Html } else { notecraft_model::PageFormat::Cmgfm };
+    if input == target {
+        return Ok(source);
+    }
+    let (blocks, containers) = notecraft_formats::boxes::read(input, &source.body);
+    let body = notecraft_formats::boxes::write(target, &blocks, containers.as_deref());
+    let (converted_blocks, converted_containers) = notecraft_formats::boxes::read(target, &body);
+    if blocks != converted_blocks || containers != converted_containers {
+        let difference = blocks
+            .iter()
+            .zip(&converted_blocks)
+            .enumerate()
+            .find(|(_, (left, right))| left != right)
+            .map(|(index, (left, right))| format!("block {index}: {left:?} -> {right:?}"))
+            .unwrap_or_else(|| format!("{} blocks -> {} blocks", blocks.len(), converted_blocks.len()));
+        return Err(format!(
+            "{}: converting to {target:?} changed page content or layout ({difference}; layout {containers:?} -> {converted_containers:?})",
+            path.display()
+        ));
+    }
+    if let Some(justify) = &source.justify {
+        check_justify(path, justify, target == notecraft_model::PageFormat::Html, &body)?;
+    }
+    source.body = body;
+    source.html = target == notecraft_model::PageFormat::Html;
+    Ok(source)
+}
+
 /// A body without the heading that only repeats the page's title.
 fn without_title_heading(body: &str, title: &str) -> String {
     let mut offset = 0;
@@ -282,7 +340,8 @@ fn without_title_heading(body: &str, title: &str) -> String {
             offset += line_with_end.len();
             continue;
         }
-        let is_echo = line.strip_prefix("# ").map(str::trim) == Some(title.trim());
+        let is_echo =
+            line.strip_prefix("# ").map(str::trim) == Some(title.trim()) || line.eq_ignore_ascii_case(&format!("<h1>{}</h1>", title.trim()));
         if !is_echo {
             return body.to_string();
         }
@@ -571,6 +630,11 @@ fn verify(out: &Path) -> Result<(), String> {
     }
 }
 
+fn verify_pair(out: &Path) -> Result<(), String> {
+    verify(&out.join("html"))?;
+    verify(&out.join("cmgfm"))
+}
+
 /// Every page folder under `dir` with the text of its file.
 fn pages_under(dir: &Path) -> Result<Vec<(PathBuf, String)>, String> {
     let mut out = Vec::new();
@@ -759,32 +823,41 @@ page-color: yellow
         assert_eq!(link_targets(html), vec!["../a/", "assets/p.png"]);
     }
 
-    /// The real content builds, the store's checker is happy, every link resolves, the tree
-    /// has the shape the owner asked for, and a second build is byte-identical.
+    /// Both full format editions build cleanly, contain the same tour, and rebuild identically.
     #[test]
-    fn the_notebook_builds_cleanly_and_the_same_way_twice() {
+    fn both_full_format_notebooks_build_cleanly_and_the_same_way_twice() {
         let dir = scratch("build");
         let out = dir.join("DemoNotebook");
         let built = build(&content_dir(), &out, &art_dir()).expect("build");
-        verify(&out).expect("verify");
+        verify_pair(&out).expect("verify both notebooks");
         assert!(built.languages.contains(&"en".to_string()));
-        let tree = notecraft_store::tree::load_tree(&out).expect("tree");
-        assert_eq!(tree.info.title, NOTEBOOK_TITLE);
-        assert_eq!(tree.info.format, Some(notecraft_model::PageFormat::Html), "new demo pages prefer HTML");
-        let first = tree.children.first().expect("a first child");
-        assert_eq!(first.info.title, START_TITLE, "the start section sorts first, so the notebook opens on it");
+        let html = out.join("html");
+        let cmgfm = out.join("cmgfm");
+        let html_tree = notecraft_store::tree::load_tree(&html).expect("HTML notebook tree");
+        let cmgfm_tree = notecraft_store::tree::load_tree(&cmgfm).expect("CMGFM notebook tree");
+        assert_eq!(html_tree.info.title, NOTEBOOK_TITLE);
+        assert_eq!(cmgfm_tree.info.title, NOTEBOOK_TITLE);
+        assert_eq!(html_tree.info.format, Some(notecraft_model::PageFormat::Html));
+        assert_eq!(cmgfm_tree.info.format, Some(notecraft_model::PageFormat::Cmgfm));
+        assert_eq!(html_tree.children.len(), cmgfm_tree.children.len(), "both editions have the same top-level sections");
+        let first = html_tree.children.first().expect("a first child");
+        assert_eq!(first.info.title, START_TITLE, "the start section sorts first");
         assert_eq!(first.children.len(), 1);
-        for group in tree.children.iter().skip(1) {
-            assert_eq!(group.info.kind, notecraft_model::NodeKind::SectionGroup, "{}", group.path.display());
-            assert_eq!(group.children.len(), 1, "one How to section in {}", group.path.display());
-            assert!(group.children[0].children.len() >= 8, "the same pages in every language");
+        for (html_group, cmgfm_group) in html_tree.children.iter().zip(&cmgfm_tree.children) {
+            assert_eq!(html_group.info.title, cmgfm_group.info.title);
+            assert_eq!(html_group.children.len(), cmgfm_group.children.len(), "matching structure in {}", html_group.path.display());
+            if html_group.info.kind == notecraft_model::NodeKind::SectionGroup {
+                assert_eq!(html_group.children.len(), 1, "one How to section in {}", html_group.path.display());
+                assert!(html_group.children[0].children.len() >= 8, "the same pages in every language");
+            }
         }
-        let start = fs::read_to_string(out.join(START_FOLDER).join("welcome").join("index.html")).expect("HTML start page");
+        let start = fs::read_to_string(html.join(START_FOLDER).join("welcome").join("index.html")).expect("HTML start page");
         assert!(start.contains("<li><a href=\"../../10-en/\">English</a></li>"), "{start}");
         assert!(start.contains("<li><a href=\"../../20-ar/\">العربية</a>, Arabic, right to left</li>"), "{start}");
         assert!(!start.contains(LANGUAGES_MARK));
-        assert!(out.join("10-en").join("how-to").join("write-a-page").join("index.md").is_file(), "the notebook also includes CMGFM pages");
-        assert!(out.join("10-en").join("how-to").join("page-formats").join("index.html").is_file(), "the format guide is an HTML example");
+        assert!(html.join("10-en").join("how-to").join("write-a-page").join("index.html").is_file());
+        assert!(cmgfm.join("10-en").join("how-to").join("write-a-page").join("index.md").is_file());
+        assert!(html.join("10-en").join("how-to").join("page-formats").join("index.html").is_file());
         let first_build = snapshot(&out).expect("snapshot");
         let again = dir.join("Again");
         build(&content_dir(), &again, &art_dir()).expect("build again");

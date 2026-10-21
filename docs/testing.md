@@ -22,6 +22,7 @@ link check, the text style check, and the check that the Welcome notebook in
 | Level | Where | What it proves |
 |---|---|---|
 | Unit tests | in each crate (`#[cfg(test)]`) | Pure logic: names, slugs, Markdown and HTML conversion, TeX parsing and layout, settings, ids, time, themes, the control transport. |
+| Page representation parity | `crates/formats/src/render.rs`, `crates/formats/src/boxes.rs`, `crates/formats/tests/format_parity.rs` | Block and inline-markup round trips, box layout round trips, and semantic equality for every page in the complete HTML and CMGFM demo notebooks. This is a required gate against the two serializations drifting apart. |
 | Store tests | `crates/store` | The folder format on a real temporary folder: creating nodes, the format cascade, deep nesting, unusual titles, both formats, attachments, search, the checker. |
 | Engine tests | `crates/engine` | Every command through the registry, a full workflow with commands only, path confinement, and `hostile_params_never_panic`. |
 | Command line tests | `apps/notecraft-cli` | A whole session through the command line, and error paths. |

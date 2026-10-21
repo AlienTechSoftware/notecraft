@@ -266,6 +266,7 @@ struct Writer {
     /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
     div_diagram: bool,
     in_math: bool,
+    in_math_block: bool,
     href: Vec<Option<String>>,
     row: Option<Vec<String>>,
     cell: String,
@@ -316,13 +317,14 @@ impl Writer {
     }
 
     fn text(&mut self, t: &str) {
-        if self.in_pre {
+        if self.in_pre || self.in_math_block {
             let s = t.to_string();
             self.push(&s);
             return;
         }
         let mut s = String::new();
-        let mut last_space = self.out.ends_with(' ') || self.out.ends_with('\n') || self.out.is_empty() || (self.in_cell && self.cell.ends_with(' '));
+        let mut last_space =
+            if self.in_cell { self.cell.ends_with(' ') } else { self.out.ends_with(' ') || self.out.ends_with('\n') || self.out.is_empty() };
         for c in t.chars() {
             if c.is_whitespace() {
                 if !last_space {
@@ -366,6 +368,14 @@ impl Writer {
                 self.out.push_str("```");
                 self.block_break();
             }
+            ("p", true) if self.in_math_block => {
+                self.in_math_block = false;
+                if !self.out.ends_with('\n') {
+                    self.out.push('\n');
+                }
+                self.out.push_str("$$");
+                self.block_break();
+            }
             ("h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div" | "blockquote", true) => {
                 if name == "blockquote" {
                     self.quote = false;
@@ -376,6 +386,11 @@ impl Writer {
                     }
                 }
                 self.block_break();
+            }
+            ("p", false) if attrs.to_lowercase().contains("class=\"math\"") => {
+                self.block_break();
+                self.push("$$\n");
+                self.in_math_block = true;
             }
             ("p" | "div", false) => self.block_break(),
             ("blockquote", false) => {
@@ -388,8 +403,16 @@ impl Writer {
                 self.push("---");
                 self.block_break();
             }
-            ("ul", false) => self.lists.push((false, 0)),
-            ("ol", false) => self.lists.push((true, 0)),
+            ("ul" | "ol", false) => {
+                if !self.lists.is_empty() {
+                    let trimmed = self.out.trim_end_matches([' ', '\t']).len();
+                    self.out.truncate(trimmed);
+                }
+                self.lists.push((name == "ol", 0));
+                if !self.out.is_empty() && !self.out.ends_with('\n') {
+                    self.out.push('\n');
+                }
+            }
             ("ul" | "ol", true) => {
                 self.lists.pop();
                 if self.lists.is_empty() {
@@ -410,7 +433,11 @@ impl Writer {
                 };
                 self.out.push_str(&format!("{}{marker}", "  ".repeat(depth)));
             }
-            ("li", true) => self.line_break(),
+            ("li", true) => {
+                let trimmed = self.out.trim_end_matches([' ', '\t']).len();
+                self.out.truncate(trimmed);
+                self.line_break();
+            }
             ("b" | "strong", _) => self.push("**"),
             ("i" | "em", _) => self.push("*"),
             ("s" | "del" | "strike", _) => self.push("~~"),
@@ -419,9 +446,10 @@ impl Writer {
                 self.block_break();
                 // `diagram` is how NoteCraft has always written one; `mermaid` is how Mermaid's own
                 // pages and most other tools do, so a page from elsewhere is read the same.
-                let attrs = attrs.to_lowercase();
-                self.pre_diagram = attrs.contains("diagram") || attrs.contains("mermaid");
-                self.push(if self.pre_diagram { "```mermaid\n" } else { "```\n" });
+                let class = attr(attrs, "class").unwrap_or_default();
+                self.pre_diagram = class.eq_ignore_ascii_case("diagram") || class.eq_ignore_ascii_case("mermaid");
+                let language = if self.pre_diagram { "mermaid" } else { class.as_str() };
+                self.push(&format!("```{language}\n"));
                 self.in_pre = true;
             }
             ("pre", true) => {
