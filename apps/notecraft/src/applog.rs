@@ -10,7 +10,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 const MAX_BYTES: u64 = 1_000_000;
 

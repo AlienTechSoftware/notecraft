@@ -98,6 +98,7 @@ unsafe extern "system" fn input_language_changed(
     unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
 }
 
+#[cfg(any(windows, test))]
 fn is_rtl_language_id(lang_id: u16) -> bool {
     // Windows LANGID primary language identifiers for scripts written right to left.
     matches!(lang_id & 0x03ff, 0x01 | 0x0d | 0x20 | 0x29 | 0x3d | 0x59 | 0x5a | 0x60 | 0x63 | 0x65 | 0x80 | 0x8c | 0x92)
