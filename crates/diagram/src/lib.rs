@@ -17,6 +17,12 @@ use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 pub const MAX_SOURCE_CHARS: usize = 20_000;
 /// The most lines a diagram may have and still be drawn.
 pub const MAX_LINES: usize = 150;
+/// The largest diagram the single-threaded WebAssembly build draws on the browser's UI thread.
+const WEB_MAX_SOURCE_CHARS: usize = 4_000;
+/// The most lines the single-threaded WebAssembly build draws on the browser's UI thread.
+const WEB_MAX_LINES: usize = 60;
+/// The most Mermaid relationships the single-threaded WebAssembly build draws in one frame.
+const WEB_MAX_RELATIONSHIPS: usize = 64;
 /// The largest a drawing may be on either side, in pixels at its own size. A picture bigger than
 /// the graphics card's textures cannot be shown at all, and a window that asks for one panics.
 pub const MAX_SIDE: f32 = 16_000.0;
@@ -99,6 +105,11 @@ pub fn draw(source: &str, palette: &Palette) -> Result<String, String> {
     if source.lines().count() > MAX_LINES {
         return Err(format!("The diagram has more than {MAX_LINES} lines, which is as much as is drawn"));
     }
+    if cfg!(target_arch = "wasm32")
+        && let Some(reason) = web_limit_error(source)
+    {
+        return Err(reason);
+    }
     let options = RenderOptions { theme: palette.theme(), ..RenderOptions::default() };
     let owned = source.to_owned();
     // The renderer is young. Whatever it does with a diagram it was not made for, the window goes on.
@@ -159,6 +170,18 @@ pub fn fit(w: f32, h: f32, room: f32, max_side: f32, pixels_per_point: f32) -> f
 
 fn first_line(s: &str) -> String {
     s.lines().next().unwrap_or("The diagram cannot be read").trim().to_string()
+}
+
+fn web_limit_error(source: &str) -> Option<String> {
+    if source.chars().count() > WEB_MAX_SOURCE_CHARS || source.lines().count() > WEB_MAX_LINES {
+        return Some(format!("This diagram is too large to draw in the browser (up to {WEB_MAX_SOURCE_CHARS} characters and {WEB_MAX_LINES} lines)"));
+    }
+    let relationships = ["-->", "---", "==>", "===", "-.->", "-.-", "->>", "-->>", "<--", "<<-", "--o", "--x"]
+        .iter()
+        .map(|arrow| source.matches(arrow).count())
+        .sum::<usize>();
+    (relationships > WEB_MAX_RELATIONSHIPS)
+        .then(|| format!("This diagram has more than {WEB_MAX_RELATIONSHIPS} relationships, which is as much as the browser draws at once"))
 }
 
 /// Every Mermaid diagram in a page's text, in the order they come, as their source.
@@ -407,5 +430,13 @@ mod tests {
         for odd in ["\u{0}", "\u{202e}x", "graph", "pie\n\"a\" : -1", "sequenceDiagram\n->>", "gantt\ndateFormat nonsense"] {
             let _ = draw(odd, &Palette::default());
         }
+    }
+
+    #[test]
+    fn browser_limits_reject_diagrams_that_would_block_the_ui_thread() {
+        let many_relationships = "flowchart TD; ".to_string() + &"A-->B;".repeat(WEB_MAX_RELATIONSHIPS + 1);
+        assert!(web_limit_error(&many_relationships).is_some_and(|e| e.contains("relationships")));
+        assert!(web_limit_error(&"x".repeat(WEB_MAX_SOURCE_CHARS + 1)).is_some_and(|e| e.contains("too large")));
+        assert!(web_limit_error("flowchart TD\n A --> B").is_none());
     }
 }

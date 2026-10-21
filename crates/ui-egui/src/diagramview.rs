@@ -1,21 +1,22 @@
 //! Shows a Mermaid diagram in the window.
 //!
 //! The drawing is made by `notecraft-diagram` as an SVG picture, in the page's colours, and
-//! shown through egui's SVG loader. Drawing can take a noticeable moment for a big graph, so it
-//! is done on a thread of its own and the window shows "Drawing..." until it is ready: a
-//! diagram must never make a frame wait. The result is kept by source and colours, so a
-//! diagram that has not changed is not drawn again, and a theme change draws it again in the new
-//! colours.
+//! shown through egui's SVG loader. Native builds draw on a thread of their own. A browser's
+//! single-threaded WebAssembly build draws smaller, bounded diagrams in the current frame. The
+//! result is kept by source and colours, so an unchanged diagram is not drawn again, and a theme
+//! change draws it again in the new colours.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
+#[cfg(any(not(target_arch = "wasm32"), test))]
 use std::time::Duration;
 
 use egui::{Color32, Ui, vec2};
 use notecraft_diagram::{Palette, draw};
 // std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is the
 // same type everywhere else and performance.now()/Date.now() there.
+#[cfg(any(not(target_arch = "wasm32"), test))]
 use web_time::Instant;
 
 use crate::theme::{Tokens, mix};
@@ -24,9 +25,11 @@ use crate::theme::{Tokens, mix};
 const CACHE_LIMIT: usize = 64;
 /// A drawing still not ready after this long is given up on in the window. Its thread carries on
 /// until the renderer returns, but the window stops waiting for it.
+#[cfg(not(target_arch = "wasm32"))]
 const GIVE_UP: Duration = Duration::from_secs(8);
 
 enum Slot {
+    #[cfg(not(target_arch = "wasm32"))]
     Drawing(Instant),
     /// The picture's bytes, and its own width and height.
     Ready(Arc<[u8]>, f32, f32),
@@ -76,6 +79,24 @@ fn cache(ctx: &egui::Context) -> Cache {
     ctx.data_mut(|d| d.get_temp_mut_or_insert_with::<Cache>(id, || Arc::new(Mutex::new(HashMap::new()))).clone())
 }
 
+fn render_slot(source: &str, palette: &Palette) -> Slot {
+    match draw(source, palette) {
+        Ok(svg) => {
+            let (w, h) = notecraft_diagram::size(&svg).unwrap_or((1.0, 1.0));
+            Slot::Ready(Arc::from(svg.into_bytes()), w, h)
+        }
+        Err(why) => Slot::Failed(why),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shown(slot: &Slot) -> Shown {
+    match slot {
+        Slot::Ready(..) => Shown::Drawn,
+        Slot::Failed(why) => Shown::Failed(why.clone()),
+    }
+}
+
 /// What the cache says about a diagram, starting a drawing when it knows nothing.
 pub fn state(ctx: &egui::Context, source: &str, palette: &Palette) -> Shown {
     let key = key_of(source, palette);
@@ -84,9 +105,11 @@ pub fn state(ctx: &egui::Context, source: &str, palette: &Palette) -> Shown {
     match slots.get(&key) {
         Some(Slot::Ready(..)) => return Shown::Drawn,
         Some(Slot::Failed(why)) => return Shown::Failed(why.clone()),
+        #[cfg(not(target_arch = "wasm32"))]
         Some(Slot::Drawing(since)) if since.elapsed() > GIVE_UP => {
             return Shown::Failed("The diagram took too long to draw".to_string());
         }
+        #[cfg(not(target_arch = "wasm32"))]
         Some(Slot::Drawing(_)) => {
             ctx.request_repaint_after(Duration::from_millis(100));
             return Shown::Drawing;
@@ -96,27 +119,31 @@ pub fn state(ctx: &egui::Context, source: &str, palette: &Palette) -> Shown {
     if slots.len() >= CACHE_LIMIT {
         slots.clear();
     }
-    slots.insert(key, Slot::Drawing(Instant::now()));
-    let (source, palette, done, ctx2) = (source.to_owned(), palette.clone(), cache.clone(), ctx.clone());
-    let started = std::thread::Builder::new().name("diagram".into()).spawn(move || {
-        let slot = match draw(&source, &palette) {
-            Ok(svg) => {
-                let (w, h) = notecraft_diagram::size(&svg).unwrap_or((1.0, 1.0));
-                Slot::Ready(Arc::from(svg.into_bytes()), w, h)
-            }
-            Err(why) => Slot::Failed(why),
-        };
-        if let Ok(mut slots) = done.lock() {
-            slots.insert(key, slot);
-        }
-        ctx2.request_repaint();
-    });
-    if started.is_err() {
-        slots.insert(key, Slot::Failed("The diagram could not be drawn".to_string()));
-        return Shown::Failed("The diagram could not be drawn".to_string());
+    #[cfg(target_arch = "wasm32")]
+    {
+        let slot = render_slot(source, palette);
+        let result = shown(&slot);
+        slots.insert(key, slot);
+        return result;
     }
-    ctx.request_repaint_after(Duration::from_millis(100));
-    Shown::Drawing
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        slots.insert(key, Slot::Drawing(Instant::now()));
+        let (source, palette, done, ctx2) = (source.to_owned(), palette.clone(), cache.clone(), ctx.clone());
+        let started = std::thread::Builder::new().name("diagram".into()).spawn(move || {
+            let slot = render_slot(&source, &palette);
+            if let Ok(mut slots) = done.lock() {
+                slots.insert(key, slot);
+            }
+            ctx2.request_repaint();
+        });
+        if started.is_err() {
+            slots.insert(key, Slot::Failed("The diagram could not be drawn".to_string()));
+            return Shown::Failed("The diagram could not be drawn".to_string());
+        }
+        ctx.request_repaint_after(Duration::from_millis(100));
+        Shown::Drawing
+    }
 }
 
 /// How many of `sources` are drawn, being drawn, and could not be, as the cache stands. It starts
@@ -187,7 +214,10 @@ mod tests {
         let pal = Palette::default();
         let src = "flowchart TD\n  A[Start] --> B[Done]";
         // The first look starts the drawing and does not wait for it.
+        #[cfg(not(target_arch = "wasm32"))]
         assert_eq!(state(&ctx, src, &pal), Shown::Drawing);
+        #[cfg(target_arch = "wasm32")]
+        assert_eq!(state(&ctx, src, &pal), Shown::Drawn);
         let began = Instant::now();
         let end = loop {
             match state(&ctx, src, &pal) {
