@@ -1884,6 +1884,25 @@ impl NoteCraftApp {
             }
             return;
         }
+        // Browsers, Word and other editors offer a formatted clipboard flavour as well
+        // as plain text. Parse it through the same HTML-to-block path as an HTML page, so
+        // links, emphasis, lists and tables survive a paste into NoteCraft.
+        if let Some(html) = crate::clipboard::html() {
+            let new = pageedit::pasted_blocks(pageedit::pasted(&html));
+            if !new.is_empty()
+                && let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable)
+            {
+                let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
+                if ed.blocks.is_empty() {
+                    ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
+                }
+                pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
+                ed.rebuild_body();
+                Self::mark_dirty_from_blocks(ed);
+                self.say("Pasted formatted content");
+                return;
+            }
+        }
         match crate::clipboard::text() {
             Some(text) => {
                 // The same reading as Ctrl+V: a box that was copied comes back whole, several lines

@@ -59,6 +59,13 @@ pub fn text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok().filter(|t| !t.is_empty())
 }
 
+/// The rich HTML flavour on the clipboard, when another application supplied one.
+/// Keeping this separate from [`text`] lets callers prefer formatted content while
+/// retaining plain text as the fallback for applications that only offer it.
+pub fn html() -> Option<String> {
+    arboard::Clipboard::new().ok()?.get().html().ok().filter(|html| !html.trim().is_empty())
+}
+
 /// A name for a pasted picture, so two pastes do not fight over one file. The clock is
 /// enough: a person cannot paste twice in the same second by hand, and `attach_bytes`
 /// makes the name unique anyway if they manage it.
@@ -91,6 +98,7 @@ mod tests {
         let before = Instant::now();
         let _ = has_picture();
         let _ = picture();
+        let _ = html();
         let _ = text();
         assert!(before.elapsed() < std::time::Duration::from_secs(5), "asking the clipboard does not hang the window");
     }
