@@ -54,7 +54,7 @@ fn the_full_demo_notebooks_have_matching_pages_and_blocks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("docs").join("demo").join("DemoNotebook");
     let html = pages(&root.join("html"));
     let cmgfm = pages(&root.join("cmgfm"));
-    assert_eq!(html.len(), 145, "expected every page from the 13-language demo");
+    assert_eq!(html.len(), 147, "expected every page from the 13-language demo");
     assert_eq!(html.len(), cmgfm.len(), "both notebooks must have the same number of pages");
     assert_eq!(html.keys().collect::<Vec<_>>(), cmgfm.keys().collect::<Vec<_>>(), "page paths must match");
 

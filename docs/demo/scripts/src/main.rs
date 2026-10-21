@@ -240,7 +240,7 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             let page = section.join(&s.slug);
             // A page with ink names it, as every page with ink must: the folder and the
             // page's own words have to agree. See docs/page-model.md section 5.
-            let inked = s.slug == "pictures-and-files";
+            let inked = matches!(s.slug.as_str(), "pictures-and-files" | "shapes" | "handwriting-and-drawing");
             let s = if inked {
                 Source {
                     body: format!(
@@ -258,10 +258,14 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             let source_path = content.join(lang.code).join(format!("{}-{}.{}", s.order, s.slug, if s.html { "html" } else { "md" }));
             let s = convert_source(s, target_format, &source_path)?;
             write_page(&page, &s, &id, default_dir, art)?;
-            // The page about pictures and files is the one that shows handwriting, so a
-            // reader meets the pen on the page that talks about what a page can hold.
+            // Keep the pictures-and-files sample, and add dedicated shape and handwriting
+            // pages to show that ink can be drawn and edited on a page.
             if s.slug == "pictures-and-files" {
                 write_ink(&page)?;
+            } else if s.slug == "shapes" {
+                write_shapes_ink(&page)?;
+            } else if s.slug == "handwriting-and-drawing" {
+                write_handwriting_ink(&page)?;
             }
             built.pages += 1;
         }
@@ -405,6 +409,125 @@ fn write_ink(dir: &Path) -> Result<(), String> {
     }
     drawing.add(tick);
 
+    let svg = notecraft_ink::svg::write(&drawing, notecraft_ink::svg::Flavour::Editable);
+    write(&dir.join("ink.svg"), &svg)
+}
+
+/// A two-column sheet of every shape offered by the Draw tab.
+fn write_shapes_ink(dir: &Path) -> Result<(), String> {
+    use notecraft_ink::{Drawing, Rgb, Stroke, Tool};
+    let mut drawing = Drawing::new(820.0, 800.0);
+    for (index, shape) in notecraft_ink::shapes::Shape::ALL.into_iter().enumerate() {
+        let column = index % 2;
+        let row = index / 2;
+        let x = 160.0 + column as f32 * 420.0;
+        let y = 300.0 + row as f32 * 100.0;
+        let dabs = notecraft_ink::shapes::trace(shape, (x, y), (x + 80.0, y + 60.0), 0.75);
+        let mut stroke = Stroke::new(Tool::Pen, Rgb(0x28, 0x57, 0x8a), 4.0);
+        for dab in dabs {
+            stroke.add(dab);
+        }
+        drawing.add(stroke);
+    }
+    let svg = notecraft_ink::svg::write(&drawing, notecraft_ink::svg::Flavour::Editable);
+    write(&dir.join("ink.svg"), &svg)
+}
+
+/// Handwritten words and a small landscape, saved as editable pen strokes.
+fn write_handwriting_ink(dir: &Path) -> Result<(), String> {
+    use notecraft_ink::{Dab, Drawing, Rgb, Stroke, Tool};
+    let mut drawing = Drawing::new(820.0, 700.0);
+    let mut x = 70.0;
+    for ch in "Meet me at 3".chars() {
+        if ch == ' ' {
+            x += 24.0;
+            continue;
+        }
+        let paths: &[&[(f32, f32)]] = match ch {
+            'M' => &[&[(0.0, 42.0), (0.0, 0.0), (14.0, 22.0), (28.0, 0.0), (28.0, 42.0)]],
+            'e' => &[&[
+                (27.0, 21.0),
+                (4.0, 21.0),
+                (6.0, 13.0),
+                (14.0, 7.0),
+                (22.0, 10.0),
+                (27.0, 18.0),
+                (25.0, 30.0),
+                (17.0, 37.0),
+                (9.0, 35.0),
+                (4.0, 28.0),
+            ]],
+            't' => &[&[(14.0, 1.0), (14.0, 33.0), (19.0, 38.0), (25.0, 35.0)], &[(3.0, 13.0), (24.0, 13.0)]],
+            'm' => &[&[(3.0, 39.0), (3.0, 12.0), (9.0, 7.0), (15.0, 13.0), (15.0, 39.0)], &[(15.0, 13.0), (22.0, 7.0), (29.0, 13.0), (29.0, 39.0)]],
+            'a' => &[&[
+                (25.0, 14.0),
+                (20.0, 7.0),
+                (11.0, 7.0),
+                (4.0, 15.0),
+                (3.0, 28.0),
+                (10.0, 37.0),
+                (19.0, 35.0),
+                (25.0, 27.0),
+                (25.0, 7.0),
+                (25.0, 39.0),
+            ]],
+            '3' => &[&[
+                (4.0, 8.0),
+                (13.0, 2.0),
+                (23.0, 7.0),
+                (24.0, 15.0),
+                (17.0, 20.0),
+                (10.0, 21.0),
+                (19.0, 22.0),
+                (26.0, 29.0),
+                (23.0, 37.0),
+                (13.0, 41.0),
+                (4.0, 36.0),
+            ]],
+            _ => &[],
+        };
+        for path in paths {
+            let mut stroke = Stroke::new(Tool::Pen, Rgb(0x22, 0x4f, 0x78), 4.2);
+            for (index, (px, py)) in path.iter().enumerate() {
+                stroke.add(Dab { x: x + px * 1.25, y: 200.0 + py * 1.25, pressure: if index % 2 == 0 { 0.72 } else { 0.88 } });
+            }
+            drawing.add(stroke);
+        }
+        x += 40.0;
+    }
+
+    // A sun, rolling hills and lake ripples.
+    let mut sun = Stroke::new(Tool::Pen, Rgb(0xd0, 0x70, 0x32), 3.5);
+    for i in 0..=32 {
+        let angle = i as f32 / 32.0 * std::f32::consts::TAU;
+        sun.add(Dab { x: 640.0 + angle.cos() * 28.0, y: 340.0 + angle.sin() * 28.0, pressure: 0.7 });
+    }
+    drawing.add(sun);
+    let lines: &[&[(f32, f32)]] = &[
+        &[
+            (60.0, 400.0),
+            (130.0, 360.0),
+            (200.0, 385.0),
+            (270.0, 325.0),
+            (350.0, 390.0),
+            (425.0, 340.0),
+            (505.0, 390.0),
+            (580.0, 360.0),
+            (670.0, 405.0),
+            (760.0, 370.0),
+        ],
+        &[(65.0, 435.0), (170.0, 415.0), (260.0, 440.0), (370.0, 415.0), (500.0, 440.0), (625.0, 417.0), (760.0, 440.0)],
+        &[(110.0, 500.0), (190.0, 490.0), (270.0, 502.0), (350.0, 490.0), (430.0, 502.0), (510.0, 490.0), (600.0, 502.0), (700.0, 490.0)],
+        &[(130.0, 545.0), (220.0, 535.0), (310.0, 547.0), (400.0, 535.0), (490.0, 547.0), (580.0, 535.0), (680.0, 547.0)],
+    ];
+    for (index, line) in lines.iter().enumerate() {
+        let colour = if index < 2 { Rgb(0x37, 0x76, 0x52) } else { Rgb(0x28, 0x65, 0x91) };
+        let mut stroke = Stroke::new(Tool::Pen, colour, 3.8);
+        for (i, (x, y)) in line.iter().enumerate() {
+            stroke.add(Dab { x: *x, y: *y, pressure: if i % 2 == 0 { 0.68 } else { 0.82 } });
+        }
+        drawing.add(stroke);
+    }
     let svg = notecraft_ink::svg::write(&drawing, notecraft_ink::svg::Flavour::Editable);
     write(&dir.join("ink.svg"), &svg)
 }
