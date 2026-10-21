@@ -12,6 +12,8 @@ pub struct Session {
     /// live outside the notebooks folder; opening it must not put away the others, which is
     /// why these sit beside the root rather than replacing it. Remembered in the settings.
     extra: Vec<PathBuf>,
+    /// Notebooks inside the notebooks folder that have been put away. Remembered in settings.
+    closed: Vec<PathBuf>,
     pub settings: Settings,
     tree: Vec<Node>,
 }
@@ -19,6 +21,7 @@ pub struct Session {
 /// How the settings file keeps the list. A vertical bar cannot appear in a Windows path and
 /// is vanishingly rare elsewhere, which makes it a safe separator for one line of them.
 const OPEN_KEY: &str = "open_notebooks";
+const CLOSED_KEY: &str = "closed_notebooks";
 const SEP: char = '|';
 
 impl Session {
@@ -28,7 +31,9 @@ impl Session {
         let root = std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))?;
         let extra =
             settings.get(OPEN_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
-        let mut s = Session { root, extra, settings, tree: Vec::new() };
+        let closed =
+            settings.get(CLOSED_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
+        let mut s = Session { root, extra, closed, settings, tree: Vec::new() };
         s.refresh();
         Ok(s)
     }
@@ -44,6 +49,8 @@ impl Session {
 
     pub fn refresh(&mut self) {
         self.tree = tree::load_notebooks(&self.root);
+        self.closed.retain(|p| p.is_dir());
+        self.tree.retain(|n| !self.closed.contains(&n.path));
         // The notebooks opened from elsewhere, in the order they were opened, after the
         // ones in the notebooks folder. A folder that has gone is quietly left out.
         self.extra.retain(|p| p.is_dir());
@@ -78,13 +85,24 @@ impl Session {
             self.extra.push(path.clone());
             self.remember();
         }
+        self.closed.retain(|p| p != &path);
+        self.remember_closed();
         self.refresh();
         Ok(path)
     }
 
-    /// Puts an opened-from-elsewhere notebook away again. Nothing is deleted.
+    /// Puts a notebook away again. Nothing is deleted.
     pub fn close_notebook(&mut self, path: &Path) -> bool {
         let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if canon.starts_with(&self.root) {
+            if self.closed.contains(&canon) || !tree::read_node(&canon).is_some_and(|n| n.kind == notecraft_store::NodeKind::Notebook) {
+                return false;
+            }
+            self.closed.push(canon);
+            self.remember_closed();
+            self.refresh();
+            return true;
+        }
         let before = self.extra.len();
         self.extra.retain(|p| p != &canon);
         if self.extra.len() != before {
@@ -98,6 +116,11 @@ impl Session {
     fn remember(&self) {
         let line = self.extra.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join(&SEP.to_string());
         let _ = self.settings.set(OPEN_KEY, &line);
+    }
+
+    fn remember_closed(&self) {
+        let line = self.closed.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join(&SEP.to_string());
+        let _ = self.settings.set(CLOSED_KEY, &line);
     }
 
     /// An absolute path or a path relative to the notebooks folder, resolved and
