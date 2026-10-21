@@ -253,6 +253,8 @@ enum Act {
     AddKind(PathBuf, NodeKind, NodeKind),
     /// A notebook, from the menu on the empty space.
     NewNotebook,
+    /// Close a notebook opened from outside the notebooks folder.
+    CloseNotebook(PathBuf),
     /// Show the notebooks folder in the file manager.
     RevealRoot,
     /// Ask the system for the folder to work from.
@@ -976,6 +978,23 @@ impl NoteCraftApp {
                 self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind, format: None });
             }
             Act::NewNotebook => self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None }),
+            Act::CloseNotebook(path) => {
+                self.save_now();
+                let was_showing = self.editor.as_ref().is_some_and(|ed| ed.dir.starts_with(&path));
+                if matches!(self.run("notebook.close", &params(&[("path", &path_str(&path))])), Some(Output::Text(ref result)) if result == "closed")
+                {
+                    self.open.retain(|p| !p.starts_with(&path));
+                    if self.selected.as_ref().is_some_and(|p| p.starts_with(&path)) {
+                        self.selected = self.session.tree().first().map(|n| n.path.clone());
+                    }
+                    if was_showing {
+                        self.editor = None;
+                        self.pad = None;
+                        self.nav = NavHistory::default();
+                    }
+                    self.say("Notebook closed; its files are still on disk");
+                }
+            }
             Act::RevealRoot => {
                 let root = self.session.root().to_path_buf();
                 self.reveal(&root);
@@ -1121,6 +1140,13 @@ impl NoteCraftApp {
             if ui.button("Rename...").clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
+            }
+            if node.info.kind == NodeKind::Notebook {
+                let can_close = self.session.opened_elsewhere().contains(&node.path);
+                if ui.add_enabled(can_close, egui::Button::new("Close notebook")).clicked() {
+                    acts.push(Act::CloseNotebook(node.path.clone()));
+                    ui.close();
+                }
             }
             if has_kids && ui.button(if open { "Collapse" } else { "Expand" }).clicked() {
                 acts.push(Act::Toggle(node.path.clone()));

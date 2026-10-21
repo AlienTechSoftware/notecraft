@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mermaid diagrams</title>
+<meta name="notecraft:id" content="a43084e68c6c9c461a8a">
+<meta name="notecraft:order" content="82">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-21T09:00:57Z">
+</head>
+<body>
+<p>Write a diagram as Mermaid text in a fenced block. NoteCraft draws the block on the page in the current theme; open the page source with <b>&lt; &gt;</b> to edit the text.</p>
+<h2>Flowchart</h2>
+<pre class="diagram">flowchart TD
+  Start[Write a note] --&gt; Save{Saved?}
+  Save --&gt;|yes| Ready[Keep going]
+  Save --&gt;|not yet| Wait[Pause briefly]
+  Wait --&gt; Save</pre>
+<h2>Sequence</h2>
+<pre class="diagram">sequenceDiagram
+  Writer-&gt;&gt;Page: Type a line
+  Page-&gt;&gt;Files: Save the page
+  Files--&gt;&gt;Page: Saved
+  Page--&gt;&gt;Writer: Keep writing</pre>
+<h2>Mind map</h2>
+<pre class="diagram">mindmap
+  root((A notebook))
+    Pages
+      Words
+      Equations
+    Drawings
+      Shapes
+      Ink
+    Files
+      Pictures
+      Attachments</pre>
+<h2>State diagram</h2>
+<pre class="diagram">stateDiagram-v2
+  [*] --&gt; Ready
+  Ready --&gt; Editing: type
+  Editing --&gt; Saved: pause
+  Saved --&gt; Editing: type again
+  Saved --&gt; [*]</pre>
+<h2>Pie diagram</h2>
+<pre class="diagram">pie title Pages in this tour
+  &quot;Writing&quot; : 4
+  &quot;Drawing&quot; : 2
+  &quot;Files&quot; : 2</pre>
+<p>Each block is its own diagram. The text stays in the page file, so it can be changed or copied without an image editor.</p>
+<p>Next: <a href="../charts-vega-d3/">Charts, Vega and D3</a>.</p>
+<p><img src="ink.svg" alt="Ink"></p>
+</body>
+</html>
