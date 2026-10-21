@@ -20,7 +20,7 @@ older Word material, which is from 2010.
 | Page or section direction | Page Layout, Page Setup, Layout, **Section direction** | not documented | Direction group, **Page** |
 | Whole document direction | Word Options, Advanced, Show Document Content, **Document View** | not documented | the page direction is the only level |
 | Table direction | Table Properties, **Table direction** | not documented | not built |
-| Direction of one run inside a line | the `RtlRun` and `LtrRun` macros | not documented | behind the Direction group's launcher |
+| Direction of one run inside a line | the `RtlRun` and `LtrRun` macros | not documented | in the Direction group's **More...** menu |
 
 Two things to take from the first row. OneNote keeps paragraph direction **behind the
 alignment arrow**, which is where NoteCraft already had it, so that placement was right. And

@@ -51,6 +51,16 @@ fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
 
+fn notebook_for(path: &Path) -> Option<PathBuf> {
+    let mut current = path;
+    loop {
+        if notecraft_store::tree::read_node(current).is_some_and(|node| node.kind == NodeKind::Notebook) {
+            return Some(current.to_path_buf());
+        }
+        current = current.parent()?;
+    }
+}
+
 /// The path as the window may show it: redacted to `<notebooks>/relative/path` when
 /// `redact` is on (for screenshots, tests and documentation, so no local path leaks).
 fn shown_in(root: &Path, p: &Path, redact: bool) -> String {
@@ -139,14 +149,21 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl;
     let r = if editing {
-        ui.add(
-            egui::TextEdit::singleline(&mut ed.title_buf)
-                .id(title_id)
-                .frame(egui::Frame::NONE)
-                .font(egui::FontId::proportional(26.0 * zoom))
-                .horizontal_align(align)
-                .desired_width(width),
-        )
+        let out = egui::TextEdit::singleline(&mut ed.title_buf)
+            .id(title_id)
+            .frame(egui::Frame::NONE)
+            .font(egui::FontId::proportional(26.0 * zoom))
+            .horizontal_align(align)
+            .desired_width(width)
+            .show(ui);
+        if out.response.has_focus()
+            && crate::input_language::is_rtl()
+            && let Some(range) = out.cursor_range
+        {
+            let caret = out.galley.pos_from_cursor(range.primary).translate(out.galley_pos.to_vec2());
+            crate::pageedit::paint_rtl_input_marker(ui, caret);
+        }
+        out.response
     } else {
         let pieces = crate::bidi::plain(&ed.title_buf, 26.0 * zoom, tokens);
         let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0 * zoom, width);
@@ -157,7 +174,7 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         }
         let name = ed.title_buf.clone();
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
-        resp.on_hover_cursor(egui::CursorIcon::Text)
+        egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
     if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
         *rename = Some(ed.title_buf.trim().to_string());
@@ -210,6 +227,20 @@ enum Dialog {
         title: String,
         count: usize,
     },
+    PageVersions {
+        page: PathBuf,
+        versions: Vec<notecraft_store::page::Version>,
+    },
+    RecycleBin {
+        notebook: PathBuf,
+        items: Vec<notecraft_store::recycle::Recycled>,
+    },
+    PurgeRecycleItem {
+        notebook: PathBuf,
+        id: String,
+        title: String,
+    },
+    Symbols,
 }
 
 enum Act {
@@ -313,8 +344,6 @@ pub struct NoteCraftApp {
     fit_page_width: bool,
     /// The theme chooser is open as a window (the ribbon's Theme button).
     theme_window: bool,
-    /// The window of direction controls that are not everyday ones.
-    direction_window: bool,
     /// Text the ribbon asked to put on the clipboard this frame.
     pending_copy: Option<String>,
     /// The File screen, when it is open, and which of its pages.
@@ -394,7 +423,6 @@ impl NoteCraftApp {
             zoom_percent: 100,
             fit_page_width: false,
             theme_window: false,
-            direction_window: false,
             pending_copy: None,
             backstage: None,
             full_page: false,
@@ -710,6 +738,9 @@ impl NoteCraftApp {
     // ---------- page open, save ----------
 
     fn open_page(&mut self, dir: &Path) {
+        if let Some(notebook) = notebook_for(dir) {
+            self.remember_recent_notebook(&notebook);
+        }
         self.nav.visit(dir);
         self.open_page_inner(dir);
     }
@@ -1354,11 +1385,12 @@ impl NoteCraftApp {
         let page = self.backstage.unwrap_or("Info");
         let tokens = self.tokens;
         let folder = self.shown(self.session.root());
+        let recent = self.recent_notebooks();
         let (root, redact) = (self.session.root().to_path_buf(), self.redact_paths);
         let show_path = move |p: &Path| shown_in(&root, p, redact);
         let mut acts = Vec::new();
         egui::CentralPanel::default().show(ui, |ui| {
-            acts = backstage::show(ui, self.session.tree(), &folder, page, &show_path, &tokens);
+            acts = backstage::show(ui, self.session.tree(), &recent, &folder, page, &show_path, &tokens);
         });
         for a in acts {
             match a {
@@ -1375,13 +1407,10 @@ impl NoteCraftApp {
                     self.reveal(&root);
                 }
                 backstage::Act::Open(p) => {
-                    self.backstage = None;
-                    self.open.insert(p.clone());
-                    self.selected = Some(p.clone());
-                    // Open the first page inside, so the notebook shows something.
-                    if let Some(page) = first_page(self.session.tree(), &p) {
-                        self.open_page(&page);
-                    }
+                    self.open_notebook_from_path(&p);
+                }
+                backstage::Act::OpenRecent(p) => {
+                    self.open_notebook_from_path(&p);
                 }
                 backstage::Act::AddWelcome => {
                     self.backstage = None;
@@ -1391,6 +1420,67 @@ impl NoteCraftApp {
                     self.status = format!("{name} is not built yet. See the roadmap for what is coming.");
                     self.status_is_error = false;
                 }
+            }
+        }
+    }
+
+    fn recent_notebooks(&self) -> Vec<Node> {
+        let mut paths = Vec::new();
+        if let Some(path) = self.editor.as_ref().and_then(|editor| notebook_for(&editor.dir)) {
+            paths.push(path);
+        }
+        paths.extend(self.session.opened_elsewhere().iter().rev().cloned());
+        if let Some(saved) = self.session.settings.get("recent_notebooks")
+            && let Ok(saved) = serde_json::from_str::<Vec<String>>(&saved)
+        {
+            paths.extend(saved.into_iter().map(PathBuf::from));
+        }
+        let mut recent = Vec::new();
+        let mut seen = HashSet::new();
+        for path in paths {
+            let path = std::fs::canonicalize(&path).unwrap_or(path);
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            if let Some(notebook) = notecraft_store::tree::load_tree(&path)
+                && notebook.info.kind == NodeKind::Notebook
+            {
+                recent.push(notebook);
+                if recent.len() == 12 {
+                    break;
+                }
+            }
+        }
+        recent
+    }
+
+    fn remember_recent_notebook(&mut self, path: &Path) {
+        let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let mut recent =
+            self.session.settings.get("recent_notebooks").and_then(|saved| serde_json::from_str::<Vec<String>>(&saved).ok()).unwrap_or_default();
+        let path_text = path.to_string_lossy().into_owned();
+        recent.retain(|saved| std::fs::canonicalize(saved).unwrap_or_else(|_| PathBuf::from(saved)) != path);
+        recent.insert(0, path_text);
+        recent.truncate(12);
+        if let Ok(serialized) = serde_json::to_string(&recent) {
+            let _ = self.session.settings.set("recent_notebooks", &serialized);
+        }
+    }
+
+    fn open_notebook_from_path(&mut self, path: &Path) {
+        self.save_now();
+        let path_text = path_str(path);
+        if let Some(Output::Path(opened)) = self.run("notebook.open", &params(&[("path", &path_text)])) {
+            self.remember_recent_notebook(&opened);
+            self.open.insert(opened.clone());
+            self.selected = Some(opened.clone());
+            self.backstage = None;
+            if let Some(page) = first_page(self.session.tree(), &opened) {
+                self.open_page(&page);
+            } else {
+                self.editor = None;
+                self.pad = None;
+                self.say(format!("Opened {}; it has no pages yet", self.shown(&opened)));
             }
         }
     }
@@ -1410,6 +1500,7 @@ impl NoteCraftApp {
         if wanted.is_empty() {
             let p = path_str(&picked);
             if let Some(Output::Path(opened)) = self.run("notebook.open", &params(&[("path", &p)])) {
+                self.remember_recent_notebook(&opened);
                 self.open.insert(opened.clone());
                 self.selected = Some(opened);
                 self.backstage = None;
@@ -1417,21 +1508,22 @@ impl NoteCraftApp {
             }
             return;
         }
-        let mut opened = 0;
+        let mut opened_count = 0;
         let mut first = None;
         for path in wanted {
             let p = path_str(&path);
-            if self.run("notebook.open", &params(&[("path", &p)])).is_some() {
-                opened += 1;
+            if let Some(Output::Path(notebook_path)) = self.run("notebook.open", &params(&[("path", &p)])) {
+                self.remember_recent_notebook(&notebook_path);
+                opened_count += 1;
                 first.get_or_insert(path.clone());
-                self.open.insert(path);
+                self.open.insert(notebook_path);
             }
         }
         if let Some(path) = first {
             self.selected = Some(path);
         }
         self.backstage = None;
-        self.say(match opened {
+        self.say(match opened_count {
             1 => "Notebook opened".to_string(),
             n => format!("{n} notebooks opened"),
         });
@@ -1458,6 +1550,7 @@ impl NoteCraftApp {
                 _ => return,
             },
         };
+        self.remember_recent_notebook(&dir);
         self.open.insert(dir.clone());
         self.selected = Some(dir.clone());
         if let Some(first) = first_page_under(self.session.tree(), &dir) {
@@ -1551,6 +1644,7 @@ impl NoteCraftApp {
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
             sensitivity: self.sensitivity,
+            has_page: self.editor.is_some(),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -1570,11 +1664,38 @@ impl NoteCraftApp {
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
             ribbon::Act::File => self.backstage = Some("Info"),
+            ribbon::Act::PageVersions => {
+                self.save_now();
+                if let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                    let p = params(&[("path", &path_str(&page))]);
+                    if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
+                        self.dialog = Some(Dialog::PageVersions { page, versions });
+                    }
+                }
+            }
+            ribbon::Act::RecycleBin => {
+                if let Some(notebook) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
+                    let p = params(&[("notebook", &path_str(&notebook))]);
+                    if let Some(Output::Recycled(items)) = self.run("recycle.list", &p) {
+                        self.dialog = Some(Dialog::RecycleBin { notebook, items });
+                    }
+                }
+            }
+            ribbon::Act::Symbols => self.dialog = Some(Dialog::Symbols),
             ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
             ribbon::Act::Tab(name) => self.ribbon_tab = name,
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),
             ribbon::Act::Insert(what) => match what {
+                "space" => {
+                    let Some(ed) = self.editor.as_mut() else { return };
+                    let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
+                    ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new()));
+                    ed.rebuild_body();
+                    ed.caret =
+                        Some(pageedit::Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                    Self::mark_dirty_from_blocks(ed);
+                }
                 "link" => self.insert_in_page("[text](https://)"),
                 "equation" => self.insert_in_page("$E = mc^2$"),
                 "date" | "time" | "datetime" => {
@@ -1593,7 +1714,6 @@ impl NoteCraftApp {
             }
             ribbon::Act::ToggleSource => self.set_show_source(!self.show_source),
             ribbon::Act::ToggleFullPage => self.full_page = !self.full_page,
-            ribbon::Act::FocusSearch => self.focus_search = true,
             ribbon::Act::OpenThemes => self.theme_window = !self.theme_window,
             ribbon::Act::RuleLines(r) => {
                 // The paper is the page's own, as OneNote's rule lines are. The window's
@@ -1651,7 +1771,6 @@ impl NoteCraftApp {
             ribbon::Act::Justify(strength) => self.apply_justify(strength),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
-            ribbon::Act::OpenAdvancedDirection => self.direction_window = !self.direction_window,
             ribbon::Act::InkPointer(p) => self.pointer = p,
             ribbon::Act::InkPen(i) => {
                 self.nib = i.min(self.rack.len().saturating_sub(1));
@@ -2218,24 +2337,17 @@ impl NoteCraftApp {
         Self::mark_dirty_from_blocks(ed);
     }
 
-    /// The keys Windows users expect for direction: Ctrl+Shift+R and Ctrl+Shift+L set the
-    /// line, Alt+Shift+R and Alt+Shift+L the run the caret is in.
+    /// The keys Windows users expect for paragraph direction. Alt+Shift remains available
+    /// to Windows for switching the active input language.
     fn direction_keys(&mut self, ctx: &Context) {
         use notecraft_model::Dir;
         let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
-        let alt_shift = Modifiers { alt: true, shift: true, ..Modifiers::NONE };
         let pressed = |m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(m, k));
         if pressed(ctrl_shift, Key::R) {
             self.apply_direction(Some(Dir::Rtl));
         }
         if pressed(ctrl_shift, Key::L) {
             self.apply_direction(Some(Dir::Ltr));
-        }
-        if pressed(alt_shift, Key::R) {
-            self.apply_embedding(Dir::Rtl);
-        }
-        if pressed(alt_shift, Key::L) {
-            self.apply_embedding(Dir::Ltr);
         }
     }
 
@@ -2633,49 +2745,6 @@ impl NoteCraftApp {
             );
             if !open || pick.is_some() {
                 self.theme_window = false;
-            }
-        }
-        if self.direction_window {
-            let mut open = true;
-            let mut act: Option<ribbon::Act> = None;
-            egui::Window::new("Advanced direction")
-                .collapsible(false)
-                .resizable(false)
-                .open(&mut open)
-                .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-                .show(ui.ctx(), |ui| {
-                    ui.label(egui::RichText::new("Part of a line").strong());
-                    ui.label(
-                        egui::RichText::new(
-                            "The selection, or what you type next. It is written into the text as a Unicode isolate, so it is right even where the drawing is not yet.",
-                        )
-                        .small()
-                        .color(tokens.muted),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button("Run left to right (Alt+Shift+L)").clicked() {
-                            act = Some(ribbon::Act::Embedding(notecraft_model::Dir::Ltr));
-                        }
-                        if ui.button("Run right to left (Alt+Shift+R)").clicked() {
-                            act = Some(ribbon::Act::Embedding(notecraft_model::Dir::Rtl));
-                        }
-                    });
-                    ui.add_space(10.0);
-                    ui.label(egui::RichText::new("Not built yet").strong());
-                    for (what, why) in [
-                        ("Digits", "Western (123) or Arabic-Indic, the way Word lets you choose"),
-                        ("Date and time format", "Which calendar and numerals a page's date line uses"),
-                        ("Mirror the window", "Tree on the right, ribbon reversed, for an interface in Arabic"),
-                    ] {
-                        ui.label(egui::RichText::new(format!("{what}: {why}")).small().color(tokens.muted));
-                    }
-                });
-            if !open {
-                self.direction_window = false;
-            }
-            if let Some(a) = act {
-                self.ribbon_act(a);
-                self.direction_window = false;
             }
         }
         if let Some((mode, accent)) = pick {
@@ -3606,14 +3675,22 @@ impl NoteCraftApp {
             }
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
+                let is_notebook = notecraft_store::tree::read_node(path).is_some_and(|node| node.kind == NodeKind::Notebook);
                 egui::Window::new("Delete").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.label(format!("Delete \"{title}\" and everything inside it ({count} item{})?", if *count == 1 { "" } else { "s" }));
-                    ui.colored_label(self.tokens.warn, "The folder is removed from disk. This cannot be undone here.");
+                    if is_notebook {
+                        ui.label("Deleting an entire notebook is not supported yet.");
+                    } else {
+                        ui.label(format!(
+                            "Move \"{title}\" and everything inside it ({count} item{}) to this notebook's recycle bin?",
+                            if *count == 1 { "" } else { "s" }
+                        ));
+                        ui.label("You can restore it from History.");
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
                             keep = false;
                         }
-                        if ui.button("Delete").clicked() {
+                        if ui.add_enabled(!is_notebook, egui::Button::new("Move to recycle bin")).clicked() {
                             go = true;
                         }
                     });
@@ -3625,8 +3702,135 @@ impl NoteCraftApp {
                             self.editor = None;
                         }
                         self.selected = None;
-                        self.say("Deleted");
+                        self.say("Moved to the notebook recycle bin");
                     }
+                    keep = false;
+                }
+            }
+            Dialog::PageVersions { page, versions } => {
+                let mut restore: Option<String> = None;
+                egui::Window::new("Page versions").collapsible(false).resizable(true).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
+                    ui.set_min_width(420.0);
+                    ui.label("Saved copies of this page");
+                    ui.add_space(6.0);
+                    if versions.is_empty() {
+                        ui.label("No saved versions yet. NoteCraft keeps a copy when the page changes.");
+                    } else {
+                        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                            for version in versions.iter() {
+                                ui.horizontal(|ui| {
+                                    ui.label(&version.created);
+                                    ui.label(egui::RichText::new(format!("{} KB", version.bytes.div_ceil(1024))).small().color(self.tokens.muted));
+                                    if ui.button("Restore").clicked() {
+                                        restore = Some(version.id.clone());
+                                    }
+                                });
+                            }
+                        });
+                    }
+                    ui.add_space(8.0);
+                    if ui.button("Close").clicked() {
+                        keep = false;
+                    }
+                });
+                if let Some(id) = restore {
+                    if self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some() {
+                        self.open_page(page);
+                        self.say("Restored the saved page version");
+                    }
+                    keep = false;
+                }
+            }
+            Dialog::RecycleBin { notebook, items } => {
+                let mut restore: Option<String> = None;
+                let mut purge: Option<(String, String)> = None;
+                egui::Window::new("Notebook recycle bin").collapsible(false).resizable(true).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+                    ctx,
+                    |ui| {
+                        ui.set_min_width(460.0);
+                        if items.is_empty() {
+                            ui.label("This notebook's recycle bin is empty.");
+                        } else {
+                            egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
+                                for item in items.iter() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(&item.title);
+                                        ui.label(
+                                            egui::RichText::new(format!("{} item(s) · {}", item.count, item.deleted))
+                                                .small()
+                                                .color(self.tokens.muted),
+                                        );
+                                        if ui.button("Restore").clicked() {
+                                            restore = Some(item.id.clone());
+                                        }
+                                        if ui.button("Delete permanently").clicked() {
+                                            purge = Some((item.id.clone(), item.title.clone()));
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                        if ui.button("Close").clicked() {
+                            keep = false;
+                        }
+                    },
+                );
+                if let Some(id) = restore {
+                    if self.run("recycle.restore", &params(&[("notebook", &path_str(notebook)), ("id", &id)])).is_some() {
+                        self.say("Restored to the original location");
+                        keep = false;
+                    }
+                } else if let Some((id, title)) = purge {
+                    next = Dialog::PurgeRecycleItem { notebook: notebook.clone(), id, title };
+                }
+            }
+            Dialog::PurgeRecycleItem { notebook, id, title } => {
+                let mut purge = false;
+                egui::Window::new("Permanently delete?").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+                    ctx,
+                    |ui| {
+                        ui.label(format!("Permanently delete \"{title}\" and everything inside it?"));
+                        ui.colored_label(self.tokens.warn, "This cannot be undone.");
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancel").clicked() {
+                                keep = false;
+                            }
+                            if ui.button("Delete permanently").clicked() {
+                                purge = true;
+                            }
+                        });
+                    },
+                );
+                if purge && self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
+                    self.say("Permanently deleted");
+                    keep = false;
+                }
+            }
+            Dialog::Symbols => {
+                let mut chosen: Option<&'static str> = None;
+                egui::Window::new("Insert symbol").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+                    ctx,
+                    |ui| {
+                        ui.label("Choose a symbol to insert at the caret");
+                        ui.add_space(6.0);
+                        for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
+                        {
+                            ui.horizontal(|ui| {
+                                for symbol in row {
+                                    if ui.add_sized([46.0, 36.0], egui::Button::new(egui::RichText::new(symbol).size(20.0))).clicked() {
+                                        chosen = Some(symbol);
+                                    }
+                                }
+                            });
+                        }
+                        ui.add_space(6.0);
+                        if ui.button("Close").clicked() {
+                            keep = false;
+                        }
+                    },
+                );
+                if let Some(symbol) = chosen {
+                    self.insert_in_page(symbol);
                     keep = false;
                 }
             }

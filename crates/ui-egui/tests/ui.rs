@@ -250,66 +250,60 @@ fn arabic_draws_and_the_direction_controls_work() {
 
     // The paragraph's direction sits where OneNote keeps it: in the alignment menu.
     h.get_by_label("Alignment and direction").click();
-    h.run();
+    h.run_steps(2);
     // A picture of the open menu: the two direction entries carry the pilcrow and arrow
     // that Word, LibreOffice and the Office web apps all use for paragraph direction.
     review(&mut h, "alignment-menu");
     h.get_by_label("Right-to-Left").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let body = h.state().body().unwrap_or_default().to_string();
     let marked: Vec<&str> = body.lines().filter(|l| l.starts_with('\u{200F}')).collect();
     assert_eq!(marked.len(), 1, "one paragraph carries the mark:\n{body:?}");
     h.get_by_label("Alignment and direction").click();
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Direction from the words").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "auto takes the mark off");
 
     // The paragraph's direction is also in the Direction group, with the pilcrow-and-arrow
     // mark Word uses for it, so a writer looking for the direction controls finds them all
     // in one place instead of under an alignment button.
     h.get_by_label("Paragraph right to left").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     assert_eq!(
         h.state().body().unwrap_or_default().lines().filter(|l| l.starts_with('\u{200F}')).count(),
         1,
         "the group's button marks the paragraph the menu's entry does"
     );
     h.get_by_label("Paragraph direction from the words").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "and takes it off again");
 
     // The page's own direction is written into the page's file, and the window redraws by
     // it: before this was fixed the file changed and nothing on the screen moved.
     h.get_by_label("Page right to left").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let file = s.md_page.join("index.md");
     let text = std::fs::read_to_string(&file).unwrap_or_default();
     assert!(text.contains("dir: rtl"), "the page records it:\n{text}");
     h.get_by_label("Page direction from the words").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let text = std::fs::read_to_string(&file).unwrap_or_default();
     assert!(!text.contains("dir: rtl"), "and auto takes it out again:\n{text}");
 
-    // The run direction is behind the launcher, with the options that are not built.
-    h.get_by_label("Advanced direction").click();
-    h.run();
-    h.get_by_label("Run right to left (Alt+Shift+R)").click();
-    h.run();
-    h.run();
+    // The less common run direction sits in a compact More menu, like OneNote's paragraph
+    // direction entries, rather than opening a separate dialog.
+    h.get_by_label("Text run direction").click();
+    h.run_steps(2);
+    review(&mut h, "run-direction-menu");
+    h.get_by_label("Right-to-Left").click();
+    h.run_steps(2);
     let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains('\u{2067}') && body.contains('\u{2069}'), "an isolate went in:\n{body:?}");
+    assert!(body.contains('\u{2067}') && body.contains('\u{2069}'), "an isolate went in (status: {}):\n{body:?}", h.state().status());
 
     // The page control writes into the page's own file, where it travels with the folder.
     h.get_by_label("Page right to left").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("dir: rtl"), "the page's own direction is in its front matter:\n{file}");
     review(&mut h, "rtl");
@@ -344,10 +338,9 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     h.get_by_label("Alignment and direction").click();
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Justify High").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
 
     // The page knows which paragraph and how hard it is stretched, and its words are the
     // ones that were typed. The three strengths are Word's Justify Low, Medium and High.
@@ -371,20 +364,18 @@ fn the_justify_button_fills_the_column_and_the_page_keeps_the_words() {
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     h.get_by_label("Alignment and direction").click();
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Justify Low").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let text = std::fs::read_to_string(&file).expect("the page file");
     assert!(text.contains("justify: 0:low"), "another strength changes it rather than adding a second entry:\n{text}");
 
     // Asking for the strength it already has puts the paragraph back the way it was, which
     // is how a menu of three gives a way to a ragged edge without a fourth entry.
     h.get_by_label("Alignment and direction").click();
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Justify Low").click();
-    h.run();
-    h.run();
+    h.run_steps(2);
     let text = std::fs::read_to_string(&file).expect("the page file");
     assert!(!text.contains("justify:"), "the line is gone, not left empty:\n{text}");
 }
@@ -837,7 +828,7 @@ fn the_ribbon_inserts_in_both_formats() {
     review(&mut h, "ribbon_insert");
 
     h.state_mut().open_path(&s.html_page.to_string_lossy());
-    h.run();
+    settle(&mut h);
     h.get_by_label("Table").click();
     h.run();
     h.get_by_label("3 x 2 Table").click();

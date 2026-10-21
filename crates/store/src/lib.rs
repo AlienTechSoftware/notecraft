@@ -16,6 +16,7 @@ pub mod error;
 pub mod links;
 pub mod ops;
 pub mod page;
+pub mod recycle;
 pub mod search;
 pub mod settings;
 pub mod testing;

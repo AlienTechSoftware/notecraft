@@ -20,6 +20,10 @@ pub fn output_json(o: &Output) -> Value {
         Output::Text(t) => json!(t),
         Output::Count(n) => json!(n),
         Output::Page(p) => json!({"format": p.format.id(), "title": p.title, "body": p.body}),
+        Output::Versions(versions) => Value::Array(versions.iter().map(|v| json!({"id": v.id, "created": v.created, "bytes": v.bytes})).collect()),
+        Output::Recycled(items) => {
+            Value::Array(items.iter().map(|x| json!({"id": x.id, "title": x.title, "deleted": x.deleted, "count": x.count})).collect())
+        }
         Output::Hits(h) => Value::Array(h.iter().map(|x| json!({"path": display_path(&x.path), "title": x.title, "snippet": x.snippet})).collect()),
         Output::Report(r) => {
             json!({"nodes": r.nodes, "problems": r.problems.iter().map(|p| json!({"path": display_path(&p.path), "message": p.message})).collect::<Vec<_>>()})

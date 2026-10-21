@@ -15,7 +15,7 @@ use notecraft_model::{PageFormat, Tag};
 
 /// The tabs, in order. "Source" only appears while the page source is shown, the way Office
 /// shows a tab for what is selected.
-pub const TABS: [&str; 4] = ["Home", "Insert", "Draw", "View"];
+pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
 /// Shown only while the caret is in a table, the way Office shows a tab for the thing in
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
@@ -26,6 +26,12 @@ pub const TABLE_TAB: &str = "Table";
 pub enum Act {
     /// The File tab: open the File screen.
     File,
+    /// Show the saved versions of the open page.
+    PageVersions,
+    /// Open the active notebook's recycle bin.
+    RecycleBin,
+    /// Open the built-in symbol picker.
+    Symbols,
     /// Put marks around the selection, or at the caret: bold, italic, strikethrough, code.
     Mark(&'static str),
     /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
@@ -41,7 +47,6 @@ pub enum Act {
     AddPicture,
     ToggleSource,
     ToggleFullPage,
-    FocusSearch,
     OpenThemes,
     /// Lines or squares behind the page, as on paper.
     RuleLines(RuleLines),
@@ -75,8 +80,6 @@ pub enum Act {
     PageDirection(Option<notecraft_model::Dir>),
     /// Which way the selection, or what is typed next, reads: an isolated run inside the line.
     Embedding(notecraft_model::Dir),
-    /// Open the window with the direction controls that are not everyday ones.
-    OpenAdvancedDirection,
     /// Take the marks off the selection.
     ClearFormatting,
     /// Put a tag on the line the caret is in, or take it off again.
@@ -342,6 +345,8 @@ pub struct View<'a> {
     pub can_redo: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
+    /// A page is open for page-specific History commands.
+    pub has_page: bool,
 }
 
 impl View<'_> {
@@ -391,6 +396,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
                 match chosen {
                     "Insert" => insert_tab(ui, view, t, &mut acts),
                     "Draw" => draw_tab(ui, view, t, &mut acts),
+                    "History" => history_tab(ui, view, t, &mut acts),
                     "View" => view_tab(ui, source, view, t, &mut acts),
                     TABLE_TAB => table_tab(ui, view, t, &mut acts),
                     SOURCE_TAB => source_tab(ui, format, t, &mut acts),
@@ -710,7 +716,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // in Arabic wants one. The paragraph's direction is in the alignment menu above, where
     // OneNote and Word keep it, and here as well: a writer who has come looking for the
     // direction controls should find all of them in one place rather than be sent back to
-    // a menu under an alignment button. The rarer run direction is behind the launcher.
+    // a menu under an alignment button. The rarer run direction is in the More menu.
     group(ui, "Direction", t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
@@ -722,7 +728,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 {
                     acts.push(Act::PageDirection(Some(notecraft_model::Dir::Rtl)));
                 }
-                if small(ui, None, "Auto", "Page direction from the words", "Every paragraph decides for itself", false, t).clicked() {
+                if small(ui, Some(Icon::DirAuto), "Auto", "Page direction from the words", "Every paragraph decides for itself", false, t).clicked() {
                     acts.push(Act::PageDirection(None));
                 }
             });
@@ -736,19 +742,21 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 {
                     acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
                 }
-                if small(ui, None, "Auto", "Paragraph direction from the words", "This paragraph decides from its own first letter", false, t)
-                    .clicked()
+                if small(
+                    ui,
+                    Some(Icon::ParaAuto),
+                    "Auto",
+                    "Paragraph direction from the words",
+                    "This paragraph decides from its own first letter",
+                    false,
+                    t,
+                )
+                .clicked()
                 {
                     acts.push(Act::Direction(None));
                 }
             });
-            ui.horizontal(|ui| {
-                if small(ui, None, "More...", "Advanced direction", "Direction for part of a line, and the options that are not built yet", false, t)
-                    .clicked()
-                {
-                    acts.push(Act::OpenAdvancedDirection);
-                }
-            });
+            run_direction_menu(ui, t, acts);
         });
     });
     group(ui, "Styles", t, |ui| {
@@ -1014,24 +1022,62 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
-/// One entry of the alignment menu that sets a paragraph's direction, with the mark Word
-/// and LibreOffice use for it: a pilcrow with an arrow pointing the way the paragraph is
-/// read. The shape is the convention a writer of Arabic looks for, so the words beside it
-/// are read as confirmation rather than as the only clue.
+/// One direction choice in a menu, with the icon that identifies its scope: paragraph mark
+/// for paragraph flow or caret-and-triangle for the direction of a text run.
 fn direction_row(ui: &mut Ui, icon: Option<Icon>, label: &str, t: &Tokens) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(150.0), 22.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(150.0), 24.0), Sense::click());
     let painter = ui.painter_at(rect);
     if resp.hovered() {
         painter.rect_filled(rect, 3.0, t.row_hover);
     }
     if let Some(icon) = icon {
-        icons::paint(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 3.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
+        icons::paint(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 4.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
     }
-    painter.text(egui::pos2(rect.min.x + 25.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
+    painter.text(egui::pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
     let said = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &said));
     resp
+}
+
+/// The less common direction for a selected or newly typed run, kept in a compact menu like
+/// the paragraph direction entries in OneNote's alignment menu.
+fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = small(ui, None, "More...", "Text run direction", "Set the direction of selected text, or the text typed next", false, t);
+    let open_id = egui::Id::new("ribbon-run-direction-menu");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(resp.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+                    ui.set_width(220.0);
+                    ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    ui.label(egui::RichText::new("Selected text / next typing").small().color(t.muted));
+                    ui.separator();
+                    if direction_row(ui, Some(Icon::CaretLtr), "Left-to-Right", t).clicked() {
+                        acts.push(Act::Embedding(notecraft_model::Dir::Ltr));
+                        picked = true;
+                    }
+                    if direction_row(ui, Some(Icon::CaretRtl), "Right-to-Left", t).clicked() {
+                        acts.push(Act::Embedding(notecraft_model::Dir::Rtl));
+                        picked = true;
+                    }
+                });
+            })
+            .response;
+        let clicked_away =
+            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
 /// One line of the Styles gallery, drawn the way the style looks.
@@ -1133,7 +1179,9 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// work is rather than a short list of what happens to exist.
 fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, "Insert", t, |ui| {
-        soon(ui, Icon::InsertSpace, "Insert\nSpace", t);
+        if big(ui, Icon::InsertSpace, "Insert\nSpace", "Add a blank paragraph at the caret", t).clicked() {
+            acts.push(Act::Insert("space"));
+        }
     });
     group(ui, "Tables", t, |ui| {
         table_menu(ui, view, t, acts);
@@ -1185,16 +1233,16 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     });
     group(ui, "Symbols", t, |ui| {
         equation_gallery(ui, t, acts);
-        soon(ui, Icon::Symbol, "Symbol", t);
-    });
-    // NoteCraft's own, which OneNote has no button for: a diagram kept as its source, so
-    // it can be read and changed in any editor rather than being a picture of one.
-    group(ui, "NoteCraft", t, |ui| {
-        if big(ui, Icon::Diagram, "Diagram", "A Mermaid diagram, kept as its source", t).clicked() {
-            acts.push(Act::Insert("diagram"));
+        if big_menu(ui, Icon::Symbol, "Symbol", "Insert a common symbol", t).clicked() {
+            acts.push(Act::Symbols);
         }
     });
     group(ui, "More", t, |ui| {
+        // NoteCraft's own addition to OneNote's group: a diagram kept as its source, so it
+        // can be read and changed in any editor rather than being a picture of one.
+        if big(ui, Icon::Diagram, "Diagram", "A Mermaid diagram, kept as its source", t).clicked() {
+            acts.push(Act::Insert("diagram"));
+        }
         soon(ui, Icon::Sticker, "Stickers", t);
     });
 }
@@ -1912,6 +1960,38 @@ fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
     resp.on_hover_text(format!("{label}: not built yet"));
 }
 
+/// OneNote's History tab, with the same groups and controls. NoteCraft does not yet keep
+/// unread flags or authors, so those controls are visible but disabled.
+fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, "Unread", t, |ui| {
+        soon(ui, Icon::PageStack, "Next\nUnread", t);
+        soon(ui, Icon::Todo, "Mark as\nRead", t);
+    });
+    group(ui, "Authors", t, |ui| {
+        soon(ui, Icon::Clock, "Recent\nEdits", t);
+        soon(ui, Icon::Search, "Find by\nAuthor", t);
+        soon(ui, Icon::Page, "Hide\nAuthors", t);
+    });
+    group(ui, "History", t, |ui| {
+        if ui
+            .add_enabled_ui(view.has_page, |ui| big(ui, Icon::PageStack, "Page\nVersions", "See and restore saved copies of this page", t))
+            .inner
+            .clicked()
+        {
+            acts.push(Act::PageVersions);
+        }
+        if ui
+            .add_enabled_ui(view.has_page, |ui| {
+                big(ui, Icon::Notebook, "Notebook\nRecycle Bin", "Restore pages, sections and groups removed from this notebook", t)
+            })
+            .inner
+            .clicked()
+        {
+            acts.push(Act::RecycleBin);
+        }
+    });
+}
+
 /// OneNote's Draw tab, group for group, and built the way OneNote builds it: big buttons
 /// with the mark each one makes above its name. What NoteCraft cannot do yet is greyed and
 /// says so, rather than being left out, so the tab is an honest map of the ink work.
@@ -2181,9 +2261,6 @@ view",
         });
     });
     group(ui, "Tools", t, |ui| {
-        if big(ui, Icon::Search, "Search", "Search all pages", t).clicked() {
-            acts.push(Act::FocusSearch);
-        }
         rows(ui, |ui| {
             not_built(ui, "Immersive reader", t);
             not_built(ui, "Live captions", t);
@@ -2324,8 +2401,8 @@ mod tests {
 
     #[test]
     fn the_tabs_are_office_like_and_source_comes_and_goes() {
-        assert_eq!(tabs(false, false), vec!["Home", "Insert", "Draw", "View"]);
-        assert_eq!(tabs(true, false), vec!["Home", "Insert", "Draw", "View", "Source"]);
+        assert_eq!(tabs(false, false), vec!["Home", "Insert", "Draw", "History", "View"]);
+        assert_eq!(tabs(true, false), vec!["Home", "Insert", "Draw", "History", "View", "Source"]);
         assert_eq!(resolve_tab("Insert", false, false), "Insert");
         assert_eq!(resolve_tab("Draw", false, false), "Draw");
         assert_eq!(resolve_tab("Source", true, false), "Source");
@@ -2335,7 +2412,7 @@ mod tests {
 
         // The Table tab goes with the caret: it is offered only while the caret is in a
         // table, and leaving one takes the tab and its commands away.
-        assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "View", "Table"]);
+        assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "History", "View", "Table"]);
         assert_eq!(resolve_tab("Table", false, true), "Table");
         assert_eq!(resolve_tab("Table", false, false), "Home", "out of the table, out of the tab");
     }
@@ -2367,7 +2444,7 @@ mod tests {
 
     #[test]
     fn every_tab_draws_without_panicking_and_asks_for_nothing_by_itself() {
-        for tab in ["Home", "Insert", "View", "Source", "junk"] {
+        for tab in ["Home", "Insert", "History", "View", "Source", "junk"] {
             for source in [false, true] {
                 assert_eq!(draw(tab, source), Vec::new(), "{tab} asked for something nobody clicked");
             }

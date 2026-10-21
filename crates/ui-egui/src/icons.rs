@@ -67,6 +67,14 @@ pub enum Icon {
     ParaLtr,
     /// The same, mirrored: this paragraph reads right to left.
     ParaRtl,
+    /// A text caret with a right-pointing marker: the text run reads left to right.
+    CaretLtr,
+    /// A text caret with a left-pointing marker: the text run reads right to left.
+    CaretRtl,
+    /// Lines of text with an asterisk: let each paragraph decide its own direction.
+    DirAuto,
+    /// A pilcrow with an asterisk: let this paragraph decide its own direction.
+    ParaAuto,
     /// A block rubber held at an angle, with the worn end on the page: the ink eraser.
     Eraser,
     /// An arrow curving back to the left: take the last thing back.
@@ -445,37 +453,102 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(7.6, 18.0), (12.0, 11.8), (19.5, 10.5), (12.0, 21.0)], shade(color, 0.45)),
             Shape::line_segment([g.p(3.0, 21.0), g.p(21.0, 21.0)], stroke),
         ],
-        // Lines of text with an arrow beneath them, the way Word marks text direction.
+        // Lines of text with a clear angle-bracket direction mark beneath them.
         Icon::DirLtr => vec![
             path(&[(5.0, 6.0), (17.0, 6.0)]),
             path(&[(5.0, 10.0), (19.0, 10.0)]),
             path(&[(5.0, 14.0), (14.0, 14.0)]),
-            path(&[(5.0, 19.0), (19.0, 19.0)]),
-            path(&[(16.0, 16.0), (19.0, 19.0), (16.0, 22.0)]),
+            Shape::line_segment([g.p(4.0, 19.0), g.p(13.0, 19.0)], Stroke::new((w / 7.0).max(1.8), color)),
+            path(&[(14.0, 15.0), (20.0, 19.0), (14.0, 23.0)]),
         ],
         Icon::DirRtl => vec![
             path(&[(19.0, 6.0), (7.0, 6.0)]),
             path(&[(19.0, 10.0), (5.0, 10.0)]),
             path(&[(19.0, 14.0), (10.0, 14.0)]),
-            path(&[(19.0, 19.0), (5.0, 19.0)]),
-            path(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
+            Shape::line_segment([g.p(20.0, 19.0), g.p(11.0, 19.0)], Stroke::new((w / 7.0).max(1.8), color)),
+            path(&[(10.0, 15.0), (4.0, 19.0), (10.0, 23.0)]),
         ],
-        // A pilcrow with an arrow beside it, the way Word marks a paragraph's direction:
-        // the arrow on the side the paragraph starts from, pointing the way it is read.
-        // The bowl is filled, because a hollow one closes up at this size.
+        // Paragraph controls read as a small angle bracket followed by a rounded pilcrow.
         Icon::ParaLtr => vec![
-            fill(&[(13.0, 4.5), (20.0, 4.5), (20.0, 12.5), (13.0, 12.5)], color),
-            path(&[(17.0, 4.5), (17.0, 20.0)]),
-            path(&[(20.0, 4.5), (20.0, 20.0)]),
-            path(&[(3.5, 12.0), (10.0, 12.0)]),
-            path(&[(7.5, 9.0), (10.5, 12.0), (7.5, 15.0)]),
+            fill(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            path(&[(3.0, 17.0), (7.0, 20.0), (3.0, 23.0)]),
         ],
         Icon::ParaRtl => vec![
-            fill(&[(4.0, 4.5), (11.0, 4.5), (11.0, 12.5), (4.0, 12.5)], color),
-            path(&[(7.0, 4.5), (7.0, 20.0)]),
-            path(&[(4.0, 4.5), (4.0, 20.0)]),
-            path(&[(20.5, 12.0), (14.0, 12.0)]),
-            path(&[(16.5, 9.0), (13.5, 12.0), (16.5, 15.0)]),
+            fill(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            path(&[(7.0, 17.0), (3.0, 20.0), (7.0, 23.0)]),
+        ],
+        Icon::ParaAuto => vec![
+            fill(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            Shape::line_segment([g.p(5.0, 17.0), g.p(5.0, 23.0)], Stroke::new((w / 7.0).max(1.5), color)),
+            Shape::line_segment([g.p(2.5, 18.5), g.p(7.5, 21.5)], Stroke::new((w / 7.0).max(1.5), color)),
+            Shape::line_segment([g.p(2.5, 21.5), g.p(7.5, 18.5)], Stroke::new((w / 7.0).max(1.5), color)),
+        ],
+        Icon::CaretLtr => vec![
+            Shape::line_segment([g.p(10.0, 3.0), g.p(10.0, 19.0)], Stroke::new((w / 10.0).max(1.5), color)),
+            fill(&[(10.0, 16.0), (20.0, 21.0), (10.0, 24.0)], color),
+        ],
+        Icon::CaretRtl => vec![
+            Shape::line_segment([g.p(14.0, 3.0), g.p(14.0, 19.0)], Stroke::new((w / 10.0).max(1.5), color)),
+            fill(&[(14.0, 16.0), (4.0, 21.0), (14.0, 24.0)], color),
+        ],
+        Icon::DirAuto => vec![
+            path(&[(5.0, 6.0), (17.0, 6.0)]),
+            path(&[(5.0, 10.0), (19.0, 10.0)]),
+            path(&[(5.0, 14.0), (14.0, 14.0)]),
+            line((16.0, 15.0), (16.0, 23.0)),
+            line((12.5, 17.0), (19.5, 21.0)),
+            line((12.5, 21.0), (19.5, 17.0)),
         ],
         // A crescent: the outer circle, with the inner edge drawn across it.
         Icon::Moon => vec![
@@ -500,7 +573,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 55] = [
+    pub const ALL: [Icon; 59] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -527,6 +600,10 @@ mod tests {
         Icon::DirRtl,
         Icon::ParaLtr,
         Icon::ParaRtl,
+        Icon::CaretLtr,
+        Icon::CaretRtl,
+        Icon::DirAuto,
+        Icon::ParaAuto,
         Icon::Bars,
         Icon::Eraser,
         Icon::Undo,

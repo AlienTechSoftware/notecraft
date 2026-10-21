@@ -44,11 +44,37 @@ Parameters:
 
 ## `node.delete`
 
-Delete a notebook, section group, section or page (changes the tree).
+Move a page, section or group into its notebook's recycle bin (changes the tree).
 
 Parameters:
 
-- path (required): the node to delete with everything inside it
+- path (required): the page, section or group to recycle
+
+## `recycle.list`
+
+List recycled items in a notebook.
+
+Parameters:
+
+- notebook (required): the notebook whose recycle bin to list
+
+## `recycle.restore`
+
+Restore an item from a notebook's recycle bin (changes the tree).
+
+Parameters:
+
+- notebook (required)
+- id (required): an id returned by recycle.list
+
+## `recycle.purge`
+
+Permanently delete an item from a notebook's recycle bin (changes the tree).
+
+Parameters:
+
+- notebook (required)
+- id (required): an id returned by recycle.list
 
 ## `node.title`
 
@@ -75,6 +101,23 @@ Parameters:
 
 - path (required): the page
 - body (required): the editable part (inside of the HTML body, or the Markdown after the front matter)
+
+## `page.versions`
+
+List saved page versions.
+
+Parameters:
+
+- path (required): the page
+
+## `page.version.restore`
+
+Restore a saved page version.
+
+Parameters:
+
+- path (required): the page
+- id (required): the saved version id from page.versions
 
 ## `page.direction`
 

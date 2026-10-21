@@ -309,12 +309,18 @@ and are not verified for every sync tool.
 - A page is written to a temporary file next to it and renamed over the original, so a
   crash cannot leave half a page.
 - Pages over 50 MB are refused.
-- A delete is confined to the notebooks folder and to NoteCraft nodes.
+- Page versions are kept in the page's hidden `.notecraft/versions` folder. At most 50
+  snapshots and 128 MB are retained; snapshots contain the page's main file, not its assets.
+- Recycled pages, sections and groups are moved into the notebook's hidden
+  `.notecraft/recycle-bin` folder. Restore returns an item to its original path and refuses
+  to overwrite a new item there. Emptying an entry permanently deletes it. Deleting an
+  entire notebook is not supported yet.
+- Deletes are confined to NoteCraft nodes inside a notebook.
 
 ## 10. What this format does not define yet
 
 - A strict HTML subset, and how a free-form canvas would be stored.
-- Version history of pages (git or file history is the intended answer).
+- A portable sync and conflict model for the local page versions and recycle bin.
 - Links between pages by id, and how renames update them. Today a page links to another
   page or folder by relative path, as it links to its pictures (`../other-page/`), and the
   app follows such a link; a rename breaks it.

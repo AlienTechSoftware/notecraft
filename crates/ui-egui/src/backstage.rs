@@ -25,6 +25,8 @@ pub enum Act {
     ChooseFolder,
     /// Open a page of this notebook (the first one).
     Open(std::path::PathBuf),
+    /// Open a notebook from the recent list.
+    OpenRecent(std::path::PathBuf),
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -54,6 +56,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn show(
     ui: &mut Ui,
     notebooks: &[Node],
+    recent: &[Node],
     notebooks_folder: &str,
     page: &str,
     show_path: &dyn Fn(&std::path::Path) -> String,
@@ -68,7 +71,7 @@ pub fn show(
                 ui.add_space(10.0);
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
-                    "Open" => open_page(ui, notebooks, notebooks_folder, t, &mut acts),
+                    "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
                     "About" => about_page(ui, t),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
@@ -162,7 +165,10 @@ fn info_page(ui: &mut Ui, notebooks: &[Node], folder: &str, show_path: &dyn Fn(&
                     })
                     .unwrap_or(t.notebook);
                 icons::paint(&painter, rect.shrink(8.0), Icon::Notebook, color);
-                if resp.clicked() {
+                let name = n.info.title.clone();
+                let enabled = ui.is_enabled();
+                resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, format!("Open {name}")));
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open this notebook").clicked() {
                     acts.push(Act::Open(n.path.clone()));
                 }
                 ui.add_space(8.0);
@@ -223,37 +229,66 @@ fn new_page(ui: &mut Ui, folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
     );
 }
 
-fn open_page(ui: &mut Ui, notebooks: &[Node], folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
-    heading(ui, "Open", t);
-    ui.label(egui::RichText::new(format!("Notebooks in {folder}")).size(12.0).color(t.muted));
-    ui.add_space(6.0);
-    for n in notebooks {
-        if ui.button(&n.info.title).clicked() {
-            acts.push(Act::Open(n.path.clone()));
-        }
-    }
-    ui.add_space(10.0);
+fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std::path::Path) -> String, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "Open a notebook", t);
     ui.horizontal(|ui| {
-        // The system's own dialog, which is what "Open" means everywhere else.
-        if ui.button("Open a folder...").on_hover_text("Choose the folder your notebooks are in").clicked() {
+        if ui.add_sized([230.0, 42.0], egui::Button::new(egui::RichText::new("Browse for a notebook…").size(15.0))).clicked() {
             acts.push(Act::ChooseFolder);
         }
-        if ui.button("Show the notebooks folder").on_hover_text("Open it in the file manager").clicked() {
+        if ui.add_sized([210.0, 42.0], egui::Button::new(egui::RichText::new("Show notebooks folder").size(14.0))).clicked() {
             acts.push(Act::OpenNotebooksFolder);
         }
     });
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new("Choosing a folder that is itself a notebook works too: NoteCraft then works from the folder it sits in.")
-            .size(11.5)
-            .color(t.muted),
-    );
-    ui.add_space(14.0);
-    ui.label(
-        egui::RichText::new("Opening a notebook from a web address is not built. Importing a `.one` notebook is being written; see the roadmap.")
-            .size(11.5)
-            .color(t.muted),
-    );
+    ui.add_space(22.0);
+    ui.label(egui::RichText::new("Recently opened").size(16.0).color(t.strong));
+    ui.add_space(8.0);
+    if recent.is_empty() {
+        ui.label(egui::RichText::new("Notebooks you open will appear here.").size(13.0).color(t.muted));
+        return;
+    }
+    egui::ScrollArea::vertical().id_salt("backstage-recent-notebooks").show(ui, |ui| {
+        for notebook in recent {
+            let width = ui.available_width().min(680.0);
+            let (rect, response) = ui.allocate_exact_size(vec2(width, 70.0), Sense::click());
+            let background = if response.hovered() { t.row_hover } else { t.panel };
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 5.0, background);
+            painter.rect_stroke(rect, 5.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+            let cover = egui::Rect::from_center_size(egui::pos2(rect.left() + 32.0, rect.center().y), vec2(40.0, 46.0));
+            let color = notebook
+                .info
+                .color
+                .map(|c| {
+                    let (r, g, b) = c.rgb(t.panel.r() < 128);
+                    egui::Color32::from_rgb(r, g, b)
+                })
+                .unwrap_or(t.notebook);
+            icons::paint(&painter, cover, Icon::Notebook, color);
+            painter.text(
+                egui::pos2(rect.left() + 64.0, rect.center().y - 9.0),
+                Align2::LEFT_CENTER,
+                &notebook.info.title,
+                egui::FontId::proportional(16.0),
+                t.text,
+            );
+            painter.text(
+                egui::pos2(rect.left() + 64.0, rect.center().y + 13.0),
+                Align2::LEFT_CENTER,
+                show_path(&notebook.path),
+                egui::FontId::monospace(11.0),
+                t.muted,
+            );
+            painter.text(egui::pos2(rect.right() - 18.0, rect.center().y), Align2::CENTER_CENTER, "›", egui::FontId::proportional(25.0), t.accent);
+            let name = notebook.info.title.clone();
+            response.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Open {name}")));
+            if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                acts.push(Act::OpenRecent(notebook.path.clone()));
+            }
+            ui.add_space(6.0);
+        }
+    });
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(format!("Browse notebooks in {folder} or choose another folder.")).size(11.5).color(t.muted));
 }
 
 /// About: what this is, which version, and where the code lives.
@@ -314,7 +349,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut acts = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            acts = show(ui, &[], "C:/notebooks", "About", &|p| p.to_string_lossy().into_owned(), &t);
+            acts = show(ui, &[], &[], "C:/notebooks", "About", &|p| p.to_string_lossy().into_owned(), &t);
         });
         out.textures_delta.clear();
         assert_eq!(acts, Vec::new(), "the About page asked for something nobody clicked");
