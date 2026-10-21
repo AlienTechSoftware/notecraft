@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mirar dentro de una página</title>
+<meta name="notecraft:id" content="3d3ca34a2b7108986920">
+<meta name="notecraft:order" content="75">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>Muchas aplicaciones de notas guardan un cuaderno entero en un único archivo binario, y un editor de texto solo muestra ruido. Una página de NoteCraft es una carpeta de archivos normales, y la vista de código te enseña esa carpeta, archivo por archivo. Pruébalo ahora: pulsa el botón <code>&lt; &gt;</code> junto a esta página.</p>
+<h2>Qué verás</h2>
+<p>A la izquierda, <b>Archivos de esta página</b>: primero el archivo de la propia página, <code>index.md</code>, y después todo lo demás que haya en la carpeta. Un archivo que nada en la página usa aparece marcado como <i>no usado por la página</i>. A la derecha está el archivo que has elegido. Esta es la página que estás leyendo, así que el visor muestra su propio texto.</p>
+<p>El archivo de la página se muestra entero: su <b>cabecera</b> (el id, el título, el orden, las fechas y los ajustes de la página) y debajo el <b>cuerpo</b>. Puedes editarlo todo. Vuelve a pulsar el mismo botón para cerrar la vista y la página se dibuja de nuevo con lo que escribiste.</p>
+<table>
+<tr><th>Archivo</th><th>Qué muestra el visor</th><th>¿Se puede escribir en él?</th></tr>
+<tr><td>El archivo de la página, <code>index.md</code> o <code>index.html</code></td><td>La cabecera y el cuerpo tal como se guardó</td><td>Todo</td></tr>
+<tr><td>Un dibujo, <code>ink.svg</code></td><td>El texto SVG, con las lecturas propias del lápiz</td><td>Sí, con cuidado</td></tr>
+<tr><td>Una imagen</td><td>La imagen</td><td>No</td></tr>
+<tr><td>Otro texto</td><td>Su texto</td><td>No</td></tr>
+<tr><td>Cualquier otra cosa</td><td>Su nombre, tamaño y tipo</td><td>No</td></tr>
+</table>
+<p>Un archivo de más de 256 KB muestra su primera parte y lo dice.</p>
+<h2>Qué te enseña</h2>
+<ul>
+<li>Una página organizada en cuadros tiene un <code>div</code> con <code>class=&quot;nc-box&quot;</code> alrededor de cada cuadro.</li>
+<li>Un dibujo es un archivo, <code>ink.svg</code>, y el texto de la página lo nombra en una línea.</li>
+<li>Las etiquetas y los enlaces son texto sencillo.</li>
+</ul>
+<p>Nada está oculto: si la página lo muestra, hay un archivo en esta carpeta que lo contiene.</p>
+<p>Siguiente: <a href="../right-to-left/">De derecha a izquierda</a>.</p>
+<p><i>Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.</i></p>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Synchronisieren und sichern</title>
+<meta name="notecraft:id" content="b502c8e853ab4f3700af">
+<meta name="notecraft:order" content="60">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft hat keine eigene Synchronisierung und kein Konto. Ein Notizbuch ist ein Ordner mit kleinen Dateien, also legen Sie Ihren Notizbuchordner dorthin, wo Ihr Synchronisierungsdienst schon hinschaut: OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, eine Netzwerkfreigabe oder ein git-Repository. Keiner davon muss NoteCraft verstehen. Sie kopieren Dateien.</p>
+<h2>Warum das funktioniert</h2>
+<ul>
+<li><b>Eine Datei pro Seite.</b> Eine Seite zu bearbeiten schreibt eine einzige kleine Datei neu,</li>
+</ul>
+<p>also berühren zwei Rechner selten dieselben Bytes.</p>
+<ul>
+<li><b>Atomare Schreibvorgänge.</b> Eine Seite wird in eine temporäre Datei geschrieben und dann über</li>
+</ul>
+<p>die alte umbenannt, also sieht ein Synchronisierungsclient nie eine halb geschriebene Seite.</p>
+<ul>
+<li><b>Kurze, sichere Namen.</b> Ordnernamen haben höchstens 64 Zeichen, Pfade höchstens 255, und</li>
+</ul>
+<p>nichts, was Windows ablehnt, wird je geschrieben.</p>
+<ul>
+<li><b>Konfliktkopien fallen auf.</b> Legt ein Dienst eine Konfliktkopie neben eine Seite, meldet es</li>
+</ul>
+<p>der Prüfer: <b>Datei</b>, dann <b>Prüfen</b>, oder <code>notecraft-cli check</code> im Terminal.</p>
+<h2>Sicherung</h2>
+<p>Eine Sicherung ist eine Kopie des Ordners. Es gibt nichts anderes zu exportieren.</p>
+<h2>Seitenverlauf</h2>
+<p>Öffnen Sie <b>Verlauf</b> und dann <b>Seitenversionen</b>, um gespeicherte Fassungen dieser Seite anzusehen und wiederherzustellen. Gelöschte Seiten, Abschnitte und Abschnittsgruppen lassen sich über <b>Verlauf</b> und <b>Notebook-Papierkorb</b> wiederherstellen. Diese Funktionen ersetzen keine separate Sicherung des Notebooks.</p>
+<h2>Was nicht behandelt wird</h2>
+<p>NoteCraft führt zwei Fassungen einer Seite nicht zusammen. Wenn Ihr Sync-Dienst eine Konfliktkopie erstellt, entscheiden Sie, welche Fassung Sie behalten.</p>
+<p>Weiter: <a href="../make-it-yours/">Nach Ihrem Geschmack</a>.</p>
+<p><i>Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.</i></p>
+</body>
+</html>

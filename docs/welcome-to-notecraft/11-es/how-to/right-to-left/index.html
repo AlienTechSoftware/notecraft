@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>De derecha a izquierda</title>
+<meta name="notecraft:id" content="376c2dfc1933ac6ec0c4">
+<meta name="notecraft:order" content="80">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>El árabe, el hebreo, el persa y el urdu se leen desde la derecha. NoteCraft los dibuja así: las letras se unen, una línea cuelga del borde derecho, y una línea que mezcla las dos direcciones se ordena con el algoritmo Unicode, de modo que un precio conserva su número del derecho:</p>
+<p>السعر 123 ريال</p>
+<p>Las fuentes que lo hacen posible vienen con la aplicación, así que la línea de arriba se ve igual en una máquina sin fuente árabe instalada. El hebreo y el hindi también tienen sus fuentes incluidas:</p>
+<p>שלום עולם</p>
+<p>नमस्ते दुनिया</p>
+<h2>Tres direcciones, tres controles</h2>
+<table>
+<tr><th>Control</th><th>Dónde</th><th>Qué fija</th></tr>
+<tr><td><b>Página</b></td><td><b>Inicio</b>, luego <b>Dirección</b></td><td>En qué sentido se lee toda la página. Una línea sin letras propias la sigue</td></tr>
+<tr><td><b>Párrafo</b></td><td>El menú de alineación en <b>Texto básico</b></td><td>En qué sentido se lee el párrafo donde está el cursor</td></tr>
+<tr><td><b>Tramo</b></td><td><b>Más...</b> en el grupo Dirección</td><td>En qué sentido se lee la selección, o lo que escribas a continuación</td></tr>
+</table>
+<p>La dirección de página es propia de NoteCraft; las aplicaciones de las que viene la gente no tienen ese ajuste, y un cuaderno escrito en árabe lo necesita.</p>
+<h2>Dónde se guarda el ajuste</h2>
+<p>En el propio texto. La dirección de página es <code>dir: rtl</code> en la cabecera de una página Markdown o una etiqueta meta en una página HTML. La dirección de párrafo es un carácter invisible al principio, la marca Unicode de derecha a izquierda o de izquierda a derecha. Ambos sobreviven en cualquier otro editor.</p>
+<p>Los grupos en árabe, persa, urdu y hebreo de este cuaderno están escritos de derecha a izquierda de principio a fin. Abre uno desde <a href="../../../00-start/welcome/">la página de inicio</a> y compara.</p>
+<p><i>Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.</i></p>
+</body>
+</html>
