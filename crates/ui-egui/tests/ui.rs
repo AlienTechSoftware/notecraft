@@ -1344,6 +1344,131 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
     review(&mut h, "draw_tab");
 }
 
+/// Page ink crosses container edges and stays visible in the open space between them.
+#[test]
+fn page_ink_is_visible_across_container_borders() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-ink-across-boxes");
+    let boxes = ask(&mut h, "ui.inspect", json!({})).expect("inspect arranged page");
+    assert_eq!(
+        boxes.pointer("/page/containers").and_then(Value::as_array).map(Vec::len),
+        Some(2),
+        "the stroke crosses two real page containers: {boxes}"
+    );
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+
+    // Carry the stroke beyond the second box's right edge too. Checking only the
+    // gap and the second box would miss a clip rect that ends at that box.
+    let (y, start, end) = (oy + 60.0, ox + 200.0, ox + 740.0);
+    ask(&mut h, "ui.press", json!({"x": start, "y": y})).expect("press in the first box");
+    pump(&mut h);
+    for x in [ox + 280.0, ox + 340.0, ox + 430.0, end] {
+        ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("draw across the container edge");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": end, "y": y})).expect("release in the second box");
+    settle(&mut h);
+
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    assert_eq!(ink["strokes"].as_u64(), Some(1), "the pen made one page stroke: {ink}");
+    let image = h.render().expect("render the page with the stroke");
+    review(&mut h, "ink_across_boxes");
+    let scale = image.width() as f64 / 1200.0;
+    let visible_red_near = |x: f64| {
+        let (cx, cy) = ((x * scale).round() as i32, (y * scale).round() as i32);
+        (-4..=4).any(|dy| {
+            (-4..=4).any(|dx| {
+                let (px, py) = (cx + dx, cy + dy);
+                px >= 0 && py >= 0 && (px as u32) < image.width() && (py as u32) < image.height() && {
+                    let pixel = image.get_pixel(px as u32, py as u32);
+                    pixel[0] > 170 && pixel[1] < 90 && pixel[2] < 90
+                }
+            })
+        })
+    };
+    for x in [ox + 280.0, ox + 340.0, ox + 430.0, ox + 700.0] {
+        assert!(visible_red_near(x), "red page ink is visible at x={x}, including across the box edge");
+    }
+}
+
+#[test]
+fn page_ink_crosses_a_diagram_container_edge() {
+    let (_t, mut app, sample) = sample_app("ui-ink-diagram-edge");
+    let page = sample.md_page.to_string_lossy().to_string();
+    let md_file = sample.md_page.join("index.md");
+    let demo_page = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook/cmgfm/10-en/how-to/mermaid-diagrams/index.md");
+    let source = std::fs::read_to_string(demo_page).expect("read the Mermaid diagram demo page");
+    std::fs::write(&md_file, source).expect("write diagram page");
+    app.open_path(&page);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let info = ask(&mut h, "ui.inspect", json!({})).expect("inspect page");
+    let blocks = info.pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks >= 3, "the test page has its flowchart: {info}");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("200,0,360,{blocks}")}}))
+        .expect("put the diagram in a narrow container");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open arranged page");
+    settle(&mut h);
+    let arranged = ask(&mut h, "ui.inspect", json!({})).expect("inspect arranged page");
+    assert_eq!(
+        arranged.pointer("/page/containers/0/x").and_then(Value::as_f64),
+        Some(200.0),
+        "the container begins to the right of open paper: {arranged}"
+    );
+    assert_eq!(
+        arranged.pointer("/page/containers/0/width").and_then(Value::as_f64),
+        Some(360.0),
+        "the flowchart is inside a 360 point container: {arranged}"
+    );
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Pen red").click();
+    pump(&mut h);
+    let info = ask(&mut h, "ui.inspect", json!({})).expect("inspect arranged page");
+    let origin = info.pointer("/page/origin").and_then(Value::as_array).expect("page origin");
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+    let (y, start, end) = (oy + 190.0, ox + 450.0, ox + 100.0);
+    ask(&mut h, "ui.press", json!({"x": start, "y": y})).expect("press over diagram");
+    pump(&mut h);
+    for x in [ox + 350.0, ox + 250.0, end] {
+        ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("draw across diagram edge");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": end, "y": y})).expect("release outside the container");
+    settle(&mut h);
+    // Repeat in the opposite direction: begin on open paper and draw into the box.
+    let y2 = y + 35.0;
+    ask(&mut h, "ui.press", json!({"x": ox + 100.0, "y": y2})).expect("press on open paper");
+    pump(&mut h);
+    for x in [ox + 200.0, ox + 350.0, ox + 450.0] {
+        ask(&mut h, "ui.move", json!({"x": x, "y": y2})).expect("draw into the diagram container");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": ox + 450.0, "y": y2})).expect("release inside the container");
+    settle(&mut h);
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect strokes")["ink"].clone();
+    assert_eq!(ink["strokes"].as_u64(), Some(2), "both strokes remain on the page: {ink}");
+    let image = h.render().expect("render diagram and ink");
+    review(&mut h, "ink_across_diagram_container");
+    let scale = image.width() as f64 / 1200.0;
+    let visible_red = |x: f64, at_y: f64| {
+        let (cx, cy) = ((x * scale).round() as i32, (at_y * scale).round() as i32);
+        (-4..=4).any(|dy| {
+            (-4..=4).any(|dx| {
+                let (px, py) = (cx + dx, cy + dy);
+                px >= 0 && py >= 0 && (px as u32) < image.width() && (py as u32) < image.height() && {
+                    let pixel = image.get_pixel(px as u32, py as u32);
+                    pixel[0] > 170 && pixel[1] < 90 && pixel[2] < 90
+                }
+            })
+        })
+    };
+    assert!(visible_red(ox + 150.0, y), "ink is visible in open page space past the diagram container's left edge");
+    assert!(visible_red(ox + 150.0, y2), "ink remains visible when a stroke starts on open paper and enters the container");
+}
+
 /// The same on an HTML page, and the ink comes back when the page is opened again.
 #[test]
 fn ink_comes_back_when_the_page_is_opened_again() {
