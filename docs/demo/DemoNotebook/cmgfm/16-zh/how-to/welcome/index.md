@@ -24,6 +24,10 @@ NoteCraft 保存笔记的方式和你保存文件一样：笔记本是一个文�
 - [同步与备份](../sync-and-backup/)：把文件夹放在同步工具查看的地方。
 - [按你的喜好设置](../make-it-yours/)：14 种主题和九种颜色。
 - [从右到左](../right-to-left/)：阿拉伯语、希伯来语、波斯语和乌尔都语。
+- [形状](../shapes/)：绘图工具支持的全部十种形状。
+- [手写与绘图](../handwriting-and-drawing/)：可编辑的墨迹笔画。
+- [Mermaid 图表](../mermaid-diagrams/)：多种图表类型。
+- [Vega 和 D3 图表](../charts-vega-d3/)：渲染图表与代码示例。
 
 ## 现在试试
 

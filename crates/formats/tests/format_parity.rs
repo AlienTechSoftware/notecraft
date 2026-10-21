@@ -54,9 +54,15 @@ fn the_full_demo_notebooks_have_matching_pages_and_blocks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("docs").join("demo").join("DemoNotebook");
     let html = pages(&root.join("html"));
     let cmgfm = pages(&root.join("cmgfm"));
-    assert_eq!(html.len(), 149, "expected every page from the 13-language demo");
+    assert_eq!(html.len(), 197, "expected every page from the 13-language demo");
     assert_eq!(html.len(), cmgfm.len(), "both notebooks must have the same number of pages");
     assert_eq!(html.keys().collect::<Vec<_>>(), cmgfm.keys().collect::<Vec<_>>(), "page paths must match");
+    for language in ["10-en", "11-es", "12-fr", "13-de", "14-hi", "15-ru", "16-zh", "17-ja", "18-ko", "20-ar", "21-fa", "22-ur", "23-he"] {
+        for page in ["shapes", "handwriting-and-drawing", "mermaid-diagrams", "charts-vega-d3"] {
+            let path = Path::new(language).join("how-to").join(page);
+            assert!(html.contains_key(&path), "the 13-language demo has {}", path.display());
+        }
+    }
 
     let html_files = notebook_files(&root.join("html"));
     let cmgfm_files = notebook_files(&root.join("cmgfm"));

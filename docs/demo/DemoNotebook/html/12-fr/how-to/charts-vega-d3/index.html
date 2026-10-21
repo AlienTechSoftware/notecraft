@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Graphiques Vega et D3</title>
+<meta name="notecraft:id" content="e12aa88da1f42c3e9166">
+<meta name="notecraft:order" content="84">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft draws Mermaid chart blocks directly on the page. The examples below are rendered charts. Vega specifications and D3 programs are also useful ways to describe charts, but NoteCraft currently keeps those as code; it does not execute or render them as charts.</p>
+<h2>Rendered charts</h2>
+<h3>Bars and a line</h3>
+<pre class="diagram">xychart-beta
+    title &quot;Pages written each month&quot;
+    x-axis [Jan, Feb, Mar, Apr, May]
+    y-axis &quot;Pages&quot; 0 --&gt; 100
+    bar [20, 38, 55, 72, 90]
+    line [12, 29, 48, 68, 86]</pre>
+<h3>A pie</h3>
+<pre class="diagram">pie title How notes are used
+  &quot;Writing&quot; : 45
+  &quot;Planning&quot; : 30
+  &quot;Reference&quot; : 25</pre>
+<h3>A quadrant</h3>
+<pre class="diagram">quadrantChart
+    title Ideas to try
+    x-axis Low effort --&gt; High effort
+    y-axis Low value --&gt; High value
+    quadrant-1 Do next
+    quadrant-2 Plan
+    quadrant-3 Skip
+    quadrant-4 Maybe
+    Page links: [0.75, 0.82]
+    Ink tools: [0.58, 0.72]
+    Themes: [0.25, 0.3]</pre>
+<h3>A schedule</h3>
+<pre class="diagram">gantt
+  title A small notebook project
+  dateFormat YYYY-MM-DD
+  section Make
+  Sketch :done, a1, 2026-10-01, 2d
+  Write :active, a2, after a1, 3d
+  section Review
+  Share :a3, after a2, 1d</pre>
+<h2>Vega source: a bar chart</h2>
+<p>This specification is shown as JSON source, not drawn by NoteCraft yet.</p>
+<pre class="json">{
+  &quot;$schema&quot;: &quot;https://vega.github.io/schema/vega-lite/v5.json&quot;,
+  &quot;data&quot;: {
+    &quot;values&quot;: [
+      {&quot;month&quot;: &quot;Jan&quot;, &quot;pages&quot;: 20},
+      {&quot;month&quot;: &quot;Feb&quot;, &quot;pages&quot;: 38},
+      {&quot;month&quot;: &quot;Mar&quot;, &quot;pages&quot;: 55}
+    ]
+  },
+  &quot;mark&quot;: &quot;bar&quot;,
+  &quot;encoding&quot;: {
+    &quot;x&quot;: {&quot;field&quot;: &quot;month&quot;, &quot;type&quot;: &quot;ordinal&quot;},
+    &quot;y&quot;: {&quot;field&quot;: &quot;pages&quot;, &quot;type&quot;: &quot;quantitative&quot;}
+  }
+}</pre>
+<h2>Vega source: a line chart</h2>
+<pre class="json">{
+  &quot;$schema&quot;: &quot;https://vega.github.io/schema/vega-lite/v5.json&quot;,
+  &quot;data&quot;: {
+    &quot;values&quot;: [
+      {&quot;month&quot;: &quot;Jan&quot;, &quot;pages&quot;: 12},
+      {&quot;month&quot;: &quot;Feb&quot;, &quot;pages&quot;: 29},
+      {&quot;month&quot;: &quot;Mar&quot;, &quot;pages&quot;: 48}
+    ]
+  },
+  &quot;mark&quot;: &quot;line&quot;,
+  &quot;encoding&quot;: {
+    &quot;x&quot;: {&quot;field&quot;: &quot;month&quot;, &quot;type&quot;: &quot;ordinal&quot;},
+    &quot;y&quot;: {&quot;field&quot;: &quot;pages&quot;, &quot;type&quot;: &quot;quantitative&quot;}
+  }
+}</pre>
+<h2>D3 source: a bar chart</h2>
+<p>This JavaScript is source code for a D3 chart. NoteCraft displays the code but does not run it.</p>
+<pre class="javascript">const data = [
+  { month: &quot;Jan&quot;, pages: 20 },
+  { month: &quot;Feb&quot;, pages: 38 },
+  { month: &quot;Mar&quot;, pages: 55 }
+];
+
+const svg = d3.select(&quot;svg&quot;)
+  .attr(&quot;width&quot;, 400)
+  .attr(&quot;height&quot;, 260);
+const x = d3.scaleBand()
+  .domain(data.map(d =&gt; d.month))
+  .range([0, 360])
+  .padding(0.15);
+const y = d3.scaleLinear()
+  .domain([0, d3.max(data, d =&gt; d.pages)])
+  .range([220, 0]);
+
+svg.selectAll(&quot;rect&quot;)
+  .data(data)
+  .join(&quot;rect&quot;)
+  .attr(&quot;x&quot;, d =&gt; x(d.month))
+  .attr(&quot;y&quot;, d =&gt; y(d.pages))
+  .attr(&quot;width&quot;, x.bandwidth())
+  .attr(&quot;height&quot;, d =&gt; 220 - y(d.pages));</pre>
+<h2>D3 source: a line chart</h2>
+<pre class="javascript">const data = [
+  { month: &quot;Jan&quot;, pages: 12 },
+  { month: &quot;Feb&quot;, pages: 29 },
+  { month: &quot;Mar&quot;, pages: 48 }
+];
+
+const svg = d3.select(&quot;svg&quot;)
+  .attr(&quot;width&quot;, 400)
+  .attr(&quot;height&quot;, 260);
+const x = d3.scalePoint()
+  .domain(data.map(d =&gt; d.month))
+  .range([20, 360]);
+const y = d3.scaleLinear()
+  .domain([0, d3.max(data, d =&gt; d.pages)])
+  .range([220, 0]);
+const line = d3.line()
+  .x(d =&gt; x(d.month))
+  .y(d =&gt; y(d.pages));
+
+svg.append(&quot;path&quot;)
+  .datum(data)
+  .attr(&quot;fill&quot;, &quot;none&quot;)
+  .attr(&quot;stroke&quot;, &quot;currentColor&quot;)
+  .attr(&quot;d&quot;, line);</pre>
+<p>Use the rendered Mermaid blocks to see charts in the page. Keep Vega and D3 examples as code until NoteCraft adds support for those formats.</p>
+<p>Next: <a href="../right-to-left/">Right to left</a>.</p>
+</body>
+</html>

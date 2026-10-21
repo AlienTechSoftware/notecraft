@@ -28,6 +28,10 @@ Jede Seite in diesem Abschnitt zeigt einen Teil von NoteCraft, auf der Seite sel
 - [Synchronisieren und sichern](../sync-and-backup/): Den Ordner dorthin legen, wo Ihr Dienst hinschaut.
 - [Nach Ihrem Geschmack](../make-it-yours/): 14 Designs und neun Farben.
 - [Von rechts nach links](../right-to-left/): Arabisch, Hebräisch, Persisch und Urdu.
+- [Formen](../shapes/): alle zehn Zeichenformen.
+- [Handschrift und Zeichnen](../handwriting-and-drawing/): bearbeitbare Tintenstriche.
+- [Mermaid-Diagramme](../mermaid-diagrams/): mehrere Diagrammarten.
+- [Diagramme mit Vega und D3](../charts-vega-d3/): gerenderte Diagramme und Quelltext.
 
 ## Probieren Sie es gleich aus
 
