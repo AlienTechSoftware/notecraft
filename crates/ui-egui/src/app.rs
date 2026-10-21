@@ -346,6 +346,8 @@ pub struct NoteCraftApp {
     theme_window: bool,
     /// Text the ribbon asked to put on the clipboard this frame.
     pending_copy: Option<String>,
+    /// Matching HTML flavor for the same copied item, when one is available.
+    pending_copy_html: Option<String>,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
     /// The page fills the window: the notebooks are hidden until it is turned off.
@@ -424,6 +426,7 @@ impl NoteCraftApp {
             fit_page_width: false,
             theme_window: false,
             pending_copy: None,
+            pending_copy_html: None,
             backstage: None,
             full_page: false,
             focus_search: false,
@@ -1581,9 +1584,10 @@ impl NoteCraftApp {
             return;
         };
         let title = notecraft_store::tree::read_node(dir).map(|n| n.title).unwrap_or_else(|| "Page".to_string());
-        // A Markdown link, so pasting it into a page gives words to click rather than the
-        // address itself. The address alone is in it for anywhere else.
-        self.pending_copy = Some(format!("[{title}]({uri})"));
+        // Plain text keeps the title and address readable; the matching HTML flavor is an
+        // anchor for clients that accept rich content.
+        self.pending_copy = Some(format!("{title} ({uri})"));
+        self.pending_copy_html = Some(crate::clipboard::html_link(&title, &uri));
         self.say(format!("Link to \"{title}\" copied"));
     }
 
@@ -2612,7 +2616,9 @@ impl NoteCraftApp {
                 self.say("Select some words first");
                 return;
             }
-            self.pending_copy = Some(picked);
+            let copied = pageedit::blocks_to_paste(&picked);
+            self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
+            self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
                 let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
@@ -2636,7 +2642,9 @@ impl NoteCraftApp {
             self.status_is_error = false;
             return;
         }
-        self.pending_copy = Some(picked.clone());
+        let copied = pageedit::blocks_to_paste(&picked);
+        self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
+        self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
         if which == "cut" {
             let (text, at) = pageedit::insert_at_caret(&caret.text, caret.selection, "");
             caret.text = text;
@@ -4248,7 +4256,13 @@ impl NoteCraftApp {
             self.window_level_pending = false;
         }
         if let Some(text) = self.pending_copy.take() {
-            ctx.copy_text(text);
+            if let Some(html) = self.pending_copy_html.take() {
+                if crate::clipboard::set_html(&html, &text).is_err() {
+                    ctx.copy_text(text);
+                }
+            } else {
+                ctx.copy_text(text);
+            }
         }
         self.clipboard_keys(ctx);
         self.poll_control(ctx);

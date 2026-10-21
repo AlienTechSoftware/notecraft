@@ -51,19 +51,67 @@ pub fn has_picture() -> bool {
 /// clipboard through its own platform layer - but a test that wants to prove a copy
 /// happened has to be able to put something else there first.
 pub fn set_text(text: &str) -> Result<(), String> {
-    let mut board = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    board.set_text(text.to_string()).map_err(|e| e.to_string())
+    with_writer(|board| board.set_text(text.to_string()))
+}
+
+/// Put the same copied item on the system clipboard as HTML and plain text. Setting these
+/// together lets each receiving application choose the richer form it understands.
+pub fn set_html(html: &str, text: &str) -> Result<(), String> {
+    with_writer(|board| board.set().html(html.to_string(), Some(text.to_string())))
+}
+
+/// The rich HTML flavor for a copied page link.
+pub fn html_link(title: &str, uri: &str) -> String {
+    format!("<p><a href=\"{}\">{}</a></p>", notecraft_formats::html::escape(uri), notecraft_formats::html::escape(title))
+}
+
+// X11 and Wayland applications serve clipboard data on request. Keep the writer alive
+// while NoteCraft runs so the copied HTML and its fallback remain available to other apps.
+thread_local! {
+    static WRITER: std::cell::RefCell<Option<arboard::Clipboard>> = const { std::cell::RefCell::new(None) };
+}
+
+fn with_writer(write: impl FnOnce(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> Result<(), String> {
+    WRITER.with(|writer| {
+        let mut slot = writer.try_borrow_mut().map_err(|e| e.to_string())?;
+        if slot.is_none() {
+            *slot = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
+        }
+        match slot.as_mut().map(write) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(error)) => {
+                *slot = None;
+                Err(error.to_string())
+            }
+            None => Err("clipboard is unavailable".to_string()),
+        }
+    })
 }
 
 pub fn text() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get_text().ok().filter(|t| !t.is_empty())
+    with_reader(|board| board.get_text().ok().filter(|text| !text.is_empty()))
 }
 
 /// The rich HTML flavour on the clipboard, when another application supplied one.
 /// Keeping this separate from [`text`] lets callers prefer formatted content while
 /// retaining plain text as the fallback for applications that only offer it.
 pub fn html() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get().html().ok().filter(|html| !html.trim().is_empty())
+    with_reader(|board| board.get().html().ok().filter(|html| !html.trim().is_empty()))
+}
+
+fn with_reader<T>(read: impl FnOnce(&mut arboard::Clipboard) -> Option<T>) -> Option<T> {
+    let mut read = Some(read);
+    WRITER.with(|writer| {
+        if let Ok(mut slot) = writer.try_borrow_mut()
+            && let Some(board) = slot.as_mut()
+        {
+            let read = read.take()?;
+            return read(board);
+        }
+        let mut board = arboard::Clipboard::new().ok()?;
+        let read = read.take()?;
+        read(&mut board)
+    })
 }
 
 /// A name for a pasted picture, so two pastes do not fight over one file. The clock is
@@ -101,5 +149,10 @@ mod tests {
         let _ = html();
         let _ = text();
         assert!(before.elapsed() < std::time::Duration::from_secs(5), "asking the clipboard does not hang the window");
+    }
+
+    #[test]
+    fn a_copied_page_link_has_an_html_anchor() {
+        assert_eq!(html_link("A <page>", "notecraft:/book/page?a&b"), "<p><a href=\"notecraft:/book/page?a&amp;b\">A &lt;page&gt;</a></p>");
     }
 }
