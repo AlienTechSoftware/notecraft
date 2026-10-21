@@ -339,25 +339,25 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
     }
 
     let backup = staging.join("previous-copy");
-    if target.exists() {
-        if let Err(e) = fs::rename(&target, &backup) {
-            return Err(match fs::remove_dir_all(&staging) {
-                Ok(()) => format!("move existing test copy to staging: {e}"),
-                Err(cleanup) => format!(
-                    "move existing test copy to staging: {e}; temporary folder remains at {} because cleanup failed: {cleanup}",
-                    staging.display()
-                ),
-            });
-        }
+    if target.exists()
+        && let Err(e) = fs::rename(&target, &backup)
+    {
+        return Err(match fs::remove_dir_all(&staging) {
+            Ok(()) => format!("move existing test copy to staging: {e}"),
+            Err(cleanup) => format!(
+                "move existing test copy to staging: {e}; temporary folder remains at {} because cleanup failed: {cleanup}",
+                staging.display()
+            ),
+        });
     }
     if let Err(e) = fs::rename(&staged_notebook, &target) {
-        if backup.exists() {
-            if let Err(restore) = fs::rename(&backup, &target) {
-                return Err(format!(
-                    "install new test copy failed ({e}); restoring the previous copy also failed ({restore}); it remains at {}",
-                    backup.display()
-                ));
-            }
+        if backup.exists()
+            && let Err(restore) = fs::rename(&backup, &target)
+        {
+            return Err(format!(
+                "install new test copy failed ({e}); restoring the previous copy also failed ({restore}); it remains at {}",
+                backup.display()
+            ));
         }
         return Err(match fs::remove_dir_all(&staging) {
             Ok(()) => format!("install new test copy: {e}"),
