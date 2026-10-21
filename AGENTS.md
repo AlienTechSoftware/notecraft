@@ -30,16 +30,20 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
 - **Keep repositories distinct.** Planning and discussion belong in the
   private host; NoteCraft implementation and its design docs belong here.
   Other repositories in the workspace remain separate projects.
-- **Quality and delivery.** Run relevant repository checks before committing
-  or claiming completion. Fix failures or report them clearly. Commit
-  substantial tested work in coherent chunks when authorized. Do not push,
-  merge, publish or release without explicit authorization.
+- **Quality and delivery.** For every sizable change, after the final edit and
+  before claiming completion, run the relevant lint, link, build, and test
+  checks. If a check fails, fix it and rerun the affected checks; if a check
+  cannot run, say why and leave the result unverified. Report the exact commands
+  and outcomes. Run the repository's relevant checks before committing as well.
+  Commit substantial tested work in coherent chunks when authorized. Do not
+  push, merge, publish or release without explicit authorization.
 - **External contribution path.** Contributors may use their own fork or clone
   and submit a pull request to this repository. Pull requests are reviewed
   against the relevant design docs and tests; run `cargo xtask ci` and focused
   checks for changed behavior before requesting review.
-- **Completion report.** State the branch, files changed, checks and results,
-  commits, and remaining work. Do not report unverified work as complete.
+- **Completion report.** State the branch, files changed, exact lint, link,
+  build, and test commands with their results, commits, and remaining work. Do
+  not report unverified work as complete.
 
 ## What this is
 
