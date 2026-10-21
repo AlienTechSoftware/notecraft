@@ -133,6 +133,17 @@ cargo run -p notecraft-cli -- --notebooks ./demo sample
 cargo run --release -p notecraft -- --notebooks ./demo --expand-all
 ```
 
+To try the bundled Welcome notebook, first copy one format into the ignored `./my-notebooks`
+folder. The copy task never writes to `docs/demo/DemoNotebook`:
+
+```sh
+cargo xtask demo-copy html
+cargo run -p notecraft -- --notebooks ./my-notebooks --expand-all
+```
+
+Use `cargo xtask demo-copy cmgfm` for the CMGFM version. If `my-notebooks/welcome-notebook`
+already exists, add `--replace` to refresh that test copy; this replaces edits made to that copy.
+
 ## How your notes are stored
 
 ```text
