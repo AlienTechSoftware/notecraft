@@ -13,10 +13,18 @@ use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, contrast};
 use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
 use serde_json::{Value, json};
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 const LIGHT: Theme = Theme { mode: Mode::Light, accent: Accent::Default };
 const DARK: Theme = Theme { mode: Mode::Dark, accent: Accent::Default };
+
+// The system clipboard is shared by parallel UI tests, even when each test has its own window.
+static SYSTEM_CLIPBOARD_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_system_clipboard() -> MutexGuard<'static, ()> {
+    SYSTEM_CLIPBOARD_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
@@ -2284,6 +2292,7 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
 /// inside a paragraph and stray `<code>` pieces.
 #[test]
 fn a_box_that_is_copied_and_pasted_comes_back_as_it_was() {
+    let _clipboard = lock_system_clipboard();
     let (_t, app, s) = sample_app("ui-copy-paste");
     let mut h = harness(app, LIGHT);
     h.run();
@@ -2795,6 +2804,7 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
 /// page.
 #[test]
 fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
+    let _clipboard = lock_system_clipboard();
     let (_t, app, s) = sample_app("ui-copy-link");
     let mut h = harness(app, LIGHT);
     h.run();
@@ -3258,6 +3268,7 @@ fn deleting_a_box_removes_its_words_from_the_saved_page() {
 /// takes the box away.
 #[test]
 fn copy_and_cut_on_a_box_reach_the_clipboard() {
+    let _clipboard = lock_system_clipboard();
     for (label, removes) in [("Copy", false), ("Cut", true)] {
         let (_t, mut h, blocks, (ox, oy)) = two_boxes(&format!("ui-box-{label}"));
         let before = h.state().body().unwrap_or_default().to_string();
@@ -3278,7 +3289,15 @@ fn copy_and_cut_on_a_box_reach_the_clipboard() {
             }
         }
         if copied.is_empty() {
-            copied = notecraft_ui_egui::clipboard::text().unwrap_or_default();
+            // Other parallel UI harnesses also inspect the real clipboard while painting.
+            // Windows can report it temporarily unavailable during that access.
+            for _ in 0..100 {
+                if let Some(text) = notecraft_ui_egui::clipboard::text().filter(|text| !text.is_empty()) {
+                    copied = text;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
         assert!(copied.contains(&words), "{label} put the box's words on the clipboard: {words:?} in {copied:?}");
         settle(&mut h);
@@ -3484,6 +3503,7 @@ fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
 /// the text box used to forget the moment the button went down.
 #[test]
 fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
+    let _clipboard = lock_system_clipboard();
     let (_t, mut h) = right_click_on_selected_words("ui-minibar-cut");
     let before = h.state().body().unwrap_or_default().to_string();
     assert!(before.contains("NoteCraft pages are"));
@@ -4160,6 +4180,7 @@ fn a_drag_can_select_across_paragraphs() {
 /// round trip is seen.
 #[test]
 fn the_clipboard_keys_work_in_an_arabic_paragraph() {
+    let _clipboard = lock_system_clipboard();
     const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
     let (_t, app, s) = sample_app("ui-keys");
     let mut h = harness(app, LIGHT);
@@ -4209,6 +4230,7 @@ fn the_clipboard_keys_work_in_an_arabic_paragraph() {
 /// answered paste, so the ribbon's Paste button was the only way in.
 #[test]
 fn ctrl_v_works_when_no_paragraph_has_the_keyboard() {
+    let _clipboard = lock_system_clipboard();
     const PASTED: &str = "pasted with no caret";
     let (_t, app, s) = sample_app("ui-keys-nobody");
     let mut h = harness(app, LIGHT);
