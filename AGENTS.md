@@ -69,6 +69,18 @@ sections and pages are plain folders. See [`docs/architecture.md`](docs/architec
   authored content, regenerate the notebook, and use `cargo xtask demo-check`
   to confirm the checked-in bundle matches its source. Inspect Git status first
   and preserve unrelated edits to the source or generated notebook.
+- **HARD RULE: `docs/demo/DemoNotebook/html` and
+  `docs/demo/DemoNotebook/cmgfm` MUST remain identical in notebook structure,
+  pages, languages, translations, metadata, links, assets and feature examples.
+  The only permitted difference is the serialized page file format and its
+  required format declaration.** At the same viewport, zoom, theme and app
+  settings, both notebooks MUST render nearly pixel-for-pixel alike. Every
+  demo or rendering change must pass
+  `cargo xtask demo-check` and
+  `cargo test -p notecraft-formats --test format_parity`, plus a visual
+  side-by-side check at matching settings. The automated parity test compares
+  page metadata, shared files and semantic page blocks; it does not compare
+  rendered pixels, so record visual verification separately.
 - The owner's OpenPlayground fork is checked out at `../openplayground` from
   this repository. Use it to inspect browser deployment and integration.
   `tools.yaml` currently identifies NoteCraft as slug `onenote`, builds from
