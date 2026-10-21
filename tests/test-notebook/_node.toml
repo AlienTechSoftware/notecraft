@@ -1,0 +1,6 @@
+kind = "notebook"
+title = "Format parity test"
+id = "00000000000000000001"
+format = "html"
+order = 10
+created = "2026-10-20T00:00:00Z"

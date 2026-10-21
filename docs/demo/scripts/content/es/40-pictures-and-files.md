@@ -29,8 +29,9 @@ de más de 512 MB se rechaza.
 
 ## Pegar
 
-Una tabla copiada de otra aplicación de notas o de una hoja de cálculo se pega como tabla. Pegar
-una imagen desde el portapapeles todavía no está hecho: guárdala y suelta el archivo.
+Una tabla copiada de otra aplicación de notas o de una hoja de cálculo se pega como tabla. Para
+pegar una imagen, haz clic en la página y pulsa **Ctrl+V**. NoteCraft guarda una copia en la carpeta
+`assets` de la página y la inserta en la nota.
 
 ## Impresiones
 

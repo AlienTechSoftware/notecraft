@@ -25,11 +25,17 @@ repositorio git. Ninguno necesita entender NoteCraft. Copian archivos.
 
 Una copia de seguridad es una copia de la carpeta. No hay nada más que exportar.
 
+## Historial de páginas
+
+Abre **Historial** y luego **Versiones de página** para consultar y restaurar copias guardadas de
+esta página. Para recuperar páginas, secciones o grupos de secciones eliminados, abre **Historial**
+y después **Papelera del cuaderno**. Estas herramientas funcionan en este dispositivo y no
+sustituyen una copia de seguridad independiente del cuaderno.
+
 ## Lo que no se maneja
 
-NoteCraft no fusiona dos versiones de una página; tu herramienta crea una copia en conflicto y
-tú decides. No tiene historial de páginas propio: usa una carpeta sincronizada que conserve
-versiones, o git.
+NoteCraft no fusiona dos versiones de una página. Si tu herramienta de sincronización crea una
+copia en conflicto, tú decides qué versión conservar.
 
 Siguiente: [Hazlo tuyo](../make-it-yours/).
 

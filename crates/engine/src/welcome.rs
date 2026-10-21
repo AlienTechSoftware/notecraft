@@ -85,7 +85,7 @@ mod tests {
     fn the_build_carries_the_notebook() {
         assert!(available(), "docs/demo/DemoNotebook was not embedded; run `cargo xtask demo`");
         assert!(FILES.iter().any(|(p, _)| *p == "_node.toml"));
-        assert!(FILES.iter().any(|(p, _)| *p == "00-start/welcome/index.md"), "the start page");
+        assert!(FILES.iter().any(|(p, _)| *p == "00-start/welcome/index.html"), "the HTML start page");
         assert!(FILES.iter().any(|(p, _)| p.starts_with("10-en/how-to/")), "the English pages");
         let mut paths: Vec<&str> = FILES.iter().map(|(p, _)| *p).collect();
         paths.dedup();

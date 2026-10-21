@@ -27,9 +27,15 @@ NoteCraft. They copy files.
 
 A backup is a copy of the folder. There is nothing else to export.
 
+## Page history
+
+Open **History**, then **Page Versions**, to review and restore saved copies of this page. To
+recover a deleted page, section or section group, open **History**, then **Notebook Recycle
+Bin**. These tools work on this device and do not replace a separate backup of the notebook.
+
 ## What is not handled
 
-NoteCraft does not merge two versions of a page; your sync tool makes a conflict copy and you
-decide. There is no page history of its own: use a synced folder that keeps versions, or git.
+NoteCraft does not merge two versions of a page. If your sync tool makes a conflict copy, you
+decide which version to keep.
 
 Next: [Make it yours](../make-it-yours/).

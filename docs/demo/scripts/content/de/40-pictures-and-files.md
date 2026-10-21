@@ -30,8 +30,8 @@ jedes Betriebssystem sicher gemacht, zwei Dateien tragen nie denselben Namen, un
 ## Einfügen aus der Zwischenablage
 
 Eine Tabelle, die aus einer anderen Notiz-App oder einer Tabellenkalkulation kopiert wurde,
-wird als Tabelle eingefügt. Ein Bild aus der Zwischenablage einzufügen ist noch nicht gebaut:
-Speichern Sie es und ziehen Sie die Datei auf die Seite.
+wird als Tabelle eingefügt. Zum Einfügen eines Bildes klicken Sie auf die Seite und drücken Sie
+**Strg+V**. NoteCraft speichert eine Kopie im Ordner `assets` der Seite und fügt sie in die Notiz ein.
 
 ## Ausdrucke
 

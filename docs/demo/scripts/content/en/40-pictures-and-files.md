@@ -28,8 +28,9 @@ refused.
 
 ## Pasting
 
-A table copied from another note taking app or a spreadsheet pastes as a table. Pasting a
-picture from the clipboard is not built yet: save it and drop the file instead.
+A table copied from another note taking app or a spreadsheet pastes as a table. To paste a
+picture, click in the page and press **Ctrl+V**. NoteCraft saves a copy in the page's `assets`
+folder and inserts it in the note.
 
 ## Printouts
 
