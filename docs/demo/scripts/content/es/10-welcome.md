@@ -25,6 +25,10 @@ Cada página de esta sección muestra una parte de NoteCraft en la propia págin
 - [Sincronizar y copias de seguridad](../sync-and-backup/): pon la carpeta donde mira tu herramienta.
 - [Hazlo tuyo](../make-it-yours/): 14 temas y nueve colores.
 - [De derecha a izquierda](../right-to-left/): árabe, hebreo, persa y urdu.
+- [Formas](../shapes/): las diez formas de dibujo.
+- [Escritura a mano y dibujo](../handwriting-and-drawing/): trazos de tinta editables.
+- [Diagramas Mermaid](../mermaid-diagrams/): varios tipos de diagramas.
+- [Gráficos con Vega y D3](../charts-vega-d3/): gráficos y ejemplos de código.
 
 ## Pruébalo ahora
 

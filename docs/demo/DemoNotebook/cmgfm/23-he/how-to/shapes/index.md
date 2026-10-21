@@ -1,0 +1,25 @@
+---
+id: 53804e0c5d4d967e3dd2
+title: "צורות"
+order: 26
+created: 2026-10-18T00:00:00Z
+updated: 2026-10-18T00:00:00Z
+dir: rtl
+tags: []
+---
+
+Choose a shape in the **Draw** tab, then drag on the page. Each shape is an editable ink stroke. Select it to move or resize it, or use **Undo stroke** to remove it.
+
+The ten shapes are arranged in the same two-column order as the **Shapes** group.
+
+| Left | Right |
+|---|---|
+| Line | Arrow |
+| Rectangle | Rounded |
+| Square | Ellipse |
+| Circle | Diamond |
+| Triangle | Star |
+
+Next: [Handwriting and drawing](../handwriting-and-drawing/).
+
+![Ink](ink.svg)
