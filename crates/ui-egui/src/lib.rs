@@ -22,6 +22,9 @@ pub mod gridcraft;
 pub mod highlight;
 pub mod history;
 pub mod icons;
+pub mod input_language {
+    pub use notecraft_input_language::{Watcher, is_rtl, watch_changes};
+}
 pub mod inkpad;
 pub mod mathview;
 pub mod navhistory;

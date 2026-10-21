@@ -1059,6 +1059,7 @@ pub fn show_blocks(
             let mut at_start = false;
             let mut selection = None;
             let mut ticked = None;
+            let mut input_caret = None;
             let id = ui.make_persistent_id(("page-block", i));
             // A line that reads right to left is written from the right: its bullet, box or
             // tag mark sits on the right, and the words hang from that edge.
@@ -1158,6 +1159,9 @@ pub fn show_blocks(
                             .layouter(&mut layouter)
                             .show(ui)
                     };
+                    if let Some(range) = out.cursor_range {
+                        input_caret = Some(out.galley.pos_from_cursor(range.primary).translate(out.galley_pos.to_vec2()));
+                    }
                     at_start = out.cursor_range.is_some_and(|r| r.primary.index.0 == 0 && r.secondary.index.0 == 0);
                     if let Some(r) = out.cursor_range {
                         selection = Some((r.primary.index.0, r.secondary.index.0));
@@ -1165,6 +1169,12 @@ pub fn show_blocks(
                     out.response
                 })
                 .inner;
+            if resp.has_focus()
+                && crate::input_language::is_rtl()
+                && let Some(caret) = input_caret
+            {
+                paint_rtl_input_marker(ui, caret);
+            }
             if let Some(sel) = selection {
                 c.selection = sel;
             }
@@ -1799,8 +1809,19 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let bar = egui::Rect::from_min_max(rect.min + bar.min.to_vec2(), rect.min + bar.max.to_vec2());
         let bar = egui::Rect::from_min_size(bar.min, vec2(1.5, bar.height().max(size)));
         ui.painter().rect_filled(bar, 0.0, t.accent);
+        if crate::input_language::is_rtl() {
+            paint_rtl_input_marker(ui, bar);
+        }
     }
     Wrote { response: resp, changed, at_start: at == 0 }
+}
+
+/// A left-pointing triangle at the foot of the caret marks an active RTL keyboard layout.
+pub(crate) fn paint_rtl_input_marker(ui: &Ui, caret: egui::Rect) {
+    let x = caret.center().x;
+    let y = caret.bottom();
+    let points = vec![egui::pos2(x - 4.0, y), egui::pos2(x + 2.0, y - 3.0), egui::pos2(x + 2.0, y + 3.0)];
+    ui.painter().add(egui::Shape::convex_polygon(points, ui.visuals().text_color(), egui::Stroke::NONE));
 }
 
 fn commit(blocks: &mut [Block], caret: &Option<Caret>) {

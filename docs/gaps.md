@@ -62,10 +62,12 @@ it is fixed and tested, not when it is promised.
 - **Rule lines are a window setting, not a page setting.** View, Rule Lines draws none, lines
   or squares behind every page, and the choice is remembered; the page itself carries no
   setting, so it does not travel with the notebook.
-- **The ribbon is a first pass.** Home, Insert and View with Office-style groups, a Styles
-  gallery, a Tags gallery and a File screen. Missing: fonts and sizes, text colour and
-  highlight, alignment, and the Draw, History, Review and Help tabs. Controls that are not
-  built say so rather than doing nothing.
+- **The ribbon is a first pass.** Home, Insert, Draw, History and View with Office-style
+  groups, a Styles gallery, a Tags gallery and a File screen. Page Versions now keeps and
+  restores snapshots of a page's main file; assets beside the page are not versioned. The
+  notebook recycle bin can restore or permanently remove pages, sections and groups; deleting
+  an entire notebook is not supported. The Unread and Authors controls remain disabled. Missing tabs:
+  Review and Help. Other controls that are not built say so rather than doing nothing.
 - **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
   a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
   Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule
@@ -372,13 +374,15 @@ it is fixed and tested, not when it is promised.
   the clipboard is read directly, because egui hands a window text only. The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab
   can put there.
-- **The Insert tab** carries OneNote's groups, but most of what they offer is not built.
-  Working: tables, a file attachment, a picture, a link, the three time stamps, an
-  equation, and NoteCraft's own Mermaid diagram. Not built, and greyed on the tab: insert
-  space, file printout, spreadsheet, screen clipping, online video, transcribe, record
-  video, page templates, symbol and stickers.
-- **Templates picker, version history and recycle bin** are not built. (Tags are: to-do boxes
-  and the other familiar marks, stored as plain text in the page.)
+- **The Insert tab** carries OneNote's groups. Working: tables, a file attachment, a
+  picture, a link, the three time stamps, an equation, a symbol picker, insert space, and
+  NoteCraft's own Mermaid diagram. File printout, screen clipping, online video,
+  transcription, recording, page templates and stickers remain unbuilt. Spreadsheet is
+  available through the existing GridCraft integration when installed.
+- **Unread and author history** are not built. Page version
+  history stores snapshots of the page's main file; changes to attached files and drawings
+  are not captured by those snapshots. (Tags are: to-do boxes and the other familiar marks,
+  stored as plain text in the page.)
 - **Sync conflicts** are only detected by name by the checker; there is no merge or resolve UI.
 
 ## Engineering

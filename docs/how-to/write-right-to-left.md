@@ -22,11 +22,12 @@ They are three different things, and Word and OneNote keep them apart too:
 |---|---|---|---|
 | **Page** | **Home**, then **Direction** | Which way the whole page reads. A paragraph with no letters of its own, such as an empty one or `123`, follows it | |
 | **Paragraph** | The alignment menu in **Basic Text**, where OneNote keeps it | Which way the paragraph the caret is in reads, whatever the page says | Ctrl+Shift+R, Ctrl+Shift+L |
-| **Run** | **More...** in the Direction group | Which way the selection reads, or what you type next if nothing is selected | Alt+Shift+R, Alt+Shift+L |
+| **Run** | **More...** in the Direction group | Which way the selection reads, or what you type next if nothing is selected | |
 
 Page direction is NoteCraft's own: OneNote has no such setting, and a notebook written in
-Arabic wants one. **More...** also lists what is not built yet: which digits to show, the date
-format, and mirroring the window.
+Arabic wants one. **More...** opens a compact menu with **Left-to-Right** and
+**Right-to-Left** choices for a selected or newly typed run. Windows keeps Alt+Shift for
+switching the active input language.
 
 **Auto** on the Page row, and **Direction from the words** in the menu, take the setting off
 again and let the words decide: the first letter of the paragraph picks the direction, which

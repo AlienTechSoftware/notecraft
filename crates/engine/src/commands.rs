@@ -5,8 +5,10 @@ use crate::session::Session;
 use notecraft_model::{Dir, NodeColor, NodeKind, PageFormat};
 use notecraft_store::check::Report;
 use notecraft_store::page::Page;
+use notecraft_store::page::Version;
+use notecraft_store::recycle::Recycled;
 use notecraft_store::search::Hit;
-use notecraft_store::{StoreError, assets, check, ops, page, search, tree};
+use notecraft_store::{StoreError, assets, check, ops, page, recycle, search, tree};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -18,6 +20,8 @@ pub enum Output {
     Path(PathBuf),
     Text(String),
     Page(Page),
+    Versions(Vec<Version>),
+    Recycled(Vec<Recycled>),
     Hits(Vec<Hit>),
     Report(Report),
     Count(usize),
@@ -100,7 +104,31 @@ fn node_color(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 
 fn node_delete(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
-    Ok(Output::Count(ops::delete_node(s.root(), &path)?))
+    let mut ancestor = path.as_path();
+    let notebook = loop {
+        if tree::read_node(ancestor).is_some_and(|node| node.kind == NodeKind::Notebook) {
+            break ancestor.to_path_buf();
+        }
+        ancestor = ancestor.parent().ok_or_else(|| EngineError::BadParam("that node is not inside a notebook".into()))?;
+    };
+    Ok(Output::Count(recycle::delete(&notebook, &path)?))
+}
+
+fn recycle_list(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let notebook = s.resolve(req(p, "notebook")?)?;
+    Ok(Output::Recycled(recycle::list(&notebook)?))
+}
+
+fn recycle_restore(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let notebook = s.resolve(req(p, "notebook")?)?;
+    recycle::restore(&notebook, req(p, "id")?)?;
+    Ok(Output::None)
+}
+
+fn recycle_purge(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let notebook = s.resolve(req(p, "notebook")?)?;
+    recycle::purge(&notebook, req(p, "id")?)?;
+    Ok(Output::None)
 }
 
 fn node_title(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -116,6 +144,16 @@ fn page_load(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 fn page_save(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     Ok(Output::Text(page::save_body(&path, req(p, "body")?)?))
+}
+
+fn page_versions(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Versions(page::versions(&s.resolve(req(p, "path")?)?)?))
+}
+
+fn page_version_restore(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    page::restore_version(&path, req(p, "id")?)?;
+    Ok(Output::None)
 }
 
 fn page_detach(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -311,10 +349,31 @@ static REGISTRY: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "node.delete",
-        label: "Delete a notebook, section group, section or page",
-        params: "path (required): the node to delete with everything inside it",
+        label: "Move a page, section or group into its notebook's recycle bin",
+        params: "path (required): the page, section or group to recycle",
         changes_tree: true,
         run: node_delete,
+    },
+    CommandSpec {
+        id: "recycle.list",
+        label: "List recycled items in a notebook",
+        params: "notebook (required): the notebook whose recycle bin to list",
+        changes_tree: false,
+        run: recycle_list,
+    },
+    CommandSpec {
+        id: "recycle.restore",
+        label: "Restore an item from a notebook's recycle bin",
+        params: "notebook (required)\nid (required): an id returned by recycle.list",
+        changes_tree: true,
+        run: recycle_restore,
+    },
+    CommandSpec {
+        id: "recycle.purge",
+        label: "Permanently delete an item from a notebook's recycle bin",
+        params: "notebook (required)\nid (required): an id returned by recycle.list",
+        changes_tree: true,
+        run: recycle_purge,
     },
     CommandSpec {
         id: "node.title",
@@ -330,6 +389,20 @@ static REGISTRY: &[CommandSpec] = &[
         params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)",
         changes_tree: false,
         run: page_save,
+    },
+    CommandSpec {
+        id: "page.versions",
+        label: "List saved page versions",
+        params: "path (required): the page",
+        changes_tree: false,
+        run: page_versions,
+    },
+    CommandSpec {
+        id: "page.version.restore",
+        label: "Restore a saved page version",
+        params: "path (required): the page\nid (required): the saved version id from page.versions",
+        changes_tree: false,
+        run: page_version_restore,
     },
     CommandSpec {
         id: "page.direction",

@@ -11,6 +11,7 @@ description = "NoteCraft egui front end. Swappable: nothing below it depends on 
 workspace = true
 
 [dependencies]
+notecraft-input-language = { path = "../input-language" }
 notecraft-model = { workspace = true }
 notecraft-ink = { workspace = true }
 notecraft-text = { workspace = true }

@@ -46,6 +46,21 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
 NoteCraft is a pure-Rust, clean-room note taking app. Notebooks, section groups,
 sections and pages are plain folders. See [`docs/architecture.md`](docs/architecture.md).
 
+## Harmony, reuse and platforms
+
+- Prioritize compatibility with established interaction patterns and
+  conventions in related suite apps where they fit NoteCraft's requirements.
+  Inspect available references and shared libraries before implementing a new
+  capability. Prefer reusable shared code over one-off duplication when the
+  dependency and repository boundaries allow it. Keep app-specific behavior at
+  clear edges.
+- Keep shared contracts and behavior platform-neutral while using useful native
+  platform support through isolated implementations. Name platform-specific
+  files `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for
+  macOS and `.lnx.*` for Linux. Rust must select these files explicitly through
+  `cfg`-gated module wiring; the suffix alone does not select a file. Preserve a
+  shared implementation or fallback for platforms without a specialized one.
+
 ## Commands
 
 ```bash

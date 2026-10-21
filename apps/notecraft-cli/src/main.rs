@@ -133,6 +133,10 @@ fn describe(o: &Output) -> String {
         Output::Text(t) => t.clone(),
         Output::Count(n) => n.to_string(),
         Output::Page(p) => format!("{} page \"{}\" ({} characters)\n{}", p.format.id(), p.title, p.body.chars().count(), p.body),
+        Output::Versions(versions) => versions.iter().map(|v| format!("{}  {}  {} bytes", v.id, v.created, v.bytes)).collect::<Vec<_>>().join("\n"),
+        Output::Recycled(items) => {
+            items.iter().map(|item| format!("{}  {}  {} item(s)  {}", item.id, item.title, item.count, item.deleted)).collect::<Vec<_>>().join("\n")
+        }
         Output::Hits(h) => h.iter().map(|x| format!("{}  {}\n    {}", x.title, display_path(&x.path), x.snippet)).collect::<Vec<_>>().join("\n"),
         Output::Report(r) => {
             let mut s = r.problems.iter().map(|p| format!("problem: {}: {}", display_path(&p.path), p.message)).collect::<Vec<_>>().join("\n");

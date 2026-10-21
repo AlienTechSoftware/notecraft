@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 55] = [
+const ALL: [Icon; 59] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -51,6 +51,10 @@ const ALL: [Icon; 55] = [
     Icon::DirRtl,
     Icon::ParaLtr,
     Icon::ParaRtl,
+    Icon::CaretLtr,
+    Icon::CaretRtl,
+    Icon::DirAuto,
+    Icon::ParaAuto,
     Icon::Bars,
     Icon::Eraser,
     Icon::Undo,
@@ -138,6 +142,10 @@ fn name(icon: Icon) -> &'static str {
         Icon::Bars => "bars",
         Icon::ParaLtr => "para-ltr",
         Icon::ParaRtl => "para-rtl",
+        Icon::CaretLtr => "caret-ltr",
+        Icon::CaretRtl => "caret-rtl",
+        Icon::DirAuto => "dir-auto",
+        Icon::ParaAuto => "para-auto",
         Icon::DirLtr => "dir-ltr",
         Icon::DirRtl => "dir-rtl",
         Icon::Sun => "sun",
@@ -418,31 +426,97 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(5.0, 6.0), (17.0, 6.0)]),
             open(&[(5.0, 10.0), (19.0, 10.0)]),
             open(&[(5.0, 14.0), (14.0, 14.0)]),
-            open(&[(5.0, 19.0), (19.0, 19.0)]),
-            open(&[(16.0, 16.0), (19.0, 19.0), (16.0, 22.0)]),
+            Shape::line_segment([at(4.0, 19.0), at(13.0, 19.0)], Stroke::new((SIZE / 7.0).max(1.8), color)),
+            open(&[(14.0, 15.0), (20.0, 19.0), (14.0, 23.0)]),
         ],
         Icon::DirRtl => vec![
             open(&[(19.0, 6.0), (7.0, 6.0)]),
             open(&[(19.0, 10.0), (5.0, 10.0)]),
             open(&[(19.0, 14.0), (10.0, 14.0)]),
-            open(&[(19.0, 19.0), (5.0, 19.0)]),
-            open(&[(8.0, 16.0), (5.0, 19.0), (8.0, 22.0)]),
+            Shape::line_segment([at(20.0, 19.0), at(11.0, 19.0)], Stroke::new((SIZE / 7.0).max(1.8), color)),
+            open(&[(10.0, 15.0), (4.0, 19.0), (10.0, 23.0)]),
         ],
-        // A pilcrow with an arrow beside it: the bowl filled, two stems, then the arrow on
-        // the side the paragraph starts from.
+        // Paragraph direction as a small angle bracket followed by a rounded pilcrow.
         Icon::ParaLtr => vec![
-            poly(&[(13.0, 4.5), (20.0, 4.5), (20.0, 12.5), (13.0, 12.5)], color),
-            open(&[(17.0, 4.5), (17.0, 20.0)]),
-            open(&[(20.0, 4.5), (20.0, 20.0)]),
-            open(&[(3.5, 12.0), (10.0, 12.0)]),
-            open(&[(7.5, 9.0), (10.5, 12.0), (7.5, 15.0)]),
+            poly(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            poly(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            poly(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            poly(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            open(&[(3.0, 17.0), (7.0, 20.0), (3.0, 23.0)]),
         ],
         Icon::ParaRtl => vec![
-            poly(&[(4.0, 4.5), (11.0, 4.5), (11.0, 12.5), (4.0, 12.5)], color),
-            open(&[(7.0, 4.5), (7.0, 20.0)]),
-            open(&[(4.0, 4.5), (4.0, 20.0)]),
-            open(&[(20.5, 12.0), (14.0, 12.0)]),
-            open(&[(16.5, 9.0), (13.5, 12.0), (16.5, 15.0)]),
+            poly(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            poly(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            poly(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            poly(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            open(&[(7.0, 17.0), (3.0, 20.0), (7.0, 23.0)]),
+        ],
+        Icon::ParaAuto => vec![
+            poly(
+                &[
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
+                ],
+                color,
+            ),
+            poly(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            poly(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            poly(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
+            Shape::line_segment([at(5.0, 17.0), at(5.0, 23.0)], Stroke::new((SIZE / 7.0).max(1.5), color)),
+            Shape::line_segment([at(2.5, 18.5), at(7.5, 21.5)], Stroke::new((SIZE / 7.0).max(1.5), color)),
+            Shape::line_segment([at(2.5, 21.5), at(7.5, 18.5)], Stroke::new((SIZE / 7.0).max(1.5), color)),
+        ],
+        Icon::CaretLtr => vec![
+            Shape::line_segment([at(10.0, 3.0), at(10.0, 19.0)], Stroke::new((SIZE / 10.0).max(1.5), color)),
+            poly(&[(10.0, 16.0), (20.0, 21.0), (10.0, 24.0)], color),
+        ],
+        Icon::CaretRtl => vec![
+            Shape::line_segment([at(14.0, 3.0), at(14.0, 19.0)], Stroke::new((SIZE / 10.0).max(1.5), color)),
+            poly(&[(14.0, 16.0), (4.0, 21.0), (14.0, 24.0)], color),
+        ],
+        Icon::DirAuto => vec![
+            open(&[(5.0, 6.0), (17.0, 6.0)]),
+            open(&[(5.0, 10.0), (19.0, 10.0)]),
+            open(&[(5.0, 14.0), (14.0, 14.0)]),
+            seg((16.0, 15.0), (16.0, 23.0)),
+            seg((12.5, 17.0), (19.5, 21.0)),
+            seg((12.5, 21.0), (19.5, 17.0)),
         ],
     };
     for s in shapes {
@@ -534,7 +608,7 @@ fn every_icon_matches_its_reference_pixel_for_pixel() {
             }
         }
     }
-    assert_eq!(pairs, 110);
+    assert_eq!(pairs, ALL.len() * 2);
 }
 
 #[test]

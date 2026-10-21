@@ -3,9 +3,9 @@
 use crate::error::{Result, StoreError};
 use crate::tree::{page_file, raw_title, read_node};
 use notecraft_formats::{boxes, frontmatter, html};
-use notecraft_model::{Container, Dir, PageFormat, container, justify, kv, tablecols, time::iso_now};
+use notecraft_model::{Container, Dir, PageFormat, container, id::new_id, justify, kv, tablecols, time::iso_now};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Pages larger than this are refused (a guard against hostile or accidental input).
 pub const MAX_PAGE_BYTES: usize = 50 * 1024 * 1024;
@@ -29,6 +29,19 @@ pub struct Page {
     pub dir: Option<Dir>,
 }
 
+/// A saved copy of a page file, newest first. The page's own format and assets remain
+/// ordinary files; versions are kept in its hidden `.notecraft/versions` folder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Version {
+    pub id: String,
+    pub created: String,
+    pub bytes: u64,
+}
+
+const MAX_VERSIONS: usize = 50;
+const MAX_VERSION_BYTES: u64 = 128 * 1024 * 1024;
+const VERSION_INTERVAL_NS: u128 = 5 * 60 * 1_000_000_000;
+
 pub fn load_page(dir: &Path) -> Result<Page> {
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let meta = fs::metadata(&file).map_err(|e| StoreError::io("read", &file, e))?;
@@ -40,6 +53,129 @@ pub fn load_page(dir: &Path) -> Result<Page> {
     let has_title = raw_title(format, &text).is_some();
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
     Ok(Page { format, title, has_title, body, dir: read_direction(&text, format) })
+}
+
+/// Saved versions of the page's main file, newest first.
+pub fn versions(dir: &Path) -> Result<Vec<Version>> {
+    let (_, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let versions = version_dir(dir);
+    let entries = match fs::read_dir(&versions) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(StoreError::io("read", &versions, e)),
+    };
+    let mut found = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| StoreError::io("read", &versions, e))?;
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let info = dir.join("version.toml");
+        let text = match fs::read_to_string(&info) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(StoreError::io("read", &info, e)),
+        };
+        let values = kv::parse(&text);
+        let id = values.get("id").cloned().unwrap_or_default();
+        if !valid_version_id(&id) || dir.file_name().and_then(|n| n.to_str()) != Some(id.as_str()) {
+            continue;
+        }
+        let snapshot = dir.join(file.file_name().unwrap_or_default());
+        let bytes = match fs::metadata(&snapshot) {
+            Ok(meta) => meta.len(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(StoreError::io("read", &snapshot, e)),
+        };
+        found.push(Version { id, created: values.get("created").cloned().unwrap_or_default(), bytes });
+    }
+    found.sort_by(|a, b| b.id.cmp(&a.id));
+    Ok(found)
+}
+
+/// Restores an earlier version, first preserving the current file as another version.
+pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
+    if !valid_version_id(id) {
+        return Err(StoreError::invalid("that page version id is not valid"));
+    }
+    let (_, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let snapshot = version_dir(dir).join(id).join(file.file_name().unwrap_or_default());
+    if !snapshot.is_file() {
+        return Err(StoreError::NotFound(format!("page version {id}")));
+    }
+    let contents = fs::read_to_string(&snapshot).map_err(|e| StoreError::io("read", &snapshot, e))?;
+    snapshot_current(dir, &file, true)?;
+    write_atomic_file(&file, &contents)
+}
+
+fn version_dir(dir: &Path) -> PathBuf {
+    dir.join(".notecraft").join("versions")
+}
+
+fn valid_version_id(id: &str) -> bool {
+    id.len() == 20 && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
+    if !file.is_file() {
+        return Ok(());
+    }
+    let versions = version_dir(dir);
+    let mut existing: Vec<PathBuf> = match fs::read_dir(&versions) {
+        Ok(entries) => entries.filter_map(|entry| entry.ok().map(|e| e.path())).filter(|path| path.is_dir()).collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(StoreError::io("read", &versions, e)),
+    };
+    existing.sort_by_key(|path| path.file_name().map(|name| name.to_os_string()));
+    let current = fs::read(file).map_err(|e| StoreError::io("read", file, e))?;
+    if let Some(last) = existing.last() {
+        let previous = last.join(file.file_name().unwrap_or_default());
+        if let Ok(bytes) = fs::read(&previous)
+            && bytes == current
+        {
+            return Ok(());
+        }
+        let last_id = last.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+        let current_id = new_id();
+        let recent = last_id.get(..16).and_then(|value| u128::from_str_radix(value, 16).ok());
+        let now = current_id.get(..16).and_then(|value| u128::from_str_radix(value, 16).ok());
+        if !force && recent.zip(now).is_some_and(|(before, after)| after.saturating_sub(before) < VERSION_INTERVAL_NS) {
+            return Ok(());
+        }
+    }
+    fs::create_dir_all(&versions).map_err(|e| StoreError::io("create", &versions, e))?;
+    let id = new_id();
+    let entry = versions.join(&id);
+    fs::create_dir(&entry).map_err(|e| StoreError::io("create", &entry, e))?;
+    let snapshot = entry.join(file.file_name().unwrap_or_default());
+    if let Err(e) = fs::write(&snapshot, &current) {
+        let _ = fs::remove_dir_all(&entry);
+        return Err(StoreError::io("write", &snapshot, e));
+    }
+    let info = format!("id = {}\ncreated = {}\n", kv::quote(&id), kv::quote(&iso_now()));
+    if let Err(e) = fs::write(entry.join("version.toml"), info) {
+        let _ = fs::remove_dir_all(&entry);
+        return Err(StoreError::io("write", &entry.join("version.toml"), e));
+    }
+    existing.push(entry);
+    let mut total = 0u64;
+    let mut sizes = Vec::with_capacity(existing.len());
+    for version in &existing {
+        let snapshot = version.join(file.file_name().unwrap_or_default());
+        let size = fs::metadata(&snapshot).map(|meta| meta.len()).unwrap_or(0);
+        total = total.saturating_add(size);
+        sizes.push(size);
+    }
+    let mut remove_count = existing.len().saturating_sub(MAX_VERSIONS);
+    let mut next = 0;
+    while next < existing.len() && (remove_count > 0 || total > MAX_VERSION_BYTES) {
+        total = total.saturating_sub(sizes[next]);
+        let _ = fs::remove_dir_all(&existing[next]);
+        remove_count = remove_count.saturating_sub(1);
+        next += 1;
+    }
+    Ok(())
 }
 
 /// The editable part of a page's file: the inside of the HTML body, or the Markdown after the
@@ -357,6 +493,15 @@ pub fn save_body(dir: &Path, body: &str) -> Result<String> {
 /// Writes a file by writing a temporary file next to it and renaming it over the
 /// target, so a crash cannot leave half a page.
 pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
+    if let Some(parent) = path.parent()
+        && crate::tree::page_file(parent).is_some_and(|(_, page)| page == path)
+    {
+        snapshot_current(parent, path, false)?;
+    }
+    write_atomic_file(path, text)
+}
+
+fn write_atomic_file(path: &Path, text: &str) -> Result<()> {
     let tmp = path.with_extension("tmp-write");
     fs::write(&tmp, text).map_err(|e| StoreError::io("write", &tmp, e))?;
     fs::rename(&tmp, path).map_err(|e| {
@@ -367,6 +512,23 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn page_versions_restore_the_saved_page_file() {
+        let t = crate::testing::TempDir::new("page-versions");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        let initial = load_page(&page).expect("initial page").body;
+
+        save_body(&page, "first version").expect("first save");
+        let saved_versions = versions(&page).expect("versions");
+        assert_eq!(saved_versions.len(), 1);
+        save_body(&page, "second version").expect("second save");
+        restore_version(&page, &saved_versions[0].id).expect("restore");
+        assert_eq!(load_page(&page).expect("page").body, initial);
+        assert_eq!(versions(&page).expect("versions after restore").len(), 2);
+    }
+
     /// A file is ink because of the namespace inside it, not because of its name.
     #[test]
     fn the_ink_files_of_a_page_are_the_ones_with_our_namespace() {

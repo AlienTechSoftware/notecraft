@@ -11,10 +11,12 @@ mod applog;
 use notecraft_engine::Session;
 use notecraft_store::Settings;
 use notecraft_ui_egui::NoteCraftApp;
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::path::PathBuf;
 
 struct Shell {
     app: NoteCraftApp,
+    _input_language_watcher: Option<notecraft_ui_egui::input_language::Watcher>,
 }
 
 impl eframe::App for Shell {
@@ -125,6 +127,13 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = NoteCraftApp::new(session);
+            let input_language_watcher = cc.window_handle().ok().and_then(|window| match window.as_raw() {
+                RawWindowHandle::Win32(handle) => {
+                    let ctx = cc.egui_ctx.clone();
+                    notecraft_ui_egui::input_language::watch_changes(handle.hwnd.get(), move || ctx.request_repaint())
+                }
+                _ => None,
+            });
             // With no frame of the system's own, the band across the top is the title bar.
             app.set_frameless(own_frame);
             if let Some(port) = control_port {
@@ -143,7 +152,7 @@ fn main() -> eframe::Result {
                 app.open_path(p);
             }
             applog::info("window ready");
-            Ok(Box::new(Shell { app }))
+            Ok(Box::new(Shell { app, _input_language_watcher: input_language_watcher }))
         }),
     );
     match &result {
