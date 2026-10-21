@@ -1,0 +1,18 @@
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Processing : start
+  state Processing {
+    [*] --> Parse
+    Parse --> Validate
+    state Validate {
+      [*] --> Check
+      Check --> [*]
+    }
+    Validate --> Decision
+    state Decision <<choice>>
+    Decision --> Success : ok
+    Decision --> Error : fail
+  }
+  Error --> Idle : reset
+  Success --> Idle : restart
+  Success --> [*] : finish

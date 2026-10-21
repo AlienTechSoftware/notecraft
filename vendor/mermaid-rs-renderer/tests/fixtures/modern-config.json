@@ -1,0 +1,32 @@
+{
+  "theme": "modern",
+  "themeVariables": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI",
+    "fontSize": 14,
+    "primaryColor": "#F8FAFC",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#94A3B8",
+    "lineColor": "#64748B",
+    "secondaryColor": "#E2E8F0",
+    "tertiaryColor": "#FFFFFF",
+    "edgeLabelBackground": "#FFFFFF",
+    "clusterBkg": "#F1F5F9",
+    "clusterBorder": "#CBD5E1",
+    "background": "#FFFFFF",
+    "actorBkg": "#F8FAFC",
+    "actorBorder": "#94A3B8",
+    "actorLine": "#64748B",
+    "noteBkg": "#FFF7ED",
+    "noteBorderColor": "#FDBA74",
+    "activationBkgColor": "#E2E8F0",
+    "activationBorderColor": "#94A3B8"
+  },
+  "flowchart": {
+    "nodeSpacing": 40,
+    "rankSpacing": 80
+  },
+  "gitGraph": {
+    "textWidthScale": 1.23,
+    "showCommitLabel": false
+  }
+}

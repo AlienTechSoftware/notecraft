@@ -1,0 +1,27 @@
+classDiagram
+  class Animal {
+    +String name
+    +int age
+  }
+  class Mammal
+  class Bird
+  class Dog {
+    +String breed
+  }
+  class Cat
+  class Collar
+  class Owner {
+    +String id
+  }
+  class Vet
+
+  Animal <|-- Mammal
+  Animal <|-- Bird
+  Mammal <|-- Dog
+  Mammal <|-- Cat
+
+  Dog *-- Collar
+  Owner o-- Dog : adopts
+  Owner o-- Cat : adopts
+  Vet ..> Animal : treats
+  Bird ..> Vet : visits

@@ -1,0 +1,74 @@
+[package]
+name = "mermaid-rs-renderer"
+version = "0.3.1"
+edition = "2024"
+description = "Fast Mermaid diagram renderer in pure Rust - 23 diagram types, 100-1400x faster than mermaid-cli"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/1jehuang/mermaid-rs-renderer"
+homepage = "https://github.com/1jehuang/mermaid-rs-renderer"
+keywords = ["mermaid", "diagram", "svg", "renderer", "cli"]
+categories = ["command-line-utilities", "visualization"]
+exclude = [
+    "node_modules/",
+    "comparison/",
+    "tmp/",
+    "docs/benchmarks/",
+    "docs/comparisons/",
+    "docs/comparison_sources/",
+    "docs/conformance-report/",
+    "docs/diagrams/",
+    "docs/examples/",
+    "docs/layout-compare-report/",
+    "docs/*.html",
+    "docs/*.json",
+    "docs/*.md",
+    "scripts/",
+    ".github/",
+    "package.json",
+    "package-lock.json",
+    "Cargo.toml.orig",
+    "*.orig",
+    "*.bak",
+    "*~",
+    ".DS_Store",
+    "*.png",
+    "*.html",
+]
+
+[features]
+default = ["cli", "png"]
+# CLI support (adds clap dependency)
+cli = ["dep:clap"]
+# PNG output support (adds resvg/usvg dependencies)
+png = ["dep:resvg", "dep:usvg"]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.6.1", features = ["derive"], optional = true }
+regex = "1.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+json5 = "1.3"
+thiserror = "2.0"
+once_cell = "1.21.4"
+fontdb = "0.23"
+ttf-parser = "0.25"
+resvg = { version = "0.47.0", optional = true }
+usvg = { version = "0.47.0", optional = true }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "renderer"
+harness = false
+
+[[bin]]
+name = "mmdr"
+path = "src/main.rs"
+required-features = ["cli"]

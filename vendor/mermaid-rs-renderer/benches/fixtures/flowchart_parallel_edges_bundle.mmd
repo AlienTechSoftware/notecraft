@@ -1,0 +1,28 @@
+flowchart LR
+  API[API Gateway]
+  BUS[(Command Bus)]
+  WORK[Worker Pool]
+  RETRY[Retry Queue]
+  AUDIT[Audit Store]
+
+  API -->|create| BUS
+  API -->|update| BUS
+  API -->|delete| BUS
+  API -.trace.-> BUS
+  API ==> BUS
+
+  BUS -->|dispatch| WORK
+  BUS -->|priority dispatch| WORK
+  BUS -.slow lane.-> WORK
+  BUS ==> WORK
+
+  WORK -->|ok| AUDIT
+  WORK -->|warn| AUDIT
+  WORK -.retry.-> RETRY
+  WORK ==> RETRY
+
+  RETRY -->|replay| BUS
+  RETRY -.expire.-> AUDIT
+
+  AUDIT -.notify.-> API
+  AUDIT --> API

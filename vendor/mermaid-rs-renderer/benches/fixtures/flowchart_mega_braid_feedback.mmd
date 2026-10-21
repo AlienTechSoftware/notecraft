@@ -1,0 +1,58 @@
+flowchart LR
+  A0[Start]
+  A1[Stage A1]
+  A2[Stage A2]
+  A3[Stage A3]
+  A4[Stage A4]
+  A5[Stage A5]
+
+  B1[Stage B1]
+  B2[Stage B2]
+  B3[Stage B3]
+  B4[Stage B4]
+  B5[Stage B5]
+
+  C1[Stage C1]
+  C2[Stage C2]
+  C3[Stage C3]
+  C4[Stage C4]
+  C5[Stage C5]
+
+  Z1[(Sink X)]
+  Z2[(Sink Y)]
+  Z3[(Sink Z)]
+
+  A0 --> A1 --> A2 --> A3 --> A4 --> A5
+  A1 --> B1
+  A2 --> B2
+  A3 --> B3
+  A4 --> B4
+  A5 --> B5
+
+  B1 --> C1
+  B2 --> C2
+  B3 --> C3
+  B4 --> C4
+  B5 --> C5
+
+  C1 --> Z1
+  C2 --> Z1
+  C3 --> Z2
+  C4 --> Z2
+  C5 --> Z3
+
+  B1 -.audit.-> A3
+  B2 -.audit.-> A4
+  B3 -.audit.-> A5
+  B4 -.audit.-> A2
+  B5 -.audit.-> A1
+
+  C1 -.retry lane.-> B3
+  C2 -.retry lane.-> B4
+  C3 -.retry lane.-> B5
+  C4 -.retry lane.-> B2
+  C5 -.retry lane.-> B1
+
+  Z1 -.reprocess.-> A2
+  Z2 -.reprocess.-> A3
+  Z3 -.reprocess.-> A4

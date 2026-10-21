@@ -1,0 +1,82 @@
+flowchart LR
+  U1[Mobile]
+  U2[Web]
+  U3[Partner API]
+
+  E1[Edge POP A]
+  E2[Edge POP B]
+  GW[Global Gateway]
+  RL[Rate Limit]
+  AU[Auth]
+  RT[Request Router]
+
+  Q1[(Queue A)]
+  Q2[(Queue B)]
+  W1[Worker A1]
+  W2[Worker A2]
+  W3[Worker B1]
+  W4[Worker B2]
+
+  DB1[(User DB)]
+  DB2[(Orders DB)]
+  CH[(Cache)]
+  IDX[(Search Index)]
+
+  OBS[Observability]
+  ALR[Alerting]
+  DLQ[(Dead Letter Queue)]
+  RC[Retry Coordinator]
+
+  U1 --> E1
+  U2 --> E1
+  U3 --> E2
+  E1 --> GW
+  E2 --> GW
+  GW --> RL
+  RL --> AU
+  AU --> RT
+
+  RT --> Q1
+  RT --> Q2
+  Q1 --> W1
+  Q1 --> W2
+  Q2 --> W3
+  Q2 --> W4
+
+  W1 --> DB1
+  W1 --> CH
+  W2 --> DB2
+  W2 --> IDX
+  W3 --> DB1
+  W3 --> DB2
+  W4 --> CH
+  W4 --> IDX
+
+  DB1 --> OBS
+  DB2 --> OBS
+  CH --> OBS
+  IDX --> OBS
+  RT --> OBS
+  W1 --> OBS
+  W2 --> OBS
+  W3 --> OBS
+  W4 --> OBS
+  OBS --> ALR
+
+  W1 -.retry budget exceeded.-> RC
+  W2 -.retry budget exceeded.-> RC
+  W3 -.retry budget exceeded.-> RC
+  W4 -.retry budget exceeded.-> RC
+  RC --> Q1
+  RC --> Q2
+
+  W1 -.fatal payload.-> DLQ
+  W2 -.fatal payload.-> DLQ
+  W3 -.fatal payload.-> DLQ
+  W4 -.fatal payload.-> DLQ
+  DLQ -.replay request.-> RT
+
+  DB1 -.replica lag high.-> ALR
+  DB2 -.replica lag high.-> ALR
+  CH -.eviction storm.-> ALR
+  IDX -.refresh backlog.-> ALR

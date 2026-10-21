@@ -1,0 +1,29 @@
+flowchart LR
+  subgraph DomainA[Domain A]
+    A1[Ingress A] --> A2[Validate A] --> A3[Commit A]
+  end
+
+  subgraph DomainB[Domain B]
+    B1[Ingress B] --> B2[Validate B] --> B3[Commit B]
+  end
+
+  subgraph DomainC[Domain C]
+    C1[Ingress C] --> C2[Validate C] --> C3[Commit C]
+  end
+
+  A2 --> B2
+  B2 --> C2
+  C2 --> A2
+
+  A1 --> C3
+  C1 --> B3
+  B1 --> A3
+
+  A3 -.rollback.-> A1
+  B3 -.rollback.-> B1
+  C3 -.rollback.-> C1
+
+  A1 -.diag.-> C2
+  C3 -.diag.-> A2
+  B1 -.diag.-> C2
+  C1 -.diag.-> B2

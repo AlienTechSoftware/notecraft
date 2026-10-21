@@ -1,0 +1,13 @@
+gitGraph
+  commit id:"C0"
+  branch release
+  checkout release
+  commit id:"R1"
+  branch hotfix
+  checkout hotfix
+  commit id:"H1"
+  checkout release
+  merge hotfix
+  checkout main
+  merge release
+  commit id:"C1"

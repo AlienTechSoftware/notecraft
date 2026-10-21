@@ -1,0 +1,41 @@
+erDiagram
+  CUSTOMER ||--o{ ORDER : places
+  ORDER ||--|{ LINE_ITEM : contains
+  PRODUCT ||--o{ LINE_ITEM : referenced_by
+  SUPPLIER ||--o{ PRODUCT : supplies
+  WAREHOUSE ||--o{ STOCK : stores
+  PRODUCT ||--o{ STOCK : tracked_in
+  ORDER ||--o{ SHIPMENT : fulfilled_by
+  CARRIER ||--o{ SHIPMENT : ships
+
+  CUSTOMER {
+    string id
+    string name
+    string email
+  }
+  ORDER {
+    string id
+    date ordered_at
+  }
+  LINE_ITEM {
+    int quantity
+    float price
+  }
+  PRODUCT {
+    string sku
+    string name
+    float price
+  }
+  WAREHOUSE {
+    string id
+    string location
+  }
+  STOCK {
+    int on_hand
+  }
+  SHIPMENT {
+    string tracking
+  }
+  CARRIER {
+    string name
+  }

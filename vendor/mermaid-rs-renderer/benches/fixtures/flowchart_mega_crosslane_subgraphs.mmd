@@ -1,0 +1,83 @@
+flowchart TD
+  subgraph Intake
+    I1[API Ingress]
+    I2[Webhook Ingress]
+    I3[Batch Import]
+    NORM[Normalizer]
+    VAL[Schema Validator]
+  end
+
+  subgraph Decision
+    R1{Risk Score}
+    R2{Quota Check}
+    R3{Policy Match}
+    MERGE[Decision Merge]
+  end
+
+  subgraph Execution
+    EX1[Create Ticket]
+    EX2[Run Workflow]
+    EX3[Dispatch Notification]
+    EX4[Schedule Followup]
+  end
+
+  subgraph Stores
+    S1[(Ledger)]
+    S2[(Workflow DB)]
+    S3[(Notification DB)]
+    S4[(Archive)]
+    S5[(Metrics TSDB)]
+  end
+
+  subgraph Control
+    C1[Backpressure Ctrl]
+    C2[Reconciler]
+    C3[Compaction]
+    C4[Audit Export]
+  end
+
+  I1 --> NORM
+  I2 --> NORM
+  I3 --> NORM
+  NORM --> VAL
+
+  VAL --> R1
+  VAL --> R2
+  VAL --> R3
+  R1 --> MERGE
+  R2 --> MERGE
+  R3 --> MERGE
+
+  MERGE --> EX1
+  MERGE --> EX2
+  MERGE --> EX3
+  MERGE --> EX4
+
+  EX1 --> S1
+  EX2 --> S2
+  EX3 --> S3
+  EX4 --> S4
+
+  S1 --> S5
+  S2 --> S5
+  S3 --> S5
+  S4 --> S5
+
+  S5 --> C1
+  C1 --> C2
+  C2 --> C3
+  C3 --> C4
+
+  C2 --> EX2
+  C2 --> EX4
+  C3 --> S2
+  C3 --> S4
+
+  EX2 -.policy drift detected.-> R3
+  EX3 -.quota exhausted.-> R2
+  EX1 -.risk recalculation.-> R1
+
+  C4 -.export lag high.-> C1
+  C1 -.throttle intake.-> I1
+  C1 -.throttle intake.-> I2
+  C1 -.throttle intake.-> I3

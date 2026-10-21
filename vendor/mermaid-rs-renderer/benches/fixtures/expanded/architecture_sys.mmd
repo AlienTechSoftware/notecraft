@@ -1,0 +1,13 @@
+architecture-beta
+  group core(icon)[Core]
+  service api(icon)[API] in core
+  service auth(icon)[Auth] in core
+  service db(icon)[DB] in core
+  group edge(icon)[Edge]
+  service web(icon)[Web] in edge
+  service cdn(icon)[CDN] in edge
+
+  web:R --> L:api
+  api:R --> L:auth
+  api:R --> L:db
+  cdn:R --> L:web
