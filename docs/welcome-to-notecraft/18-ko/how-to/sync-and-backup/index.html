@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>동기화와 백업</title>
+<meta name="notecraft:id" content="e6410459b8d5fd1d3d85">
+<meta name="notecraft:order" content="60">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft에는 자체 동기화도, 계정도 없습니다. 노트북은 작은 파일들이 든 폴더이므로, 노트북 폴더를 동기화 도구가 이미 보고 있는 곳에 두세요. OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, 네트워크 공유, git 저장소. 어느 것도 NoteCraft를 이해할 필요가 없습니다. 파일을 복사할 뿐입니다.</p>
+<h2>왜 되는가</h2>
+<ul>
+<li><b>페이지마다 파일 하나.</b> 페이지를 고치면 작은 파일 하나만 다시 쓰므로, 두 기기가 같은 바이트를 건드리는 일은 드뭅니다.</li>
+<li><b>원자적 쓰기.</b> 페이지는 임시 파일에 쓰인 뒤 이름을 바꿔 옛 파일을 대체하므로, 동기화 클라이언트는 반쯤 쓰인 페이지를 보지 않습니다.</li>
+<li><b>짧고 안전한 이름.</b> 폴더 이름은 최대 64자, 경로는 최대 255자이며, Windows가 거부하는 문자는 쓰지 않습니다.</li>
+<li><b>충돌 사본을 알아챔.</b> 동기화 도구가 페이지 옆에 충돌 사본을 남기면 검사기가 보고합니다. <b>파일</b>에서 <b>검사</b>, 또는 터미널에서 <code>notecraft-cli check</code>.</li>
+</ul>
+<h2>백업</h2>
+<p>백업은 폴더의 복사본입니다. 따로 내보낼 것이 없습니다.</p>
+<h2>페이지 기록</h2>
+<p><b>History</b>를 연 뒤 <b>Page Versions</b>를 선택하면 이 페이지의 저장된 사본을 보고 복원할 수 있습니다. 삭제한 페이지, 섹션, 섹션 그룹은 <b>History</b>의 <b>Notebook Recycle Bin</b>에서 복원할 수 있습니다. 이 기능은 이 기기에서 작동하며 노트북의 별도 백업을 대신하지 않습니다.</p>
+<h2>다루지 않는 것</h2>
+<p>NoteCraft는 한 페이지의 두 판본을 병합하지 않습니다. 동기화 도구가 충돌 사본을 만들면 어떤 판본을 보관할지 직접 결정하세요.</p>
+<p>다음: <a href="../make-it-yours/">내 취향대로</a>.</p>
+<p><i>이 페이지는 AI 모델이 번역했습니다. 수정 제안을 환영합니다.</i></p>
+</body>
+</html>

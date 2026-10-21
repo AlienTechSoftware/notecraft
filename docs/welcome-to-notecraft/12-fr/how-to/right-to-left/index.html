@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>De droite à gauche</title>
+<meta name="notecraft:id" content="2db8352078c7e7bfff3f">
+<meta name="notecraft:order" content="80">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>L'arabe, l'hébreu, le persan et l'ourdou se lisent depuis la droite. NoteCraft les dessine ainsi : les lettres se lient, une ligne pend du bord droit, et une ligne qui mélange les deux sens est ordonnée par l'algorithme Unicode, si bien qu'un prix garde son nombre à l'endroit :</p>
+<p>السعر 123 ريال</p>
+<p>Les polices qui le permettent sont livrées avec l'application, donc la ligne ci-dessus a le même aspect sur une machine sans police arabe. L'hébreu et le hindi ont aussi leur police intégrée :</p>
+<p>שלום עולם</p>
+<p>नमस्ते दुनिया</p>
+<h2>Trois sens, trois commandes</h2>
+<table>
+<tr><th>Commande</th><th>Où</th><th>Ce qu'elle fixe</th></tr>
+<tr><td><b>Page</b></td><td><b>Accueil</b>, puis <b>Sens</b></td><td>Dans quel sens se lit toute la page. Une ligne sans lettres à elle le suit</td></tr>
+<tr><td><b>Paragraphe</b></td><td>Le menu d'alignement dans <b>Texte de base</b></td><td>Dans quel sens se lit le paragraphe où est le curseur</td></tr>
+<tr><td><b>Segment</b></td><td><b>Plus...</b> dans le groupe Sens</td><td>Dans quel sens se lit la sélection, ou ce que vous tapez ensuite</td></tr>
+</table>
+<p>Le sens de page est propre à NoteCraft ; les applications d'où viennent les gens n'ont pas ce réglage, et un carnet écrit en arabe en a besoin.</p>
+<h2>Où le réglage est gardé</h2>
+<p>Dans le texte lui-même. Un sens de page est <code>dir: rtl</code> dans l'en-tête d'une page Markdown ou une balise meta dans une page HTML. Un sens de paragraphe est un caractère invisible à son début, la marque Unicode de droite à gauche ou de gauche à droite. Les deux survivent dans tout autre éditeur.</p>
+<p>Les groupes arabe, persan, ourdou et hébreu de ce carnet sont écrits de droite à gauche d'un bout à l'autre. Ouvrez-en un depuis <a href="../../../00-start/welcome/">la page de départ</a> et comparez.</p>
+<p><i>Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.</i></p>
+</body>
+</html>

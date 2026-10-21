@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sync and backup</title>
+<meta name="notecraft:id" content="b8fa7c16cf8cf2122a14">
+<meta name="notecraft:order" content="60">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft has no sync of its own and no account. A notebook is a folder of small files, so put your notebooks folder where your sync tool already looks: OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, a network share or a git repository. None of them has to understand NoteCraft. They copy files.</p>
+<h2>Why it works</h2>
+<ul>
+<li><b>One file per page.</b> Editing a page rewrites one small file, so two machines rarely touch</li>
+</ul>
+<p>the same bytes.</p>
+<ul>
+<li><b>Atomic writes.</b> A page is written to a temporary file and renamed over the old one, so a</li>
+</ul>
+<p>sync client never sees a half-written page.</p>
+<ul>
+<li><b>Short, safe names.</b> Folder names are at most 64 characters, paths at most 255, and</li>
+</ul>
+<p>nothing Windows refuses is ever written.</p>
+<ul>
+<li><b>Conflict copies are noticed.</b> When a sync tool leaves a conflicted copy beside a page,</li>
+</ul>
+<p>the checker reports it: <b>File</b>, then <b>Check</b>, or <code>notecraft-cli check</code> from a terminal.</p>
+<h2>Backup</h2>
+<p>A backup is a copy of the folder. There is nothing else to export.</p>
+<h2>Page history</h2>
+<p>Open <b>History</b>, then <b>Page Versions</b>, to review and restore saved copies of this page. To recover a deleted page, section or section group, open <b>History</b>, then <b>Notebook Recycle Bin</b>. These tools work on this device and do not replace a separate backup of the notebook.</p>
+<h2>What is not handled</h2>
+<p>NoteCraft does not merge two versions of a page. If your sync tool makes a conflict copy, you decide which version to keep.</p>
+<p>Next: <a href="../make-it-yours/">Make it yours</a>.</p>
+</body>
+</html>

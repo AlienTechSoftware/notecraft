@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>查看页面内部</title>
+<meta name="notecraft:id" content="aa425b20c10cfe1952d9">
+<meta name="notecraft:order" content="75">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>很多笔记应用把整本笔记放在一个二进制文件里，用文本编辑器打开只能看到乱码。NoteCraft 的页面是一个装着普通文件的文件夹，代码视图会把这个文件夹一个文件一个文件地展示给你。现在就试试：点击这个页面旁边的 <code>&lt; &gt;</code> 按钮。</p>
+<h2>你会看到什么</h2>
+<p>左侧是<b>本页的文件</b>：先是页面自己的文件 <code>index.md</code>，然后是文件夹里的其他东西。页面上没有任何地方用到的文件会标上<i>页面未使用</i>。右侧是你选中的文件。你正在读的就是这个页面，所以查看器显示的是它自己的文本。</p>
+<p>页面文件会完整显示：它的<b>头部</b>（页面的 ID、标题、顺序、日期和设置）和下面的<b>正文</b>。全部都可以编辑。再按一次同一个按钮即可关闭此视图，页面会根据您写的内容重新绘制。</p>
+<table>
+<tr><th>文件</th><th>查看器显示什么</th><th>能输入吗</th></tr>
+<tr><td>页面文件 <code>index.md</code> 或 <code>index.html</code></td><td>头部，以及保存时的原样正文</td><td>全部都可以</td></tr>
+<tr><td>绘图 <code>ink.svg</code></td><td>SVG 文本，以及笔自己的读数</td><td>可以，要小心</td></tr>
+<tr><td>图片</td><td>图片</td><td>不能</td></tr>
+<tr><td>其他文本</td><td>它的文本</td><td>不能</td></tr>
+<tr><td>其他任何文件</td><td>名称、大小和类型</td><td>不能</td></tr>
+</table>
+<p>超过 256 KB 的文件只显示开头部分，并会说明这一点。</p>
+<h2>它让你看到什么</h2>
+<ul>
+<li>用方框排版的页面，每个方框外面都有一个带 <code>class=&quot;nc-box&quot;</code> 的 <code>div</code>。</li>
+<li>绘图是一个文件 <code>ink.svg</code>，页面的文本用一行把它的名字写出来。</li>
+<li>标签和链接都是普通文本。</li>
+</ul>
+<p>没有任何东西是隐藏的：页面显示的内容，都在这个文件夹的某个文件里。</p>
+<p>下一页：<a href="../right-to-left/">从右到左</a>。</p>
+<p><i>本页由人工智能模型翻译。欢迎指正。</i></p>
+</body>
+</html>

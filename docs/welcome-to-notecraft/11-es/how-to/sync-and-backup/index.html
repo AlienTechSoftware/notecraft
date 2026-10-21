@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sincronizar y copias de seguridad</title>
+<meta name="notecraft:id" content="dff9f0305e57ae000492">
+<meta name="notecraft:order" content="60">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft no tiene sincronización propia ni cuenta. Un cuaderno es una carpeta de archivos pequeños, así que pon la carpeta de cuadernos donde tu herramienta de sincronización ya mira: OneDrive, Dropbox, Google Drive, iCloud Drive, Syncthing, una carpeta compartida de red o un repositorio git. Ninguno necesita entender NoteCraft. Copian archivos.</p>
+<h2>Por qué funciona</h2>
+<ul>
+<li><b>Un archivo por página.</b> Editar una página reescribe un archivo pequeño, así que dos</li>
+</ul>
+<p>máquinas rara vez tocan los mismos bytes.</p>
+<ul>
+<li><b>Escrituras atómicas.</b> Una página se escribe en un archivo temporal que luego sustituye al</li>
+</ul>
+<p>antiguo, así que un cliente de sincronización nunca ve una página a medio escribir.</p>
+<ul>
+<li><b>Nombres cortos y seguros.</b> Los nombres de carpeta tienen como mucho 64 caracteres, las</li>
+</ul>
+<p>rutas 255, y nunca se escribe nada que Windows rechace.</p>
+<ul>
+<li><b>Las copias en conflicto se detectan.</b> Cuando una herramienta deja una copia en conflicto</li>
+</ul>
+<p>junto a una página, el comprobador lo informa: <b>Archivo</b>, luego <b>Comprobar</b>, o <code>notecraft-cli check</code> desde la terminal.</p>
+<h2>Copia de seguridad</h2>
+<p>Una copia de seguridad es una copia de la carpeta. No hay nada más que exportar.</p>
+<h2>Historial de páginas</h2>
+<p>Abre <b>Historial</b> y luego <b>Versiones de página</b> para consultar y restaurar copias guardadas de esta página. Para recuperar páginas, secciones o grupos de secciones eliminados, abre <b>Historial</b> y después <b>Papelera del cuaderno</b>. Estas herramientas funcionan en este dispositivo y no sustituyen una copia de seguridad independiente del cuaderno.</p>
+<h2>Lo que no se maneja</h2>
+<p>NoteCraft no fusiona dos versiones de una página. Si tu herramienta de sincronización crea una copia en conflicto, tú decides qué versión conservar.</p>
+<p>Siguiente: <a href="../make-it-yours/">Hazlo tuyo</a>.</p>
+<p><i>Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.</i></p>
+</body>
+</html>
