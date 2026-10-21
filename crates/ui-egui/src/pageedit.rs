@@ -1505,7 +1505,39 @@ fn looks_like_html(text: &str) -> bool {
         return false;
     }
     let lower = body.to_ascii_lowercase();
-    ["<table", "<tr", "<p ", "<p>", "<div", "<ul", "<ol", "<h1", "<h2", "<span", "<html", "<body"].iter().any(|tag| lower.contains(tag))
+    [
+        "<table",
+        "<tr",
+        "<p ",
+        "<p>",
+        "<div",
+        "<ul",
+        "<ol",
+        "<li",
+        "<h1",
+        "<h2",
+        "<h3",
+        "<h4",
+        "<h5",
+        "<h6",
+        "<span",
+        "<a ",
+        "<b>",
+        "<strong",
+        "<i>",
+        "<em",
+        "<u>",
+        "<s>",
+        "<br",
+        "<blockquote",
+        "<pre",
+        "<code",
+        "<img",
+        "<html",
+        "<body",
+    ]
+    .iter()
+    .any(|tag| lower.contains(tag))
 }
 
 /// The HTML inside a clipboard flavour: what is between the fragment markers if they are
@@ -2264,6 +2296,10 @@ mod tests {
         }
         let blocks = pasted_blocks(pasted(clip_html));
         assert!(matches!(blocks.first(), Some(Block::Table { .. })), "a table came back: {blocks:?}");
+        let inline_html = "<strong>bold</strong> <a href=\"https://example.com\">linked</a>";
+        let blocks = pasted_blocks(pasted(inline_html));
+        let keeps_format = matches!(blocks.first(), Some(Block::Paragraph(spans)) if spans.iter().any(|s| s.bold && s.text == "bold") && spans.iter().any(|s| s.link.as_deref() == Some("https://example.com")));
+        assert!(keeps_format, "rich inline clipboard keeps emphasis and links: {blocks:?}");
         // Plain words that merely start with a bracket are not markup.
         assert_eq!(pasted("<- look at that\nand this"), Pasted::Paragraphs(vec!["<- look at that".into(), "and this".into()]));
 
