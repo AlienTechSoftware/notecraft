@@ -85,7 +85,7 @@ off-screen window in `ui_shot` and in the tests. See [`control-protocol.md`](con
 
 ## Pages, files and the two views
 
-A page is a folder, the page file names everything the page owns, and the live view and the code view are two ways of looking at the same files. The rules, the code view's design and the open questions are in [page-model.md](page-model.md).
+A page is a folder, the page file names everything the page owns, and the live view and the code view are two ways of looking at the same files. The rules, the code view's design and the open questions are in [page-model.md](dom_serialization/page-model.md).
 
 ## Writing on the page
 
@@ -97,7 +97,7 @@ function from text to styled ranges, so it is tested without a window.
 The code view opens with the Code button and takes the page's place. It shows the page's folder:
 a list of its files and a viewer, with the page file's body as the one editable copy, so two
 editable copies of a page never exist at once. Closing it reads the text again and draws the
-page. See [`page-model.md`](page-model.md) and [`gaps.md`](gaps.md).
+page. See [`page-model.md`](dom_serialization/page-model.md) and [`gaps.md`](gaps.md).
 
 ## Reading `.one` files
 

@@ -3,7 +3,7 @@
 //! A page is a folder, and the window should be able to show that folder as it is. The
 //! old Source button put the page's text beside the page itself, which showed one file of
 //! the several a page owns and left two editable copies of the same page on screen at
-//! once. This is the view [`docs/page-model.md`](../../../docs/page-model.md) section 4
+//! once. This is the view [`docs/dom_serialization/page-model.md`](../../../docs/dom_serialization/page-model.md) section 4
 //! asks for: a list, a viewer, and one editable copy.
 //!
 //! What can be edited: the page file, whole, head and all, and the SVG of a drawing.

@@ -220,7 +220,7 @@ it is fixed and tested, not when it is promised.
   program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
   number against the wrong block. The code view does show them, because it shows the page file's
   head. The reasoning, and what the alternatives cost, is in
-  [page-model.md](page-model.md) section 2.
+  [page-model.md](dom_serialization/page-model.md) section 2.
 - **Justification: three things it does not do yet.** A justified paragraph is stretched when it is
   drawn, which is what keeps the page file the writer's own words
   (`crates/ui-egui/src/bidi.rs`, measured in `crates/ui-egui/tests/rtl_quality.rs`). Three edges

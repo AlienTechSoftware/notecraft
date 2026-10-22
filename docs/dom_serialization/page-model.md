@@ -2,7 +2,7 @@
 
 Read this before you change how a page is stored, edited on screen, or shown as code. It is the
 shared picture, so every contributor and every agent works from the same one. Where the code does
-not yet match it, that is a gap and belongs in [gaps.md](gaps.md); do not quietly work around it.
+not yet match it, that is a gap and belongs in [gaps.md](../gaps.md); do not quietly work around it.
 
 Status: written 2026-10-19 from decisions by the owner. Each item says whether it is built.
 
@@ -15,7 +15,7 @@ Status: written 2026-10-19 from decisions by the owner. Each item says whether i
 | **Head** | The metadata of the page file: the `<head>` of an HTML page, the front matter of a Markdown one. Title, id, order, times, direction. |
 | **Body** | The rest of the page file: the words and structure. This is what a person writes. |
 | **Block** | One paragraph, heading, list item, table, picture line and so on. The model the editor works on. |
-| **Box** | A container on the page: a place, a width and the blocks it holds. Written as an element in the body ([folder-format.md](folder-format.md) section 3.4). |
+| **Box** | A container on the page: a place, a width and the blocks it holds. Written as an element in the body ([folder-format.md](../folder-format.md) section 3.4). |
 | **Ink file** | `ink.svg`: the pen's strokes for the page. |
 | **Attachment** | A file added to the page, kept in the page's `assets/` folder: a picture, a document. |
 | **Live view** | The page drawn the way it will be read, edited in place. |
@@ -56,11 +56,18 @@ rules below; they must not become hidden editor-only state.
 | Inline `Span` marks and links | Emphasis, code, strike, math and link syntax | `b`, `i`, `s`, `code`, `span.math`, `a` |
 | `Container` layout | `div.nc-box` with `data-x`, `data-y`, `data-width` | `div.nc-box` with the same data attributes and browser positioning style |
 
+The writers are `render::blocks_to_markdown` / `spans_to_markdown` (CMGFM) and
+`render::blocks_to_html` / `spans_to_html` (HTML), both in `crates/formats/src/render.rs`; each is
+one `match` over `Block`. `Item` is flat in the model, with a `depth`; the HTML writer regroups
+consecutive items into nested `ul`/`ol` lists by depth. There is no HTML-to-`Block` parser: the
+HTML reader turns the body into Markdown text (`html::to_markdown`) and `markdown::parse` reads
+that, so both formats share one reader.
+
 This table is the contract, not a claim that every arbitrary HTML or full CommonMark document is
-supported. The accepted subset is specified in [folder-format.md](folder-format.md); unknown
+supported. The accepted subset is specified in [folder-format.md](../folder-format.md); unknown
 markup must remain intact or make the page read-only if a live edit would lose it. Changes to a
 mapping require round-trip tests in both formats and a whole-page parity check. The repository
-skill [nc-dom-ser](../SKILLS/nc-dom-ser/SKILL.md) makes this review and verification workflow
+skill [nc-dom-ser](../../SKILLS/nc-dom-ser/SKILL.md) makes this review and verification workflow
 reusable.
 
 ## 2. The rules
@@ -85,7 +92,7 @@ reusable.
    view shows it as it is. Two things are kept there that belong to a block rather than to
    the page: the width of a table's columns (`columns`) and which paragraphs are justified
    (`justify`). Both name their block by its position among the page's blocks. Section 2.1
-   says why, and [gaps.md](gaps.md) records what it costs.
+   says why, and [gaps.md](../gaps.md) records what it costs.
 5. **What the window shows and what the folder holds never disagree.** Open a page, change
    nothing, save it: the folder is the same. Close the window and read the folder: it says what
    the window showed. Each kind of content has a test for this.
@@ -149,7 +156,7 @@ half-sentence pulled out to the margin is the mark of a bad typesetter.
 **A paragraph that reads left to right** is justified the Latin way, by widening the spaces,
 which is egui's own layout (`LayoutJob::justify`). Kashida does nothing for Latin letters:
 they do not join. What is not done is a paragraph that mixes the two directions and reads
-left to right; it is drawn ragged, and that is in [gaps.md](gaps.md).
+left to right; it is drawn ragged, and that is in [gaps.md](../gaps.md).
 
 ### 2.2 The page's name is drawn on the page
 
@@ -187,7 +194,7 @@ changes when that lands, not before.
 ## 4. The code view
 
 Status: built on 2026-10-19, except the two lines marked below. How to use it, for a reader:
-[how-to/look-inside-a-page.md](how-to/look-inside-a-page.md). Questions that are still open are
+[how-to/look-inside-a-page.md](../how-to/look-inside-a-page.md). Questions that are still open are
 in section 8.
 
 - **A flat list of the page's files**, with a viewer beside it. The page file is first and is
