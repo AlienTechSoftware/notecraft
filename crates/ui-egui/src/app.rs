@@ -1672,6 +1672,7 @@ impl NoteCraftApp {
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
             sensitivity: self.sensitivity,
             has_page: self.editor.is_some(),
+            style: self.caret_style(ui.ctx()),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -1682,9 +1683,108 @@ impl NoteCraftApp {
             .show(ui, |ui| {
                 acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
             });
+        let picked = self.editor.as_ref().and_then(|e| crate::containers::selected(ui.ctx(), &e.dir));
         for a in acts {
+            if let Some(i) = picked
+                && self.act_on_box(ui.ctx(), i, &a)
+            {
+                continue;
+            }
             self.ribbon_act(a);
         }
+    }
+
+    /// What a ribbon button does while a container is selected: selecting a box selects everything in
+    /// it, so Cut, Copy, the marks and the styles take all of it. True when the act was one of those.
+    fn act_on_box(&mut self, ctx: &Context, at: usize, act: &ribbon::Act) -> bool {
+        use notecraft_formats::markdown::Block;
+        let wanted = matches!(
+            act,
+            ribbon::Act::Clipboard(_)
+                | ribbon::Act::Mark(_)
+                | ribbon::Act::Block(_)
+                | ribbon::Act::ClearFormatting
+                | ribbon::Act::Direction(_)
+                | ribbon::Act::Indent(_)
+                | ribbon::Act::Tag(_)
+                | ribbon::Act::Justify(_)
+        );
+        let Some(ed) = self.editor.as_mut().filter(|_| wanted) else { return false };
+        let range = notecraft_model::container::blocks_of(&ed.boxes, at);
+        if range.end > ed.blocks.len() || range.is_empty() {
+            return false;
+        }
+        let words = |b: &Block| !matches!(b, Block::Code { .. } | Block::MathBlock(_)) && pageedit::is_one_line_of_words(b);
+        match act {
+            ribbon::Act::Clipboard(which) => {
+                crate::containers::ask_clipboard(ctx, *which == "cut");
+                return true;
+            }
+            ribbon::Act::Mark(mark) => {
+                if !pageedit::toggle_mark(&mut ed.blocks, range, mark) {
+                    return true;
+                }
+            }
+            ribbon::Act::Direction(dir) => {
+                // Words only: a mark in a diagram or an equation would be part of its source.
+                for i in range {
+                    if ed.blocks.get(i).is_some_and(words) {
+                        pageedit::set_direction(&mut ed.blocks, i, *dir);
+                    }
+                }
+            }
+            ribbon::Act::Indent(deeper) => {
+                for i in range {
+                    pageedit::indent(&mut ed.blocks, i, *deeper);
+                }
+            }
+            ribbon::Act::Tag(tag) => {
+                // All of them have the tag already: the same button takes it off every one.
+                let has = |b: &Block| pageedit::tag_of(b).0 == Some(*tag);
+                // A to-do line carries no other tag, so it is left out of every tag but its own.
+                let can = |b: &Block| words(b) && (*tag == notecraft_model::Tag::ToDo || !matches!(b, Block::Item { task: Some(_), .. }));
+                let all = range.clone().filter_map(|i| ed.blocks.get(i)).filter(|b| can(b)).all(has);
+                for i in range {
+                    if ed.blocks.get(i).is_some_and(|b| can(b) && (all || !has(b))) {
+                        pageedit::set_tag(&mut ed.blocks, i, *tag);
+                    }
+                }
+            }
+            ribbon::Act::Justify(strength) => {
+                let paragraphs: Vec<usize> = range.filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_)))).collect();
+                if paragraphs.is_empty() {
+                    return true;
+                }
+                let all = paragraphs.iter().all(|i| ed.justified.strength_of(*i) == Some(*strength));
+                let want = (!all).then_some(*strength);
+                let mut marked = ed.justified.clone();
+                for i in paragraphs {
+                    marked.set(i, want);
+                }
+                self.write_justified(marked, want);
+                return true;
+            }
+            ribbon::Act::Block(kind) => {
+                // All of them are that kind already: the same button turns them back into text.
+                let all = range.clone().all(|i| ed.blocks.get(i).is_some_and(|b| pageedit::block_kind(b) == *kind));
+                for i in range {
+                    if all || ed.blocks.get(i).is_some_and(|b| pageedit::block_kind(b) != *kind) {
+                        pageedit::set_kind(&mut ed.blocks, i, kind);
+                    }
+                }
+            }
+            _ => {
+                for i in range {
+                    if let Some(b) = ed.blocks.get_mut(i).filter(|b| words(b)) {
+                        let text = pageedit::without_marks(&pageedit::block_text(b));
+                        pageedit::set_block_text(b, &text);
+                    }
+                }
+            }
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        true
     }
 
     /// Carries out one thing the ribbon asked for.
@@ -2046,6 +2146,21 @@ impl NoteCraftApp {
     }
 
     /// Whether the caret is in a table, which is when the Table tab is offered.
+    /// The Styles kind of the block the caret is in (or that a selected box is all of), for the ribbon to highlight; "" with neither.
+    fn caret_style(&self, ctx: &Context) -> &'static str {
+        let Some(ed) = self.editor.as_ref() else { return "" };
+        if let Some(block) = ed.caret.as_ref().and_then(|c| ed.blocks.get(c.block)) {
+            return pageedit::block_kind(block);
+        }
+        // A selected box has everything in it selected: its style is the one they all share.
+        let range = crate::containers::selected(ctx, &ed.dir).map(|i| notecraft_model::container::blocks_of(&ed.boxes, i)).unwrap_or_default();
+        let mut kinds = range.filter_map(|i| ed.blocks.get(i)).map(pageedit::block_kind);
+        match kinds.next() {
+            Some(first) if kinds.all(|k| k == first) => first,
+            _ => "",
+        }
+    }
+
     fn caret_in_table(&self) -> bool {
         self.editor
             .as_ref()
@@ -2374,6 +2489,19 @@ impl NoteCraftApp {
             "strike" => "~~",
             _ => "`",
         };
+        let len = caret.text.chars().count();
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        // All of the line's words: marked on the spans, so words that are partly marked already come out
+        // right. A part of them is wrapped in the text, where the caret's own selection lives.
+        if len > 0 && lo == 0 && hi == len && pageedit::toggle_mark(&mut ed.blocks, caret.block..caret.block + 1, mark) {
+            if let Some(b) = ed.blocks.get(caret.block) {
+                caret.text = pageedit::caret_text(b);
+                caret.selection = (0, caret.text.chars().count());
+            }
+            ed.rebuild_body();
+            Self::mark_dirty_from_blocks(ed);
+            return;
+        }
         let (text, _) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
         caret.text = text;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
@@ -2449,6 +2577,12 @@ impl NoteCraftApp {
         let want = (ed.justified.strength_of(at) != Some(strength)).then_some(strength);
         let mut marked = ed.justified.clone();
         marked.set(at, want);
+        self.write_justified(marked, want);
+    }
+
+    /// Writes which paragraphs are justified into the page's own file, and says what `want` now is.
+    fn write_justified(&mut self, marked: notecraft_model::justify::Justified, want: Option<notecraft_model::justify::Strength>) {
+        let Some(ed) = self.editor.as_ref() else { return };
         let path = path_str(&ed.dir);
         let line = notecraft_model::justify::write(&marked);
         self.save_now();

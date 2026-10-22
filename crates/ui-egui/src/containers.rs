@@ -53,6 +53,18 @@ fn words_id() -> Id {
     Id::new("container-words-selected")
 }
 
+/// What the ribbon's Cut or Copy asked of the selected container (1 copy, 2 cut), until the next frame
+/// takes it. The container does it as it does Ctrl+C and Ctrl+X, so there is one way to take a box.
+fn ribbon_clip_id() -> Id {
+    Id::new("container-ribbon-clipboard")
+}
+
+/// Asks the selected container to be copied or cut, as the ribbon's Cut and Copy buttons do.
+pub fn ask_clipboard(ctx: &egui::Context, cut: bool) {
+    ctx.data_mut(|d| d.insert_temp(ribbon_clip_id(), if cut { 2u8 } else { 1u8 }));
+    ctx.request_repaint();
+}
+
 /// The container that is selected on `page`, if there is one. The selection is kept with the
 /// page it was made on: another page opened since has nothing selected, rather than inheriting
 /// a box number and a Delete key that would take a box out of a page nobody picked from.
@@ -295,6 +307,8 @@ pub fn show(
                 i.events.iter().any(|e| matches!(e, egui::Event::Cut)) || pressed(i, Key::X),
             )
         });
+        let asked = ui.data_mut(|d| d.remove_temp::<u8>(ribbon_clip_id()));
+        let (copy_key, cut_key) = (copy_key || asked == Some(1), cut_key || asked == Some(2));
         if copy_key || cut_key {
             // The heading that merely repeats the page's title is not content. It is the
             // title showing through, the title area is already drawing it, and the editor
@@ -370,7 +384,13 @@ pub fn show(
     // So does the caret arriving in a container: the words are being edited, not the box.
     if sel.is_some() {
         let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p));
-        let pressed_away = ui.input(|i| i.pointer.primary_pressed()) && !opened_now && pointer.is_some_and(away);
+        // Only a press on the page lets go of it: the ribbon's buttons act on the selected box, so a
+        // press there must leave it selected.
+        // A list the ribbon has opened over the page (the styles) is not the page either: a press on one of
+        // its rows is a pick for the selected box.
+        let over_a_popup = |p: Pos2| ui.ctx().layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground);
+        let pressed_away =
+            ui.input(|i| i.pointer.primary_pressed()) && !opened_now && pointer.is_some_and(|p| area.contains(p) && away(p) && !over_a_popup(p));
         if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
             sel = None;
             menu_at = None;

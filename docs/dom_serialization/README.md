@@ -41,6 +41,7 @@ The agent skill `SKILLS/nc-dom-ser/SKILL.md` is the change procedure.
 | Document | Status |
 |---|---|
 | [page-model.md](page-model.md): the normative page, view and storage contract | Normative |
+| [code-blocks.md](code-blocks.md): the two code styles and the `123|` name | Built |
 
 Open questions to turn into documents:
 

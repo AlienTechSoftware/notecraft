@@ -347,6 +347,8 @@ pub struct View<'a> {
     pub sensitivity: u8,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
+    /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
+    pub style: &'static str,
 }
 
 impl View<'_> {
@@ -618,7 +620,7 @@ fn rows(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
 }
 
 /// The styles OneNote lists in its Styles gallery, and what each one is here.
-pub const STYLES: [(&str, &str); 11] = [
+pub const STYLES: [(&str, &str); 12] = [
     ("Heading 1", "h1"),
     ("Heading 2", "h2"),
     ("Heading 3", "h3"),
@@ -629,6 +631,7 @@ pub const STYLES: [(&str, &str); 11] = [
     ("Citation", "citation"),
     ("Quote", "quote"),
     ("Code", "codeblock"),
+    ("123|code", "codenumbers"),
     ("Normal", "p"),
 ];
 
@@ -760,17 +763,20 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     group(ui, "Styles", t, |ui| {
-        gallery(ui, "styles", t, acts, |ui, acts| {
-            // The box shows the first two, as OneNote's does.
-            for (label, kind) in STYLES.iter().take(2) {
-                if style_row(ui, label, kind, t).clicked() {
+        gallery(ui, "styles", view.style, t, acts, |ui, acts| {
+            // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
+            // a later style, that one and the next (the last two for the last), so the current
+            // style is in sight. Ordinary text keeps the headings in the box.
+            let first = STYLES.iter().position(|(_, k)| *k == view.style && *k != "p").filter(|i| *i >= 2).map_or(0, |i| i.min(STYLES.len() - 2));
+            for (label, kind) in STYLES.iter().skip(first).take(2) {
+                if style_row(ui, label, kind, *kind == view.style, t).clicked() {
                     acts.push(Act::Block(leak(kind)));
                 }
             }
         });
     });
     group(ui, "Tags", t, |ui| {
-        gallery(ui, "tags", t, acts, |ui, acts| {
+        gallery(ui, "tags", "", t, acts, |ui, acts| {
             for tag in [Tag::ToDo, Tag::Important] {
                 if tag_row(ui, tag, t).clicked() {
                     acts.push(Act::Tag(tag));
@@ -803,7 +809,7 @@ fn leak(kind: &str) -> &'static str {
 
 /// A gallery like OneNote's: a bordered box with the first entries, and an arrow that opens
 /// the whole list beside it.
-fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, rows_in_box: impl FnOnce(&mut Ui, &mut Vec<Act>)) {
+fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &mut Vec<Act>, rows_in_box: impl FnOnce(&mut Ui, &mut Vec<Act>)) {
     let height = GROUP_H - 20.0;
     let box_rect = egui::Frame::NONE
         .stroke(egui::Stroke::new(1.0, t.faint))
@@ -850,7 +856,7 @@ fn gallery(ui: &mut Ui, which: &'static str, t: &Tokens, acts: &mut Vec<Act>, ro
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
                     if which == "styles" {
                         for (label, kind) in STYLES {
-                            if style_row(ui, label, kind, t).clicked() {
+                            if style_row(ui, label, kind, kind == current, t).clicked() {
                                 acts.push(Act::Block(leak(kind)));
                                 picked = true;
                             }
@@ -1081,24 +1087,39 @@ fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 }
 
 /// One line of the Styles gallery, drawn the way the style looks.
-fn style_row(ui: &mut Ui, label: &str, kind: &str, t: &Tokens) -> egui::Response {
+fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) -> egui::Response {
     let (size, color, italics) = match kind {
         "h1" | "title" => (17.0, t.accent, false),
         "h2" => (15.0, t.accent, false),
         "h3" | "h4" => (13.5, t.muted, kind == "h4"),
         "h5" | "h6" => (12.5, t.accent, kind == "h6"),
         "quote" | "citation" => (12.5, t.muted, true),
-        "codeblock" => (12.5, t.text, false),
+        "codeblock" | "codenumbers" => (12.5, t.text, false),
         _ => (13.0, t.text, false),
     };
     let mut text = egui::RichText::new(label).size(size).color(color);
     if italics {
         text = text.italics();
     }
-    if kind == "codeblock" {
+    if matches!(kind, "codeblock" | "codenumbers") {
         text = text.monospace();
     }
-    ui.add(egui::Button::new(text).frame(false).min_size(vec2(130.0, 22.0)))
+    let galley = egui::WidgetText::from(text).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+    let width = ui.available_width().max(130.0).min(galley.size().x + 16.0).max(130.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 22.0), Sense::click());
+    // The style the caret is in is boxed, as OneNote boxes it; the one under the pointer is shaded.
+    if current {
+        ui.painter().rect_filled(rect, 3.0, t.row_selected);
+        ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, t.row_hover);
+    }
+    let at = egui::pos2(rect.left() + 6.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, color);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, current, name.clone()));
+    resp
 }
 
 /// One line of the Tags gallery: OneNote's own mark and the name, with its shortcut.

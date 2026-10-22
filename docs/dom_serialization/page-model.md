@@ -49,7 +49,7 @@ rules below; they must not become hidden editor-only state.
 |---|---|---|
 | `Heading`, `Paragraph`, `Quote`, `Rule` | Markdown heading, text, quote, thematic break | `h1`-`h6`, `p`, `blockquote`, `hr` |
 | `Item` | Bullet/number marker, task marker, indentation | `ul`/`ol`, `li`, task glyph, nested lists |
-| `Code` | Fenced block; `mermaid` identifies a diagram | `pre`, with a class identifying the language or diagram |
+| `Code` | Fenced block; `mermaid` identifies a diagram; `123\|rust` numbers the lines ([code-blocks.md](code-blocks.md)) | `pre`, with a class identifying the language or diagram |
 | `MathBlock` | `$$` display-math fence | `p.math` |
 | `Table` | GFM table | `table`, rows, header and data cells |
 | `Image` and inline image `Span` | Markdown image/link syntax | `img` with `src` and `alt` |

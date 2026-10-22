@@ -142,6 +142,67 @@ pub fn isolate(text: &str, selection: (usize, usize), dir: notecraft_model::Dir)
     (format!("{before}{open}{middle}{PDI}{after}"), (a + 1, a + 1 + len))
 }
 
+/// Bold, italic, strikethrough or code on every line of words in `range`, as a toggle: when all of
+/// those words already have the mark it comes off, otherwise it goes on all of them. Done on the
+/// spans, not on the text, so words that are partly marked already come out right (`a **b** c`
+/// becomes `**a b c**`, not `**a **b** c**`). Returns false when the range has no words to mark.
+pub fn toggle_mark(blocks: &mut [Block], range: std::ops::Range<usize>, mark: &str) -> bool {
+    let flag = |s: &mut Span| -> bool {
+        match mark {
+            "bold" => s.bold,
+            "italic" => s.italic,
+            "strike" => s.strike,
+            _ => s.code,
+        }
+    };
+    let set = |s: &mut Span, on: bool| match mark {
+        "bold" => s.bold = on,
+        "italic" => s.italic = on,
+        "strike" => s.strike = on,
+        _ => s.code = on,
+    };
+    let mut targets: Vec<&mut Vec<Span>> = Vec::new();
+    for b in blocks.get_mut(range).unwrap_or_default() {
+        if let Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } = b {
+            targets.push(spans);
+        }
+    }
+    let mut all = true;
+    let mut any = false;
+    for spans in targets.iter_mut() {
+        for s in spans.iter_mut().filter(|s| s.image.is_none() && !s.math && !s.text.is_empty()) {
+            any = true;
+            all &= flag(s);
+        }
+    }
+    if !any {
+        return false;
+    }
+    for spans in targets {
+        for s in spans.iter_mut().filter(|s| s.image.is_none() && !s.math) {
+            set(s, !all);
+        }
+        // Neighbours that now look alike are one run, or each would be written with its own marks.
+        let mut merged: Vec<Span> = Vec::new();
+        for s in std::mem::take(spans) {
+            match merged.last_mut() {
+                Some(last)
+                    if last.image.is_none()
+                        && s.image.is_none()
+                        && !last.math
+                        && !s.math
+                        && Span { text: String::new(), ..last.clone() } == Span { text: String::new(), ..s.clone() } =>
+                {
+                    last.text.push_str(&s.text)
+                }
+                _ => merged.push(s),
+            }
+        }
+        *spans = merged;
+    }
+    true
+}
+
 pub fn wrap_selection(text: &str, selection: (usize, usize), marks: &str) -> (String, (usize, usize)) {
     let chars: Vec<char> = text.chars().collect();
     let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));
@@ -185,6 +246,18 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     if !is_one_line_of_words(block) {
         return false;
     }
+    // Code stays code with its words as they are; only whether its lines are numbered changes.
+    if let (Block::Code { lang, text }, "codeblock" | "codenumbers") = (block, kind)
+        && block_kind(block) != kind
+    {
+        let language = notecraft_formats::markdown::code_lang(lang).1.to_string();
+        let lang = if kind == "codenumbers" { format!("{}{language}", notecraft_formats::markdown::NUMBERED) } else { language };
+        let text = text.clone();
+        if let Some(b) = blocks.get_mut(at) {
+            *b = Block::Code { lang, text };
+        }
+        return true;
+    }
     let spans = match block {
         Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans.clone(),
         _ => parse_inline(&block_text(block)),
@@ -193,7 +266,14 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         "h1" => Block::Heading { level: 1, spans },
         "h2" => Block::Heading { level: 2, spans },
         "h3" => Block::Heading { level: 3, spans },
+        "h4" => Block::Heading { level: 4, spans },
+        "h5" => Block::Heading { level: 5, spans },
+        "h6" => Block::Heading { level: 6, spans },
         "quote" => Block::Quote(spans),
+        "codeblock" => Block::Code { lang: String::new(), text: spans.iter().map(|s| s.text.as_str()).collect() },
+        "codenumbers" => {
+            Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() }
+        }
         "bullet" => Block::Item { ordered: false, number: 0, task: None, depth: 0, spans },
         "number" => Block::Item { ordered: true, number: 1, task: None, depth: 0, spans },
         "todo" => Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans },
@@ -438,8 +518,13 @@ pub fn block_kind(block: &Block) -> &'static str {
     match block {
         Block::Heading { level: 1, .. } => "h1",
         Block::Heading { level: 2, .. } => "h2",
-        Block::Heading { .. } => "h3",
+        Block::Heading { level: 3, .. } => "h3",
+        Block::Heading { level: 4, .. } => "h4",
+        Block::Heading { level: 5, .. } => "h5",
+        Block::Heading { .. } => "h6",
         Block::Quote(_) => "quote",
+        Block::Code { lang, .. } if notecraft_formats::markdown::code_lang(lang).0 => "codenumbers",
+        Block::Code { .. } => "codeblock",
         Block::Item { task: Some(_), .. } => "todo",
         Block::Item { ordered: true, .. } => "number",
         Block::Item { .. } => "bullet",
@@ -908,7 +993,8 @@ fn size_of(block: &Block) -> (f32, bool) {
             },
             true,
         ),
-        Block::Code { .. } | Block::MathBlock(_) => (13.5, false),
+        // As big as the finished block draws it (preview.rs), or the text jumps when the caret arrives.
+        Block::Code { .. } | Block::MathBlock(_) => (14.5, false),
         _ => (14.5, false),
     }
 }
@@ -1143,13 +1229,28 @@ pub fn show_blocks(
                     }
                     let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
                     let out = if multiline {
-                        egui::TextEdit::multiline(&mut c.text)
-                            .id(id)
-                            .frame(egui::Frame::NONE)
-                            .desired_width(ui.available_width())
-                            .horizontal_align(align)
-                            .font(egui::FontId::monospace(size))
-                            .show(ui)
+                        // The same box the finished block is drawn in (preview.rs), so the block does not
+                        // change its look when the caret arrives in it.
+                        egui::Frame::new()
+                            .fill(t.code_bg)
+                            .corner_radius(6.0)
+                            .inner_margin(8.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                if let Block::Code { lang, .. } = &block
+                                    && !notecraft_formats::markdown::code_lang(lang).1.is_empty()
+                                {
+                                    ui.label(egui::RichText::new(notecraft_formats::markdown::code_lang(lang).1).size(12.0 * zoom).color(t.muted));
+                                }
+                                egui::TextEdit::multiline(&mut c.text)
+                                    .id(id)
+                                    .frame(egui::Frame::NONE)
+                                    .desired_width(ui.available_width())
+                                    .horizontal_align(align)
+                                    .font(egui::FontId::monospace(size))
+                                    .show(ui)
+                            })
+                            .inner
                     } else {
                         egui::TextEdit::singleline(&mut c.text)
                             .id(id)
@@ -2721,6 +2822,100 @@ A note to self.
         assert_eq!(text, "**\u{4e2d}\u{6587}**x");
     }
 
+    /// The two code styles are one block with its lines numbered or not; changing between them keeps the words and the language.
+    #[test]
+    fn code_changes_between_plain_and_numbered_and_keeps_its_words() {
+        let mut b = blocks(
+            "```rust
+*not italic*
+```
+",
+        );
+        assert_eq!(block_kind(&b[0]), "codeblock");
+        assert!(set_kind(&mut b, 0, "codenumbers"));
+        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "123|rust" && text == "*not italic*"), "{:?}", b[0]);
+        assert_eq!(block_kind(&b[0]), "codenumbers");
+        assert!(set_kind(&mut b, 0, "codeblock"));
+        assert!(matches!(&b[0], Block::Code { lang, .. } if lang == "rust"));
+        // The same style again is the way back to ordinary text.
+        assert!(set_kind(&mut b, 0, "codeblock"));
+        assert_eq!(block_kind(&b[0]), "p");
+    }
+
+    /// Bold, italic and the rest are toggles, and words that are partly marked already do not break them.
+    #[test]
+    fn a_mark_is_a_toggle_over_words_that_are_partly_marked() {
+        let md = |b: &[Block]| notecraft_formats::render::blocks_to_markdown(b).trim().to_string();
+        for (mark, open) in [("bold", "**"), ("italic", "*"), ("strike", "~~")] {
+            // Partly marked: it goes on all of it, once, and the same button takes it off again.
+            let mut b = blocks(
+                "a **b** c
+",
+            );
+            assert!(toggle_mark(&mut b, 0..1, mark));
+            let on = md(&b);
+            let spans = parse_inline(&on);
+            let has = |s: &Span| match mark {
+                "bold" => s.bold,
+                "italic" => s.italic,
+                _ => s.strike,
+            };
+            // (A space between two runs is written outside their marks, so it is not itself marked.)
+            assert!(spans.iter().filter(|s| !s.text.trim().is_empty()).all(has), "{mark} is on all of it ({open}): {on}");
+            assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), "a b c", "{mark} lost no words: {on}");
+            assert!(toggle_mark(&mut b, 0..1, mark));
+            // Only that mark comes off: the bold on b stays for the others.
+            assert_eq!(md(&b), if mark == "bold" { "a b c" } else { "a **b** c" }, "{mark} came off everywhere");
+            // Marked at both ends but not all the way through: that is not 'already marked'.
+            let mut b = blocks(
+                "**a** and **b**
+",
+            );
+            assert!(toggle_mark(&mut b, 0..1, "bold"));
+            assert_eq!(md(&b), "**a and b**", "everything is bold now, none lost");
+        }
+        // Several blocks together: all or nothing, and what is not words is left alone.
+        let mut b = blocks(
+            "one
+
+**two**
+
+```
+code
+```
+",
+        );
+        assert!(toggle_mark(&mut b, 0..3, "bold"));
+        assert_eq!(
+            md(&b),
+            "**one**
+
+**two**
+
+```
+code
+```"
+        );
+        assert!(toggle_mark(&mut b, 0..3, "bold"));
+        assert_eq!(
+            md(&b),
+            "one
+
+two
+
+```
+code
+```"
+        );
+        let mut only_code = blocks(
+            "```
+code
+```
+",
+        );
+        assert!(!toggle_mark(&mut only_code, 0..1, "bold"), "nothing to mark");
+    }
+
     /// What the ribbon's Styles and Lists buttons do to the block under the caret.
     #[test]
     fn a_block_changes_kind_and_keeps_its_words() {
@@ -2732,9 +2927,20 @@ A note to self.
         // The same kind again turns it back into ordinary text.
         assert!(set_kind(&mut b, 0, "h1"));
         assert_eq!(block_kind(b.first().expect("one")), "p");
-        for (kind, check) in
-            [("bullet", "bullet"), ("number", "number"), ("todo", "todo"), ("quote", "quote"), ("h2", "h2"), ("h3", "h3"), ("p", "p")]
-        {
+        for (kind, check) in [
+            ("bullet", "bullet"),
+            ("number", "number"),
+            ("todo", "todo"),
+            ("quote", "quote"),
+            ("h2", "h2"),
+            ("h3", "h3"),
+            ("h4", "h4"),
+            ("h5", "h5"),
+            ("h6", "h6"),
+            ("codeblock", "codeblock"),
+            ("codenumbers", "codenumbers"),
+            ("p", "p"),
+        ] {
             assert!(set_kind(&mut b, 0, kind), "{kind}");
             assert_eq!(block_kind(b.first().expect("one")), check, "{kind}");
             assert_eq!(block_text(b.first().expect("one")), "Some words", "{kind} lost the words");

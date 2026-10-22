@@ -139,37 +139,78 @@ fn row_to_markdown(cells: &[Vec<Span>]) -> String {
 
 /// Inline spans as Markdown. The order of the marks matches what the parser reads back.
 pub fn spans_to_markdown(spans: &[Span]) -> String {
+    marked(spans, 0)
+}
+
+/// The marks in the order they are opened: bold outermost, so `***x***` reads back the same way.
+const MARKS: [(&str, fn(&Span) -> bool, fn(&mut Span)); 3] = [
+    ("**", |s| s.bold && plain_text(s), |s| s.bold = false),
+    ("*", |s| s.italic && plain_text(s), |s| s.italic = false),
+    ("~~", |s| s.strike && plain_text(s), |s| s.strike = false),
+];
+
+/// Pictures, maths and code carry no emphasis of their own.
+fn plain_text(s: &Span) -> bool {
+    s.image.is_none() && !s.math && !s.code
+}
+
+/// Writes `spans` with the marks from `level` on. Neighbours that share a mark are written under one
+/// pair of it (`**a *b* c**`, not `**a **` `***b***` `** c**`), and the white space at the edge of a
+/// run goes outside its marks, which is what CommonMark needs for them to open and close.
+fn marked(spans: &[Span], level: usize) -> String {
+    let Some((marks, has, clear)) = MARKS.get(level) else {
+        return spans.iter().map(leaf).collect();
+    };
     let mut out = String::new();
-    for s in spans {
-        if let Some(src) = &s.image {
-            out.push_str(&format!("![{}]({src})", s.text));
-            continue;
+    let mut i = 0;
+    while i < spans.len() {
+        let on = spans.get(i).is_some_and(has);
+        let mut j = i;
+        while spans.get(j).is_some_and(|s| has(s) == on) {
+            j += 1;
         }
-        if s.math {
-            out.push_str(&format!("${}$", s.text));
-            continue;
-        }
-        let mut text = s.text.clone();
-        if s.code {
-            text = format!("`{text}`");
+        let run = spans.get(i..j).unwrap_or_default();
+        if on {
+            let inner: Vec<Span> = run
+                .iter()
+                .cloned()
+                .map(|mut s| {
+                    clear(&mut s);
+                    s
+                })
+                .collect();
+            let text = marked(&inner, level + 1);
+            let core = text.trim();
+            if core.is_empty() {
+                out.push_str(&text);
+            } else {
+                let lead = text.len() - text.trim_start().len();
+                let trail = text.len() - text.trim_end().len();
+                out.push_str(text.get(..lead).unwrap_or_default());
+                out.push_str(&format!("{marks}{core}{marks}"));
+                out.push_str(text.get(text.len() - trail..).unwrap_or_default());
+            }
         } else {
-            // Bold before italic, so `***x***` reads back the same way.
-            if s.strike {
-                text = format!("~~{text}~~");
-            }
-            if s.italic {
-                text = format!("*{text}*");
-            }
-            if s.bold {
-                text = format!("**{text}**");
-            }
+            out.push_str(&marked(run, level + 1));
         }
-        match &s.link {
-            Some(target) => out.push_str(&format!("[{text}]({target})")),
-            None => out.push_str(&text),
-        }
+        i = j;
     }
     out
+}
+
+/// One span with nothing but its code, picture, maths or link written round it.
+fn leaf(s: &Span) -> String {
+    if let Some(src) = &s.image {
+        return format!("![{}]({src})", s.text);
+    }
+    if s.math {
+        return format!("${}$", s.text);
+    }
+    let text = if s.code { format!("`{}`", s.text) } else { s.text.clone() };
+    match &s.link {
+        Some(target) => format!("[{text}]({target})"),
+        None => text,
+    }
 }
 
 /// Blocks as the HTML body of a page: the inside of `<body>`, one block per line.
@@ -289,6 +330,55 @@ mod tests {
     use super::*;
     use crate::html;
     use crate::markdown::parse;
+
+    /// A code block whose lines are numbered says so in its language, in both formats, and keeps its words.
+    #[test]
+    fn numbered_code_is_the_same_block_in_both_formats() {
+        let blocks = vec![
+            Block::Code {
+                lang: "123|rust".into(),
+                text: "fn a() {}
+fn b() {}"
+                    .into(),
+            },
+            Block::Code { lang: "123|".into(), text: "plain".into() },
+            Block::Code { lang: "rust".into(), text: "x".into() },
+        ];
+        let md = blocks_to_markdown(&blocks);
+        assert!(
+            md.contains("```123|rust")
+                && md.contains(
+                    "```123|
+"
+                ),
+            "{md}"
+        );
+        assert_eq!(parse(&md), blocks, "CMGFM reads back the same");
+        let html = blocks_to_html(&blocks);
+        assert!(html.contains("<pre class=\"123|rust\">"), "{html}");
+        assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML reads back the same");
+        assert_eq!(crate::markdown::code_lang("123|rust"), (true, "rust"));
+        assert_eq!(crate::markdown::code_lang("rust"), (false, "rust"));
+        assert_eq!(crate::markdown::code_lang("123|"), (true, ""));
+    }
+
+    /// Neighbours that share a mark are written under one pair of it, with the white space outside.
+    #[test]
+    fn neighbours_that_share_a_mark_are_written_under_one_pair() {
+        let bold = |t: &str| Span { text: t.into(), bold: true, ..Default::default() };
+        let both = |t: &str| Span { text: t.into(), bold: true, italic: true, ..Default::default() };
+        let spans = vec![bold("one "), both("two"), bold(" three")];
+        assert_eq!(spans_to_markdown(&spans), "**one *two* three**");
+        assert_eq!(spans_to_markdown(&[bold("x "), Span { text: "y".into(), ..Default::default() }]), "**x** y");
+        // Both marks on one run, and read back as both.
+        let spans = crate::markdown::parse_inline("***x***");
+        assert_eq!((spans.len(), spans[0].bold, spans[0].italic, spans[0].text.as_str()), (1, true, true, "x"));
+        // Whatever is written says the same thing when it is read and written again.
+        for md in ["**one *two* three**", "**a** b *c*", "~~**a** b~~", "**[a](x) b**"] {
+            let once = spans_to_markdown(&crate::markdown::parse_inline(md));
+            assert_eq!(spans_to_markdown(&crate::markdown::parse_inline(&once)), once, "{md}");
+        }
+    }
 
     /// The property that makes block editing safe: what is written parses back the same.
     fn round_trips(markdown: &str) {
