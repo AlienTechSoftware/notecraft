@@ -34,6 +34,20 @@ pub enum Block {
     Image { alt: String, src: String },
 }
 
+/// What a code block's language starts with when its lines are numbered: `123|rust`, or `123|` for no language.
+/// It is the block's own info string, so both page formats carry it the way they carry any language: the fence
+/// in CMGFM, the class of the `pre` in HTML. A page read by something that knows nothing of it shows the code
+/// under an odd language name, and loses nothing.
+pub const NUMBERED: &str = "123|";
+
+/// A code block's language split into whether its lines are numbered and the language itself.
+pub fn code_lang(lang: &str) -> (bool, &str) {
+    match lang.strip_prefix(NUMBERED) {
+        Some(rest) => (true, rest),
+        None => (false, lang),
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct Style {
     bold: bool,
@@ -97,6 +111,19 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 } else {
                     buf.push(c);
                     i += 1;
+                }
+            }
+            // `***x***` is bold and italic together, which is how both marks on one run are written.
+            '*' if next == Some('*')
+                && chars.get(i + 2) == Some(&'*')
+                && depth < MAX_DEPTH
+                && find(chars, i + 3, &['*', '*', '*']).is_some_and(|end| end > i + 3) =>
+            {
+                if let Some(end) = find(chars, i + 3, &['*', '*', '*']) {
+                    push_text(&mut out, &mut buf, st, &link);
+                    let inner = Style { bold: true, italic: true, ..st };
+                    out.extend(inline(slice(chars, i + 3, end), inner, link.clone(), depth + 1));
+                    i = end + 3;
                 }
             }
             '*' | '~' if next == Some(c) && depth < MAX_DEPTH => {

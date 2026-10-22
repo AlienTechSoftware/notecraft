@@ -4374,3 +4374,243 @@ fn ctrl_v_works_when_no_paragraph_has_the_keyboard() {
     let body = h.state().body().unwrap_or_default().to_string();
     assert!(body.contains(PASTED), "Ctrl+V reached the page with no caret in it:\n{body}");
 }
+
+/// The Styles list opens from its arrow, and a style picked in it is applied to the line the caret is in.
+#[test]
+fn the_styles_list_applies_what_is_picked() {
+    let (_t, mut app, s) = sample_app("ui-styles-list");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    for (label, starts) in [("Code", "```"), ("Heading 5", "##### "), ("Quote", "> ")] {
+        let arrow = h.get_by_label("More styles").rect();
+        ask(&mut h, "ui.click", json!({"x": arrow.center().x, "y": arrow.center().y})).expect("open the list");
+        for _ in 0..8 {
+            pump(&mut h);
+        }
+        let rows: Vec<_> = h.query_all_by_label(label).collect();
+        assert!(!rows.is_empty(), "{label} is in the list");
+        let row = rows.last().expect("row").rect();
+        ask(&mut h, "ui.click", json!({"x": row.center().x, "y": row.center().y})).expect("pick");
+        for _ in 0..8 {
+            pump(&mut h);
+        }
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default().to_string();
+        assert!(body.lines().any(|l| l.starts_with(starts)), "{label} was applied:\n{body}");
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret again");
+        pump(&mut h);
+    }
+}
+
+/// Selecting a box selects everything in it, so the ribbon's marks, styles, Copy and Cut take all of it.
+#[test]
+fn a_selected_box_takes_the_ribbon_as_a_whole() {
+    let _clip = lock_system_clipboard();
+    let (_t, mut app, s) = sample_app("ui-box-ribbon");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    let look = |h: &mut Harness<'_, NoteCraftApp>| -> Value { ask(h, "ui.inspect", json!({})).expect("inspect") };
+    let blocks = look(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    let line = format!("40,20,320,{blocks}");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let click = |h: &mut Harness<'_, NoteCraftApp>, x: f32, y: f32| {
+        ask(h, "ui.click", json!({"x": x, "y": y})).expect("click");
+        for _ in 0..6 {
+            pump(h);
+        }
+    };
+    let click_label = |h: &mut Harness<'_, NoteCraftApp>, label: &str| {
+        let r = h.get_by_label(label).rect();
+        click(h, r.center().x, r.center().y);
+    };
+
+    // Pick the box by its handle.
+    let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
+
+    // Bold, from the ribbon: every line of words in the box, and the box stays picked.
+    click_label(&mut h, "Bold");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    for bold in [
+        "# **Format ideas**",
+        "## **A checklist**",
+        "- [x] **Create a notebook**",
+        "3. **Backup is a copy.**",
+        "> **Notes should outlive the app that wrote them.**",
+    ] {
+        assert!(body.contains(bold), "{bold} is bold, a heading, a list item and a quote alike:\n{body}");
+    }
+    assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "still picked after the button");
+
+    // A style from the list goes on every block of the box.
+    let arrow = h.get_by_label("More styles").rect();
+    click(&mut h, arrow.center().x, arrow.center().y);
+    let row = h.query_all_by_label("Heading 3").last().expect("the list").rect();
+    click(&mut h, row.center().x, row.center().y);
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.lines().filter(|l| l.starts_with("### ")).count() >= 2, "every block of the box became a heading:\n{body}");
+
+    // A style low in the list lies over the page itself; picking it must still reach the box.
+    let arrow = h.get_by_label("More styles").rect();
+    click(&mut h, arrow.center().x, arrow.center().y);
+    let row = h.query_all_by_label("Code").last().expect("the list").rect();
+    assert!(row.center().y > oy, "the row lies over the page: {row:?} against the page at {oy}");
+    click(&mut h, row.center().x, row.center().y);
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("```\nFormat ideas\n```"), "the blocks of the box became code:\n{body}");
+    assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "still picked after the list");
+
+    // Cut takes the whole box away with what is in it.
+    click_label(&mut h, "Cut");
+    settle(&mut h);
+    let after = look(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(99);
+    assert_eq!(after, 0, "the cut took every block of the box");
+}
+
+/// Bold and italic are toggles over a whole line, even one that is partly bold or italic already.
+#[test]
+fn bold_and_italic_toggle_over_a_line_that_is_partly_marked() {
+    let (_t, mut app, s) = sample_app("ui-mark-toggle");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    let line = |h: &Harness<'_, NoteCraftApp>| {
+        h.state().body().unwrap_or_default().lines().find(|l| l.contains("plain folders")).unwrap_or_default().to_string()
+    };
+    let select_the_line = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.caret", json!({"block": 1})).expect("caret");
+        pump(h);
+        ask(h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+        pump(h);
+    };
+    let before = line(&h);
+    assert!(before.contains("**plain files**") && before.contains("*any*"), "the line is partly marked to begin with: {before}");
+    for (button, open) in [("Bold", "**"), ("Italic", "*")] {
+        select_the_line(&mut h);
+        h.get_by_label(button).click();
+        h.run();
+        let on = line(&h);
+        assert!(on.starts_with(open) && on.ends_with(open), "{button} is on the whole line: {on}");
+        assert!(!on.contains("****"), "{button} did not double the marks: {on}");
+        select_the_line(&mut h);
+        h.get_by_label(button).click();
+        h.run();
+        let off = line(&h);
+        assert!(off.contains("plain folders") && !off.starts_with("***"), "{button} came off again: {off}");
+    }
+}
+
+/// A code block is drawn the same whether or not the caret is in it: same box, same place for the words.
+#[test]
+fn a_code_block_looks_the_same_when_the_caret_arrives() {
+    let (_t, app, s) = sample_app("ui-code-same");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```\nhello code\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let words = |h: &Harness<'_, NoteCraftApp>| -> egui::Rect {
+        let n = h.query_all_by_label("hello code").next().or_else(|| h.query_all_by_value("hello code").next());
+        n.expect("the code is on the page").rect()
+    };
+    let before = words(&h);
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    let after = words(&h);
+    assert!((before.left() - after.left()).abs() < 1.5, "the words stay where they were across: {before:?} then {after:?}");
+    assert!((before.top() - after.top()).abs() < 1.5, "and down: {before:?} then {after:?}");
+}
+
+/// Numbered code shows its line numbers on the page and none while it is being written in.
+#[test]
+fn numbered_code_shows_its_numbers_in_view_and_hides_them_in_edit() {
+    let (_t, app, s) = sample_app("ui-code-numbers");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 1, "the numbers are drawn beside the code");
+    assert!(h.query_all_by_label("123|rust").count() == 0 && h.query_all_by_label("rust").count() >= 1, "the label is the language alone");
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 0, "no numbers while it is written in");
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("```123|rust"), "the page keeps saying so");
+}
+
+/// Direction, tags and the lists reach every line of a selected box, not only the line the caret was in.
+#[test]
+fn a_selected_box_takes_direction_tags_and_lists_as_a_whole() {
+    let (_t, mut app, s) = sample_app("ui-box-ribbon-more");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    let look = |h: &mut Harness<'_, NoteCraftApp>| -> Value { ask(h, "ui.inspect", json!({})).expect("inspect") };
+    let blocks = look(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,{blocks}")}}))
+        .expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let click = |h: &mut Harness<'_, NoteCraftApp>, x: f32, y: f32| {
+        ask(h, "ui.click", json!({"x": x, "y": y})).expect("click");
+        for _ in 0..6 {
+            pump(h);
+        }
+    };
+    let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
+
+    // Right to left on every paragraph of words in it.
+    let r = h.get_by_label("Paragraph right to left").rect();
+    click(&mut h, r.center().x, r.center().y);
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    let marked =
+        body.lines().filter(|l| l.contains("Create a notebook") || l.contains("Backup is a copy") || l.contains("Notes should outlive")).count();
+    let with_mark = body.lines().filter(|l| l.contains('\u{200F}')).count();
+    assert!(marked >= 3 && with_mark >= 6, "every line of words in the box reads right to left ({with_mark} marked):\n{body}");
+    assert!(!body.contains("\u{200F}graph TD") && !body.contains("\u{200F}\\int"), "a diagram and an equation are left alone:\n{body}");
+
+    // A tag goes on every line, and the same button takes it off every line.
+    let tagged = |h: &Harness<'_, NoteCraftApp>| h.state().body().unwrap_or_default().lines().filter(|l| l.contains("#important")).count();
+    let r = h.get_by_label("Important (Ctrl+2)").rect();
+    click(&mut h, r.center().x, r.center().y);
+    settle(&mut h);
+    assert!(tagged(&h) >= 6, "the tag went on all of them: {}", tagged(&h));
+    let r = h.get_by_label("Important (Ctrl+2)").rect();
+    click(&mut h, r.center().x, r.center().y);
+    settle(&mut h);
+    assert_eq!(
+        tagged(&h),
+        0,
+        "and came off all of them:
+{}",
+        h.state().body().unwrap_or_default()
+    );
+}

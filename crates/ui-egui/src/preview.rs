@@ -534,12 +534,23 @@ pub(crate) fn show_block_zoomed(
                 ui.add_space(4.0);
             }
             Block::Code { lang, text } => {
+                let (numbered, language) = notecraft_formats::markdown::code_lang(lang);
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    if !lang.is_empty() {
-                        ui.label(RichText::new(lang).size(12.0 * zoom).color(tokens.muted));
+                    if !language.is_empty() {
+                        ui.label(RichText::new(language).size(12.0 * zoom).color(tokens.muted));
                     }
-                    ui.label(RichText::new(text).monospace().size(14.5 * zoom));
+                    if numbered {
+                        // Numbers are for reading: the block being written in shows none (pageedit.rs).
+                        let lines = text.trim_end_matches('\n').split('\n').count();
+                        let numbers = (1..=lines).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
+                        ui.horizontal_top(|ui| {
+                            ui.label(RichText::new(numbers).monospace().size(14.5 * zoom).color(tokens.muted));
+                            ui.label(RichText::new(text.trim_end_matches('\n')).monospace().size(14.5 * zoom));
+                        });
+                    } else {
+                        ui.label(RichText::new(text).monospace().size(14.5 * zoom));
+                    }
                 });
                 ui.add_space(4.0);
             }
