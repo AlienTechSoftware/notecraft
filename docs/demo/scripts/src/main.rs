@@ -239,7 +239,7 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             let id = id_for(&format!("{}/how-to/{}", lang.folder(), s.slug));
             let page = section.join(&s.slug);
             // A page with ink names it, as every page with ink must: the folder and the
-            // page's own words have to agree. See docs/page-model.md section 5.
+            // page's own words have to agree. See docs/dom_serialization/page-model.md section 5.
             let inked = matches!(s.slug.as_str(), "pictures-and-files" | "shapes" | "handwriting-and-drawing");
             let s = if inked {
                 Source {

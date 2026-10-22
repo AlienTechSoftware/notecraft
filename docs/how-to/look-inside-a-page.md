@@ -91,5 +91,5 @@ model, the page is shown but not written on, and says so. The code view is where
 - Opening a file with the system from the viewer.
 
 These are listed in [gaps.md](../gaps.md). The design, and how the code view relates to the live
-view and the files, is in [the page model](../page-model.md); the files themselves are described in
+view and the files, is in [the page model](../dom_serialization/page-model.md); the files themselves are described in
 [the folder format](../folder-format.md).

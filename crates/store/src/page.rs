@@ -438,7 +438,7 @@ const JUSTIFY_META: &str = "notecraft:justify";
 ///
 /// The line names the paragraphs by their place among the page's blocks; the words of the
 /// page are not touched, so the file reads the same to any other program. See
-/// [`notecraft_model::justify`] and `docs/page-model.md` section 2 for why it is here and
+/// [`notecraft_model::justify`] and `docs/dom_serialization/page-model.md` section 2 for why it is here and
 /// not in the markup.
 pub fn justified(dir: &Path) -> Result<justify::Justified> {
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
