@@ -1428,6 +1428,11 @@ impl NoteCraftApp {
                 }
                 backstage::Act::OpenFolder(p) => self.reveal(&p),
                 backstage::Act::ChooseFolder => self.choose_notebooks_folder(),
+                backstage::Act::ImportLocalBackup => self.import_local_backup(),
+                backstage::Act::ImportCloud => {
+                    self.status = "Cloud import is not implemented yet.".to_string();
+                    self.status_is_error = false;
+                }
                 backstage::Act::OpenNotebooksFolder => {
                     let root = self.session.root().to_path_buf();
                     self.reveal(&root);
@@ -1553,6 +1558,56 @@ impl NoteCraftApp {
             1 => "Notebook opened".to_string(),
             n => format!("{n} notebooks opened"),
         });
+    }
+
+    fn import_local_backup(&mut self) {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose a OneNote section file (.one)");
+        if let Some(backup) = notecraft_import::discover::default_source() {
+            dialog = dialog.set_directory(backup);
+        }
+        let Some(source) = dialog.pick_file() else {
+            return;
+        };
+        let format = self
+            .session
+            .settings
+            .get("page_format")
+            .and_then(|v| notecraft_model::PageFormat::parse(&v).ok())
+            .unwrap_or(notecraft_model::PageFormat::Html);
+        let bridge_format = match format {
+            notecraft_model::PageFormat::Html => notecraft_import::officeimo::Format::Html,
+            notecraft_model::PageFormat::Cmgfm => notecraft_import::officeimo::Format::Cmgfm,
+        };
+        let destination = self.session.root().join(Self::import_notebook_name(&source));
+        log::info!("OfficeIMO import requested: source={} destination={}", source.display(), destination.display());
+        match notecraft_import::officeimo::run(&source, &destination, bridge_format) {
+            Ok(_) => {
+                let _ = self.run("tree.refresh", &Params::new());
+                log::info!("OfficeIMO import succeeded: source={} destination={}", source.display(), destination.display());
+                self.status = format!("Imported {} into {}", self.shown(&source), self.shown(&destination));
+                self.status_is_error = false;
+                self.open_notebook_from_path(&destination);
+            }
+            Err(error) => {
+                log::error!("OfficeIMO import failed: source={} destination={} error={error}", source.display(), destination.display());
+                self.status = error;
+                self.status_is_error = true;
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("NoteCraft import failed")
+                    .set_description(&self.status)
+                    .show();
+            }
+        }
+    }
+
+    fn import_notebook_name(source: &Path) -> String {
+        let stem = source.file_stem().and_then(|name| name.to_str()).unwrap_or("Imported notebook");
+        let name = stem.split_once(" (On ").map_or(stem, |(name, _)| name).trim();
+        let cleaned: String =
+            name.chars().map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { c }).collect();
+        let cleaned = cleaned.trim().trim_end_matches('.');
+        if cleaned.is_empty() { "Imported notebook".to_string() } else { cleaned.to_string() }
     }
 
     fn reveal(&mut self, path: &Path) {

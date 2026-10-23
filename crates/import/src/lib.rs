@@ -12,6 +12,7 @@
 
 pub mod convert;
 pub mod discover;
+pub mod officeimo;
 
 use convert::{Loss, convert_page};
 use discover::{Planned, Scan};

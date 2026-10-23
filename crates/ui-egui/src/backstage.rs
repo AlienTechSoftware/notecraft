@@ -23,6 +23,10 @@ pub enum Act {
     OpenNotebooksFolder,
     /// Ask the system for a folder, and work from the notebooks in it.
     ChooseFolder,
+    /// Choose a local OneNote backup and pass it to the OfficeIMO bridge.
+    ImportLocalBackup,
+    /// Cloud import is intentionally visible but unavailable.
+    ImportCloud,
     /// Open a page of this notebook (the first one).
     Open(std::path::PathBuf),
     /// Open a notebook from the recent list.
@@ -238,6 +242,14 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
         if ui.add_sized([210.0, 42.0], egui::Button::new(egui::RichText::new("Show notebooks folder").size(14.0))).clicked() {
             acts.push(Act::OpenNotebooksFolder);
         }
+    });
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        if ui.add_sized([230.0, 34.0], egui::Button::new("Import from local backup")).clicked() {
+            acts.push(Act::ImportLocalBackup);
+        }
+        let cloud = ui.add_enabled(false, egui::Button::new("Import from the cloud"));
+        cloud.on_hover_text("Cloud import is not implemented yet.");
     });
     ui.add_space(22.0);
     ui.label(egui::RichText::new("Recently opened").size(16.0).color(t.strong));

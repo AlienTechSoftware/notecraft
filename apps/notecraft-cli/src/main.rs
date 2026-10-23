@@ -9,6 +9,7 @@
 //! notecraft-cli search TEXT                   search all pages
 //! notecraft-cli sample                        create the sample notebooks (for trying the app)
 //! notecraft-cli import onenote [SOURCE]       import OneNote section files (see `import onenote --help`)
+//! notecraft-cli import officeimo SOURCE       import through the optional OfficeIMO bridge
 //! ```
 //! Add `--notebooks FOLDER` to use another notebooks folder (default: `NOTECRAFT_NOTEBOOKS`,
 //! then `Documents/NoteCraft`). Exit status: 0 on success, 1 on an error or a failed check.
@@ -75,6 +76,14 @@ page's assets folder. SOURCE is only read.
   --only WORD        only notebooks, groups or sections whose name contains WORD (repeatable)
   --dry-run          show what would be imported and write nothing";
 
+const OFFICEIMO_HELP: &str = r"notecraft-cli import officeimo SOURCE [options]
+
+SOURCE is an input accepted by the installed OfficeIMO bridge.
+The bridge is selected by NOTECRAFT_OFFICEIMO_BRIDGE or the platform cache.
+
+  --to FOLDER          write the generated notebook under this folder
+  --format html|cmgfm  page format to write (default: html)";
+
 /// `import onenote`: the command line over `notecraft-import`.
 fn import_onenote(root: &Path, mut args: Vec<String>) -> Result<(String, bool), String> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -126,6 +135,22 @@ fn import_onenote(root: &Path, mut args: Vec<String>) -> Result<(String, bool), 
     Ok((report.to_string(), ok))
 }
 
+fn import_officeimo(root: &Path, mut args: Vec<String>) -> Result<(String, bool), String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok((OFFICEIMO_HELP.to_string(), true));
+    }
+    let to = take_flag_value(&mut args, "--to").map(PathBuf::from).unwrap_or_else(|| root.to_path_buf());
+    let format = match take_flag_value(&mut args, "--format") {
+        Some(value) => notecraft_import::officeimo::Format::parse(&value)?,
+        None => notecraft_import::officeimo::Format::Html,
+    };
+    if args.len() != 1 || args[0].starts_with("--") {
+        return Err("usage: import officeimo SOURCE [--to FOLDER] [--format html|cmgfm]".to_string());
+    }
+    let output = notecraft_import::officeimo::run(Path::new(&args[0]), &to, format)?;
+    Ok((if output.trim().is_empty() { format!("OfficeIMO import written to {}", display_path(&to)) } else { output }, true))
+}
+
 fn describe(o: &Output) -> String {
     match o {
         Output::None => "ok".to_string(),
@@ -167,7 +192,8 @@ fn run(mut args: Vec<String>) -> Result<(String, bool), String> {
     if cmd == "import" {
         return match rest.first().map(String::as_str) {
             Some("onenote") => import_onenote(&root, rest[1..].to_vec()),
-            _ => Err("usage: import onenote [SOURCE] [options]. Try: notecraft-cli import onenote --help".to_string()),
+            Some("officeimo") => import_officeimo(&root, rest[1..].to_vec()),
+            _ => Err("usage: import onenote [SOURCE] or import officeimo SOURCE. Try --help".to_string()),
         };
     }
     if cmd == "mcp" {
@@ -205,7 +231,7 @@ fn run(mut args: Vec<String>) -> Result<(String, bool), String> {
     }
 }
 
-const HELP: &str = "notecraft-cli commands | run ID key=value ... | tree | check NOTEBOOK | search TEXT | sample | import onenote [SOURCE] | mcp [--connect PORT]   (add --notebooks FOLDER)";
+const HELP: &str = "notecraft-cli commands | run ID key=value ... | tree | check NOTEBOOK | search TEXT | sample | import onenote [SOURCE] | import officeimo SOURCE | mcp [--connect PORT]   (add --notebooks FOLDER)";
 
 fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--version") {
