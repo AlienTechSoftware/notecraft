@@ -199,13 +199,14 @@ fn run_folder(
     result
 }
 
+#[cfg(windows)]
 fn suppress_console(command: &mut Command) {
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
 }
+
+#[cfg(not(windows))]
+fn suppress_console(_command: &mut Command) {}
 
 fn unique_notebook_path(parent: &Path, name: &str) -> (String, PathBuf) {
     let candidate = parent.join(name);
