@@ -125,6 +125,12 @@ group, section, page, and sub-pages nested to any depth), and the pages from `fo
 imported page is the same as a typed one. Run it with `notecraft-cli import onenote`; see
 [`how-to/move-your-notes.md`](how-to/move-your-notes.md).
 
+The optional OfficeIMO path is an external bridge, not a Rust dependency. The resolver looks
+for `NOTECRAFT_OFFICEIMO_BRIDGE` first, then for a pinned platform artifact under the NoteCraft
+data directory. The bridge receives `--source`, `--out` and `--format html|cmgfm`; its output can
+then be checked as a normal NoteCraft folder by the existing store checks. Artifact download and
+checksum metadata are release tooling, not an implicit network operation during Cargo builds.
+
 ## Equations and diagrams
 
 - **Equations** are TeX maths (`crates/math`). RaTeX, a pure Rust typesetter that follows KaTeX,

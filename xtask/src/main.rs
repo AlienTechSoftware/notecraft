@@ -14,7 +14,7 @@
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  line coverage with cargo-llvm-cov, if it is installed
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
-//! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format to ignored ./my-notebooks
+//! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format; --replace approves overwriting a changed scratch copy
 //! ```
 
 use std::collections::BTreeMap;
@@ -287,7 +287,7 @@ fn screenshots(root: &Path) -> Result<(), String> {
 }
 
 /// Copies one checked-in demo format to the ignored test notebooks folder.
-/// The source is read-only; `--replace` only replaces the dedicated test copy.
+/// The source is read-only; `--replace` is the explicit approval to replace a changed copy.
 fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
     let mut format: Option<&str> = None;
     let mut replace = false;
@@ -319,7 +319,16 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
     match fs::symlink_metadata(&target) {
         Ok(meta) if meta.file_type().is_symlink() => return Err(format!("refusing to replace a symlink: {}", target.display())),
         Ok(meta) if !meta.is_dir() => return Err(format!("not a folder: {}", target.display())),
-        Ok(_) if !replace => return Err(format!("{} already exists; pass --replace to refresh this test copy", target.display())),
+        Ok(_) if same_directory(&source, &target)? => {
+            println!("{} is already current; scratch copy unchanged", target.display());
+            return Ok(());
+        }
+        Ok(_) if !replace => {
+            return Err(format!(
+                "scratch demo differs from the official demo at {}; review it, then approve replacement with `cargo xtask demo-copy {format} --replace`",
+                target.display()
+            ));
+        }
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("inspect {}: {e}", target.display())),
@@ -372,6 +381,34 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Compares regular directory trees without following symlinks.
+fn same_directory(left: &Path, right: &Path) -> Result<bool, String> {
+    let mut left_files = Vec::new();
+    let mut right_files = Vec::new();
+    files_under(left, &mut left_files);
+    files_under(right, &mut right_files);
+    let relative = |root: &Path, files: &mut Vec<PathBuf>| -> Result<(), String> {
+        for file in files.iter_mut() {
+            *file = file.strip_prefix(root).map_err(|e| format!("compare {}: {e}", file.display()))?.to_path_buf();
+        }
+        files.sort();
+        Ok(())
+    };
+    relative(left, &mut left_files)?;
+    relative(right, &mut right_files)?;
+    if left_files != right_files {
+        return Ok(false);
+    }
+    for rel in left_files {
+        let a = fs::read(left.join(&rel)).map_err(|e| format!("read {}: {e}", left.join(&rel).display()))?;
+        let b = fs::read(right.join(&rel)).map_err(|e| format!("read {}: {e}", right.join(&rel).display()))?;
+        if a != b {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Copies a directory tree without following or reproducing symlinks.
 fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
     let meta = fs::symlink_metadata(source).map_err(|e| format!("inspect {}: {e}", source.display()))?;
@@ -420,7 +457,10 @@ fn run(task: &str) -> Result<(), String> {
         "coverage" => coverage(&root),
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
-        "demo" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"]),
+        "demo" => {
+            cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"])?;
+            demo_copy(&root, &["html".into()])
+        }
         "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
         "ci" => {

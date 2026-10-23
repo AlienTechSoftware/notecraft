@@ -147,6 +147,7 @@ pub fn show(
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
     let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
+    let image_clicked = ui.data_mut(|d| d.remove_temp::<usize>(crate::preview::image_clicked_id()));
     // The open paper: the whole page area, made first so that every box and every block, which
     // are made after it, sit on top of it and take their own clicks. A click that reaches it
     // landed on no box at all.
@@ -169,6 +170,11 @@ pub fn show(
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
+        if image_clicked.is_some_and(|block| range.contains(&block)) {
+            sel = Some(i);
+            *caret = None;
+            out.changed.caret = true;
+        }
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
         let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);

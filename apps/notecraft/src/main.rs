@@ -31,10 +31,13 @@ impl eframe::App for Shell {
 }
 
 fn notebooks_dir(args: &[String]) -> PathBuf {
-    match args.iter().position(|a| a == "--notebooks") {
-        Some(i) => args.get(i + 1).map(PathBuf::from).unwrap_or_else(notecraft_store::settings::default_notebooks_dir),
-        None => notecraft_store::settings::default_notebooks_dir(),
+    if let Some(i) = args.iter().position(|a| a == "--notebooks") {
+        return args.get(i + 1).map(PathBuf::from).unwrap_or_else(notecraft_store::settings::default_notebooks_dir);
     }
+    if let Some(saved) = Settings::default_location().get("last_notebooks_root") {
+        return PathBuf::from(saved);
+    }
+    notecraft_store::settings::default_notebooks_dir()
 }
 
 /// The first page inside a notebook folder, walking its sections in tree order.
@@ -89,6 +92,13 @@ fn main() -> eframe::Result {
             fail(&format!("NoteCraft cannot open the notebooks folder {}: {e}", root.display()));
         }
     };
+    // An explicit command-line root becomes the next launch's remembered notebook root.
+    // This prevents a demo or another deliberately selected notebook from being replaced
+    // by the old default folder on the next start.
+    if args.iter().any(|arg| arg == "--notebooks") {
+        let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+        let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
+    }
     // The first start, with nothing to show: the Welcome notebook, a tour of the app, goes
     // into the empty folder and the window opens on it. Once only: a folder the user emptied
     // on purpose stays empty, and the File screen can add the notebook again by hand.

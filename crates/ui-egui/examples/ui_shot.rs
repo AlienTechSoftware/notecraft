@@ -15,8 +15,8 @@
 //!   is never touched). Paths are redacted (`<notebooks>/...`).
 
 use egui_kittest::Harness;
-use notecraft_engine::Session;
 use notecraft_engine::sample::create_sample;
+use notecraft_engine::{Params, Session};
 use notecraft_store::Settings;
 use notecraft_store::testing::TempDir;
 use notecraft_ui_egui::control::ControlRequest;
@@ -81,21 +81,33 @@ fn main() {
     let height = opt("height").and_then(|v| v.as_f64()).unwrap_or(900.0) as f32;
     let scale = opt("scale").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32;
     let empty = opt("empty").and_then(|v| v.as_bool()).unwrap_or(false);
+    let backstage = opt("backstage").and_then(|v| v.as_str().map(str::to_string));
+    let open = opt("open").and_then(|v| v.as_str().map(str::to_string));
+    let demo_progress = opt("demo_progress").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let dir = TempDir::new("ui-shot");
     let notebooks = dir.path().join("notebooks");
-    if let Some(src) = opt("notebook").and_then(|v| v.as_str().map(std::path::PathBuf::from)) {
+    let copied_notebook = if let Some(src) = opt("notebook").and_then(|v| v.as_str().map(std::path::PathBuf::from)) {
         let name = src.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "notebook".into());
-        if let Err(e) = copy_dir(&src, &notebooks.join(name)) {
+        let copied = notebooks.join(name);
+        if let Err(e) = copy_dir(&src, &copied) {
             eprintln!("cannot copy {}: {e}", src.display());
             std::process::exit(2);
         }
-    }
+        Some(copied)
+    } else {
+        None
+    };
     let mut session = Session::new(&notebooks, Settings::at(dir.path().join("settings.toml"))).expect("session");
     if !empty {
         create_sample(&mut session, Some(LOGO_PNG)).expect("sample notebooks");
     }
     session.refresh();
+    if let Some(notebook) = copied_notebook {
+        session
+            .run("notebook.open", &Params::from([(String::from("path"), notebook.to_string_lossy().into_owned())]))
+            .expect("open supplied notebook");
+    }
     let (tx, rx) = mpsc::channel::<ControlRequest>();
     let mut app = NoteCraftApp::new(session).with_requests(rx);
     // The screenshots show the window as it is run: with the band as its title bar.
@@ -106,6 +118,15 @@ fn main() {
             Some(theme) => app.set_theme(theme),
             None => eprintln!("unknown theme {t}; using the default"),
         }
+    }
+    if let Some(page) = backstage {
+        app.open_backstage_page(Box::leak(page.into_boxed_str()));
+    }
+    if let Some(page) = open {
+        app.open_path(&page);
+    }
+    if demo_progress {
+        app.show_demo_import_progress(3, 33, "Journal (On 10-12-2026).one");
     }
     let mut harness = Harness::builder()
         .with_size(egui::vec2(width, height))

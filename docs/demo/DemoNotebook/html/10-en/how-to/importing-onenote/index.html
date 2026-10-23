@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Import OneNote into NoteCraft</title>
+<meta name="notecraft:id" content="42a8b62a48f81f58952a">
+<meta name="notecraft:order" content="95">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft can import a complete notebook folder or one importable file. The OfficeIMO bridge converts the source into NoteCraft's plain folder format. The source stays unchanged.</p>
+<p>OneNote parsing is provided by <a href="https://github.com/EvotecIT/OfficeIMO">OfficeIMO</a>, an open-source project distributed under the <a href="https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE">MIT license</a>.</p>
+<p>On <b>File &gt; Open</b>, use the two import actions:</p>
+<ul>
+<li><b>Import notebook folder</b> imports a complete folder tree.</li>
+<li><b>Import file</b> imports one <code>.one</code> section file.</li>
+</ul>
+<p><img src="assets/import-open.png" alt="Import actions"></p>
+<h2>Import notebook folder</h2>
+<p>Choose <b>Import notebook folder</b> and select a folder such as <code>2026</code>. The folder name becomes the notebook name. Nested folders become section groups, and <code>.one</code> files become sections. Pages and nested pages keep their names and hierarchy.</p>
+<h2>Import file</h2>
+<p>Choose <b>Import file</b> and select one <code>.one</code> file. NoteCraft creates a notebook named after the file and places the imported section inside it.</p>
+<h2>What happens during import</h2>
+<p>NoteCraft creates the destination inside the configured notebooks folder, opens the imported notebook after a successful import, and adds it to Recently opened. The original OneNote files are never changed. A progress dialog shows the current section and lets you cancel safely.</p>
+<p>If a notebook with the same name already exists, NoteCraft avoids overwriting it by adding a Windows-style suffix: <code>2026</code>, <code>2026 (1)</code>, <code>2026 (2)</code>, and so on.</p>
+<p>Folder imports recurse through nested folders. Folders become section groups, <code>.one</code> files become sections, and pages and nested pages keep their names and hierarchy.</p>
+<p><img src="assets/imported-notebook.png" alt="Imported notebook"></p>
+<p>While an import is running, NoteCraft shows one themed progress dialog with the current section, progress count, and a Cancel import button.</p>
+<p><img src="assets/import-progress.png" alt="Import progress"></p>
+<p>Encrypted or unsupported sections are reported in the imported notebook's <code>import-errors.txt</code>. Readable sections still open when a folder contains a mixture of readable and unsupported files.</p>
+</body>
+</html>
