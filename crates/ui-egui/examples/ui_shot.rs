@@ -15,8 +15,8 @@
 //!   is never touched). Paths are redacted (`<notebooks>/...`).
 
 use egui_kittest::Harness;
-use notecraft_engine::Session;
 use notecraft_engine::sample::create_sample;
+use notecraft_engine::{Params, Session};
 use notecraft_store::Settings;
 use notecraft_store::testing::TempDir;
 use notecraft_ui_egui::control::ControlRequest;
@@ -84,18 +84,27 @@ fn main() {
 
     let dir = TempDir::new("ui-shot");
     let notebooks = dir.path().join("notebooks");
-    if let Some(src) = opt("notebook").and_then(|v| v.as_str().map(std::path::PathBuf::from)) {
+    let copied_notebook = if let Some(src) = opt("notebook").and_then(|v| v.as_str().map(std::path::PathBuf::from)) {
         let name = src.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "notebook".into());
-        if let Err(e) = copy_dir(&src, &notebooks.join(name)) {
+        let copied = notebooks.join(name);
+        if let Err(e) = copy_dir(&src, &copied) {
             eprintln!("cannot copy {}: {e}", src.display());
             std::process::exit(2);
         }
-    }
+        Some(copied)
+    } else {
+        None
+    };
     let mut session = Session::new(&notebooks, Settings::at(dir.path().join("settings.toml"))).expect("session");
     if !empty {
         create_sample(&mut session, Some(LOGO_PNG)).expect("sample notebooks");
     }
     session.refresh();
+    if let Some(notebook) = copied_notebook {
+        session
+            .run("notebook.open", &Params::from([(String::from("path"), notebook.to_string_lossy().into_owned())]))
+            .expect("open supplied notebook");
+    }
     let (tx, rx) = mpsc::channel::<ControlRequest>();
     let mut app = NoteCraftApp::new(session).with_requests(rx);
     // The screenshots show the window as it is run: with the band as its title bar.
