@@ -141,8 +141,10 @@ cargo xtask demo-copy html
 cargo run -p notecraft -- --notebooks ./my-notebooks --expand-all
 ```
 
-Use `cargo xtask demo-copy cmgfm` for the CMGFM version. If `my-notebooks/welcome-notebook`
-already exists, add `--replace` to refresh that test copy; this replaces edits made to that copy.
+Use `cargo xtask demo-copy cmgfm` for the CMGFM version. `cargo xtask demo` rebuilds the official
+demo and checks the HTML scratch copy, but never overwrites a changed scratch notebook. If it
+reports drift, review the changes and explicitly approve replacement with
+`cargo xtask demo-copy html --replace`; this replaces edits made to that copy.
 
 ## How your notes are stored
 

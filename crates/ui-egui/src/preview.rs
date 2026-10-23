@@ -332,12 +332,15 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
     egui::vec2(ui.available_width(), 480.0 * zoom)
 }
 
-fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
+fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, block: usize) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
                 Some(uri) => {
-                    ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)));
+                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::click()));
+                    if response.clicked() {
+                        ui.data_mut(|data| data.insert_temp(image_clicked_id(), block));
+                    }
                 }
                 None => {
                     ui.weak(format!("[image: {} ({src})]", s.text));
@@ -367,6 +370,11 @@ pub struct BlockResponse {
     pub response: egui::Response,
     /// A to-do box the user ticked or cleared, and its new state.
     pub task_set: Option<bool>,
+}
+
+/// Temporary marker used to let the page container select the object that owns a clicked image.
+pub(crate) fn image_clicked_id() -> egui::Id {
+    egui::Id::new("page-image-clicked")
 }
 
 /// Draws blocks into `ui`. `page_dir` is the page's folder, used to find attachments.
@@ -466,7 +474,7 @@ pub(crate) fn show_block_zoomed(
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom);
+                            draw_inline_images(ui, &spans, page_dir, zoom, i);
                         });
                         ui.add_space(4.0);
                     }
@@ -474,7 +482,7 @@ pub(crate) fn show_block_zoomed(
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
-                        draw_inline_images(ui, spans, page_dir, zoom);
+                        draw_inline_images(ui, spans, page_dir, zoom, i);
                         ui.add_space(4.0);
                     }
                 }
@@ -504,11 +512,11 @@ pub(crate) fn show_block_zoomed(
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom);
+                            draw_inline_images(ui, &spans, page_dir, zoom, i);
                         }),
                         None => {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, spans, page_dir, zoom);
+                            draw_inline_images(ui, spans, page_dir, zoom, i);
                         }
                     });
                 });
@@ -587,7 +595,10 @@ pub(crate) fn show_block_zoomed(
             Block::Image { alt, src } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {
-                        ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)));
+                        let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::click()));
+                        if response.clicked() {
+                            ui.data_mut(|data| data.insert_temp(image_clicked_id(), i));
+                        }
                     }
                     None => {
                         ui.weak(format!("[image: {alt} ({src})]"));

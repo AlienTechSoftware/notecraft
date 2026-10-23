@@ -44,6 +44,20 @@ const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
 
+/// Shared title treatment for modal dialogs. Keeping this here makes dialogs use the
+/// same opaque, theme-owned title band instead of inheriting egui's platform-gray title bar.
+fn modal_frame(tokens: &Tokens) -> egui::Frame {
+    egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
+}
+
+fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
+    egui::Frame::NONE.fill(tokens.band).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(egui::RichText::new(title).strong().size(17.0).color(tokens.band_text));
+    });
+    ui.add_space(10.0);
+}
+
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
@@ -1771,11 +1785,10 @@ impl NoteCraftApp {
             .resizable(false)
             .title_bar(false)
             .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .frame(egui::Frame::NONE.fill(self.tokens.panel).stroke(egui::Stroke::new(1.0, self.tokens.faint)).inner_margin(egui::Margin::same(16)))
+            .frame(modal_frame(&self.tokens))
             .show(ctx, |ui| {
                 ui.set_min_width(420.0);
-                ui.label(egui::RichText::new("Importing OneNote").strong().size(18.0).color(self.tokens.text));
-                ui.add_space(4.0);
+                modal_title(ui, &self.tokens, "Importing OneNote");
                 ui.label(egui::RichText::new("You can continue working while the import runs.").color(self.tokens.muted));
                 ui.add_space(12.0);
                 ui.label(egui::RichText::new(&job.current).strong());
@@ -4131,21 +4144,30 @@ impl NoteCraftApp {
             }
             Dialog::DeleteNotebook { path, title } => {
                 let mut go = false;
-                egui::Window::new("Delete notebook").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
-                    ctx,
-                    |ui| {
+                egui::Window::new("Delete notebook")
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(440.0);
+                        modal_title(ui, &self.tokens, "Delete notebook");
                         ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
+                        ui.add_space(4.0);
                         ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");
+                        ui.add_space(14.0);
+                        ui.separator();
+                        ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             if ui.button("Cancel").clicked() {
                                 keep = false;
                             }
-                            if ui.button("Delete notebook").clicked() {
+                            if ui.add(egui::Button::new("Delete notebook").fill(self.tokens.accent)).clicked() {
                                 go = true;
                             }
                         });
-                    },
-                );
+                    });
                 if go {
                     let path = path.clone();
                     let was_open = self.editor.as_ref().and_then(|editor| notebook_for(&editor.dir)).is_some_and(|notebook| notebook == path);
@@ -4177,16 +4199,10 @@ impl NoteCraftApp {
                     .resizable(false)
                     .title_bar(false)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-                    .frame(
-                        egui::Frame::NONE
-                            .fill(self.tokens.panel)
-                            .stroke(egui::Stroke::new(1.0, self.tokens.faint))
-                            .inner_margin(egui::Margin::same(16)),
-                    )
+                    .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
                         ui.set_min_width(420.0);
-                        ui.label(egui::RichText::new("Delete notebook").strong().size(18.0).color(self.tokens.text));
-                        ui.add_space(8.0);
+                        modal_title(ui, &self.tokens, "Delete notebook");
                         if is_notebook {
                             ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
                             ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");

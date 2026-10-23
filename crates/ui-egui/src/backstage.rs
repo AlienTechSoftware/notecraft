@@ -371,6 +371,15 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
     ui.label(
         egui::RichText::new("The window, drawn on the GPU. The icons are drawn in code. The logo is the only picture.").size(11.5).color(t.muted),
     );
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("OneNote import").size(14.0).color(t.strong));
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new("Powered by").size(11.5).color(t.muted));
+        ui.hyperlink_to("OfficeIMO", "https://github.com/EvotecIT/OfficeIMO");
+        ui.label(egui::RichText::new("under the").size(11.5).color(t.muted));
+        ui.hyperlink_to("MIT license", "https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE");
+        ui.label(egui::RichText::new("— many thanks to its authors and contributors.").size(11.5).color(t.muted));
+    });
 }
 
 #[cfg(test)]
