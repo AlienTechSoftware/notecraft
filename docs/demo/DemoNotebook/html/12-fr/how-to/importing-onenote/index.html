@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Import OneNote into NoteCraft</title>
+<meta name="notecraft:id" content="f752ccf19fb3e6531233">
+<meta name="notecraft:order" content="95">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>This guide explains importing a complete notebook folder or one importable file. The source stays unchanged.</p>
+<p>L'analyse de OneNote est fournie par <a href="https://github.com/EvotecIT/OfficeIMO">OfficeIMO</a>, un projet open source distribué sous <a href="https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE">licence MIT</a>.</p>
+<p><img src="assets/import-open.png" alt="Notebook folder import"></p>
+<h2>Import notebook folder</h2>
+<p>Choose <b>Import notebook folder</b> and select a folder such as <code>2026</code>. Its name becomes the notebook name. Nested folders become section groups and <code>.one</code> files become sections.</p>
+<h2>Import file</h2>
+<p>Choose <b>Import file</b> and select one <code>.one</code> file. NoteCraft creates a notebook named after the file.</p>
+<h2>What happens during import</h2>
+<p>NoteCraft creates the destination inside the configured notebooks folder, opens the imported notebook after a successful import, and adds it to Recently opened. The original OneNote files are never changed. A progress dialog shows the current section and lets you cancel safely.</p>
+<p>If a notebook with the same name already exists, NoteCraft avoids overwriting it by adding a Windows-style suffix: <code>2026</code>, <code>2026 (1)</code>, <code>2026 (2)</code>, and so on.</p>
+<p>Folder imports recurse through nested folders. Folders become section groups, <code>.one</code> files become sections, and pages and nested pages keep their names and hierarchy.</p>
+<p><img src="assets/imported-notebook.png" alt="Imported notebook"></p>
+<p>While an import is running, NoteCraft shows one themed progress dialog with the current section, progress count, and a Cancel import button.</p>
+<p><img src="assets/import-progress.png" alt="Import progress"></p>
+</body>
+</html>

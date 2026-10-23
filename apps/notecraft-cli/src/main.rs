@@ -78,7 +78,8 @@ page's assets folder. SOURCE is only read.
 
 const OFFICEIMO_HELP: &str = r"notecraft-cli import officeimo SOURCE [options]
 
-SOURCE is an input accepted by the installed OfficeIMO bridge.
+SOURCE is one .one file or a folder tree. A folder becomes a notebook, nested folders become
+section groups, and .one files become sections. OneNote_RecycleBin is skipped.
 The bridge is selected by NOTECRAFT_OFFICEIMO_BRIDGE or the platform cache.
 
   --to FOLDER          write the generated notebook under this folder

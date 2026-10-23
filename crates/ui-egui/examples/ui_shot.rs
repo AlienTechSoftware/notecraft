@@ -81,6 +81,9 @@ fn main() {
     let height = opt("height").and_then(|v| v.as_f64()).unwrap_or(900.0) as f32;
     let scale = opt("scale").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32;
     let empty = opt("empty").and_then(|v| v.as_bool()).unwrap_or(false);
+    let backstage = opt("backstage").and_then(|v| v.as_str().map(str::to_string));
+    let open = opt("open").and_then(|v| v.as_str().map(str::to_string));
+    let demo_progress = opt("demo_progress").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let dir = TempDir::new("ui-shot");
     let notebooks = dir.path().join("notebooks");
@@ -115,6 +118,15 @@ fn main() {
             Some(theme) => app.set_theme(theme),
             None => eprintln!("unknown theme {t}; using the default"),
         }
+    }
+    if let Some(page) = backstage {
+        app.open_backstage_page(Box::leak(page.into_boxed_str()));
+    }
+    if let Some(page) = open {
+        app.open_path(&page);
+    }
+    if demo_progress {
+        app.show_demo_import_progress(3, 33, "Journal (On 10-12-2026).one");
     }
     let mut harness = Harness::builder()
         .with_size(egui::vec2(width, height))

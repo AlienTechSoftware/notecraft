@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+  <rect width="900" height="420" fill="#17151e"/>
+  <rect x="24" y="24" width="852" height="372" rx="16" fill="#211d2b" stroke="#7040b2" stroke-width="2"/>
+  <text x="54" y="74" fill="#eeeaf5" font-family="Segoe UI,Arial" font-size="28" font-weight="700">Import file</text>
+  <text x="54" y="112" fill="#aaa3b8" font-family="Segoe UI,Arial" font-size="18">A single .one file becomes a notebook with one section.</text>
+  <rect x="86" y="162" width="250" height="150" rx="12" fill="#29243a" stroke="#b57cff" stroke-width="2"/>
+  <path d="M150 200h90l34 34v48H150z" fill="#7040b2"/>
+  <path d="M240 200v34h34" fill="none" stroke="#eeeaf5" stroke-width="3"/>
+  <text x="116" y="342" fill="#eeeaf5" font-family="Consolas,monospace" font-size="20">Work.one</text>
+  <path d="M392 238h90" stroke="#7fe0b2" stroke-width="6" marker-end="url(#arrow)"/>
+  <rect x="540" y="162" width="250" height="150" rx="12" fill="#29243a" stroke="#7fe0b2" stroke-width="2"/>
+  <text x="570" y="210" fill="#eeeaf5" font-family="Segoe UI,Arial" font-size="22">Work</text>
+  <text x="570" y="250" fill="#aaa3b8" font-family="Segoe UI,Arial" font-size="18">Imported section</text>
+  <text x="570" y="286" fill="#aaa3b8" font-family="Segoe UI,Arial" font-size="18">All pages preserved</text>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0l9 3-9 3z" fill="#7fe0b2"/></marker></defs>
+</svg>

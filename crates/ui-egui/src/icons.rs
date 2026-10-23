@@ -19,6 +19,8 @@ pub enum Icon {
     Section,
     /// One sheet with a folded corner.
     Page,
+    /// An open folder with a tab.
+    Folder,
     /// A stack of sheets: a page that has sub-pages, shown while collapsed.
     PageStack,
     /// Angle brackets: show or hide the page source.
@@ -205,6 +207,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line((8.5, 13.0), (15.5, 13.0)),
             line((8.5, 16.5), (15.5, 16.5)),
         ],
+        Icon::Folder => vec![closed(&[(3.0, 7.0), (9.0, 7.0), (11.0, 9.0), (21.0, 9.0), (21.0, 20.0), (3.0, 20.0), (3.0, 7.0)])],
         Icon::PageStack => vec![
             path(&[(8.5, 3.0), (15.0, 3.0), (20.0, 8.0), (20.0, 15.0)]),
             closed(&[(4.5, 6.0), (12.0, 6.0), (17.0, 11.0), (17.0, 21.0), (4.5, 21.0)]),
@@ -573,12 +576,13 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 59] = [
+    pub const ALL: [Icon; 60] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
         Icon::Section,
         Icon::Page,
+        Icon::Folder,
         Icon::PageStack,
         Icon::Code,
         Icon::Search,
