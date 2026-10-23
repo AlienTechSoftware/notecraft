@@ -23,10 +23,20 @@ pub enum Act {
     OpenNotebooksFolder,
     /// Ask the system for a folder, and work from the notebooks in it.
     ChooseFolder,
+    /// Choose a OneNote notebook folder and pass it to the OfficeIMO bridge.
+    ImportNotebookFolder,
+    /// Choose one importable file and pass it to the OfficeIMO bridge.
+    ImportFile,
+    /// Cloud import is intentionally visible but unavailable.
+    ImportCloud,
     /// Open a page of this notebook (the first one).
     Open(std::path::PathBuf),
     /// Open a notebook from the recent list.
     OpenRecent(std::path::PathBuf),
+    /// Forget a notebook in the known notebooks list without touching its files.
+    RemoveRecent(std::path::PathBuf),
+    /// Ask for confirmation before deleting a notebook from disk.
+    DeleteRecent(std::path::PathBuf, String),
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -235,9 +245,20 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
         if ui.add_sized([230.0, 42.0], egui::Button::new(egui::RichText::new("Browse for a notebook…").size(15.0))).clicked() {
             acts.push(Act::ChooseFolder);
         }
-        if ui.add_sized([210.0, 42.0], egui::Button::new(egui::RichText::new("Show notebooks folder").size(14.0))).clicked() {
+        if open_action(ui, "Show notebooks folder", 210.0, 42.0, t, false).clicked() {
             acts.push(Act::OpenNotebooksFolder);
         }
+    });
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        if open_action(ui, "Import notebook folder", 230.0, 36.0, t, true).clicked() {
+            acts.push(Act::ImportNotebookFolder);
+        }
+        if open_action(ui, "Import file", 230.0, 36.0, t, true).clicked() {
+            acts.push(Act::ImportFile);
+        }
+        let cloud = ui.add_enabled(false, egui::Button::new(egui::RichText::new("Import from the cloud").size(13.0)).min_size(vec2(190.0, 36.0)));
+        cloud.on_hover_text("Cloud import is not implemented yet.");
     });
     ui.add_space(22.0);
     ui.label(egui::RichText::new("Recently opened").size(16.0).color(t.strong));
@@ -280,7 +301,18 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
             );
             painter.text(egui::pos2(rect.right() - 18.0, rect.center().y), Align2::CENTER_CENTER, "›", egui::FontId::proportional(25.0), t.accent);
             let name = notebook.info.title.clone();
-            response.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Open {name}")));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Open {name}")));
+            let path = notebook.path.clone();
+            response.context_menu(|ui| {
+                if ui.button("Remove from list").clicked() {
+                    acts.push(Act::RemoveRecent(path.clone()));
+                    ui.close();
+                }
+                if ui.button("Delete notebook...").clicked() {
+                    acts.push(Act::DeleteRecent(path.clone(), name.clone()));
+                    ui.close();
+                }
+            });
             if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 acts.push(Act::OpenRecent(notebook.path.clone()));
             }
@@ -289,6 +321,16 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
     });
     ui.add_space(8.0);
     ui.label(egui::RichText::new(format!("Browse notebooks in {folder} or choose another folder.")).size(11.5).color(t.muted));
+}
+
+fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, primary: bool) -> egui::Response {
+    let (fill, stroke, text) = if primary { (t.accent, t.accent, t.band_text) } else { (t.panel, t.faint, t.text) };
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).size(if primary { 13.5 } else { 14.0 }).color(text))
+            .min_size(vec2(width, height))
+            .fill(fill)
+            .stroke(egui::Stroke::new(if primary { 1.0 } else { 0.8 }, stroke)),
+    )
 }
 
 /// About: what this is, which version, and where the code lives.
@@ -329,6 +371,15 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
     ui.label(
         egui::RichText::new("The window, drawn on the GPU. The icons are drawn in code. The logo is the only picture.").size(11.5).color(t.muted),
     );
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("OneNote import").size(14.0).color(t.strong));
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new("Powered by").size(11.5).color(t.muted));
+        ui.hyperlink_to("OfficeIMO", "https://github.com/EvotecIT/OfficeIMO");
+        ui.label(egui::RichText::new("under the").size(11.5).color(t.muted));
+        ui.hyperlink_to("MIT license", "https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE");
+        ui.label(egui::RichText::new("— many thanks to its authors and contributors.").size(11.5).color(t.muted));
+    });
 }
 
 #[cfg(test)]

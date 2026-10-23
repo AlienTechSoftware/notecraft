@@ -5,6 +5,7 @@
 
 use crate::backstage;
 use crate::control::{ControlRequest, ControlServer, base64};
+use crate::floating;
 use crate::icons::{self, Icon};
 use crate::navhistory::NavHistory;
 use crate::pageedit;
@@ -21,7 +22,11 @@ use notecraft_store::tree::Node;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Duration;
 // std's own Instant panics on wasm32-unknown-unknown, which has no clock; web_time is the
 // same type everywhere else and performance.now()/Date.now() there.
@@ -38,6 +43,20 @@ const SENSITIVITY_KEY: &str = "pen_sensitivity";
 
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
+
+/// Shared title treatment for modal dialogs. Keeping this here makes dialogs use the
+/// same opaque, theme-owned title band instead of inheriting egui's platform-gray title bar.
+fn modal_frame(tokens: &Tokens) -> egui::Frame {
+    egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
+}
+
+fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
+    egui::Frame::NONE.fill(tokens.band).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(egui::RichText::new(title).strong().size(17.0).color(tokens.band_text));
+    });
+    ui.add_space(10.0);
+}
 
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
@@ -227,6 +246,10 @@ enum Dialog {
         title: String,
         count: usize,
     },
+    DeleteNotebook {
+        path: PathBuf,
+        title: String,
+    },
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
@@ -241,6 +264,23 @@ enum Dialog {
         title: String,
     },
     Symbols,
+}
+
+struct ImportJob {
+    rx: Receiver<ImportMessage>,
+    keep_alive: Option<Sender<ImportMessage>>,
+    cancel: Arc<AtomicBool>,
+    source: PathBuf,
+    destination: PathBuf,
+    current: String,
+    index: usize,
+    total: usize,
+}
+
+enum ImportMessage {
+    Found(usize),
+    Section { index: usize, total: usize, label: String },
+    Finished(Result<String, String>),
 }
 
 enum Act {
@@ -291,6 +331,7 @@ pub struct NoteCraftApp {
     frameless: bool,
     editor: Option<Editor>,
     dialog: Option<Dialog>,
+    import_job: Option<ImportJob>,
     status: String,
     status_is_error: bool,
     search: String,
@@ -392,6 +433,7 @@ impl NoteCraftApp {
             frameless: false,
             editor: None,
             dialog: None,
+            import_job: None,
             status: "Ready".into(),
             status_is_error: false,
             search: String::new(),
@@ -511,6 +553,26 @@ impl NoteCraftApp {
         self.save_theme();
     }
 
+    /// Opens a File/backstage page for deterministic UI captures and integration harnesses.
+    pub fn open_backstage_page(&mut self, page: &'static str) {
+        self.backstage = Some(page);
+    }
+
+    /// Shows a deterministic progress state for documentation screenshots.
+    pub fn show_demo_import_progress(&mut self, index: usize, total: usize, current: &str) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.import_job = Some(ImportJob {
+            rx,
+            keep_alive: Some(tx),
+            cancel: Arc::new(AtomicBool::new(false)),
+            source: PathBuf::from("demo-source"),
+            destination: PathBuf::from("demo-destination"),
+            current: current.to_string(),
+            index,
+            total,
+        });
+    }
+
     /// Follows the system light or dark setting, with the given accent, and saves the choice.
     pub fn follow_system_theme(&mut self, accent: Accent) {
         self.mode_pref = ModePref::System;
@@ -551,6 +613,15 @@ impl NoteCraftApp {
         }
         self.effective_mode = if ctx.theme() == egui::Theme::Dark { Mode::Dark } else { Mode::Light };
         self.tokens = self.theme().tokens();
+        // Keep every modal surface opaque and on the same themed panel as the rest of the app.
+        // Individual dialogs may opt out of the native title bar, but they all inherit this
+        // surface and border treatment.
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            ctx.style_mut_of(theme, |style| {
+                style.visuals.window_fill = self.tokens.panel;
+                style.visuals.window_stroke = egui::Stroke::new(1.0, self.tokens.faint);
+            });
+        }
     }
 
     /// Shows paths as `<notebooks>/...` instead of real local paths. Used by tests and
@@ -566,6 +637,10 @@ impl NoteCraftApp {
     /// Opens the page at `path` (absolute, or relative to the notebooks folder) and
     /// expands the tree down to it.
     pub fn open_path(&mut self, path: &str) {
+        // An explicit command-line/control request wins over the page saved by the
+        // previous session. Otherwise the first frame's restore pass would replace the
+        // requested page with a stale page from another notebook.
+        self.restored = true;
         match self.session.resolve(path) {
             Ok(dir) => {
                 self.expand_to(&dir);
@@ -966,9 +1041,16 @@ impl NoteCraftApp {
                 if is_page {
                     self.open_page(&p);
                 } else {
-                    self.selected = Some(p.clone());
                     if !self.open.remove(&p) {
-                        self.open.insert(p);
+                        self.open.insert(p.clone());
+                    }
+                    // Selecting a container must also move the editor. Leaving the old
+                    // page open here made the navigator and page column describe one
+                    // location while the editor showed another.
+                    if let Some(page) = first_page(self.session.tree(), &p) {
+                        self.open_page(&page);
+                    } else {
+                        self.selected = Some(p);
                     }
                 }
             }
@@ -1091,7 +1173,10 @@ impl NoteCraftApp {
         icons::paint(&painter, icon_rect, icon, color);
         let text_pos = egui::pos2(x0 + 40.0, cy);
         let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
-        let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x - 52.0, rect.max.y));
+        // Pages reserve room for their format label and add-page affordance. Organiser rows
+        // do not, so notebook, group and section names should run almost to the pane border.
+        let trailing = if node.info.kind == NodeKind::Page { 52.0 } else { 8.0 };
+        let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x - trailing, rect.max.y));
         // The tree is on screen all the time, so this is the most visible place the words
         // of an Arabic name would come out backwards. Each row's name decides its own
         // direction; the row keeps its place and its clip either way.
@@ -1131,21 +1216,37 @@ impl NoteCraftApp {
                     NodeKind::Page => "New page...",
                     NodeKind::Notebook => "New notebook...",
                 };
-                if ui.button(label).clicked() {
+                let icon = match kind {
+                    NodeKind::SectionGroup => Icon::SectionGroup,
+                    NodeKind::Section => Icon::Section,
+                    NodeKind::Page => Icon::Page,
+                    NodeKind::Notebook => Icon::Notebook,
+                };
+                if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
                     acts.push(Act::AddKind(node.path.clone(), node.info.kind, *kind));
                     ui.close();
                 }
             }
-            ui.separator();
-            if ui.button("Rename...").clicked() {
+            floating::menu_separator(ui, t);
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), "Rename...", t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
             }
-            if node.info.kind == NodeKind::Notebook && ui.button("Close notebook").clicked() {
+            if node.info.kind == NodeKind::Notebook
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), "Close notebook", t).clicked()
+            {
                 acts.push(Act::CloseNotebook(node.path.clone()));
                 ui.close();
             }
-            if has_kids && ui.button(if open { "Collapse" } else { "Expand" }).clicked() {
+            if has_kids
+                && floating::menu_row(
+                    ui,
+                    Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
+                    if open { "Collapse" } else { "Expand" },
+                    t,
+                )
+                .clicked()
+            {
                 acts.push(Act::Toggle(node.path.clone()));
                 ui.close();
             }
@@ -1171,16 +1272,19 @@ impl NoteCraftApp {
                     }
                 });
             }
-            if ui.button("Copy link to page").on_hover_text("A link to paste into another page").clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), "Copy link to page", t)
+                .on_hover_text("A link to paste into another page")
+                .clicked()
+            {
                 acts.push(Act::CopyLink(node.path.clone()));
                 ui.close();
             }
-            if ui.button("Open folder").on_hover_text(self.shown(&node.path)).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), "Open folder", t).on_hover_text(self.shown(&node.path)).clicked() {
                 acts.push(Act::Reveal(node.path.clone()));
                 ui.close();
             }
-            ui.separator();
-            if ui.button("Delete...").clicked() {
+            floating::menu_separator(ui, t);
+            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), "Delete...", t).clicked() {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
                 ui.close();
             }
@@ -1428,6 +1532,12 @@ impl NoteCraftApp {
                 }
                 backstage::Act::OpenFolder(p) => self.reveal(&p),
                 backstage::Act::ChooseFolder => self.choose_notebooks_folder(),
+                backstage::Act::ImportNotebookFolder => self.import_notebook_folder(),
+                backstage::Act::ImportFile => self.import_file(),
+                backstage::Act::ImportCloud => {
+                    self.status = "Cloud import is not implemented yet.".to_string();
+                    self.status_is_error = false;
+                }
                 backstage::Act::OpenNotebooksFolder => {
                     let root = self.session.root().to_path_buf();
                     self.reveal(&root);
@@ -1438,6 +1548,8 @@ impl NoteCraftApp {
                 backstage::Act::OpenRecent(p) => {
                     self.open_notebook_from_path(&p);
                 }
+                backstage::Act::RemoveRecent(p) => self.remove_recent_notebook(&p),
+                backstage::Act::DeleteRecent(p, title) => self.dialog = Some(Dialog::DeleteNotebook { path: p, title }),
                 backstage::Act::AddWelcome => {
                     self.backstage = None;
                     self.add_welcome();
@@ -1491,6 +1603,16 @@ impl NoteCraftApp {
         if let Ok(serialized) = serde_json::to_string(&recent) {
             let _ = self.session.settings.set("recent_notebooks", &serialized);
         }
+    }
+
+    fn remove_recent_notebook(&mut self, path: &Path) {
+        let Some(saved) = self.session.settings.get("recent_notebooks") else { return };
+        let Ok(mut recent) = serde_json::from_str::<Vec<String>>(&saved) else { return };
+        recent.retain(|entry| std::fs::canonicalize(entry).unwrap_or_else(|_| PathBuf::from(entry)) != path);
+        if let Ok(serialized) = serde_json::to_string(&recent) {
+            let _ = self.session.settings.set("recent_notebooks", &serialized);
+        }
+        self.say("Removed notebook from the known notebooks list");
     }
 
     fn open_notebook_from_path(&mut self, path: &Path) {
@@ -1553,6 +1675,169 @@ impl NoteCraftApp {
             1 => "Notebook opened".to_string(),
             n => format!("{n} notebooks opened"),
         });
+    }
+
+    fn import_notebook_folder(&mut self) {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose a OneNote notebook folder");
+        if let Some(backup) = notecraft_import::discover::default_source() {
+            dialog = dialog.set_directory(backup);
+        }
+        let Some(source) = dialog.pick_folder() else { return };
+        self.import_officeimo_source(source, true);
+    }
+
+    fn import_file(&mut self) {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose a file to import");
+        if let Some(backup) = notecraft_import::discover::default_source() {
+            dialog = dialog.set_directory(backup);
+        }
+        let Some(source) = dialog.pick_file() else { return };
+        self.import_officeimo_source(source, false);
+    }
+
+    fn import_officeimo_source(&mut self, source: PathBuf, folder: bool) {
+        let format = self
+            .session
+            .settings
+            .get("page_format")
+            .and_then(|v| notecraft_model::PageFormat::parse(&v).ok())
+            .unwrap_or(notecraft_model::PageFormat::Html);
+        let bridge_format = match format {
+            notecraft_model::PageFormat::Html => notecraft_import::officeimo::Format::Html,
+            notecraft_model::PageFormat::Cmgfm => notecraft_import::officeimo::Format::Cmgfm,
+        };
+        let destination = self.unique_import_destination(&source);
+        let output = if folder { destination.parent().unwrap_or(self.session.root()) } else { &destination };
+        log::info!("OfficeIMO import requested: source={} destination={}", source.display(), destination.display());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
+        let source_for_worker = source.clone();
+        let output_for_worker = output.to_path_buf();
+        std::thread::spawn(move || {
+            let mut progress = |event| {
+                let message = match event {
+                    notecraft_import::officeimo::Progress::Found { total } => ImportMessage::Found(total),
+                    notecraft_import::officeimo::Progress::Section { index, total, label } => {
+                        ImportMessage::Section { index, total, label: label.to_string() }
+                    }
+                };
+                let _ = tx.send(message);
+            };
+            let result =
+                notecraft_import::officeimo::run_with_progress(&source_for_worker, &output_for_worker, bridge_format, &worker_cancel, &mut progress);
+            let _ = tx.send(ImportMessage::Finished(result));
+        });
+        self.import_job =
+            Some(ImportJob { rx, keep_alive: None, cancel, source, destination, current: "Starting OfficeIMO…".into(), index: 0, total: 0 });
+        self.status = "Importing…".into();
+        self.status_is_error = false;
+    }
+
+    fn poll_import(&mut self, ctx: &Context) {
+        let Some(job) = self.import_job.as_mut() else { return };
+        let mut finished = None;
+        loop {
+            match job.rx.try_recv() {
+                Ok(ImportMessage::Found(total)) => job.total = total,
+                Ok(ImportMessage::Section { index, total, label }) => {
+                    job.index = index;
+                    job.total = total;
+                    job.current = label;
+                }
+                Ok(ImportMessage::Finished(result)) => {
+                    finished = Some(result);
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    finished = Some(Err("OfficeIMO import worker stopped unexpectedly".into()));
+                    break;
+                }
+            }
+        }
+        if let Some(result) = finished {
+            let Some(job) = self.import_job.take() else { return };
+            match result {
+                Ok(message) => {
+                    let _ = self.run("tree.refresh", &Params::new());
+                    log::info!("OfficeIMO import succeeded: source={} destination={}", job.source.display(), job.destination.display());
+                    self.status = message;
+                    self.status_is_error = false;
+                    self.open_notebook_from_path(&job.destination);
+                }
+                Err(error) => {
+                    log::error!("OfficeIMO import failed: source={} destination={} error={error}", job.source.display(), job.destination.display());
+                    self.status = error;
+                    self.status_is_error = true;
+                }
+            }
+        } else if job.keep_alive.is_none() {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+    }
+
+    fn import_progress(&mut self, ctx: &Context) {
+        let Some(job) = self.import_job.as_mut() else { return };
+        let mut cancel = false;
+        egui::Window::new("Importing OneNote")
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .frame(modal_frame(&self.tokens))
+            .show(ctx, |ui| {
+                ui.set_min_width(420.0);
+                modal_title(ui, &self.tokens, "Importing OneNote");
+                ui.label(egui::RichText::new("You can continue working while the import runs.").color(self.tokens.muted));
+                ui.add_space(12.0);
+                ui.label(egui::RichText::new(&job.current).strong());
+                let fraction = if job.total == 0 { 0.0 } else { job.index as f32 / job.total as f32 };
+                ui.add(egui::ProgressBar::new(fraction).fill(self.tokens.accent).show_percentage());
+                if job.total > 0 {
+                    ui.label(format!("{} of {} sections", job.index, job.total));
+                } else {
+                    ui.label("Discovering sections…");
+                }
+                ui.add_space(14.0);
+                ui.separator();
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new("Cancel import").color(self.tokens.band_text)).fill(self.tokens.accent)).clicked()
+                    {
+                        cancel = true;
+                    }
+                });
+            });
+        if cancel {
+            job.cancel.store(true, Ordering::Relaxed);
+            job.current = "Cancelling…".into();
+        }
+    }
+
+    fn import_notebook_name(source: &Path) -> String {
+        let stem = source.file_stem().and_then(|name| name.to_str()).unwrap_or("Imported notebook");
+        let name = stem.split_once(" (On ").map_or(stem, |(name, _)| name).trim();
+        let cleaned: String =
+            name.chars().map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { c }).collect();
+        let cleaned = cleaned.trim().trim_end_matches('.');
+        if cleaned.is_empty() { "Imported notebook".to_string() } else { cleaned.to_string() }
+    }
+
+    fn unique_import_destination(&self, source: &Path) -> PathBuf {
+        let base = Self::import_notebook_name(source);
+        let root = self.session.root();
+        let first = root.join(&base);
+        if !first.exists() {
+            return first;
+        }
+        for number in 1..=u32::MAX {
+            let candidate = root.join(format!("{base} ({number})"));
+            if !candidate.exists() {
+                return candidate;
+            }
+        }
+        root.join(format!("{base} ({})", u64::from(u32::MAX) + 1))
     }
 
     fn reveal(&mut self, path: &Path) {
@@ -3857,36 +4142,116 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::DeleteNotebook { path, title } => {
+                let mut go = false;
+                egui::Window::new("Delete notebook")
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(440.0);
+                        modal_title(ui, &self.tokens, "Delete notebook");
+                        ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
+                        ui.add_space(4.0);
+                        ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");
+                        ui.add_space(14.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancel").clicked() {
+                                keep = false;
+                            }
+                            if ui.add(egui::Button::new("Delete notebook").fill(self.tokens.accent)).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if go {
+                    let path = path.clone();
+                    let was_open = self.editor.as_ref().and_then(|editor| notebook_for(&editor.dir)).is_some_and(|notebook| notebook == path);
+                    match std::fs::remove_dir_all(&path) {
+                        Ok(()) => {
+                            self.remove_recent_notebook(&path);
+                            if was_open {
+                                self.editor = None;
+                                self.pad = None;
+                                self.selected = None;
+                                self.backstage = Some("Open");
+                            }
+                            let _ = self.run("tree.refresh", &Params::new());
+                            self.say(format!("Deleted notebook {}", self.shown(&path)));
+                        }
+                        Err(error) => {
+                            self.status = format!("The notebook could not be deleted: {error}");
+                            self.status_is_error = true;
+                        }
+                    }
+                    keep = false;
+                }
+            }
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
                 let is_notebook = notecraft_store::tree::read_node(path).is_some_and(|node| node.kind == NodeKind::Notebook);
-                egui::Window::new("Delete").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    if is_notebook {
-                        ui.label("Deleting an entire notebook is not supported yet.");
-                    } else {
-                        ui.label(format!(
-                            "Move \"{title}\" and everything inside it ({count} item{}) to this notebook's recycle bin?",
-                            if *count == 1 { "" } else { "s" }
-                        ));
-                        ui.label("You can restore it from History.");
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
+                egui::Window::new("Delete")
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(420.0);
+                        modal_title(ui, &self.tokens, "Delete notebook");
+                        if is_notebook {
+                            ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
+                            ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");
+                        } else {
+                            ui.label(format!(
+                                "Move \"{title}\" and everything inside it ({count} item{}) to this notebook's recycle bin?",
+                                if *count == 1 { "" } else { "s" }
+                            ));
+                            ui.label("You can restore it from History.");
                         }
-                        if ui.add_enabled(!is_notebook, egui::Button::new("Move to recycle bin")).clicked() {
-                            go = true;
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancel").clicked() {
+                                keep = false;
+                            }
+                            if ui
+                                .add(egui::Button::new(if is_notebook { "Delete notebook" } else { "Move to recycle bin" }).fill(self.tokens.accent))
+                                .clicked()
+                            {
+                                go = true;
+                            }
+                        });
                     });
-                });
                 if go {
-                    let was_open = self.editor.as_ref().map(|e| e.dir.starts_with(&*path)).unwrap_or(false);
-                    if self.run("node.delete", &params(&[("path", &path_str(path))])).is_some() {
-                        if was_open {
-                            self.editor = None;
+                    if is_notebook {
+                        let path = path.clone();
+                        match std::fs::remove_dir_all(&path) {
+                            Ok(()) => {
+                                self.remove_recent_notebook(&path);
+                                self.editor = None;
+                                self.pad = None;
+                                self.selected = None;
+                                self.open.remove(&path);
+                                let _ = self.run("tree.refresh", &Params::new());
+                                self.say("Deleted notebook");
+                            }
+                            Err(error) => {
+                                self.status = format!("The notebook could not be deleted: {error}");
+                                self.status_is_error = true;
+                            }
                         }
-                        self.selected = None;
-                        self.say("Moved to the notebook recycle bin");
+                    } else {
+                        let was_open = self.editor.as_ref().map(|e| e.dir.starts_with(&*path)).unwrap_or(false);
+                        if self.run("node.delete", &params(&[("path", &path_str(path))])).is_some() {
+                            if was_open {
+                                self.editor = None;
+                            }
+                            self.selected = None;
+                            self.say("Moved to the notebook recycle bin");
+                        }
                     }
                     keep = false;
                 }
@@ -4423,6 +4788,7 @@ impl NoteCraftApp {
         }
         self.clipboard_keys(ctx);
         self.poll_control(ctx);
+        self.poll_import(ctx);
         if !self.event_frames.is_empty() {
             ctx.request_repaint();
         }
@@ -4450,6 +4816,7 @@ impl NoteCraftApp {
             self.title_band(ui, false);
             self.backstage_screen(ui);
             self.dialogs(ctx);
+            self.import_progress(ctx);
             self.frame_edges(ctx);
             return;
         }
@@ -4459,6 +4826,7 @@ impl NoteCraftApp {
         self.central(ui);
         self.search_popup(ctx);
         self.dialogs(ctx);
+        self.import_progress(ctx);
         self.frame_edges(ctx);
         if let Some(since) = self.editor.as_ref().and_then(|e| e.dirty_since) {
             if since.elapsed() >= AUTOSAVE_AFTER {

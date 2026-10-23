@@ -96,6 +96,7 @@ fn name(icon: Icon) -> &'static str {
         Icon::SectionGroupOpen => "section-group-open",
         Icon::Section => "section",
         Icon::Page => "page",
+        Icon::Folder => "folder",
         Icon::PageStack => "page-stack",
         Icon::Code => "code",
         Icon::Eraser => "eraser",
@@ -189,6 +190,7 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             Shape::line_segment([at(11.5, 8.5), at(16.5, 8.5)], thin),
             Shape::line_segment([at(11.5, 12.0), at(16.5, 12.0)], thin),
         ],
+        Icon::Folder => vec![closed(&[(3.0, 7.0), (9.0, 7.0), (11.0, 9.0), (21.0, 9.0), (21.0, 20.0), (3.0, 20.0), (3.0, 7.0)])],
         Icon::Undo => {
             vec![open(&[(9.0, 6.0), (5.0, 10.0), (9.0, 14.0)]), open(&[(5.0, 10.0), (15.0, 10.0), (18.0, 13.0), (18.0, 17.0), (15.0, 20.0)])]
         }
