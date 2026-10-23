@@ -196,6 +196,21 @@ enum FileChoice {
     Link,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AttachmentKind {
+    File,
+    Picture,
+}
+
+impl AttachmentKind {
+    fn file_filters(self) -> Option<&'static [&'static str]> {
+        match self {
+            AttachmentKind::Picture => Some(&["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tif", "tiff"]),
+            AttachmentKind::File => None,
+        }
+    }
+}
+
 enum Dialog {
     /// A dropped file: copy it in, or link to it where it is.
     FileOptions {
@@ -1511,6 +1526,29 @@ impl NoteCraftApp {
         }
     }
 
+    fn choose_page_attachment(&mut self, kind: AttachmentKind) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.status = match kind {
+                AttachmentKind::Picture => "Open a page first, then add a picture.".to_string(),
+                AttachmentKind::File => "Open a page first, then attach a file.".to_string(),
+            };
+            self.status_is_error = true;
+            return;
+        };
+        let title = match kind {
+            AttachmentKind::Picture => "Choose a picture to insert",
+            AttachmentKind::File => "Choose a file to attach",
+        };
+        let mut dialog = rfd::FileDialog::new().set_title(title).set_directory(&dir);
+        if let Some(filters) = kind.file_filters() {
+            dialog = dialog.add_filter("Images", filters);
+        }
+        let Some(file) = dialog.pick_file() else {
+            return;
+        };
+        self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
+    }
+
     /// Asks the system for a folder and opens the notebooks in it, keeping everything that
     /// is already open. A folder that is itself a notebook opens as one; a folder that
     /// holds notebooks opens all of them. Nothing is closed and nothing is moved.
@@ -1836,9 +1874,8 @@ impl NoteCraftApp {
                 }
                 other => self.insert_block(other),
             },
-            ribbon::Act::AddFile | ribbon::Act::AddPicture => {
-                self.say("Drop the file onto the page: a dialog then asks what to do with it");
-            }
+            ribbon::Act::AddFile => self.choose_page_attachment(AttachmentKind::File),
+            ribbon::Act::AddPicture => self.choose_page_attachment(AttachmentKind::Picture),
             ribbon::Act::ToggleSource => self.set_show_source(!self.show_source),
             ribbon::Act::ToggleFullPage => self.full_page = !self.full_page,
             ribbon::Act::OpenThemes => self.theme_window = !self.theme_window,
@@ -4534,6 +4571,20 @@ fn color_swatch(ui: &mut Ui, color: NodeColor, dark: bool, selected: bool) -> eg
 
 /// Shows a folder in the operating system's file manager. An optional extra: everything the
 /// app itself does works without it, and a failure is reported, never fatal.
+#[cfg(test)]
+mod tests {
+    use super::AttachmentKind;
+
+    #[test]
+    fn picture_attachments_only_accept_image_extensions() {
+        assert_eq!(AttachmentKind::File.file_filters(), None);
+        assert_eq!(
+            AttachmentKind::Picture.file_filters(),
+            Some(&["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tif", "tiff"] as &[&str])
+        );
+    }
+}
+
 fn open_folder(dir: &Path) -> std::io::Result<()> {
     let program = if cfg!(target_os = "windows") {
         "explorer"
