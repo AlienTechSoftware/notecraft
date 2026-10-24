@@ -283,6 +283,10 @@ enum Dialog {
     PrivacyWelcome {
         level: String,
     },
+    MissingAttachmentIcon {
+        page: PathBuf,
+        name: String,
+    },
 }
 
 struct ImportJob {
@@ -418,6 +422,10 @@ pub struct NoteCraftApp {
     focus_search: bool,
     /// The page the window closed on has been opened again (once per run).
     restored: bool,
+    /// Recovery warnings that were already shown during this run.
+    icon_recovery_reported: HashSet<String>,
+    /// Suppress further missing-icon warnings during this run.
+    icon_recovery_suppressed: bool,
 }
 
 impl NoteCraftApp {
@@ -495,6 +503,8 @@ impl NoteCraftApp {
             full_page: false,
             focus_search: false,
             restored: false,
+            icon_recovery_reported: HashSet::new(),
+            icon_recovery_suppressed: false,
         }
     }
 
@@ -1983,7 +1993,7 @@ impl NoteCraftApp {
                     }
                 }
             }
-            Link::File(file) => match open_file(&file) {
+            Link::File(file) => match open_file_for_viewer(&file) {
                 Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
                 Err(e) => {
                     self.status = format!("The file could not be opened: {e}");
@@ -5101,7 +5111,7 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// Opens a linked attachment with the operating system's associated application. Windows may
 /// show its own warning for files marked as downloaded; that prompt is intentionally preserved.
-fn open_file(file: &Path) -> std::io::Result<()> {
+pub(crate) fn open_file_for_viewer(file: &Path) -> std::io::Result<()> {
     if cfg!(target_os = "windows") {
         std::process::Command::new("cmd").args(["/C", "start", "", &file.to_string_lossy()]).spawn().map(|_| ())
     } else if cfg!(target_os = "macos") {
