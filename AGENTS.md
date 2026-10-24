@@ -119,6 +119,23 @@ cargo xtask demo            # rebuild docs/demo/DemoNotebook from docs/demo/scri
 git config core.hooksPath .githooks   # once per clone: turn the hooks on
 ```
 
+## Runtime environments and local diagnostics
+
+NoteCraft has three supported build environments:
+
+- `debug`: local development and test builds; verbose local diagnostics are enabled by default.
+- `release`: optimized distributable builds.
+- `production`: the installed release binary running from the production install folder.
+
+The app has five local collection levels, in this order: `None`, `Usage`, `Warning`, `Error`,
+and `Debug`. `None` is the default for release and production unless the user chooses another
+level. `Debug` is the default for debug builds. Collection is local only; NoteCraft does not
+upload logs or telemetry automatically.
+
+On Windows, settings are stored at `%APPDATA%\\NoteCraft\\settings.toml`, not beside the
+executable. The `telemetry` folder is stored beside that settings file. The first-run privacy
+dialog is an in-app themed modal and persists the user's choice in the settings file.
+
 ## Rules
 
 - **Layers.** A crate depends only on lower layers. `cargo xtask layers` enforces it. Only

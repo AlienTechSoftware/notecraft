@@ -9,6 +9,15 @@ metadata:
 
 # nc-hl-design - NoteCraft High-Level Design
 
+## Runtime and diagnostics baseline
+
+Designs that add diagnostics or user settings must preserve NoteCraft's three build environments:
+`debug` for local development, `release` for optimized artifacts, and `production` for the
+installed release binary. Local collection has exactly five levels: `None`, `Usage`, `Warning`,
+`Error`, and `Debug`. Debug defaults to `Debug`; release and production default to `None` unless
+the user opts in. Settings live in the platform config directory, not beside the executable.
+Telemetry means local usage and diagnostic records only. NoteCraft must not upload them.
+
 ## When to Use This Skill
 
 Start with `/nc-hl-design` before:
