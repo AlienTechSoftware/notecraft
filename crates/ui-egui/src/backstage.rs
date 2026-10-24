@@ -393,13 +393,15 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
 fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Option<&str>, t: &Tokens, acts: &mut Vec<Act>) {
     heading(ui, "Options", t);
     ui.label(
-        egui::RichText::new("Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.").color(t.text),
+        egui::RichText::new("Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.")
+            .strong()
+            .color(t.strong),
     );
     ui.add_space(12.0);
-    ui.label(egui::RichText::new("Local diagnostics and usage").size(15.0).color(t.strong));
+    ui.label(egui::RichText::new("Local diagnostics and usage").strong().size(15.0).color(t.strong));
     ui.label(egui::RichText::new("Choose what NoteCraft records locally. Nothing is uploaded automatically.").size(12.0).color(t.muted));
     ui.horizontal(|ui| {
-        ui.label("Level:");
+        ui.label(egui::RichText::new("Level:").strong());
         egui::ComboBox::from_id_salt("telemetry-level").selected_text(level).show_ui(ui, |ui| {
             for choice in ["none", "usage", "warning", "error", "debug"] {
                 if ui.selectable_label(level == choice, choice).clicked() {
@@ -410,9 +412,9 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
         });
     });
     if let Some(id) = session_id {
-        ui.label(egui::RichText::new(format!("Current session: {id}")).monospace().size(11.0).color(t.muted));
+        ui.label(egui::RichText::new(format!("Current session: {id}")).strong().monospace().size(11.0).color(t.text));
     }
-    ui.label(egui::RichText::new(format!("Folder: {}", root.display())).size(11.0).color(t.muted));
+    ui.label(egui::RichText::new(format!("Folder: {}", root.display())).strong().size(11.0).color(t.text));
     ui.horizontal(|ui| {
         if ui.button("Open telemetry folder").clicked() {
             acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
