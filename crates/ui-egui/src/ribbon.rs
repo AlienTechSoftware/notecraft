@@ -524,9 +524,15 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
-fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let response = big_inner(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", true, false, t);
-    egui::Popup::menu(&response).show(|ui| {
+    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.right() - 22.0, response.rect.top()), response.rect.right_bottom());
+    let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
+    if arrow.hovered() {
+        ui.painter().rect_filled(arrow_rect, 3.0, t.row_hover);
+        chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
+    }
+    egui::Popup::menu(&arrow).show(|ui| {
         ui.set_min_width(190.0);
         if ui.button("Picture from a file").clicked() {
             acts.push(Act::AddPicture);
@@ -535,6 +541,7 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
         ui.add_enabled(false, egui::Button::new("From Camera"));
         ui.add_enabled(false, egui::Button::new("From Online"));
     });
+    response.clicked() && !arrow.clicked()
 }
 
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
@@ -1246,7 +1253,9 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     });
     group(ui, "Images", t, |ui| {
         soon(ui, Icon::Clip, "Screen\nClipping", t);
-        pictures_menu(ui, t, acts);
+        if pictures_menu(ui, t, acts) {
+            acts.push(Act::AddPicture);
+        }
     });
     group(ui, "Media", t, |ui| {
         soon(ui, Icon::Video, "Online\nVideo", t);
