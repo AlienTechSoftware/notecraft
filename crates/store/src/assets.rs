@@ -8,6 +8,10 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+#[cfg(target_os = "windows")]
+#[path = "assets.win.rs"]
+mod platform;
+
 /// Attachments larger than this are refused.
 pub const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -39,10 +43,32 @@ fn assets_dir(page_dir: &Path) -> Result<std::path::PathBuf> {
 }
 
 pub fn ensure_icon(page_dir: &Path, file_name: &str) -> Result<()> {
-    let dir = page_dir.join("assets").join(".notecraft-icons");
+    let dir = page_dir.join("assets");
     fs::create_dir_all(&dir).map_err(|e| StoreError::io("create", &dir, e))?;
-    let ext = file_name.rsplit_once('.').map(|(_, e)| e.to_ascii_uppercase()).unwrap_or_else(|| "FILE".into());
     let safe = names::safe_file_name(file_name);
+    #[cfg(target_os = "windows")]
+    {
+        let target = dir.join(format!("{safe}.png"));
+        let source = dir.join(file_name);
+        match platform::shell_icon(&source, &target) {
+            Ok(()) => {
+                let fallback = dir.join(format!("{safe}.svg"));
+                if fallback.is_file() {
+                    fs::remove_file(&fallback).map_err(|e| StoreError::io("remove", &fallback, e))?;
+                }
+                log::info!("attachment icon generated from Windows Shell: source={:?} target={:?}", source, target);
+                return Ok(());
+            }
+            Err(error) => {
+                log::warn!(
+                    "Windows Shell attachment icon extraction failed; using SVG fallback: source={:?} target={:?} error={error}",
+                    source,
+                    target
+                );
+            }
+        }
+    }
+    let ext = file_name.rsplit_once('.').map(|(_, e)| e.to_ascii_uppercase()).unwrap_or_else(|| "FILE".into());
     let target = dir.join(format!("{safe}.svg"));
     let colour = match ext.as_str() {
         "PDF" => "#d93025",
@@ -54,7 +80,9 @@ pub fn ensure_icon(page_dir: &Path, file_name: &str) -> Result<()> {
     let svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="112" viewBox="0 0 96 112"><path fill="white" stroke="{colour}" stroke-width="6" d="M12 3h50l22 22v84H12z"/><path fill="{colour}" d="M62 3v24h22z"/><text x="48" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="{colour}">{ext}</text></svg>"#
     );
-    fs::write(&target, svg).map_err(|e| StoreError::io("write", &target, e))
+    fs::write(&target, svg).map_err(|e| StoreError::io("write", &target, e))?;
+    log::info!("attachment icon generated from SVG fallback: target={:?}", target);
+    Ok(())
 }
 
 fn unique_name(dir: &Path, name: &str) -> String {
@@ -102,7 +130,15 @@ pub fn remove(page_dir: &Path, name: &str) -> Result<()> {
     if !file.is_file() {
         return Err(StoreError::NotFound(format!("no attachment called {name}")));
     }
-    fs::remove_file(&file).map_err(|e| StoreError::io("remove", &file, e))
+    fs::remove_file(&file).map_err(|e| StoreError::io("remove", &file, e))?;
+    // Generated application icons belong to the attachment, not to the user's file list.
+    for extension in ["png", "svg"] {
+        let icon = page_dir.join("assets").join(format!("{name}.{extension}"));
+        if icon.is_file() {
+            fs::remove_file(&icon).map_err(|e| StoreError::io("remove", &icon, e))?;
+        }
+    }
+    Ok(())
 }
 
 /// Copies a file into the page's attachments. Returns the relative link.
@@ -129,11 +165,17 @@ pub fn list(page_dir: &Path) -> Vec<(String, u64)> {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .map(|e| (e.file_name().to_string_lossy().into_owned(), e.metadata().map(|m| m.len()).unwrap_or(0)))
+            .filter(|(name, _)| !is_generated_icon(page_dir, name))
             .collect(),
         Err(_) => Vec::new(),
     };
     out.sort();
     out
+}
+
+fn is_generated_icon(page_dir: &Path, name: &str) -> bool {
+    let Some((source, extension)) = name.rsplit_once('.') else { return false };
+    matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg") && page_dir.join("assets").join(source).is_file()
 }
 
 #[cfg(test)]
@@ -198,10 +240,28 @@ mod tests {
         let link = attach_file(&p, &src).expect("attach");
         assert_eq!(link, "assets/source-clip.mp4");
         assert_eq!(fs::read(p.join(&link)).expect("read"), b"video");
-        assert!(p.join("assets/.notecraft-icons/source-clip.mp4.svg").is_file(), "attachment gets a secondary icon artifact");
+        assert!(
+            p.join("assets/source-clip.mp4.png").is_file() || p.join("assets/source-clip.mp4.svg").is_file(),
+            "attachment gets a secondary icon artifact"
+        );
         assert!(src.exists(), "the original stays");
         assert!(attach_file(&p, t.path()).is_err(), "a folder cannot be attached");
         assert!(attach_file(&p, &t.path().join("missing")).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_icons_are_pngs() {
+        let t = TempDir::new("assets-shell-icon");
+        let p = page(&t);
+        let attachment = p.join("assets").join("shell-icon-check.docx");
+        fs::write(&attachment, b"test document").expect("attachment");
+
+        ensure_icon(&p, "shell-icon-check.docx").expect("icon");
+
+        let png = fs::read(p.join("assets").join("shell-icon-check.docx.png")).expect("shell PNG");
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "the Shell result is a PNG sidecar");
+        assert!(!p.join("assets").join("shell-icon-check.docx.svg").exists(), "a native Shell icon does not need the SVG fallback");
     }
 
     #[test]

@@ -337,7 +337,10 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
                 Some(uri) => {
-                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::hover()));
+                    // A linked image is the attachment-card form used by NoteCraft. Keep its
+                    // generated shell icon compact; standalone images still use the picture box.
+                    let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, zoom) };
+                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     if response.hovered() {
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
                     }
@@ -471,16 +474,16 @@ pub(crate) fn show_block_zoomed(
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
                             draw_inline_images(ui, &spans, page_dir, zoom);
+                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
+                        draw_inline_images(ui, spans, page_dir, zoom);
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
-                        draw_inline_images(ui, spans, page_dir, zoom);
                         ui.add_space(4.0);
                     }
                 }
