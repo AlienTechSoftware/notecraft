@@ -41,9 +41,17 @@ fn selected_image_id() -> Id {
     Id::new("image-selected")
 }
 
+fn selected_object_id() -> Id {
+    Id::new("embedded-object-selected")
+}
+
 pub fn selected_image(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
+    selected_object(ctx, page).and_then(|(i, kind)| (kind == "image").then_some(i))
+}
+
+pub fn selected_object(ctx: &egui::Context, page: &std::path::Path) -> Option<(usize, String)> {
     let key = page.to_string_lossy();
-    ctx.data(|d| d.get_temp::<(usize, String)>(selected_image_id())).filter(|(_, on)| *on == key).map(|(i, _)| i)
+    ctx.data(|d| d.get_temp::<(usize, String, String)>(selected_object_id())).filter(|(_, _, on)| *on == key).map(|(i, kind, _)| (i, kind))
 }
 
 /// Where the selected container's menu is open, if it is.
@@ -147,7 +155,6 @@ pub fn show(
     // was changed under it) cannot stay selected.
     let page_key = page_dir.to_string_lossy().into_owned();
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
-    let mut image_sel = selected_image(ui.ctx(), page_dir);
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
@@ -157,7 +164,9 @@ pub fn show(
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
     let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
-    let image_clicked = ui.data_mut(|d| d.remove_temp::<usize>(crate::preview::image_clicked_id()));
+    let object_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_clicked_id()));
+    ui.data_mut(|d| d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()));
+    let mut object_sel = selected_object(ui.ctx(), page_dir);
     // Selection must never rewrite the page arrangement. Image hit-testing is visual state;
     // the persisted container geometry changes only after an actual drag or resize.
     // The open paper: the whole page area, made first so that every box and every block, which
@@ -183,12 +192,7 @@ pub fn show(
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
-        if let Some(block) = image_clicked.filter(|block| range.contains(block)) {
-            image_sel = Some(block);
-            sel = None;
-            *caret = None;
-            out.changed.caret = true;
-        }
+        let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
         let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
@@ -212,6 +216,13 @@ pub fn show(
         out.changed.columns |= changed.columns;
         if changed.link.is_some() {
             out.changed.link = changed.link;
+        }
+        if let Some((block, kind)) = object_clicked.as_ref().filter(|(block, _)| range.contains(block)) {
+            object_sel = Some((*block, kind.clone()));
+            sel = None;
+            *caret = None;
+            out.changed.caret = true;
+            log::debug!("embedded object selected: container={i} block={block} kind={kind}");
         }
         let used = child.min_rect().height().max(18.0);
         // The move handle sits above the content frame, so it can never cover its top border.
@@ -240,7 +251,45 @@ pub fn show(
         // moving a box feel like it slipped out of the hand.
         // A standalone picture behaves like an object rather than a text container: the
         // whole frame is its move target, so the user does not have to find a tiny title bar.
-        let bar = if image_object { frame } else { Rect::from_min_size(at, vec2(frame.width(), handle)) };
+        // Pictures own their visible rectangle. The parent container must not also claim that
+        // rectangle: two overlapping interactions made a picture click intermittently select the
+        // whole page/container instead of the picture.
+        let image_rect = Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom));
+        if contains_image {
+            log::debug!(
+                "image candidate: container={i} blocks={}..{} standalone={} frame={:?} image_rect={:?} pointer={:?}",
+                range.start,
+                range.end,
+                image_object,
+                frame,
+                image_rect,
+                pointer
+            );
+        }
+        let image_hit = image_object
+            .then(|| ui.interact(image_rect, ui.id().with(("image-object", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move));
+        if let Some(response) = &image_hit
+            && (response.clicked() || response.dragged())
+        {
+            object_sel = Some((range.start, "image".to_string()));
+            sel = None;
+            *caret = None;
+            out.changed.caret = true;
+            log::debug!("image hit: container={i} block={}", range.start);
+        }
+        if let Some(response) = &image_hit
+            && (response.hovered() || response.clicked() || response.dragged())
+        {
+            log::debug!(
+                "image interaction: container={i} block={} hovered={} clicked={} dragged={} selected={:?}",
+                range.start,
+                response.hovered(),
+                response.clicked(),
+                response.dragged(),
+                object_sel
+            );
+        }
+        let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
@@ -273,18 +322,12 @@ pub fn show(
             ui.data_mut(|d| d.insert_temp(claimed_id(), pass));
         }
         let is_sel = sel == Some(i);
-        if let Some(block) = image_sel.filter(|block| range.contains(block)) {
-            let image_rect = Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom));
-            let image_response =
-                ui.interact(image_rect, ui.id().with(("image-object", block)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
-            if image_response.clicked() {
-                image_sel = Some(block);
-                sel = None;
-            }
-            if image_response.dragged() {
-                image_sel = Some(block);
-            }
-            ui.painter().rect_stroke(image_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+        if let Some((block, kind)) = object_sel.as_ref().filter(|(block, _)| range.contains(block)) {
+            let hits = ui.data(|d| d.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id())).unwrap_or_default();
+            let object_rect = hits.iter().find(|(at, _, _)| at == block).map(|(_, rect, _)| *rect).unwrap_or(image_rect);
+            log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
+            ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+            let image_rect = object_rect;
             let size = (6.0 * zoom).max(4.0);
             for point in [
                 image_rect.left_top(),
@@ -471,13 +514,19 @@ pub fn show(
             menu_at = None;
         }
     }
-    if image_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
-        image_sel = None;
+    if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
+        object_sel = None;
     }
     ui.data_mut(|d| {
-        if let Some(block) = image_sel {
-            d.insert_temp(selected_image_id(), (block, page_key.clone()));
+        if let Some((block, kind)) = object_sel {
+            d.insert_temp(selected_object_id(), (block, kind.clone(), page_key.clone()));
+            if kind == "image" {
+                d.insert_temp(selected_image_id(), (block, page_key.clone()));
+            } else {
+                d.remove::<(usize, String)>(selected_image_id());
+            }
         } else {
+            d.remove::<(usize, String, String)>(selected_object_id());
             d.remove::<(usize, String)>(selected_image_id());
         }
     });
