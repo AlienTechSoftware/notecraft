@@ -18,6 +18,17 @@ installed release binary. Local collection has exactly five levels: `None`, `Usa
 the user opts in. Settings live in the platform config directory, not beside the executable.
 Telemetry means local usage and diagnostic records only. NoteCraft must not upload them.
 
+## Core Constraint: Notebooks, Sections, Pages Are Folders
+
+Every design decision flows from this:
+- **Notebook** = one folder on disk (user can open it in file manager, copy it, sync it)
+- **Section group** = subfolder
+- **Section** = subfolder
+- **Page** = one file (`.html` or `index.md`) + optional `_assets/` subfolder
+- **Assets** = files in the page's `_assets/` folder, linked by relative path
+
+Your feature lives *in* this folder tree. No database, no server, no magic. User owns the files.
+
 ## When to Use This Skill
 
 Start with `/nc-hl-design` before:

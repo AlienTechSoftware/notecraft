@@ -38,6 +38,25 @@ fn assets_dir(page_dir: &Path) -> Result<std::path::PathBuf> {
     Ok(dir)
 }
 
+pub fn ensure_icon(page_dir: &Path, file_name: &str) -> Result<()> {
+    let dir = page_dir.join("assets").join(".notecraft-icons");
+    fs::create_dir_all(&dir).map_err(|e| StoreError::io("create", &dir, e))?;
+    let ext = file_name.rsplit_once('.').map(|(_, e)| e.to_ascii_uppercase()).unwrap_or_else(|| "FILE".into());
+    let safe = names::safe_file_name(file_name);
+    let target = dir.join(format!("{safe}.svg"));
+    let colour = match ext.as_str() {
+        "PDF" => "#d93025",
+        "DOC" | "DOCX" => "#2563eb",
+        "XLS" | "XLSX" => "#16803c",
+        "PPT" | "PPTX" => "#d24726",
+        _ => "#6f42c1",
+    };
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="112" viewBox="0 0 96 112"><path fill="white" stroke="{colour}" stroke-width="6" d="M12 3h50l22 22v84H12z"/><path fill="{colour}" d="M62 3v24h22z"/><text x="48" y="78" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="{colour}">{ext}</text></svg>"#
+    );
+    fs::write(&target, svg).map_err(|e| StoreError::io("write", &target, e))
+}
+
 fn unique_name(dir: &Path, name: &str) -> String {
     let taken: HashSet<String> = match fs::read_dir(dir) {
         Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_lowercase()).collect(),
@@ -99,6 +118,7 @@ pub fn attach_file(page_dir: &Path, source: &Path) -> Result<String> {
     let name = unique_name(&dir, &names::safe_file_name(&source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
     let target = dir.join(&name);
     fs::copy(source, &target).map_err(|e| StoreError::io("copy", &target, e))?;
+    ensure_icon(page_dir, &name)?;
     Ok(format!("assets/{name}"))
 }
 
@@ -178,6 +198,7 @@ mod tests {
         let link = attach_file(&p, &src).expect("attach");
         assert_eq!(link, "assets/source-clip.mp4");
         assert_eq!(fs::read(p.join(&link)).expect("read"), b"video");
+        assert!(p.join("assets/.notecraft-icons/source-clip.mp4.svg").is_file(), "attachment gets a secondary icon artifact");
         assert!(src.exists(), "the original stays");
         assert!(attach_file(&p, t.path()).is_err(), "a folder cannot be attached");
         assert!(attach_file(&p, &t.path().join("missing")).is_err());

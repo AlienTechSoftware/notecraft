@@ -12,6 +12,26 @@ metadata:
 Use this skill when changing the welcome/demo notebook, user-facing guidance, translations,
 release screenshots, generated scratch copies, or the set of product features presented to users.
 
+## Helping Users Understand the Folder Model
+
+NoteCraft notebooks are plain folders. User-facing guidance must make this clear and practical:
+
+- **Backup:** Copy the notebook folder anywhere; it's a complete backup.
+- **Sync:** Drop the folder into OneDrive, Google Drive, Dropbox, git, rsync, or any sync tool. User controls sync.
+- **Open and inspect:** User can open the notebook folder in Finder/Explorer, browse sections and pages as files, read `.html` or `index.md` in a text editor.
+- **Move, share, archive:** Notebooks are just folders. Standard file operations work.
+- **Format:** Pages are `.html` (rich, editable in NoteCraft) or `index.md` (CommonMark, editable anywhere).
+- **Assets:** Images and files live in `_assets/` folders next to their pages, linked by relative path. User can move or replace assets by editing the folder.
+
+Demo and help content must show:
+- The notebook folder structure (visual or in text)
+- Where to find a notebook on disk
+- How to back it up (copy the folder)
+- How to sync it (move the folder to a sync service)
+- That pages are readable files, not locked in a database
+
+When documenting features, mention which layers of the notebook they touch (metadata, page content, assets).
+
 ## Product coverage ownership
 
 `nc-ua` maintains the user-facing feature coverage map for the whole product. The map must
