@@ -22,5 +22,6 @@ pub fn export(session: &Path, destination: &Path) -> io::Result<()> {
     if signature != [0x50, 0x4b] {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid ZIP export"));
     }
-    fs::remove_dir_all(session)
+    let _ = session;
+    Ok(())
 }
