@@ -79,10 +79,9 @@ pub fn attachment(format: PageFormat, link: &str, name: &str) -> String {
         (PageFormat::Html, MediaKind::Image) => format!("\n<img src=\"{link}\" alt=\"{}\">\n", notecraft_formats::html::escape(name)),
         (PageFormat::Html, MediaKind::Video) => format!("\n<video src=\"{link}\" controls></video>\n"),
         (PageFormat::Html, MediaKind::Audio) => format!("\n<audio src=\"{link}\" controls></audio>\n"),
-        (PageFormat::Html, MediaKind::Other) => format!(
-            "\n<p><a href=\"{link}\"><img src=\"{icon}\" alt=\"\" width=\"48\" height=\"56\"> {}</a></p>\n",
-            notecraft_formats::html::escape(name)
-        ),
+        (PageFormat::Html, MediaKind::Other) => {
+            format!("\n<p><a href=\"{link}\"><img src=\"{icon}\" alt=\"\" width=\"48\"><br>{}</a></p>\n", notecraft_formats::html::escape(name))
+        }
         (PageFormat::Cmgfm, MediaKind::Image) => format!("\n![{name}]({link})\n"),
         (PageFormat::Cmgfm, _) => format!("\n[![{name}]({icon}) {name}]({link})\n"),
     }
@@ -90,7 +89,17 @@ pub fn attachment(format: PageFormat, link: &str, name: &str) -> String {
 
 fn attachment_icon(link: &str) -> String {
     let name = link.strip_prefix("assets/").unwrap_or(link);
-    format!("assets/.notecraft-icons/{name}.svg")
+    format!("assets/{name}{}", attachment_icon_extension())
+}
+
+#[cfg(target_os = "windows")]
+fn attachment_icon_extension() -> &'static str {
+    ".png"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn attachment_icon_extension() -> &'static str {
+    ".svg"
 }
 
 /// A link to a file that was left where it is, OneNote's "insert a link to the file".
@@ -186,7 +195,8 @@ mod tests {
     #[test]
     fn attachments_link_by_media_kind() {
         assert_eq!(attachment(PageFormat::Cmgfm, "assets/a.png", "a.png"), "\n![a.png](assets/a.png)\n");
-        assert!(attachment(PageFormat::Cmgfm, "assets/a.pdf", "a.pdf").contains("assets/.notecraft-icons/a.pdf.svg"));
+        let icon = if cfg!(target_os = "windows") { "assets/a.pdf.png" } else { "assets/a.pdf.svg" };
+        assert!(attachment(PageFormat::Cmgfm, "assets/a.pdf", "a.pdf").contains(icon));
         assert!(attachment(PageFormat::Html, "assets/a.mp4", "a.mp4").contains("<video src=\"assets/a.mp4\" controls>"));
         assert!(attachment(PageFormat::Html, "assets/a.png", "a<b>.png").contains("alt=\"a&lt;b&gt;.png\""));
         assert!(attachment(PageFormat::Html, "assets/a.mp3", "a.mp3").contains("<audio"));
