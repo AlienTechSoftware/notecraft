@@ -74,9 +74,9 @@ fn fail(message: &str) -> ! {
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let settings_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
-    applog::init(settings_dir.clone());
     let telemetry_level =
         Settings::default_location().get("telemetry_level").as_deref().and_then(telemetry::Level::parse).unwrap_or_else(telemetry::Level::for_build);
+    applog::init(settings_dir.clone(), telemetry_level == telemetry::Level::Debug);
     let telemetry = (telemetry_level != telemetry::Level::None)
         .then(|| telemetry::Session::start(telemetry::telemetry_root(&settings_dir), telemetry_level).ok())
         .flatten();

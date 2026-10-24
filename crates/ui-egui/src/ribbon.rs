@@ -478,11 +478,11 @@ fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
     // took, so a group is exactly as wide as it needs to be, as in Office.
     let inner = ui
         .scope(|ui| {
-            ui.spacing_mut().item_spacing = vec2(3.0, 3.0);
+            ui.spacing_mut().item_spacing = vec2(4.0, 3.0);
             ui.horizontal_top(|ui| {
-                ui.add_space(5.0);
+                ui.add_space(6.0);
                 add(ui);
-                ui.add_space(5.0);
+                ui.add_space(6.0);
             });
         })
         .response
@@ -508,7 +508,7 @@ fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
         [egui::pos2(x, inner.min.y + 3.0), egui::pos2(x, inner.min.y + GROUP_H - 5.0)],
         egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.16)),
     );
-    ui.add_space(15.0);
+    ui.add_space(9.0);
 }
 
 /// A big button: an icon with its name under it.
@@ -533,8 +533,8 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
         chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
     }
     egui::Popup::menu(&arrow).show(|ui| {
-        egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
-            ui.set_min_width(205.0);
+        egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+            ui.set_min_width(228.0);
             if picture_menu_row(ui, Icon::Picture, "Picture from a file", t, true).clicked() {
                 acts.push(Act::AddPicture);
                 ui.close();
@@ -547,19 +547,25 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
 }
 
 fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(190.0, 32.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), Sense::click());
     if response.hovered() && enabled {
-        ui.painter().rect_filled(rect, 4.0, t.row_hover);
+        ui.painter().rect_filled(rect, 6.0, crate::theme::mix(t.panel, t.accent, 0.12));
     }
-    let color = if enabled { t.accent } else { t.muted };
+    let color = if !enabled {
+        t.muted
+    } else if icon == Icon::Picture {
+        t.ok
+    } else {
+        t.accent
+    };
     let painter = ui.painter_at(rect);
-    let icon_rect = Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), vec2(18.0, 18.0));
-    icons::paint(&painter, icon_rect, icon, color);
+    let icon_rect = Rect::from_center_size(egui::pos2(rect.left() + 20.0, rect.center().y), vec2(20.0, 20.0));
+    icons::paint_ribbon(ui, icon_rect, icon, color);
     painter.text(
-        egui::pos2(rect.left() + 38.0, rect.center().y),
+        egui::pos2(rect.left() + 43.0, rect.center().y),
         Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(13.0),
+        egui::FontId::proportional(13.5),
         if enabled { t.text } else { t.muted },
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
@@ -599,7 +605,7 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
             _ => t.accent,
         }
     };
-    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
+    icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
     for (i, line) in lines.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
         let y = rect.min.y + LABEL_Y + i as f32 * LINE_H;
@@ -637,7 +643,7 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
         painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
     }
     match icon {
-        Some(i) => icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), i, t.accent),
+        Some(i) => icons::paint_ribbon(ui, Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), i, t.accent),
         None => {
             painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), t.strong);
         }
@@ -656,7 +662,7 @@ fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Token
     if resp.hovered() {
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
-    icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.min.x + 13.0, rect.center().y), vec2(18.0, 18.0)), icon, t.accent);
+    icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.min.x + 13.0, rect.center().y), vec2(18.0, 18.0)), icon, t.accent);
     painter.text(egui::pos2(rect.min.x + 27.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
     let enabled = ui.is_enabled();
     let name = label.to_string();
@@ -1090,7 +1096,7 @@ fn direction_row(ui: &mut Ui, icon: Option<Icon>, label: &str, t: &Tokens) -> eg
         painter.rect_filled(rect, 3.0, t.row_hover);
     }
     if let Some(icon) = icon {
-        icons::paint(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 4.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
+        icons::paint_ribbon(ui, Rect::from_min_size(egui::pos2(rect.min.x + 4.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
     }
     painter.text(egui::pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
@@ -1476,9 +1482,9 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 
 /// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
 fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = big_menu(ui, Icon::Table, "Format\nBackground", "Lines or squares behind the page, as on paper", t);
     let open_id = egui::Id::new("ribbon-rule-lines");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    let resp = big_inner(ui, Icon::Ruler, "Format\nBackground", "Lines or squares behind the page, as on paper", true, open, t);
     if resp.clicked() {
         open = !open;
     }
@@ -1488,10 +1494,10 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
             .order(egui::Order::Foreground)
             .fixed_pos(resp.rect.left_bottom())
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
+                egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 5.0);
                     let shelf = |ui: &mut Ui, title: &str, papers: &[RuleLines], acts: &mut Vec<Act>, picked: &mut bool| {
-                        ui.label(egui::RichText::new(title).strong());
+                        ui.label(egui::RichText::new(title).strong().color(t.text));
                         ui.horizontal(|ui| {
                             for r in papers {
                                 if paper_swatch(ui, *r, view.rules == *r, t).clicked() {
@@ -1505,10 +1511,11 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                     shelf(ui, "Rule lines", &RuleLines::RULED, acts, &mut picked);
                     shelf(ui, "Grid lines", &RuleLines::GRIDS, acts, &mut picked);
                     shelf(ui, "NoteCraft's own", &RuleLines::CRAFT, acts, &mut picked);
-                    ui.label(egui::RichText::new("Every fifth line stronger, to count by.").small().color(t.muted));
+                    ui.add_space(1.0);
+                    ui.label(egui::RichText::new("Every fifth line is slightly stronger for easier counting.").small().color(t.muted));
                     ui.separator();
                     // OneNote's Page Color, under the paper: a pale wash behind the words.
-                    ui.label(egui::RichText::new("Page colour").strong());
+                    ui.label(egui::RichText::new("Page colour").strong().color(t.text));
                     ui.horizontal(|ui| {
                         if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
                             acts.push(Act::PageColour(None));
@@ -1521,7 +1528,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                             }
                         }
                     });
-                    ui.label(egui::RichText::new("The paper and the colour are this page's own.").small().color(t.muted));
+                    ui.label(egui::RichText::new("The paper and colour apply to this page only.").small().color(t.muted));
                     ui.separator();
                     ui.add_enabled(false, egui::Label::new(egui::RichText::new("Rule line colour (not built)").color(t.muted)));
                 });

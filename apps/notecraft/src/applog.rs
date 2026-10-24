@@ -17,7 +17,7 @@ const MAX_BYTES: u64 = 1_000_000;
 static PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Sets the log file up, rotates it if it is large, and routes the `log` crate and panics to it.
-pub fn init(dir: PathBuf) {
+pub fn init(dir: PathBuf, debug: bool) {
     let file = dir.join("notecraft.log");
     let _ = std::fs::create_dir_all(&dir);
     if std::fs::metadata(&file).map(|m| m.len() > MAX_BYTES).unwrap_or(false) {
@@ -25,7 +25,7 @@ pub fn init(dir: PathBuf) {
     }
     let _ = PATH.set(file);
     if log::set_logger(&Logger).is_ok() {
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info });
     }
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

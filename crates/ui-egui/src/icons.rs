@@ -1,11 +1,12 @@
-//! The icon set, drawn in code with the painter. Original line drawings (see
-//! ATTRIBUTION.md): no image files and nothing copied from another application.
+//! Shared icon mapping. The ribbon uses locally vendored Fluent UI SVGs where a
+//! polished platform icon exists; the remaining app icons retain the native
+//! painter fallback.
 //!
 //! Notebooks, section groups and sections are drawn as solid shapes in their own colour,
 //! which is how OneNote shows a notebook cover and a section tab. Pages stay as outlines,
 //! so a page never competes with the coloured containers above it.
 
-use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2};
+use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Ui, pos2};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Icon {
@@ -264,11 +265,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line((15.0, 5.0), (15.0, 19.0)),
         ],
         Icon::Picture => vec![
+            fill(&[(3.5, 5.0), (20.5, 5.0), (20.5, 19.0), (3.5, 19.0)], shade(color, 0.78)),
             closed(&[(3.5, 5.0), (20.5, 5.0), (20.5, 19.0), (3.5, 19.0)]),
-            Shape::circle_stroke(g.p(8.5, 9.5), w * 1.6 / 24.0, stroke),
+            Shape::circle_filled(g.p(8.5, 9.5), w * 1.6 / 24.0, color),
+            fill(&[(5.0, 17.0), (10.0, 12.0), (13.0, 15.0), (16.0, 11.5), (19.5, 16.5)], shade(color, 0.35)),
             path(&[(5.0, 17.0), (10.0, 12.0), (13.0, 15.0), (16.0, 11.5), (19.5, 16.5)]),
         ],
-        Icon::Attach => vec![path(&[(16.5, 7.0), (9.0, 14.5), (9.0, 17.0), (11.5, 17.0), (19.0, 9.5), (19.0, 6.0), (15.5, 4.5), (7.0, 13.0)])],
+        Icon::Attach => vec![
+            fill(&[(5.0, 4.0), (14.5, 4.0), (19.0, 8.5), (19.0, 20.0), (5.0, 20.0)], shade(color, 0.78)),
+            closed(&[(5.0, 4.0), (14.5, 4.0), (19.0, 8.5), (19.0, 20.0), (5.0, 20.0)]),
+            path(&[(14.5, 4.0), (14.5, 8.5), (19.0, 8.5)]),
+            path(&[(16.5, 7.0), (9.0, 14.5), (9.0, 17.0), (11.5, 17.0), (19.0, 9.5), (19.0, 6.0), (15.5, 4.5), (7.0, 13.0)]),
+        ],
         Icon::Link => vec![
             path(&[(10.0, 14.0), (7.0, 17.0), (4.5, 14.5), (7.5, 11.5)]),
             path(&[(14.0, 10.0), (17.0, 7.0), (19.5, 9.5), (16.5, 12.5)]),
@@ -562,6 +570,38 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     for s in shapes {
         painter.add(s);
     }
+}
+
+/// Paint the vendored Fluent UI version of a ribbon icon without creating a
+/// widget or changing layout. Icons not yet migrated fall back to NoteCraft's
+/// native drawing, so the migration can happen incrementally.
+pub fn paint_ribbon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
+    let Some((name, bytes)) = fluent_asset(icon) else {
+        paint(ui.painter(), rect, icon, color);
+        return;
+    };
+    // Keep the extension in the URI: egui uses it to choose the SVG loader for
+    // byte-backed images. Without it the asset is reported as a missing image.
+    egui::Image::from_bytes(format!("bytes://notecraft-fluent/{name}.svg"), bytes).fit_to_exact_size(rect.size()).tint(color).paint_at(ui, rect);
+}
+
+fn fluent_asset(icon: Icon) -> Option<(&'static str, &'static [u8])> {
+    Some(match icon {
+        Icon::Attach => ("attach", include_bytes!("../assets/fluent/attach.svg")),
+        Icon::Calendar => ("calendar", include_bytes!("../assets/fluent/calendar.svg")),
+        Icon::Clock => ("clock", include_bytes!("../assets/fluent/clock.svg")),
+        Icon::Link => ("link", include_bytes!("../assets/fluent/link.svg")),
+        Icon::Picture => ("image", include_bytes!("../assets/fluent/image.svg")),
+        Icon::Table => ("table", include_bytes!("../assets/fluent/table.svg")),
+        Icon::Video => ("video", include_bytes!("../assets/fluent/video.svg")),
+        Icon::Mic => ("mic", include_bytes!("../assets/fluent/mic.svg")),
+        Icon::Page => ("document", include_bytes!("../assets/fluent/document.svg")),
+        Icon::Equation => ("mathformula", include_bytes!("../assets/fluent/mathformula.svg")),
+        Icon::Symbol => ("symbols", include_bytes!("../assets/fluent/symbols.svg")),
+        Icon::Ruler => ("ruler", include_bytes!("../assets/fluent/ruler.svg")),
+        Icon::InsertSpace => ("spacebar", include_bytes!("../assets/fluent/spacebar.svg")),
+        _ => return None,
+    })
 }
 
 /// The crescent needs the surface behind it, because it is drawn by covering a disc.
