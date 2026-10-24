@@ -4037,9 +4037,15 @@ impl NoteCraftApp {
             Dialog::PrivacyWelcome { level } => {
                 let mut accepted = false;
                 let mut denied = false;
+                let screen = ctx.viewport_rect();
+                egui::Area::new("privacy-welcome-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+                    ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                });
                 egui::Window::new("Welcome to NoteCraft")
                     .collapsible(false)
                     .resizable(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
