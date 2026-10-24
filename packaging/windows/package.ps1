@@ -28,7 +28,8 @@
 param(
   [switch] $SkipBuild,
   [switch] $ZipOnly,
-  [string] $BridgeProject = (Join-Path $PSScriptRoot '..\..\tools\officeimo\OfficeIMO.NoteCraft.Bridge\OfficeIMO.NoteCraft.Bridge.csproj')
+  [string] $BridgeProject = (Join-Path $PSScriptRoot '..\..\tools\officeimo\OfficeIMO.NoteCraft.Bridge\OfficeIMO.NoteCraft.Bridge.csproj'),
+  [string] $BridgeBinary = $env:NOTECRAFT_OFFICEIMO_BRIDGE
 )
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -116,7 +117,8 @@ Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe')
 $BridgeStage = Join-Path $TargetDir 'officeimo-package'
 Remove-Item -Recurse -Force $BridgeStage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $BridgeStage | Out-Null
-& (Join-Path $Root 'tools\officeimo\package.ps1') -BridgeProject $BridgeProject -Rid 'win-x64' -Version $Version -OutputRoot $BridgeStage
+$LASTEXITCODE = 0
+& (Join-Path $Root 'tools\officeimo\package.ps1') -BridgeProject $BridgeProject -BridgeBinary $BridgeBinary -Rid 'win-x64' -Version $Version -OutputRoot $BridgeStage
 if ($LASTEXITCODE -ne 0) { throw "OfficeIMO bridge packaging failed with exit code $LASTEXITCODE" }
 $BridgeExe = Join-Path $BridgeStage 'importers\officeimo\win-x64\officeimo-notecraft.exe'
 if (-not (Test-Path $BridgeExe)) { throw "OfficeIMO bridge was not produced: $BridgeExe" }
