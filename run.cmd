@@ -1,1 +1,2 @@
-cargo run --release -p notecraft -- --notebooks ./my-notes
+cargo run --release -p notecraft -- --notebooks ./my-notebooks
+

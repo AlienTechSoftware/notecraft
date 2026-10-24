@@ -122,6 +122,39 @@ fn attachment_icon_link(page: &Path, name: &str) -> String {
     if dir.join(format!("{name}.png")).is_file() { format!("assets/{name}.png") } else { format!("assets/{name}.svg") }
 }
 
+fn replace_attachment_icon(format: PageFormat, snippet: &str, name: &str, icon_link: &str) -> String {
+    match format {
+        PageFormat::Html => snippet
+            .replace(&format!("src=\"assets/{name}.png\""), &format!("src=\"{icon_link}\""))
+            .replace(&format!("src=\"assets/{name}.svg\""), &format!("src=\"{icon_link}\"")),
+        PageFormat::Cmgfm => {
+            let png = format!("](assets/{name}.png)");
+            let svg = format!("](assets/{name}.svg)");
+            snippet.replacen(&png, &format!("]({icon_link})"), 1).replacen(&svg, &format!("]({icon_link})"), 1)
+        }
+    }
+}
+
+#[cfg(test)]
+mod attachment_reference_tests {
+    use super::{PageFormat, replace_attachment_icon};
+
+    #[test]
+    fn html_repair_changes_only_the_image_source() {
+        let input = r#"<p><a href="assets/brief.docx"><img src="assets/brief.docx.svg" alt="" width="48"><br>brief.docx</a></p>"#;
+        let output = replace_attachment_icon(PageFormat::Html, input, "brief.docx", "assets/brief.docx.png");
+        assert!(output.contains(r#"href="assets/brief.docx""#));
+        assert!(output.contains(r#"src="assets/brief.docx.png""#));
+    }
+
+    #[test]
+    fn markdown_repair_changes_only_the_inner_image_link() {
+        let input = "[![brief.docx](assets/brief.docx.svg) brief.docx](assets/brief.docx)";
+        let output = replace_attachment_icon(PageFormat::Cmgfm, input, "brief.docx", "assets/brief.docx.png");
+        assert_eq!(output, "[![brief.docx](assets/brief.docx.png) brief.docx](assets/brief.docx)");
+    }
+}
+
 fn first_missing_attachment(blocks: &[notecraft_formats::markdown::Block], page: &Path) -> Option<String> {
     for block in blocks {
         let source = match block {
@@ -1150,11 +1183,7 @@ impl NoteCraftApp {
         };
         if references == 0 && !ed.body.contains(&old) {
             let icon_link = attachment_icon_link(page, name);
-            let replacement = snippets::attachment(ed.format, &link, name)
-                .replace(&format!("assets/{name}.png"), &icon_link)
-                .replace(&format!("assets/{name}.svg"), &icon_link)
-                .trim()
-                .to_string();
+            let replacement = replace_attachment_icon(ed.format, &snippets::attachment(ed.format, &link, name), name, &icon_link).trim().to_string();
             ed.body.push('\n');
             ed.body.push_str(&replacement);
             Self::mark_dirty(ed);
@@ -1162,11 +1191,7 @@ impl NoteCraftApp {
             return Ok(true);
         }
         let icon_link = attachment_icon_link(page, name);
-        let replacement = snippets::attachment(ed.format, &link, name)
-            .replace(&format!("assets/{name}.png"), &icon_link)
-            .replace(&format!("assets/{name}.svg"), &icon_link)
-            .trim()
-            .to_string();
+        let replacement = replace_attachment_icon(ed.format, &snippets::attachment(ed.format, &link, name), name, &icon_link).trim().to_string();
         let mut body = ed.body.replace(&old, &replacement);
         if references > 1 {
             let mut kept = false;

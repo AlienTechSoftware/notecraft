@@ -201,7 +201,11 @@ fn marked(spans: &[Span], level: usize) -> String {
 /// One span with nothing but its code, picture, maths or link written round it.
 fn leaf(s: &Span) -> String {
     if let Some(src) = &s.image {
-        return format!("![{}]({src})", s.text);
+        let image = format!("![{}]({src})", s.text);
+        return match &s.link {
+            Some(target) => format!("[{image}]({target})"),
+            None => image,
+        };
     }
     if s.math {
         return format!("${}$", s.text);
@@ -296,7 +300,11 @@ pub fn spans_to_html(spans: &[Span]) -> String {
     let mut out = String::new();
     for s in spans {
         if let Some(src) = &s.image {
-            out.push_str(&format!("<img src=\"{}\" alt=\"{}\">", escape(src), escape(&s.text)));
+            let image = format!("<img src=\"{}\" alt=\"{}\">", escape(src), escape(&s.text));
+            match &s.link {
+                Some(target) => out.push_str(&format!("<a href=\"{}\">{image}</a>", escape(target))),
+                None => out.push_str(&image),
+            }
             continue;
         }
         if s.math {
@@ -330,6 +338,16 @@ mod tests {
     use super::*;
     use crate::html;
     use crate::markdown::parse;
+
+    #[test]
+    fn linked_images_keep_the_outer_attachment_target() {
+        let spans = crate::markdown::parse_inline("[![brief.docx](assets/brief.docx.png) brief.docx](assets/brief.docx)");
+        assert_eq!(spans_to_markdown(&spans), "[![brief.docx](assets/brief.docx.png)](assets/brief.docx)[ brief.docx](assets/brief.docx)");
+        assert_eq!(
+            spans_to_html(&spans),
+            "<a href=\"assets/brief.docx\"><img src=\"assets/brief.docx.png\" alt=\"brief.docx\"></a><a href=\"assets/brief.docx\"> brief.docx</a>"
+        );
+    }
 
     /// A code block whose lines are numbered says so in its language, in both formats, and keeps its words.
     #[test]

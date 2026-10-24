@@ -123,7 +123,7 @@ You need [Rust](https://rustup.rs).
 
 ```sh
 cargo run --release -p notecraft                      # the app, on ~/Documents/NoteCraft
-cargo run --release -p notecraft -- --notebooks ./my-notes
+cargo run --release -p notecraft -- --notebooks ./my-notebooks
 ```
 
 Try it on sample notebooks without touching your own:

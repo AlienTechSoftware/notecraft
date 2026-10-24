@@ -777,6 +777,17 @@ mod tests {
     }
 
     #[test]
+    fn html_attachment_cards_reach_the_preview_as_linked_images() {
+        let blocks = blocks_for(
+            PageFormat::Html,
+            r#"<p><a href="assets/brief.docx"><img src="assets/brief.docx.png" alt="" width="48"><br>brief.docx</a></p>"#,
+        );
+        let Block::Paragraph(spans) = &blocks[0] else { panic!("attachment card was not a paragraph") };
+        let image = spans.iter().find(|span| span.image.as_deref() == Some("assets/brief.docx.png")).expect("attachment icon");
+        assert_eq!(image.link.as_deref(), Some("assets/brief.docx"));
+    }
+
+    #[test]
     fn rich_blocks_share_object_selection_kinds() {
         assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into() }), Some("image"));
         assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));

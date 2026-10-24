@@ -311,6 +311,11 @@ impl Writer {
     fn line_break(&mut self) {
         if self.in_cell {
             self.cell.push(' ');
+        } else if !self.href.is_empty() {
+            // An attachment card uses <br> between its icon and file name while
+            // keeping both inside one link. Markdown links cannot contain a
+            // newline, so keep that link target intact as a space.
+            self.push(" ");
         } else if !self.out.ends_with('\n') {
             self.out.push('\n');
         }
@@ -633,6 +638,12 @@ mod tests {
         assert!(md.contains("[site](https://x.test)"), "{md}");
         assert!(md.contains("![pic](assets/a.png)"), "{md}");
         assert!(md.contains("| A | B |\n|---|---|\n| 1 | 2 |"), "{md}");
+    }
+
+    #[test]
+    fn attachment_card_keeps_image_and_file_link_together() {
+        let md = to_markdown("<p><a href=\"assets/brief.docx\"><img src=\"assets/brief.docx.png\" alt=\"\" width=\"48\"><br>brief.docx</a></p>");
+        assert_eq!(md, "[![](assets/brief.docx.png) brief.docx](assets/brief.docx)\n");
     }
 
     #[test]
