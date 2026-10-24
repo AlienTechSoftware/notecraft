@@ -37,6 +37,9 @@ pub enum Act {
     RemoveRecent(std::path::PathBuf),
     /// Ask for confirmation before deleting a notebook from disk.
     DeleteRecent(std::path::PathBuf, String),
+    SetTelemetryLevel(String),
+    OpenTelemetryFolder(std::path::PathBuf),
+    ClearTelemetry(std::path::PathBuf),
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -54,7 +57,7 @@ pub const SIDE: [(&str, bool); 10] = [
     ("Share", false),
     ("Export", false),
     ("Account", false),
-    ("Options", false),
+    ("Options", true),
     ("About", true),
 ];
 
@@ -70,6 +73,9 @@ pub fn show(
     notebooks_folder: &str,
     page: &str,
     show_path: &dyn Fn(&std::path::Path) -> String,
+    telemetry_root: &std::path::Path,
+    telemetry_level: &str,
+    session_id: Option<&str>,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -83,6 +89,7 @@ pub fn show(
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
                     "About" => about_page(ui, t),
+                    "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, t, &mut acts),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
             });
@@ -382,6 +389,43 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
     });
 }
 
+fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Option<&str>, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "Options", t);
+    ui.label(
+        egui::RichText::new("Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.").color(t.text),
+    );
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new("Local diagnostics and usage").size(15.0).color(t.strong));
+    ui.label(egui::RichText::new("Choose what NoteCraft records locally. Nothing is uploaded automatically.").size(12.0).color(t.muted));
+    ui.horizontal(|ui| {
+        ui.label("Level:");
+        egui::ComboBox::from_id_salt("telemetry-level").selected_text(level).show_ui(ui, |ui| {
+            for choice in ["none", "usage", "warning", "error", "debug"] {
+                if ui.selectable_label(level == choice, choice).clicked() {
+                    acts.push(Act::SetTelemetryLevel(choice.into()));
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(id) = session_id {
+        ui.label(egui::RichText::new(format!("Current session: {id}")).monospace().size(11.0).color(t.muted));
+    }
+    ui.label(egui::RichText::new(format!("Folder: {}", root.display())).size(11.0).color(t.muted));
+    ui.horizontal(|ui| {
+        if ui.button("Open telemetry folder").clicked() {
+            acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
+        }
+        if ui.button("Clear telemetry").clicked() {
+            acts.push(Act::ClearTelemetry(root.to_path_buf()));
+        }
+    });
+    ui.add_space(12.0);
+    ui.label(
+        egui::RichText::new("Export and ZIP support will be enabled here once the local session format is finalized.").size(11.5).color(t.muted),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,7 +433,7 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "About"]);
+        assert_eq!(built, vec!["Info", "New", "Open", "Options", "About"]);
         assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
         assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
     }
@@ -400,7 +444,18 @@ mod tests {
         let ctx = egui::Context::default();
         let mut acts = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            acts = show(ui, &[], &[], "C:/notebooks", "About", &|p| p.to_string_lossy().into_owned(), &t);
+            acts = show(
+                ui,
+                &[],
+                &[],
+                "C:/notebooks",
+                "About",
+                &|p| p.to_string_lossy().into_owned(),
+                std::path::Path::new("C:/telemetry"),
+                "none",
+                None,
+                &t,
+            );
         });
         out.textures_delta.clear();
         assert_eq!(acts, Vec::new(), "the About page asked for something nobody clicked");
