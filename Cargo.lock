@@ -2310,6 +2310,7 @@ dependencies = [
  "notecraft-ui-egui",
  "raw-window-handle",
  "rfd",
+ "serde_json",
  "web-time",
  "winresource",
 ]
