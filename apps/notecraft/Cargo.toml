@@ -20,6 +20,7 @@ egui = { workspace = true }
 image = { workspace = true }
 rfd = { workspace = true }
 log = { workspace = true }
+serde_json = { workspace = true }
 web-time = { workspace = true }
 raw-window-handle = "0.6"
 
