@@ -49,6 +49,15 @@ on Windows), while session data belongs in its local telemetry subfolder.
 - No server-side state that doesn't exist locally
 - No forced vendor lock-in
 
+#### Corruption tolerance and user-approved repair
+
+Opening a damaged page must never silently replace or discard the user's source file. NoteCraft
+should make a best-effort read when safe, identify what was recovered and what was dropped, and
+ask the user before writing any repair. Before an approved repair, preserve the original in the
+page's recoverable version history or an explicit backup. If the user denies repair, open the
+page read-only or with the safe recovered view and record an error-level local diagnostic. A
+repair must be atomic and must leave the original recoverable if interrupted.
+
 **Test:** A notebook should be readable by opening the folder with `ls` and `cat`. Content should be understandable as plain text or XML/JSON.
 
 ---

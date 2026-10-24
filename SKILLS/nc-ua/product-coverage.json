@@ -65,6 +65,18 @@
       "verification_path": "",
       "limitation": "Nothing is sent automatically; export is user initiated.",
       "notes": "Keep logging levels, session IDs, retention, export, and clear behavior documented."
+    },
+    {
+      "id": "corruption-recovery",
+      "name": "Corruption tolerance and user-approved repair",
+      "product_status": "planned",
+      "discoverability": "unknown",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "work/corruption-recovery.md",
+      "limitation": "Parser diagnostics and the repair-permission flow are not implemented yet.",
+      "notes": "Never silently overwrite a damaged page; denial must be logged at error level."
     }
   ]
 }

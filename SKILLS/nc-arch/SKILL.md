@@ -3,7 +3,7 @@ name: nc-arch
 description: 'NoteCraft architectural principles and design patterns (WORK IN PROGRESS). Documents how crates relate, data flows, ownership, and cross-cutting concerns. Foundation for design work and code reviews. Being refined as implementation evolves. Reference when architecting new features or reviewing major changes.'
 license: MIT
 metadata:
-  version: "0.0.20261024"
+  version: "0.0.20261024.1"
   status: "WIP - evolving with implementation"
   related_skills: [nc-hl-design, nc-code-rust, nc-prod]
 ---
@@ -279,6 +279,32 @@ If async work is added later, must handle:
 
 ---
 
+## Architecture Style: MVC (Not MVVM)
+
+NoteCraft uses **Model-View-Controller** architecture, not MVVM. This choice is deliberate:
+
+### Why MVC
+- **Controllers own orchestration:** `Session` is the controller—it routes commands, manages MCP integration, handles test hooks, and owns autosave logic. Simple and explicit.
+- **Models are pure:** `Notebook`, `Page`, `Section`, `Block` are pure data types with no I/O or state management. Fully unit-testable.
+- **Views are stateless:** UI layer (egui, CLI) responds to controller commands. Window state and theme live in the view; notebook state lives in the model/controller.
+- **Rust-friendly:** Rust's ownership model and MVVM's two-way data binding don't mesh well. MVC sidesteps that complexity.
+
+### MVC Boundaries in NoteCraft
+```
+Model (pure types)
+  ↓
+Controller (Session: routing, commands, MCP)
+  ↓
+View (UI rendering: egui, CLI output)
+```
+
+### Anti-Patterns
+- **Do NOT:** Spread business logic across views. UI should never make Store or Engine decisions.
+- **Do NOT:** Put mutable state in the View that affects Model. Window geometry, theme, focus: yes. Notebook state, page edits: goes through Controller.
+- **Do NOT:** Use ViewModels to duplicate Model state. If you're tempted, you need a controller boundary instead.
+
+---
+
 ## Design Patterns Used
 
 ### 1. Command Pattern
@@ -339,6 +365,30 @@ Format ← Store  ✗ (would create cycle)
 ---
 
 ## Data Persistence
+
+### Anchored embedded objects
+
+Inline images and other embedded objects are document content, not UI-only overlays. The model
+must preserve an object anchor that identifies its owning text block and inline position. A
+floating object may also carry page-space position, size, and stacking order. Rendering and hit
+testing are derived from this model, so a reload produces the same selection and placement.
+
+The interaction contract is documented in `work/inline-images-and-anchors.md`. Changes to the
+object representation must preserve HTML and CMGFM semantic parity and include migration or a
+backward-compatible read path for existing pages.
+
+### Corruption recovery boundary
+
+Corruption recovery is an architectural concern only at the ownership-boundary level:
+
+- Model and format layers represent diagnostics and recovered content.
+- Store owns preservation and atomic file writes.
+- Engine coordinates the load and repair commands.
+- View presents the recovery state.
+- Controller applies the user's repair, no-repair, or cancel decision.
+
+The detailed product behavior and UI workflow belong in `work/corruption-recovery.md` and the
+appropriate UI/UX skills. Do not put dialog copy, button layout, or visual behavior in this skill.
 
 ### Notebook Structure
 

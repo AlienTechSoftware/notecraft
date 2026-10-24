@@ -119,6 +119,32 @@ cargo xtask demo            # rebuild docs/demo/DemoNotebook from docs/demo/scri
 git config core.hooksPath .githooks   # once per clone: turn the hooks on
 ```
 
+## Local skills
+
+The reusable NoteCraft skills are stored under [`SKILLS/`](SKILLS). Use the smallest set that
+covers the task. The skill files are the detailed references; this table is the inventory and
+purpose summary.
+
+| Skill | Purpose |
+|---|---|
+| `nc-arch` | High-level architecture: model, view, controller, crate boundaries, ownership, data flow, and system-level constraints. |
+| `nc-code-rust` | Rust coding standards, error handling, logging, testing, linting, and maintainable crate implementation. |
+| `nc-dom-ser` | HTML and CMGFM page model, serialization, deserialization, round-trip behavior, and cross-format parity. |
+| `nc-hl-design` | High-level feature design: scope, system boundaries, data flows, state machines, decisions, and acceptance criteria. |
+| `nc-prod` | Product principles and non-negotiable requirements, including local files, OneNote behavior, import, and format parity. |
+| `nc-reelase-signoff` | Release readiness checks for versioning, demo parity, tests, lint, packaging, installers, assets, and evidence. |
+| `nc-themes` | Theme tokens, contrast, borders, typography, state colors, modal surfaces, and visual regression checks. |
+| `nc-ua` | User assistance and demo stewardship: product coverage, multilingual demo content, generated outputs, scratch copies, and release consistency. |
+| `nc-uiux-bidi` | Bidirectional text, RTL controls, caret placement, selection, mixed-script behavior, and mirrored layout. |
+| `nc-uiux-controls` | Controls and interaction details: buttons, menus, hit targets, hover states, keyboard behavior, object selection, and dragging. |
+| `nc-uiux-dialogs` | Themed modal dialogs, confirmations, progress surfaces, privacy prompts, recovery prompts, and error states. |
+| `nc-uiux-features` | Complete user-facing features spanning ribbon, page content, storage, dialogs, persistence, accessibility, and regression tests. |
+| `nc-uiux-icons` | Licensed icon selection, local asset integration, semantic mapping, accessibility, and icon-state consistency. |
+
+When a change crosses page storage, rendering, or editor behavior, use `nc-dom-ser` together with
+the relevant architecture, product, and UI/UX skills. `nc-ua` owns the user-facing coverage map,
+but it does not replace the implementation or design skills.
+
 ## Runtime environments and local diagnostics
 
 NoteCraft has three supported build environments:

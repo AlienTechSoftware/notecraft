@@ -290,6 +290,16 @@ pub fn show(
                 object_sel
             );
         }
+        if let Some(response) = &image_hit
+            && response.dragged()
+        {
+            let d = response.drag_delta();
+            if let Some(c) = boxes.get_mut(i) {
+                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
+            }
+            out.boxes = true;
+            log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
+        }
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
