@@ -3,7 +3,7 @@ name: nc-hl-design
 description: 'NoteCraft high-level design guidance. Use before starting new features, major refactors, or architectural work. Enforces understanding-first, sketches system boundaries, identifies data flows, and documents design decisions. Reference product principles, architectural patterns, and cross-platform considerations. Output: clear scopes, data flow diagrams, state machines, and acceptance criteria.'
 license: MIT
 metadata:
-  version: "0.0.20261024.1"
+  version: "0.0.20261024.2"
   related_skills: [code-assistant, nc-arch, nc-prod]
 ---
 
@@ -145,156 +145,199 @@ Present **2-3 approaches** before implementation when:
 
 ### Step 4: Design Artifacts
 
-Before coding, deliver:
+Before coding, deliver artifacts for each MVC layer. Follow this order: **Model → Controller → View**.
 
-1. **Data model** (as Rust structs with comments):
-   ```rust
-   struct Notebook {
-     id: String,
-     name: String,
-     maybe_path: Option<PathBuf>,  // local folder
-     sections: Vec<Section>,
-     metadata: NotebookMetadata,
-   }
+#### 4a. Model (Pure Data)
 
-   struct Section {
-     id: String,
-     name: String,
-     pages: Vec<Page>,  // flat or hierarchical?
-   }
+Design your data types with zero I/O or side effects:
 
-   struct Page {
-     id: String,
-     title: String,
-     format: PageFormat,  // HTML or CommonMark
-     blocks: Vec<Block>,
-     maybe_parent_page_id: Option<String>,  // for sub-pages
-   }
+```rust
+// In crates/model/src/lib.rs
+struct Notebook {
+  id: String,
+  name: String,
+  maybe_path: Option<PathBuf>,  // local folder reference only
+  sections: Vec<Section>,
+  metadata: NotebookMetadata,
+}
+
+struct Section {
+  id: String,
+  name: String,
+  pages: Vec<Page>,
+}
+
+struct Page {
+  id: String,
+  title: String,
+  format: PageFormat,  // HTML or CommonMark
+  blocks: Vec<Block>,
+  maybe_parent_page_id: Option<String>,  // for sub-pages
+}
+```
+
+**Rules:**
+- No I/O (no file reads, no network, no timestamps)
+- No mutable global state
+- All logic is pure functions with clear inputs/outputs
+- Types are fully serializable (for persistence, MCP)
+
+#### 4b. Controller (Command & Orchestration)
+
+Define commands that the controller will route. Each command is a request→response pair:
+
+```rust
+// In crates/engine/src/commands/page.rs
+pub struct CreatePageRequest {
+  notebook_id: String,
+  title: String,
+  format: PageFormat,
+}
+
+pub struct CreatePageResponse {
+  page_id: String,
+  created_at: DateTime<Utc>,
+}
+
+// The command handler in Session
+impl Session {
+  pub fn page_create(&mut self, req: CreatePageRequest) 
+    -> Result<CreatePageResponse, EngineError> {
+    // 1. Validate input
+    if req.title.is_empty() {
+      return Err(EngineError::InvalidTitle);
+    }
+    
+    // 2. Call Store (I/O boundary)
+    let page = self.store.create_page(
+      &self.notebook_id,
+      &req.title,
+      req.format,
+    )?;
+    
+    // 3. Update Session state (change log for undo/redo)
+    self.changes.push(Change::PageCreated(page.id.clone()));
+    
+    // 4. Return response (View will render it)
+    Ok(CreatePageResponse {
+      page_id: page.id,
+      created_at: page.created_at,
+    })
+  }
+}
+```
+
+**Rules:**
+- One command = one user action (create page, edit text, save, etc.)
+- Commands own I/O boundaries (Store calls)
+- Commands track changes (for undo/redo, autosave)
+- Commands return Results; View handles errors
+
+#### 4c. View (Presentation Only)
+
+Wire the controller to UI. View is stateless about notebook data:
+
+```rust
+// In crates/ui-egui/src/commands.rs
+impl UIState {
+  fn on_create_page_clicked(&mut self, title: &str) {
+    let req = CreatePageRequest {
+      notebook_id: self.session.notebook_id.clone(),
+      title: title.to_string(),
+      format: PageFormat::Html,
+    };
+    
+    // Call controller
+    match self.session.page_create(req) {
+      Ok(resp) => {
+        // Update UI state: switch to new page, scroll to it
+        self.current_page_id = Some(resp.page_id);
+        self.show_status("Page created");
+      }
+      Err(e) => {
+        // Show error to user
+        self.show_error(&format!("Failed to create page: {}", e));
+      }
+    }
+  }
+}
+```
+
+**Rules:**
+- View calls controller; controller never calls View
+- View holds UI state only (window geometry, theme, scroll position)
+- View does NOT hold notebook state (that's in Model/Controller)
+- View responds to controller output
+
+#### 4d. State Machine (Session Lifecycle)
+
+Diagram the valid state transitions for your feature:
+
+```
+[Creating] --user-saves--> [Persisting] --OK--> [Saved]
+             --error-----------^                  |
+                                                  v
+[Loaded] <--user-opens------ [Saved] --user-edits--> [Editing]
+  |                                                      |
+  +--error-at-load--> [Error]                  autosave |
+                                                         v
+                                                    [Saving]
+```
+
+Each transition corresponds to a command in your Controller.
+
+#### 4e. Test Plan (Scenarios to Cover)
    ```
-
-2. **State machine** (as a diagram or text description):
-   ```
-   enum PageState {
-     Creating,
-     Persisting,
-     Loaded,
-     Editing,
-     Saving,
-     Saved,
-     Error(String),
-   }
-
-   Transitions:
-     Creating → Persisting (user saves)
-     Persisting → Saved | Error
-     Loaded → Editing (user types)
-     Editing → Saving (autosave timer)
-     Saving → Saved | Error
-   ```
-
-3. **API boundary** (what the feature exposes):
-   ```rust
-   // Commands (Engine API)
-   pub fn create_page(session: &Session, req: CreatePageRequest) 
-     -> Result<Output, EngineError>
-
-   // Request/Response types
-   pub struct CreatePageRequest {
-     notebook_id: String,
-     title: String,
-     format: PageFormat,
-   }
-
-   pub struct CreatePageResponse {
-     page_id: String,
-     created_at: DateTime<Utc>,
-   }
-   ```
-
-4. **Test plan** (what scenarios to cover):
-   ```
-   ✓ Create page with HTML format
+   ✓ Create page with HTML format (Model + Controller + View)
    ✓ Create page with CommonMark format
    ✓ Create sub-page (parent_page_id set)
-   ✓ Create page with empty title → error
-   ✓ Create page in non-existent notebook → error
-   ✓ Concurrent creates → each gets unique ID
-   ✓ Page persists after create (file on disk)
+   ✓ Create page with empty title → Controller rejects (Model never receives it)
+   ✓ Create page in non-existent notebook → Store error caught by Controller
+   ✓ Concurrent creates → each gets unique ID (Store guarantees)
+   ✓ Page persists after create (Store writes file, Controller tracks change)
+   ✓ View shows new page in sidebar (UI state updated after Controller response)
    ```
 
-5. **Error catalog** (all failure modes):
-   ```
-   PageError::InvalidTitle (title empty or too long)
-   PageError::NotebookNotFound (parent notebook doesn't exist)
-   PageError::PermissionDenied (no write access)
-   PageError::DiskFull (no space to write)
-   PageError::Corrupted (metadata missing/invalid)
-   ```
+#### 4f. Error Catalog (All Failure Modes, by Layer)
+
+**Model layer** (should never fail; invariants are enforced):
+- Field validation happens before Model construction
+
+**Controller layer** (catches and converts errors):
+```rust
+pub enum EngineError {
+  InvalidTitle,
+  NotebookNotFound,
+  StoreError(StoreError),  // File I/O errors
+}
+```
+
+**Store layer** (file system boundaries):
+```rust
+pub enum StoreError {
+  PermissionDenied(PathBuf),
+  DiskFull,
+  Corrupted(String),
+  NotFound(String),
+}
+```
+
+**View layer** (displays errors to user):
+- Controller returns Err; View shows message in status bar
+- User can retry or abandon
 
 ---
 
-## Architectural Principles (Applied in Design)
+## Before You Design: Read the Architecture
 
-### 1. Layered Architecture
-```
-┌─────────────────────────────────┐
-│ UI Layer (egui, CLI)            │
-├─────────────────────────────────┤
-│ Engine (Commands, State)        │
-├─────────────────────────────────┤
-│ Store (File I/O, Tree)          │
-├─────────────────────────────────┤
-│ Formats (HTML, MD, CSV parsing) │
-├─────────────────────────────────┤
-│ Model (Types: Notebook, Page)   │
-├─────────────────────────────────┤
-│ File System (OS abstractions)   │
-└─────────────────────────────────┘
-```
+Before starting Step 1, read [nc-arch](nc-arch). It documents:
+- **MVC pattern:** why NoteCraft uses MVC (not MVVM), controller ownership, model purity
+- **Design patterns:** Command, Builder, Visitor, Strategy
+- **Layered architecture:** UI → Engine → Store → Format → Model
+- **Crate boundaries:** what imports what, module invariants
+- **Data persistence:** folder structure, metadata format
 
-Each layer depends only on layers below it. Horizontal dependencies (formats ↔ store) must go through clear interfaces.
-
-### 2. Command Pattern
-Every action goes through `Session::run(command, params)`:
-- Window menu clicks → `session.run("page.create", ...)`
-- CLI commands → `session.run("page.create", ...)`
-- MCP/API calls → `session.run("page.create", ...)`
-
-Single code path = single behavior, easier to test and debug.
-
-### 2a. MVC Architecture (not MVVM)
-NoteCraft uses **Model-View-Controller**, not MVVM. Controllers are the orchestration boundary:
-- **Model:** Data types and pure logic (Notebook, Page, Section). Fully testable, no I/O.
-- **View:** Presentation layer (egui, CLI output). Stateless; responds to controller commands.
-- **Controller:** Command routing (Session), MCP handler, test hooks. Owns I/O and state transitions.
-
-Why MVC over MVVM: Controllers own the MCP integration, test mocks, and autosave orchestration cleanly. ViewModels would add state-management overhead that Rust's ownership rules make awkward. A clear controller boundary makes test fixtures and MCP hooks simpler.
-
-**Anti-pattern:** Spread business logic across views. Put it in models, route through controllers.
-
-### 3. Data Model as Source of Truth
-- Notebooks, Sections, Pages are types in `notecraft_model`
-- No "model X in the database, model Y in memory" duplication
-- Store layer is I/O only; model lives in memory during a session
-
-### 4. Local File Persistence
-- Everything is a folder tree on disk
-- No server, no cloud sync (user's sync tool handles that)
-- One `Notebook` = one folder
-- One `Page` = one `.html` or `index.md` file (+ optional assets folder)
-- `.notecraft/` metadata folder in each notebook for version, created_at, etc.
-
-### 5. Format Agility
-- Pages support HTML and CommonMark (CMGFM)
-- Format is per-page (set on creation, changeable later)
-- Demo notebooks must stay in parity: same structure, same content, different formats
-- Conversion tools may exist but are not required to round-trip perfectly
-
-### 6. OneNote Compatibility
-- Import path is smooth (not perfect conversion, but good)
-- Look and feel familiar to OneNote users
-- RTL text and script handling is best-in-class
-- Import covers 90%+ of real OneNote notebooks (tables, images, text, formatting)
+This skill assumes you know those principles. The design process below applies them.
 
 ---
 

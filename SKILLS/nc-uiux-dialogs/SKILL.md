@@ -23,6 +23,9 @@ Use this skill for any modal, confirmation, progress, privacy, warning, or error
 - Progress dialogs show current operation, progress, cancellation, and failure state without
   becoming transparent or gray.
 - Privacy dialogs state what is collected, where it is stored, and whether anything is sent.
+- Corruption-recovery dialogs distinguish reading recovered content from writing a repair. They
+  identify the page, summarize loss or changes, explain the backup, and provide explicit repair,
+  no-repair, and cancel actions.
 
 ## Verification
 

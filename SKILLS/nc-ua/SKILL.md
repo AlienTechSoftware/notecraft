@@ -33,6 +33,10 @@ features such as layered objects, object selection, movement, resizing, attachme
 themes, keyboard commands, RTL behavior, and local diagnostics must have an explicit demo or
 verification entry. Do not claim that a feature is covered merely because its code exists.
 
+Corrupted-page recovery must also be represented in the user-facing coverage map and demo
+verification. The demo or test fixture must show the repair prompt, the no-repair path, source
+preservation, and the resulting local error diagnostic.
+
 RedMesa and online builds are delivery targets, not separate product definitions. When their
 feature coverage differs from the local build, record the difference, the target revision, and
 the reason.
