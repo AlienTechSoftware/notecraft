@@ -547,10 +547,22 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
 }
 
 fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
-    let response = ui.add_enabled(enabled, egui::Button::new(label).min_size(vec2(190.0, 30.0)));
+    let (rect, response) = ui.allocate_exact_size(vec2(190.0, 32.0), Sense::click());
+    if response.hovered() && enabled {
+        ui.painter().rect_filled(rect, 4.0, t.row_hover);
+    }
     let color = if enabled { t.accent } else { t.muted };
-    let icon_rect = Rect::from_center_size(egui::pos2(response.rect.left() + 16.0, response.rect.center().y), vec2(18.0, 18.0));
-    icons::paint(&ui.painter_at(response.rect), icon_rect, icon, color);
+    let painter = ui.painter_at(rect);
+    let icon_rect = Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), vec2(18.0, 18.0));
+    icons::paint(&painter, icon_rect, icon, color);
+    painter.text(
+        egui::pos2(rect.left() + 38.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(13.0),
+        if enabled { t.text } else { t.muted },
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
     response
 }
 
