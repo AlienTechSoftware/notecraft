@@ -435,6 +435,7 @@ impl NoteCraftApp {
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(50).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
+        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none();
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -448,11 +449,7 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: if session.settings.get("privacy_welcome_seen").is_none() {
-                Some(Dialog::PrivacyWelcome { level: "debug".into() })
-            } else {
-                None
-            },
+            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: "debug".into() }) } else { None },
             import_job: None,
             status: "Ready".into(),
             status_is_error: false,
