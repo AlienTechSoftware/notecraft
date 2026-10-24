@@ -83,15 +83,6 @@ fn main() -> eframe::Result {
         let _ = Settings::default_location().set("telemetry_session_id", session.id());
         let _ = session.record(telemetry::Level::Usage, "app_start", &[("version", env!("CARGO_PKG_VERSION"))]);
     }
-    let settings = Settings::default_location();
-    if settings.get("privacy_welcome_seen").is_none() {
-        rfd::MessageDialog::new()
-            .set_title("Welcome to NoteCraft")
-            .set_description("Thank you for trying NoteCraft. Privacy is our top priority. Logs and telemetry are local only; NoteCraft never sends them automatically. Choose a collection level in File > Options. Logging is off by default in release builds.")
-            .set_level(rfd::MessageLevel::Info)
-            .show();
-        let _ = settings.set("privacy_welcome_seen", "true");
-    }
     applog::info(&format!(
         "start: NoteCraft {} exe={:?} args={args:?} settings={:?}",
         env!("CARGO_PKG_VERSION"),
