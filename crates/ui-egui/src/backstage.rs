@@ -423,13 +423,13 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
     }
     ui.label(egui::RichText::new(format!("Folder: {}", root.display())).strong().size(11.0).color(t.text));
     ui.horizontal(|ui| {
-        if open_action(ui, "Open telemetry folder", 190.0, 34.0, t, false).clicked() {
+        if open_action(ui, "Open telemetry folder", 190.0, 34.0, t, true).clicked() {
             acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
         }
         if open_action(ui, "Export current session ZIP", 220.0, 34.0, t, true).clicked() {
             acts.push(Act::ExportTelemetry(root.to_path_buf()));
         }
-        if open_action(ui, "Clear telemetry", 150.0, 34.0, t, false).clicked() {
+        if open_action(ui, "Clear telemetry", 150.0, 34.0, t, true).clicked() {
             acts.push(Act::ClearTelemetry(root.to_path_buf()));
         }
     });
