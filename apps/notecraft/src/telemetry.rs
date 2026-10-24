@@ -116,7 +116,7 @@ fn session_id() -> String {
     let seconds = (millis / 1000) as i64;
     let serial = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let stamp = date_stamp(seconds);
-    format!("{stamp}-{:08x}{:08x}", std::process::id(), serial ^ millis as u64)
+    format!("{stamp}-{:08x}{:08x}", std::process::id(), (serial ^ millis as u64) as u32)
 }
 
 fn date_stamp(secs: i64) -> String {
