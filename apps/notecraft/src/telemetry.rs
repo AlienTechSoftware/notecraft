@@ -113,8 +113,25 @@ pub fn telemetry_root(settings_dir: &Path) -> PathBuf {
 
 fn session_id() -> String {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let seconds = (millis / 1000) as i64;
     let serial = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    format!("{millis:014}-{:08x}-{:04x}", std::process::id(), serial & 0xffff)
+    let stamp = date_stamp(seconds);
+    format!("{stamp}-{:08x}{:08x}", std::process::id(), serial ^ millis as u64)
+}
+
+fn date_stamp(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}{month:02}{day:02}{:02}{:02}{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 fn build_profile() -> &'static str {
@@ -143,6 +160,14 @@ mod tests {
         assert!(Level::Debug.allows(Level::Error));
         assert!(!Level::Error.allows(Level::Debug));
         assert!(!Level::None.allows(Level::Usage));
+    }
+
+    #[test]
+    fn session_ids_start_with_a_readable_datetime() {
+        let id = session_id();
+        assert_eq!(id.len(), 31);
+        assert_eq!(&id[14..15], "-");
+        assert!(id[..14].chars().all(|c| c.is_ascii_digit()));
     }
 
     #[test]
