@@ -1936,7 +1936,13 @@ impl NoteCraftApp {
                     }
                 }
             }
-            Link::File(file) => self.reveal(&file),
+            Link::File(file) => match open_file(&file) {
+                Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
+                Err(e) => {
+                    self.status = format!("The file could not be opened: {e}");
+                    self.status_is_error = true;
+                }
+            },
             Link::Missing(p) => {
                 self.status = format!("Nothing at {}: the link points to a page or file that is not there", self.shown(&p));
                 self.status_is_error = true;
@@ -2134,7 +2140,21 @@ impl NoteCraftApp {
                 other => self.insert_block(other),
             },
             ribbon::Act::AddFile | ribbon::Act::AddPicture => {
-                self.say("Drop the file onto the page: a dialog then asks what to do with it");
+                let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+                    self.say("Open a page first");
+                    return;
+                };
+                let mut picker = rfd::FileDialog::new().set_title(if matches!(act, ribbon::Act::AddPicture) {
+                    "Choose a picture"
+                } else {
+                    "Choose a file to attach"
+                });
+                if matches!(act, ribbon::Act::AddPicture) {
+                    picker = picker.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+                }
+                if let Some(file) = picker.pick_file() {
+                    self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
+                }
             }
             ribbon::Act::ToggleSource => self.set_show_source(!self.show_source),
             ribbon::Act::ToggleFullPage => self.full_page = !self.full_page,
@@ -3003,7 +3023,9 @@ impl NoteCraftApp {
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
         let (copy, cut, paste, all) = ctx.input(|i| {
             let hit = |want: egui::Key| {
-                i.events.iter().any(|e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && modifiers.command))
+                i.events.iter().any(
+                    |e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl)),
+                )
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -3020,7 +3042,12 @@ impl NoteCraftApp {
         if cut && ours {
             self.clipboard("cut");
         }
-        if paste && (ours || nobody) {
+        // A screenshot has no text for egui's text widget to consume. Route it through
+        // NoteCraft even when the caret is inside an ordinary text editor; otherwise Ctrl+V
+        // appears to do nothing because egui handles the key before `paste_here` can inspect
+        // the system image clipboard.
+        let picture = paste && crate::clipboard::has_picture();
+        if paste && (picture || ours || nobody) {
             self.paste_here();
         }
         if all && ours {
@@ -4761,6 +4788,8 @@ impl NoteCraftApp {
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
+                // The image block selected independently of its containing text box, or null.
+                "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "origin": [e.origin.x, e.origin.y],
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
@@ -4921,6 +4950,18 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
     };
     // `explorer` returns a non-zero status even when it worked, so the status is not checked.
     std::process::Command::new(program).arg(dir).spawn().map(|_| ())
+}
+
+/// Opens a linked attachment with the operating system's associated application. Windows may
+/// show its own warning for files marked as downloaded; that prompt is intentionally preserved.
+fn open_file(file: &Path) -> std::io::Result<()> {
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd").args(["/C", "start", "", &file.to_string_lossy()]).spawn().map(|_| ())
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(file).spawn().map(|_| ())
+    } else {
+        std::process::Command::new("xdg-open").arg(file).spawn().map(|_| ())
+    }
 }
 
 /// Saves a screenshot to `path`, or returns it as base64 PNG in the reply.
