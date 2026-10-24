@@ -520,8 +520,12 @@ fn big(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Res
 }
 
 /// The same, with the small chevron Office puts on a button that opens something.
-fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens, acts: &mut Vec<Act>) -> egui::Response {
-    let response = big_inner(ui, icon, label, tip, true, false, t);
+fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    big_inner(ui, icon, label, tip, true, false, t)
+}
+
+fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let response = big_inner(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", true, false, t);
     egui::Popup::menu(&response).show(|ui| {
         ui.set_min_width(190.0);
         if ui.button("Picture from a file").clicked() {
@@ -531,7 +535,6 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens, acts: &
         ui.add_enabled(false, egui::Button::new("From Camera"));
         ui.add_enabled(false, egui::Button::new("From Online"));
     });
-    response
 }
 
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
@@ -1243,7 +1246,7 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     });
     group(ui, "Images", t, |ui| {
         soon(ui, Icon::Clip, "Screen\nClipping", t);
-        let _ = big_menu(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", t, acts);
+        pictures_menu(ui, t, acts);
     });
     group(ui, "Media", t, |ui| {
         soon(ui, Icon::Video, "Online\nVideo", t);
