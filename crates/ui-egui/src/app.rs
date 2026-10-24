@@ -277,6 +277,9 @@ enum Dialog {
         title: String,
     },
     Symbols,
+    PrivacyWelcome {
+        level: String,
+    },
 }
 
 struct ImportJob {
@@ -445,7 +448,11 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: None,
+            dialog: if session.settings.get("privacy_welcome_seen").is_none() {
+                Some(Dialog::PrivacyWelcome { level: "debug".into() })
+            } else {
+                None
+            },
             import_job: None,
             status: "Ready".into(),
             status_is_error: false,
@@ -4030,6 +4037,49 @@ impl NoteCraftApp {
         let mut keep = true;
         let mut next = dialog;
         match &mut next {
+            Dialog::PrivacyWelcome { level } => {
+                let mut accepted = false;
+                let mut denied = false;
+                egui::Window::new("Welcome to NoteCraft")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Welcome to NoteCraft");
+                        ui.set_min_width(520.0);
+                        ui.label("Thank you for trying NoteCraft!");
+                        ui.add_space(6.0);
+                        ui.label(
+                            "Privacy is our top priority. All logs and telemetry stay on this device. NoteCraft never sends them automatically.",
+                        );
+                        ui.add_space(6.0);
+                        ui.label("Choose a local collection level. Logging is off by default in release builds.");
+                        egui::ComboBox::from_id_salt("privacy-welcome-level").selected_text(level.as_str()).show_ui(ui, |ui| {
+                            for choice in ["none", "usage", "warning", "error", "debug"] {
+                                ui.selectable_value(level, choice.into(), choice);
+                            }
+                        });
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Accept", true).clicked() {
+                                accepted = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Deny", false).clicked() {
+                                denied = true;
+                            }
+                        });
+                    });
+                if accepted {
+                    let _ = self.session.settings.set("telemetry_level", level);
+                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
+                    keep = false;
+                } else if denied {
+                    let _ = self.session.settings.set("telemetry_level", "none");
+                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
+                    keep = false;
+                }
+            }
             Dialog::FileOptions { dir, files } => {
                 let (dir, file) = (dir.clone(), files.first().cloned().unwrap_or_default());
                 let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
