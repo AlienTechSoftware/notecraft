@@ -79,6 +79,54 @@ fn path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
+    let Some(name) = src.strip_prefix("assets/") else { return None };
+    if let Some(icon_name) = name.strip_prefix(".notecraft-icons/") {
+        let original = icon_name.strip_suffix(".svg")?;
+        let icon = page.join("assets").join(".notecraft-icons").join(icon_name);
+        return (!icon.is_file()).then(|| original.to_string());
+    }
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
+        return None;
+    }
+    if notecraft_store::assets::media_kind(src) != notecraft_store::assets::MediaKind::Other {
+        return None;
+    }
+    (!page.join("assets").join(".notecraft-icons").join(format!("{name}.svg")).is_file()).then(|| name.to_string())
+}
+
+fn first_missing_attachment(blocks: &[notecraft_formats::markdown::Block], page: &Path) -> Option<String> {
+    for block in blocks {
+        let source = match block {
+            notecraft_formats::markdown::Block::Image { src, .. } => Some(src),
+            notecraft_formats::markdown::Block::Paragraph(spans)
+            | notecraft_formats::markdown::Block::Item { spans, .. }
+            | notecraft_formats::markdown::Block::Heading { spans, .. }
+            | notecraft_formats::markdown::Block::Quote(spans) => spans.iter().find_map(|s| s.image.as_ref().or(s.link.as_ref())),
+            _ => None,
+        };
+        if let Some(src) = source.and_then(|src| missing_attachment_icon(page, src)) {
+            return Some(src);
+        }
+    }
+    None
+}
+
+fn first_missing_attachment_in_source(source: &str, page: &Path) -> Option<String> {
+    let mut rest = source;
+    while let Some(at) = rest.find("assets/") {
+        rest = &rest[at + "assets/".len()..];
+        let end = rest.find(|c: char| matches!(c, '"' | '\'' | ')' | ']' | '<' | '>' | ' ' | '\n' | '\r')).unwrap_or(rest.len());
+        let name = &rest[..end];
+        let candidate = format!("assets/{name}");
+        if let Some(name) = (!name.is_empty()).then(|| missing_attachment_icon(page, &candidate)).flatten() {
+            return Some(name);
+        }
+        rest = &rest[end..];
+    }
+    None
+}
+
 fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
@@ -983,6 +1031,25 @@ impl NoteCraftApp {
             Ok(_) => {}
             Err(e) => self.fail(&e),
         }
+    }
+
+    fn repair_attachment_reference(&mut self, page: &Path, name: &str) -> Result<bool, String> {
+        let Some(ed) = self.editor.as_mut() else { return Ok(false) };
+        if ed.dir != page {
+            return Err("the page changed while the recovery dialog was open".into());
+        }
+        let link = format!("assets/{name}");
+        let old = match ed.format {
+            PageFormat::Html => format!("<p><a href=\"{link}\">{name}</a></p>"),
+            PageFormat::Cmgfm => format!("[{name}]({link})"),
+        };
+        if !ed.body.contains(&old) {
+            return Ok(false);
+        }
+        let replacement = snippets::attachment(ed.format, &link, name).trim().to_string();
+        ed.body = ed.body.replace(&old, &replacement);
+        Self::mark_dirty(ed);
+        Ok(true)
     }
 
     /// The page text changed: remember to save it, and read the blocks from it again.
@@ -3638,6 +3705,17 @@ impl NoteCraftApp {
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
+        if !self.icon_recovery_suppressed && self.dialog.is_none() {
+            if let Some(ed) = self.editor.as_ref()
+                && let Some(name) = first_missing_attachment(&ed.blocks, &ed.dir).or_else(|| first_missing_attachment_in_source(&ed.body, &ed.dir))
+            {
+                let key = format!("{}::{name}", ed.dir.display());
+                if self.icon_recovery_reported.insert(key) {
+                    log::warn!("attachment icon is missing: page={:?} attachment={name:?}", ed.dir);
+                    self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
+                }
+            }
+        }
         let editor_rect = ui.max_rect();
         let wheel_zoom = ui.input(|i| i.pointer.hover_pos().filter(|p| editor_rect.contains(*p)).map_or(1.0, |_| i.zoom_delta()));
         if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
@@ -3682,6 +3760,7 @@ impl NoteCraftApp {
         let mut delete_file: Option<String> = None;
         // A file other than the page written in the code view, waiting to go to disk.
         let mut wrote_file: Option<(String, String)> = None;
+        let mut file_action: Option<crate::codeview::FileAction> = None;
         let mut code = std::mem::take(&mut self.code);
         let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
@@ -3921,6 +4000,7 @@ impl NoteCraftApp {
                 let entries = crate::codeview::files(&ed.dir, ed.format.page_file(), &named);
                 let out = crate::codeview::show(ui, &mut code, &entries, &ed.dir, &tokens, height);
                 wrote_file = out.wrote;
+                file_action = out.file_action;
             } else {
                 page(
                     ui,
@@ -3977,6 +4057,28 @@ impl NoteCraftApp {
             let page = self.editor.as_ref().map(|e| e.dir.clone());
             if let Some(page) = page {
                 self.dialog = Some(Dialog::DeleteFile { page, name });
+            }
+        }
+        if let Some(action) = file_action {
+            match action {
+                crate::codeview::FileAction::CopyPath(path) => {
+                    ui.ctx().copy_text(path);
+                    self.say("Full path copied");
+                }
+                crate::codeview::FileAction::OpenFolder(path) => match open_folder(&path) {
+                    Ok(()) => self.say("Opened the containing folder"),
+                    Err(e) => self.complain(&format!("Could not open the containing folder: {e}")),
+                },
+                crate::codeview::FileAction::OpenShell(path) => match open_file_for_viewer(&path) {
+                    Ok(()) => self.say("Opened using the associated application"),
+                    Err(e) => self.complain(&format!("Could not open the file: {e}")),
+                },
+                crate::codeview::FileAction::Delete(name) => {
+                    let page = self.editor.as_ref().map(|e| e.dir.clone());
+                    if let Some(page) = page {
+                        self.dialog = Some(Dialog::DeleteFile { page, name });
+                    }
+                }
             }
         }
         if toggle_source {
@@ -4142,6 +4244,68 @@ impl NoteCraftApp {
                     let _ = self.session.settings.set("telemetry_level", "none");
                     let _ = self.session.settings.set("privacy_welcome_seen", "true");
                     keep = false;
+                }
+            }
+            Dialog::MissingAttachmentIcon { page, name } => {
+                let mut repair = false;
+                let mut leave = false;
+                let mut suppress = self.icon_recovery_suppressed;
+                egui::Area::new("missing-attachment-icon-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
+                    ctx,
+                    |ui| {
+                        let response =
+                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
+                egui::Window::new("Attachment recovery")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Attachment icon missing");
+                        ui.set_min_width(520.0);
+                        ui.label(egui::RichText::new(format!("NoteCraft found an attachment without its generated icon:\n{name}")).strong());
+                        ui.add_space(6.0);
+                        ui.label("The original file is still safe. NoteCraft can regenerate the icon beside it.");
+                        ui.add_space(8.0);
+                        ui.checkbox(&mut suppress, "Do not warn about similar missing icons again this session");
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Repair icon", true).clicked() {
+                                repair = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Leave it", false).clicked() {
+                                leave = true;
+                            }
+                        });
+                    });
+                if repair {
+                    self.icon_recovery_suppressed = suppress;
+                    match notecraft_store::assets::ensure_icon(page, name).and_then(|()| {
+                        self.repair_attachment_reference(page, name)
+                            .map(|changed| if changed { () } else { () })
+                            .map_err(|e| notecraft_store::StoreError::invalid(e))
+                    }) {
+                        Ok(()) => {
+                            log::info!("repaired missing attachment icon and reference: page={:?} attachment={name:?}", page);
+                            self.say(format!("Repaired the attachment icon for {name}"));
+                        }
+                        Err(e) => {
+                            log::error!("could not repair missing attachment icon: page={:?} attachment={name:?} error={e}", page);
+                            self.complain(&format!("Could not repair the icon for {name}: {e}"));
+                        }
+                    }
+                    keep = false;
+                } else if leave {
+                    self.icon_recovery_suppressed = suppress;
+                    log::error!("user declined missing attachment icon repair: page={:?} attachment={name:?}", page);
+                    keep = false;
+                } else {
+                    self.icon_recovery_suppressed = suppress;
                 }
             }
             Dialog::FileOptions { dir, files } => {
