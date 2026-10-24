@@ -13,6 +13,9 @@ out/
 /crates/*/tests/**/*.diff.png
 /crates/*/tests/**/*.new.png
 
+# Development: local settings, logs, and telemetry data
+/local/
+
 # Working notes of the private repository: they do not belong in the open one.
 JOURNAL.md
 MEMORY.md
