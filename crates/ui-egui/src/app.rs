@@ -3946,6 +3946,7 @@ impl NoteCraftApp {
         let mut boxes_moved = false;
         let mut cols_moved = false;
         // A file the writer asked to delete from the page's folder, confirmed first.
+        let mut delete_file: Option<String> = None;
         // A file other than the page written in the code view, waiting to go to disk.
         let mut wrote_file: Option<(String, String)> = None;
         let mut file_action: Option<crate::codeview::FileAction> = None;
@@ -4028,7 +4029,8 @@ impl NoteCraftApp {
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
                             follow: &mut Option<String>,
-                            rename: &mut Option<String>| {
+                            rename: &mut Option<String>,
+                            delete_file: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
@@ -4137,6 +4139,27 @@ impl NoteCraftApp {
                             if moved.changed.link.is_some() {
                                 *follow = moved.changed.link;
                             }
+                            if !ed.attachments.is_empty() {
+                                ui.add_space(10.0);
+                                ui.separator();
+                                ui.label(egui::RichText::new("Files in this page's folder").small().color(tokens.muted));
+                                for (name, size) in &ed.attachments {
+                                    // A file in the page's folder can be taken out again. The
+                                    // button is on the row rather than under the right
+                                    // button, because the page's own menu answers a right
+                                    // click anywhere on the sheet, this list included.
+                                    ui.horizontal(|ui| {
+                                        ui.label(egui::RichText::new(format!("assets/{name}  ({} KB)", size.div_ceil(1024))).small().monospace());
+                                        if ui
+                                            .small_button("Delete file")
+                                            .on_hover_text(format!("Delete assets/{name} from this page's folder"))
+                                            .clicked()
+                                        {
+                                            *delete_file = Some(name.clone());
+                                        }
+                                    });
+                                }
+                            }
                         } else if wide {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
@@ -4171,7 +4194,22 @@ impl NoteCraftApp {
                 wrote_file = out.wrote;
                 file_action = out.file_action;
             } else {
-                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow, &mut rename);
+                page(
+                    ui,
+                    ed,
+                    true,
+                    &mut changed,
+                    &mut from_blocks,
+                    &mut toggle_source,
+                    &mut boxes_moved,
+                    &mut cols_moved,
+                    &mut follow,
+                    &mut rename,
+                    &mut delete_file,
+                );
+            }
+            if let Some(name) = delete_file {
+                self.dialog = Some(Dialog::DeleteFile { page: ed.dir.clone(), name });
             }
             if changed {
                 Self::mark_dirty(ed);
