@@ -203,10 +203,38 @@ Edit `SKILLS/nc-devx/scripts/check-pii.sh` to add project-specific patterns:
 
 ```bash
 PII_PATTERNS=(
-    "<owner-name>"             # Owner name
-    "<owner@domain\.com>"      # Owner email
-    "<custom-pattern>"         # Add your patterns here
+    "person@domain"            # Actual email to block (uncomment and update)
+    "sensitive-word"           # Add your patterns here
 )
+```
+
+### Cleaning PII from Git History
+
+If PII was already committed (e.g., in commit author fields), the scanner will catch it in *files* but not in git metadata. To clean git history:
+
+**Option 1: Rewrite history (careful - affects all contributors)**
+```bash
+# For local-only branches (not yet pushed):
+git rebase -i HEAD~N  # Go back N commits, manually edit or squash
+
+# For published branches, use git filter-repo:
+# Install: pip install git-filter-repo
+git filter-repo --replace-text patterns.txt  # See git-filter-repo docs
+```
+
+**Option 2: Accept and prevent future**
+- Leave historical commits as-is (no public harm once committed)
+- Prevent new commits with the scanner
+- Update `.gitconfig` to use a safe author email
+
+**Recommended:**
+```bash
+# Set per-project safe author
+git config user.email "dev@company.com"
+git config user.name "Developer"
+
+# Verify
+git config user.email
 ```
 
 ---
