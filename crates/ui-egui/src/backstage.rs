@@ -89,7 +89,7 @@ pub fn show(
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
-                    "About" => about_page(ui, t),
+                    "About" => about_page(ui, telemetry_root, session_id, t),
                     "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, t, &mut acts),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
@@ -342,7 +342,7 @@ fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, pr
 }
 
 /// About: what this is, which version, and where the code lives.
-fn about_page(ui: &mut Ui, t: &Tokens) {
+fn about_page(ui: &mut Ui, telemetry_root: &std::path::Path, session_id: Option<&str>, t: &Tokens) {
     heading(ui, "About NoteCraft", t);
     ui.horizontal_top(|ui| {
         ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(64.0, 64.0)));
@@ -388,6 +388,13 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
         ui.hyperlink_to("MIT license", "https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE");
         ui.label(egui::RichText::new("— many thanks to its authors and contributors.").size(11.5).color(t.muted));
     });
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("Local diagnostics").strong().size(14.0).color(t.strong));
+    ui.label(egui::RichText::new("Logs and telemetry stay on this device. NoteCraft does not send them automatically.").size(11.5).color(t.muted));
+    if let Some(id) = session_id {
+        ui.label(egui::RichText::new(format!("Session ID: {id}")).strong().monospace().size(11.5).color(t.text));
+    }
+    ui.label(egui::RichText::new(format!("Logging folder: {}", telemetry_root.display())).strong().size(11.5).color(t.text));
 }
 
 fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Option<&str>, t: &Tokens, acts: &mut Vec<Act>) {
@@ -416,13 +423,13 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
     }
     ui.label(egui::RichText::new(format!("Folder: {}", root.display())).strong().size(11.0).color(t.text));
     ui.horizontal(|ui| {
-        if ui.button("Open telemetry folder").clicked() {
+        if open_action(ui, "Open telemetry folder", 190.0, 34.0, t, false).clicked() {
             acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
         }
-        if ui.button("Export current session ZIP").clicked() {
+        if open_action(ui, "Export current session ZIP", 220.0, 34.0, t, true).clicked() {
             acts.push(Act::ExportTelemetry(root.to_path_buf()));
         }
-        if ui.button("Clear telemetry").clicked() {
+        if open_action(ui, "Clear telemetry", 150.0, 34.0, t, false).clicked() {
             acts.push(Act::ClearTelemetry(root.to_path_buf()));
         }
     });
