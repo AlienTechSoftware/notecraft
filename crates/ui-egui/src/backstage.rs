@@ -37,6 +37,10 @@ pub enum Act {
     RemoveRecent(std::path::PathBuf),
     /// Ask for confirmation before deleting a notebook from disk.
     DeleteRecent(std::path::PathBuf, String),
+    SetTelemetryLevel(String),
+    OpenTelemetryFolder(std::path::PathBuf),
+    ClearTelemetry(std::path::PathBuf),
+    ExportTelemetry(std::path::PathBuf),
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -54,7 +58,7 @@ pub const SIDE: [(&str, bool); 10] = [
     ("Share", false),
     ("Export", false),
     ("Account", false),
-    ("Options", false),
+    ("Options", true),
     ("About", true),
 ];
 
@@ -70,6 +74,9 @@ pub fn show(
     notebooks_folder: &str,
     page: &str,
     show_path: &dyn Fn(&std::path::Path) -> String,
+    telemetry_root: &std::path::Path,
+    telemetry_level: &str,
+    session_id: Option<&str>,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -82,7 +89,8 @@ pub fn show(
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
-                    "About" => about_page(ui, t),
+                    "About" => about_page(ui, telemetry_root, session_id, t),
+                    "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, t, &mut acts),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
             });
@@ -325,16 +333,26 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
 
 fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, primary: bool) -> egui::Response {
     let (fill, stroke, text) = if primary { (t.accent, t.accent, t.band_text) } else { (t.panel, t.faint, t.text) };
-    ui.add(
-        egui::Button::new(egui::RichText::new(label).size(if primary { 13.5 } else { 14.0 }).color(text))
-            .min_size(vec2(width, height))
-            .fill(fill)
-            .stroke(egui::Stroke::new(if primary { 1.0 } else { 0.8 }, stroke)),
-    )
+    let response = ui
+        .add(
+            egui::Button::new(egui::RichText::new(label).size(if primary { 13.5 } else { 14.0 }).color(text))
+                .min_size(vec2(width, height))
+                .fill(fill)
+                .stroke(egui::Stroke::new(if primary { 1.0 } else { 0.8 }, stroke)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(label);
+    if response.hovered() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(2.0, t.band_text), egui::StrokeKind::Inside);
+    }
+    if response.is_pointer_button_down_on() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(3.0, t.strong), egui::StrokeKind::Inside);
+    }
+    response
 }
 
 /// About: what this is, which version, and where the code lives.
-fn about_page(ui: &mut Ui, t: &Tokens) {
+fn about_page(ui: &mut Ui, telemetry_root: &std::path::Path, session_id: Option<&str>, t: &Tokens) {
     heading(ui, "About NoteCraft", t);
     ui.horizontal_top(|ui| {
         ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(64.0, 64.0)));
@@ -380,6 +398,53 @@ fn about_page(ui: &mut Ui, t: &Tokens) {
         ui.hyperlink_to("MIT license", "https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE");
         ui.label(egui::RichText::new("— many thanks to its authors and contributors.").size(11.5).color(t.muted));
     });
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new("Local diagnostics").strong().size(14.0).color(t.strong));
+    ui.label(egui::RichText::new("Logs and telemetry stay on this device. NoteCraft does not send them automatically.").size(11.5).color(t.muted));
+    if let Some(id) = session_id {
+        ui.label(egui::RichText::new(format!("Session ID: {id}")).strong().monospace().size(11.5).color(t.text));
+    }
+    ui.label(egui::RichText::new(format!("Logging folder: {}", telemetry_root.display())).strong().size(11.5).color(t.text));
+}
+
+fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Option<&str>, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, "Options", t);
+    ui.label(
+        egui::RichText::new("Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.")
+            .strong()
+            .color(t.strong),
+    );
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new("Local diagnostics and usage").strong().size(15.0).color(t.strong));
+    ui.label(egui::RichText::new("Choose what NoteCraft records locally. Nothing is uploaded automatically.").size(12.0).color(t.muted));
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Level:").strong());
+        egui::ComboBox::from_id_salt("telemetry-level").selected_text(level).show_ui(ui, |ui| {
+            for choice in ["none", "usage", "warning", "error", "debug"] {
+                if ui.selectable_label(level == choice, choice).clicked() {
+                    acts.push(Act::SetTelemetryLevel(choice.into()));
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(id) = session_id {
+        ui.label(egui::RichText::new(format!("Current session: {id}")).strong().monospace().size(11.0).color(t.text));
+    }
+    ui.label(egui::RichText::new(format!("Folder: {}", root.display())).strong().size(11.0).color(t.text));
+    ui.horizontal(|ui| {
+        if open_action(ui, "Open telemetry folder", 190.0, 34.0, t, true).clicked() {
+            acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
+        }
+        if open_action(ui, "Export current session ZIP", 220.0, 34.0, t, true).clicked() {
+            acts.push(Act::ExportTelemetry(root.to_path_buf()));
+        }
+        if open_action(ui, "Clear telemetry", 150.0, 34.0, t, true).clicked() {
+            acts.push(Act::ClearTelemetry(root.to_path_buf()));
+        }
+    });
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new("Export creates a user-selected ZIP, then removes the exported session folder.").size(11.5).color(t.muted));
 }
 
 #[cfg(test)]
@@ -389,7 +454,7 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "About"]);
+        assert_eq!(built, vec!["Info", "New", "Open", "Options", "About"]);
         assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
         assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
     }
@@ -400,7 +465,18 @@ mod tests {
         let ctx = egui::Context::default();
         let mut acts = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            acts = show(ui, &[], &[], "C:/notebooks", "About", &|p| p.to_string_lossy().into_owned(), &t);
+            acts = show(
+                ui,
+                &[],
+                &[],
+                "C:/notebooks",
+                "About",
+                &|p| p.to_string_lossy().into_owned(),
+                std::path::Path::new("C:/telemetry"),
+                "none",
+                None,
+                &t,
+            );
         });
         out.textures_delta.clear();
         assert_eq!(acts, Vec::new(), "the About page asked for something nobody clicked");

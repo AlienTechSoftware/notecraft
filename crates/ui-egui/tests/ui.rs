@@ -31,7 +31,9 @@ fn params(pairs: &[(&str, &str)]) -> Params {
 }
 
 fn session(t: &TempDir) -> Session {
-    Session::new(&t.path().join("notebooks"), Settings::at(t.path().join("settings.toml"))).expect("session")
+    let settings = Settings::at(t.path().join("settings.toml"));
+    settings.set("privacy_welcome_seen", "true").expect("test settings");
+    Session::new(&t.path().join("notebooks"), settings).expect("session")
 }
 
 fn sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {

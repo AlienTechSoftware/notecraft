@@ -37,6 +37,15 @@ fn selected_id() -> Id {
     Id::new("container-selected")
 }
 
+fn selected_image_id() -> Id {
+    Id::new("image-selected")
+}
+
+pub fn selected_image(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
+    let key = page.to_string_lossy();
+    ctx.data(|d| d.get_temp::<(usize, String)>(selected_image_id())).filter(|(_, on)| *on == key).map(|(i, _)| i)
+}
+
 /// Where the selected container's menu is open, if it is.
 fn menu_id() -> Id {
     Id::new("container-menu")
@@ -138,6 +147,7 @@ pub fn show(
     // was changed under it) cannot stay selected.
     let page_key = page_dir.to_string_lossy().into_owned();
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
+    let mut image_sel = selected_image(ui.ctx(), page_dir);
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
@@ -148,6 +158,8 @@ pub fn show(
     let mut opened_now = false;
     let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
     let image_clicked = ui.data_mut(|d| d.remove_temp::<usize>(crate::preview::image_clicked_id()));
+    // Selection must never rewrite the page arrangement. Image hit-testing is visual state;
+    // the persisted container geometry changes only after an actual drag or resize.
     // The open paper: the whole page area, made first so that every box and every block, which
     // are made after it, sit on top of it and take their own clicks. A click that reaches it
     // landed on no box at all.
@@ -170,8 +182,10 @@ pub fn show(
     for i in 0..boxes.len() {
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
-        if image_clicked.is_some_and(|block| range.contains(&block)) {
-            sel = Some(i);
+        let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
+        if let Some(block) = image_clicked.filter(|block| range.contains(block)) {
+            image_sel = Some(block);
+            sel = None;
             *caret = None;
             out.changed.caret = true;
         }
@@ -224,7 +238,9 @@ pub fn show(
         // every frame, whether or not they are drawn: a widget that comes and goes with the
         // pointer loses the drag the moment the pointer leaves it, which is what made
         // moving a box feel like it slipped out of the hand.
-        let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
+        // A standalone picture behaves like an object rather than a text container: the
+        // whole frame is its move target, so the user does not have to find a tiny title bar.
+        let bar = if image_object { frame } else { Rect::from_min_size(at, vec2(frame.width(), handle)) };
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
@@ -257,6 +273,34 @@ pub fn show(
             ui.data_mut(|d| d.insert_temp(claimed_id(), pass));
         }
         let is_sel = sel == Some(i);
+        if let Some(block) = image_sel.filter(|block| range.contains(block)) {
+            let image_rect = Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom));
+            let image_response =
+                ui.interact(image_rect, ui.id().with(("image-object", block)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
+            if image_response.clicked() {
+                image_sel = Some(block);
+                sel = None;
+            }
+            if image_response.dragged() {
+                image_sel = Some(block);
+            }
+            ui.painter().rect_stroke(image_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+            let size = (6.0 * zoom).max(4.0);
+            for point in [
+                image_rect.left_top(),
+                image_rect.center_top(),
+                image_rect.right_top(),
+                image_rect.left_center(),
+                image_rect.right_center(),
+                image_rect.left_bottom(),
+                image_rect.center_bottom(),
+                image_rect.right_bottom(),
+            ] {
+                let handle = Rect::from_center_size(point, vec2(size, size));
+                ui.painter().rect_filled(handle, 1.0, t.editor);
+                ui.painter().rect_stroke(handle, 1.0, egui::Stroke::new(1.0 * zoom, t.accent), egui::StrokeKind::Inside);
+            }
+        }
         if is_sel {
             sel_frame = Some(frame);
             // Everything in the box is selected: shade it all, behind the words.
@@ -272,10 +316,35 @@ pub fn show(
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
-            ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
-            for n in 0..3 {
-                let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0 * zoom, bar.center().y);
-                ui.painter().circle_filled(c, 1.2 * zoom, t.muted);
+            if image_object {
+                if is_sel || drag.hovered() || drag.dragged() {
+                    let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
+                    ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
+                    // The handles are deliberately square and theme-coloured, like the
+                    // selection affordance in the reference UI. The right-edge grip remains
+                    // the live resize target; the other handles make the object boundary
+                    // clear at every corner and edge.
+                    let size = (6.0 * zoom).max(4.0);
+                    for point in [
+                        frame.left_top(),
+                        frame.center_top(),
+                        frame.right_top(),
+                        frame.left_center(),
+                        frame.right_center(),
+                        frame.left_bottom(),
+                        frame.center_bottom(),
+                        frame.right_bottom(),
+                    ] {
+                        ui.painter().rect_filled(Rect::from_center_size(point, vec2(size, size)), 1.0, t.editor);
+                        ui.painter().rect_stroke(Rect::from_center_size(point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
+                    }
+                }
+            } else {
+                ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
+                for n in 0..3 {
+                    let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0 * zoom, bar.center().y);
+                    ui.painter().circle_filled(c, 1.2 * zoom, t.muted);
+                }
             }
             if grip.hovered() || grip.dragged() {
                 ui.painter().rect_filled(edge.shrink2(vec2(2.0, 4.0)), 2.0, t.row_hover);
@@ -402,6 +471,16 @@ pub fn show(
             menu_at = None;
         }
     }
+    if image_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
+        image_sel = None;
+    }
+    ui.data_mut(|d| {
+        if let Some(block) = image_sel {
+            d.insert_temp(selected_image_id(), (block, page_key.clone()));
+        } else {
+            d.remove::<(usize, String)>(selected_image_id());
+        }
+    });
 
     // A block was added or taken away inside a container: it belongs to that one.
     let now = blocks.len();
@@ -530,6 +609,14 @@ pub fn show(
     out
 }
 
+fn block_has_image(block: &Block) -> bool {
+    match block {
+        Block::Image { .. } => true,
+        Block::Paragraph(spans) => spans.iter().any(|span| span.image.is_some()),
+        _ => false,
+    }
+}
+
 /// Whether the pointer is over open paper, not over a box.
 fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
@@ -552,6 +639,18 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn image_detection_covers_standalone_and_inline_images() {
+        use notecraft_formats::markdown::{Block, Span};
+        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into() }));
+        assert!(block_has_image(&Block::Paragraph(vec![Span {
+            image: Some("assets/picture.png".into()),
+            text: "picture".into(),
+            ..Span::default()
+        }])));
+        assert!(!block_has_image(&Block::Paragraph(vec![Span { text: "ordinary text".into(), ..Span::default() }])));
+    }
+
     /// A box that holds the heading repeating the page title does not carry it when copied.
     ///
     /// The editor hides that heading where it stands, because the title area is already

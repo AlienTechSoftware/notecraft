@@ -524,6 +524,48 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
+fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let response = big_inner(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", true, false, t);
+    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.left(), response.rect.bottom() - 28.0), response.rect.right_bottom());
+    let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
+    if arrow.hovered() {
+        ui.painter().rect_filled(arrow_rect, 3.0, t.row_hover);
+        chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
+    }
+    egui::Popup::menu(&arrow).show(|ui| {
+        egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+            ui.set_min_width(205.0);
+            if picture_menu_row(ui, Icon::Picture, "Picture from a file", t, true).clicked() {
+                acts.push(Act::AddPicture);
+                ui.close();
+            }
+            let _ = picture_menu_row(ui, Icon::Attach, "From Camera", t, false);
+            let _ = picture_menu_row(ui, Icon::Link, "From Online", t, false);
+        });
+    });
+    response.clicked() && !arrow.clicked()
+}
+
+fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(190.0, 32.0), Sense::click());
+    if response.hovered() && enabled {
+        ui.painter().rect_filled(rect, 4.0, t.row_hover);
+    }
+    let color = if enabled { t.accent } else { t.muted };
+    let painter = ui.painter_at(rect);
+    let icon_rect = Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), vec2(18.0, 18.0));
+    icons::paint(&painter, icon_rect, icon, color);
+    painter.text(
+        egui::pos2(rect.left() + 38.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(13.0),
+        if enabled { t.text } else { t.muted },
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    response
+}
+
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
 /// use on the rack.
 fn chevron(painter: &egui::Painter, at: egui::Pos2, colour: egui::Color32) {
@@ -545,7 +587,18 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     } else if resp.hovered() {
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
-    let colour = if ui.is_enabled() { t.accent } else { t.muted };
+    let colour = if !ui.is_enabled() {
+        t.muted
+    } else {
+        match icon {
+            Icon::Picture | Icon::Clip => t.ok,
+            Icon::Attach => t.warn,
+            Icon::Link => t.link,
+            Icon::InsertSpace => t.accent,
+            Icon::Calendar | Icon::Clock => t.strong,
+            _ => t.accent,
+        }
+    };
     icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
     for (i, line) in lines.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
@@ -1222,7 +1275,7 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     });
     group(ui, "Images", t, |ui| {
         soon(ui, Icon::Clip, "Screen\nClipping", t);
-        if big_menu(ui, Icon::Picture, "Pictures", "A picture from a file", t).clicked() {
+        if pictures_menu(ui, t, acts) {
             acts.push(Act::AddPicture);
         }
     });

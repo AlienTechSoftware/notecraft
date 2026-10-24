@@ -1,12 +1,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-// A release build on Windows is a window app. Without this a console opens beside the window.
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+// NoteCraft is a GUI app on Windows in every profile. Diagnostics go to the local log/session
+// files rather than opening a console beside the window.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 //! NoteCraft desktop app: a native window over the engine.
 //!
 //! Usage: `notecraft [--notebooks FOLDER] [--open PAGE] [--expand-all] [--control PORT]`. The notebooks folder defaults to the
 //! `NOTECRAFT_NOTEBOOKS` environment variable, then `Documents/NoteCraft` in the home folder.
 
 mod applog;
+mod telemetry;
 
 use notecraft_engine::Session;
 use notecraft_store::Settings;
@@ -72,7 +74,16 @@ fn fail(message: &str) -> ! {
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let settings_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
-    applog::init(settings_dir);
+    applog::init(settings_dir.clone());
+    let telemetry_level =
+        Settings::default_location().get("telemetry_level").as_deref().and_then(telemetry::Level::parse).unwrap_or_else(telemetry::Level::for_build);
+    let telemetry = (telemetry_level != telemetry::Level::None)
+        .then(|| telemetry::Session::start(telemetry::telemetry_root(&settings_dir), telemetry_level).ok())
+        .flatten();
+    if let Some(session) = &telemetry {
+        let _ = Settings::default_location().set("telemetry_session_id", session.id());
+        let _ = session.record(telemetry::Level::Usage, "app_start", &[("version", env!("CARGO_PKG_VERSION"))]);
+    }
     applog::info(&format!(
         "start: NoteCraft {} exe={:?} args={args:?} settings={:?}",
         env!("CARGO_PKG_VERSION"),

@@ -11,6 +11,15 @@ metadata:
 
 # nc-prod - NoteCraft Product Principles
 
+## Runtime profiles and local-only diagnostics
+
+There are three supported runtime environments: `debug`, `release`, and `production`. There are
+five user-visible local logging levels: `None`, `Usage`, `Warning`, `Error`, and `Debug`. Debug
+builds default to `Debug`; release and production default to `None` unless the user chooses a
+level. Logs and usage telemetry remain on the user's device. NoteCraft does not send them
+automatically. Settings belong in the platform configuration directory (`%APPDATA%\\NoteCraft`
+on Windows), while session data belongs in its local telemetry subfolder.
+
 **These are non-negotiable requirements set by the product owner (2026-10-17).** Every feature, design decision, and code change must respect these principles or get explicit written approval to deviate.
 
 ---

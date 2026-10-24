@@ -263,6 +263,9 @@ enum Dialog {
         path: PathBuf,
         title: String,
     },
+    ClearTelemetry {
+        path: PathBuf,
+    },
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
@@ -277,6 +280,9 @@ enum Dialog {
         title: String,
     },
     Symbols,
+    PrivacyWelcome {
+        level: String,
+    },
 }
 
 struct ImportJob {
@@ -432,6 +438,7 @@ impl NoteCraftApp {
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(50).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
+        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none();
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -445,7 +452,7 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: None,
+            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: "debug".into() }) } else { None },
             import_job: None,
             status: "Ready".into(),
             status_is_error: false,
@@ -1533,7 +1540,21 @@ impl NoteCraftApp {
         let show_path = move |p: &Path| shown_in(&root, p, redact);
         let mut acts = Vec::new();
         egui::CentralPanel::default().show(ui, |ui| {
-            acts = backstage::show(ui, self.session.tree(), &recent, &folder, page, &show_path, &tokens);
+            let telemetry_root = self.session.settings.path().parent().unwrap_or(std::path::Path::new(".")).join("telemetry");
+            let telemetry_level = self.session.settings.get("telemetry_level").unwrap_or_else(|| "none".into());
+            let session_id = self.session.settings.get("telemetry_session_id");
+            acts = backstage::show(
+                ui,
+                self.session.tree(),
+                &recent,
+                &folder,
+                page,
+                &show_path,
+                &telemetry_root,
+                &telemetry_level,
+                session_id.as_deref(),
+                &tokens,
+            );
         });
         for a in acts {
             match a {
@@ -1563,6 +1584,23 @@ impl NoteCraftApp {
                 }
                 backstage::Act::RemoveRecent(p) => self.remove_recent_notebook(&p),
                 backstage::Act::DeleteRecent(p, title) => self.dialog = Some(Dialog::DeleteNotebook { path: p, title }),
+                backstage::Act::SetTelemetryLevel(level) => {
+                    let _ = self.session.settings.set("telemetry_level", &level);
+                }
+                backstage::Act::OpenTelemetryFolder(path) => self.reveal(&path),
+                backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
+                backstage::Act::ExportTelemetry(root) => {
+                    if let Some(session) = std::fs::read_dir(&root)
+                        .ok()
+                        .and_then(|r| r.filter_map(Result::ok).find(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)))
+                        && let Some(destination) = rfd::FileDialog::new()
+                            .set_title("Export telemetry ZIP")
+                            .set_file_name(format!("notecraft-{}-telemetry.zip", session.file_name().to_string_lossy()))
+                            .save_file()
+                    {
+                        let _ = crate::telemetry_export::export(&session.path(), &destination);
+                    }
+                }
                 backstage::Act::AddWelcome => {
                     self.backstage = None;
                     self.add_welcome();
@@ -1936,7 +1974,13 @@ impl NoteCraftApp {
                     }
                 }
             }
-            Link::File(file) => self.reveal(&file),
+            Link::File(file) => match open_file(&file) {
+                Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
+                Err(e) => {
+                    self.status = format!("The file could not be opened: {e}");
+                    self.status_is_error = true;
+                }
+            },
             Link::Missing(p) => {
                 self.status = format!("Nothing at {}: the link points to a page or file that is not there", self.shown(&p));
                 self.status_is_error = true;
@@ -2134,7 +2178,21 @@ impl NoteCraftApp {
                 other => self.insert_block(other),
             },
             ribbon::Act::AddFile | ribbon::Act::AddPicture => {
-                self.say("Drop the file onto the page: a dialog then asks what to do with it");
+                let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+                    self.say("Open a page first");
+                    return;
+                };
+                let mut picker = rfd::FileDialog::new().set_title(if matches!(act, ribbon::Act::AddPicture) {
+                    "Choose a picture"
+                } else {
+                    "Choose a file to attach"
+                });
+                if matches!(act, ribbon::Act::AddPicture) {
+                    picker = picker.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+                }
+                if let Some(file) = picker.pick_file() {
+                    self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
+                }
             }
             ribbon::Act::ToggleSource => self.set_show_source(!self.show_source),
             ribbon::Act::ToggleFullPage => self.full_page = !self.full_page,
@@ -3003,7 +3061,9 @@ impl NoteCraftApp {
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
         let (copy, cut, paste, all) = ctx.input(|i| {
             let hit = |want: egui::Key| {
-                i.events.iter().any(|e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && modifiers.command))
+                i.events.iter().any(
+                    |e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl)),
+                )
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -3020,7 +3080,12 @@ impl NoteCraftApp {
         if cut && ours {
             self.clipboard("cut");
         }
-        if paste && (ours || nobody) {
+        // A screenshot has no text for egui's text widget to consume. Route it through
+        // NoteCraft even when the caret is inside an ordinary text editor; otherwise Ctrl+V
+        // appears to do nothing because egui handles the key before `paste_here` can inspect
+        // the system image clipboard.
+        let picture = paste && crate::clipboard::has_picture();
+        if paste && (picture || ours || nobody) {
             self.paste_here();
         }
         if all && ours {
@@ -3972,6 +4037,87 @@ impl NoteCraftApp {
         let mut keep = true;
         let mut next = dialog;
         match &mut next {
+            Dialog::ClearTelemetry { path } => {
+                let mut clear = false;
+                let mut cancel = false;
+                egui::Window::new("Clear telemetry")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(440.0);
+                        modal_title(ui, &self.tokens, "Clear telemetry");
+                        ui.label("Clear all local telemetry sessions and exported telemetry ZIP files?");
+                        ui.add_space(5.0);
+                        ui.colored_label(self.tokens.warn, "This cannot be undone.");
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                cancel = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Clear telemetry", true).clicked() {
+                                clear = true;
+                            }
+                        });
+                    });
+                if clear {
+                    let _ = std::fs::remove_dir_all(path);
+                    keep = false;
+                } else if cancel {
+                    keep = false;
+                }
+            }
+            Dialog::PrivacyWelcome { level } => {
+                let mut accepted = false;
+                let mut denied = false;
+                let screen = ctx.viewport_rect();
+                egui::Area::new("privacy-welcome-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+                    ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                });
+                egui::Window::new("Welcome to NoteCraft")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Welcome to NoteCraft");
+                        ui.set_min_width(520.0);
+                        ui.label("Thank you for trying NoteCraft!");
+                        ui.add_space(6.0);
+                        ui.label(
+                            "Privacy is our top priority. All logs and telemetry stay on this device. NoteCraft never sends them automatically.",
+                        );
+                        ui.add_space(6.0);
+                        ui.label("Choose a local collection level. Logging is off by default in release builds.");
+                        egui::ComboBox::from_id_salt("privacy-welcome-level").selected_text(level.as_str()).show_ui(ui, |ui| {
+                            for choice in ["none", "usage", "warning", "error", "debug"] {
+                                ui.selectable_value(level, choice.into(), choice);
+                            }
+                        });
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Accept", true).clicked() {
+                                accepted = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Deny", false).clicked() {
+                                denied = true;
+                            }
+                        });
+                    });
+                if accepted {
+                    let _ = self.session.settings.set("telemetry_level", level);
+                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
+                    keep = false;
+                } else if denied {
+                    let _ = self.session.settings.set("telemetry_level", "none");
+                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
+                    keep = false;
+                }
+            }
             Dialog::FileOptions { dir, files } => {
                 let (dir, file) = (dir.clone(), files.first().cloned().unwrap_or_default());
                 let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -4761,6 +4907,8 @@ impl NoteCraftApp {
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
+                // The image block selected independently of its containing text box, or null.
+                "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "origin": [e.origin.x, e.origin.y],
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
@@ -4921,6 +5069,18 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
     };
     // `explorer` returns a non-zero status even when it worked, so the status is not checked.
     std::process::Command::new(program).arg(dir).spawn().map(|_| ())
+}
+
+/// Opens a linked attachment with the operating system's associated application. Windows may
+/// show its own warning for files marked as downloaded; that prompt is intentionally preserved.
+fn open_file(file: &Path) -> std::io::Result<()> {
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd").args(["/C", "start", "", &file.to_string_lossy()]).spawn().map(|_| ())
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(file).spawn().map(|_| ())
+    } else {
+        std::process::Command::new("xdg-open").arg(file).spawn().map(|_| ())
+    }
 }
 
 /// Saves a screenshot to `path`, or returns it as base64 PNG in the reply.
