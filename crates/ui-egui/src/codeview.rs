@@ -13,7 +13,10 @@
 //! Everything else is read-only, because a hand edit to a picture or to a `_node.toml`
 //! is not something to do with a text box.
 
+use crate::floating::{self, Glyph};
 use crate::highlight::{self, Class, Lang, Span};
+use crate::icons::Icon;
+use crate::ribbon_icons::Mark;
 use crate::theme::{Tokens, mix};
 use egui::text::{CCursor, CCursorRange, LayoutJob, TextFormat};
 use egui::{Color32, CursorIcon, Key, Modifiers, Rect, Sense, Ui, vec2};
@@ -327,6 +330,15 @@ fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
 pub struct Out {
     /// A file was typed in: its name and its new text, for the window to write.
     pub wrote: Option<(String, String)>,
+    pub file_action: Option<FileAction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileAction {
+    CopyPath(String),
+    OpenFolder(std::path::PathBuf),
+    OpenShell(std::path::PathBuf),
+    Delete(String),
 }
 
 /// The files of a page, the page file first, then what sits beside it, then `assets/`.
@@ -488,7 +500,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             egui::ScrollArea::vertical().id_salt("code-files").max_height(height - 24.0).show(ui, |ui| {
                 for entry in entries {
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
-                    let row = row(ui, entry, picked, t);
+                    let row = row(ui, entry, picked, t, &mut out.file_action, dir);
                     if row.clicked() {
                         state.picked = Some(entry.name.clone());
                         state.loaded = None;
@@ -753,7 +765,7 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 }
 
 /// One row of the list: the name, and what the file is.
-fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens) -> egui::Response {
+fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     if picked || resp.hovered() {
@@ -767,6 +779,29 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens) -> egui::Response {
     let enabled = ui.is_enabled();
     let label = format!("{} ({})", entry.name, size_text(entry.bytes));
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, picked, label.as_str()));
+    let full = page_dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let name = entry.name.clone();
+    resp.context_menu(|ui| {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), "Copy full path", t).clicked() {
+            *action = Some(FileAction::CopyPath(full.to_string_lossy().into_owned()));
+            ui.close();
+        }
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), "Open in folder", t).clicked() {
+            *action = Some(FileAction::OpenFolder(full.parent().unwrap_or(page_dir).to_path_buf()));
+            ui.close();
+        }
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Open using shell", t).clicked() {
+            *action = Some(FileAction::OpenShell(full.clone()));
+            ui.close();
+        }
+        if entry.name.starts_with("assets/") {
+            floating::menu_separator(ui, t);
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
+                *action = Some(FileAction::Delete(name.clone()));
+                ui.close();
+            }
+        }
+    });
     resp.on_hover_text(if entry.used { entry.name.clone() } else { format!("{}: not used by the page", entry.name) })
 }
 
