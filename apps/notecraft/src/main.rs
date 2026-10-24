@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-// A release build on Windows is a window app. Without this a console opens beside the window.
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+// NoteCraft is a GUI app on Windows in every profile. Diagnostics go to the local log/session
+// files rather than opening a console beside the window.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 //! NoteCraft desktop app: a native window over the engine.
 //!
 //! Usage: `notecraft [--notebooks FOLDER] [--open PAGE] [--expand-all] [--control PORT]`. The notebooks folder defaults to the
