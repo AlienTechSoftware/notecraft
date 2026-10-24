@@ -9,8 +9,8 @@ metadata:
 
 # nc-uiux-controls
 
-Use this skill for buttons, ribbon controls, menus, galleries, split controls, toolbars, and
-small interaction regressions.
+Use this skill for buttons, ribbon controls, menus, galleries, split controls, toolbars, embedded
+object hit testing, selection, dragging, and small interaction regressions.
 
 ## Interaction contract
 
@@ -21,9 +21,15 @@ small interaction regressions.
 - Add pointer cursor, tooltip, and accessible widget information where applicable.
 - Keep keyboard activation and Escape/menu dismissal working.
 - Disabled menu items explain why they are unavailable when the reason is not obvious.
+- Embedded objects are hit-tested from highest z-order to lowest z-order. A click must select the
+  visible object under the pointer, and an explicit alternate gesture must make lower overlapping
+  objects reachable.
+- Dragging an embedded object must select it before moving it, preserve its anchor, and report a
+  clear selected/moving state.
 
 ## Verification
 
 Test the exact pointer locations: center of the main action, center of the arrow region, edge of
 the control, and a neighboring control. Add a regression test for every hit-testing bug that has
-occurred. Check light/dark themes and narrow windows.
+occurred. Check light/dark themes and narrow windows. For embedded objects, test isolated,
+adjacent, and overlapping images, including selecting the back object and dragging it.

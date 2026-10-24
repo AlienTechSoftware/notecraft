@@ -79,6 +79,126 @@ fn path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
+    let name = src.strip_prefix("assets/")?;
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
+        return None;
+    }
+    // Generated icon sidecars are images too, but they are not attachments that
+    // need another icon. Treat `file.ext.svg`/`file.ext.png` as implementation
+    // details when the attachment they belong to is present.
+    if let Some((source, extension)) = name.rsplit_once('.')
+        && matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg")
+        && page.join("assets").join(source).is_file()
+    {
+        return None;
+    }
+    if notecraft_store::assets::media_kind(src) != notecraft_store::assets::MediaKind::Other {
+        return None;
+    }
+    // A missing attachment is not a missing-icon case. Do not warn about an icon
+    // when the original file itself is no longer present.
+    if !page.join("assets").join(name).is_file() {
+        return None;
+    }
+    (!attachment_icon_exists(page, name)).then(|| name.to_string())
+}
+
+fn attachment_icon_exists(page: &Path, name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // Native Shell icons are PNG, but the deterministic SVG fallback is valid
+        // when Shell extraction is unavailable on this Windows installation.
+        page.join("assets").join(format!("{name}.png")).is_file() || page.join("assets").join(format!("{name}.svg")).is_file()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        page.join("assets").join(format!("{name}.svg")).is_file()
+    }
+}
+
+fn attachment_icon_link(page: &Path, name: &str) -> String {
+    let dir = page.join("assets");
+    if dir.join(format!("{name}.png")).is_file() { format!("assets/{name}.png") } else { format!("assets/{name}.svg") }
+}
+
+fn first_missing_attachment(blocks: &[notecraft_formats::markdown::Block], page: &Path) -> Option<String> {
+    for block in blocks {
+        let source = match block {
+            notecraft_formats::markdown::Block::Image { src, .. } => Some(src),
+            notecraft_formats::markdown::Block::Paragraph(spans)
+            | notecraft_formats::markdown::Block::Item { spans, .. }
+            | notecraft_formats::markdown::Block::Heading { spans, .. }
+            | notecraft_formats::markdown::Block::Quote(spans) => spans.iter().find_map(|s| s.image.as_ref().or(s.link.as_ref())),
+            _ => None,
+        };
+        if let Some(src) = source.and_then(|src| missing_attachment_icon(page, src)) {
+            return Some(src);
+        }
+    }
+    None
+}
+
+fn first_missing_attachment_in_source(source: &str, page: &Path) -> Option<String> {
+    let mut rest = source;
+    while let Some(at) = rest.find("assets/") {
+        rest = &rest[at + "assets/".len()..];
+        let end = rest.find(['"', '\'', ')', ']', '<', '>', ' ', '\n', '\r']).unwrap_or(rest.len());
+        let name = &rest[..end];
+        let candidate = format!("assets/{name}");
+        if let Some(name) = (!name.is_empty()).then(|| missing_attachment_icon(page, &candidate)).flatten() {
+            return Some(name);
+        }
+        rest = &rest[end..];
+    }
+    None
+}
+
+fn first_missing_attachment_file(attachments: &[(String, u64)], page: &Path) -> Option<String> {
+    attachments.iter().find_map(|(name, _)| {
+        let src = format!("assets/{name}");
+        missing_attachment_icon(page, &src)
+    })
+}
+
+fn first_unreferenced_attachment(attachments: &[(String, u64)], source: &str) -> Option<String> {
+    attachments.iter().find_map(|(name, _)| {
+        let reference = format!("assets/{name}");
+        (!source.contains(&reference)).then(|| name.clone())
+    })
+}
+
+fn prepare_unreferenced_attachment(page: &Path, name: &str) -> bool {
+    match notecraft_store::assets::ensure_icon(page, name) {
+        Ok(()) => {
+            log::debug!("generated icon before detached attachment warning: page={:?} attachment={name:?}", page);
+            true
+        }
+        Err(error) => {
+            log::error!("could not generate icon before detached attachment warning: page={:?} attachment={name:?} error={error}", page);
+            false
+        }
+    }
+}
+
+fn first_legacy_attachment_in_source(source: &str) -> Option<String> {
+    let mut rest = source;
+    while let Some(at) = rest.find("assets/") {
+        rest = &rest[at + "assets/".len()..];
+        let end = rest.find(['"', '\'', ')', ']', '<', '>', ' ', '\n', '\r']).unwrap_or(rest.len());
+        let name = &rest[..end];
+        if !name.is_empty()
+            && !name.ends_with(".svg")
+            && notecraft_store::assets::media_kind(&format!("assets/{name}")) == notecraft_store::assets::MediaKind::Other
+            && (source.contains(&format!("<a href=\"assets/{name}\">")) || source.contains(&format!("[{name}](assets/{name})")))
+        {
+            return Some(name.to_string());
+        }
+        rest = &rest[end..];
+    }
+    None
+}
+
 fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
@@ -283,6 +403,17 @@ enum Dialog {
     PrivacyWelcome {
         level: String,
     },
+    MissingAttachmentIcon {
+        page: PathBuf,
+        name: String,
+    },
+    OpenAttachmentWarning {
+        path: PathBuf,
+    },
+    UnreferencedAttachment {
+        page: PathBuf,
+        name: String,
+    },
 }
 
 struct ImportJob {
@@ -418,13 +549,18 @@ pub struct NoteCraftApp {
     focus_search: bool,
     /// The page the window closed on has been opened again (once per run).
     restored: bool,
+    /// Recovery warnings that were already shown during this run.
+    icon_recovery_reported: HashSet<String>,
+    /// Suppress further missing-icon warnings during this run.
+    icon_recovery_suppressed: bool,
+    open_attachment_warning_suppressed: bool,
 }
 
 impl NoteCraftApp {
     pub fn new(session: Session) -> NoteCraftApp {
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let accent = session.settings.get("theme_accent").and_then(|v| Accent::parse(&v)).unwrap_or(Accent::Default);
-        let show_source = session.settings.get("show_source").map(|v| v.trim() == "true").unwrap_or(false);
+        let show_source = false;
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         // A table has borders unless it was turned off: OneNote draws them, and a table
@@ -495,6 +631,9 @@ impl NoteCraftApp {
             full_page: false,
             focus_search: false,
             restored: false,
+            icon_recovery_reported: HashSet::new(),
+            icon_recovery_suppressed: false,
+            open_attachment_warning_suppressed: false,
         }
     }
 
@@ -559,10 +698,6 @@ impl NoteCraftApp {
             }
         }
         self.show_source = on;
-        if let Err(e) = self.session.settings.set("show_source", if on { "true" } else { "false" }) {
-            self.status = format!("The setting could not be saved: {e}");
-            self.status_is_error = true;
-        }
     }
 
     /// Chooses a theme (light or dark, and an accent) and saves the choice.
@@ -848,6 +983,8 @@ impl NoteCraftApp {
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
         self.save_now();
+        self.show_source = false;
+        self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
@@ -861,6 +998,7 @@ impl NoteCraftApp {
                 .map(|(p, c)| (p.and_then(|p| ribbon::RuleLines::parse(&p)), c.and_then(|c| notecraft_model::NodeColor::parse(&c))))
                 .unwrap_or((None, None));
             let attachments = notecraft_store::assets::list(dir);
+            let page_body = page.body.clone();
             let writable = pageedit::round_trips(page.format, &page.body);
             // A page with no title of its own starts with a blank title area, not with
             // "Untitled page" sitting there as if it had been typed. `title` keeps the
@@ -876,7 +1014,7 @@ impl NoteCraftApp {
                 dirty_since: None,
                 blocks,
                 last_saved: None,
-                attachments,
+                attachments: attachments.clone(),
                 caret: None,
                 writable,
                 page_dir: page.dir,
@@ -891,6 +1029,27 @@ impl NoteCraftApp {
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
             });
+            if !self.icon_recovery_suppressed
+                && let Some(name) = first_missing_attachment_file(&attachments, dir)
+                    .or_else(|| first_missing_attachment_in_source(&page_body, dir))
+                    .or_else(|| first_legacy_attachment_in_source(&page_body))
+            {
+                let key = format!("{}::{name}", dir.display());
+                log::warn!("attachment recovery scan found missing icon: page={:?} attachment={name:?}", dir);
+                if self.icon_recovery_reported.insert(key) {
+                    self.dialog = Some(Dialog::MissingAttachmentIcon { page: dir.to_path_buf(), name });
+                }
+            } else if !self.icon_recovery_suppressed
+                && let Some(name) = first_unreferenced_attachment(&attachments, &page_body)
+            {
+                let key = format!("{}::unreferenced::{name}", dir.display());
+                if prepare_unreferenced_attachment(dir, &name) && self.icon_recovery_reported.insert(key) {
+                    log::warn!("attachment recovery scan found detached attachment after icon preparation: page={:?} attachment={name:?}", dir);
+                    self.dialog = Some(Dialog::UnreferencedAttachment { page: dir.to_path_buf(), name });
+                }
+            } else {
+                log::debug!("attachment recovery scan found no missing icons: page={:?} attachments={}", dir, attachments.len());
+            }
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
             self.absorb_old_sheets(dir);
             self.sync_ink_reference();
@@ -975,6 +1134,74 @@ impl NoteCraftApp {
         }
     }
 
+    fn repair_attachment_reference(&mut self, page: &Path, name: &str) -> Result<bool, String> {
+        let Some(ed) = self.editor.as_mut() else { return Ok(false) };
+        if ed.dir != page {
+            return Err("the page changed while the recovery dialog was open".into());
+        }
+        let link = format!("assets/{name}");
+        let html_href = format!("href=\"{link}\"");
+        let markdown_href = format!("]({link})");
+        let references = ed.body.matches(&html_href).count() + ed.body.matches(&markdown_href).count();
+        log::debug!("attachment recovery reference scan: page={:?} attachment={name:?} references={references}", page);
+        let old = match ed.format {
+            PageFormat::Html => format!("<p><a href=\"{link}\">{name}</a></p>"),
+            PageFormat::Cmgfm => format!("[{name}]({link})"),
+        };
+        if references == 0 && !ed.body.contains(&old) {
+            let icon_link = attachment_icon_link(page, name);
+            let replacement = snippets::attachment(ed.format, &link, name)
+                .replace(&format!("assets/{name}.png"), &icon_link)
+                .replace(&format!("assets/{name}.svg"), &icon_link)
+                .trim()
+                .to_string();
+            ed.body.push('\n');
+            ed.body.push_str(&replacement);
+            Self::mark_dirty(ed);
+            log::debug!("attachment recovery appended missing reference: page={:?} attachment={name:?}", page);
+            return Ok(true);
+        }
+        let icon_link = attachment_icon_link(page, name);
+        let replacement = snippets::attachment(ed.format, &link, name)
+            .replace(&format!("assets/{name}.png"), &icon_link)
+            .replace(&format!("assets/{name}.svg"), &icon_link)
+            .trim()
+            .to_string();
+        let mut body = ed.body.replace(&old, &replacement);
+        if references > 1 {
+            let mut kept = false;
+            body = body
+                .lines()
+                .filter(|line| {
+                    let card = match ed.format {
+                        PageFormat::Html => line.contains(&html_href) && line.contains("<img"),
+                        PageFormat::Cmgfm => line.contains(&markdown_href) && line.contains("!["),
+                    };
+                    if card {
+                        if kept {
+                            return false;
+                        }
+                        kept = true;
+                    }
+                    true
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            log::warn!("attachment recovery removed duplicate references: page={:?} attachment={name:?} references={references}", page);
+        }
+        // Migrate an older generated icon in place when the platform now has a native icon.
+        #[cfg(target_os = "windows")]
+        {
+            body = body.replace(&format!("assets/{name}.svg"), &icon_link).replace(&format!("assets/{name}.png"), &icon_link);
+        }
+        if body == ed.body {
+            return Ok(false);
+        }
+        ed.body = body;
+        Self::mark_dirty(ed);
+        Ok(true)
+    }
+
     /// The page text changed: remember to save it, and read the blocks from it again.
     fn mark_dirty(ed: &mut Editor) {
         ed.dirty_since = Some(Instant::now());
@@ -1022,10 +1249,19 @@ impl NoteCraftApp {
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match how {
             FileChoice::Copy => {
-                if let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) {
-                    let text = snippets::attachment(format, &link, &name);
-                    self.insert(&text);
-                    self.say(format!("{name} is now a file in this page's folder"));
+                log::debug!("file attach requested: name={name:?} page={:?}", dir);
+                match self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) {
+                    Some(Output::Text(link)) => {
+                        log::debug!("file attach copied: name={name:?} link={link:?}");
+                        let text = snippets::attachment(format, &link, &name);
+                        self.insert(&text);
+                        self.say(format!("{name} is now a file in this page's folder"));
+                    }
+                    Some(_) => self.complain("The file was not attached: the attach command returned an unexpected result."),
+                    None => {
+                        log::error!("file attach failed: name={name:?} page={:?} status={:?}", dir, self.status);
+                        self.complain(&format!("Could not attach {name} to this page."));
+                    }
                 }
             }
             FileChoice::Link => {
@@ -1974,13 +2210,16 @@ impl NoteCraftApp {
                     }
                 }
             }
-            Link::File(file) => match open_file(&file) {
-                Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
-                Err(e) => {
-                    self.status = format!("The file could not be opened: {e}");
-                    self.status_is_error = true;
+            Link::File(file) => {
+                if self.open_attachment_warning_suppressed {
+                    match open_file_for_viewer(&file) {
+                        Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
+                        Err(e) => self.complain(&format!("The file could not be opened: {e}")),
+                    }
+                } else {
+                    self.dialog = Some(Dialog::OpenAttachmentWarning { path: file });
                 }
-            },
+            }
             Link::Missing(p) => {
                 self.status = format!("Nothing at {}: the link points to a page or file that is not there", self.shown(&p));
                 self.status_is_error = true;
@@ -3061,9 +3300,16 @@ impl NoteCraftApp {
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
         let (copy, cut, paste, all) = ctx.input(|i| {
             let hit = |want: egui::Key| {
-                i.events.iter().any(
-                    |e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl)),
-                )
+                // `key_pressed` is the platform-normalized view.  Some native
+                // backends do not retain the raw key event in `events` after a
+                // focused text widget has considered it, while the normalized
+                // edge remains available for the rest of the frame.  Keep the
+                // raw-event check as a fallback for the headless harness and
+                // older egui backends.
+                (i.key_pressed(want) && (i.modifiers.command || i.modifiers.ctrl))
+                    || i.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
+                    })
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -3612,6 +3858,28 @@ impl NoteCraftApp {
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
+        if !self.icon_recovery_suppressed && self.dialog.is_none() {
+            if let Some(ed) = self.editor.as_ref()
+                && let Some(name) = first_missing_attachment_file(&ed.attachments, &ed.dir)
+                    .or_else(|| first_missing_attachment(&ed.blocks, &ed.dir))
+                    .or_else(|| first_missing_attachment_in_source(&ed.body, &ed.dir))
+                    .or_else(|| first_legacy_attachment_in_source(&ed.body))
+            {
+                let key = format!("{}::{name}", ed.dir.display());
+                if self.icon_recovery_reported.insert(key) {
+                    log::warn!("attachment icon is missing: page={:?} attachment={name:?}", ed.dir);
+                    self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
+                }
+            } else if let Some(ed) = self.editor.as_ref()
+                && let Some(name) = first_unreferenced_attachment(&ed.attachments, &ed.body)
+            {
+                let key = format!("{}::unreferenced::{name}", ed.dir.display());
+                if prepare_unreferenced_attachment(&ed.dir, &name) && self.icon_recovery_reported.insert(key) {
+                    log::warn!("attachment is detached from page text after icon preparation: page={:?} attachment={name:?}", ed.dir);
+                    self.dialog = Some(Dialog::UnreferencedAttachment { page: ed.dir.clone(), name });
+                }
+            }
+        }
         let editor_rect = ui.max_rect();
         let wheel_zoom = ui.input(|i| i.pointer.hover_pos().filter(|p| editor_rect.contains(*p)).map_or(1.0, |_| i.zoom_delta()));
         if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
@@ -3653,9 +3921,9 @@ impl NoteCraftApp {
         let mut boxes_moved = false;
         let mut cols_moved = false;
         // A file the writer asked to delete from the page's folder, confirmed first.
-        let mut delete_file: Option<String> = None;
         // A file other than the page written in the code view, waiting to go to disk.
         let mut wrote_file: Option<(String, String)> = None;
+        let mut file_action: Option<crate::codeview::FileAction> = None;
         let mut code = std::mem::take(&mut self.code);
         let mut save_cols: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
@@ -3734,7 +4002,6 @@ impl NoteCraftApp {
                             toggle: &mut bool,
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
-                            delete_file: &mut Option<String>,
                             follow: &mut Option<String>,
                             rename: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
@@ -3866,24 +4133,6 @@ impl NoteCraftApp {
                         } else if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                             *follow = Some(href);
                         }
-                        if !ed.attachments.is_empty() {
-                            ui.add_space(10.0);
-                            ui.separator();
-                            ui.label(egui::RichText::new("Files in this page's folder").small().color(tokens.muted));
-                            for (name, size) in &ed.attachments {
-                                // A file in the page's folder can be taken out again. The
-                                // button is on the row rather than under the right
-                                // button, because the page's own menu answers a right
-                                // click anywhere on the sheet, this list included.
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(format!("assets/{name}  ({} KB)", size.div_ceil(1024))).small().monospace());
-                                    if ui.small_button("Delete file").on_hover_text(format!("Delete assets/{name} from this page's folder")).clicked()
-                                    {
-                                        *delete_file = Some(name.clone());
-                                    }
-                                });
-                            }
-                        }
                     });
                 });
             };
@@ -3895,20 +4144,9 @@ impl NoteCraftApp {
                 let entries = crate::codeview::files(&ed.dir, ed.format.page_file(), &named);
                 let out = crate::codeview::show(ui, &mut code, &entries, &ed.dir, &tokens, height);
                 wrote_file = out.wrote;
+                file_action = out.file_action;
             } else {
-                page(
-                    ui,
-                    ed,
-                    true,
-                    &mut changed,
-                    &mut from_blocks,
-                    &mut toggle_source,
-                    &mut boxes_moved,
-                    &mut cols_moved,
-                    &mut delete_file,
-                    &mut follow,
-                    &mut rename,
-                );
+                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow, &mut rename);
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -3947,10 +4185,40 @@ impl NoteCraftApp {
         if let Some((name, text)) = wrote_file {
             self.write_page_file(&name, &text);
         }
-        if let Some(name) = delete_file {
-            let page = self.editor.as_ref().map(|e| e.dir.clone());
-            if let Some(page) = page {
-                self.dialog = Some(Dialog::DeleteFile { page, name });
+        if let Some(action) = file_action {
+            match action {
+                crate::codeview::FileAction::CopyPath(path) => {
+                    ui.ctx().copy_text(path);
+                    self.say("Full path copied");
+                }
+                crate::codeview::FileAction::OpenFolder(path) => match open_folder(&path) {
+                    Ok(()) => self.say("Opened the containing folder"),
+                    Err(e) => self.complain(&format!("Could not open the containing folder: {e}")),
+                },
+                crate::codeview::FileAction::OpenShell(path) => {
+                    if self.open_attachment_warning_suppressed {
+                        match open_file_for_viewer(&path) {
+                            Ok(()) => self.say("Opened using the associated application"),
+                            Err(e) => self.complain(&format!("Could not open the file: {e}")),
+                        }
+                    } else {
+                        self.dialog = Some(Dialog::OpenAttachmentWarning { path });
+                    }
+                }
+                crate::codeview::FileAction::Delete(name) => {
+                    log::debug!("source view delete action received: file={name:?}");
+                    let page = self.editor.as_ref().map(|e| e.dir.clone());
+                    if let Some(page) = page {
+                        self.dialog = Some(Dialog::DeleteFile { page, name });
+                    }
+                }
+                crate::codeview::FileAction::AddFile => {
+                    if let Some(dir) = self.editor.as_ref().map(|ed| ed.dir.clone())
+                        && let Some(file) = rfd::FileDialog::new().set_title("Add file to this page").pick_file()
+                    {
+                        self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
+                    }
+                }
             }
         }
         if toggle_source {
@@ -4118,6 +4386,183 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::MissingAttachmentIcon { page, name } => {
+                let mut repair = false;
+                let mut leave = false;
+                let mut suppress = self.icon_recovery_suppressed;
+                egui::Area::new("missing-attachment-icon-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
+                    ctx,
+                    |ui| {
+                        let response =
+                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
+                egui::Window::new("Attachment recovery")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Attachment icon missing");
+                        ui.set_min_width(520.0);
+                        ui.label(egui::RichText::new(format!("NoteCraft found an attachment without its generated icon:\n{name}")).strong());
+                        ui.add_space(6.0);
+                        ui.label("The original file is still safe. NoteCraft can regenerate the icon beside it.");
+                        ui.add_space(8.0);
+                        ui.checkbox(&mut suppress, "Do not warn about similar missing icons again this session");
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Repair icon", true).clicked() {
+                                repair = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Leave it", false).clicked() {
+                                leave = true;
+                            }
+                        });
+                    });
+                if repair {
+                    self.icon_recovery_suppressed = suppress;
+                    match notecraft_store::assets::ensure_icon(page, name).and_then(|()| {
+                        let icon_exists = attachment_icon_exists(page, name);
+                        if !icon_exists {
+                            return Err(notecraft_store::StoreError::invalid("the icon generator produced no sidecar file"));
+                        }
+                        self.repair_attachment_reference(page, name).map_err(notecraft_store::StoreError::invalid).map(|_| ())
+                    }) {
+                        Ok(()) => {
+                            log::info!("repaired missing attachment icon and reference: page={:?} attachment={name:?}", page);
+                            self.say(format!("Repaired the attachment icon for {name}"));
+                        }
+                        Err(e) => {
+                            log::error!("could not repair missing attachment icon: page={:?} attachment={name:?} error={e}", page);
+                            self.complain(&format!("Could not repair the icon for {name}: {e}"));
+                        }
+                    }
+                    keep = false;
+                } else if leave {
+                    self.icon_recovery_suppressed = suppress;
+                    log::error!("user declined missing attachment icon repair: page={:?} attachment={name:?}", page);
+                    keep = false;
+                } else {
+                    self.icon_recovery_suppressed = suppress;
+                }
+            }
+            Dialog::UnreferencedAttachment { page, name } => {
+                let mut restore = false;
+                let mut leave = false;
+                let mut suppress = self.icon_recovery_suppressed;
+                egui::Area::new("unreferenced-attachment-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
+                    ctx,
+                    |ui| {
+                        let response =
+                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
+                egui::Window::new("Attachment recovery")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Attachment not linked");
+                        ui.set_min_width(520.0);
+                        ui.label(egui::RichText::new(format!("NoteCraft found an attachment that is not referenced by this page:\n{name}")).strong());
+                        ui.add_space(6.0);
+                        ui.label("The file is safe. NoteCraft can append a link to it at the end of the page.");
+                        ui.add_space(8.0);
+                        ui.checkbox(&mut suppress, "Do not warn about similar attachment issues again this session");
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Append link", true).clicked() {
+                                restore = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Leave it", false).clicked() {
+                                leave = true;
+                            }
+                        });
+                    });
+                if restore {
+                    self.icon_recovery_suppressed = suppress;
+                    match self.repair_attachment_reference(page, name) {
+                        Ok(true) => {
+                            log::info!("restored unreferenced attachment link: page={:?} attachment={name:?}", page);
+                            self.say(format!("Added a link to {name} at the end of the page"));
+                        }
+                        Ok(false) => log::debug!("attachment recovery found no change needed: page={:?} attachment={name:?}", page),
+                        Err(e) => {
+                            log::error!("could not restore unreferenced attachment link: page={:?} attachment={name:?} error={e}", page);
+                            self.complain(&format!("Could not restore the link for {name}: {e}"));
+                        }
+                    }
+                    keep = false;
+                } else if leave {
+                    self.icon_recovery_suppressed = suppress;
+                    log::error!("user declined unreferenced attachment recovery: page={:?} attachment={name:?}", page);
+                    keep = false;
+                } else {
+                    self.icon_recovery_suppressed = suppress;
+                }
+            }
+            Dialog::OpenAttachmentWarning { path } => {
+                let mut open = false;
+                let mut cancel = false;
+                let mut suppress = self.open_attachment_warning_suppressed;
+                egui::Area::new("open-attachment-warning-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
+                    ctx,
+                    |ui| {
+                        let response =
+                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
+                egui::Window::new("Open attachment")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Open attachment");
+                        ui.set_min_width(520.0);
+                        ui.label(egui::RichText::new("This file will be opened by its associated application.").strong());
+                        ui.add_space(6.0);
+                        ui.label(self.shown(path).to_string());
+                        ui.add_space(6.0);
+                        ui.label("Only open it if you trust the file and the person who created it.");
+                        ui.add_space(8.0);
+                        ui.checkbox(&mut suppress, "Do not warn again for this file type this session");
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Open", true).clicked() {
+                                open = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                cancel = true;
+                            }
+                        });
+                    });
+                if open {
+                    self.open_attachment_warning_suppressed = suppress;
+                    match open_file_for_viewer(path) {
+                        Ok(()) => self.say(format!("Opening {}", self.shown(path))),
+                        Err(e) => self.complain(&format!("Could not open the file: {e}")),
+                    }
+                    keep = false;
+                } else if cancel {
+                    self.open_attachment_warning_suppressed = suppress;
+                    log::info!("user cancelled opening attachment: file={:?}", path);
+                    keep = false;
+                } else {
+                    self.open_attachment_warning_suppressed = suppress;
+                }
+            }
             Dialog::FileOptions { dir, files } => {
                 let (dir, file) = (dir.clone(), files.first().cloned().unwrap_or_default());
                 let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -4125,40 +4570,51 @@ impl NoteCraftApp {
                 let kind = notecraft_store::assets::media_kind(&name);
                 let mut chosen: Option<FileChoice> = None;
                 let title = if left > 0 { format!("Add {name} ({left} more)") } else { format!("Add {name}") };
-                egui::Window::new(title).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.set_min_width(380.0);
-                    ui.label("What should happen to this file?");
-                    ui.add_space(6.0);
-                    let copy_label = match kind {
-                        notecraft_store::assets::MediaKind::Image => "Insert the picture",
-                        notecraft_store::assets::MediaKind::Video => "Insert the video",
-                        notecraft_store::assets::MediaKind::Audio => "Insert the recording",
-                        notecraft_store::assets::MediaKind::Other => "Attach the file",
-                    };
-                    if ui.button(copy_label).clicked() {
-                        chosen = Some(FileChoice::Copy);
-                    }
-                    ui.label(
-                        egui::RichText::new("A copy goes into this page's folder, so the notebook carries it everywhere.")
-                            .small()
-                            .color(self.tokens.muted),
-                    );
-                    ui.add_space(6.0);
-                    if ui.button("Link to the file where it is").clicked() {
-                        chosen = Some(FileChoice::Link);
-                    }
-                    ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new("A printout (every page of a document as pictures) is not built yet.").small().color(self.tokens.muted),
-                    );
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
+                egui::Window::new("file-options")
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(380.0);
+                        modal_title(ui, &self.tokens, &title);
+                        ui.label(egui::RichText::new("What should happen to this file?").strong().size(16.0).color(self.tokens.text));
+                        ui.add_space(6.0);
+                        let copy_label = match kind {
+                            notecraft_store::assets::MediaKind::Image => "Insert the picture",
+                            notecraft_store::assets::MediaKind::Video => "Insert the video",
+                            notecraft_store::assets::MediaKind::Audio => "Insert the recording",
+                            notecraft_store::assets::MediaKind::Other => "Attach the file",
+                        };
+                        if modal_button(ui, &self.tokens, copy_label, true).clicked() {
+                            log::debug!("file attach choice clicked: choice=copy name={name:?}");
+                            chosen = Some(FileChoice::Copy);
                         }
+                        ui.label(
+                            egui::RichText::new("A copy goes into this page's folder, so the notebook carries it everywhere.")
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        ui.add_space(6.0);
+                        if modal_button(ui, &self.tokens, "Link to the file where it is", false).clicked() {
+                            log::debug!("file attach choice clicked: choice=link name={name:?}");
+                            chosen = Some(FileChoice::Link);
+                        }
+                        ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new("A printout (every page of a document as pictures) is not built yet.")
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                keep = false;
+                            }
+                        });
                     });
-                });
                 if let Some(how) = chosen {
                     self.add_file(&dir, &file, how);
                     if let Dialog::FileOptions { files, .. } = &mut next {
@@ -4275,18 +4731,43 @@ impl NoteCraftApp {
             }
             Dialog::DeleteFile { page, name } => {
                 let mut go = false;
-                egui::Window::new("Delete file").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.label(format!("Delete \"assets/{name}\" from this page's folder?"));
-                    ui.colored_label(self.tokens.warn, "The file is removed from disk. Undo does not bring a file back.");
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                        if ui.button("Delete").clicked() {
-                            go = true;
-                        }
-                    });
+                let mut cancel = false;
+                let screen = ctx.viewport_rect();
+                egui::Area::new("delete-file-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+                    ui.painter().rect_filled(response.rect, 0.0, Color32::from_black_alpha(150));
                 });
+                egui::Window::new("Delete file")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Delete file");
+                        ui.set_min_width(420.0);
+                        ui.label(format!("Delete \"assets/{name}\" from this page's folder?"));
+                        ui.add_space(6.0);
+                        ui.colored_label(self.tokens.warn, "The file is removed from disk. Undo does not bring a file back.");
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                keep = false;
+                            }
+                            if modal_button(ui, &self.tokens, "Delete", true).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if ctx.input(|input| input.key_pressed(Key::Escape)) {
+                    cancel = true;
+                } else if ctx.input(|input| input.key_pressed(Key::Enter)) {
+                    go = true;
+                }
+                if cancel {
+                    keep = false;
+                }
                 if go {
                     let page = page.clone();
                     if self.run("page.detach", &params(&[("path", &path_str(&page)), ("name", name)])).is_some() {
@@ -4909,6 +5390,7 @@ impl NoteCraftApp {
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
                 // The image block selected independently of its containing text box, or null.
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
+                "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),
                 "origin": [e.origin.x, e.origin.y],
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
@@ -5073,7 +5555,7 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// Opens a linked attachment with the operating system's associated application. Windows may
 /// show its own warning for files marked as downloaded; that prompt is intentionally preserved.
-fn open_file(file: &Path) -> std::io::Result<()> {
+pub(crate) fn open_file_for_viewer(file: &Path) -> std::io::Result<()> {
     if cfg!(target_os = "windows") {
         std::process::Command::new("cmd").args(["/C", "start", "", &file.to_string_lossy()]).spawn().map(|_| ())
     } else if cfg!(target_os = "macos") {

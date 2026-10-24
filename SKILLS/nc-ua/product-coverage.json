@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "product": "NoteCraft",
+  "last_reviewed": "2026-10-24",
+  "targets": ["local", "redmesa", "online"],
+  "status_values": ["implemented", "partial", "planned", "unknown"],
+  "coverage_values": ["verified", "demonstrated", "not_covered", "stale", "unknown"],
+  "features": [
+    {
+      "id": "layered-embedded-objects",
+      "name": "Layered embedded objects",
+      "product_status": "unknown",
+      "discoverability": "unknown",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "",
+      "limitation": "",
+      "notes": "Must cover object hit testing, z-order, selection, movement, and resizing."
+    },
+    {
+      "id": "file-attachments",
+      "name": "File attachments",
+      "product_status": "partial",
+      "discoverability": "insert-ribbon-and-file-drop",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "",
+      "limitation": "Insert dialog and copy operation are under active verification.",
+      "notes": "Keep image, video, audio, and generic-file behavior distinct."
+    },
+    {
+      "id": "themes",
+      "name": "Themes and visual states",
+      "product_status": "implemented",
+      "discoverability": "view-and-theme-controls",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "cargo test -p notecraft-ui-egui --lib",
+      "limitation": "Visual verification is still required for each supported theme.",
+      "notes": "Check normal, hover, pressed, focused, disabled, and selected states."
+    },
+    {
+      "id": "rtl-and-caret",
+      "name": "RTL text and caret behavior",
+      "product_status": "partial",
+      "discoverability": "unknown",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "work/rtl-and-caret-bar.md",
+      "limitation": "The product requirement remains broader than the current verification set.",
+      "notes": "Include Arabic, Hebrew, Persian, Urdu, mixed direction, selection, paste, and undo."
+    },
+    {
+      "id": "local-diagnostics",
+      "name": "Local logging and telemetry",
+      "product_status": "implemented",
+      "discoverability": "options-and-about",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "",
+      "limitation": "Nothing is sent automatically; export is user initiated.",
+      "notes": "Keep logging levels, session IDs, retention, export, and clear behavior documented."
+    },
+    {
+      "id": "corruption-recovery",
+      "name": "Corruption tolerance and user-approved repair",
+      "product_status": "planned",
+      "discoverability": "unknown",
+      "demo": "unknown",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "work/corruption-recovery.md",
+      "limitation": "Parser diagnostics and the repair-permission flow are not implemented yet.",
+      "notes": "Never silently overwrite a damaged page; denial must be logged at error level."
+    }
+  ]
+}

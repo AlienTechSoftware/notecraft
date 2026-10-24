@@ -13,10 +13,13 @@
 //! Everything else is read-only, because a hand edit to a picture or to a `_node.toml`
 //! is not something to do with a text box.
 
+use crate::floating::{self, Glyph};
 use crate::highlight::{self, Class, Lang, Span};
+use crate::icons::Icon;
+use crate::ribbon_icons::Mark;
 use crate::theme::{Tokens, mix};
 use egui::text::{CCursor, CCursorRange, LayoutJob, TextFormat};
-use egui::{Color32, Key, Modifiers, Sense, Ui, vec2};
+use egui::{Color32, CursorIcon, Key, Modifiers, Rect, Sense, Ui, vec2};
 use std::path::Path;
 
 /// How much of a file is read for the viewer. A larger file shows its first part and says
@@ -30,10 +33,16 @@ pub enum Kind {
     PageFile,
     /// A drawing of ours: SVG carrying the ink namespace.
     Ink,
+    /// An ordinary SVG asset, shown rendered above its editable source.
+    Svg,
     /// A Mermaid diagram's source kept as a file of its own (`.mmd`): text, and it can be typed in.
     Diagram,
     /// A picture the window can draw.
     Picture,
+    /// A PDF document; the source view shows extracted text and can open the system viewer.
+    Pdf,
+    /// A DOCX, XLSX or PPTX package; the source view shows its readable XML text.
+    Office,
     /// Anything else we can show as text.
     Text,
     /// A file shown by name, size and type only.
@@ -43,7 +52,7 @@ pub enum Kind {
 impl Kind {
     /// Whether what is shown can be typed in.
     pub fn editable(self) -> bool {
-        matches!(self, Kind::PageFile | Kind::Ink | Kind::Diagram)
+        matches!(self, Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Diagram)
     }
 }
 
@@ -85,6 +94,16 @@ pub struct State {
     /// The colour spans of `text`, and a fingerprint of the text and format they were made for.
     pub coloured: Vec<Span>,
     pub coloured_for: u64,
+    /// Width of the file list in the source view, in points.
+    pub list_width: f32,
+}
+
+const DEFAULT_LIST_WIDTH: f32 = 240.0;
+const MIN_LIST_WIDTH: f32 = 150.0;
+const MIN_EDITOR_WIDTH: f32 = 260.0;
+
+fn clamp_list_width(value: f32, available: f32) -> f32 {
+    value.clamp(MIN_LIST_WIDTH, (available - MIN_EDITOR_WIDTH).max(MIN_LIST_WIDTH))
 }
 
 /// The Find bar: what is being looked for, and where it was found in the text in hand.
@@ -313,6 +332,20 @@ fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
 pub struct Out {
     /// A file was typed in: its name and its new text, for the window to write.
     pub wrote: Option<(String, String)>,
+    pub file_action: Option<FileAction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileAction {
+    CopyPath(String),
+    OpenFolder(std::path::PathBuf),
+    OpenShell(std::path::PathBuf),
+    Delete(String),
+    AddFile,
+}
+
+fn delete_action(entry: &Entry) -> Option<FileAction> {
+    (!matches!(entry.kind, Kind::PageFile)).then(|| FileAction::Delete(entry.name.strip_prefix("assets/").unwrap_or(&entry.name).to_string()))
 }
 
 /// The files of a page, the page file first, then what sits beside it, then `assets/`.
@@ -361,14 +394,67 @@ fn kind_of(path: &Path, name: &str, page_file: &str) -> Kind {
             if head_of(path, 4096).is_some_and(|head| notecraft_ink::svg::is_ink(&head)) {
                 Kind::Ink
             } else {
-                Kind::Text
+                Kind::Svg
             }
         }
         "mmd" | "mermaid" => Kind::Diagram,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" => Kind::Picture,
+        "pdf" => Kind::Pdf,
+        "docx" | "xlsx" | "pptx" => Kind::Office,
         "md" | "html" | "htm" | "txt" | "json" | "toml" | "csv" | "xml" | "yaml" | "yml" => Kind::Text,
         _ => Kind::Other,
     }
+}
+
+fn office_text(path: &Path) -> (String, bool) {
+    let Ok(file) = std::fs::File::open(path) else { return ("The package could not be opened.".into(), false) };
+    let Ok(mut archive) = zip::ZipArchive::new(file) else { return ("The file is not a readable Office Open XML package.".into(), false) };
+    let mut names = Vec::new();
+    let mut text = String::new();
+    for i in 0..archive.len() {
+        let Ok(mut item) = archive.by_index(i) else { continue };
+        let name = item.name().to_string();
+        if !name.ends_with(".xml") || (!name.contains("document") && !name.contains("sharedStrings") && !name.contains("/slide")) {
+            continue;
+        }
+        names.push(name.clone());
+        let mut bytes = Vec::new();
+        use std::io::Read;
+        let _ = item.read_to_end(&mut bytes);
+        let xml = String::from_utf8_lossy(&bytes);
+        let mut in_tag = false;
+        for ch in xml.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => text.push(ch),
+                _ => {}
+            }
+        }
+        text.push_str("\n\n");
+        if text.len() >= MAX_SHOWN {
+            text.truncate(MAX_SHOWN);
+            return (format!("Package parts: {}\n\n{}", names.join(", "), text), true);
+        }
+    }
+    if text.trim().is_empty() {
+        text = "The package contains no readable text parts.".into();
+    }
+    (format!("Package parts: {}\n\n{}", names.join(", "), text), false)
+}
+
+fn pdf_text(path: &Path) -> (String, bool) {
+    let (raw, cut) = read_for_view(path);
+    let printable: String = raw.chars().map(|c| if c.is_control() && c != '\n' && c != '\r' && c != '\t' { ' ' } else { c }).collect();
+    (format!("PDF source inspection (embedded text may be compressed):\n\n{printable}"), cut)
+}
+
+fn attachment_icon_name(name: &str) -> String {
+    #[cfg(target_os = "windows")]
+    let extension = ".png";
+    #[cfg(not(target_os = "windows"))]
+    let extension = ".svg";
+    format!("{name}{extension}")
 }
 
 /// The first `want` bytes of a file as text, for looking at a head without reading a
@@ -407,7 +493,8 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
     if state.dir.as_deref() != Some(dir) {
         // Every page's file is `index.md` or `index.html`, so the name alone cannot say that
         // the text in hand is from this page.
-        *state = State { dir: Some(dir.to_path_buf()), ..State::default() };
+        let width = if state.list_width > 0.0 { state.list_width } else { DEFAULT_LIST_WIDTH };
+        *state = State { dir: Some(dir.to_path_buf()), list_width: width, ..State::default() };
     }
     let page_file = entries.first().filter(|e| e.kind == Kind::PageFile).map(|e| e.name.clone());
     if state.picked.is_none() || !entries.iter().any(|e| Some(&e.name) == state.picked.as_ref()) {
@@ -417,8 +504,18 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
 
     ui.horizontal_top(|ui| {
         // ---- the list ----
-        let list_width = 240.0_f32.min(ui.available_width() * 0.4);
+        let available = ui.available_width();
+        state.list_width = clamp_list_width(state.list_width.max(DEFAULT_LIST_WIDTH), available);
+        let list_width = state.list_width;
         ui.allocate_ui_with_layout(vec2(list_width, height), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            let list_surface = ui.interact(ui.max_rect(), ui.id().with("file-list-surface"), egui::Sense::click());
+            list_surface.context_menu(|ui| {
+                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Add file", t).clicked() {
+                    log::debug!("source file-list add file requested");
+                    out.file_action = Some(FileAction::AddFile);
+                    ui.close();
+                }
+            });
             ui.set_min_width(list_width);
             ui.set_max_width(list_width);
             ui.label(egui::RichText::new("FILES IN THIS PAGE").small().color(t.muted));
@@ -426,7 +523,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             egui::ScrollArea::vertical().id_salt("code-files").max_height(height - 24.0).show(ui, |ui| {
                 for entry in entries {
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
-                    let row = row(ui, entry, picked, t);
+                    let row = row(ui, entry, picked, t, &mut out.file_action, dir);
                     if row.clicked() {
                         state.picked = Some(entry.name.clone());
                         state.loaded = None;
@@ -435,11 +532,24 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 }
             });
         });
-        ui.separator();
+        let divider =
+            ui.allocate_rect(Rect::from_min_size(ui.cursor().min, vec2(8.0, height)), Sense::drag()).on_hover_cursor(CursorIcon::ResizeHorizontal);
+        ui.painter().rect_filled(divider.rect.shrink2(vec2(3.0, 0.0)), 1.0, if divider.hovered() || divider.dragged() { t.accent } else { t.faint });
+        if divider.dragged() {
+            state.list_width = clamp_list_width(state.list_width + divider.drag_delta().x, available);
+        }
 
         // ---- the file that is picked ----
         let Some(name) = state.picked.clone() else { return };
         let Some(entry) = entries.iter().find(|e| e.name == name) else { return };
+        // Delete belongs to the selected asset row in the source view, not to the
+        // source editor. Never consume it while a text editor has keyboard focus.
+        if entry.kind != Kind::PageFile
+            && !ui.ctx().egui_wants_keyboard_input()
+            && ui.input(|input| input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
+        {
+            out.file_action = delete_action(entry);
+        }
         let width = ui.available_width();
         ui.allocate_ui_with_layout(vec2(width, height), egui::Layout::top_down(egui::Align::LEFT), |ui| {
             ui.horizontal(|ui| {
@@ -450,6 +560,10 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 }
                 if !entry.kind.editable() {
                     ui.label(egui::RichText::new("read-only").small().color(t.muted));
+                }
+                if entry.kind != Kind::PageFile && ui.small_button("Delete file").clicked() {
+                    log::debug!("source view delete requested from header: file={:?}", entry.name);
+                    out.file_action = delete_action(entry);
                 }
             });
             ui.separator();
@@ -470,6 +584,55 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 Kind::Other => {
                     ui.label(egui::RichText::new("Nothing here can show this kind of file.").color(t.muted));
                     ui.label(egui::RichText::new("It is listed so the page's folder is not a secret.").small().color(t.muted));
+                }
+                Kind::Office | Kind::Pdf => {
+                    let path = dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
+                    ui.label(egui::RichText::new("Document renderer coming soon").small().color(t.muted));
+                    let icon = attachment_icon_name(&entry.name);
+                    if let Some(uri) =
+                        crate::preview::image_uri(dir, &icon).or_else(|| crate::preview::image_uri(dir, &format!("{}{}", entry.name, ".svg")))
+                    {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Image::new(uri).fit_to_exact_size(vec2(72.0, 84.0)));
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new(&entry.name).strong());
+                                ui.label(
+                                    egui::RichText::new(if entry.kind == Kind::Pdf { "PDF document" } else { "Office document" }).color(t.muted),
+                                );
+                                ui.label(egui::RichText::new("Text inspection is shown below.").small().color(t.muted));
+                            });
+                        });
+                    } else {
+                        ui.label(egui::RichText::new("No generated preview icon is available.").color(t.warn));
+                    }
+                    ui.separator();
+                    if state.loaded.as_deref() != Some(entry.name.as_str()) {
+                        let (text, cut) = if entry.kind == Kind::Office { office_text(&path) } else { pdf_text(&path) };
+                        state.text = text;
+                        state.loaded = Some(entry.name.clone());
+                        state.dirty = false;
+                        if cut {
+                            state.text.push_str("\n\n... the rest of this file is not shown here.");
+                        }
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(if entry.kind == Kind::Pdf { "PDF text inspection" } else { "Office text inspection" }).strong(),
+                        );
+                        if ui.button("Open with associated app").clicked() {
+                            log::info!("source viewer opening associated application: file={:?}", path);
+                            let _ = crate::app::open_file_for_viewer(&path);
+                        }
+                    });
+                    ui.label(egui::RichText::new("Read-only text extraction. Full document rendering is coming soon.").small().color(t.muted));
+                    egui::ScrollArea::vertical().id_salt("code-binary-text").show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut state.text)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                                .interactive(false),
+                        );
+                    });
                 }
                 // A drawing is drawn, with its code one click away: a wall of numbers
                 // says nothing about what is on the page.
@@ -506,7 +669,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         }
                     }
                 }
-                Kind::PageFile | Kind::Ink | Kind::Text | Kind::Diagram => {
+                Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
@@ -518,6 +681,26 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     }
                     if entry.kind == Kind::Ink && ui.small_button("Show the strokes").clicked() {
                         state.as_code = false;
+                    }
+                    if entry.kind == Kind::Svg {
+                        ui.label(egui::RichText::new("Rendered SVG preview").small().color(t.muted));
+                        let preview_height = (ui.available_height() * 0.34).clamp(150.0, 320.0);
+                        let preview_room = egui::vec2(ui.available_width(), preview_height);
+                        egui::Frame::new().fill(t.editor).inner_margin(6.0).show(ui, |ui| {
+                            if let Some(uri) = crate::preview::image_uri(dir, &entry.name) {
+                                egui::ScrollArea::both().id_salt("code-svg-preview").max_height(preview_height - 12.0).show(ui, |ui| {
+                                    ui.add(egui::Image::new(uri).max_width(ui.available_width()).fit_to_original_size(1.0));
+                                });
+                            } else {
+                                ui.allocate_ui(preview_room, |ui| {
+                                    ui.centered_and_justified(|ui| {
+                                        ui.label(egui::RichText::new("This SVG cannot be rendered here.").color(t.muted));
+                                    });
+                                });
+                            }
+                        });
+                        ui.separator();
+                        ui.label(egui::RichText::new("SVG source").small().color(t.muted));
                     }
                     let warning = match entry.kind {
                         Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
@@ -656,7 +839,7 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 }
 
 /// One row of the list: the name, and what the file is.
-fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens) -> egui::Response {
+fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     if picked || resp.hovered() {
@@ -670,6 +853,29 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens) -> egui::Response {
     let enabled = ui.is_enabled();
     let label = format!("{} ({})", entry.name, size_text(entry.bytes));
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, picked, label.as_str()));
+    let full = page_dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let name = entry.name.clone();
+    resp.context_menu(|ui| {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), "Copy full path", t).clicked() {
+            *action = Some(FileAction::CopyPath(full.to_string_lossy().into_owned()));
+            ui.close();
+        }
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), "Open in folder", t).clicked() {
+            *action = Some(FileAction::OpenFolder(full.parent().unwrap_or(page_dir).to_path_buf()));
+            ui.close();
+        }
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Open using shell", t).clicked() {
+            *action = Some(FileAction::OpenShell(full.clone()));
+            ui.close();
+        }
+        if entry.kind != Kind::PageFile {
+            floating::menu_separator(ui, t);
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
+                *action = Some(FileAction::Delete(name.strip_prefix("assets/").unwrap_or(&name).to_string()));
+                ui.close();
+            }
+        }
+    });
     resp.on_hover_text(if entry.used { entry.name.clone() } else { format!("{}: not used by the page", entry.name) })
 }
 

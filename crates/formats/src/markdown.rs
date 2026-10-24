@@ -173,7 +173,9 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             '!' if next == Some('[') => match parse_link(chars, i + 1) {
                 Some((alt, url, after)) => {
                     push_text(&mut out, &mut buf, st, &link);
-                    out.push(Span { text: alt, image: Some(url), ..Span::default() });
+                    // Preserve the surrounding link when an image is nested in one. This is
+                    // how attachment cards (`[![icon](icon) name](file)`) retain their target.
+                    out.push(Span { text: alt, image: Some(url), link: link.clone(), ..Span::default() });
                     i = after;
                 }
                 None => {
@@ -205,7 +207,21 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
 
 /// `[label](url)` starting at `start` (the `[`). Returns label, url and the index after `)`.
 fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
-    let close = find(chars, start + 1, &[']'])?;
+    // Find the matching label bracket, not the `]` belonging to an image nested
+    // inside the label (`[![icon](icon) name](file)`).
+    let mut depth = 0usize;
+    let close = (start + 1..chars.len()).find(|&i| match chars.get(i) {
+        Some('[') => {
+            depth += 1;
+            false
+        }
+        Some(']') if depth > 0 => {
+            depth -= 1;
+            false
+        }
+        Some(']') => true,
+        _ => false,
+    })?;
     if chars.get(close + 1) != Some(&'(') {
         return None;
     }
@@ -347,6 +363,14 @@ pub fn parse(src: &str) -> Vec<Block> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_attachment_image_keeps_file_link() {
+        let spans = parse_inline("[![ ](assets/file.docx.png) file.docx](assets/file.docx)");
+        let image = spans.iter().find(|span| span.image.is_some()).expect("image span");
+        assert_eq!(image.image.as_deref(), Some("assets/file.docx.png"));
+        assert_eq!(image.link.as_deref(), Some("assets/file.docx"));
+    }
 
     fn text_of(spans: &[Span]) -> String {
         spans.iter().map(|s| s.text.as_str()).collect()

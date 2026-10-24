@@ -44,7 +44,9 @@ const GLYPH: f32 = 16.0;
 /// for a row that has no picture; its words still start where the others' do, so a column of
 /// mixed rows lines up as it does in Office.
 pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> Response {
-    let width = ui.available_width().max(MENU_W - 16.0);
+    // Context-menu parents can report the full remaining window width. Cap the row so a
+    // four-item menu does not become a large empty ribbon across the page.
+    let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
     if resp.hovered() {
@@ -63,7 +65,7 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
 /// A menu row with a tick in the picture column when `checked`, the way OneNote lists the
 /// things a menu can turn on and off.
 pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Response {
-    let width = ui.available_width().max(MENU_W - 16.0);
+    let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
     if resp.hovered() {
@@ -82,7 +84,7 @@ pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Re
 
 /// A thin rule between groups of rows, starting where the words do, as Office draws it.
 pub fn menu_separator(ui: &mut Ui, t: &Tokens) {
-    let width = ui.available_width().max(MENU_W - 16.0);
+    let width = ui.available_width().min(MENU_W);
     let (rect, _) = ui.allocate_exact_size(vec2(width, 7.0), Sense::hover());
     let y = rect.center().y.round() + 0.5;
     ui.painter().hline(rect.min.x + ICON_COL..=rect.max.x, y, egui::Stroke::new(1.0, t.rule_line));
