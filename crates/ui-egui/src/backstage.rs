@@ -333,12 +333,22 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
 
 fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, primary: bool) -> egui::Response {
     let (fill, stroke, text) = if primary { (t.accent, t.accent, t.band_text) } else { (t.panel, t.faint, t.text) };
-    ui.add(
-        egui::Button::new(egui::RichText::new(label).size(if primary { 13.5 } else { 14.0 }).color(text))
-            .min_size(vec2(width, height))
-            .fill(fill)
-            .stroke(egui::Stroke::new(if primary { 1.0 } else { 0.8 }, stroke)),
-    )
+    let response = ui
+        .add(
+            egui::Button::new(egui::RichText::new(label).size(if primary { 13.5 } else { 14.0 }).color(text))
+                .min_size(vec2(width, height))
+                .fill(fill)
+                .stroke(egui::Stroke::new(if primary { 1.0 } else { 0.8 }, stroke)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(label);
+    if response.hovered() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(2.0, t.band_text), egui::StrokeKind::Inside);
+    }
+    if response.is_pointer_button_down_on() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(3.0, t.strong), egui::StrokeKind::Inside);
+    }
+    response
 }
 
 /// About: what this is, which version, and where the code lives.
