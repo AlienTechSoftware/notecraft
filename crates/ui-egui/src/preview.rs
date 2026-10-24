@@ -332,14 +332,14 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
     egui::vec2(ui.available_width(), 480.0 * zoom)
 }
 
-fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, block: usize) {
+fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
                 Some(uri) => {
-                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::click()));
-                    if response.clicked() {
-                        ui.data_mut(|data| data.insert_temp(image_clicked_id(), block));
+                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::hover()));
+                    if response.hovered() {
+                        log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
                     }
                 }
                 None => {
@@ -370,11 +370,6 @@ pub struct BlockResponse {
     pub response: egui::Response,
     /// A to-do box the user ticked or cleared, and its new state.
     pub task_set: Option<bool>,
-}
-
-/// Temporary marker used to let the page container select the object that owns a clicked image.
-pub(crate) fn image_clicked_id() -> egui::Id {
-    egui::Id::new("page-image-clicked")
 }
 
 /// Draws blocks into `ui`. `page_dir` is the page's folder, used to find attachments.
@@ -452,6 +447,9 @@ pub(crate) fn show_block_zoomed(
     let start = ui.cursor().min;
     let body = ui.style().visuals.text_color();
     let mut task_set = None;
+    // Keep the actual painted bounds for rich-object hit testing.  The block's
+    // layout row may be as wide as the page even when an image is narrower.
+    let mut rendered_object_rect = None;
     {
         match block {
             Block::Heading { level, spans } => {
@@ -474,7 +472,7 @@ pub(crate) fn show_block_zoomed(
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom, i);
+                            draw_inline_images(ui, &spans, page_dir, zoom);
                         });
                         ui.add_space(4.0);
                     }
@@ -482,7 +480,7 @@ pub(crate) fn show_block_zoomed(
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
-                        draw_inline_images(ui, spans, page_dir, zoom, i);
+                        draw_inline_images(ui, spans, page_dir, zoom);
                         ui.add_space(4.0);
                     }
                 }
@@ -512,11 +510,11 @@ pub(crate) fn show_block_zoomed(
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom, i);
+                            draw_inline_images(ui, &spans, page_dir, zoom);
                         }),
                         None => {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, spans, page_dir, zoom, i);
+                            draw_inline_images(ui, spans, page_dir, zoom);
                         }
                     });
                 });
@@ -595,9 +593,20 @@ pub(crate) fn show_block_zoomed(
             Block::Image { alt, src } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {
-                        let response = ui.add(egui::Image::new(uri).fit_to_exact_size(picture_box(ui, zoom)).sense(egui::Sense::click()));
-                        if response.clicked() {
-                            ui.data_mut(|data| data.insert_temp(image_clicked_id(), i));
+                        let response = ui.add(
+                            egui::Image::new(uri)
+                                .max_width(ui.available_width())
+                                .max_height(480.0 * zoom)
+                                .fit_to_original_size(1.0)
+                                .sense(egui::Sense::hover()),
+                        );
+                        rendered_object_rect = Some(response.rect);
+                        if response.hovered() {
+                            log::debug!(
+                                "image render hover: block={i} src={src:?} rect={:?} pointer={:?}",
+                                response.rect,
+                                ui.ctx().pointer_latest_pos()
+                            );
                         }
                     }
                     None => {
@@ -626,7 +635,46 @@ pub(crate) fn show_block_zoomed(
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
     let response = ui.interact(rect, id, egui::Sense::click());
+    if let Some(kind) = object_kind(block) {
+        let clicked = response.clicked();
+        let pointer = response.interact_pointer_pos();
+        ui.data_mut(|data| {
+            let mut hits = data.get_temp::<Vec<(usize, egui::Rect, String)>>(object_hits_id()).unwrap_or_default();
+            hits.push((i, rendered_object_rect.unwrap_or(response.rect), kind.to_string()));
+            data.insert_temp(object_hits_id(), hits);
+            if clicked {
+                data.insert_temp(object_clicked_id(), (i, kind.to_string()));
+            }
+        });
+        if clicked {
+            log::debug!("embedded object click: block={i} kind={kind} rect={:?} pointer={pointer:?}", response.rect);
+        }
+    }
     BlockResponse { response, task_set }
+}
+
+pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
+    match block {
+        Block::Image { .. } => Some("image"),
+        Block::Code { lang, .. } if lang == "mermaid" => Some("diagram"),
+        Block::Code { .. } => Some("code"),
+        Block::MathBlock(_) => Some("math"),
+        Block::Table { .. } => Some("table"),
+        Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans)
+            if spans.iter().any(|s| s.image.is_some()) =>
+        {
+            Some("image")
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn object_hits_id() -> egui::Id {
+    egui::Id::new("embedded-object-hits")
+}
+
+pub(crate) fn object_clicked_id() -> egui::Id {
+    egui::Id::new("embedded-object-clicked")
 }
 
 /// A text block with no words, no maths and no picture in it: a blank line.
@@ -723,6 +771,17 @@ mod tests {
         assert_eq!(image_uri(dir, "assets/"), None);
         assert_eq!(image_uri(dir, "assets/a\\b.png"), None);
         assert_eq!(image_uri(dir, "../assets/a.png"), None);
+    }
+
+    #[test]
+    fn rich_blocks_share_object_selection_kinds() {
+        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into() }), Some("image"));
+        assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
+        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), Some("code"));
+        assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));
+        assert_eq!(object_kind(&Block::Table { head: vec![], rows: vec![] }), Some("table"));
+        assert_eq!(object_kind(&Block::Paragraph(vec![Span { image: Some("assets/a.png".into()), ..Span::default() }])), Some("image"));
+        assert_eq!(object_kind(&Block::Paragraph(vec![Span { text: "plain".into(), ..Span::default() }])), None);
     }
 
     /// An attachment link must resolve to something egui can actually load.

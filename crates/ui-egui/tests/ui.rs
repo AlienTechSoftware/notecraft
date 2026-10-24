@@ -3573,6 +3573,37 @@ fn deleting_a_box_with_a_picture_in_it_removes_the_picture_from_the_page() {
     assert!(!file(&s).contains("koala.png"), "the saved page no longer names the picture");
 }
 
+/// A picture click belongs to the picture, not to its containing page box. This guards the
+/// overlapping-hit-test regression where the whole container became selected instead.
+#[test]
+fn clicking_a_picture_selects_the_picture_only() {
+    let (_t, mut app, s) = sample_app("ui-picture-hit-test");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "![the koala](assets/koala.png)\n"}}))
+        .expect("write one-picture page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}}))
+        .expect("arrange the picture");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+
+    // The picture begins below the container handle/padding.
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0})).expect("click the picture");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "the picture is selected: {v}");
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "the containing box is not selected: {v}");
+
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("clear picture selection");
+    settle(&mut h);
+    assert!(look_at(&mut h).pointer("/page/selectedImage").is_none_or(Value::is_null), "Escape clears the picture selection");
+}
+
 /// The first drawn line selected whole, then a right click on it: the state the text menu and
 /// its toolbar are meant for. Block 0 is the page's title heading, which the window does not draw
 /// because the title area above the page already shows it, so the caret lands on the line under

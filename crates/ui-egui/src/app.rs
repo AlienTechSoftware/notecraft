@@ -3061,9 +3061,16 @@ impl NoteCraftApp {
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
         let (copy, cut, paste, all) = ctx.input(|i| {
             let hit = |want: egui::Key| {
-                i.events.iter().any(
-                    |e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl)),
-                )
+                // `key_pressed` is the platform-normalized view.  Some native
+                // backends do not retain the raw key event in `events` after a
+                // focused text widget has considered it, while the normalized
+                // edge remains available for the rest of the frame.  Keep the
+                // raw-event check as a fallback for the headless harness and
+                // older egui backends.
+                (i.key_pressed(want) && (i.modifiers.command || i.modifiers.ctrl))
+                    || i.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
+                    })
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -4909,6 +4916,7 @@ impl NoteCraftApp {
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
                 // The image block selected independently of its containing text box, or null.
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
+                "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),
                 "origin": [e.origin.x, e.origin.y],
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
