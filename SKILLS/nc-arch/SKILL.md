@@ -284,7 +284,7 @@ If async work is added later, must handle:
 NoteCraft uses **Model-View-Controller** architecture, not MVVM. This choice is deliberate:
 
 ### Why MVC
-- **Controllers own orchestration:** `Session` is the controller—it routes commands, manages MCP integration, handles test hooks, and owns autosave logic. Simple and explicit.
+- **Controllers own orchestration:** `Session` is the controller - it routes commands, manages MCP integration, handles test hooks, and owns autosave logic. Simple and explicit.
 - **Models are pure:** `Notebook`, `Page`, `Section`, `Block` are pure data types with no I/O or state management. Fully unit-testable.
 - **Views are stateless:** UI layer (egui, CLI) responds to controller commands. Window state and theme live in the view; notebook state lives in the model/controller.
 - **Rust-friendly:** Rust's ownership model and MVVM's two-way data binding don't mesh well. MVC sidesteps that complexity.

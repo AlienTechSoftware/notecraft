@@ -390,7 +390,11 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
     // drag that scrolled the ribbon instead would take the pen out of the user's hand.
     egui::ScrollArea::horizontal()
         .id_salt(("ribbon", chosen))
-        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        // The ribbon is an Office-style command band, not a document scroller.  A
+        // visible horizontal scrollbar is painted across its bottom edge when a tab
+        // is wider than the window, which looks like a stray black artifact.  Keep
+        // the scroll area (overflow tabs still scroll) but do not paint that bar.
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .scroll_source(egui::scroll_area::ScrollSource { drag: egui::scroll_area::DragScroll::Never, ..egui::scroll_area::ScrollSource::default() })
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {

@@ -125,25 +125,27 @@ The reusable NoteCraft skills are stored under [`SKILLS/`](SKILLS). Use the smal
 covers the task. The skill files are the detailed references; this table is the inventory and
 purpose summary.
 
-| Skill | Purpose |
-|---|---|
-| `nc-arch` | High-level architecture: model, view, controller, crate boundaries, ownership, data flow, and system-level constraints. |
-| `nc-code-rust` | Rust coding standards, error handling, logging, testing, linting, and maintainable crate implementation. |
-| `nc-dom-ser` | HTML and CMGFM page model, serialization, deserialization, round-trip behavior, and cross-format parity. |
-| `nc-hl-design` | High-level feature design: scope, system boundaries, data flows, state machines, decisions, and acceptance criteria. |
-| `nc-prod` | Product principles and non-negotiable requirements, including local files, OneNote behavior, import, and format parity. |
-| `nc-reelase-signoff` | Release readiness checks for versioning, demo parity, tests, lint, packaging, installers, assets, and evidence. |
-| `nc-themes` | Theme tokens, contrast, borders, typography, state colors, modal surfaces, and visual regression checks. |
-| `nc-ua` | User assistance and demo stewardship: product coverage, multilingual demo content, generated outputs, scratch copies, and release consistency. |
-| `nc-uiux-bidi` | Bidirectional text, RTL controls, caret placement, selection, mixed-script behavior, and mirrored layout. |
-| `nc-uiux-controls` | Controls and interaction details: buttons, menus, hit targets, hover states, keyboard behavior, object selection, and dragging. |
-| `nc-uiux-dialogs` | Themed modal dialogs, confirmations, progress surfaces, privacy prompts, recovery prompts, and error states. |
-| `nc-uiux-features` | Complete user-facing features spanning ribbon, page content, storage, dialogs, persistence, accessibility, and regression tests. |
-| `nc-uiux-icons` | Licensed icon selection, local asset integration, semantic mapping, accessibility, and icon-state consistency. |
+| Skill | Level or role | Owns | Does not own / routes to |
+|---|---|---|---|
+| `nc-arch` | Level 1: architecture authority | System architecture, MVC boundaries, crate layering, ownership, data flow, and cross-platform constraints. | Does not define feature details or UI polish. Routes feature design to `nc-hl-design`. |
+| `nc-hl-design` | Level 2: design router | Feature scope, architecture handoff, state and data-flow design, decisions, risks, and acceptance criteria. | Does not replace `nc-arch` or implement MVC details. Routes the detailed design to the relevant specialist below. |
+| `nc-prod` | Product authority | Product requirements, non-negotiable behavior, local-file model, OneNote behavior, import, and format parity. | Does not design crate APIs or implement features. |
+| `nc-dom-ser` | MVC specialist: DOM and persistence | HTML and CMGFM page model, DOM semantics, serialization, deserialization, asset references, round trips, and cross-format parity. | Does not own general architecture or UI styling. Consult with `nc-arch`; route feature design through `nc-hl-design`. |
+| `nc-code-rust` | Implementation specialist | Rust code quality, error handling, logging, tests, linting, and maintainable crate implementation. | Does not decide product scope or architecture. Implements the approved design. |
+| `nc-uiux-features` | MVC specialist: end-to-end feature view | Complete user-facing features spanning ribbon, page content, storage integration, persistence, accessibility, and regression tests. | Does not redefine storage or format semantics. Consult `nc-dom-ser` and `nc-arch` when those boundaries are crossed. |
+| `nc-uiux-controls` | MVC specialist: interaction controls | Buttons, menus, hit targets, hover states, keyboard behavior, object selection, and dragging. | Does not own dialog theming, DOM persistence, or product scope. |
+| `nc-uiux-dialogs` | MVC specialist: dialog view | Themed modal dialogs, confirmations, progress surfaces, privacy prompts, recovery prompts, and error states. | Does not own command behavior or persistence. Consult `nc-uiux-controls` for interaction details. |
+| `nc-uiux-bidi` | MVC specialist: text interaction | Bidirectional text, RTL controls, caret placement, selection, mixed-script behavior, and mirrored layout. | Does not own general editor serialization. Consult `nc-dom-ser` for persisted page representation. |
+| `nc-themes` | UI foundation specialist | Theme tokens, contrast, borders, typography, state colors, modal surfaces, and visual regression checks. | Does not own individual feature behavior or dialog flow. |
+| `nc-uiux-icons` | UI foundation specialist | Licensed icon selection, local asset integration, semantic mapping, accessibility, and icon-state consistency. | Does not own Windows Shell asset extraction or page serialization. Consult `nc-dom-ser` and `nc-themes` where applicable. |
+| `nc-ua` | Product coverage specialist | User assistance, product coverage, multilingual demo content, generated outputs, scratch copies, and release consistency. | Does not replace implementation or design skills. |
+| `nc-reelase-signoff` | Release gate | Versioning, demo parity, tests, lint, packaging, installers, assets, and release evidence. | Does not implement features or waive failing gates. |
 
-When a change crosses page storage, rendering, or editor behavior, use `nc-dom-ser` together with
-the relevant architecture, product, and UI/UX skills. `nc-ua` owns the user-facing coverage map,
-but it does not replace the implementation or design skills.
+Use the smallest set that covers the work, in this order when the change is substantial:
+`nc-arch` -> `nc-hl-design` -> the relevant MVC or UI specialist -> `nc-code-rust`.
+Add `nc-prod` when product requirements are involved, `nc-dom-ser` when page or DOM
+representation is involved, and `nc-reelase-signoff` for release work. `nc-ua` owns the
+user-facing coverage map, but it does not replace the implementation or design skills.
 
 ## Runtime environments and local diagnostics
 

@@ -4302,6 +4302,15 @@ impl NoteCraftApp {
 
     fn dialogs(&mut self, ctx: &Context) {
         let Some(dialog) = self.dialog.take() else { return };
+        // Page loading and native Shell icon generation can finish between the
+        // recovery scan and the frame that presents this modal. Re-check the
+        // filesystem so a healthy sidecar never produces a stale warning.
+        if let Dialog::MissingAttachmentIcon { page, name } = &dialog
+            && attachment_icon_exists(page, name)
+        {
+            log::debug!("discarding stale missing-icon warning: page={page:?} attachment={name:?}");
+            return;
+        }
         let mut keep = true;
         let mut next = dialog;
         match &mut next {

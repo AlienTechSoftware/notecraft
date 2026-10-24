@@ -4,7 +4,7 @@ description: 'NoteCraft high-level design guidance. Use before starting new feat
 license: MIT
 metadata:
   version: "0.0.20261024.2"
-  related_skills: [code-assistant, nc-arch, nc-prod]
+  related_skills: [code-assistant, nc-arch, nc-dom-ser, nc-prod]
 ---
 
 # nc-hl-design - NoteCraft High-Level Design
@@ -35,8 +35,17 @@ Start with `/nc-hl-design` before:
 - Adding a major new feature (new command, new format, new import path)
 - Refactoring a system boundary (how crates talk to each other)
 - Changing the data model (notebooks, pages, sections)
+- Changing how DOM objects, tiles or containers resolve to page folders or assets
 - Adding cross-platform support (Windows, macOS, Linux features)
 - Major performance work (benchmarking new paths)
+
+### DOM and page-folder ownership
+
+When a design crosses the boundary between the rendered DOM and the on-disk page
+tree - especially asset lookup, container ownership, or DOM-to-model identity - apply
+[`nc-dom-ser`](../nc-dom-ser/SKILL.md) alongside this skill. The design must define
+the model identity and controller query before specifying the view. The view must
+not reconstruct page, section, notebook, or asset paths from DOM structure.
 
 For small, scoped work (single-file bug fix, obvious config change), use `code-assistant` directly.
 
