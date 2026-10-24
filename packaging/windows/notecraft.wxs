@@ -77,6 +77,22 @@
       <Component Id="NotecraftCli" Guid="E3061CAE-99C3-48E0-8250-8C192AABBFFA">
         <File Id="NotecraftCliExe" Source="$(var.BinDir)\notecraft-cli.exe" KeyPath="yes" />
       </Component>
+      <ComponentRef Id="OfficeimoBridge" />
     </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Directory Id="ImportersDir" Name="importers">
+        <Directory Id="OfficeimoDir" Name="officeimo">
+          <Directory Id="OfficeimoWinX64Dir" Name="win-x64">
+            <Component Id="OfficeimoBridge" Guid="A6C5F87B-5A6E-4F00-9A9C-6ACF5E8FBB11">
+              <File Id="OfficeimoBridgeExe" Source="$(var.BinDir)\importers\officeimo\win-x64\officeimo-notecraft.exe" KeyPath="yes" />
+              <File Id="OfficeimoManifest" Source="$(var.BinDir)\importers\officeimo\manifest.json" />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </DirectoryRef>
   </Fragment>
 </Wix>

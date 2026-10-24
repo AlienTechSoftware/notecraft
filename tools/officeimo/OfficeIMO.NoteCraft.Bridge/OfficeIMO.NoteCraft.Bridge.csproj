@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>officeimo-notecraft</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OfficeIMO.OneNote" Version="3.5.1" />
+    <PackageReference Include="OfficeIMO.OneNote.Html" Version="3.5.1" />
+    <PackageReference Include="OfficeIMO.OneNote.Markdown" Version="3.5.1" />
+  </ItemGroup>
+</Project>

@@ -58,6 +58,19 @@ fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
     ui.add_space(10.0);
 }
 
+/// Modal actions use a readable size based on their label instead of egui's compact default.
+fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
+    let width = (label.chars().count() as f32 * 8.0 + 32.0).max(92.0);
+    let fill = if primary { tokens.accent } else { tokens.panel };
+    let text = if primary { tokens.band_text } else { tokens.text };
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).size(14.0).color(text))
+            .min_size(vec2(width, 32.0))
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0, tokens.accent)),
+    )
+}
+
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
@@ -1803,8 +1816,7 @@ impl NoteCraftApp {
                 ui.separator();
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new("Cancel import").color(self.tokens.band_text)).fill(self.tokens.accent)).clicked()
-                    {
+                    if modal_button(ui, &self.tokens, "Cancel import", true).clicked() {
                         cancel = true;
                     }
                 });
@@ -4160,10 +4172,10 @@ impl NoteCraftApp {
                         ui.separator();
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Cancel").clicked() {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
                                 keep = false;
                             }
-                            if ui.add(egui::Button::new("Delete notebook").fill(self.tokens.accent)).clicked() {
+                            if modal_button(ui, &self.tokens, "Delete notebook", true).clicked() {
                                 go = true;
                             }
                         });
@@ -4214,13 +4226,10 @@ impl NoteCraftApp {
                             ui.label("You can restore it from History.");
                         }
                         ui.horizontal(|ui| {
-                            if ui.button("Cancel").clicked() {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
                                 keep = false;
                             }
-                            if ui
-                                .add(egui::Button::new(if is_notebook { "Delete notebook" } else { "Move to recycle bin" }).fill(self.tokens.accent))
-                                .clicked()
-                            {
+                            if modal_button(ui, &self.tokens, if is_notebook { "Delete notebook" } else { "Move to recycle bin" }, true).clicked() {
                                 go = true;
                             }
                         });

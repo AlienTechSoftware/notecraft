@@ -53,12 +53,23 @@ pub fn locate() -> Result<PathBuf, String> {
         return executable_or_error(path, "NOTECRAFT_OFFICEIMO_BRIDGE");
     }
 
-    let root = std::env::var_os("NOTECRAFT_DATA_DIR")
-        .map(PathBuf::from)
-        .or_else(data_dir)
-        .ok_or_else(|| "cannot determine the NoteCraft data directory".to_string())?;
-    let path = root.join("importers").join("officeimo").join(target_name()).join(executable_name());
-    executable_or_error(path, "the installed OfficeIMO bridge")
+    let relative = Path::new("importers").join("officeimo").join(target_name()).join(executable_name());
+    let mut candidates = Vec::new();
+    if let Some(root) = std::env::var_os("NOTECRAFT_DATA_DIR").map(PathBuf::from).or_else(data_dir) {
+        candidates.push(root.join(&relative));
+    }
+    // Windows MSI installs the bridge beside the application under Program Files, while
+    // portable/dev installs may use the data directory above. Check both layouts.
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(app_dir) = executable.parent()
+    {
+        candidates.push(app_dir.join(&relative));
+    }
+    if let Some(path) = candidates.iter().find(|path| path.is_file()) {
+        return Ok(path.clone());
+    }
+    let searched = candidates.iter().map(|path| path.display().to_string()).collect::<Vec<_>>().join("; ");
+    Err(format!("the installed OfficeIMO bridge was not found; searched: {searched}"))
 }
 
 /// Invokes the bridge using the stable command-line contract.
