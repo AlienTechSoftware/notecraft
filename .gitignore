@@ -23,3 +23,8 @@ MEMORY.md
 *.wixpdb
 *.exe
 *.dmp
+
+# OfficeIMO bridge build output and temporary upstream source inspection.
+/tools/officeimo/OfficeIMO.NoteCraft.Bridge/bin/
+/tools/officeimo/OfficeIMO.NoteCraft.Bridge/obj/
+/.work-officeimo-*/
