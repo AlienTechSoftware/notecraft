@@ -1585,7 +1585,8 @@ impl NoteCraftApp {
                     let _ = std::fs::remove_dir_all(path);
                 }
                 backstage::Act::ExportTelemetry(root) => {
-                    if let Some(destination) = rfd::FileDialog::new().set_title("Export telemetry ZIP").set_file_name("notecraft-telemetry.zip").save_file()
+                    if let Some(destination) =
+                        rfd::FileDialog::new().set_title("Export telemetry ZIP").set_file_name("notecraft-telemetry.zip").save_file()
                         && let Some(session) = std::fs::read_dir(&root)
                             .ok()
                             .and_then(|r| r.filter_map(Result::ok).find(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)))
