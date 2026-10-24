@@ -40,6 +40,7 @@ pub enum Act {
     SetTelemetryLevel(String),
     OpenTelemetryFolder(std::path::PathBuf),
     ClearTelemetry(std::path::PathBuf),
+    ExportTelemetry(std::path::PathBuf),
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -416,14 +417,15 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
         if ui.button("Open telemetry folder").clicked() {
             acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
         }
+        if ui.button("Export current session ZIP").clicked() {
+            acts.push(Act::ExportTelemetry(root.to_path_buf()));
+        }
         if ui.button("Clear telemetry").clicked() {
             acts.push(Act::ClearTelemetry(root.to_path_buf()));
         }
     });
     ui.add_space(12.0);
-    ui.label(
-        egui::RichText::new("Export and ZIP support will be enabled here once the local session format is finalized.").size(11.5).color(t.muted),
-    );
+    ui.label(egui::RichText::new("Export creates a user-selected ZIP, then removes the exported session folder.").size(11.5).color(t.muted));
 }
 
 #[cfg(test)]

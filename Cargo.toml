@@ -31,6 +31,7 @@ egui = "0.36"
 egui_extras = { version = "0.36", default-features = false, features = ["image", "file", "svg_text"] }
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 serde_json = "1"
+zip = "4"
 # Equations: a pure Rust, KaTeX compatible TeX maths typesetter. Pinned exactly, because it is
 # 0.x and young; the adapter in crates/math is the only place that names it.
 # Diagrams: a pure Rust Mermaid renderer. Pinned exactly, because it is 0.x and young; only
