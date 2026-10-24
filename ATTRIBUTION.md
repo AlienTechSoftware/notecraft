@@ -107,3 +107,5 @@ data.
   `LICENSE-APACHE`, `NOTICE`. The rows above are not covered by it where they say so.
 - The `.one` file format notes in `docs/research/` paraphrase Microsoft's published
   specifications. No Microsoft text or code is included.
+
+| \crates/ui-egui/assets/fluent/*.svg\ | Selected Fluent UI System Icons used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons | Microsoft Corporation and contributors |

@@ -158,6 +158,7 @@ pub fn show(
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
+    let mut delete_object: Option<usize> = None;
     // An empty box that was clicked: it has no words to answer a click, so the click starts some.
     let mut start_in: Option<usize> = None;
     let right_click = ui.input(|i| i.pointer.secondary_clicked());
@@ -269,7 +270,7 @@ pub fn show(
         let image_hit = image_object
             .then(|| ui.interact(image_rect, ui.id().with(("image-object", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move));
         if let Some(response) = &image_hit
-            && (response.clicked() || response.dragged())
+            && (response.clicked() || response.secondary_clicked() || response.dragged())
         {
             object_sel = Some((range.start, "image".to_string()));
             sel = None;
@@ -308,7 +309,8 @@ pub fn show(
         {
             ui.data_mut(|d| d.insert_temp(pageedit::restore_selection_id(), (block_at, primary, secondary)));
         }
-        let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected;
+        let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
+        let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected && !image_right_click;
         if drag.clicked() || right_here {
             sel = Some(i);
             *caret = None;
@@ -517,6 +519,16 @@ pub fn show(
     if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
         object_sel = None;
     }
+    // Embedded objects have their own selection, separate from the containing box.
+    // Both keys should remove the selected object, just as they remove selected text.
+    if let Some((block, _)) = object_sel
+        && caret.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
+        && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    {
+        delete_object = Some(block);
+        object_sel = None;
+    }
     ui.data_mut(|d| {
         if let Some((block, kind)) = object_sel {
             d.insert_temp(selected_object_id(), (block, kind.clone(), page_key.clone()));
@@ -556,6 +568,27 @@ pub fn show(
         out.changed.blocks = true;
         out.changed.caret = true;
         out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+
+    // Remove an embedded block after it has been drawn, so the current frame's
+    // hit testing and selection affordance remain stable.
+    if let Some(block) = delete_object
+        && let Some((container_at, _)) = container::place(boxes, block)
+        && block < blocks.len()
+    {
+        if boxes.get(container_at).is_some_and(|c| c.blocks <= 1) {
+            remove_container(blocks, boxes, container_at);
+        } else {
+            blocks.remove(block);
+            if let Some(container) = boxes.get_mut(container_at) {
+                container.blocks -= 1;
+            }
+        }
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        *caret = None;
         ui.ctx().request_repaint();
     }
 

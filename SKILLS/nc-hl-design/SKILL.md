@@ -3,7 +3,7 @@ name: nc-hl-design
 description: 'NoteCraft high-level design guidance. Use before starting new features, major refactors, or architectural work. Enforces understanding-first, sketches system boundaries, identifies data flows, and documents design decisions. Reference product principles, architectural patterns, and cross-platform considerations. Output: clear scopes, data flow diagrams, state machines, and acceptance criteria.'
 license: MIT
 metadata:
-  version: "0.0.20261024"
+  version: "0.0.20261024.1"
   related_skills: [code-assistant, nc-arch, nc-prod]
 ---
 
@@ -261,6 +261,16 @@ Every action goes through `Session::run(command, params)`:
 - MCP/API calls → `session.run("page.create", ...)`
 
 Single code path = single behavior, easier to test and debug.
+
+### 2a. MVC Architecture (not MVVM)
+NoteCraft uses **Model-View-Controller**, not MVVM. Controllers are the orchestration boundary:
+- **Model:** Data types and pure logic (Notebook, Page, Section). Fully testable, no I/O.
+- **View:** Presentation layer (egui, CLI output). Stateless; responds to controller commands.
+- **Controller:** Command routing (Session), MCP handler, test hooks. Owns I/O and state transitions.
+
+Why MVC over MVVM: Controllers own the MCP integration, test mocks, and autosave orchestration cleanly. ViewModels would add state-management overhead that Rust's ownership rules make awkward. A clear controller boundary makes test fixtures and MCP hooks simpler.
+
+**Anti-pattern:** Spread business logic across views. Put it in models, route through controllers.
 
 ### 3. Data Model as Source of Truth
 - Notebooks, Sections, Pages are types in `notecraft_model`
