@@ -4043,6 +4043,7 @@ impl NoteCraftApp {
                     ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                 });
                 egui::Window::new("Welcome to NoteCraft")
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
                     .order(egui::Order::Foreground)
