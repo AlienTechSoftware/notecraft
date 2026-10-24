@@ -172,7 +172,11 @@ mod tests {
 
     #[test]
     fn simultaneous_sessions_have_unique_ids_and_atomic_manifest() {
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "notecraft-telemetry-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
         let _ = fs::remove_dir_all(&root);
         let a = Session::start(&root, Level::Debug).expect("session");
         let b = Session::start(&root, Level::Debug).expect("session");
@@ -184,7 +188,11 @@ mod tests {
 
     #[test]
     fn events_are_json_and_redact_paths() {
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-event-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "notecraft-telemetry-event-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
         let _ = fs::remove_dir_all(&root);
         let session = Session::start(&root, Level::Debug).expect("session");
         session.record(Level::Warning, "example", &[("path", "C:\\private\\note")]).expect("event");
