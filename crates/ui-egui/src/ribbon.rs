@@ -533,15 +533,25 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
         chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
     }
     egui::Popup::menu(&arrow).show(|ui| {
-        ui.set_min_width(190.0);
-        if ui.button("Picture from a file").clicked() {
-            acts.push(Act::AddPicture);
-            ui.close();
-        }
-        ui.add_enabled(false, egui::Button::new("From Camera"));
-        ui.add_enabled(false, egui::Button::new("From Online"));
+        egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+            ui.set_min_width(205.0);
+            if picture_menu_row(ui, Icon::Picture, "Picture from a file", t, true).clicked() {
+                acts.push(Act::AddPicture);
+                ui.close();
+            }
+            let _ = picture_menu_row(ui, Icon::Attach, "From Camera", t, false);
+            let _ = picture_menu_row(ui, Icon::Link, "From Online", t, false);
+        });
     });
     response.clicked() && !arrow.clicked()
+}
+
+fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
+    let response = ui.add_enabled(enabled, egui::Button::new(label).min_size(vec2(190.0, 30.0)));
+    let color = if enabled { t.accent } else { t.muted };
+    let icon_rect = Rect::from_center_size(egui::pos2(response.rect.left() + 16.0, response.rect.center().y), vec2(18.0, 18.0));
+    icons::paint(&ui.painter_at(response.rect), icon_rect, icon, color);
+    response
 }
 
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
