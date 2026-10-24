@@ -27,7 +27,8 @@
 #>
 param(
   [switch] $SkipBuild,
-  [switch] $ZipOnly
+  [switch] $ZipOnly,
+  [string] $BridgeProject = (Join-Path $PSScriptRoot '..\..\tools\officeimo\OfficeIMO.NoteCraft.Bridge\OfficeIMO.NoteCraft.Bridge.csproj')
 )
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -110,6 +111,17 @@ Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe') $Stage
 
+# The importer is part of the Windows product, not an optional file that can silently be
+# omitted from a release. Build and stage the self-contained OfficeIMO bridge beside NoteCraft.
+$BridgeStage = Join-Path $TargetDir 'officeimo-package'
+Remove-Item -Recurse -Force $BridgeStage -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $BridgeStage | Out-Null
+& (Join-Path $Root 'tools\officeimo\package.ps1') -BridgeProject $BridgeProject -Rid 'win-x64' -Version $Version -OutputRoot $BridgeStage
+if ($LASTEXITCODE -ne 0) { throw "OfficeIMO bridge packaging failed with exit code $LASTEXITCODE" }
+$BridgeExe = Join-Path $BridgeStage 'importers\officeimo\win-x64\officeimo-notecraft.exe'
+if (-not (Test-Path $BridgeExe)) { throw "OfficeIMO bridge was not produced: $BridgeExe" }
+Copy-Item (Join-Path $BridgeStage 'importers') $Stage -Recurse
+
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'notecraft.exe') (Join-Path $Stage 'notecraft-cli.exe')
 
 $Outputs = @()
@@ -165,6 +177,7 @@ $Portable = Join-Path $TargetDir "windows-package\notecraft-$Version-windows-$Ar
 Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
+Copy-Item (Join-Path $Stage 'importers') $Portable -Recurse
 foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
