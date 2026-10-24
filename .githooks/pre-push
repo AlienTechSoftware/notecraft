@@ -10,6 +10,14 @@
 # Turn off for good: git config --unset core.hooksPath
 set -e
 
+# PII check first (fail fast)
+echo "pre-push: checking for PII..."
+if ! bash SKILLS/nc-devx/scripts/check-pii.sh origin/main; then
+    echo
+    echo "pre-push: PII check failed. Remove sensitive data before pushing."
+    exit 1
+fi
+
 echo "pre-push: cargo xtask ci (this takes a few minutes)"
 if ! cargo xtask ci; then
     echo

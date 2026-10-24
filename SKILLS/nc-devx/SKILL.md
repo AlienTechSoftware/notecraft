@@ -147,6 +147,70 @@ cargo xtask ci
 
 ---
 
+## Personally Identifiable Information (PII) Scanner
+
+NoteCraft checks for sensitive data before commits and pushes to prevent accidental leaks.
+
+### What's Checked
+- Owner name and email patterns
+- Notebook file extensions (should not be in repo)
+- SSN-like patterns (###-##-####)
+- Custom patterns per project
+
+### Manual Scan
+```bash
+# Scan current staged files
+bash SKILLS/nc-devx/scripts/check-pii.sh
+
+# Scan all files
+bash SKILLS/nc-devx/scripts/check-pii.sh --all
+```
+
+### Fixing PII Issues
+
+If the scanner blocks a commit or push:
+
+1. **Identify the issue:**
+   ```bash
+   # The hook will show which files contain what patterns
+   # Edit those files and remove the sensitive data
+   ```
+
+2. **Common fixes:**
+   - Remove owner name/email from commits: Use `git commit --author` or `git config user.name`
+   - Remove `.one` files: `git rm --cached notebook.one`
+   - Remove personal data from comments: Edit the file and remove it
+   - Update email references: Replace with generic placeholder
+
+3. **Re-stage and commit:**
+   ```bash
+   git add <file>
+   git commit  # Re-run pre-commit hook
+   ```
+
+4. **If it's in commit history:**
+   ```bash
+   # Amend the previous commit if not yet pushed
+   git commit --amend
+   
+   # Or rebase to fix multiple commits
+   git rebase -i HEAD~N  # Replace N with number of commits to go back
+   ```
+
+### Customize PII Patterns
+
+Edit `SKILLS/nc-devx/scripts/check-pii.sh` to add project-specific patterns:
+
+```bash
+PII_PATTERNS=(
+    "<owner-name>"             # Owner name
+    "<owner@domain\.com>"      # Owner email
+    "<custom-pattern>"         # Add your patterns here
+)
+```
+
+---
+
 ## Git Hooks
 
 Hooks are in `.githooks/` and run automatically after `git config core.hooksPath .githooks`.

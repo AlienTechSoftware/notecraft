@@ -62,5 +62,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
+      - name: PII Scanner
+        run: bash SKILLS/nc-devx/scripts/check-pii.sh
+
       - name: Quality gate
         run: cargo xtask ci

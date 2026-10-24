@@ -12,7 +12,15 @@
 # commit too, and --no-verify is the honest way through that.
 set -e
 
-echo "pre-commit: fmt, layers, assets, docs, text"
+echo "pre-commit: pii, fmt, layers, assets, docs, text"
+
+# Check for PII first (fail fast)
+if ! bash SKILLS/nc-devx/scripts/check-pii.sh; then
+    echo
+    echo "pre-commit: PII check failed. Remove sensitive data and re-stage."
+    exit 1
+fi
+
 for task in fmt layers assets docs text; do
     if ! cargo xtask "$task"; then
         echo
