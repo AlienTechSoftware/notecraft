@@ -1,6 +1,6 @@
 ---
 name: nc-ua
-description: Maintain NoteCraft's multilingual demo notebook, generated outputs, scratch copy, release version consistency, and user-facing assistant guidance.
+description: Maintain NoteCraft's user-facing product coverage, multilingual demo notebook, generated outputs, scratch copy, release version consistency, and user-facing assistant guidance.
 license: MIT
 metadata:
   version: "0.0.20261024"
@@ -10,10 +10,37 @@ metadata:
 # nc-ua - User assistant and demo steward
 
 Use this skill when changing the welcome/demo notebook, user-facing guidance, translations,
-release screenshots, or generated scratch copies.
+release screenshots, generated scratch copies, or the set of product features presented to users.
+
+## Product coverage ownership
+
+`nc-ua` maintains the user-facing feature coverage map for the whole product. The map must
+identify, for every supported user-facing feature:
+
+- whether the feature is implemented;
+- where it is documented or discoverable in the UI;
+- whether the bundled demo notebook demonstrates it;
+- whether it is verified in the RedMesa build;
+- whether it is verified in the online build;
+- which release or known limitation applies.
+
+The demo notebook is a product tour and regression reference, not only sample content. It should
+exercise the complete supported feature set where the feature can be demonstrated safely. If a
+feature cannot be included in the demo, record the reason and the alternate verification path.
+
+Keep this coverage aligned with `nc-prod`, `nc-arch`, and the relevant UI/UX skills. Product
+features such as layered objects, object selection, movement, resizing, attachments, dialogs,
+themes, keyboard commands, RTL behavior, and local diagnostics must have an explicit demo or
+verification entry. Do not claim that a feature is covered merely because its code exists.
+
+RedMesa and online builds are delivery targets, not separate product definitions. When their
+feature coverage differs from the local build, record the difference, the target revision, and
+the reason.
 
 ## Source of truth
 
+- Product coverage map: `SKILLS/nc-ua/product-coverage.json`. Keep this file factual; use
+  `unknown` until a target has been checked.
 - Authored demo content: `docs/demo/scripts/content`.
 - Generated checked-in demo: `docs/demo/DemoNotebook/html` and `docs/demo/DemoNotebook/cmgfm`.
 - Disposable scratch copy: `my-notebooks/welcome-notebook`; never treat it as source.
@@ -29,10 +56,14 @@ release screenshots, or generated scratch copies.
   must agree with the approved workspace version.
 - For every release, update authored content first, regenerate both formats, run demo parity, and
   refresh the disposable scratch copy used for testing.
+- Before release signoff, update the product coverage map and verify the demo, RedMesa build, and
+  online build against the same approved feature list. Mark unavailable or stale targets clearly.
 - Do not copy personal notebooks or paths into tracked files.
 
 ## Verification
 
 Run `cargo xtask demo`, `cargo xtask demo-check`, and
 `cargo test -p notecraft-formats --test format_parity`. Perform a matching visual check of HTML
-and CMGFM and report the source path and scratch refresh explicitly.
+and CMGFM and report the source path and scratch refresh explicitly. Review the product coverage
+map and report the RedMesa and online revision checked, the features demonstrated in the notebook,
+and the features verified through another path.
