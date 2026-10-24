@@ -61,10 +61,10 @@ impl Settings {
             return Settings::at(local_dev);
         }
         // Check if we're in a development environment (local/ folder exists nearby)
-        if let Ok(cwd) = std::env::current_dir() {
-            if cwd.join("local").exists() || cwd.join("Cargo.toml").exists() {
-                return Settings::at(local_dev);
-            }
+        if let Ok(cwd) = std::env::current_dir()
+            && (cwd.join("local").exists() || cwd.join("Cargo.toml").exists())
+        {
+            return Settings::at(local_dev);
         }
         // Production: use platform-specific locations
         let path = if let Some(appdata) = std::env::var_os("APPDATA") {
