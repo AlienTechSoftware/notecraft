@@ -1533,7 +1533,21 @@ impl NoteCraftApp {
         let show_path = move |p: &Path| shown_in(&root, p, redact);
         let mut acts = Vec::new();
         egui::CentralPanel::default().show(ui, |ui| {
-            acts = backstage::show(ui, self.session.tree(), &recent, &folder, page, &show_path, &tokens);
+            let telemetry_root = self.session.settings.path().parent().unwrap_or(std::path::Path::new(".")).join("telemetry");
+            let telemetry_level = self.session.settings.get("telemetry_level").unwrap_or_else(|| "none".into());
+            let session_id = self.session.settings.get("telemetry_session_id");
+            acts = backstage::show(
+                ui,
+                self.session.tree(),
+                &recent,
+                &folder,
+                page,
+                &show_path,
+                &telemetry_root,
+                &telemetry_level,
+                session_id.as_deref(),
+                &tokens,
+            );
         });
         for a in acts {
             match a {
@@ -1563,6 +1577,13 @@ impl NoteCraftApp {
                 }
                 backstage::Act::RemoveRecent(p) => self.remove_recent_notebook(&p),
                 backstage::Act::DeleteRecent(p, title) => self.dialog = Some(Dialog::DeleteNotebook { path: p, title }),
+                backstage::Act::SetTelemetryLevel(level) => {
+                    let _ = self.session.settings.set("telemetry_level", &level);
+                }
+                backstage::Act::OpenTelemetryFolder(path) => self.reveal(&path),
+                backstage::Act::ClearTelemetry(path) => {
+                    let _ = std::fs::remove_dir_all(path);
+                }
                 backstage::Act::AddWelcome => {
                     self.backstage = None;
                     self.add_welcome();

@@ -80,6 +80,7 @@ fn main() -> eframe::Result {
         .then(|| telemetry::Session::start(telemetry::telemetry_root(&settings_dir), telemetry_level).ok())
         .flatten();
     if let Some(session) = &telemetry {
+        let _ = Settings::default_location().set("telemetry_session_id", session.id());
         let _ = session.record(telemetry::Level::Usage, "app_start", &[("version", env!("CARGO_PKG_VERSION"))]);
     }
     applog::info(&format!(

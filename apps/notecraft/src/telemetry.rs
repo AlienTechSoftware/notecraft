@@ -91,6 +91,10 @@ impl Session {
         writeln!(file, "{json}")
     }
 
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
     pub fn write_atomic(&self, name: &str, contents: &str) -> io::Result<()> {
         let target = self.dir.join(name);
         let temp = self.dir.join(format!(".{name}.tmp-{}", std::process::id()));
