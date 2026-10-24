@@ -526,7 +526,7 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
 
 fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let response = big_inner(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", true, false, t);
-    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.right() - 22.0, response.rect.top()), response.rect.right_bottom());
+    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.left(), response.rect.bottom() - 28.0), response.rect.right_bottom());
     let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
     if arrow.hovered() {
         ui.painter().rect_filled(arrow_rect, 3.0, t.row_hover);
