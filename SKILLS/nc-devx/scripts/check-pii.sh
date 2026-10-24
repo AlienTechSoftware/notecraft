@@ -3,15 +3,11 @@
 # Run: bash SKILLS/nc-devx/scripts/check-pii.sh [--fix]
 
 # PII patterns to detect
-# Add project-specific patterns here. Examples (commented out for safety):
-# PII_PATTERNS=(
-#     "owner-name"                   # Your actual owner name
-#     "owner@domain\.com"            # Your actual owner email
-#     "company-domain"               # Your actual company domain
-# )
-# For now, we check for the most obvious dangers:
+# Project-specific patterns (add your own as needed):
 PII_PATTERNS=(
-    "[0-9]{3}-[0-9]{2}-[0-9]{4}"   # SSN-like pattern (###-##-####)
+    # Prevent known personal emails - update with project-specific emails
+    # "person@domain"                # Template: replace with actual email to block
+    "[0-9]{3}-[0-9]{2}-[0-9]{4}"  # SSN-like pattern (###-##-####)
 )
 
 FIX_MODE=false
