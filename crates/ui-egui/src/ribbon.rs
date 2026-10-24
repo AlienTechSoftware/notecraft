@@ -545,7 +545,18 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     } else if resp.hovered() {
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
-    let colour = if ui.is_enabled() { t.accent } else { t.muted };
+    let colour = if !ui.is_enabled() {
+        t.muted
+    } else {
+        match icon {
+            Icon::Picture | Icon::Clip => t.ok,
+            Icon::Attach => t.warn,
+            Icon::Link => t.link,
+            Icon::InsertSpace => t.accent,
+            Icon::Calendar | Icon::Clock => t.strong,
+            _ => t.accent,
+        }
+    };
     icons::paint(&painter, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
     for (i, line) in lines.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
