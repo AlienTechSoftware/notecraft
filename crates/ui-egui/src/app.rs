@@ -263,6 +263,9 @@ enum Dialog {
         path: PathBuf,
         title: String,
     },
+    ClearTelemetry {
+        path: PathBuf,
+    },
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
@@ -1585,9 +1588,7 @@ impl NoteCraftApp {
                     let _ = self.session.settings.set("telemetry_level", &level);
                 }
                 backstage::Act::OpenTelemetryFolder(path) => self.reveal(&path),
-                backstage::Act::ClearTelemetry(path) => {
-                    let _ = std::fs::remove_dir_all(path);
-                }
+                backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
                         .ok()
@@ -4036,6 +4037,37 @@ impl NoteCraftApp {
         let mut keep = true;
         let mut next = dialog;
         match &mut next {
+            Dialog::ClearTelemetry { path } => {
+                let mut clear = false;
+                let mut cancel = false;
+                egui::Window::new("Clear telemetry")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(440.0);
+                        modal_title(ui, &self.tokens, "Clear telemetry");
+                        ui.label("Clear all local telemetry sessions and exported telemetry ZIP files?");
+                        ui.add_space(5.0);
+                        ui.colored_label(self.tokens.warn, "This cannot be undone.");
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                cancel = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Clear telemetry", true).clicked() {
+                                clear = true;
+                            }
+                        });
+                    });
+                if clear {
+                    let _ = std::fs::remove_dir_all(path);
+                    keep = false;
+                } else if cancel {
+                    keep = false;
+                }
+            }
             Dialog::PrivacyWelcome { level } => {
                 let mut accepted = false;
                 let mut denied = false;
