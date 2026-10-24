@@ -10,7 +10,8 @@
 //! assets    check that every file under assets/ has a row in ATTRIBUTION.md
 //! docs      check that relative links in the Markdown files point at files that exist
 //! text      check text files: no byte order mark in source, manifests or Markdown, and plain
-//!           punctuation (no em or en dashes, no curly quotes) in Markdown, per .agents/TONE.md
+//!           punctuation (no em or en dashes, no curly quotes) in Markdown, per .agents/TONE.md;
+//!           add `--fix` to rewrite those issues
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  line coverage with cargo-llvm-cov, if it is installed
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
@@ -256,7 +257,18 @@ fn text_problems(name: &str, bytes: &[u8]) -> Vec<String> {
     out
 }
 
-fn text(root: &Path) -> Result<(), String> {
+fn fixed_text(name: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut text = String::from_utf8(bytes.to_vec()).map_err(|_| format!("{name}: invalid UTF-8; cannot fix automatically"))?;
+    if text.starts_with('\u{FEFF}') {
+        text = text.trim_start_matches('\u{FEFF}').to_string();
+    }
+    if name.ends_with(".md") {
+        text = text.replace(['\u{2014}', '\u{2013}'], "-").replace(['\u{2018}', '\u{2019}'], "'").replace(['\u{201C}', '\u{201D}'], "\"");
+    }
+    Ok(text.into_bytes())
+}
+
+fn text(root: &Path, fix: bool) -> Result<(), String> {
     let mut files = Vec::new();
     files_under(root, &mut files);
     let skip = ["target", ".git", "out", "prototypes", "snapshots", "my-notebooks"];
@@ -273,6 +285,13 @@ fn text(root: &Path) -> Result<(), String> {
         }
         n += 1;
         let bytes = fs::read(&f).map_err(|e| format!("{name}: {e}"))?;
+        if fix {
+            let updated = fixed_text(&name, &bytes)?;
+            if updated != bytes {
+                fs::write(&f, updated).map_err(|e| format!("{name}: {e}"))?;
+            }
+            continue;
+        }
         problems.extend(text_problems(&name, &bytes));
     }
     println!("text: {n} files checked, {} problems", problems.len());
@@ -443,7 +462,7 @@ fn coverage(root: &Path) -> Result<(), String> {
     cargo(root, &["llvm-cov", "--workspace", "--summary-only"])
 }
 
-fn run(task: &str) -> Result<(), String> {
+fn run(task: &str, options: &[String]) -> Result<(), String> {
     let root = root();
     match task {
         "fmt" => cargo(&root, &["fmt", "--all", "--", "--check"]),
@@ -452,7 +471,13 @@ fn run(task: &str) -> Result<(), String> {
         "layers" => layers(&root),
         "assets" => assets(&root),
         "docs" => docs(&root),
-        "text" => text(&root),
+        "text" => {
+            let fix = options == ["--fix"];
+            if !fix && !options.is_empty() {
+                return Err("usage: cargo xtask text [--fix]".into());
+            }
+            text(&root, fix)
+        }
         "screenshots" => screenshots(&root),
         "coverage" => coverage(&root),
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
@@ -466,7 +491,7 @@ fn run(task: &str) -> Result<(), String> {
         "ci" => {
             for t in ["fmt", "clippy", "test", "layers", "assets", "docs", "text", "demo-check"] {
                 println!("\n== {t} ==");
-                run(t).map_err(|e| format!("{t}: {e}"))?;
+                run(t, &[]).map_err(|e| format!("{t}: {e}"))?;
             }
             println!("\nci: all checks passed");
             Ok(())
@@ -483,7 +508,7 @@ fn main() -> ExitCode {
     let result = match task.as_str() {
         "version" => version::run(&root(), &args[1..]),
         "demo-copy" => demo_copy(&root(), &args[1..]),
-        _ => run(&task),
+        _ => run(&task, &args[1..]),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -549,6 +574,14 @@ mod tests {
         assert_eq!(text_problems("a.md", "a \u{2014} b".as_bytes()).len(), 1);
         assert_eq!(text_problems("a.md", "\u{201c}quoted\u{201d}".as_bytes()).len(), 2);
         assert!(text_problems("a.rs", "// \u{2014} allowed in source".as_bytes()).is_empty(), "only Markdown is held to plain punctuation");
+    }
+
+    #[test]
+    fn text_fix_rewrites_bom_and_markdown_punctuation() {
+        let fixed = fixed_text("a.md", "\u{FEFF}a \u{2014} \u{2018}quote\u{2019}".as_bytes()).expect("valid UTF-8");
+        assert_eq!(fixed, b"a - 'quote'");
+        let source = fixed_text("a.rs", "// \u{2014}".as_bytes()).expect("valid UTF-8");
+        assert_eq!(source, "// \u{2014}".as_bytes());
     }
 
     #[test]
