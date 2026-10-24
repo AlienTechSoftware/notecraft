@@ -1022,10 +1022,19 @@ impl NoteCraftApp {
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match how {
             FileChoice::Copy => {
-                if let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) {
-                    let text = snippets::attachment(format, &link, &name);
-                    self.insert(&text);
-                    self.say(format!("{name} is now a file in this page's folder"));
+                log::debug!("file attach requested: name={name:?} page={:?}", dir);
+                match self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) {
+                    Some(Output::Text(link)) => {
+                        log::debug!("file attach copied: name={name:?} link={link:?}");
+                        let text = snippets::attachment(format, &link, &name);
+                        self.insert(&text);
+                        self.say(format!("{name} is now a file in this page's folder"));
+                    }
+                    Some(_) => self.complain("The file was not attached: the attach command returned an unexpected result."),
+                    None => {
+                        log::error!("file attach failed: name={name:?} page={:?} status={:?}", dir, self.status);
+                        self.complain(&format!("Could not attach {name} to this page."));
+                    }
                 }
             }
             FileChoice::Link => {
@@ -4132,40 +4141,51 @@ impl NoteCraftApp {
                 let kind = notecraft_store::assets::media_kind(&name);
                 let mut chosen: Option<FileChoice> = None;
                 let title = if left > 0 { format!("Add {name} ({left} more)") } else { format!("Add {name}") };
-                egui::Window::new(title).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.set_min_width(380.0);
-                    ui.label("What should happen to this file?");
-                    ui.add_space(6.0);
-                    let copy_label = match kind {
-                        notecraft_store::assets::MediaKind::Image => "Insert the picture",
-                        notecraft_store::assets::MediaKind::Video => "Insert the video",
-                        notecraft_store::assets::MediaKind::Audio => "Insert the recording",
-                        notecraft_store::assets::MediaKind::Other => "Attach the file",
-                    };
-                    if ui.button(copy_label).clicked() {
-                        chosen = Some(FileChoice::Copy);
-                    }
-                    ui.label(
-                        egui::RichText::new("A copy goes into this page's folder, so the notebook carries it everywhere.")
-                            .small()
-                            .color(self.tokens.muted),
-                    );
-                    ui.add_space(6.0);
-                    if ui.button("Link to the file where it is").clicked() {
-                        chosen = Some(FileChoice::Link);
-                    }
-                    ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new("A printout (every page of a document as pictures) is not built yet.").small().color(self.tokens.muted),
-                    );
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
+                egui::Window::new("file-options")
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(380.0);
+                        modal_title(ui, &self.tokens, &title);
+                        ui.label(egui::RichText::new("What should happen to this file?").strong().size(16.0).color(self.tokens.text));
+                        ui.add_space(6.0);
+                        let copy_label = match kind {
+                            notecraft_store::assets::MediaKind::Image => "Insert the picture",
+                            notecraft_store::assets::MediaKind::Video => "Insert the video",
+                            notecraft_store::assets::MediaKind::Audio => "Insert the recording",
+                            notecraft_store::assets::MediaKind::Other => "Attach the file",
+                        };
+                        if modal_button(ui, &self.tokens, copy_label, true).clicked() {
+                            log::debug!("file attach choice clicked: choice=copy name={name:?}");
+                            chosen = Some(FileChoice::Copy);
                         }
+                        ui.label(
+                            egui::RichText::new("A copy goes into this page's folder, so the notebook carries it everywhere.")
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        ui.add_space(6.0);
+                        if modal_button(ui, &self.tokens, "Link to the file where it is", false).clicked() {
+                            log::debug!("file attach choice clicked: choice=link name={name:?}");
+                            chosen = Some(FileChoice::Link);
+                        }
+                        ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new("A printout (every page of a document as pictures) is not built yet.")
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                keep = false;
+                            }
+                        });
                     });
-                });
                 if let Some(how) = chosen {
                     self.add_file(&dir, &file, how);
                     if let Dialog::FileOptions { files, .. } = &mut next {
