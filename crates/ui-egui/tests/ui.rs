@@ -3602,6 +3602,39 @@ fn clicking_a_picture_selects_the_picture_only() {
     ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("clear picture selection");
     settle(&mut h);
     assert!(look_at(&mut h).pointer("/page/selectedImage").is_none_or(Value::is_null), "Escape clears the picture selection");
+
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0, "button": "right"})).expect("right click the picture");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "right-clicking selects the picture: {v}");
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "right-clicking the picture does not select its container: {v}");
+}
+
+#[test]
+fn delete_and_backspace_remove_a_selected_picture() {
+    for key in ["Delete", "Backspace"] {
+        let label = if key == "Delete" { "ui-picture-delete" } else { "ui-picture-backspace" };
+        let (_t, mut app, s) = sample_app(label);
+        let md = s.md_page.to_string_lossy().to_string();
+        app.open_path(&md);
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "![the koala](assets/koala.png)\n"}}))
+            .expect("write one-picture page");
+        ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}}))
+            .expect("arrange the picture");
+        ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+        settle(&mut h);
+        let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+        let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+        let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+        ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0})).expect("click the picture");
+        settle(&mut h);
+        assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "the picture is selected");
+        ask(&mut h, "ui.key", json!({"key": key})).expect("remove the picture");
+        settle(&mut h);
+        assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(0), "{key} removes the selected picture");
+    }
 }
 
 /// The first drawn line selected whole, then a right click on it: the state the text menu and
