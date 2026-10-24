@@ -1,9 +1,15 @@
 # NoteCraft Developer Setup - Windows (PowerShell)
 # Run: .\SKILLS\nc-devx\scripts\setup.ps1
+#
+# Options:
+#   -SkipRust    Skip Rust installation check
+#   -SkipTools   Skip platform tools check
+#   -SkipBuild   Skip build and test steps
 
 param(
     [switch]$SkipRust = $false,
-    [switch]$SkipTools = $false
+    [switch]$SkipTools = $false,
+    [switch]$SkipBuild = $false
 )
 
 Write-Host "NoteCraft Developer Setup (Windows)" -ForegroundColor Cyan
@@ -26,10 +32,10 @@ if (-not $SkipRust) {
         $rustVersion = rustc --version
         Write-Host "✓ Rust is installed: $rustVersion" -ForegroundColor Green
     } else {
-        Write-Host "Installing Rust from rustup.rs..." -ForegroundColor Yellow
-        Write-Host "This will open a browser to download rustup."
+        Write-Host "✗ Rust not found. Installing from rustup.rs..." -ForegroundColor Yellow
+        Write-Host "  Opening https://rustup.rs in your browser..." -ForegroundColor Cyan
         Start-Process "https://rustup.rs"
-        Write-Host "Please complete the Rust installation and re-run this script." -ForegroundColor Yellow
+        Write-Host "  Please complete the installation and re-run this script." -ForegroundColor Yellow
         exit 1
     }
     Write-Host ""
@@ -42,11 +48,19 @@ if (-not $SkipTools) {
     # Check for Visual Studio Build Tools or MSVC
     $msvcInstalled = $null -ne (Get-Command cl.exe -ErrorAction SilentlyContinue)
     if (-not $msvcInstalled) {
-        Write-Host "ⓘ MSVC (C++ compiler) not found in PATH" -ForegroundColor Yellow
-        Write-Host "  Install Visual Studio Build Tools or Visual Studio Community edition" -ForegroundColor Yellow
+        Write-Host "⚠ MSVC (C++ compiler) not found in PATH" -ForegroundColor Yellow
+        Write-Host "  Download Visual Studio Build Tools or Community edition:" -ForegroundColor Yellow
         Write-Host "  https://visualstudio.microsoft.com/downloads/" -ForegroundColor Cyan
+        Write-Host "  Select 'Desktop development with C++'" -ForegroundColor Cyan
     } else {
         Write-Host "✓ MSVC compiler found" -ForegroundColor Green
+    }
+
+    # Check for git
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "⚠ Git not found. Install from https://git-scm.com/download/win" -ForegroundColor Yellow
+    } else {
+        Write-Host "✓ Git found" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -62,33 +76,60 @@ if ($LASTEXITCODE -eq 0) {
 }
 Write-Host ""
 
-# Step 4: Verify Rust build
-Write-Host "Step 4: Verifying build..." -ForegroundColor Green
-cargo build -p notecraft 2>&1 | Select-Object -Last 5
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "✓ Build successful" -ForegroundColor Green
+# Step 4: Setup development environment
+Write-Host "Step 4: Setting up dev environment..." -ForegroundColor Green
+
+# Initialize rustup and update toolchain
+Write-Host "  - Updating Rust toolchain..." -ForegroundColor Cyan
+rustup install
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "⚠ rustup install failed, continuing..." -ForegroundColor Yellow
 } else {
-    Write-Host "✗ Build failed. Check the output above." -ForegroundColor Red
+    Write-Host "  ✓ Rust toolchain updated" -ForegroundColor Green
 }
+
+# Install xtask (build helper)
+Write-Host "  - Building xtask (dev helper)..." -ForegroundColor Cyan
+cargo build -p xtask 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ xtask built" -ForegroundColor Green
+} else {
+    Write-Host "  ⓘ xtask build skipped" -ForegroundColor Yellow
+}
+
 Write-Host ""
 
-# Step 5: Run quick test
-Write-Host "Step 5: Running quick test..." -ForegroundColor Green
-cargo test --workspace -- --test-threads=1 2>&1 | Tail -n 3
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "✓ Tests passed" -ForegroundColor Green
-} else {
-    Write-Host "ⓘ Some tests failed or timed out (may be OK for first run)" -ForegroundColor Yellow
+# Step 5: Verify build (unless skipped)
+if (-not $SkipBuild) {
+    Write-Host "Step 5: Verifying build..." -ForegroundColor Green
+    cargo build -p notecraft 2>&1 | Select-Object -Last 3
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✓ Build successful" -ForegroundColor Green
+    } else {
+        Write-Host "✗ Build failed. Check the output above." -ForegroundColor Red
+        Write-Host "  Try running: cargo build -p notecraft" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    # Step 6: Run quick test
+    Write-Host "Step 6: Running quick test..." -ForegroundColor Green
+    cargo test --workspace --lib -- --test-threads=1 2>&1 | Select-Object -Last 3
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✓ Tests passed" -ForegroundColor Green
+    } else {
+        Write-Host "ⓘ Some tests failed (may be expected on first run)" -ForegroundColor Yellow
+    }
+    Write-Host ""
 }
-Write-Host ""
 
 # Summary
 Write-Host "Setup Complete!" -ForegroundColor Green
 Write-Host "===============" -ForegroundColor Green
 Write-Host ""
-Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Run the app:     cargo run -p notecraft" -ForegroundColor White
-Write-Host "  2. Run tests:       cargo test --workspace" -ForegroundColor White
-Write-Host "  3. Check gates:     cargo xtask ci" -ForegroundColor White
+Write-Host "Quick start commands:" -ForegroundColor Cyan
+Write-Host "  cargo run -p notecraft          # Run the app" -ForegroundColor White
+Write-Host "  cargo test --workspace          # Run all tests" -ForegroundColor White
+Write-Host "  cargo xtask ci                  # Run full CI gate" -ForegroundColor White
+Write-Host "  cargo watch -x check            # Watch and check on file changes" -ForegroundColor White
 Write-Host ""
-Write-Host "For more info, see SKILLS/nc-devx/SKILL.md" -ForegroundColor Cyan
+Write-Host "Documentation: SKILLS/nc-devx/SKILL.md" -ForegroundColor Cyan

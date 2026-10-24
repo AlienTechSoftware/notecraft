@@ -19,51 +19,69 @@ Developer setup, workflow, and automation for local NoteCraft work.
 
 - **Rust:** [rustup.rs](https://rustup.rs) (latest stable)
 - **Platform tools:** See platform-specific scripts below
-- **Git hooks:** Enable once per clone
+- **Git:** For cloning and version control
 
-### Quick Setup (All Platforms)
+### Quick Setup (Recommended)
 
-Run the platform-specific setup script:
+The setup scripts handle Rust installation, platform tools, git hooks, xtask building, and verification. Run the one for your platform from the repository root:
 
-**Windows (PowerShell):**
+**Windows (PowerShell 5+):**
 ```powershell
+# As administrator recommended (right-click → Run as administrator)
 .\SKILLS\nc-devx\scripts\setup.ps1
 ```
 
-**Linux:**
+**Linux (bash/zsh):**
 ```bash
 bash SKILLS/nc-devx/scripts/setup.sh
 ```
 
-**macOS:**
+**macOS (bash/zsh):**
 ```bash
 bash SKILLS/nc-devx/scripts/setup.mac.sh
 ```
 
-This script will:
-1. Install Rust toolchain (if needed)
-2. Install platform-specific tools (e.g., WiX on Windows)
-3. Clone/fetch sub-repositories (icons, etc.)
-4. Enable git hooks
-5. Verify build and run a quick test
+These scripts will:
+1. Check and install Rust if needed
+2. Check platform tools (MSVC on Windows, Xcode on macOS, build-essential on Linux)
+3. Enable git hooks (`core.hooksPath = .githooks`)
+4. Build xtask (development helper tool)
+5. Verify the build works
+6. Run a quick sanity test
+
+**Skip steps if re-running:**
+```bash
+# Windows: skip Rust check
+.\SKILLS\nc-devx\scripts\setup.ps1 -SkipRust
+
+# Linux: skip both Rust and dependency checks
+SKIP_RUST=1 SKIP_DEPS=1 bash SKILLS/nc-devx/scripts/setup.sh
+
+# macOS: skip Xcode check
+SKIP_XCODE=1 bash SKILLS/nc-devx/scripts/setup.mac.sh
+```
 
 ### Manual Setup
 
-If you prefer manual steps:
+If you prefer to set up step-by-step:
 
 ```bash
-# Enable git hooks (once per clone)
+# 1. Enable git hooks (once per clone)
 git config core.hooksPath .githooks
 
-# Install Rust (if not already installed)
+# 2. Install Rust (if not already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"  # On Linux/macOS
 
-# Fetch sub-repositories (if needed)
-# Example: git submodule update --init --recursive
+# 3. Update Rust toolchain
+rustup install
 
-# Verify setup
+# 4. Build the dev helper tool
+cargo build -p xtask
+
+# 5. Verify the setup
 cargo build -p notecraft
-cargo test --workspace
+cargo test --workspace --lib
 ```
 
 ---
