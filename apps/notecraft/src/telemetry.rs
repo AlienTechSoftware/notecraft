@@ -116,7 +116,7 @@ fn session_id() -> String {
     let seconds = (millis / 1000) as i64;
     let serial = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let stamp = date_stamp(seconds);
-    format!("{stamp}-{:08x}{:08x}", std::process::id(), (serial ^ millis as u64) as u32)
+    format!("{stamp}-{:08x}{:08x}", std::process::id(), serial as u32)
 }
 
 fn date_stamp(secs: i64) -> String {
@@ -175,7 +175,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-test-{}", id));
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let root = std::env::temp_dir().join(format!("notecraft-telemetry-test-{}-{}-{}", std::process::id(), id, nonce));
         let _ = fs::remove_dir_all(&root);
         let a = Session::start(&root, Level::Debug).expect("session");
         let b = Session::start(&root, Level::Debug).expect("session");
@@ -190,7 +191,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         static COUNTER: AtomicU32 = AtomicU32::new(1000);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-event-{}", id));
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos();
+        let root = std::env::temp_dir().join(format!("notecraft-telemetry-event-{}-{}-{}", std::process::id(), id, nonce));
         let _ = fs::remove_dir_all(&root);
         let session = Session::start(&root, Level::Debug).expect("session");
         session.record(Level::Warning, "example", &[("path", "C:\\private\\note")]).expect("event");

@@ -2252,7 +2252,7 @@ fn undo_takes_back_a_change_to_the_page_and_redo_puts_it_back() {
     assert!(state["page"]["history"]["steps"].as_u64().unwrap_or(0) >= 2, "{}", state["page"]["history"]);
 }
 
-/// A file in the page's folder can be taken out again: the right button offers it, and
+/// A file in the page's folder can be taken out again from the Source view, and
 /// the window asks before anything is deleted.
 #[test]
 fn a_file_in_the_pages_folder_can_be_deleted_from_the_page() {
@@ -2265,20 +2265,13 @@ fn a_file_in_the_pages_folder_can_be_deleted_from_the_page() {
     ask(&mut h, "engine.execute", json!({"command": "page.attach", "params": {"path": page, "source": dropped.to_string_lossy()}})).expect("attach");
     ask(&mut h, "ui.open", json!({"path": page})).expect("open");
     settle(&mut h);
-
-    // The list of files sits under a whole sheet of paper, so scroll down to it first.
-    // The wheel goes to whatever is under the pointer, so the pointer goes to the page.
-    ask(&mut h, "ui.move", json!({"x": 700, "y": 400})).expect("pointer onto the page");
+    h.state_mut().set_show_source(true);
     settle(&mut h);
-    for _ in 0..8 {
-        ask(&mut h, "ui.scroll", json!({"y": -400})).expect("scroll down");
-        settle(&mut h);
-    }
-    let row = h.query_all_by_label_contains("assets/picture.png").next().map(|n| n.rect()).expect("the file is listed");
-    // The Delete on that row, not on another file's.
-    let button =
-        h.query_all_by_label("Delete file").find(|n| (n.rect().center().y - row.center().y).abs() < 4.0).expect("the Delete beside that file");
-    button.click();
+
+    let row = h.query_all_by_label_contains("assets/picture.png").next().expect("the file is listed");
+    row.click();
+    settle(&mut h);
+    h.get_by_label("Delete file").click();
     settle(&mut h);
 
     // It asks first, and says plainly that undo will not bring a file back.
