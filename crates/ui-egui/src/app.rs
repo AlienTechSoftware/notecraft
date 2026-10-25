@@ -1904,7 +1904,17 @@ impl NoteCraftApp {
                 backstage::Act::SetTelemetryLevel(level) => {
                     let _ = self.session.settings.set("telemetry_level", &level);
                 }
-                backstage::Act::OpenTelemetryFolder(path) => self.reveal(&path),
+                backstage::Act::OpenTelemetryFolder(path) => {
+                    // The folder is made on first use: it does not exist until a session has
+                    // written to it, and Explorer opens Documents for a folder it cannot find.
+                    match std::fs::create_dir_all(&path) {
+                        Ok(()) => self.reveal(&path),
+                        Err(e) => {
+                            self.status = format!("The diagnostics folder could not be created: {e}");
+                            self.status_is_error = true;
+                        }
+                    }
+                }
                 backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
@@ -5661,6 +5671,11 @@ fn color_swatch(ui: &mut Ui, color: NodeColor, dark: bool, selected: bool) -> eg
 /// Shows a folder in the operating system's file manager. An optional extra: everything the
 /// app itself does works without it, and a failure is reported, never fatal.
 fn open_folder(dir: &Path) -> std::io::Result<()> {
+    // Explorer opens the user's Documents folder when it is given a path that does not exist, so
+    // a missing folder is an error here, not a window on the wrong place.
+    if !dir.is_dir() {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, format!("{} does not exist", dir.display())));
+    }
     let program = if cfg!(target_os = "windows") {
         "explorer"
     } else if cfg!(target_os = "macos") {
