@@ -21,7 +21,7 @@ use notecraft_model::{NodeColor, NodeKind, PageFormat};
 use notecraft_store::search::Hit;
 use notecraft_store::tree::Node;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{
@@ -424,6 +424,14 @@ enum Dialog {
     PrivacyWelcome {
         level: String,
     },
+    /// A problem told to the user in a box. Ticking "do not alert me again" stops the box for
+    /// this `key` for the rest of the session; the status line still says what happened.
+    Alert {
+        key: String,
+        title: String,
+        message: String,
+        suppress: bool,
+    },
     MissingAttachmentIcon {
         page: PathBuf,
         name: String,
@@ -575,6 +583,10 @@ pub struct NoteCraftApp {
     icon_recovery_reported: HashSet<String>,
     /// Suppress further missing-icon warnings during this run.
     icon_recovery_suppressed: bool,
+    /// Alerts the user asked not to see again this session, by key.
+    muted_alerts: HashSet<String>,
+    /// Alerts waiting for the open one to close.
+    queued_alerts: VecDeque<Dialog>,
     open_attachment_warning_suppressed: bool,
 }
 
@@ -656,6 +668,8 @@ impl NoteCraftApp {
             restored: false,
             icon_recovery_reported: HashSet::new(),
             icon_recovery_suppressed: false,
+            muted_alerts: HashSet::new(),
+            queued_alerts: VecDeque::new(),
             open_attachment_warning_suppressed: false,
         }
     }
@@ -973,6 +987,28 @@ impl NoteCraftApp {
     }
 
     /// Says something went wrong, in our own words rather than the engine's.
+    /// Tells the user about a problem. The status line always says it. A box says it too, unless
+    /// the user has asked not to see alerts with this `key` again this session; a box that is
+    /// already open is not replaced, the next alert waits its turn in a queue.
+    pub fn alert(&mut self, key: &str, title: &str, message: &str) {
+        self.status = message.to_string();
+        self.status_is_error = true;
+        if self.muted_alerts.contains(key) {
+            return;
+        }
+        let showing = matches!(&self.dialog, Some(Dialog::Alert { key: k, .. }) if k == key);
+        let queued = self.queued_alerts.iter().any(|d| matches!(d, Dialog::Alert { key: k, .. } if k == key));
+        if showing || queued {
+            return;
+        }
+        let dialog = Dialog::Alert { key: key.to_string(), title: title.to_string(), message: message.to_string(), suppress: false };
+        if self.dialog.is_none() {
+            self.dialog = Some(dialog);
+        } else {
+            self.queued_alerts.push_back(dialog);
+        }
+    }
+
     fn complain(&mut self, msg: &str) {
         self.status = msg.to_string();
         self.status_is_error = true;
@@ -4386,6 +4422,12 @@ impl NoteCraftApp {
     // ---------- dialogs ----------
 
     fn dialogs(&mut self, ctx: &Context) {
+        while self.dialog.is_none() {
+            let Some(next) = self.queued_alerts.pop_front() else { break };
+            if !matches!(&next, Dialog::Alert { key, .. } if self.muted_alerts.contains(key)) {
+                self.dialog = Some(next);
+            }
+        }
         let Some(dialog) = self.dialog.take() else { return };
         // Page loading and native Shell icon generation can finish between the
         // recovery scan and the frame that presents this modal. Re-check the
@@ -4477,6 +4519,33 @@ impl NoteCraftApp {
                 } else if denied {
                     let _ = self.session.settings.set("telemetry_level", "none");
                     let _ = self.session.settings.set("privacy_welcome_seen", "true");
+                    keep = false;
+                }
+            }
+            Dialog::Alert { key, title, message, suppress } => {
+                let mut ok = false;
+                egui::Window::new(title.as_str())
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, title.as_str());
+                        ui.set_min_width(420.0);
+                        ui.label(message.as_str());
+                        ui.add_space(8.0);
+                        ui.checkbox(suppress, "Do not alert me again this session");
+                        ui.add_space(12.0);
+                        if modal_button(ui, &self.tokens, "OK", true).clicked() {
+                            ok = true;
+                        }
+                    });
+                if ok {
+                    if *suppress {
+                        self.muted_alerts.insert(key.clone());
+                    }
                     keep = false;
                 }
             }
@@ -5758,4 +5827,32 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     ui.add_space(4.0);
     ui.label(egui::RichText::new(format!("Accent: {}", current.accent.label())).small());
     ui.checkbox(follow, "Follow the system light or dark setting");
+}
+
+#[cfg(test)]
+mod alert_tests {
+    use super::*;
+
+    #[test]
+    fn an_alert_queues_behind_an_open_one_and_a_muted_key_is_never_queued() {
+        let t = notecraft_store::testing::TempDir::new("alerts");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        app.alert("first", "Title", "one");
+        assert!(matches!(&app.dialog, Some(Dialog::Alert { key, .. }) if key == "first"), "the first alert opens");
+
+        app.alert("first", "Title", "one again");
+        assert!(app.queued_alerts.is_empty(), "the same alert is not shown twice while it is open");
+
+        app.alert("second", "Title", "two");
+        assert_eq!(app.queued_alerts.len(), 1, "a different alert waits its turn");
+
+        app.muted_alerts.insert("third".to_string());
+        app.alert("third", "Title", "three");
+        assert_eq!(app.queued_alerts.len(), 1, "a muted alert is not queued");
+        assert_eq!(app.status, "three", "the status line still says what happened");
+    }
 }

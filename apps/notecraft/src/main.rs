@@ -116,6 +116,7 @@ fn main() -> eframe::Result {
     // empties the folder on purpose gets it back at the next start, and the File screen can
     // also add it by hand.
     let mut open_first: Option<String> = None;
+    let mut startup_alert: Option<String> = None;
     if session.tree().is_empty() {
         match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
             Ok(notecraft_engine::Output::Path(dir)) => {
@@ -123,10 +124,10 @@ fn main() -> eframe::Result {
             }
             Ok(_) => {}
             Err(e) => {
-                // A release build on Windows has no console, so a failure is shown in a box.
+                // A release build on Windows has no console; the window shows the message in a box.
                 let message = format!("The Welcome notebook could not be added to {}: {e}", session.root().display());
                 eprintln!("{message}");
-                rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("NoteCraft").set_description(&message).show();
+                startup_alert = Some(message);
             }
         }
     }
@@ -152,6 +153,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = NoteCraftApp::new(session);
+            if let Some(message) = startup_alert.take() {
+                app.alert("welcome-notebook-add", "NoteCraft", &message);
+            }
             let input_language_watcher = cc.window_handle().ok().and_then(|window| match window.as_raw() {
                 RawWindowHandle::Win32(handle) => {
                     let ctx = cc.egui_ctx.clone();
