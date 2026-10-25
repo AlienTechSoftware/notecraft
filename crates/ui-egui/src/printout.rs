@@ -107,9 +107,9 @@ fn office_to_pdf(source: &Path, workspace: &Path) -> Result<PathBuf, String> {
 }
 
 fn office_renderers() -> Vec<OsString> {
-    let mut renderers = vec![OsString::from("soffice"), OsString::from("libreoffice")];
     #[cfg(windows)]
     {
+        let mut renderers = vec![OsString::from("soffice"), OsString::from("libreoffice")];
         if let Some(program_files) = std::env::var_os("ProgramFiles") {
             renderers.push(Path::new(&program_files).join("LibreOffice/program/soffice.exe").into_os_string());
         }
@@ -119,8 +119,12 @@ fn office_renderers() -> Vec<OsString> {
         if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
             renderers.push(Path::new(&local_app_data).join("Programs/LibreOffice/program/soffice.exe").into_os_string());
         }
+        renderers
     }
-    renderers
+    #[cfg(not(windows))]
+    {
+        vec![OsString::from("soffice"), OsString::from("libreoffice")]
+    }
 }
 
 fn temporary_workspace() -> Result<PathBuf, String> {
