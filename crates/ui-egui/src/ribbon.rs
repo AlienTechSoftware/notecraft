@@ -5,6 +5,7 @@
 //! Every control here asks for an [`Act`]; the window carries it out. Nothing in this module
 //! touches the notebook, so the whole ribbon is tested by asking what the buttons return.
 
+use crate::floating::{self, Glyph};
 use crate::icons::{self, Icon};
 use crate::ribbon_icons::{self, Mark};
 use crate::theme::Tokens;
@@ -1470,7 +1471,7 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 ui.separator();
                 ui.add_enabled(false, egui::Label::new(egui::RichText::new("Insert Table... (not built)").color(t.muted)));
                 if view.gridcraft {
-                    if ui.button("New GridCraft Spreadsheet").clicked() {
+                    if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), "New GridCraft Spreadsheet", t).clicked() {
                         acts.push(Act::NewGridCraft);
                         picked = true;
                     }
