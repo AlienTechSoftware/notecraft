@@ -12,6 +12,81 @@
 //! other program on the machine: it can be empty, held open by something else, or hold
 //! something of a kind we do not want, and none of that is an error worth a message.
 
+/// The clipboard as the app uses it. The app holds one of these, made at startup, so that the
+/// system clipboard is the only place a platform's clipboard is reached.
+pub trait Board {
+    /// The plain text on the clipboard, if there is any.
+    fn text(&mut self) -> Option<String>;
+    /// The HTML on the clipboard, if another application supplied any.
+    fn html(&mut self) -> Option<String>;
+    /// The picture on the clipboard, encoded as PNG.
+    fn picture(&mut self) -> Option<Picture>;
+    /// Whether a picture is on the clipboard now.
+    fn has_picture(&mut self) -> bool;
+    /// Puts plain text on the clipboard.
+    fn set_text(&mut self, text: &str) -> Result<(), String>;
+    /// Puts the same item on the clipboard as HTML and as plain text.
+    fn set_html(&mut self, html: &str, text: &str) -> Result<(), String>;
+}
+
+/// The operating system's clipboard. On Windows this is the clipboard the user shares with
+/// every other program.
+pub struct System;
+
+impl Board for System {
+    fn text(&mut self) -> Option<String> {
+        text()
+    }
+    fn html(&mut self) -> Option<String> {
+        html()
+    }
+    fn picture(&mut self) -> Option<Picture> {
+        picture()
+    }
+    fn has_picture(&mut self) -> bool {
+        has_picture()
+    }
+    fn set_text(&mut self, text: &str) -> Result<(), String> {
+        set_text(text)
+    }
+    fn set_html(&mut self, html: &str, text: &str) -> Result<(), String> {
+        set_html(html, text)
+    }
+}
+
+/// Opens the system clipboard once, at startup. An error says why it cannot be used, so the
+/// caller can tell the user instead of letting every paste fail in silence.
+pub fn open() -> Result<Box<dyn Board>, String> {
+    arboard::Clipboard::new().map(|_| Box::new(System) as Box<dyn Board>).map_err(|e| e.to_string())
+}
+
+/// The clipboard the app holds when the system one could not be opened. Every action reports
+/// that the clipboard is unavailable, and nothing is read from or written to anywhere.
+pub struct Unavailable;
+
+const UNAVAILABLE: &str = "The clipboard is unavailable on this computer.";
+
+impl Board for Unavailable {
+    fn text(&mut self) -> Option<String> {
+        None
+    }
+    fn html(&mut self) -> Option<String> {
+        None
+    }
+    fn picture(&mut self) -> Option<Picture> {
+        None
+    }
+    fn has_picture(&mut self) -> bool {
+        false
+    }
+    fn set_text(&mut self, _text: &str) -> Result<(), String> {
+        Err(UNAVAILABLE.to_string())
+    }
+    fn set_html(&mut self, _html: &str, _text: &str) -> Result<(), String> {
+        Err(UNAVAILABLE.to_string())
+    }
+}
+
 /// A picture from the clipboard, as PNG bytes ready to be written beside a page.
 pub struct Picture {
     pub png: Vec<u8>,

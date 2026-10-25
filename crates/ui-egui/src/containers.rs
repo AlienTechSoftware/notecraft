@@ -113,6 +113,9 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
 /// What a frame of the canvas did.
 #[derive(Default)]
 pub struct Moved {
+    /// A copy the page asked for: the HTML and its plain text. The window puts it on the
+    /// clipboard it holds, and falls back to plain text when that fails.
+    pub copy: Option<(String, String)>,
     pub changed: Changed,
     /// True when a container was moved, resized, added or removed.
     pub boxes: bool,
@@ -494,9 +497,7 @@ pub fn show(
             pageedit::remember_copied(&markdown, held);
             let html = notecraft_formats::render::blocks_to_html(held);
             let text = notecraft_formats::render::blocks_to_text(held);
-            if crate::clipboard::set_html(&html, &text).is_err() {
-                ui.ctx().copy_text(text);
-            }
+            out.copy = Some((html, text));
             if cut_key {
                 delete_at = Some(i);
             }
@@ -542,9 +543,7 @@ pub fn show(
             pageedit::remember_copied(&markdown, held);
             let html = notecraft_formats::render::blocks_to_html(held);
             let text = notecraft_formats::render::blocks_to_text(held);
-            if crate::clipboard::set_html(&html, &text).is_err() {
-                ui.ctx().copy_text(text);
-            }
+            out.copy = Some((html, text));
         }
         let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !area.rect.contains(pointer.unwrap_or_default());
         if picked || outside || ui.input(|i| i.key_pressed(Key::Escape)) {

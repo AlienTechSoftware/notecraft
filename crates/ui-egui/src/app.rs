@@ -587,10 +587,19 @@ pub struct NoteCraftApp {
     muted_alerts: HashSet<String>,
     /// Alerts waiting for the open one to close.
     queued_alerts: VecDeque<Dialog>,
+    /// The clipboard the app reads and writes. The system's, unless the app was built with another.
+    clipboard: Box<dyn crate::clipboard::Board>,
     open_attachment_warning_suppressed: bool,
 }
 
 impl NoteCraftApp {
+    /// Replaces the clipboard the app uses. Made at startup by the caller, so the app never
+    /// reaches a platform's clipboard by itself.
+    pub fn with_clipboard(mut self, board: Box<dyn crate::clipboard::Board>) -> NoteCraftApp {
+        self.clipboard = board;
+        self
+    }
+
     pub fn new(session: Session) -> NoteCraftApp {
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let accent = session.settings.get("theme_accent").and_then(|v| Accent::parse(&v)).unwrap_or(Accent::Default);
@@ -670,6 +679,7 @@ impl NoteCraftApp {
             icon_recovery_suppressed: false,
             muted_alerts: HashSet::new(),
             queued_alerts: VecDeque::new(),
+            clipboard: Box::new(crate::clipboard::System),
             open_attachment_warning_suppressed: false,
         }
     }
@@ -2725,7 +2735,7 @@ impl NoteCraftApp {
             self.say("Open a page first");
             return;
         };
-        if let Some(picture) = crate::clipboard::picture() {
+        if let Some(picture) = self.clipboard.picture() {
             let name = crate::clipboard::picture_name();
             let (w, h) = (picture.width, picture.height);
             match notecraft_store::assets::attach_bytes(&dir, &name, &picture.png) {
@@ -2746,7 +2756,7 @@ impl NoteCraftApp {
         // Browsers, Word and other editors offer a formatted clipboard flavour as well
         // as plain text. Parse it through the same HTML-to-block path as an HTML page, so
         // links, emphasis, lists and tables survive a paste into NoteCraft.
-        if let Some(html) = crate::clipboard::html() {
+        if let Some(html) = self.clipboard.html() {
             let new = pageedit::pasted_blocks(pageedit::pasted(&html));
             if !new.is_empty()
                 && let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable)
@@ -2762,7 +2772,7 @@ impl NoteCraftApp {
                 return;
             }
         }
-        match crate::clipboard::text() {
+        match self.clipboard.text() {
             Some(text) => {
                 // The same reading as Ctrl+V: a box that was copied comes back whole, several lines
                 // become lines of their own, a table stays a table. Put in as one text, as this once
@@ -3468,7 +3478,7 @@ impl NoteCraftApp {
         // NoteCraft even when the caret is inside an ordinary text editor; otherwise Ctrl+V
         // appears to do nothing because egui handles the key before `paste_here` can inspect
         // the system image clipboard.
-        let picture = paste && crate::clipboard::has_picture();
+        let picture = paste && self.clipboard.has_picture();
         if paste && (picture || ours || nobody) {
             self.paste_here();
         }
@@ -4194,6 +4204,11 @@ impl NoteCraftApp {
                                 zoom_scale,
                             );
                             page_acts.append(&mut moved.acts);
+                            if let Some((html, text)) = moved.copy.take()
+                                && self.clipboard.set_html(&html, &text).is_err()
+                            {
+                                ui.ctx().copy_text(text);
+                            }
                             // The ink of a page sits over its words, anywhere on it, the
                             // way a pen on paper does. It goes on after them so a press
                             // with a pen in hand reaches the ink and not the caret.
@@ -5615,7 +5630,7 @@ impl NoteCraftApp {
         }
         if let Some(text) = self.pending_copy.take() {
             if let Some(html) = self.pending_copy_html.take() {
-                if crate::clipboard::set_html(&html, &text).is_err() {
+                if self.clipboard.set_html(&html, &text).is_err() {
                     ctx.copy_text(text);
                 }
             } else {

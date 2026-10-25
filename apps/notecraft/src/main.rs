@@ -116,7 +116,8 @@ fn main() -> eframe::Result {
     // empties the folder on purpose gets it back at the next start, and the File screen can
     // also add it by hand.
     let mut open_first: Option<String> = None;
-    let mut startup_alert: Option<String> = None;
+    // Problems found before the window opens. The window shows each one in an alert.
+    let mut startup_alerts: Vec<(&str, String)> = Vec::new();
     if session.tree().is_empty() {
         match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
             Ok(notecraft_engine::Output::Path(dir)) => {
@@ -127,7 +128,7 @@ fn main() -> eframe::Result {
                 // A release build on Windows has no console; the window shows the message in a box.
                 let message = format!("The Welcome notebook could not be added to {}: {e}", session.root().display());
                 eprintln!("{message}");
-                startup_alert = Some(message);
+                startup_alerts.push(("welcome-notebook-add", message));
             }
         }
     }
@@ -148,13 +149,24 @@ fn main() -> eframe::Result {
     let control_port: Option<u16> =
         flag_value(&args, "--control").or_else(|| std::env::var("NOTECRAFT_CONTROL_PORT").ok()).and_then(|p| p.parse().ok());
     let key_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    // The clipboard is opened once, here. If it cannot be, the app still runs without it, and the
+    // window says so.
+    let clipboard: Box<dyn notecraft_ui_egui::clipboard::Board> = match notecraft_ui_egui::clipboard::open() {
+        Ok(board) => board,
+        Err(e) => {
+            let message = format!("The clipboard could not be opened, so copy and paste do not work this session: {e}");
+            eprintln!("{message}");
+            startup_alerts.push(("clipboard-open", message));
+            Box::new(notecraft_ui_egui::clipboard::Unavailable)
+        }
+    };
     let result = eframe::run_native(
         "NoteCraft",
         options,
         Box::new(move |cc| {
-            let mut app = NoteCraftApp::new(session);
-            if let Some(message) = startup_alert.take() {
-                app.alert("welcome-notebook-add", "NoteCraft", &message);
+            let mut app = NoteCraftApp::new(session).with_clipboard(clipboard);
+            for (key, message) in startup_alerts.drain(..) {
+                app.alert(key, "NoteCraft", &message);
             }
             let input_language_watcher = cc.window_handle().ok().and_then(|window| match window.as_raw() {
                 RawWindowHandle::Win32(handle) => {

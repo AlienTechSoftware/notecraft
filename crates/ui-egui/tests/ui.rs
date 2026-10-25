@@ -11,10 +11,13 @@ use notecraft_store::testing::TempDir;
 use notecraft_ui_egui::control::{ControlRequest, start};
 use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, contrast};
 use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
+
+mod support;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use support::clipboard::MemoryBoard;
 
 const LIGHT: Theme = Theme { mode: Mode::Light, accent: Accent::Default };
 const DARK: Theme = Theme { mode: Mode::Dark, accent: Accent::Default };
@@ -4458,9 +4461,10 @@ fn the_clipboard_keys_work_in_an_arabic_paragraph() {
 /// answered paste, so the ribbon's Paste button was the only way in.
 #[test]
 fn ctrl_v_works_when_no_paragraph_has_the_keyboard() {
-    let _clipboard = lock_system_clipboard();
     const PASTED: &str = "pasted with no caret";
+    let board = MemoryBoard::new();
     let (_t, app, s) = sample_app("ui-keys-nobody");
+    let app = app.with_clipboard(Box::new(board.clone()));
     let mut h = harness(app, LIGHT);
     h.run();
     page_of(&mut h, &s, "NoCaret", "first line");
@@ -4468,14 +4472,15 @@ fn ctrl_v_works_when_no_paragraph_has_the_keyboard() {
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
     assert_eq!(caret, Value::Null, "nothing holds the keyboard to begin with");
 
-    if notecraft_ui_egui::clipboard::set_text(PASTED).is_err() {
-        eprintln!("no clipboard on this machine; skipped");
-        return;
-    }
+    board.put_text(PASTED);
     ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("ctrl+v");
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains(PASTED), "Ctrl+V reached the page with no caret in it:\n{body}");
+    assert!(
+        body.contains(PASTED),
+        "Ctrl+V reached the page with no caret in it:
+{body}"
+    );
 }
 
 /// The Styles list opens from its arrow, and a style picked in it is applied to the line the caret is in.
