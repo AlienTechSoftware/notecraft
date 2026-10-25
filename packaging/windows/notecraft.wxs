@@ -78,11 +78,25 @@
         <File Id="NotecraftCliExe" Source="$(var.BinDir)\notecraft-cli.exe" KeyPath="yes" />
       </Component>
       <ComponentRef Id="OfficeimoBridge" />
+      <ComponentRef Id="Notices" />
+      <ComponentRef Id="PdfRenderingNotices" />
     </ComponentGroup>
   </Fragment>
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
+      <!-- The notices every copy must carry: the licences and the third-party notices. -->
+      <Component Id="Notices" Guid="FD6430D6-FBDD-431D-9A3B-8267B72103B4">
+        <File Id="NoticeFile" Source="$(var.BinDir)\NOTICE" KeyPath="yes" />
+        <File Id="AttributionFile" Source="$(var.BinDir)\ATTRIBUTION.md" />
+        <File Id="LicenseMitFile" Source="$(var.BinDir)\LICENSE-MIT" />
+        <File Id="LicenseApacheFile" Source="$(var.BinDir)\LICENSE-APACHE" />
+      </Component>
+      <Directory Id="LicensesDir" Name="licenses">
+        <Component Id="PdfRenderingNotices" Guid="36A97956-CB23-4AAE-BE12-CE39555E9EE3">
+          <File Id="PdfRenderingNoticesFile" Source="$(var.BinDir)\licenses\PDF-RENDERING-NOTICES.txt" KeyPath="yes" />
+        </Component>
+      </Directory>
       <Directory Id="ImportersDir" Name="importers">
         <Directory Id="OfficeimoDir" Name="officeimo">
           <Directory Id="OfficeimoWinX64Dir" Name="win-x64">

@@ -24,6 +24,10 @@ is, where it came from, its license status) is in ATTRIBUTION.md.
 - mermaid-rs-renderer - MIT License, by its authors, linked into the program to draw Mermaid diagrams.
 - RaTeX (ratex-parser, ratex-layout, ratex-types, ratex-font) - MIT License, by the RaTeX
   authors, linked into the program to typeset equations.
+- PDF printouts are drawn with the hayro crates (Laurenz Stampfl), used under the MIT License,
+  and with substitute fonts from PDFium (Foxit Software Inc. copyright) compiled into the program.
+  The notices those licences require are in licenses/PDF-RENDERING-NOTICES.txt, which ships with
+  every build. See ATTRIBUTION.md.
 - The window also uses the fonts bundled with egui, which carry their own licenses; those ship
   with the egui crates.
 - Dependencies are listed in Cargo.lock, each under its own license. A license audit of them

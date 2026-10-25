@@ -94,6 +94,15 @@ data.
 | `docs/images/dark-green.png` | The dark green theme |
 | `docs/images/theme-switcher.png` | The theme menu open |
 
+## PDF printout rendering
+
+| File | What | Origin | Licence status |
+| --- | --- | --- | --- |
+| `licenses/PDF-RENDERING-NOTICES.txt` | The notices for the rows below, in the form the licences require | Written from the licence texts of the hayro crates and the PDFium font files | Shipped in the portable zip and the installer |
+| hayro crates: `hayro`, `hayro-ccitt`, `hayro-font`, `hayro-interpret`, `hayro-jbig2`, `hayro-jpeg2000`, `hayro-syntax` | A pure-Rust PDF renderer, linked into the program to draw PDF printouts | Laurenz Stampfl, https://github.com/LaurenzV/hayro (locked in `Cargo.lock`) | MIT License, used under that option; the notice is in `licenses/PDF-RENDERING-NOTICES.txt` |
+| Substitute fonts inside `hayro-interpret`: FoxitSans, FoxitSerif, FoxitFixed, FoxitSymbol, FoxitDingbats (`.pfb`) | Stand-ins for the 14 standard PDF fonts, compiled into the binary so printouts draw without a font installed | Extracted from PDFium; Foxit Software Inc. copyright, PDFium Authors | BSD-style licence; the text is in `licenses/PDF-RENDERING-NOTICES.txt` |
+| Colour profiles inside `hayro-interpret`: `CGATS001Compat-v2-micro.icc`, `LAB.icc` | Colour profiles compiled into the binary for PDF colour | Compact-ICC-Profiles (CMYK, CC0 1.0); generated with LittleCMS | CC0 1.0 Universal, no notice required |
+
 ## Code and fonts
 
 - The icons in the tree and toolbar are drawn in code (`crates/ui-egui/src/icons.rs`). No icon

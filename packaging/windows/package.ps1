@@ -126,6 +126,16 @@ Copy-Item (Join-Path $BridgeStage 'importers') $Stage -Recurse
 
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'notecraft.exe') (Join-Path $Stage 'notecraft-cli.exe')
 
+# The notices travel with the program: the installer and the portable zip both carry them, and the
+# licence texts they name, so a copy handed on alone still says what it contains.
+Copy-Item (Join-Path $Root 'NOTICE'), (Join-Path $Root 'ATTRIBUTION.md'), (Join-Path $Root 'LICENSE-MIT'), (Join-Path $Root 'LICENSE-APACHE') $Stage
+$LicensesStage = Join-Path $Stage 'licenses'
+New-Item -ItemType Directory -Force -Path $LicensesStage | Out-Null
+Copy-Item (Join-Path $Root 'licenses\*') $LicensesStage
+foreach ($notice in 'NOTICE', 'ATTRIBUTION.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'licenses\PDF-RENDERING-NOTICES.txt') {
+  if (-not (Test-Path (Join-Path $Stage $notice))) { throw "notice missing from the package stage: $notice" }
+}
+
 $Outputs = @()
 
 # ---- MSI ---------------------------------------------------------------------------------------
@@ -180,6 +190,7 @@ Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
 Copy-Item (Join-Path $Stage 'importers') $Portable -Recurse
+Copy-Item (Join-Path $Stage 'licenses') $Portable -Recurse
 foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
