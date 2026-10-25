@@ -98,7 +98,11 @@ fn main() {
     } else {
         None
     };
-    let mut session = Session::new(&notebooks, Settings::at(dir.path().join("settings.toml"))).expect("session");
+    // The privacy welcome is answered once per profile. A screenshot run starts with a fresh
+    // profile, so mark it seen as the UI tests do, or the welcome dialog covers every picture.
+    let settings = Settings::at(dir.path().join("settings.toml"));
+    settings.set("privacy_welcome_seen", "true").expect("screenshot settings");
+    let mut session = Session::new(&notebooks, settings).expect("session");
     if !empty {
         create_sample(&mut session, Some(LOGO_PNG)).expect("sample notebooks");
     }
