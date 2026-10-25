@@ -653,14 +653,8 @@ pub(crate) fn show_block_zoomed(
     // this response preserves double-clicks on the attachment itself.
     if let Some(object_rect) = rendered_object_rect {
         let object_response = ui.interact(object_rect, id.with("object-hit"), egui::Sense::click());
-        if object_response.clicked() {
-            ui.data_mut(|data| data.insert_temp(object_clicked_id(), (i, object_kind(block).unwrap_or("image").to_string())));
-        }
-        if object_response.double_clicked()
-            && let Some(p) = object_response.interact_pointer_pos()
-            && let Some(href) = crate::pageedit::link_under(ui, block, &object_response, p, tokens, page)
-        {
-            ui.data_mut(|data| data.insert_temp(object_double_clicked_id(), (i, href)));
+        if object_response.double_clicked() {
+            ui.data_mut(|data| data.insert_temp(object_double_clicked_id(), (i, object_kind(block).unwrap_or("image").to_string())));
         }
     }
     let end = ui.cursor().min;
@@ -676,11 +670,8 @@ pub(crate) fn show_block_zoomed(
             if clicked {
                 data.insert_temp(object_clicked_id(), (i, kind.to_string()));
             }
-            if response.double_clicked()
-                && let Some(p) = response.interact_pointer_pos()
-                && let Some(href) = crate::pageedit::link_under(ui, block, &response, p, tokens, page)
-            {
-                data.insert_temp(object_double_clicked_id(), (i, href));
+            if response.double_clicked() {
+                data.insert_temp(object_double_clicked_id(), (i, kind.to_string()));
             }
         });
         if clicked {
@@ -737,6 +728,10 @@ pub(crate) fn object_clicked_id() -> egui::Id {
 
 pub(crate) fn object_double_clicked_id() -> egui::Id {
     egui::Id::new("embedded-object-double-clicked")
+}
+
+pub(crate) fn object_click_state_id() -> egui::Id {
+    egui::Id::new("embedded-object-click-state")
 }
 
 /// A text block with no words, no maths and no picture in it: a blank line.

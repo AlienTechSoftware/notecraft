@@ -3648,7 +3648,8 @@ fn double_clicking_an_attachment_card_opens_it() {
     let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("first click card");
     settle(&mut h);
-    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("second click card");
+    assert_eq!(h.query_all_by_label_contains("Open attachment").count(), 0, "single click only selects the attachment: {}", look_at(&mut h));
+    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
     settle(&mut h);
     assert!(h.query_all_by_label_contains("Open attachment").count() >= 1, "double click opened the attachment prompt: {}", look_at(&mut h));
 }
