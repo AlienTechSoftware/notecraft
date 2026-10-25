@@ -3,6 +3,10 @@
 Rules for AI agents working in this folder. The project-wide contract is one level up
 (`p-NoteCraft/AGENTS.md`); this file adds what is specific to the code.
 
+## Hard rule
+
+- **NEVER use the workspace for work.**
+
 ## Shared agent workflow
 
 - **Understand first.** Read the host contract and this file, inspect status and

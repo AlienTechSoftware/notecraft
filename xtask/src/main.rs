@@ -276,7 +276,10 @@ fn text(root: &Path, fix: bool) -> Result<(), String> {
     let mut n = 0;
     for f in files {
         let rel = f.strip_prefix(root).unwrap_or(&f);
-        if rel.components().any(|c| skip.contains(&c.as_os_str().to_string_lossy().as_ref())) {
+        if rel.components().any(|c| {
+            let component = c.as_os_str().to_string_lossy();
+            skip.contains(&component.as_ref()) || component.starts_with(".work-officeimo-")
+        }) {
             continue;
         }
         let name = rel.to_string_lossy().replace('\\', "/");
