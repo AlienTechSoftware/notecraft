@@ -100,6 +100,8 @@ The pictures in `docs/images` (used by the README and release notes) are rebuilt
 - Commit the regenerated `docs/images` with the code change that caused it, and say which
   pictures changed.
 - A new picture needs its `shot` line in the script and a README reference, in the same change.
+- Every picture, and the script that makes it, is listed in
+  [`screenshot-audit.md`](screenshot-audit.md). Update that file in the same change.
 
 Windows only: `scripts/capture-window.ps1` takes a picture of a window that is open on the desktop.
 Use it only for a check the headless runner cannot show.
