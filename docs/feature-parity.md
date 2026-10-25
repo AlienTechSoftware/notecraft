@@ -25,7 +25,7 @@ side by side. Status words:
 | Authoring | Diagrams (Mermaid) | Partial | Drawn in the page (flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line, quadrant), in both page formats; a click opens the source, and the code view shows it as text. `how-to/draw-diagrams.md`. |
 | Authoring | Free-form canvas boxes | Later | Not representable in Markdown. |
 | Authoring | Ink | Later | Possible as SVG strokes per page. |
-| Embedding | Images, files, video | Partial | A dropped file can be copied into the page folder, linked where it is, or rendered as a printout when LibreOffice and Poppler are installed. |
+| Embedding | Images, files, video | Partial | A dropped file can be copied into the page folder, linked where it is, or rendered as a printout. Windows releases bundle Poppler; LibreOffice is used for Office conversion. |
 | Embedding | Live Office objects | Skip | Not portable. |
 | Retrieval | Full-text search | Done | Across all notebooks, title and body. |
 | Retrieval | Links between pages | Partial | Stored as relative links; shown, not clickable yet. |

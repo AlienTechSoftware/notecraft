@@ -46,6 +46,7 @@ and use **Insert**. [docs/gaps.md](../gaps.md) says what it would take.
 ## Printouts
 
 Every page of a PDF or Office document is rendered to a picture on the page, while the original
-file is kept as an attachment. LibreOffice and Poppler's `pdftoppm` must be installed for this
-feature. If either renderer is unavailable, NoteCraft reports the problem and does not insert a
-partial printout.
+file is kept as an attachment. Windows releases bundle Poppler's `pdftoppm`; development builds
+may use a local Poppler installation or `NOTECRAFT_PDFTOPPM`. LibreOffice is needed to convert
+Office documents. If a renderer is unavailable, NoteCraft reports the problem and does not insert
+a partial printout.

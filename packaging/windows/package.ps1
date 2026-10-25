@@ -124,6 +124,14 @@ $BridgeExe = Join-Path $BridgeStage 'importers\officeimo\win-x64\officeimo-notec
 if (-not (Test-Path $BridgeExe)) { throw "OfficeIMO bridge was not produced: $BridgeExe" }
 Copy-Item (Join-Path $BridgeStage 'importers') $Stage -Recurse
 
+# PDF printouts use the same self-contained runtime approach as the OfficeIMO importer.
+$PopplerStage = Join-Path $TargetDir 'poppler-package'
+Remove-Item -Recurse -Force $PopplerStage -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $PopplerStage | Out-Null
+& (Join-Path $Root 'tools\poppler\package.ps1') -OutputRoot $PopplerStage
+if ($LASTEXITCODE -ne 0) { throw "Poppler packaging failed with exit code $LASTEXITCODE" }
+Copy-Item (Join-Path $PopplerStage 'renderers') $Stage -Recurse
+
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'notecraft.exe') (Join-Path $Stage 'notecraft-cli.exe')
 
 $Outputs = @()

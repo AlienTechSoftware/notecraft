@@ -41,7 +41,8 @@ partial printout is presented as complete.
 The UI owns the command, warning, insertion order and image-object behaviour.
 A renderer owns document-to-page conversion and returns ordered raster pages.
 The current renderer uses LibreOffice (`soffice` or `libreoffice`) for Office
-documents and Poppler's `pdftoppm` for PDF page rasterization. These tools are
-optional runtime dependencies: when they are unavailable, the printout action
-is disabled for unsupported files or reports a clear error, and it never
-silently attaches a file without its pages.
+documents and Poppler's `pdftoppm` for PDF page rasterization. Windows releases
+bundle the Poppler runtime beside the app. Development builds may use
+`NOTECRAFT_PDFTOPPM` or a `pdftoppm` on `PATH`. When a renderer is unavailable,
+the printout action reports a clear error and never silently attaches a file
+without its pages.

@@ -119,6 +119,15 @@ fn office_renderers() -> Vec<OsString> {
 }
 
 fn pdf_rasterizer() -> OsString {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .map(|dir| dir.join("renderers/poppler/Library/bin/pdftoppm.exe"));
+    if let Some(path) = std::env::var_os("NOTECRAFT_PDFTOPPM").map(PathBuf::from).or(bundled)
+        && path.is_file()
+    {
+        return path.into_os_string();
+    }
     OsString::from("pdftoppm")
 }
 
