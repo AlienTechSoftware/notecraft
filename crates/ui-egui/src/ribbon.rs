@@ -43,6 +43,8 @@ pub enum Act {
     Equation(&'static str),
     /// Add a file to the page (opens the same question a dropped file asks).
     AddFile,
+    /// Pick a document and insert it as a printout.
+    AddPrintout,
     /// Add a picture to the page.
     AddPicture,
     ToggleSource,
@@ -1271,7 +1273,9 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         table_menu(ui, view, t, acts);
     });
     group(ui, "Files", t, |ui| {
-        soon(ui, Icon::Page, "File\nPrintout", t);
+        if big(ui, Icon::Page, "File\nPrintout", "Pick a PDF or Office document and insert its pages as pictures", t).clicked() {
+            acts.push(Act::AddPrintout);
+        }
         if big(ui, Icon::Attach, "File\nAttachment", "A file: copied in, or linked where it is", t).clicked() {
             acts.push(Act::AddFile);
         }

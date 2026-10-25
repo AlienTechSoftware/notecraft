@@ -60,14 +60,14 @@ fn render_in_workspace(source: &Path, workspace: &Path) -> Result<Vec<PathBuf>, 
     let pages_dir = workspace.join("pages");
     fs::create_dir_all(&pages_dir).map_err(|e| format!("cannot create printout pages folder: {e}"))?;
     let prefix = pages_dir.join("page");
-    let output = Command::new("pdftoppm")
+    let output = Command::new(pdf_rasterizer())
         .args(["-png", "-r", "144"])
         .arg(&pdf)
         .arg(&prefix)
         .output()
-        .map_err(|e| format!("cannot start pdftoppm: {e}. Install Poppler and ensure pdftoppm is on PATH"))?;
+        .map_err(|e| format!("cannot start PDF rasterizer: {e}. Install Poppler and ensure pdftoppm is available"))?;
     if !output.status.success() {
-        return Err(format!("pdftoppm could not render the printout: {}", String::from_utf8_lossy(&output.stderr).trim()));
+        return Err(format!("PDF rasterizer could not render the printout: {}", String::from_utf8_lossy(&output.stderr).trim()));
     }
     let mut pages: Vec<PathBuf> = fs::read_dir(&pages_dir)
         .map_err(|e| format!("cannot read rendered printout pages: {e}"))?
@@ -84,21 +84,42 @@ fn render_in_workspace(source: &Path, workspace: &Path) -> Result<Vec<PathBuf>, 
 
 fn office_to_pdf(source: &Path, workspace: &Path) -> Result<PathBuf, String> {
     let mut last_error = String::new();
-    for executable in ["soffice", "libreoffice"] {
-        match Command::new(executable).args(["--headless", "--convert-to", "pdf", "--outdir"]).arg(workspace).arg(source).output() {
+    for executable in office_renderers() {
+        match Command::new(&executable).args(["--headless", "--convert-to", "pdf", "--outdir"]).arg(workspace).arg(source).output() {
             Ok(output) if output.status.success() => {
                 let stem: OsString = source.file_stem().map(OsStr::to_os_string).unwrap_or_else(|| OsString::from("printout"));
                 let pdf = workspace.join(stem).with_extension("pdf");
                 if pdf.is_file() {
                     return Ok(pdf);
                 }
-                last_error = format!("{executable} reported success but produced no PDF");
+                last_error = format!("{} reported success but produced no PDF", executable.to_string_lossy());
             }
-            Ok(output) => last_error = format!("{executable}: {}", String::from_utf8_lossy(&output.stderr).trim()),
-            Err(error) => last_error = format!("{executable}: {error}"),
+            Ok(output) => last_error = format!("{}: {}", executable.to_string_lossy(), String::from_utf8_lossy(&output.stderr).trim()),
+            Err(error) => last_error = format!("{}: {error}", executable.to_string_lossy()),
         }
     }
-    Err(format!("cannot render Office document. Install LibreOffice (soffice) and ensure it is on PATH: {last_error}"))
+    Err(format!("cannot render Office document. Install LibreOffice (soffice) and ensure it is available: {last_error}"))
+}
+
+fn office_renderers() -> Vec<OsString> {
+    let mut renderers = vec![OsString::from("soffice"), OsString::from("libreoffice")];
+    #[cfg(windows)]
+    {
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            renderers.push(Path::new(&program_files).join("LibreOffice/program/soffice.exe").into_os_string());
+        }
+        if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+            renderers.push(Path::new(&program_files_x86).join("LibreOffice/program/soffice.exe").into_os_string());
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            renderers.push(Path::new(&local_app_data).join("Programs/LibreOffice/program/soffice.exe").into_os_string());
+        }
+    }
+    renderers
+}
+
+fn pdf_rasterizer() -> OsString {
+    OsString::from("pdftoppm")
 }
 
 fn page_number(path: &Path) -> Option<u32> {

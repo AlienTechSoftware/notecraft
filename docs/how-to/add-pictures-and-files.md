@@ -10,8 +10,8 @@ way you are used to:
 - **Link to the file where it is**: nothing is copied. The page gets a `file:` link to the
   original. The link breaks if the file moves.
 
-**Insert**, then **Picture** or **File** in the ribbon does the same thing and tells you to drop
-the file on the page, because NoteCraft has no file picker of its own yet.
+**Insert**, then **Picture** or **File** in the ribbon opens a file picker. **File Printout** opens
+the same kind of picker and inserts a PDF or Office document as one picture per page.
 
 ## Where they go
 
@@ -43,8 +43,9 @@ Pasting a **picture** from the clipboard is not built: the window's toolkit hand
 only, so NoteCraft never sees the picture flavour. Drag the file onto the page, or save it
 and use **Insert**. [docs/gaps.md](../gaps.md) says what it would take.
 
-## What a printout is, and why there is not one
+## Printouts
 
-Some apps can insert a document as a **printout**: every page of a PDF or a Word file rendered to
-pictures on your page. NoteCraft cannot do that yet, because it needs a renderer for those
-formats. The dialog says so rather than pretending. A PDF you attach is kept as a file.
+Every page of a PDF or Office document is rendered to a picture on the page, while the original
+file is kept as an attachment. LibreOffice and Poppler's `pdftoppm` must be installed for this
+feature. If either renderer is unavailable, NoteCraft reports the problem and does not insert a
+partial printout.

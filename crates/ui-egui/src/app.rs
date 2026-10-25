@@ -2465,6 +2465,18 @@ impl NoteCraftApp {
                 }
                 other => self.insert_block(other),
             },
+            ribbon::Act::AddPrintout => {
+                let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+                    self.say("Open a page first");
+                    return;
+                };
+                let picker = rfd::FileDialog::new()
+                    .set_title("Choose a PDF or Office document to print out")
+                    .add_filter("PDF and Office documents", &["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods", "rtf"]);
+                if let Some(file) = picker.pick_file() {
+                    self.add_file(&dir, &file, FileChoice::Printout);
+                }
+            }
             ribbon::Act::AddFile | ribbon::Act::AddPicture => {
                 let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
                     self.say("Open a page first");
