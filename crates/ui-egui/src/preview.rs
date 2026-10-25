@@ -648,6 +648,21 @@ pub(crate) fn show_block_zoomed(
             ui.add_space(line - used);
         }
     }
+    // Give rich objects their own real hit target after painting them. The
+    // paragraph response remains the fallback for text beside the object, but
+    // this response preserves double-clicks on the attachment itself.
+    if let Some(object_rect) = rendered_object_rect {
+        let object_response = ui.interact(object_rect, id.with("object-hit"), egui::Sense::click());
+        if object_response.clicked() {
+            ui.data_mut(|data| data.insert_temp(object_clicked_id(), (i, object_kind(block).unwrap_or("image").to_string())));
+        }
+        if object_response.double_clicked()
+            && let Some(p) = object_response.interact_pointer_pos()
+            && let Some(href) = crate::pageedit::link_under(ui, block, &object_response, p, tokens, page)
+        {
+            ui.data_mut(|data| data.insert_temp(object_double_clicked_id(), (i, href)));
+        }
+    }
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
     let response = ui.interact(rect, id, egui::Sense::click());
@@ -660,6 +675,12 @@ pub(crate) fn show_block_zoomed(
             data.insert_temp(object_hits_id(), hits);
             if clicked {
                 data.insert_temp(object_clicked_id(), (i, kind.to_string()));
+            }
+            if response.double_clicked()
+                && let Some(p) = response.interact_pointer_pos()
+                && let Some(href) = crate::pageedit::link_under(ui, block, &response, p, tokens, page)
+            {
+                data.insert_temp(object_double_clicked_id(), (i, href));
             }
         });
         if clicked {
@@ -685,12 +706,37 @@ pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn object_link(block: &Block, page_dir: &std::path::Path) -> Option<String> {
+    match block {
+        Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans) => {
+            spans.iter().find_map(|span| span.link.clone())
+        }
+        // Attachment cards in stored Markdown are represented by the generated
+        // file icon as a standalone image in some older/imported pages. The
+        // icon's stem is the original attachment name, but only treat it as a
+        // file card when that original is actually present beside the icon.
+        Block::Image { src, .. } => {
+            let name = src.strip_prefix("assets/")?;
+            let (source, extension) = name.rsplit_once('.')?;
+            if !matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg") {
+                return None;
+            }
+            page_dir.join("assets").join(source).is_file().then(|| format!("assets/{source}"))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn object_hits_id() -> egui::Id {
     egui::Id::new("embedded-object-hits")
 }
 
 pub(crate) fn object_clicked_id() -> egui::Id {
     egui::Id::new("embedded-object-clicked")
+}
+
+pub(crate) fn object_double_clicked_id() -> egui::Id {
+    egui::Id::new("embedded-object-double-clicked")
 }
 
 /// A text block with no words, no maths and no picture in it: a blank line.

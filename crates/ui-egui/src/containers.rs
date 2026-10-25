@@ -166,8 +166,10 @@ pub fn show(
     let mut opened_now = false;
     let words_in = ui.data(|d| d.get_temp::<(usize, usize, usize, usize)>(words_id()));
     let object_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_clicked_id()));
+    let object_double_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_double_clicked_id()));
     ui.data_mut(|d| d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()));
     let mut object_sel = selected_object(ui.ctx(), page_dir);
+    let previously_selected_object = object_sel.clone();
     // Selection must never rewrite the page arrangement. Image hit-testing is visual state;
     // the persisted container geometry changes only after an actual drag or resize.
     // The open paper: the whole page area, made first so that every box and every block, which
@@ -241,11 +243,21 @@ pub fn show(
             out.changed.link = changed.link;
         }
         if let Some((block, kind)) = object_clicked.as_ref().filter(|(block, _)| range.contains(block)) {
+            let activate = object_sel.as_ref().is_some_and(|(selected, _)| selected == block);
             object_sel = Some((*block, kind.clone()));
             sel = None;
             *caret = None;
             out.changed.caret = true;
+            if activate
+                && kind == "image"
+                && let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir))
+            {
+                out.changed.link = Some(href);
+            }
             log::debug!("embedded object selected: container={i} block={block} kind={kind}");
+        }
+        if let Some((_block, href)) = object_double_clicked.as_ref().filter(|(block, _)| range.contains(block)) {
+            out.changed.link = Some(href.clone());
         }
         let used = child.min_rect().height().max(18.0);
         // The move handle sits above the content frame, so it can never cover its top border.
@@ -294,6 +306,12 @@ pub fn show(
         if let Some(response) = &image_hit
             && (response.clicked() || response.secondary_clicked() || response.dragged())
         {
+            if response.clicked()
+                && previously_selected_object.as_ref().is_some_and(|(block, kind)| *block == range.start && kind == "image")
+                && let Some(href) = blocks.get(range.start).and_then(|block| crate::preview::object_link(block, page_dir))
+            {
+                out.changed.link = Some(href);
+            }
             object_sel = Some((range.start, "image".to_string()));
             sel = None;
             *caret = None;

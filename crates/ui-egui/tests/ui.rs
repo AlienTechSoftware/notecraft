@@ -3624,6 +3624,36 @@ fn clicking_a_picture_selects_the_picture_only() {
 }
 
 #[test]
+fn double_clicking_an_attachment_card_opens_it() {
+    let (t, mut app, s) = sample_app("ui-attachment-double-click");
+    let page = s.md_page.to_string_lossy().to_string();
+    let source = t.path().join("brief.docx");
+    std::fs::write(&source, b"attachment").expect("attachment");
+    app.open_path(&page);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.attach", "params": {"path": page, "source": source.to_string_lossy()}})).expect("attach");
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "[![brief.docx](assets/brief.docx.png)](assets/brief.docx)"}}),
+    )
+    .expect("save attachment card");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page, "boxes": "0,0,300,1"}}))
+        .expect("arrange attachment card");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("first click card");
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("second click card");
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("Open attachment").count() >= 1, "double click opened the attachment prompt: {}", look_at(&mut h));
+}
+
+#[test]
 fn delete_and_backspace_remove_a_selected_picture() {
     for key in ["Delete", "Backspace"] {
         let label = if key == "Delete" { "ui-picture-delete" } else { "ui-picture-backspace" };
