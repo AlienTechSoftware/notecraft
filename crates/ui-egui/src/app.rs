@@ -1746,22 +1746,22 @@ impl NoteCraftApp {
     /// applications do.
     fn discord_link(&self, ui: &mut Ui, on: Tokens) {
         // Painted by hand: a button draws its image in the SVG's own black and ignores the
-        // theme, so the icon takes the band's text colour through a tint here, as the ribbon's do.
+        // theme, so the icon takes the header's text colour through a tint, as the window buttons do.
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 26.0), Sense::click());
         if resp.hovered() {
-            ui.painter().rect_filled(rect, 4.0, on.band_text.gamma_multiply(0.18));
+            ui.painter().rect_filled(rect, 4.0, on.row_hover);
         }
         let icon = egui::Rect::from_center_size(egui::pos2(rect.min.x + 14.0, rect.center().y), vec2(16.0, 16.0));
         egui::Image::from_bytes("bytes://notecraft-fluent/chat-multiple.svg", include_bytes!("../assets/fluent/chat-multiple.svg"))
             .fit_to_exact_size(vec2(16.0, 16.0))
-            .tint(on.band_text)
+            .tint(on.text)
             .paint_at(ui, icon);
         ui.painter().text(
             egui::pos2(rect.min.x + 30.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             "Discord",
             egui::FontId::proportional(13.0),
-            on.band_text,
+            on.text,
         );
         let resp = resp.on_hover_text(DISCORD_URL);
         if resp.clicked() {
