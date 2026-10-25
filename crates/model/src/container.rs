@@ -68,6 +68,12 @@ pub fn write(containers: &[Container]) -> String {
 /// exactly the blocks there are, they are used as they are. If they do not, because the page
 /// was edited somewhere else, everything goes into one container and nothing is lost.
 pub fn fit(containers: &[Container], blocks: usize, width: f32) -> Vec<Container> {
+    // An empty page has no box until the writer clicks on its paper. Keeping a
+    // zero-block placeholder here makes that placeholder claim the click before
+    // the page-level hit target can create the first real box.
+    if blocks == 0 {
+        return containers.to_vec();
+    }
     let counted: usize = containers.iter().map(|c| c.blocks).sum();
     if !containers.is_empty() && counted == blocks {
         return containers.to_vec();
@@ -135,6 +141,12 @@ mod tests {
         assert_eq!(fitted.first().map(|c| (c.blocks, c.width)), Some((4, 700.0)));
         // No containers at all is the same thing: one box holding the page.
         assert_eq!(fit(&[], 2, 700.0), vec![Container::new(0.0, 0.0, 700.0, 2)]);
+    }
+
+    #[test]
+    fn an_empty_page_has_no_placeholder_box() {
+        assert!(fit(&[], 0, 700.0).is_empty());
+        assert_eq!(fit(&[Container::new(0.0, 0.0, 400.0, 0)], 0, 700.0).len(), 1);
     }
 
     #[test]

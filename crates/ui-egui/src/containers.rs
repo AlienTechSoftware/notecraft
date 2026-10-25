@@ -187,6 +187,28 @@ pub fn show(
             t.muted,
         );
     }
+    // With no containers there is no child editor to own the empty page. Give
+    // the whole available sheet one topmost hit target so the first click can
+    // create the first box, including on a page whose last box was deleted.
+    if boxes.is_empty() {
+        let empty_area = Rect::from_min_size(area.min, vec2(area.width(), area.height().max(260.0)));
+        let empty_paper = ui.allocate_rect(empty_area, Sense::click());
+        if empty_paper.clicked()
+            && !selection_was_up
+            && let Some(at) = empty_paper.interact_pointer_pos()
+        {
+            let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
+            start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+            out.changed.caret = true;
+            out.changed.blocks = true;
+            out.boxes = true;
+            ui.ctx().request_repaint();
+        }
+        if empty_paper.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+        }
+        return out;
+    }
     let mut frames: Vec<Rect> = Vec::with_capacity(boxes.len());
 
     for i in 0..boxes.len() {

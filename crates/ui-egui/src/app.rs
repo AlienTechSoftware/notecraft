@@ -170,6 +170,7 @@ fn first_missing_attachment_in_source(source: &str, page: &Path) -> Option<Strin
     None
 }
 
+#[allow(dead_code)]
 fn first_unreferenced_attachment(attachments: &[(String, u64)], source: &str) -> Option<String> {
     attachments.iter().find_map(|(name, _)| {
         let reference = format!("assets/{name}");
@@ -177,6 +178,7 @@ fn first_unreferenced_attachment(attachments: &[(String, u64)], source: &str) ->
     })
 }
 
+#[allow(dead_code)]
 fn prepare_unreferenced_attachment(page: &Path, name: &str) -> bool {
     match notecraft_store::assets::ensure_icon(page, name) {
         Ok(()) => {
@@ -419,6 +421,7 @@ enum Dialog {
     OpenAttachmentWarning {
         path: PathBuf,
     },
+    #[allow(dead_code)]
     UnreferencedAttachment {
         page: PathBuf,
         name: String,
@@ -993,13 +996,18 @@ impl NoteCraftApp {
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
         self.save_now();
-        self.show_source = false;
         self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
             let arranged = in_the_text.is_some() || !older.is_empty();
-            let boxes = in_the_text.unwrap_or(older);
+            let mut boxes = in_the_text.unwrap_or(older);
+            // A never-arranged blank page still gets one empty writing box. A
+            // page whose last box was deliberately deleted remains boxless so
+            // its open paper can create a new box on the next click.
+            if blocks.is_empty() && !arranged && boxes.is_empty() {
+                boxes.push(notecraft_model::Container::new(0.0, 0.0, 360.0, 0));
+            }
             // The page as it was opened is the first step of its history: undo goes back
             // this far and no further.
             let first = (page.body.clone(), blocks.clone(), boxes.clone());
@@ -1046,14 +1054,6 @@ impl NoteCraftApp {
                 log::warn!("attachment recovery scan found missing icon: page={:?} attachment={name:?}", dir);
                 if self.icon_recovery_reported.insert(key) {
                     self.dialog = Some(Dialog::MissingAttachmentIcon { page: dir.to_path_buf(), name });
-                }
-            } else if !self.icon_recovery_suppressed
-                && let Some(name) = first_unreferenced_attachment(&attachments, &page_body)
-            {
-                let key = format!("{}::unreferenced::{name}", dir.display());
-                if prepare_unreferenced_attachment(dir, &name) && self.icon_recovery_reported.insert(key) {
-                    log::warn!("attachment recovery scan found detached attachment after icon preparation: page={:?} attachment={name:?}", dir);
-                    self.dialog = Some(Dialog::UnreferencedAttachment { page: dir.to_path_buf(), name });
                 }
             } else {
                 log::debug!("attachment recovery scan found no missing icons: page={:?} attachments={}", dir, attachments.len());
@@ -3858,23 +3858,15 @@ impl NoteCraftApp {
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
-        if !self.icon_recovery_suppressed && self.dialog.is_none() {
-            if let Some(ed) = self.editor.as_ref()
-                && let Some(name) = first_missing_attachment_in_source(&ed.body, &ed.dir).or_else(|| first_legacy_attachment_in_source(&ed.body))
-            {
-                let key = format!("{}::{name}", ed.dir.display());
-                if self.icon_recovery_reported.insert(key) {
-                    log::warn!("attachment icon is missing: page={:?} attachment={name:?}", ed.dir);
-                    self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
-                }
-            } else if let Some(ed) = self.editor.as_ref()
-                && let Some(name) = first_unreferenced_attachment(&ed.attachments, &ed.body)
-            {
-                let key = format!("{}::unreferenced::{name}", ed.dir.display());
-                if prepare_unreferenced_attachment(&ed.dir, &name) && self.icon_recovery_reported.insert(key) {
-                    log::warn!("attachment is detached from page text after icon preparation: page={:?} attachment={name:?}", ed.dir);
-                    self.dialog = Some(Dialog::UnreferencedAttachment { page: ed.dir.clone(), name });
-                }
+        if !self.icon_recovery_suppressed
+            && self.dialog.is_none()
+            && let Some(ed) = self.editor.as_ref()
+            && let Some(name) = first_missing_attachment_in_source(&ed.body, &ed.dir).or_else(|| first_legacy_attachment_in_source(&ed.body))
+        {
+            let key = format!("{}::{name}", ed.dir.display());
+            if self.icon_recovery_reported.insert(key) {
+                log::warn!("attachment icon is missing: page={:?} attachment={name:?}", ed.dir);
+                self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
             }
         }
         let editor_rect = ui.max_rect();
