@@ -33,3 +33,8 @@ requested `reelase` spelling for discoverability.
 
 Stop and report instead of guessing when a gate fails, the version is ambiguous, a branch contains
 unrelated work, an installer cannot be tested, or generated demo parity is not proven.
+
+## References
+
+- [`references/0.0.6-lessons.md`](references/0.0.6-lessons.md): what went wrong in 0.0.6, the checks that
+  would have caught it, and a checklist for the next sign-off. Read it before starting a release.
