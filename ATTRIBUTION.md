@@ -89,7 +89,6 @@ data.
 | `docs/images/ribbon-insert.png` | The Insert tab of the ribbon |
 | `docs/images/tags.png` | A page with to-do boxes and tags |
 | `docs/images/file-screen.png` | The File screen with the notebook covers |
-| `docs/images/markdown-page.png` | A Markdown page with the preview |
 | `docs/images/html-page.png` | An HTML page with the preview |
 | `docs/images/equations.png` | Inline and display equations |
 | `docs/images/dark-green.png` | The dark green theme |
