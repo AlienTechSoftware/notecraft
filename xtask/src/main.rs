@@ -470,7 +470,12 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
     match task {
         "fmt" => cargo(&root, &["fmt", "--all", "--", "--check"]),
         "clippy" => cargo(&root, &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
-        "test" => cargo(&root, &["test", "--workspace"]),
+        // The UI tests share the desktop clipboard and drive one window each, so they run one at a time;
+        // the other crates run in parallel as before.
+        "test" => {
+            cargo(&root, &["test", "--workspace", "--exclude", "notecraft-ui-egui"])?;
+            cargo(&root, &["test", "-p", "notecraft-ui-egui", "--", "--test-threads=1"])
+        }
         "layers" => layers(&root),
         "assets" => assets(&root),
         "docs" => docs(&root),
