@@ -386,6 +386,57 @@ Build system selects the right implementation per platform.
 
 ---
 
+## Testing Philosophy
+
+This is the design-time view of the testing rules in `AGENTS.md` and `docs/testing.md`. A design
+is not finished until its test plan (step 4e) shows how each scenario is tested under these rules.
+
+### No mocks: test data first
+
+- Tests use the real code with real or checked-in test data: sample notebooks, fixture files, real
+  temporary folders, and recorded inputs.
+- Do not write mocks, stubs, fakes or spies for code we own. Do not replace a dependency with a
+  double because the real one is inconvenient to set up.
+- Why: a mock encodes what we think a dependency does, so it drifts from the real behaviour and
+  hides bugs at the seams. It also pushes test-only hooks into product code, which makes the product
+  harder to read and change.
+- When a test needs a scenario, build the data for it. Write a sample notebook or fixture file that
+  has the shape the test needs, and keep it in the test folder or `docs/demo`.
+
+### The one exemption: the clipboard
+
+- The system clipboard may be replaced by a test double, Windows first. The double lives only in the
+  test folder (`crates/*/tests/`).
+- Product code gets no test hook of any kind: no `cfg(test)` branches, no test-only feature flags, no
+  setters or injected backends that exist only for tests. This rule overrides the exemption.
+- The app's clipboard calls currently go straight to the system clipboard, and no boundary exists
+  that a test can reach. Until one exists through a change the app needs for itself, the clipboard
+  tests use the real clipboard and run alone.
+- No other platform service is exempt. A new exemption is written into `AGENTS.md` first.
+
+### Isolation: a test owns its state
+
+- A test creates its own temporary folder, its own notebooks and its own settings file.
+- Tests must not share the system clipboard, environment variables, the working directory or a fixed
+  folder. A test that shares any of these says so and runs alone.
+- Two tests must be able to run in any order and in parallel. If they cannot, that is a bug in the
+  tests, not a reason to run the whole suite serially.
+
+### Parallel by default, serial by exception
+
+- The gate runs the crates in parallel. Tests that cannot be isolated run alone, one binary at a
+  time, and the gate says which ones.
+- A flaky test is a failure. Diagnose it: find the shared state, then isolate it. Do not re-run it
+  until it passes, and do not push past it. The gate must be green before a push.
+
+### What a test plan must say (step 4e)
+
+For each scenario:
+- the test data it needs, and where that data lives;
+- the real code path it exercises, with no double in the middle;
+- whether it touches shared state, and if so how it is isolated or why it runs alone;
+- the platform it runs on, and which platforms were not run.
+
 ## Design Checklist
 
 Before moving to implementation, confirm:
