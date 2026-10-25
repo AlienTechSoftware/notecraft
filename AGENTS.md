@@ -41,6 +41,7 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
   and outcomes. Run the repository's relevant checks before committing as well.
   Commit substantial tested work in coherent chunks when authorized. Do not
   push, merge, publish or release without explicit authorization.
+- **Never skip the gates.** Do not use `--no-verify` on commit or push, do not bypass or edit the hooks to get past them, and do not push while a gate is red. If a gate fails, find the cause and fix it, or stop and report it to the owner. A failing or flaky test is a failure, not something to push around. Re-run a flaky test only to diagnose it; the gate must pass before the push.
 - **External contribution path.** Contributors may use their own fork or clone
   and submit a pull request to this repository. Pull requests are reviewed
   against the relevant design docs and tests; run `cargo xtask ci` and focused
