@@ -191,7 +191,7 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
     - Product code gets no test hook of any kind: no `cfg(test)` branch, no feature flag for tests, no setter or injected backend that exists only for tests.
     - A test may use the double only where the product code already reaches the clipboard through a boundary that is there for the app itself. Where there is no such boundary, the test uses the real clipboard and runs alone, as a single-threaded test binary.
     - Every other platform service stays unmocked until it gets its own exemption here.
-    - A few real-clipboard smoke tests remain, and they run alone.
+    - No test reads or writes the real clipboard. Copy and paste tests use the in-memory double, and read what was copied from it.
   - **Isolation.** A test owns its state. Tests must not share the system clipboard, the
     environment, the working directory or a fixed folder. A test that cannot be isolated says so
     and runs alone.

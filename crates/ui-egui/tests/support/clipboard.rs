@@ -22,6 +22,11 @@ impl MemoryBoard {
         MemoryBoard::default()
     }
 
+    /// The plain text on the clipboard now, empty if there is none.
+    pub fn read_text(&self) -> String {
+        self.0.lock().ok().and_then(|held| held.text.clone()).unwrap_or_default()
+    }
+
     /// Puts plain text on the clipboard, as another program would.
     pub fn put_text(&self, text: &str) {
         if let Ok(mut held) = self.0.lock() {

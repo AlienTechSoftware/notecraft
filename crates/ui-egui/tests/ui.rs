@@ -15,20 +15,33 @@ use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
 mod support;
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use support::clipboard::MemoryBoard;
+
+/// Forwards the copies egui was asked to make in the frames just drawn to the test's clipboard,
+/// as the system clipboard would receive them. egui's own copies leave a frame as output and
+/// are never written to the real clipboard by a test.
+fn forward_copies(h: &mut Harness<'_, NoteCraftApp>, board: &MemoryBoard) {
+    for command in &h.output().platform_output.commands {
+        if let egui::OutputCommand::CopyText(text) = command {
+            board.put_text(text);
+        }
+    }
+}
+
+/// Presses Ctrl+`key` and lets the frames it takes run, forwarding what was copied.
+fn press_copy(h: &mut Harness<'_, NoteCraftApp>, board: &MemoryBoard, key: &str) {
+    ask(h, "ui.key", json!({"key": key, "ctrl": true})).expect("ctrl key");
+    for _ in 0..8 {
+        pump(h);
+        forward_copies(h, board);
+    }
+}
 
 const LIGHT: Theme = Theme { mode: Mode::Light, accent: Accent::Default };
 const DARK: Theme = Theme { mode: Mode::Dark, accent: Accent::Default };
 
 // The system clipboard is shared by parallel UI tests, even when each test has its own window.
-static SYSTEM_CLIPBOARD_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock_system_clipboard() -> MutexGuard<'static, ()> {
-    SYSTEM_CLIPBOARD_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
@@ -2428,8 +2441,9 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
 /// inside a paragraph and stray `<code>` pieces.
 #[test]
 fn a_box_that_is_copied_and_pasted_comes_back_as_it_was() {
-    let _clipboard = lock_system_clipboard();
+    let board = MemoryBoard::new();
     let (_t, app, s) = sample_app("ui-copy-paste");
+    let app = app.with_clipboard(Box::new(board.clone()));
     let mut h = harness(app, LIGHT);
     h.run();
     let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
@@ -2452,7 +2466,7 @@ fn a_box_that_is_copied_and_pasted_comes_back_as_it_was() {
     settle(&mut h);
     let selected = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["selectedContainer"].clone();
     assert_eq!(selected, json!(0), "the box is selected: {selected}");
-    ask(&mut h, "ui.key", json!({"key": "C", "ctrl": true})).expect("Ctrl+C");
+    press_copy(&mut h, &board, "C");
     settle(&mut h);
 
     // What that put on the clipboard: the Markdown of the box's blocks.
@@ -2940,8 +2954,9 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
 /// page.
 #[test]
 fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
-    let _clipboard = lock_system_clipboard();
+    let board = MemoryBoard::new();
     let (_t, app, s) = sample_app("ui-copy-link");
+    let app = app.with_clipboard(Box::new(board.clone()));
     let mut h = harness(app, LIGHT);
     h.run();
 
@@ -2949,6 +2964,7 @@ fn a_link_to_a_page_can_be_copied_and_pasted_into_another_page() {
     h.state_mut().copy_link_to(&s.md_page);
     for _ in 0..8 {
         pump(&mut h);
+        forward_copies(&mut h, &board);
     }
     let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect copied link");
     assert_eq!(status.pointer("/status/text").and_then(Value::as_str), Some("Link to \"Format ideas\" copied"));
@@ -3219,7 +3235,13 @@ fn results_of_an_unused_output_variant_compile() {
 
 /// Two containers on the sample page, and where the first one is drawn: its top left corner.
 fn two_boxes(label: &str) -> (TempDir, Harness<'static, NoteCraftApp>, u64, (f64, f64)) {
-    let (t, mut app, s) = sample_app(label);
+    two_boxes_on(label, &MemoryBoard::new())
+}
+
+/// [`two_boxes`], with the app's clipboard being `board`.
+fn two_boxes_on(label: &str, board: &MemoryBoard) -> (TempDir, Harness<'static, NoteCraftApp>, u64, (f64, f64)) {
+    let (t, app, s) = sample_app(label);
+    let mut app = app.with_clipboard(Box::new(board.clone()));
     let page = s.md_page.to_string_lossy().to_string();
     app.open_path(&page);
     let mut h = harness(app, LIGHT);
@@ -3404,9 +3426,9 @@ fn deleting_a_box_removes_its_words_from_the_saved_page() {
 /// takes the box away.
 #[test]
 fn copy_and_cut_on_a_box_reach_the_clipboard() {
-    let _clipboard = lock_system_clipboard();
     for (label, removes) in [("Copy", false), ("Cut", true)] {
-        let (_t, mut h, blocks, (ox, oy)) = two_boxes(&format!("ui-box-{label}"));
+        let board = MemoryBoard::new();
+        let (_t, mut h, blocks, (ox, oy)) = two_boxes_on(&format!("ui-box-{label}"), &board);
         let before = h.state().body().unwrap_or_default().to_string();
         let words = needle(&before, 0, 2);
         ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
@@ -3415,26 +3437,10 @@ fn copy_and_cut_on_a_box_reach_the_clipboard() {
         }
         // The Home tab has a Cut and a Copy of its own; the box's menu is drawn over it.
         h.query_all_by_label(label).last().expect("the menu item").click();
-        let mut copied = String::new();
         for _ in 0..8 {
             pump(&mut h);
-            for command in &h.output().platform_output.commands {
-                if let egui::OutputCommand::CopyText(text) = command {
-                    copied = text.clone();
-                }
-            }
         }
-        if copied.is_empty() {
-            // Other parallel UI harnesses also inspect the real clipboard while painting.
-            // Windows can report it temporarily unavailable during that access.
-            for _ in 0..100 {
-                if let Some(text) = notecraft_ui_egui::clipboard::text().filter(|text| !text.is_empty()) {
-                    copied = text;
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        }
+        let copied = board.read_text();
         assert!(copied.contains(&words), "{label} put the box's words on the clipboard: {words:?} in {copied:?}");
         settle(&mut h);
         let v = look_at(&mut h);
@@ -3734,7 +3740,6 @@ fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
 /// the text box used to forget the moment the button went down.
 #[test]
 fn cut_on_the_page_menu_cuts_the_words_that_were_selected() {
-    let _clipboard = lock_system_clipboard();
     let (_t, mut h) = right_click_on_selected_words("ui-minibar-cut");
     let before = h.state().body().unwrap_or_default().to_string();
     assert!(before.contains("NoteCraft pages are"));
@@ -4411,9 +4416,10 @@ fn a_drag_can_select_across_paragraphs() {
 /// round trip is seen.
 #[test]
 fn the_clipboard_keys_work_in_an_arabic_paragraph() {
-    let _clipboard = lock_system_clipboard();
     const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
+    let board = MemoryBoard::new();
     let (_t, app, s) = sample_app("ui-keys");
+    let app = app.with_clipboard(Box::new(board.clone()));
     let mut h = harness(app, LIGHT);
     h.run();
     page_of(&mut h, &s, "Keys", LINE);
@@ -4436,16 +4442,13 @@ fn the_clipboard_keys_work_in_an_arabic_paragraph() {
     assert_eq!((at.max(anchor), at.min(anchor)), (whole, 0), "Ctrl+A took the whole paragraph: {at} and {anchor} of {whole}");
 
     // Ctrl+C reaches the handler, which says so.
-    ask(&mut h, "ui.key", json!({"key": "C", "ctrl": true})).expect("ctrl+c");
+    press_copy(&mut h, &board, "C");
     settle(&mut h);
     assert_eq!(status(&mut h), "Copied", "Ctrl+C reached the copy handler");
 
-    // Ctrl+V puts what is really on the clipboard into the page.
+    // Ctrl+V puts what is on the clipboard into the page.
     const PASTED: &str = "سطر ملصوق";
-    if notecraft_ui_egui::clipboard::set_text(PASTED).is_err() {
-        eprintln!("no clipboard on this machine; the paste half is skipped");
-        return;
-    }
+    board.put_text(PASTED);
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     settle(&mut h);
     ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("ctrl+v");
@@ -4516,7 +4519,6 @@ fn the_styles_list_applies_what_is_picked() {
 /// Selecting a box selects everything in it, so the ribbon's marks, styles, Copy and Cut take all of it.
 #[test]
 fn a_selected_box_takes_the_ribbon_as_a_whole() {
-    let _clip = lock_system_clipboard();
     let (_t, mut app, s) = sample_app("ui-box-ribbon");
     let page = s.md_page.to_string_lossy().to_string();
     app.open_path(&page);
