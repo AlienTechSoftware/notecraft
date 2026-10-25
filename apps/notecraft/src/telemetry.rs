@@ -172,7 +172,10 @@ mod tests {
 
     #[test]
     fn simultaneous_sessions_have_unique_ids_and_atomic_manifest() {
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-test-{}", std::process::id()));
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("notecraft-telemetry-test-{}", id));
         let _ = fs::remove_dir_all(&root);
         let a = Session::start(&root, Level::Debug).expect("session");
         let b = Session::start(&root, Level::Debug).expect("session");
@@ -184,7 +187,10 @@ mod tests {
 
     #[test]
     fn events_are_json_and_redact_paths() {
-        let root = std::env::temp_dir().join(format!("notecraft-telemetry-event-{}", std::process::id()));
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(1000);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("notecraft-telemetry-event-{}", id));
         let _ = fs::remove_dir_all(&root);
         let session = Session::start(&root, Level::Debug).expect("session");
         session.record(Level::Warning, "example", &[("path", "C:\\private\\note")]).expect("event");

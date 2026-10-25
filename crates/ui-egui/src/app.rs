@@ -155,23 +155,6 @@ mod attachment_reference_tests {
     }
 }
 
-fn first_missing_attachment(blocks: &[notecraft_formats::markdown::Block], page: &Path) -> Option<String> {
-    for block in blocks {
-        let source = match block {
-            notecraft_formats::markdown::Block::Image { src, .. } => Some(src),
-            notecraft_formats::markdown::Block::Paragraph(spans)
-            | notecraft_formats::markdown::Block::Item { spans, .. }
-            | notecraft_formats::markdown::Block::Heading { spans, .. }
-            | notecraft_formats::markdown::Block::Quote(spans) => spans.iter().find_map(|s| s.image.as_ref().or(s.link.as_ref())),
-            _ => None,
-        };
-        if let Some(src) = source.and_then(|src| missing_attachment_icon(page, src)) {
-            return Some(src);
-        }
-    }
-    None
-}
-
 fn first_missing_attachment_in_source(source: &str, page: &Path) -> Option<String> {
     let mut rest = source;
     while let Some(at) = rest.find("assets/") {
@@ -185,13 +168,6 @@ fn first_missing_attachment_in_source(source: &str, page: &Path) -> Option<Strin
         rest = &rest[end..];
     }
     None
-}
-
-fn first_missing_attachment_file(attachments: &[(String, u64)], page: &Path) -> Option<String> {
-    attachments.iter().find_map(|(name, _)| {
-        let src = format!("assets/{name}");
-        missing_attachment_icon(page, &src)
-    })
 }
 
 fn first_unreferenced_attachment(attachments: &[(String, u64)], source: &str) -> Option<String> {
@@ -600,8 +576,9 @@ impl NoteCraftApp {
         // without them reads as loose columns of words.
         let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
-        // pages. Off by default: one tree is what NoteCraft has always shown.
-        let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(false);
+        // pages. This is the product's default navigation layout; the one-tree view remains
+        // available as an explicit preference.
+        let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(true);
         // The pen rack as the owner last arranged it, and which tool was in hand.
         let rack = notecraft_ink::rack::parse(&session.settings.get(RACK_KEY).unwrap_or_default());
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
@@ -1063,9 +1040,7 @@ impl NoteCraftApp {
                 origin: egui::Pos2::ZERO,
             });
             if !self.icon_recovery_suppressed
-                && let Some(name) = first_missing_attachment_file(&attachments, dir)
-                    .or_else(|| first_missing_attachment_in_source(&page_body, dir))
-                    .or_else(|| first_legacy_attachment_in_source(&page_body))
+                && let Some(name) = first_missing_attachment_in_source(&page_body, dir).or_else(|| first_legacy_attachment_in_source(&page_body))
             {
                 let key = format!("{}::{name}", dir.display());
                 log::warn!("attachment recovery scan found missing icon: page={:?} attachment={name:?}", dir);
@@ -3885,10 +3860,7 @@ impl NoteCraftApp {
     fn editor_ui(&mut self, ui: &mut Ui) {
         if !self.icon_recovery_suppressed && self.dialog.is_none() {
             if let Some(ed) = self.editor.as_ref()
-                && let Some(name) = first_missing_attachment_file(&ed.attachments, &ed.dir)
-                    .or_else(|| first_missing_attachment(&ed.blocks, &ed.dir))
-                    .or_else(|| first_missing_attachment_in_source(&ed.body, &ed.dir))
-                    .or_else(|| first_legacy_attachment_in_source(&ed.body))
+                && let Some(name) = first_missing_attachment_in_source(&ed.body, &ed.dir).or_else(|| first_legacy_attachment_in_source(&ed.body))
             {
                 let key = format!("{}::{name}", ed.dir.display());
                 if self.icon_recovery_reported.insert(key) {
@@ -3946,6 +3918,7 @@ impl NoteCraftApp {
         let mut boxes_moved = false;
         let mut cols_moved = false;
         // A file the writer asked to delete from the page's folder, confirmed first.
+        let mut delete_file: Option<String> = None;
         // A file other than the page written in the code view, waiting to go to disk.
         let mut wrote_file: Option<(String, String)> = None;
         let mut file_action: Option<crate::codeview::FileAction> = None;
@@ -4024,11 +3997,12 @@ impl NoteCraftApp {
                             wide: bool,
                             _changed: &mut bool,
                             from_blocks: &mut bool,
-                            toggle: &mut bool,
+                            _toggle: &mut bool,
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
                             follow: &mut Option<String>,
-                            rename: &mut Option<String>| {
+                            rename: &mut Option<String>,
+                            delete_file: &mut Option<String>| {
                 let scroll = egui::containers::scroll_area::ScrollSource {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
@@ -4137,6 +4111,27 @@ impl NoteCraftApp {
                             if moved.changed.link.is_some() {
                                 *follow = moved.changed.link;
                             }
+                            if !ed.attachments.is_empty() {
+                                ui.add_space(10.0);
+                                ui.separator();
+                                ui.label(egui::RichText::new("Files in this page's folder").small().color(tokens.muted));
+                                for (name, size) in &ed.attachments {
+                                    // A file in the page's folder can be taken out again. The
+                                    // button is on the row rather than under the right
+                                    // button, because the page's own menu answers a right
+                                    // click anywhere on the sheet, this list included.
+                                    ui.horizontal(|ui| {
+                                        ui.label(egui::RichText::new(format!("assets/{name}  ({} KB)", size.div_ceil(1024))).small().monospace());
+                                        if ui
+                                            .small_button("Delete file")
+                                            .on_hover_text(format!("Delete assets/{name} from this page's folder"))
+                                            .clicked()
+                                        {
+                                            *delete_file = Some(name.clone());
+                                        }
+                                    });
+                                }
+                            }
                         } else if wide {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
@@ -4145,16 +4140,11 @@ impl NoteCraftApp {
                                 *follow = Some(href);
                             }
                             ui.add_space(14.0);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("This page holds markup NoteCraft does not edit yet, so it is shown as it reads.")
-                                        .small()
-                                        .color(tokens.muted),
-                                );
-                                if ui.small_button("Edit the source").clicked() {
-                                    *toggle = true;
-                                }
-                            });
+                            ui.label(
+                                egui::RichText::new("This page holds markup NoteCraft does not edit yet, so it is shown as it reads.")
+                                    .small()
+                                    .color(tokens.muted),
+                            );
                         } else if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                             *follow = Some(href);
                         }
@@ -4171,7 +4161,22 @@ impl NoteCraftApp {
                 wrote_file = out.wrote;
                 file_action = out.file_action;
             } else {
-                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow, &mut rename);
+                page(
+                    ui,
+                    ed,
+                    true,
+                    &mut changed,
+                    &mut from_blocks,
+                    &mut toggle_source,
+                    &mut boxes_moved,
+                    &mut cols_moved,
+                    &mut follow,
+                    &mut rename,
+                    &mut delete_file,
+                );
+            }
+            if let Some(name) = delete_file {
+                self.dialog = Some(Dialog::DeleteFile { page: ed.dir.clone(), name });
             }
             if changed {
                 Self::mark_dirty(ed);

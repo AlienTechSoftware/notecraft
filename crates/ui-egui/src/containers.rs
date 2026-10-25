@@ -587,12 +587,18 @@ pub fn show(
         && let Some((container_at, _)) = container::place(boxes, block)
         && block < blocks.len()
     {
-        if boxes.get(container_at).is_some_and(|c| c.blocks <= 1) {
-            remove_container(blocks, boxes, container_at);
-        } else {
-            blocks.remove(block);
-            if let Some(container) = boxes.get_mut(container_at) {
-                container.blocks -= 1;
+        // Check if this block is the only one in its container.
+        if let Some(container) = boxes.get(container_at) {
+            if container.blocks <= 1 {
+                // Remove the whole container if it only has this one block.
+                remove_container(blocks, boxes, container_at);
+            } else {
+                // Remove just this block; the container remains and owns the others.
+                blocks.remove(block);
+                // Update the container's block count.
+                if let Some(c) = boxes.get_mut(container_at) {
+                    c.blocks = c.blocks.saturating_sub(1);
+                }
             }
         }
         out.changed.blocks = true;

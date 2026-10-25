@@ -55,6 +55,18 @@ impl Settings {
         if let Some(p) = std::env::var_os("NOTECRAFT_SETTINGS") {
             return Settings::at(p);
         }
+        // Development mode: prefer local folder next to executable/cwd
+        let local_dev = PathBuf::from("local/settings.toml");
+        if local_dev.exists() {
+            return Settings::at(local_dev);
+        }
+        // Check if we're in a development environment (local/ folder exists nearby)
+        if let Ok(cwd) = std::env::current_dir()
+            && (cwd.join("local").exists() || cwd.join("Cargo.toml").exists())
+        {
+            return Settings::at(local_dev);
+        }
+        // Production: use platform-specific locations
         let path = if let Some(appdata) = std::env::var_os("APPDATA") {
             PathBuf::from(appdata).join("NoteCraft").join("settings.toml")
         } else if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
