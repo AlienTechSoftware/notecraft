@@ -187,10 +187,11 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
   test data: sample notebooks, fixture files, real temporary folders, recorded inputs. Do not
   add mocks, stubs, fakes or spies for code we own, and do not replace a dependency with a
   double to make a test easier to write. Build the test data instead.
-  - **The one exception: the platform boundary.** A platform service the test cannot reach
-    safely (the clipboard first) may be replaced by a test double, one per platform backend,
-    starting with Windows. Each double sits behind that boundary; UI, engine and store logic
-    are never mocked. Keep a small number of real-service smoke tests for each boundary.
+  - **Clipboard exemption (the only one).** The system clipboard may be replaced by a test double, for Windows first, and the double lives only in the test folder (`crates/*/tests/`). It is an exemption from the no-mock rule, not permission to change the product:
+    - Product code gets no test hook of any kind: no `cfg(test)` branch, no feature flag for tests, no setter or injected backend that exists only for tests.
+    - A test may use the double only where the product code already reaches the clipboard through a boundary that is there for the app itself. Where there is no such boundary, the test uses the real clipboard and runs alone, as a single-threaded test binary.
+    - Every other platform service stays unmocked until it gets its own exemption here.
+    - A few real-clipboard smoke tests remain, and they run alone.
   - **Isolation.** A test owns its state. Tests must not share the system clipboard, the
     environment, the working directory or a fixed folder. A test that cannot be isolated says so
     and runs alone.
