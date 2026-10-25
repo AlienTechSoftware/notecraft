@@ -110,20 +110,24 @@ fn main() -> eframe::Result {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
-    // The first start, with nothing to show: the Welcome notebook, a tour of the app, goes
-    // into the empty folder and the window opens on it. Once only: a folder the user emptied
-    // on purpose stays empty, and the File screen can add the notebook again by hand.
+    // With nothing to show, the Welcome notebook, a tour of the app, goes into the notebooks
+    // folder and the window opens on it. The check is the folder itself, not a setting left
+    // over from an earlier install: a folder with no notebooks gets the tour. Someone who
+    // empties the folder on purpose gets it back at the next start, and the File screen can
+    // also add it by hand.
     let mut open_first: Option<String> = None;
-    if session.tree().is_empty() && session.settings.get("welcome_added").is_none() {
+    if session.tree().is_empty() {
         match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
             Ok(notecraft_engine::Output::Path(dir)) => {
                 open_first = first_page_in(&dir).map(|p| p.to_string_lossy().into_owned());
             }
             Ok(_) => {}
-            Err(e) => eprintln!("NoteCraft: the welcome notebook was not added: {e}"),
-        }
-        if let Err(e) = session.settings.set("welcome_added", "true") {
-            eprintln!("NoteCraft: cannot remember that the welcome notebook was offered: {e}");
+            Err(e) => {
+                // A release build on Windows has no console, so a failure is shown in a box.
+                let message = format!("The Welcome notebook could not be added to {}: {e}", session.root().display());
+                eprintln!("{message}");
+                rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("NoteCraft").set_description(&message).show();
+            }
         }
     }
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
