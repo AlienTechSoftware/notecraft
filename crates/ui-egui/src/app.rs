@@ -10,6 +10,7 @@ use crate::icons::{self, Icon};
 use crate::navhistory::NavHistory;
 use crate::pageedit;
 use crate::preview;
+use crate::printout;
 use crate::quickaccess;
 use crate::ribbon;
 use crate::snippets;
@@ -60,10 +61,15 @@ fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
 
 /// Modal actions use a readable size based on their label instead of egui's compact default.
 fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
+    modal_button_enabled(ui, tokens, label, primary, true)
+}
+
+fn modal_button_enabled(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool, enabled: bool) -> egui::Response {
     let width = (label.chars().count() as f32 * 8.0 + 32.0).max(92.0);
     let fill = if primary { tokens.accent } else { tokens.panel };
     let text = if primary { tokens.band_text } else { tokens.text };
-    ui.add(
+    ui.add_enabled(
+        enabled,
         egui::Button::new(egui::RichText::new(label).size(14.0).color(text))
             .min_size(vec2(width, 32.0))
             .fill(fill)
@@ -357,6 +363,8 @@ enum FileChoice {
     Copy,
     /// Leave it where it is and write a link. OneNote: "Insert a link to the file".
     Link,
+    /// Copy it in and insert one rendered image for each printed page.
+    Printout,
 }
 
 enum Dialog {
@@ -1269,10 +1277,51 @@ impl NoteCraftApp {
                 self.insert(&text);
                 self.say(format!("Linked {name} where it is; the file was not copied"));
             }
+            FileChoice::Printout => self.insert_printout(dir, file, format),
         }
         if let Some(ed) = self.editor.as_mut() {
             ed.attachments = notecraft_store::assets::list(&ed.dir);
         }
+    }
+
+    fn insert_printout(&mut self, dir: &Path, file: &Path, format: PageFormat) {
+        let rendered = match printout::render(file) {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                self.complain(&error);
+                return;
+            }
+        };
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) else {
+            self.complain(&format!("Could not attach {name} before rendering its pages"));
+            return;
+        };
+        let Some(base) = link.strip_prefix("assets/").and_then(|link| Path::new(link).file_name()).map(|name| name.to_string_lossy().into_owned())
+        else {
+            self.complain("The attachment returned an invalid page link");
+            return;
+        };
+        let assets = dir.join("assets");
+        let mut generated = Vec::with_capacity(rendered.pages().len());
+        for (index, page) in rendered.pages().iter().enumerate() {
+            let target = assets.join(format!("{base}.printout-{:03}.png", index + 1));
+            if let Err(error) = std::fs::copy(page, &target) {
+                for path in &generated {
+                    let _ = std::fs::remove_file(path);
+                }
+                self.complain(&format!("Could not store printout page {}: {error}", index + 1));
+                return;
+            }
+            generated.push(target);
+        }
+        let mut text = snippets::attachment(format, &link, &name);
+        for (index, _) in generated.iter().enumerate() {
+            let image = format!("assets/{base}.printout-{:03}.png", index + 1);
+            text.push_str(&snippets::printout_page(format, &image, index + 1));
+        }
+        self.insert(&text);
+        self.say(format!("Inserted {name} and {} printout page(s)", generated.len()));
     }
 
     // ---------- tree ----------
@@ -4628,18 +4677,28 @@ impl NoteCraftApp {
                                 .color(self.tokens.muted),
                         );
                         ui.add_space(6.0);
+                        let can_printout = printout::supports(&file);
+                        if modal_button_enabled(ui, &self.tokens, "Insert printout", false, can_printout).clicked() {
+                            log::debug!("file attach choice clicked: choice=printout name={name:?}");
+                            chosen = Some(FileChoice::Printout);
+                        }
+                        ui.label(
+                            egui::RichText::new(if can_printout {
+                                "Copies the file and inserts one picture for each printed page."
+                            } else {
+                                "Printout is available for PDF and Office documents."
+                            })
+                            .small()
+                            .color(self.tokens.muted),
+                        );
+                        ui.add_space(6.0);
                         if modal_button(ui, &self.tokens, "Link to the file where it is", false).clicked() {
                             log::debug!("file attach choice clicked: choice=link name={name:?}");
                             chosen = Some(FileChoice::Link);
                         }
                         ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
                         ui.add_space(6.0);
-                        ui.label(
-                            egui::RichText::new("A printout (every page of a document as pictures) is not built yet.")
-                                .small()
-                                .color(self.tokens.muted),
-                        );
-                        ui.add_space(8.0);
+                        ui.add_space(2.0);
                         ui.horizontal(|ui| {
                             if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
                                 keep = false;

@@ -32,6 +32,7 @@ pub mod pageedit;
 pub mod pagemenu;
 pub mod pagetext;
 pub mod preview;
+pub(crate) mod printout;
 pub mod quickaccess;
 pub mod ribbon;
 pub mod ribbon_icons;

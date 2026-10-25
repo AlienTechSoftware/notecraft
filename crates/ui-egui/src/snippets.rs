@@ -87,6 +87,14 @@ pub fn attachment(format: PageFormat, link: &str, name: &str) -> String {
     }
 }
 
+/// A page image produced by Insert as Printout, placed immediately after its attachment card.
+pub fn printout_page(format: PageFormat, link: &str, page: usize) -> String {
+    match format {
+        PageFormat::Html => format!("\n<img src=\"{link}\" alt=\"Printout page {page}\">\n"),
+        PageFormat::Cmgfm => format!("\n![Printout page {page}]({link})\n"),
+    }
+}
+
 fn attachment_icon(link: &str) -> String {
     let name = link.strip_prefix("assets/").unwrap_or(link);
     format!("assets/{name}{}", attachment_icon_extension())
@@ -200,5 +208,14 @@ mod tests {
         assert!(attachment(PageFormat::Html, "assets/a.mp4", "a.mp4").contains("<video src=\"assets/a.mp4\" controls>"));
         assert!(attachment(PageFormat::Html, "assets/a.png", "a<b>.png").contains("alt=\"a&lt;b&gt;.png\""));
         assert!(attachment(PageFormat::Html, "assets/a.mp3", "a.mp3").contains("<audio"));
+    }
+
+    #[test]
+    fn printout_pages_follow_the_attachment_in_both_formats() {
+        assert_eq!(printout_page(PageFormat::Cmgfm, "assets/a.printout-001.png", 1), "\n![Printout page 1](assets/a.printout-001.png)\n");
+        assert_eq!(
+            printout_page(PageFormat::Html, "assets/a.printout-001.png", 1),
+            "\n<img src=\"assets/a.printout-001.png\" alt=\"Printout page 1\">\n"
+        );
     }
 }
