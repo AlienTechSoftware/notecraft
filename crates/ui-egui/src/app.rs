@@ -576,8 +576,9 @@ impl NoteCraftApp {
         // without them reads as loose columns of words.
         let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
-        // pages. Off by default: one tree is what NoteCraft has always shown.
-        let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(false);
+        // pages. This is the product's default navigation layout; the one-tree view remains
+        // available as an explicit preference.
+        let session_split = session.settings.get("split_panes").map(|v| v.trim() == "true").unwrap_or(true);
         // The pen rack as the owner last arranged it, and which tool was in hand.
         let rack = notecraft_ink::rack::parse(&session.settings.get(RACK_KEY).unwrap_or_default());
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);

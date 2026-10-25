@@ -33,12 +33,25 @@ fn params(pairs: &[(&str, &str)]) -> Params {
 fn session(t: &TempDir) -> Session {
     let settings = Settings::at(t.path().join("settings.toml"));
     settings.set("privacy_welcome_seen", "true").expect("test settings");
+    // Most UI tests exercise the single-tree interactions explicitly. The production default
+    // is the OneNote-style split layout; tests that cover that default opt in below.
+    settings.set("split_panes", "false").expect("test navigation setting");
     Session::new(&t.path().join("notebooks"), settings).expect("session")
 }
 
 fn sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
     let t = TempDir::new(label);
     let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    (t, app, sample)
+}
+
+fn split_sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
+    let t = TempDir::new(label);
+    let mut s = session(&t);
+    s.settings.set("split_panes", "true").expect("split test setting");
     let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
     let mut app = NoteCraftApp::new(s);
     app.set_redact_paths(true);
@@ -598,7 +611,7 @@ fn a_container_can_be_dragged_and_stays_where_it_is_put() {
 /// first of them.
 #[test]
 fn the_notebooks_and_the_pages_can_have_columns_of_their_own() {
-    let (_t, mut app, s) = sample_app("ui-panes");
+    let (_t, mut app, s) = split_sample_app("ui-panes");
     app.open_path(&s.md_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
     settle(&mut h);
@@ -609,9 +622,9 @@ fn the_notebooks_and_the_pages_can_have_columns_of_their_own() {
             v.pointer("/panes/organisers").and_then(Value::as_bool).unwrap_or(false),
         )
     };
-    assert_eq!(panes(&mut h), (false, true), "one tree to begin with");
+    assert_eq!(panes(&mut h), (true, true), "OneNote's two columns to begin with");
 
-    // The three-bar button: first press splits the panel and hides the notebooks.
+    // The three-bar button hides the notebooks column.
     h.get_by_label("\u{2630}").click();
     h.run();
     h.run();
