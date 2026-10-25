@@ -1815,9 +1815,9 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                     });
                 }
                 ui.separator();
-                not_built(ui, "More Colours", t);
-                not_built(ui, "Eyedropper", t);
-                if ui.add_enabled(rack_len > 1, egui::Button::new("Delete Tool")).clicked() {
+                popup_action_button(ui, "More Colours", false, t.accent, "More colours are not built yet");
+                popup_action_button(ui, "Eyedropper", false, t.accent, "The eyedropper is not built yet");
+                if popup_action_button(ui, "Delete Tool", rack_len > 1, t.warn, "Remove this tool from the rack").clicked() {
                     acts.push(Act::InkRack(RackEdit::Remove(i)));
                     done = true;
                 }
@@ -2435,6 +2435,20 @@ fn not_built(ui: &mut Ui, label: &str, t: &Tokens) {
     let name = format!("{label} (not built)");
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
     resp.on_hover_text(format!("{label}: not built yet"));
+}
+
+/// A compact action in the ink-tool popup. The same treatment is used for unavailable
+/// actions and the destructive tool removal, with the accent colour making the state clear
+/// without overpowering the swatches above it.
+fn popup_action_button(ui: &mut Ui, label: &str, enabled: bool, colour: egui::Color32, tip: &str) -> egui::Response {
+    let fg = if enabled { colour } else { ui.visuals().widgets.noninteractive.fg_stroke.color };
+    let fill = crate::theme::mix(ui.visuals().panel_fill, colour, if enabled { 0.10 } else { 0.04 });
+    let stroke = crate::theme::mix(ui.visuals().panel_fill, colour, if enabled { 0.45 } else { 0.18 });
+    let button = egui::Button::new(egui::RichText::new(label).size(11.0).color(fg))
+        .min_size(vec2(ui.available_width(), 24.0))
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, stroke));
+    ui.add_enabled(enabled, button).on_hover_text(tip)
 }
 
 fn source_tab(ui: &mut Ui, format: Option<PageFormat>, t: &Tokens, acts: &mut Vec<Act>) {
