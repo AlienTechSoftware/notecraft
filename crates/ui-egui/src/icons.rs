@@ -576,6 +576,15 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
 /// widget or changing layout. Icons not yet migrated fall back to NoteCraft's
 /// native drawing, so the migration can happen incrementally.
 pub fn paint_ribbon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
+    if let Some((name, bytes)) = fluent_color_asset(icon) {
+        // A colour icon keeps its own colours and is only faded when its control is disabled.
+        let tint = if ui.is_enabled() { Color32::WHITE } else { Color32::from_white_alpha(90) };
+        egui::Image::from_bytes(format!("bytes://notecraft-fluent-color/{name}.svg"), bytes)
+            .fit_to_exact_size(rect.size())
+            .tint(tint)
+            .paint_at(ui, rect);
+        return;
+    }
     let Some((name, bytes)) = fluent_asset(icon) else {
         paint(ui.painter(), rect, icon, color);
         return;
@@ -583,6 +592,21 @@ pub fn paint_ribbon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
     // Keep the extension in the URI: egui uses it to choose the SVG loader for
     // byte-backed images. Without it the asset is reported as a missing image.
     egui::Image::from_bytes(format!("bytes://notecraft-fluent/{name}.svg"), bytes).fit_to_exact_size(rect.size()).tint(color).paint_at(ui, rect);
+}
+
+/// The Fluent colour versions, for the icons that have one. The others stay monochrome.
+fn fluent_color_asset(icon: Icon) -> Option<(&'static str, &'static [u8])> {
+    Some(match icon {
+        Icon::Calendar => ("calendar", include_bytes!("../assets/fluent-color/calendar.svg")),
+        Icon::Clock => ("clock", include_bytes!("../assets/fluent-color/clock.svg")),
+        Icon::Link => ("link", include_bytes!("../assets/fluent-color/link.svg")),
+        Icon::Picture => ("image", include_bytes!("../assets/fluent-color/image.svg")),
+        Icon::Table => ("table", include_bytes!("../assets/fluent-color/table.svg")),
+        Icon::Video => ("video", include_bytes!("../assets/fluent-color/video.svg")),
+        Icon::Mic => ("mic", include_bytes!("../assets/fluent-color/mic.svg")),
+        Icon::Page => ("document", include_bytes!("../assets/fluent-color/document.svg")),
+        _ => return None,
+    })
 }
 
 fn fluent_asset(icon: Icon) -> Option<(&'static str, &'static [u8])> {

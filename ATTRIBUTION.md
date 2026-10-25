@@ -109,3 +109,4 @@ data.
   specifications. No Microsoft text or code is included.
 
 | \crates/ui-egui/assets/fluent/*.svg\ | Selected Fluent UI System Icons used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons | Microsoft Corporation and contributors |
+| \crates/ui-egui/assets/fluent-color/*.svg\ | Selected Fluent UI System Icons colour versions (calendar, clock, link, image, table, video, mic, document) used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons (`assets/<Name>/SVG/ic_fluent_<name>_24_color.svg`) | Microsoft Corporation and contributors |
