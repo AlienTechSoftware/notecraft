@@ -84,6 +84,26 @@ the reason.
   online build against the same approved feature list. Mark unavailable or stale targets clearly.
 - Do not copy personal notebooks or paths into tracked files.
 
+## Screenshots
+
+The pictures in `docs/images` (used by the README and release notes) are rebuilt headless:
+
+- Run `cargo xtask screenshots`. It plays `scripts/readme-screens.jsonl` through the off-screen
+  runner `crates/ui-egui/examples/ui_shot.rs`, so no window has to be open or focused.
+- Edit the script to change what a picture shows. Each `{"shot": "docs/images/<name>.png"}` line
+  saves one picture. Keep the `"width": 1440, "height": 900` header so the pictures match.
+- The runner starts with a fresh profile and marks the privacy welcome as seen, as the UI tests
+  do. If a picture ever shows the welcome dialog, that setting was lost: fix the runner, not the
+  picture.
+- Look at every changed picture before committing. Check the right tab is open, no dialog or
+  stale state covers the window, and the theme matches the script.
+- Commit the regenerated `docs/images` with the code change that caused it, and say which
+  pictures changed.
+- A new picture needs its `shot` line in the script and a README reference, in the same change.
+
+Windows only: `scripts/capture-window.ps1` takes a picture of a window that is open on the desktop.
+Use it only for a check the headless runner cannot show.
+
 ## Verification
 
 Run `cargo xtask demo`, `cargo xtask demo-check`, and
