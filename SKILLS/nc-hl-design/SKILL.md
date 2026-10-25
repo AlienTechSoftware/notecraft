@@ -391,6 +391,8 @@ Build system selects the right implementation per platform.
 This is the design-time view of the testing rules in `AGENTS.md` and `docs/testing.md`. A design
 is not finished until its test plan (step 4e) shows how each scenario is tested under these rules.
 
+The decision paths, with diagrams, are in [`references/testing-philosophy.md`](references/testing-philosophy.md).
+
 ### No mocks: test data first
 
 - Tests use the real code with real or checked-in test data: sample notebooks, fixture files, real
