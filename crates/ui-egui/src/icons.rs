@@ -591,7 +591,17 @@ pub fn paint_ribbon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
     };
     // Keep the extension in the URI: egui uses it to choose the SVG loader for
     // byte-backed images. Without it the asset is reported as a missing image.
-    egui::Image::from_bytes(format!("bytes://notecraft-fluent/{name}.svg"), bytes).fit_to_exact_size(rect.size()).tint(color).paint_at(ui, rect);
+    coloured_svg(name, bytes, color).fit_to_exact_size(rect.size()).paint_at(ui, rect);
+}
+
+/// A monochrome Fluent icon drawn in `colour`. The SVG is drawn in one near-black, and a tint
+/// can only multiply that, so it can never show a light icon. The colour is written into the
+/// file instead, and the picture is keyed by that colour so each colour is loaded once.
+pub fn coloured_svg(name: &str, bytes: &[u8], colour: Color32) -> egui::Image<'static> {
+    let hex = format!("#{:02x}{:02x}{:02x}", colour.r(), colour.g(), colour.b());
+    let text = String::from_utf8_lossy(bytes).replace("#212121", &hex);
+    // Keep the extension in the URI: egui uses it to choose the SVG loader for byte-backed images.
+    egui::Image::from_bytes(format!("bytes://notecraft-fluent/{name}-{}.svg", &hex[1..]), text.into_bytes())
 }
 
 /// The Fluent colour versions, for the icons that have one. The others stay monochrome.

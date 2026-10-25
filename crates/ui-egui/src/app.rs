@@ -1752,9 +1752,8 @@ impl NoteCraftApp {
             ui.painter().rect_filled(rect, 4.0, on.row_hover);
         }
         let icon = egui::Rect::from_center_size(egui::pos2(rect.min.x + 14.0, rect.center().y), vec2(16.0, 16.0));
-        egui::Image::from_bytes("bytes://notecraft-fluent/chat-multiple.svg", include_bytes!("../assets/fluent/chat-multiple.svg"))
+        icons::coloured_svg("chat-multiple", include_bytes!("../assets/fluent/chat-multiple.svg"), on.text)
             .fit_to_exact_size(vec2(16.0, 16.0))
-            .tint(on.text)
             .paint_at(ui, icon);
         ui.painter().text(
             egui::pos2(rect.min.x + 30.0, rect.center().y),
