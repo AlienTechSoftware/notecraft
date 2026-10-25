@@ -4774,33 +4774,45 @@ impl NoteCraftApp {
                 } else {
                     format!("Add inside this {}", parent_kind.label().to_lowercase())
                 };
-                egui::Window::new(heading).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    let kinds = parent_kind.may_contain();
-                    if kinds.len() > 1 {
-                        ui.label("What to add");
+                egui::Window::new(heading.clone())
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, &heading);
+                        ui.set_min_width(420.0);
+                        let kinds = parent_kind.may_contain();
+                        if kinds.len() > 1 {
+                            ui.label("What to add");
+                            ui.horizontal(|ui| {
+                                for k in kinds {
+                                    ui.selectable_value(kind, *k, k.label());
+                                }
+                            });
+                        }
+                        ui.label("Title");
+                        let r = ui.text_edit_singleline(title);
+                        // Read Enter before asking for focus again: a new focus request hides the lost focus.
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                        r.request_focus();
+                        let what = if *kind == NodeKind::Page { "Format for this page" } else { "Default format for pages below" };
+                        ui.label(what);
+                        format_picker(ui, format);
+                        ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            for k in kinds {
-                                ui.selectable_value(kind, *k, k.label());
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                keep = false;
+                            }
+                            let ready = !title.trim().is_empty();
+                            let create = ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, "Create", true).clicked()).inner;
+                            if (create || enter) && ready {
+                                go = true;
                             }
                         });
-                    }
-                    ui.label("Title");
-                    let r = ui.text_edit_singleline(title);
-                    // Read Enter before asking for focus again: a new focus request hides the lost focus.
-                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    r.request_focus();
-                    let what = if *kind == NodeKind::Page { "Format for this page" } else { "Default format for pages below" };
-                    ui.label(what);
-                    format_picker(ui, format);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                        if (ui.add_enabled(!title.trim().is_empty(), egui::Button::new("Create")).clicked() || enter) && !title.trim().is_empty() {
-                            go = true;
-                        }
                     });
-                });
                 if go {
                     let mut p = params(&[("parent", &path_str(parent)), ("kind", kind.id()), ("title", title.trim())]);
                     if let Some(f) = format {
