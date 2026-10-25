@@ -36,6 +36,8 @@ use web_time::Instant;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
 const BARS: &str = "\u{2630}";
+/// The ArtCraft community chat. Opened in the browser, never fetched by the app.
+const DISCORD_URL: &str = "https://discord.gg/artcraft";
 
 /// Where the pen rack and the tool in hand are remembered between runs.
 const RACK_KEY: &str = "pen_rack";
@@ -1722,6 +1724,7 @@ impl NoteCraftApp {
         }
         right.add_space(4.0);
         self.theme_menu(&mut right, on);
+        self.discord_link(&mut right, on);
         let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search all pages").desired_width(200.0));
         if self.focus_search {
             resp.request_focus();
@@ -1735,6 +1738,20 @@ impl NoteCraftApp {
             };
         }
         ui.advance_cursor_after_rect(row);
+    }
+
+    /// The header's link to the ArtCraft Discord. It opens in the browser, as the other ArtCraft
+    /// applications do.
+    fn discord_link(&self, ui: &mut Ui, on: Tokens) {
+        let icon = egui::Image::from_bytes("bytes://notecraft-fluent/chat-multiple.svg", include_bytes!("../assets/fluent/chat-multiple.svg"))
+            .fit_to_exact_size(vec2(16.0, 16.0))
+            .tint(on.band_text);
+        let resp = ui
+            .add(egui::Button::image_and_text(icon, egui::RichText::new("Discord").color(on.band_text)).fill(Color32::TRANSPARENT))
+            .on_hover_text(DISCORD_URL);
+        if resp.clicked() {
+            ui.ctx().open_url(egui::OpenUrl::new_tab(DISCORD_URL));
+        }
     }
 
     /// Minimise, maximise or restore, and close: the buttons the system would have drawn.
