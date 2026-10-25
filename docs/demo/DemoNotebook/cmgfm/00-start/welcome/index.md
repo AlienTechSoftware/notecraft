@@ -1,6 +1,6 @@
 ---
 id: e9dcc4d20c93f404aa30
-title: "Welcome to NoteCraft (Ver 0.0.5)"
+title: "Welcome to NoteCraft (Ver 0.0.6)"
 order: 10
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -13,7 +13,7 @@ tags: []
 
 This notebook is NoteCraft showing itself. Every page in it is an ordinary page: open it, change it, delete it.
 
-**Demo build:** NoteCraft 0.0.5. This notebook is the release demonstration and regression reference for both HTML and CMGFM page formats.
+**Demo build:** NoteCraft 0.0.6. This notebook is the release demonstration and regression reference for both HTML and CMGFM page formats.
 
 ## How it is organised
 
