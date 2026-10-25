@@ -1,14 +1,19 @@
 //! Document printout rendering for dropped files.
 //!
-//! The page editor owns insertion and persistence. This module owns the renderer boundary:
-//! it uses installed command-line renderers, keeps their temporary output private, and never
-//! reports a partial printout as complete.
+//! The page editor owns insertion and persistence. This module owns the renderer boundary,
+//! keeps temporary output private, and never reports a partial printout as complete.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use hayro::hayro_interpret::InterpreterSettings;
+use hayro::hayro_syntax::Pdf;
+use hayro::vello_cpu::color::palette::css::WHITE;
+use hayro::{RenderSettings, render as render_pdf_page};
 
 const OFFICE_EXTENSIONS: &[&str] = &["doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods", "rtf"];
 
@@ -57,27 +62,27 @@ fn render_in_workspace(source: &Path, workspace: &Path) -> Result<Vec<PathBuf>, 
     } else {
         office_to_pdf(source, workspace)?
     };
-    let pages_dir = workspace.join("pages");
-    fs::create_dir_all(&pages_dir).map_err(|e| format!("cannot create printout pages folder: {e}"))?;
-    let prefix = pages_dir.join("page");
-    let output = Command::new(pdf_rasterizer())
-        .args(["-png", "-r", "144"])
-        .arg(&pdf)
-        .arg(&prefix)
-        .output()
-        .map_err(|e| format!("cannot start PDF rasterizer: {e}. Install Poppler and ensure pdftoppm is available"))?;
-    if !output.status.success() {
-        return Err(format!("PDF rasterizer could not render the printout: {}", String::from_utf8_lossy(&output.stderr).trim()));
-    }
-    let mut pages: Vec<PathBuf> = fs::read_dir(&pages_dir)
-        .map_err(|e| format!("cannot read rendered printout pages: {e}"))?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(OsStr::to_str).is_some_and(|e| e.eq_ignore_ascii_case("png")))
-        .collect();
-    pages.sort_by_key(|path| page_number(path).unwrap_or(u32::MAX));
+    let pages = render_pdf(&pdf, workspace)?;
     if pages.is_empty() {
         return Err("the renderer produced no printout pages".into());
+    }
+    Ok(pages)
+}
+
+fn render_pdf(pdf_path: &Path, workspace: &Path) -> Result<Vec<PathBuf>, String> {
+    let data = fs::read(pdf_path).map_err(|e| format!("cannot read PDF for rendering: {e}"))?;
+    let pdf = Pdf::new(Arc::new(data)).map_err(|e| format!("cannot parse PDF for rendering: {e:?}"))?;
+    let pages_dir = workspace.join("pages");
+    fs::create_dir_all(&pages_dir).map_err(|e| format!("cannot create printout pages folder: {e}"))?;
+    let interpreter = InterpreterSettings::default();
+    let settings = RenderSettings { x_scale: 2.0, y_scale: 2.0, bg_color: WHITE, ..Default::default() };
+    let mut pages = Vec::with_capacity(pdf.pages().len());
+    for (index, page) in pdf.pages().iter().enumerate() {
+        let pixmap = render_pdf_page(page, &interpreter, &settings);
+        let path = pages_dir.join(format!("page-{:03}.png", index + 1));
+        let png = pixmap.into_png().map_err(|e| format!("cannot encode PDF page {} as PNG: {e}", index + 1))?;
+        fs::write(&path, png).map_err(|e| format!("cannot write rendered PDF page {}: {e}", index + 1))?;
+        pages.push(path);
     }
     Ok(pages)
 }
@@ -118,23 +123,6 @@ fn office_renderers() -> Vec<OsString> {
     renderers
 }
 
-fn pdf_rasterizer() -> OsString {
-    let bundled = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf))
-        .map(|dir| dir.join("renderers/poppler/Library/bin/pdftoppm.exe"));
-    if let Some(path) = std::env::var_os("NOTECRAFT_PDFTOPPM").map(PathBuf::from).or(bundled)
-        && path.is_file()
-    {
-        return path.into_os_string();
-    }
-    OsString::from("pdftoppm")
-}
-
-fn page_number(path: &Path) -> Option<u32> {
-    path.file_stem()?.to_str()?.rsplit('-').next()?.parse().ok()
-}
-
 fn temporary_workspace() -> Result<PathBuf, String> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| format!("clock error: {e}"))?.as_nanos();
     Ok(std::env::temp_dir().join(format!("notecraft-printout-{}-{stamp}", std::process::id())))
@@ -142,7 +130,9 @@ fn temporary_workspace() -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::supports;
+    use super::{render_pdf, supports, temporary_workspace};
+    use std::fs;
+    use std::io::Write as IoWrite;
     use std::path::Path;
 
     #[test]
@@ -152,5 +142,43 @@ mod tests {
         }
         assert!(!supports(Path::new("picture.png")));
         assert!(!supports(Path::new("notes.txt")));
+    }
+
+    #[test]
+    fn renders_pdf_pages_to_png() {
+        let workspace = temporary_workspace().expect("temporary workspace");
+        fs::create_dir_all(&workspace).expect("create temporary workspace");
+        let pdf_path = workspace.join("sample.pdf");
+        fs::write(&pdf_path, minimal_pdf()).expect("write sample PDF");
+
+        let pages = render_pdf(&pdf_path, &workspace).expect("render sample PDF");
+
+        assert_eq!(pages.len(), 1);
+        assert!(fs::read(&pages[0]).expect("read PNG").starts_with(b"\x89PNG\r\n\x1a\n"));
+        fs::remove_dir_all(workspace).expect("remove temporary workspace");
+    }
+
+    fn minimal_pdf() -> Vec<u8> {
+        let content = "BT /F1 12 Tf 72 720 Td (Hello) Tj ET";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_owned(),
+            format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        ];
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = vec![0usize];
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            write!(pdf, "{} 0 obj\n{}\nendobj\n", index + 1, object).expect("write PDF object");
+        }
+        let xref_offset = pdf.len();
+        write!(pdf, "xref\n0 {}\n0000000000 65535 f \n", offsets.len()).expect("write PDF xref");
+        for offset in offsets.iter().skip(1) {
+            writeln!(pdf, "{offset:010} 00000 n ").expect("write PDF xref entry");
+        }
+        write!(pdf, "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n", offsets.len()).expect("write PDF trailer");
+        pdf
     }
 }

@@ -40,9 +40,8 @@ partial printout is presented as complete.
 
 The UI owns the command, warning, insertion order and image-object behaviour.
 A renderer owns document-to-page conversion and returns ordered raster pages.
-The current renderer uses LibreOffice (`soffice` or `libreoffice`) for Office
-documents and Poppler's `pdftoppm` for PDF page rasterization. Windows releases
-bundle the Poppler runtime beside the app. Development builds may use
-`NOTECRAFT_PDFTOPPM` or a `pdftoppm` on `PATH`. When a renderer is unavailable,
-the printout action reports a clear error and never silently attaches a file
-without its pages.
+The current renderer uses the native Rust `hayro` library for PDF page
+rasterization. Office documents still use LibreOffice (`soffice` or `libreoffice`)
+to create an intermediate PDF, after which the same native PDF renderer produces
+the page images. When a renderer is unavailable, the printout action reports a
+clear error and never silently attaches a file without its pages.

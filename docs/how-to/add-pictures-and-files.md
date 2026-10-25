@@ -46,7 +46,6 @@ and use **Insert**. [docs/gaps.md](../gaps.md) says what it would take.
 ## Printouts
 
 Every page of a PDF or Office document is rendered to a picture on the page, while the original
-file is kept as an attachment. Windows releases bundle Poppler's `pdftoppm`; development builds
-may use a local Poppler installation or `NOTECRAFT_PDFTOPPM`. LibreOffice is needed to convert
-Office documents. If a renderer is unavailable, NoteCraft reports the problem and does not insert
-a partial printout.
+file is kept as an attachment. PDF rendering is built into NoteCraft through the native Rust
+renderer. LibreOffice is still needed to convert Office documents to an intermediate PDF. If a
+renderer is unavailable, NoteCraft reports the problem and does not insert a partial printout.

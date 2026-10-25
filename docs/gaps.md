@@ -199,9 +199,9 @@ it is fixed and tested, not when it is promised.
   one is open the page stops being text boxes altogether. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
   hit testing) and gets this right; matching a mature editor means a text crate of our own
   over parley or the same house stack. Decision pending.
-- **A dropped file can be copied in, linked, or inserted as a printout.** Windows releases bundle
-  Poppler for PDF rasterization. LibreOffice is still needed to convert Office documents; without
-  a renderer, the printout action reports an error rather than creating an incomplete page.
+- **A dropped file can be copied in, linked, or inserted as a printout.** PDF rasterization is
+  native Rust. LibreOffice is still needed to convert Office documents; without a renderer, the
+  printout action reports an error rather than creating an incomplete page.
 - **The clipboard supports HTML and plain text together for copy and paste.** A copied
   selection is one logical clipboard item: rich-text clients receive HTML with headings,
   marks, links, lists and tables; plain-text clients receive readable text without Markdown
