@@ -487,7 +487,8 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         // the checked-in copy is current.
         "demo" => {
             cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"])?;
-            demo_copy(&root, &["html".into()])
+            // The scratch copy is always replaced from docs/demo: the source is the one truth.
+            demo_copy(&root, &["html".into(), "--replace".into()])
         }
         "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),

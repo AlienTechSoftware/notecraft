@@ -68,8 +68,11 @@ the reason.
 - Authored demo content: `docs/demo/scripts/content`.
 - Generated checked-in demo: `docs/demo/DemoNotebook/html` and `docs/demo/DemoNotebook/cmgfm`.
 - Disposable scratch copy: `my-notebooks/welcome-notebook`; never treat it as source.
-- Refresh scratch copies from the generated demo with `cargo xtask demo-copy html --replace` or
-  the matching CMGFM command. Never accumulate edits in the scratch folder.
+- `cargo xtask demo` replaces the scratch copy (`my-notebooks/welcome-notebook`) from
+  `docs/demo/DemoNotebook/html` on every build. `docs/demo` is the source; nothing is edited in the
+  scratch folder, so there is never a changed copy to protect. Use the CMGFM command for that format.
+- The pictures in the demo come from `assets/demo`, the only place they are copied from. Change a
+  picture there, then run `cargo xtask demo`.
 
 ## Rules
 
