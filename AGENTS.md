@@ -67,8 +67,12 @@ sections and pages are plain folders. See [`docs/architecture.md`](docs/architec
   platform support through isolated implementations. Name platform-specific
   files `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for
   macOS and `.lnx.*` for Linux. Rust must select these files explicitly through
-  `cfg`-gated module wiring; the suffix alone does not select a file. Preserve a
-  shared implementation or fallback for platforms without a specialized one.
+  `cfg`-gated module wiring; the suffix alone does not select a file.
+- **Union, not intersection.** NoteCraft does not reduce every platform to what they
+  all share. Each platform branch uses what that platform does best, and a shared
+  fallback is only for a platform with no specialized branch yet. Any missing
+  feature says so in the UI; it is never silently dropped. The full rules are in
+  [`SKILLS/nc-arch-x-plat/SKILL.md`](SKILLS/nc-arch-x-plat/SKILL.md).
 
 ## Bundled notebook and browser playground
 
@@ -179,6 +183,17 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
   Refresh `docs/commands.md` with `UPDATE_DOCS=1 cargo test -p notecraft-engine commands_doc`.
 - **UI tests** follow the method in [`docs/testing.md`](docs/testing.md): paired comparisons
   and the control channel. Do not commit golden images.
+- **HARD RULE: no mocks. Prefer test data.** Test with the real code and real or checked-in
+  test data: sample notebooks, fixture files, real temporary folders, recorded inputs. Do not
+  add mocks, stubs, fakes or spies for code we own, and do not replace a dependency with a
+  double to make a test easier to write. Build the test data instead.
+  - **The one exception: the platform boundary.** A platform service the test cannot reach
+    safely (the clipboard first) may be replaced by a test double, one per platform backend,
+    starting with Windows. Each double sits behind that boundary; UI, engine and store logic
+    are never mocked. Keep a small number of real-service smoke tests for each boundary.
+  - **Isolation.** A test owns its state. Tests must not share the system clipboard, the
+    environment, the working directory or a fixed folder. A test that cannot be isolated says so
+    and runs alone.
 - **Themes.** The UI uses theme tokens only. Contrast tests must pass for all 14 themes.
 - **Assets.** Every file in `assets/` or `docs/images/` needs a row in `ATTRIBUTION.md`.
 - **Text style.** Plain ASCII, no em dashes, short sentences. `cargo xtask text` checks it.
