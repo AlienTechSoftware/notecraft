@@ -4727,22 +4727,34 @@ impl NoteCraftApp {
             }
             Dialog::NewNotebook { name, format } => {
                 let mut go = false;
-                egui::Window::new("New notebook").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.label("Name");
-                    let r = ui.text_edit_singleline(name);
-                    // Read Enter before asking for focus again: a new focus request hides the lost focus.
-                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    r.request_focus();
-                    format_picker(ui, format);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                        if (ui.add_enabled(!name.trim().is_empty(), egui::Button::new("Create")).clicked() || enter) && !name.trim().is_empty() {
-                            go = true;
-                        }
+                egui::Window::new("New notebook")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "New notebook");
+                        ui.set_min_width(420.0);
+                        ui.label("Name");
+                        let r = ui.text_edit_singleline(name);
+                        // Read Enter before asking for focus again: a new focus request hides the lost focus.
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                        r.request_focus();
+                        format_picker(ui, format);
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                keep = false;
+                            }
+                            let ready = !name.trim().is_empty();
+                            let create = ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, "Create", true).clicked()).inner;
+                            if (create || enter) && ready {
+                                go = true;
+                            }
+                        });
                     });
-                });
                 if go {
                     let mut p = params(&[("name", name.trim())]);
                     if let Some(f) = format {
