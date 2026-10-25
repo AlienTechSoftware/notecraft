@@ -19,7 +19,7 @@ or the demo.
 - The current primary family is Fluent UI System Icons: MIT licensed, regular and filled variants,
   and a consistent 24x24 grid. Tabler Icons remains an approved alternative. Confirm the exact
   upstream license before adding assets.
-- The developer clone location is read from `C:\dev\p-NoteCraft\.repos\o-NoteCraft\.env`, using
+- The developer clone location is read from `.env` at the root of the open repository, using
   `NOTECRAFT_ICON_SOURCE`. Read that file before searching for upstream source assets. The value
   points to a local developer-only clone and must never become a runtime dependency or a network
   download path.
