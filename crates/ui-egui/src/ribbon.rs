@@ -1750,12 +1750,15 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
 #[allow(clippy::too_many_arguments)]
 fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_len: usize, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let mut done = false;
+    let more_colours_id = id.with("more-colours-open");
+    let mut more_colours = ui.data(|d| d.get_temp::<bool>(more_colours_id)).unwrap_or(false);
     let area = egui::Area::new(id.with("area"))
         .order(egui::Order::Foreground)
         .fixed_pos(under.left_bottom())
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_min_width(196.0);
+                const POPUP_WIDTH: f32 = 196.0;
+                ui.set_min_width(POPUP_WIDTH);
                 // The stroke this tool makes, drawn by the code that draws the page's ink,
                 // so the sample cannot say one thing and the page another.
                 let (sample, _) = ui.allocate_exact_size(vec2(180.0, 26.0), Sense::hover());
@@ -1815,7 +1818,20 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                     });
                 }
                 ui.separator();
-                popup_action_button(ui, "More Colours", false, t.accent, "More colours are not built yet");
+                if popup_action_button(ui, "More Colours", true, t.accent, "Choose a custom ink colour").clicked() {
+                    more_colours = !more_colours;
+                }
+                if more_colours {
+                    let mut colour = egui::Color32::from_rgb(nib.colour.0, nib.colour.1, nib.colour.2);
+                    if egui::color_picker::color_picker_color32(ui, &mut colour, egui::color_picker::Alpha::Opaque) {
+                        acts.push(Act::InkRack(RackEdit::Set(
+                            i,
+                            Nib::new(nib.tool, notecraft_ink::Rgb(colour.r(), colour.g(), colour.b()), nib.tenths),
+                        )));
+                        more_colours = false;
+                        done = true;
+                    }
+                }
                 popup_action_button(ui, "Eyedropper", false, t.accent, "The eyedropper is not built yet");
                 if popup_action_button(ui, "Delete Tool", rack_len > 1, t.warn, "Remove this tool from the rack").clicked() {
                     acts.push(Act::InkRack(RackEdit::Remove(i)));
@@ -1824,6 +1840,7 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
             });
         })
         .response;
+    ui.data_mut(|d| d.insert_temp(more_colours_id, more_colours));
     let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
     let outside = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !under.contains(at);
     done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape))
@@ -2445,7 +2462,7 @@ fn popup_action_button(ui: &mut Ui, label: &str, enabled: bool, colour: egui::Co
     let fill = crate::theme::mix(ui.visuals().panel_fill, colour, if enabled { 0.10 } else { 0.04 });
     let stroke = crate::theme::mix(ui.visuals().panel_fill, colour, if enabled { 0.45 } else { 0.18 });
     let button = egui::Button::new(egui::RichText::new(label).size(11.0).color(fg))
-        .min_size(vec2(ui.available_width(), 24.0))
+        .min_size(vec2(196.0, 22.0))
         .fill(fill)
         .stroke(egui::Stroke::new(1.0, stroke));
     ui.add_enabled(enabled, button).on_hover_text(tip)
