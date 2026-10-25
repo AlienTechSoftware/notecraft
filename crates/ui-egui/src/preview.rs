@@ -285,6 +285,18 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir
     if spans.iter().any(|s| s.math) {
         return None;
     }
+    // Attachment cards are rendered as a compact linked image before the
+    // label text. The text mapper deliberately skips image spans, so handle
+    // the card's own 48x56 hit area before mapping the remaining words.
+    if at.x >= 0.0
+        && at.x <= 56.0
+        && at.y >= 0.0
+        && at.y <= 64.0
+        && spans.iter().any(|s| s.image.is_some())
+        && let Some(href) = spans.iter().find_map(|s| s.link.clone())
+    {
+        return Some(href);
+    }
     // What is drawn: the words without a tag's marker, beside the mark or the bullet.
     let (spans, mark) = match tagged(spans) {
         Some((_, stripped)) => (stripped, 21.0),
@@ -332,7 +344,7 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
     egui::vec2(ui.available_width(), 480.0 * zoom)
 }
 
-fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
+fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_uri(page_dir, src) {
@@ -341,6 +353,7 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32) {
                     // generated shell icon compact; standalone images still use the picture box.
                     let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, zoom) };
                     let response = ui.add(egui::Image::new(uri).fit_to_exact_size(size).sense(egui::Sense::hover()));
+                    *object_rect = Some(response.rect);
                     if response.hovered() {
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
                     }
@@ -474,13 +487,13 @@ pub(crate) fn show_block_zoomed(
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_inline_images(ui, &spans, page_dir, zoom);
+                            draw_inline_images(ui, &spans, page_dir, zoom, &mut rendered_object_rect);
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
-                        draw_inline_images(ui, spans, page_dir, zoom);
+                        draw_inline_images(ui, spans, page_dir, zoom, &mut rendered_object_rect);
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
@@ -513,11 +526,11 @@ pub(crate) fn show_block_zoomed(
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom);
+                            draw_inline_images(ui, &spans, page_dir, zoom, &mut rendered_object_rect);
                         }),
                         None => {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, spans, page_dir, zoom);
+                            draw_inline_images(ui, spans, page_dir, zoom, &mut rendered_object_rect);
                         }
                     });
                 });
@@ -785,6 +798,15 @@ mod tests {
         let Block::Paragraph(spans) = &blocks[0] else { panic!("attachment card was not a paragraph") };
         let image = spans.iter().find(|span| span.image.as_deref() == Some("assets/brief.docx.png")).expect("attachment icon");
         assert_eq!(image.link.as_deref(), Some("assets/brief.docx"));
+    }
+
+    #[test]
+    fn an_attachment_card_hit_follows_its_file_link() {
+        let blocks = blocks_for(
+            PageFormat::Html,
+            r#"<p><a href="assets/brief.docx"><img src="assets/brief.docx.png" alt="" width="48"><br>brief.docx</a></p>"#,
+        );
+        assert_eq!(link_at_point(&blocks[0], egui::vec2(24.0, 28.0), 400.0, Some(Dir::Ltr)).as_deref(), Some("assets/brief.docx"));
     }
 
     #[test]

@@ -1424,7 +1424,7 @@ pub fn show_blocks(
             }
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
-            } else if resp.clicked() && is_writable(&block) {
+            } else if (resp.clicked() || resp.double_clicked()) && is_writable(&block) {
                 // A click on a link follows it; anywhere else it puts the caret there.
                 match resp.interact_pointer_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)) {
                     Some(href) => changed.link = Some(href),
