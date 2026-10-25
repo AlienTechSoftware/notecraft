@@ -1724,7 +1724,9 @@ impl NoteCraftApp {
         }
         right.add_space(4.0);
         self.theme_menu(&mut right, on);
+        right.add_space(10.0);
         self.discord_link(&mut right, on);
+        right.add_space(10.0);
         let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search all pages").desired_width(200.0));
         if self.focus_search {
             resp.request_focus();
@@ -1743,12 +1745,25 @@ impl NoteCraftApp {
     /// The header's link to the ArtCraft Discord. It opens in the browser, as the other ArtCraft
     /// applications do.
     fn discord_link(&self, ui: &mut Ui, on: Tokens) {
-        let icon = egui::Image::from_bytes("bytes://notecraft-fluent/chat-multiple.svg", include_bytes!("../assets/fluent/chat-multiple.svg"))
+        // Painted by hand: a button draws its image in the SVG's own black and ignores the
+        // theme, so the icon takes the band's text colour through a tint here, as the ribbon's do.
+        let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 26.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, 4.0, on.band_text.gamma_multiply(0.18));
+        }
+        let icon = egui::Rect::from_center_size(egui::pos2(rect.min.x + 14.0, rect.center().y), vec2(16.0, 16.0));
+        egui::Image::from_bytes("bytes://notecraft-fluent/chat-multiple.svg", include_bytes!("../assets/fluent/chat-multiple.svg"))
             .fit_to_exact_size(vec2(16.0, 16.0))
-            .tint(on.band_text);
-        let resp = ui
-            .add(egui::Button::image_and_text(icon, egui::RichText::new("Discord").color(on.band_text)).fill(Color32::TRANSPARENT))
-            .on_hover_text(DISCORD_URL);
+            .tint(on.band_text)
+            .paint_at(ui, icon);
+        ui.painter().text(
+            egui::pos2(rect.min.x + 30.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            "Discord",
+            egui::FontId::proportional(13.0),
+            on.band_text,
+        );
+        let resp = resp.on_hover_text(DISCORD_URL);
         if resp.clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(DISCORD_URL));
         }
