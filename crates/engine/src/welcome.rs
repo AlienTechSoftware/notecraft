@@ -34,9 +34,10 @@ pub fn installed(tree: &[Node]) -> Option<PathBuf> {
     tree.iter().find(|n| n.info.title == TITLE).map(|n| n.path.clone())
 }
 
-/// Writes the notebook into the notebooks folder `root`, in a folder of its own, and returns
-/// that folder. Refuses when a notebook of that title is already there, so a second ask
-/// never makes a second copy by accident.
+/// Writes the notebook into the notebooks folder `root`, in the folder `welcome-to-notecraft`,
+/// and returns that folder. The bundled notebook is the one that ships: any copy already in
+/// that folder, an earlier install's, is replaced, not kept beside it. Refuses when a notebook
+/// of this title is already in the tree, so a second ask never replaces an open one by accident.
 pub fn install(root: &Path, tree: &[Node]) -> Result<PathBuf, EngineError> {
     if !available() {
         return Err(StoreError::invalid("this build of NoteCraft carries no welcome notebook").into());
@@ -44,7 +45,10 @@ pub fn install(root: &Path, tree: &[Node]) -> Result<PathBuf, EngineError> {
     if let Some(existing) = installed(tree) {
         return Err(StoreError::invalid(format!("the welcome notebook is already here: {}", existing.display())).into());
     }
-    let dir = unique_child(root, &notecraft_model::names::slug(TITLE));
+    let dir = root.join(notecraft_model::names::slug(TITLE));
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| StoreError::io("replace", &dir, e))?;
+    }
     for (rel, bytes) in FILES {
         let path = dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
         if let Some(parent) = path.parent() {
@@ -53,21 +57,6 @@ pub fn install(root: &Path, tree: &[Node]) -> Result<PathBuf, EngineError> {
         fs::write(&path, bytes).map_err(|e| StoreError::io("write", &path, e))?;
     }
     Ok(dir)
-}
-
-/// `base`, or `base-2`, `base-3`, ... whichever is free in `parent`, ignoring case.
-fn unique_child(parent: &Path, base: &str) -> PathBuf {
-    let taken: Vec<String> = match fs::read_dir(parent) {
-        Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_lowercase()).collect(),
-        Err(_) => Vec::new(),
-    };
-    let mut name = base.to_string();
-    let mut n = 2;
-    while taken.contains(&name.to_lowercase()) {
-        name = format!("{base}-{n}");
-        n += 1;
-    }
-    parent.join(name)
 }
 
 #[cfg(test)]
@@ -79,6 +68,20 @@ mod tests {
 
     fn params(pairs: &[(&str, &str)]) -> Params {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
+    fn an_old_copy_is_replaced_not_kept_beside_it() {
+        let t = TempDir::new("welcome-replace");
+        let root = t.path();
+        let old = root.join(notecraft_model::names::slug(TITLE));
+        fs::create_dir_all(&old).expect("an old copy");
+        fs::write(old.join("stale.txt"), b"old").expect("a stale file");
+        let dir = install(root, &[]).expect("install over the old copy");
+        assert_eq!(dir, old);
+        assert!(!dir.join("stale.txt").exists(), "the old copy is gone");
+        assert!(dir.join("00-start/welcome/index.html").is_file(), "the bundled start page is written");
+        assert_eq!(fs::read_dir(root).expect("root").count(), 1, "no second copy beside it");
     }
 
     #[test]
