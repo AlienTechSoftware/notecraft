@@ -22,6 +22,7 @@ struct Dab {
 struct PressureCanvas {
     stylus: Stylus,
     strokes: Vec<Vec<Dab>>,
+    pressure_history: Vec<f32>,
     drawing: bool,
     sensitivity: u8,
     maximum_width: f32,
@@ -57,6 +58,12 @@ impl eframe::App for PressureCanvas {
         ui.ctx().input(|i| self.stylus.update(&i.events));
         let sample = self.stylus.sample();
         let (highest, readings) = self.stylus.seen();
+        if sample.down || sample.pen {
+            self.pressure_history.push(sample.pressure);
+            if self.pressure_history.len() > 240 {
+                self.pressure_history.remove(0);
+            }
+        }
         if self.maximum_width <= 0.0 {
             self.maximum_width = 12.0;
             self.sensitivity = 100;
@@ -64,6 +71,57 @@ impl eframe::App for PressureCanvas {
 
         ui.heading("NoteCraft pressure canvas");
         ui.label("Compare the raw tablet reading with the rendered width. Draw on the canvas with a pen, then with a mouse.");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("PRESSURE  {:.3}", sample.pressure)).size(22.0).strong());
+            ui.add(egui::ProgressBar::new(sample.pressure.clamp(0.0, 1.0)).desired_width(260.0).text(format!("{:.0}%", sample.pressure * 100.0)));
+        });
+        let (meter, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 54.0), egui::Sense::hover());
+        let painter = ui.painter_at(meter);
+        painter.rect_filled(meter, 4.0, egui::Color32::from_gray(242));
+        let filled = egui::Rect::from_min_max(meter.min, egui::pos2(meter.left() + meter.width() * sample.pressure.clamp(0.0, 1.0), meter.bottom()));
+        painter.rect_filled(filled, 4.0, egui::Color32::from_rgb(112, 54, 190));
+        painter.text(
+            meter.left_top() + egui::vec2(8.0, 8.0),
+            egui::Align2::LEFT_TOP,
+            "raw pressure 0",
+            egui::FontId::proportional(11.0),
+            egui::Color32::DARK_GRAY,
+        );
+        painter.text(
+            meter.right_top() - egui::vec2(8.0, -8.0),
+            egui::Align2::RIGHT_TOP,
+            "1.0 maximum",
+            egui::FontId::proportional(11.0),
+            egui::Color32::DARK_GRAY,
+        );
+        painter.circle_filled(
+            egui::pos2(meter.left() + meter.width() * sample.pressure.clamp(0.0, 1.0), meter.center().y),
+            8.0,
+            egui::Color32::WHITE,
+        );
+        painter.circle_stroke(
+            egui::pos2(meter.left() + meter.width() * sample.pressure.clamp(0.0, 1.0), meter.center().y),
+            8.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(112, 54, 190)),
+        );
+        ui.label(egui::RichText::new("Recent pressure").strong());
+        let (history, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 72.0), egui::Sense::hover());
+        let painter = ui.painter_at(history);
+        painter.rect_filled(history, 4.0, egui::Color32::from_gray(248));
+        if self.pressure_history.len() > 1 {
+            let points: Vec<egui::Pos2> = self
+                .pressure_history
+                .iter()
+                .enumerate()
+                .map(|(index, pressure)| {
+                    egui::pos2(
+                        history.left() + history.width() * index as f32 / (self.pressure_history.len() - 1) as f32,
+                        history.bottom() - history.height() * pressure.clamp(0.0, 1.0),
+                    )
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, egui::Stroke::new(2.0, egui::Color32::from_rgb(112, 54, 190))));
+        }
         ui.horizontal(|ui| {
             ui.label(if sample.pen { "Pressure pen detected" } else { "No pressure pen detected" });
             ui.separator();
@@ -74,6 +132,7 @@ impl eframe::App for PressureCanvas {
             ui.label(format!("{readings} readings"));
             if ui.button("Clear").clicked() {
                 self.strokes.clear();
+                self.pressure_history.clear();
             }
         });
         ui.horizontal(|ui| {
