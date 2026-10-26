@@ -3,7 +3,7 @@ name: nc-uiux-drawing
 description: Design, implement, and review NoteCraft handwriting, drawing tools, stylus pressure, ink selection, and OneNote-compatible drawing workflows.
 license: MIT
 metadata:
-  version: "0.0.20261025"
+  version: "0.0.20261026"
   related_skills: [nc-uiux-controls, nc-themes, nc-uiux-bidi]
 ---
 
@@ -22,8 +22,11 @@ the result with both real hardware and synthetic input.
 
 The technical record for this skill lives in [references](./references/). Start with
 [OneNote ink and pressure](./references/onenote-ink-and-pressure.md) before changing pressure,
-pen thickness, or drawing-tool behavior. It links to Microsoft's public documentation and
-separates documented OneNote behavior from our clean-room design decisions.
+pen thickness, or drawing-tool behavior. Read [Draw ribbon current state and target]
+(./references/draw-ribbon-current-state.md) before changing the Draw ribbon. It records the
+current NoteCraft layout, the OneNote target, and the visual/interaction gaps we are trying to
+close. These references link to Microsoft's public documentation and separate documented
+OneNote behavior from our clean-room design decisions.
 
 When investigating a drawing issue:
 
