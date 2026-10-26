@@ -34,6 +34,10 @@ and ink edge treatment, read [Ink scaling and edge treatment]
 [`docs/ink-and-pressure.md`](../../docs/ink-and-pressure.md) synchronized with that reference;
 do not let implementation changes silently redefine either document.
 
+For Windows input, device identity, HID ranges, and calibration, read [Windows pen input and
+device metrics](./references/win/windows-pen-input.md). Treat that reference as the authority for
+what Windows reports versus what remains driver-specific.
+
 When investigating a drawing issue:
 
 1. Read this skill and the relevant reference in `references/`.
