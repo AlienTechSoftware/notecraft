@@ -28,6 +28,12 @@ current NoteCraft layout, the OneNote target, and the visual/interaction gaps we
 close. These references link to Microsoft's public documentation and separate documented
 OneNote behavior from our clean-room design decisions.
 
+The skill owns the NoteCraft drawing behavior contract. For thickness scaling, pressure curves,
+and ink edge treatment, read [Ink scaling and edge treatment]
+(./references/ink-scaling-and-edge-treatment.md). Keep the public product summary in
+[`docs/ink-and-pressure.md`](../../docs/ink-and-pressure.md) synchronized with that reference;
+do not let implementation changes silently redefine either document.
+
 When investigating a drawing issue:
 
 1. Read this skill and the relevant reference in `references/`.
@@ -40,13 +46,21 @@ When investigating a drawing issue:
 
 - A selected pen has a base thickness. Pressure changes the visible width around that base;
   it must not silently replace the selected thickness.
+- Thickness choices should use perceptual geometric spacing, like musical intervals, rather than
+  a linear pixel ruler. Pressure remains continuous between those choices.
 - Light, medium, and maximum pressure must produce visibly distinguishable widths for a
   pressure-reporting pen, unless the selected tool is intentionally pressure-flat, such as a
   highlighter.
 - Maximum pressure reaches the selected full-pressure width. Light pressure must not be
   boosted so far that normal writing becomes almost full width.
+- Sensitivity changes a bounded power-curve response, not the stored readings or the selected
+  maximum width. At sensitivity 100, medium pressure should be close to full width and maximum
+  pressure must reach the selected width.
 - Sensitivity changes the response curve, not the stored device readings. Reopening or
   re-weighting a stroke must preserve the original readings.
+- Edge treatment is not a generic blur: use crisp antialiasing for thin ink and a small,
+  fixed-width translucent fringe only where the tool calls for softness. Thick strokes must stay
+  solid rather than becoming hazy.
 - A mouse or a platform without pressure must produce a stable, usable line rather than a
   hairline or an invisible stroke.
 - Pressure values are bounded and finite before they reach stroke geometry or persistence.
