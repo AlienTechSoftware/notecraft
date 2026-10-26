@@ -3,6 +3,23 @@
 Status: verified against Microsoft documentation on 2026-10-26. This is the Windows-specific
 input reference for the `nc-uiux-drawing` skill.
 
+## Confirmed NoteCraft finding
+
+On 2026-10-26, the XP-Pen driver control panel showed:
+
+- `0` at rest;
+- `8191` under hard pressure.
+
+The hardware and its driver therefore expose a changing pressure signal. In the NoteCraft
+pressure canvas, the corresponding diagnostic showed **No pressure pen detected**, `now 1.000`,
+`hardest 0.000`, and `0 readings`. That means the current NoteCraft window is falling back to
+mouse behavior; it is not receiving a usable pen-pressure event.
+
+The current `crates/ui-egui/src/stylus.rs` implementation only consumes
+`egui::Event::Touch` events with an optional `force`. It does not yet consume native
+`WM_POINTER` messages or enumerate Windows pointer devices. The pressure curve and ink width
+are therefore not the first problem to fix.
+
 ## What Windows can report
 
 The standard Windows pointer stack can report these pen properties:
@@ -64,6 +81,34 @@ The Windows input adapter should:
 
 The existing egui event path is useful as a fallback, but it must not be treated as the complete
 Windows pen implementation until the pressure canvas proves that real pen pressure reaches it.
+
+The native implementation should be isolated in `stylus.win.rs` and selected through explicit
+`cfg(windows)` module wiring. The shared path must remain available for macOS, Linux, Wayland,
+mouse input, and test doubles.
+
+## Pressure canvas device diagnostics
+
+The pressure canvas should list detected pointer devices instead of presenting only one anonymous
+pressure number. For each device it should show, where Windows exposes the value:
+
+- device type and display name;
+- stable device, vendor/product, or transducer identifier;
+- pressure support and the current normalized pressure;
+- tilt X/Y, rotation, barrel-button, and eraser capabilities;
+- in-range/contact state;
+- highest reading and sample count;
+- calibration status.
+
+The list must distinguish these states:
+
+1. a pressure-capable device detected but no contact yet;
+2. a pressure-capable device actively reporting pressure;
+3. a pointer device with no pressure capability;
+4. no device enumerated by the native path;
+5. the egui fallback path being used.
+
+Never label a mouse or a pressure-capable device with no current contact as a broken pen. The
+diagnostic must identify which input path produced each reading.
 
 ## Calibration requirements
 
