@@ -4923,10 +4923,10 @@ impl NoteCraftApp {
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                     r.request_focus();
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
                             keep = false;
                         }
-                        if (ui.button("Rename").clicked() || enter) && !title.trim().is_empty() {
+                        if (modal_button(ui, &self.tokens, "Rename", true).clicked() || enter) && !title.trim().is_empty() {
                             go = true;
                         }
                     });
@@ -5118,7 +5118,7 @@ impl NoteCraftApp {
                                 ui.horizontal(|ui| {
                                     ui.label(&version.created);
                                     ui.label(egui::RichText::new(format!("{} KB", version.bytes.div_ceil(1024))).small().color(self.tokens.muted));
-                                    if ui.button("Restore").clicked() {
+                                    if modal_button(ui, &self.tokens, "Restore", true).clicked() {
                                         restore = Some(version.id.clone());
                                     }
                                 });
@@ -5126,7 +5126,7 @@ impl NoteCraftApp {
                         });
                     }
                     ui.add_space(8.0);
-                    if ui.button("Close").clicked() {
+                    if modal_button(ui, &self.tokens, "Close", false).clicked() {
                         keep = false;
                     }
                 });
@@ -5157,17 +5157,17 @@ impl NoteCraftApp {
                                                 .small()
                                                 .color(self.tokens.muted),
                                         );
-                                        if ui.button("Restore").clicked() {
+                                        if modal_button(ui, &self.tokens, "Restore", true).clicked() {
                                             restore = Some(item.id.clone());
                                         }
-                                        if ui.button("Delete permanently").clicked() {
+                                        if modal_button(ui, &self.tokens, "Delete permanently", true).clicked() {
                                             purge = Some((item.id.clone(), item.title.clone()));
                                         }
                                     });
                                 }
                             });
                         }
-                        if ui.button("Close").clicked() {
+                        if modal_button(ui, &self.tokens, "Close", false).clicked() {
                             keep = false;
                         }
                     },
@@ -5189,10 +5189,10 @@ impl NoteCraftApp {
                         ui.label(format!("Permanently delete \"{title}\" and everything inside it?"));
                         ui.colored_label(self.tokens.warn, "This cannot be undone.");
                         ui.horizontal(|ui| {
-                            if ui.button("Cancel").clicked() {
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
                                 keep = false;
                             }
-                            if ui.button("Delete permanently").clicked() {
+                            if modal_button(ui, &self.tokens, "Delete permanently", true).clicked() {
                                 purge = true;
                             }
                         });
@@ -5214,14 +5214,18 @@ impl NoteCraftApp {
                         {
                             ui.horizontal(|ui| {
                                 for symbol in row {
-                                    if ui.add_sized([46.0, 36.0], egui::Button::new(egui::RichText::new(symbol).size(20.0))).clicked() {
+                                    let button = egui::Button::new(egui::RichText::new(symbol).size(20.0).color(self.tokens.text))
+                                        .min_size(vec2(46.0, 36.0))
+                                        .fill(self.tokens.panel)
+                                        .stroke(egui::Stroke::new(0.8, self.tokens.faint));
+                                    if ui.add(button).clicked() {
                                         chosen = Some(symbol);
                                     }
                                 }
                             });
                         }
                         ui.add_space(6.0);
-                        if ui.button("Close").clicked() {
+                        if modal_button(ui, &self.tokens, "Close", false).clicked() {
                             keep = false;
                         }
                     },
