@@ -202,13 +202,15 @@ it is fixed and tested, not when it is promised.
 - **A dropped file can be copied in, linked, or inserted as a printout.** PDF rasterization is
   native Rust. LibreOffice is still needed to convert Office documents; without a renderer, the
   printout action reports an error rather than creating an incomplete page.
-- **The clipboard supports HTML and plain text together for copy and paste.** A copied
-  selection is one logical clipboard item: rich-text clients receive HTML with headings,
-  marks, links, lists and tables; plain-text clients receive readable text without Markdown
-  syntax. NoteCraft reads HTML before falling back to plain text. The shared `arboard` writer
-  keeps clipboard ownership alive on X11 and Wayland, and enables Wayland data-control.
-  RTF output, copy-as-image for selected visual blocks, and paste of copied file lists are
-  still open; image paste is already supported.
+- **The clipboard carries text, HTML and pictures, through one boundary.** A copied selection
+  is one logical clipboard item: rich-text clients receive HTML with headings, marks, links,
+  lists and tables; plain-text clients receive readable text without Markdown syntax. NoteCraft
+  reads HTML before falling back to plain text, and a picture on the clipboard is pasted as a
+  file beside the page. The shared `arboard` writer keeps clipboard ownership alive on X11 and
+  Wayland, and enables Wayland data-control. Not built yet: RTF output and paste, NoteCraft's own
+  page format on the clipboard, URL and other registered formats, copy-as-image for selected
+  visual blocks, and paste of copied file lists. Those need the Windows clipboard API; see
+  [ADR 0001](adr/0001-clipboard-boundary.md).
 - **A box's right-click menu is short.** It has Cut, Copy and Delete, then the page's entries. OneNote's also has
   Paste Options, Copy Link to Paragraph, Select, Order, Move and Resize, and a small formatting
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
@@ -370,7 +372,8 @@ it is fixed and tested, not when it is promised.
   history holds the page, not the files beside it. A line that linked to the file is left
   as it was written, and shows as a link to something no longer there.
 - **Pasting** puts a picture on the page as a file beside it, which egui alone cannot do:
-  the clipboard is read directly, because egui hands a window text only. The page also has
+  the clipboard is read through the app's clipboard boundary, because egui hands a window text
+  only (see [ADR 0001](adr/0001-clipboard-boundary.md)). The page also has
   its own menu under the right button, with paste, cut, copy and the things the Insert tab
   can put there.
 - **The Insert tab** carries OneNote's groups. Working: tables, a file attachment, a

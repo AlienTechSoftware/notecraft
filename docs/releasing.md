@@ -43,6 +43,24 @@ name or mark.
 3. The run builds on a Windows runner and drafts a GitHub Release `NoteCraft v<version>`. Nothing
    is published. Try the zip on a clean machine, then publish the draft by hand.
 
+### Notes and the draft
+
+- The workflow writes its own fixed text into the draft, not the notes in
+  `docs/releases/<version>/RELEASE_NOTES.md`. After the draft exists, replace its body with those
+  notes: `gh release edit v<version> --draft --notes-file <file>`.
+- A relative image in the notes does not show on a release page. Link the picture with its
+  absolute URL on `main`, such as `https://raw.githubusercontent.com/AlienTechSoftware/notecraft/main/docs/releases/<version>/<file>`.
+- Where `pwsh` is not installed, run the packaging script with
+  `powershell -NoProfile -ExecutionPolicy Bypass -File packaging/windows/package.ps1`.
+
+### Clean-machine check
+
+Before publishing, install the MSI on a machine that has never run NoteCraft. Uninstalling leaves
+`%APPDATA%\NoteCraft\settings.toml` behind, and an old copy hides the first-use dialog and the
+Welcome notebook. Delete that folder and `Documents\NoteCraft` first, then check that
+`Documents\NoteCraft\welcome-to-notecraft` appears with its 13 language folders, and that the first-use
+dialog shows once.
+
 | File | What it is |
 |---|---|
 | `notecraft-<version>-windows-x64.msi` | Per-machine installer: Program Files, Start menu shortcut |

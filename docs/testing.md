@@ -79,6 +79,13 @@ cargo xtask coverage
 
 Last measurement (2026-10-17): 87.8% of lines, 87.3% of regions, workspace-wide. The weakest files are `apps/notecraft/src/main.rs` (29%, the window start-up), `xtask` (58%) and `crates/ui-egui/src/app.rs` (70%). Re-measure before quoting the number later.
 
+## Clipboard in tests
+
+No test reads or writes the system clipboard. The app takes its clipboard as a boundary (see
+[ADR 0001](adr/0001-clipboard-boundary.md)), and the UI tests give it an in-memory clipboard from
+`crates/ui-egui/tests/support/clipboard.rs`. That double is the one mock the rules allow (see
+`AGENTS.md`). Copies are read from it, and the UI suite runs in parallel.
+
 ## What is not tested yet
 
 - Keyboard editing inside the text area (that behaviour is egui's).
