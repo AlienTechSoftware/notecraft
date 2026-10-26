@@ -43,6 +43,7 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 const RACK_KEY: &str = "pen_rack";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
+const DEFAULT_SENSITIVITY: u8 = 50;
 const PRESSURE_WARNING_KEY: &str = "pressure_unavailable";
 
 const ROW_HEIGHT: f32 = 24.0;
@@ -620,7 +621,7 @@ impl NoteCraftApp {
         // The pen rack as the owner last arranged it, and which tool was in hand.
         let rack = notecraft_ink::rack::parse(&session.settings.get(RACK_KEY).unwrap_or_default());
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
-        let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(50).min(100);
+        let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
         let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none();
         NoteCraftApp {
@@ -5931,6 +5932,18 @@ mod alert_tests {
         assert_eq!(NoteCraftApp::sensitivity_width(0), 1.0);
         assert_eq!(NoteCraftApp::sensitivity_width(50), 1.0);
         assert_eq!(NoteCraftApp::sensitivity_width(100), 4.0);
+    }
+
+    #[test]
+    fn fresh_preferences_start_with_neutral_sensitivity() {
+        let t = notecraft_store::testing::TempDir::new("default-sensitivity");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        assert_eq!(settings.get(SENSITIVITY_KEY), None);
+        assert_eq!(settings.get(SENSITIVITY_KEY).and_then(|v| v.parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY), 50);
+        settings.set(SENSITIVITY_KEY, "100").expect("set");
+        settings.reset().expect("reset");
+        assert_eq!(settings.get(SENSITIVITY_KEY), None);
+        assert_eq!(settings.get(SENSITIVITY_KEY).and_then(|v| v.parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY), 50);
     }
 
     #[test]
