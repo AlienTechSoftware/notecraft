@@ -32,6 +32,19 @@ pub struct Sample {
     pub down: bool,
 }
 
+/// Counters used to distinguish a pressure-capable pen from a mouse-shaped fallback.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Diagnostics {
+    pub frames: u64,
+    pub events: u64,
+    pub pointer_moved: u64,
+    pub mouse_moved: u64,
+    pub pointer_buttons: u64,
+    pub touch_events: u64,
+    pub touch_with_force: u64,
+    pub touch_without_force: u64,
+}
+
 impl Default for Sample {
     fn default() -> Self {
         Self { pressure: 1.0, pen: false, down: false }
@@ -46,13 +59,30 @@ pub struct Stylus {
     down: bool,
     highest: f32,
     samples: u64,
+    diagnostics: Diagnostics,
+    last_event: &'static str,
 }
 
 impl Stylus {
     /// Takes this frame's input events. Call it once per frame, before anything asks.
     pub fn update(&mut self, events: &[egui::Event]) {
+        self.diagnostics.frames += 1;
         for e in events {
+            self.diagnostics.events += 1;
+            match e {
+                egui::Event::PointerMoved(_) => self.diagnostics.pointer_moved += 1,
+                egui::Event::MouseMoved(_) => self.diagnostics.mouse_moved += 1,
+                egui::Event::PointerButton { .. } => self.diagnostics.pointer_buttons += 1,
+                egui::Event::Touch { .. } => self.diagnostics.touch_events += 1,
+                _ => {}
+            }
             let egui::Event::Touch { phase, force, .. } = e else { continue };
+            self.last_event = if force.is_some() { "touch with force" } else { "touch without force" };
+            if force.is_some() {
+                self.diagnostics.touch_with_force += 1;
+            } else {
+                self.diagnostics.touch_without_force += 1;
+            }
             // A force at all means the device reports pressure: that is a pen, and from
             // then on this window believes what it says, including a reading of zero.
             let reported = force.filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 1.0));
@@ -74,6 +104,24 @@ impl Stylus {
                 }
             }
         }
+        if self.diagnostics.frames == 1 || self.diagnostics.frames.is_multiple_of(60) {
+            log::debug!(
+                target: "notecraft::stylus",
+                "input diagnostics: events={} pointer_moved={} mouse_moved={} pointer_buttons={} touch={} force={} no_force={} pen={} pressure={:.3} highest={:.3} readings={} last={}",
+                self.diagnostics.events,
+                self.diagnostics.pointer_moved,
+                self.diagnostics.mouse_moved,
+                self.diagnostics.pointer_buttons,
+                self.diagnostics.touch_events,
+                self.diagnostics.touch_with_force,
+                self.diagnostics.touch_without_force,
+                self.pen,
+                self.pressure,
+                self.highest,
+                self.samples,
+                self.last_event,
+            );
+        }
     }
 
     /// The reading now. A window that has never seen a pen answers like a mouse.
@@ -89,6 +137,11 @@ impl Stylus {
     /// the platform is not reading properly.
     pub fn seen(&self) -> (f32, u64) {
         (self.highest, self.samples)
+    }
+
+    /// Event counters for the pressure diagnostic canvas and troubleshooting logs.
+    pub fn diagnostics(&self) -> Diagnostics {
+        self.diagnostics
     }
 }
 

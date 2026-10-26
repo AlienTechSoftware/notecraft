@@ -58,6 +58,7 @@ impl eframe::App for PressureCanvas {
         ui.ctx().input(|i| self.stylus.update(&i.events));
         let sample = self.stylus.sample();
         let (highest, readings) = self.stylus.seen();
+        let diagnostics = self.stylus.diagnostics();
         if sample.down || sample.pen {
             self.pressure_history.push(sample.pressure);
             if self.pressure_history.len() > 240 {
@@ -134,6 +135,20 @@ impl eframe::App for PressureCanvas {
                     self.pressure_history.clear();
                 }
             });
+            ui.label(
+                egui::RichText::new(format!(
+                    "Events {} | pointer {} | mouse {} | buttons {} | touch {} | force {} | no force {}",
+                    diagnostics.events,
+                    diagnostics.pointer_moved,
+                    diagnostics.mouse_moved,
+                    diagnostics.pointer_buttons,
+                    diagnostics.touch_events,
+                    diagnostics.touch_with_force,
+                    diagnostics.touch_without_force,
+                ))
+                .small()
+                .color(muted),
+            );
             ui.horizontal(|ui| {
                 ui.add(egui::Slider::new(&mut self.sensitivity, 0..=100).text("sensitivity"));
                 ui.add(egui::Slider::new(&mut self.maximum_width, 2.0..=60.0).text("full width"));
