@@ -2873,7 +2873,22 @@ impl NoteCraftApp {
     fn pen(&self) -> crate::inkpad::Pen {
         let nib =
             self.rack.get(self.nib).or_else(|| self.rack.first()).copied().unwrap_or_else(|| notecraft_ink::rack::new_nib(notecraft_ink::Tool::Pen));
-        crate::inkpad::Pen { pointer: self.pointer, tool: nib.tool, colour: nib.colour, width: nib.width(), gain: self.gain() }
+        crate::inkpad::Pen {
+            pointer: self.pointer,
+            tool: nib.tool,
+            colour: nib.colour,
+            // Keep the chosen nib width at the neutral setting, but let the top of the
+            // control reach the same four-times full-width range as the pressure canvas.
+            width: nib.width() * Self::sensitivity_width(self.sensitivity),
+            gain: self.gain(),
+        }
+    }
+
+    /// The pressure canvas uses a 4x full-width range at sensitivity 100. Keep 50 neutral
+    /// so the rack's selected thickness remains the familiar baseline, and grow only the
+    /// maximum width above it. Existing strokes retain the width stored when they were made.
+    fn sensitivity_width(sensitivity: u8) -> f32 {
+        if sensitivity <= 50 { 1.0 } else { 1.0 + 3.0 * (f32::from(sensitivity - 50) / 50.0) }
     }
 
     /// The sensitivity as the curve a stroke is drawn with: the middle of the control is
@@ -5910,6 +5925,13 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
 #[cfg(test)]
 mod alert_tests {
     use super::*;
+
+    #[test]
+    fn maximum_sensitivity_reaches_four_times_the_neutral_pen_width() {
+        assert_eq!(NoteCraftApp::sensitivity_width(0), 1.0);
+        assert_eq!(NoteCraftApp::sensitivity_width(50), 1.0);
+        assert_eq!(NoteCraftApp::sensitivity_width(100), 4.0);
+    }
 
     #[test]
     fn an_alert_queues_behind_an_open_one_and_a_muted_key_is_never_queued() {

@@ -22,9 +22,11 @@ Pressure remains continuous. It must not be quantized to the thickness steps.
 
 ## Pressure response
 
-The selected thickness is the maximum width at full pressure. Sensitivity changes how quickly
-the stroke approaches that width; it does not silently replace the selected thickness or make
-full pressure exceed it.
+The selected thickness is the baseline full-pressure width at neutral sensitivity. The upper
+half of the sensitivity control also exposes the broader diagnostic range: at 100 the
+full-pressure maximum is four times the selected baseline, matching the pressure canvas's
+default 12 px maximum against a 3 px pen baseline. Sensitivity changes both how quickly the
+stroke approaches that width and, above neutral, the available full-pressure range.
 
 Use a bounded power curve after input normalization:
 
@@ -38,7 +40,7 @@ where `pressure` is in `0..=1` and `gamma` is selected by the sensitivity contro
 - neutral sensitivity: `gamma ~= 1`;
 - high sensitivity: `gamma < 1`, making a lighter hand produce more width.
 
-At sensitivity 100, a medium-pressure stroke should already be visibly close to its selected
+At sensitivity 100, a medium-pressure stroke should already be visibly close to the expanded
 maximum, and a maximum-pressure stroke must reach that maximum. The curve must remain monotonic,
 finite, and visibly separated at light, medium, and hard pressure for tools that support
 pressure. Highlighters may intentionally remain pressure-flat.

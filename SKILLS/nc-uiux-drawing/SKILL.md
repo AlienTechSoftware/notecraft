@@ -63,9 +63,10 @@ problem before changing the normal page editor.
   highlighter.
 - Maximum pressure reaches the selected full-pressure width. Light pressure must not be
   boosted so far that normal writing becomes almost full width.
-- Sensitivity changes a bounded power-curve response, not the stored readings or the selected
-  maximum width. At sensitivity 100, medium pressure should be close to full width and maximum
-  pressure must reach the selected width.
+- Sensitivity changes a bounded power-curve response, not the stored readings. The selected
+  thickness is the neutral baseline; above neutral, the available full-pressure width grows
+  to 4x at sensitivity 100, matching the pressure canvas. At sensitivity 100, medium pressure
+  should be close to that expanded maximum and maximum pressure must reach it.
 - Sensitivity changes the response curve, not the stored device readings. Reopening or
   re-weighting a stroke must preserve the original readings.
 - Edge treatment is not a generic blur: use crisp antialiasing for thin ink and a small,

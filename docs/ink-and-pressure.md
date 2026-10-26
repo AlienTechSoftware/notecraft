@@ -20,13 +20,15 @@ The selector may show friendly labels, while the renderer keeps a precise width.
 
 ## Pressure
 
-The selected thickness is the full-pressure width. Pressure changes the width around that base;
-it does not replace the selected thickness. Sensitivity changes the response curve:
+The selected thickness is the baseline full-pressure width at neutral sensitivity. Above neutral,
+the sensitivity control also expands the available full-pressure range to 4x at 100, matching
+the pressure canvas's 12 px diagnostic maximum against a 3 px pen baseline. Sensitivity changes
+the response curve and, above neutral, that maximum width:
 
 - low sensitivity requires more pressure before the stroke becomes broad;
 - neutral sensitivity follows the device reading approximately;
 - high sensitivity makes a lighter hand become broad more quickly;
-- sensitivity 100 must still reach the selected width at maximum pressure.
+- sensitivity 100 must reach the expanded 4x width at maximum pressure.
 
 The intended model is a bounded power curve. It must produce a monotonic, finite response and a
 clearly visible difference between light, medium, and hard pressure. Highlighters may remain flat
