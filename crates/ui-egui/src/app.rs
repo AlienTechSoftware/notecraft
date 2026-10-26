@@ -43,6 +43,7 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 const RACK_KEY: &str = "pen_rack";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
+const PRESSURE_WARNING_KEY: &str = "pressure_unavailable";
 
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
@@ -407,6 +408,7 @@ enum Dialog {
     ClearTelemetry {
         path: PathBuf,
     },
+    ResetPreferences,
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
@@ -431,6 +433,7 @@ enum Dialog {
         title: String,
         message: String,
         suppress: bool,
+        suppress_forever: bool,
     },
     MissingAttachmentIcon {
         page: PathBuf,
@@ -590,6 +593,7 @@ pub struct NoteCraftApp {
     /// The clipboard the app reads and writes. The system's, unless the app was built with another.
     clipboard: Box<dyn crate::clipboard::Board>,
     open_attachment_warning_suppressed: bool,
+    pressure_warning_presented: bool,
 }
 
 impl NoteCraftApp {
@@ -681,6 +685,7 @@ impl NoteCraftApp {
             queued_alerts: VecDeque::new(),
             clipboard: Box::new(crate::clipboard::System),
             open_attachment_warning_suppressed: false,
+            pressure_warning_presented: false,
         }
     }
 
@@ -1006,12 +1011,16 @@ impl NoteCraftApp {
         if self.muted_alerts.contains(key) {
             return;
         }
+        if self.session.settings.get(&format!("{key}_never")).as_deref() == Some("true") {
+            return;
+        }
         let showing = matches!(&self.dialog, Some(Dialog::Alert { key: k, .. }) if k == key);
         let queued = self.queued_alerts.iter().any(|d| matches!(d, Dialog::Alert { key: k, .. } if k == key));
         if showing || queued {
             return;
         }
-        let dialog = Dialog::Alert { key: key.to_string(), title: title.to_string(), message: message.to_string(), suppress: false };
+        let dialog =
+            Dialog::Alert { key: key.to_string(), title: title.to_string(), message: message.to_string(), suppress: false, suppress_forever: false };
         if self.dialog.is_none() {
             self.dialog = Some(dialog);
         } else {
@@ -1961,6 +1970,7 @@ impl NoteCraftApp {
                     }
                 }
                 backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
+                backstage::Act::ResetPreferences => self.dialog = Some(Dialog::ResetPreferences),
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
                         .ok()
@@ -2370,6 +2380,14 @@ impl NoteCraftApp {
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
+        if tab == "Draw" && !self.stylus.sample().pen && !self.pressure_warning_presented {
+            self.pressure_warning_presented = true;
+            self.alert(
+                PRESSURE_WARNING_KEY,
+                "Pressure sensitivity unavailable",
+                "The selected pen is not reporting Windows Ink pressure. Pressure sensitivity will be disabled. Enable Windows Ink and disable Mouse mode in the tablet driver's settings.",
+            );
+        }
         let view = ribbon::View {
             split_panes: self.split_panes,
             always_on_top: self.always_on_top,
@@ -4538,7 +4556,7 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::Alert { key, title, message, suppress } => {
+            Dialog::Alert { key, title, message, suppress, suppress_forever } => {
                 let mut ok = false;
                 egui::Window::new(title.as_str())
                     .title_bar(false)
@@ -4552,7 +4570,8 @@ impl NoteCraftApp {
                         ui.set_min_width(420.0);
                         ui.label(message.as_str());
                         ui.add_space(8.0);
-                        ui.checkbox(suppress, "Do not alert me again this session");
+                        ui.checkbox(suppress, "Don't show this again in this session");
+                        ui.checkbox(suppress_forever, "Don't show this ever");
                         ui.add_space(12.0);
                         if modal_button(ui, &self.tokens, "OK", true).clicked() {
                             ok = true;
@@ -4562,6 +4581,45 @@ impl NoteCraftApp {
                     if *suppress {
                         self.muted_alerts.insert(key.clone());
                     }
+                    if *suppress_forever {
+                        let _ = self.session.settings.set(&format!("{key}_never"), "true");
+                    }
+                    keep = false;
+                }
+            }
+            Dialog::ResetPreferences => {
+                let mut reset = false;
+                let mut cancel = false;
+                egui::Window::new("Reset app preferences")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, "Reset app preferences");
+                        ui.set_min_width(460.0);
+                        ui.label("Reset NoteCraft's saved preferences to their built-in defaults?");
+                        ui.add_space(6.0);
+                        ui.colored_label(self.tokens.warn, "This does not delete notebooks or pages. It cannot be undone.");
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, "Reset preferences", true).clicked() {
+                                reset = true;
+                            }
+                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                                cancel = true;
+                            }
+                        });
+                    });
+                if reset {
+                    match self.session.settings.reset() {
+                        Ok(()) => self.say("App preferences reset. Restart NoteCraft to apply every default."),
+                        Err(e) => self.complain(&format!("Could not reset app preferences: {e}")),
+                    }
+                    keep = false;
+                } else if cancel {
                     keep = false;
                 }
             }
@@ -5874,5 +5932,19 @@ mod alert_tests {
         app.alert("third", "Title", "three");
         assert_eq!(app.queued_alerts.len(), 1, "a muted alert is not queued");
         assert_eq!(app.status, "three", "the status line still says what happened");
+    }
+
+    #[test]
+    fn a_permanently_muted_alert_is_not_opened() {
+        let t = notecraft_store::testing::TempDir::new("alerts-never");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        settings.set("pressure_unavailable_never", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        app.alert("pressure_unavailable", "Pressure", "not available");
+        assert!(app.dialog.is_none(), "a permanent mute suppresses the dialog");
+        assert_eq!(app.status, "not available", "the status still records the condition");
     }
 }

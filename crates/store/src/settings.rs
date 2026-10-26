@@ -113,6 +113,15 @@ impl Settings {
         std::fs::write(&self.path, kv::render(&map)).map_err(|e| StoreError::io("write", &self.path, e))
     }
 
+    /// Removes all saved application preferences. Missing settings are already at defaults.
+    pub fn reset(&self) -> Result<()> {
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(StoreError::io("remove", &self.path, e)),
+        }
+    }
+
     /// The format used for new pages when nothing nearer says otherwise.
     pub fn global_format(&self) -> (PageFormat, FormatSource) {
         match self.default_format() {
@@ -168,5 +177,15 @@ mod tests {
         let text = std::fs::read_to_string(&p).expect("read");
         assert!(text.contains("other = \"keep\""));
         assert!(text.contains("default_format = \"cmgfm\""));
+    }
+
+    #[test]
+    fn reset_removes_saved_preferences() {
+        let t = TempDir::new("settings-reset");
+        let s = Settings::at(t.path().join("settings.toml"));
+        s.set("theme_mode", "dark").expect("set");
+        s.reset().expect("reset");
+        assert_eq!(s.get("theme_mode"), None);
+        s.reset().expect("reset missing settings");
     }
 }

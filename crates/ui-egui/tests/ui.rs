@@ -52,6 +52,10 @@ fn session(t: &TempDir) -> Session {
     // Most UI tests exercise the single-tree interactions explicitly. The production default
     // is the OneNote-style split layout; tests that cover that default opt in below.
     settings.set("split_panes", "false").expect("test navigation setting");
+    // These tests use synthetic mouse input; keep the hardware-specific pressure warning out
+    // of unrelated drawing interaction tests. The warning itself is exercised through the app
+    // alert path and real hardware is covered by the pressure canvas.
+    settings.set("pressure_unavailable_never", "true").expect("test pressure setting");
     Session::new(&t.path().join("notebooks"), settings).expect("session")
 }
 
