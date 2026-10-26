@@ -1,6 +1,6 @@
 # OneNote ink and pressure reference
 
-Status: verified against Microsoft's public support documentation on 2026-10-25.
+Status: verified against Microsoft's public support documentation on 2026-10-26.
 
 ## Important fact
 
@@ -32,6 +32,33 @@ OneNote's drawing workflow includes:
 - erasing, lasso selection, shapes, ruler, ink-to-text, ink-to-math, and ink replay in the
   Windows drawing experience;
 - smoothing as an available drawing option in the advanced settings.
+
+## Pen is not automatically a Sharpie
+
+This is an important product-language distinction. Microsoft describes the ordinary tools as
+**Pen** and **Highlighter**, not as Sharpies or markers. Its documentation says that a person
+chooses a pen or highlighter and then configures its colour and thickness. It describes the
+highlighter as the tool used to emphasize important sections, and documents multiple
+highlighter thicknesses and colours:
+
+- [Draw and sketch notes in OneNote](https://support.microsoft.com/en-us/onenote/onenote-help-and-learning/draw-and-sketch-notes-in-onenote)
+- [Learn more about Drawing Tools](https://support.microsoft.com/en-us/onenote/onenote-help-and-learning/learn-more-about-drawing-tools)
+- [Change the color and thickness of ink strokes](https://support.microsoft.com/en-us/onenote/change-the-color-and-thickness-of-ink-strokes-in-onenote-for-windows-10)
+
+The documentation does not define a black or red pen as a Sharpie, marker, brush, or any other
+special nib merely because of its colour. NoteCraft therefore follows this rule:
+
+1. Black and red rack entries are ordinary **Pens** unless their tool type explicitly says
+   otherwise.
+2. The **Highlighter** remains a separate, broad, translucent tool with its own thickness and
+   colour behavior; users should recognize it visually as the marker-like option.
+3. If NoteCraft later adds a Sharpie or marker, it must be an explicit tool type with a documented
+   width, opacity, edge, and pressure contract - not a reinterpretation of every colored pen.
+4. Ribbon glyphs should communicate the tool type before the colour: a red pen must still look
+   like a pen, while a highlighter must retain the broad marker silhouette.
+
+This prevents a misleading "row of crayons" treatment and keeps the drawing ribbon aligned with
+the public OneNote vocabulary while preserving NoteCraft's configurable rack.
 
 The documentation describes pressure sensitivity as a behavior of the ink, not as a replacement
 for the selected pen thickness. A NoteCraft pen therefore needs both a configured full-pressure
