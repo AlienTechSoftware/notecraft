@@ -2387,6 +2387,7 @@ impl NoteCraftApp {
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
             sensitivity: self.sensitivity,
+            pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
             style: self.caret_style(ui.ctx()),
         };

@@ -348,6 +348,8 @@ pub struct View<'a> {
     pub can_redo: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
+    /// Whether the current input path has reported a pressure-capable pen.
+    pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
@@ -1559,28 +1561,31 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
 /// hard you have to press to get there. Turned up, a light hand already lays down a broad
 /// line; turned down, it takes a firm press. The pen's own readings are kept as they came
 /// either way, so a stroke drawn at one setting can be re-weighted later.
-fn sensitivity(ui: &mut Ui, now: u8, t: &Tokens, acts: &mut Vec<Act>) {
+fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts: &mut Vec<Act>) {
     rows(ui, |ui| {
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Sensitivity").size(10.0).color(t.muted));
+        let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
+        ui.label(egui::RichText::new(label).size(10.0).color(if pressure_available { t.muted } else { t.warn }));
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
         let track = rect.shrink2(vec2(6.0, 3.0));
+        let accent = if pressure_available { t.accent } else { t.muted };
         // The wedge: nothing at the left, full at the right.
         let wedge = vec![egui::pos2(track.min.x, track.max.y), egui::pos2(track.max.x, track.max.y), egui::pos2(track.max.x, track.min.y)];
-        painter.add(egui::Shape::convex_polygon(wedge.clone(), crate::theme::mix(t.panel, t.text, 0.14), egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(wedge, crate::theme::mix(t.panel, t.text, 0.14), egui::Stroke::NONE));
         // The part that is turned on is filled in the accent, cut at the handle.
         let x = track.min.x + track.width() * share;
         let h = track.max.y - track.height() * share;
         painter.add(egui::Shape::convex_polygon(
             vec![egui::pos2(track.min.x, track.max.y), egui::pos2(x, track.max.y), egui::pos2(x, h)],
-            t.accent,
+            accent,
             egui::Stroke::NONE,
         ));
-        painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, t.accent));
+        painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, accent));
 
-        if (resp.dragged() || resp.clicked())
+        if pressure_available
+            && (resp.dragged() || resp.clicked())
             && let Some(at) = resp.interact_pointer_pos()
         {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -1589,11 +1594,22 @@ fn sensitivity(ui: &mut Ui, now: u8, t: &Tokens, acts: &mut Vec<Act>) {
                 acts.push(Act::InkSensitivity(picked));
             }
         }
-        let enabled = ui.is_enabled();
-        let said = format!("Pressure sensitivity {now} of 100");
+        let enabled = pressure_available && ui.is_enabled();
+        let said = if pressure_available { format!("Pressure sensitivity {now} of 100") } else { "Pressure sensitivity unavailable".to_string() };
         resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
-        resp.on_hover_text("How readily the pen answers pressure: turned up, a light hand lays down more ink");
-        ui.label(egui::RichText::new(format!("{now}")).size(10.5).color(t.text));
+        let tip = if pressure_available {
+            "How readily the pen answers pressure: turned up, a light hand lays down more ink"
+        } else {
+            "Pressure is unavailable. Enable Windows Ink and disable XP-Pen Mouse mode."
+        };
+        resp.on_hover_text(tip);
+        ui.label(
+            egui::RichText::new(if pressure_available { format!("{now}") } else { "OFF".to_string() }).size(10.5).color(if pressure_available {
+                t.text
+            } else {
+                t.warn
+            }),
+        );
     });
 }
 
@@ -2182,7 +2198,7 @@ Select",
             }
         }
         add_menu(ui, t, acts);
-        sensitivity(ui, view.sensitivity, t, acts);
+        sensitivity(ui, view.sensitivity, view.pressure_available, t, acts);
     });
     group(ui, "Input Mode", t, |ui| {
         soon(
