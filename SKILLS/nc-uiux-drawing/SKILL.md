@@ -42,6 +42,12 @@ When investigating a drawing issue:
 4. Use `cargo run -p notecraft --example pen_check` to inspect pressure readings on hardware.
 5. Add or update focused tests for the pressure curve and run the full repository gate.
 
+For visual pressure investigation, use the isolated [pressure canvas](./tools/pressure_canvas.ps1)
+with `powershell -ExecutionPolicy Bypass -File SKILLS/nc-uiux-drawing/tools/pressure_canvas.ps1`.
+It shows the raw pressure value, the hardest reading, reading count, synthetic pressure bands,
+and the live rendered stroke. Use it to separate a tablet-input problem from a width/curve
+problem before changing the normal page editor.
+
 ## Interaction contract
 
 - A selected pen has a base thickness. Pressure changes the visible width around that base;
