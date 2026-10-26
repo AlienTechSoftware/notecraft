@@ -41,6 +41,7 @@ pub enum Act {
     OpenTelemetryFolder(std::path::PathBuf),
     ClearTelemetry(std::path::PathBuf),
     ExportTelemetry(std::path::PathBuf),
+    ResetPreferences,
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -445,6 +446,18 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
     });
     ui.add_space(12.0);
     ui.label(egui::RichText::new("Export creates a user-selected ZIP, then removes the exported session folder.").size(11.5).color(t.muted));
+    ui.add_space(18.0);
+    ui.separator();
+    ui.label(egui::RichText::new("Application preferences").strong().size(15.0).color(t.strong));
+    ui.label(
+        egui::RichText::new("Reset themes, layout, ribbon choices, and other saved NoteCraft preferences to their defaults.")
+            .size(11.5)
+            .color(t.muted),
+    );
+    ui.colored_label(t.warn, "This does not delete notebooks or pages. It cannot be undone.");
+    if open_action(ui, "Reset app preferences…", 210.0, 34.0, t, false).clicked() {
+        acts.push(Act::ResetPreferences);
+    }
 }
 
 #[cfg(test)]

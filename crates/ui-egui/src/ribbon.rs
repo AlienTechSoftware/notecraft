@@ -348,6 +348,8 @@ pub struct View<'a> {
     pub can_redo: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
+    /// Whether the current input path has reported a pressure-capable pen.
+    pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
@@ -1559,28 +1561,31 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
 /// hard you have to press to get there. Turned up, a light hand already lays down a broad
 /// line; turned down, it takes a firm press. The pen's own readings are kept as they came
 /// either way, so a stroke drawn at one setting can be re-weighted later.
-fn sensitivity(ui: &mut Ui, now: u8, t: &Tokens, acts: &mut Vec<Act>) {
+fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts: &mut Vec<Act>) {
     rows(ui, |ui| {
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Sensitivity").size(10.0).color(t.muted));
+        let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
+        ui.label(egui::RichText::new(label).size(10.0).color(if pressure_available { t.muted } else { t.warn }));
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
         let track = rect.shrink2(vec2(6.0, 3.0));
+        let accent = if pressure_available { t.accent } else { t.muted };
         // The wedge: nothing at the left, full at the right.
         let wedge = vec![egui::pos2(track.min.x, track.max.y), egui::pos2(track.max.x, track.max.y), egui::pos2(track.max.x, track.min.y)];
-        painter.add(egui::Shape::convex_polygon(wedge.clone(), crate::theme::mix(t.panel, t.text, 0.14), egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(wedge, crate::theme::mix(t.panel, t.text, 0.14), egui::Stroke::NONE));
         // The part that is turned on is filled in the accent, cut at the handle.
         let x = track.min.x + track.width() * share;
         let h = track.max.y - track.height() * share;
         painter.add(egui::Shape::convex_polygon(
             vec![egui::pos2(track.min.x, track.max.y), egui::pos2(x, track.max.y), egui::pos2(x, h)],
-            t.accent,
+            accent,
             egui::Stroke::NONE,
         ));
-        painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, t.accent));
+        painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, accent));
 
-        if (resp.dragged() || resp.clicked())
+        if pressure_available
+            && (resp.dragged() || resp.clicked())
             && let Some(at) = resp.interact_pointer_pos()
         {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -1589,11 +1594,22 @@ fn sensitivity(ui: &mut Ui, now: u8, t: &Tokens, acts: &mut Vec<Act>) {
                 acts.push(Act::InkSensitivity(picked));
             }
         }
-        let enabled = ui.is_enabled();
-        let said = format!("Pressure sensitivity {now} of 100");
+        let enabled = pressure_available && ui.is_enabled();
+        let said = if pressure_available { format!("Pressure sensitivity {now} of 100") } else { "Pressure sensitivity unavailable".to_string() };
         resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
-        resp.on_hover_text("How readily the pen answers pressure: turned up, a light hand lays down more ink");
-        ui.label(egui::RichText::new(format!("{now}")).size(10.5).color(t.text));
+        let tip = if pressure_available {
+            "How readily the pen answers pressure: turned up, a light hand lays down more ink"
+        } else {
+            "Pressure is unavailable. Enable Windows Ink and disable XP-Pen Mouse mode."
+        };
+        resp.on_hover_text(tip);
+        ui.label(
+            egui::RichText::new(if pressure_available { format!("{now}") } else { "OFF".to_string() }).size(10.5).color(if pressure_available {
+                t.text
+            } else {
+                t.warn
+            }),
+        );
     });
 }
 
@@ -1891,12 +1907,11 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
 
 /// Draws one drawing tool upright inside `rect`, the way OneNote draws its rack.
 ///
-/// The structure is the same for every tool, which is what makes seven of them look like
-/// one set: a pale grey body for the part a hand holds, the writing colour in the lower
-/// barrel, a bright collar where the two meet, and a nib below that. Only the nib differs:
-/// a fine cone for a pen, sharpened wood for a pencil, a slit nib for a fountain pen, a
-/// soft point for a brush, a slanted chisel for a highlighter. So the rack is read first
-/// by colour and then by shape, as a tray of real pens is.
+/// The rack shares a visual language, but each tool must be recognisable before its colour is
+/// read: the marker stays broad and squared, the pencil shows wood and lead, the fountain pen
+/// shows a metal nib and breather hole, the brush has a flexible bristle point, and the pen has
+/// a small ball tip. Keeping these silhouettes distinct prevents the rack from reading as a row
+/// of crayons while preserving the marker treatment users already recognise.
 fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop: f32) {
     let ink = egui::Color32::from_rgb(colour.0, colour.1, colour.2);
     let mix = crate::theme::mix;
@@ -1938,55 +1953,75 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
             painter.add(shape(vec![at(-lw, nib), at(lw, nib), at(lw, foot - 6.0), at(-lw, foot)], darker(ink, 0.12), darker(ink, 0.4)));
         }
         Tool::Pencil => {
-            // Painted body, bare wood, then the lead.
-            let (w, lw) = (5.4, 5.0);
-            let wood = foot - 15.0;
-            painter.add(shape(vec![at(-w, top), at(w, top), at(lw, wood), at(-lw, wood)], ink, darker(ink, 0.4)));
-            painter.line_segment([at(-w * 0.42, top + 3.0), at(-lw * 0.42, wood - 2.0)], egui::Stroke::new(1.2, shine));
-            painter.line_segment([at(-w, top + 7.0), at(w, top + 7.0)], egui::Stroke::new(1.8, collar));
+            // A compact hexagonal coloured pencil: the writing colour is the lacquered body,
+            // but the wood and graphite make it unmistakably different from a marker.
+            let (w, lw) = (4.7, 4.1);
+            let wood = foot - 13.0;
+            let lacquer = crate::theme::mix(ink, egui::Color32::WHITE, 0.08);
+            painter.add(shape(vec![at(-w, top), at(w, top), at(lw, wood), at(-lw, wood)], lacquer, darker(ink, 0.42)));
+            painter.line_segment([at(-w * 0.42, top + 3.0), at(-lw * 0.42, wood - 2.0)], egui::Stroke::new(1.0, shine));
+            painter.line_segment([at(-w, top + 7.0), at(w, top + 7.0)], egui::Stroke::new(1.5, collar));
             painter.add(shape(
-                vec![at(-lw, wood), at(lw, wood), at(1.5, foot - 3.6), at(-1.5, foot - 3.6)],
+                vec![at(-lw, wood), at(lw, wood), at(1.35, foot - 3.2), at(-1.35, foot - 3.2)],
                 egui::Color32::from_rgb(0xe8, 0xd0, 0xa6),
                 egui::Color32::from_rgb(0xb2, 0x95, 0x66),
             ));
             painter.add(shape(
-                vec![at(-1.5, foot - 3.6), at(1.5, foot - 3.6), at(0.0, foot)],
+                vec![at(-1.35, foot - 3.2), at(1.35, foot - 3.2), at(0.0, foot)],
                 egui::Color32::from_gray(60),
                 egui::Color32::from_gray(40),
             ));
         }
         Tool::FountainPen => {
-            let (w, lw) = (5.4, 5.0);
-            let grip = top + 10.0;
-            let nib = foot - 16.0;
-            hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.4, nib), at(-4.4, nib)], ink, darker(ink, 0.42)));
-            // A long tapered nib, with its slit and breather hole.
-            painter.add(shape(vec![at(-4.4, nib), at(4.4, nib), at(0.8, foot), at(-0.8, foot)], collar, body_edge));
-            painter.line_segment([at(0.0, nib + 3.0), at(0.0, foot - 1.0)], egui::Stroke::new(0.9, egui::Color32::from_gray(90)));
-            painter.circle_filled(at(0.0, nib + 2.5), 1.0, egui::Color32::from_gray(90));
-        }
-        Tool::BrushPen => {
-            let (w, lw) = (5.6, 5.1);
-            let grip = top + 10.0;
-            let ferrule = foot - 16.0;
-            hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.3, grip), at(5.3, grip), at(4.7, ferrule), at(-4.7, ferrule)], ink, darker(ink, 0.42)));
-            painter.line_segment([at(-3.4, ferrule), at(3.4, ferrule)], egui::Stroke::new(1.8, collar));
-            // A loaded brush: full at the ferrule, drawn to a fine point.
-            painter.add(shape(
-                vec![at(-4.6, ferrule), at(4.6, ferrule), at(2.6, ferrule + 7.5), at(0.6, foot), at(-0.6, foot), at(-2.6, ferrule + 7.5)],
-                darker(ink, 0.15),
-                darker(ink, 0.45),
-            ));
-        }
-        Tool::Pen => {
-            let (w, lw) = (5.4, 5.0);
-            let grip = top + 11.0;
+            // A fountain pen has a shorter barrel and a broad metal nib, unlike the small
+            // ball tip of the ordinary pen.
+            let (w, lw) = (4.8, 4.4);
+            let grip = top + 8.0;
             let nib = foot - 14.0;
             hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.7, nib), at(-4.7, nib)], ink, darker(ink, 0.42)));
-            painter.add(shape(vec![at(-4.7, nib), at(4.7, nib), at(0.9, foot), at(-0.9, foot)], darker(ink, 0.25), darker(ink, 0.5)));
+            painter.add(shape(vec![at(-4.5, grip), at(4.5, grip), at(3.9, nib), at(-3.9, nib)], darker(ink, 0.08), darker(ink, 0.48)));
+            painter.line_segment([at(-4.1, grip + 3.0), at(4.1, grip + 3.0)], egui::Stroke::new(1.8, collar));
+            // A broad split nib with a visible slit and breather hole.
+            painter.add(shape(
+                vec![at(-3.9, nib), at(3.9, nib), at(1.3, foot), at(-1.3, foot)],
+                egui::Color32::from_rgb(0xc8, 0xcc, 0xd2),
+                body_edge,
+            ));
+            painter.line_segment([at(0.0, nib + 1.0), at(0.0, foot - 1.0)], egui::Stroke::new(0.8, egui::Color32::from_gray(75)));
+            painter.circle_filled(at(0.0, nib + 3.4), 1.15, egui::Color32::from_gray(75));
+        }
+        Tool::BrushPen => {
+            // A loaded brush has a soft ferrule and a visibly flexible, tapered bristle bundle.
+            let (w, lw) = (5.8, 5.2);
+            let grip = top + 8.0;
+            let ferrule = foot - 15.0;
+            hold(painter, w, lw, grip);
+            painter.add(shape(vec![at(-5.4, grip), at(5.4, grip), at(4.8, ferrule), at(-4.8, ferrule)], darker(ink, 0.12), darker(ink, 0.5)));
+            painter.line_segment([at(-3.7, ferrule), at(3.7, ferrule)], egui::Stroke::new(1.8, collar));
+            painter.add(shape(
+                vec![at(-4.8, ferrule), at(4.8, ferrule), at(2.4, ferrule + 7.0), at(0.55, foot), at(-0.55, foot), at(-2.4, ferrule + 7.0)],
+                darker(ink, 0.08),
+                darker(ink, 0.5),
+            ));
+            for offset in [-2.0, 0.0, 2.0] {
+                painter.line_segment([at(offset * 0.72, ferrule + 1.5), at(offset * 0.18, foot - 1.0)], egui::Stroke::new(0.55, shine));
+            }
+        }
+        Tool::Pen => {
+            // The ordinary pen is the clean, slim ballpoint: narrow barrel, small metal cone,
+            // and a round tip rather than the broad point shared by the other tools.
+            let (w, lw) = (4.2, 3.8);
+            let grip = top + 9.0;
+            let nib = foot - 12.0;
+            hold(painter, w, lw, grip);
+            painter.add(shape(vec![at(-3.9, grip), at(3.9, grip), at(3.5, nib), at(-3.5, nib)], ink, darker(ink, 0.48)));
+            painter.line_segment([at(-3.4, grip + 3.0), at(3.4, grip + 3.0)], egui::Stroke::new(1.0, shine));
+            painter.add(shape(
+                vec![at(-3.5, nib), at(3.5, nib), at(0.65, foot - 2.2), at(-0.65, foot - 2.2)],
+                egui::Color32::from_rgb(0xb9, 0xbd, 0xc5),
+                body_edge,
+            ));
+            painter.circle_filled(at(0.0, foot - 1.0), 0.8, egui::Color32::from_gray(55));
         }
     }
 }
@@ -2163,7 +2198,7 @@ Select",
             }
         }
         add_menu(ui, t, acts);
-        sensitivity(ui, view.sensitivity, t, acts);
+        sensitivity(ui, view.sensitivity, view.pressure_available, t, acts);
     });
     group(ui, "Input Mode", t, |ui| {
         soon(

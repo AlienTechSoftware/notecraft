@@ -52,6 +52,10 @@ fn session(t: &TempDir) -> Session {
     // Most UI tests exercise the single-tree interactions explicitly. The production default
     // is the OneNote-style split layout; tests that cover that default opt in below.
     settings.set("split_panes", "false").expect("test navigation setting");
+    // These tests use synthetic mouse input; keep the hardware-specific pressure warning out
+    // of unrelated drawing interaction tests. The warning itself is exercised through the app
+    // alert path and real hardware is covered by the pressure canvas.
+    settings.set("pressure_unavailable_never", "true").expect("test pressure setting");
     Session::new(&t.path().join("notebooks"), settings).expect("session")
 }
 
@@ -72,6 +76,17 @@ fn split_sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
     let mut app = NoteCraftApp::new(s);
     app.set_redact_paths(true);
     (t, app, sample)
+}
+
+fn pressure_session(t: &TempDir) -> Session {
+    let settings = Settings::at(t.path().join("pressure-settings.toml"));
+    settings.set("privacy_welcome_seen", "true").expect("test settings");
+    settings.set("split_panes", "false").expect("test navigation setting");
+    Session::new(&t.path().join("pressure-notebooks"), settings).expect("pressure session")
+}
+
+fn touch_event(phase: egui::TouchPhase, force: Option<f32>) -> egui::Event {
+    egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos: egui::Pos2::new(100.0, 100.0), force }
 }
 
 fn harness(app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
@@ -138,6 +153,40 @@ fn the_window_opens_and_shows_the_sample() {
         let _ = h.get_by_label(label);
     }
     review(&mut h, "welcome_with_sample");
+}
+
+#[test]
+fn mouse_warning_and_synthetic_ink_mode_cover_the_pressure_ribbon() {
+    let t = TempDir::new("ui-pressure-modes");
+    let mut s = pressure_session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+
+    // Mouse mode: pointer events arrive without force, so the warning is shown and the
+    // sensitivity control is explicitly unavailable.
+    h.get_by_label("Draw").click();
+    h.run();
+    assert!(h.query_all_by_label("Pressure sensitivity unavailable").count() > 0, "mouse mode warns");
+    assert!(h.query_all_by_label("Don't show this again in this session").count() > 0, "session suppression is offered");
+    assert!(h.query_all_by_label("Don't show this ever").count() > 0, "permanent suppression is offered");
+    h.get_by_label("OK").click();
+    h.run();
+    assert!(h.query_all_by_label("Pressure off").count() > 0, "mouse mode disables sensitivity");
+
+    // Ink mode: a force-bearing touch event is what the Windows input adapter supplies.
+    h.input_mut().events.push(touch_event(egui::TouchPhase::Start, Some(0.25)));
+    h.step();
+    assert!(h.query_all_by_label("Pressure sensitivity 50 of 100").count() > 0, "ink mode enables sensitivity");
+    h.input_mut().events.push(touch_event(egui::TouchPhase::Move, Some(0.8)));
+    h.step();
+    let diagnostics = ask(&mut h, "ui.inspect", json!({})).expect("inspect pressure")["pen"].clone();
+    assert_eq!(diagnostics["seen"].as_bool(), Some(true), "the synthetic pen is detected: {diagnostics}");
+    let pressure = diagnostics["pressure"].as_f64().unwrap_or_default();
+    assert!((pressure - 0.8).abs() < 0.001, "the force reading reaches the app: {diagnostics}");
 }
 
 #[test]
