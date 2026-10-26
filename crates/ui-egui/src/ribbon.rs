@@ -1891,12 +1891,11 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
 
 /// Draws one drawing tool upright inside `rect`, the way OneNote draws its rack.
 ///
-/// The structure is the same for every tool, which is what makes seven of them look like
-/// one set: a pale grey body for the part a hand holds, the writing colour in the lower
-/// barrel, a bright collar where the two meet, and a nib below that. Only the nib differs:
-/// a fine cone for a pen, sharpened wood for a pencil, a slit nib for a fountain pen, a
-/// soft point for a brush, a slanted chisel for a highlighter. So the rack is read first
-/// by colour and then by shape, as a tray of real pens is.
+/// The rack shares a visual language, but each tool must be recognisable before its colour is
+/// read: the marker stays broad and squared, the pencil shows wood and lead, the fountain pen
+/// shows a metal nib and breather hole, the brush has a flexible bristle point, and the pen has
+/// a small ball tip. Keeping these silhouettes distinct prevents the rack from reading as a row
+/// of crayons while preserving the marker treatment users already recognise.
 fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop: f32) {
     let ink = egui::Color32::from_rgb(colour.0, colour.1, colour.2);
     let mix = crate::theme::mix;
@@ -1938,55 +1937,75 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
             painter.add(shape(vec![at(-lw, nib), at(lw, nib), at(lw, foot - 6.0), at(-lw, foot)], darker(ink, 0.12), darker(ink, 0.4)));
         }
         Tool::Pencil => {
-            // Painted body, bare wood, then the lead.
-            let (w, lw) = (5.4, 5.0);
-            let wood = foot - 15.0;
-            painter.add(shape(vec![at(-w, top), at(w, top), at(lw, wood), at(-lw, wood)], ink, darker(ink, 0.4)));
-            painter.line_segment([at(-w * 0.42, top + 3.0), at(-lw * 0.42, wood - 2.0)], egui::Stroke::new(1.2, shine));
-            painter.line_segment([at(-w, top + 7.0), at(w, top + 7.0)], egui::Stroke::new(1.8, collar));
+            // A compact hexagonal coloured pencil: the writing colour is the lacquered body,
+            // but the wood and graphite make it unmistakably different from a marker.
+            let (w, lw) = (4.7, 4.1);
+            let wood = foot - 13.0;
+            let lacquer = crate::theme::mix(ink, egui::Color32::WHITE, 0.08);
+            painter.add(shape(vec![at(-w, top), at(w, top), at(lw, wood), at(-lw, wood)], lacquer, darker(ink, 0.42)));
+            painter.line_segment([at(-w * 0.42, top + 3.0), at(-lw * 0.42, wood - 2.0)], egui::Stroke::new(1.0, shine));
+            painter.line_segment([at(-w, top + 7.0), at(w, top + 7.0)], egui::Stroke::new(1.5, collar));
             painter.add(shape(
-                vec![at(-lw, wood), at(lw, wood), at(1.5, foot - 3.6), at(-1.5, foot - 3.6)],
+                vec![at(-lw, wood), at(lw, wood), at(1.35, foot - 3.2), at(-1.35, foot - 3.2)],
                 egui::Color32::from_rgb(0xe8, 0xd0, 0xa6),
                 egui::Color32::from_rgb(0xb2, 0x95, 0x66),
             ));
             painter.add(shape(
-                vec![at(-1.5, foot - 3.6), at(1.5, foot - 3.6), at(0.0, foot)],
+                vec![at(-1.35, foot - 3.2), at(1.35, foot - 3.2), at(0.0, foot)],
                 egui::Color32::from_gray(60),
                 egui::Color32::from_gray(40),
             ));
         }
         Tool::FountainPen => {
-            let (w, lw) = (5.4, 5.0);
-            let grip = top + 10.0;
-            let nib = foot - 16.0;
-            hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.4, nib), at(-4.4, nib)], ink, darker(ink, 0.42)));
-            // A long tapered nib, with its slit and breather hole.
-            painter.add(shape(vec![at(-4.4, nib), at(4.4, nib), at(0.8, foot), at(-0.8, foot)], collar, body_edge));
-            painter.line_segment([at(0.0, nib + 3.0), at(0.0, foot - 1.0)], egui::Stroke::new(0.9, egui::Color32::from_gray(90)));
-            painter.circle_filled(at(0.0, nib + 2.5), 1.0, egui::Color32::from_gray(90));
-        }
-        Tool::BrushPen => {
-            let (w, lw) = (5.6, 5.1);
-            let grip = top + 10.0;
-            let ferrule = foot - 16.0;
-            hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.3, grip), at(5.3, grip), at(4.7, ferrule), at(-4.7, ferrule)], ink, darker(ink, 0.42)));
-            painter.line_segment([at(-3.4, ferrule), at(3.4, ferrule)], egui::Stroke::new(1.8, collar));
-            // A loaded brush: full at the ferrule, drawn to a fine point.
-            painter.add(shape(
-                vec![at(-4.6, ferrule), at(4.6, ferrule), at(2.6, ferrule + 7.5), at(0.6, foot), at(-0.6, foot), at(-2.6, ferrule + 7.5)],
-                darker(ink, 0.15),
-                darker(ink, 0.45),
-            ));
-        }
-        Tool::Pen => {
-            let (w, lw) = (5.4, 5.0);
-            let grip = top + 11.0;
+            // A fountain pen has a shorter barrel and a broad metal nib, unlike the small
+            // ball tip of the ordinary pen.
+            let (w, lw) = (4.8, 4.4);
+            let grip = top + 8.0;
             let nib = foot - 14.0;
             hold(painter, w, lw, grip);
-            painter.add(shape(vec![at(-5.1, grip), at(5.1, grip), at(4.7, nib), at(-4.7, nib)], ink, darker(ink, 0.42)));
-            painter.add(shape(vec![at(-4.7, nib), at(4.7, nib), at(0.9, foot), at(-0.9, foot)], darker(ink, 0.25), darker(ink, 0.5)));
+            painter.add(shape(vec![at(-4.5, grip), at(4.5, grip), at(3.9, nib), at(-3.9, nib)], darker(ink, 0.08), darker(ink, 0.48)));
+            painter.line_segment([at(-4.1, grip + 3.0), at(4.1, grip + 3.0)], egui::Stroke::new(1.8, collar));
+            // A broad split nib with a visible slit and breather hole.
+            painter.add(shape(
+                vec![at(-3.9, nib), at(3.9, nib), at(1.3, foot), at(-1.3, foot)],
+                egui::Color32::from_rgb(0xc8, 0xcc, 0xd2),
+                body_edge,
+            ));
+            painter.line_segment([at(0.0, nib + 1.0), at(0.0, foot - 1.0)], egui::Stroke::new(0.8, egui::Color32::from_gray(75)));
+            painter.circle_filled(at(0.0, nib + 3.4), 1.15, egui::Color32::from_gray(75));
+        }
+        Tool::BrushPen => {
+            // A loaded brush has a soft ferrule and a visibly flexible, tapered bristle bundle.
+            let (w, lw) = (5.8, 5.2);
+            let grip = top + 8.0;
+            let ferrule = foot - 15.0;
+            hold(painter, w, lw, grip);
+            painter.add(shape(vec![at(-5.4, grip), at(5.4, grip), at(4.8, ferrule), at(-4.8, ferrule)], darker(ink, 0.12), darker(ink, 0.5)));
+            painter.line_segment([at(-3.7, ferrule), at(3.7, ferrule)], egui::Stroke::new(1.8, collar));
+            painter.add(shape(
+                vec![at(-4.8, ferrule), at(4.8, ferrule), at(2.4, ferrule + 7.0), at(0.55, foot), at(-0.55, foot), at(-2.4, ferrule + 7.0)],
+                darker(ink, 0.08),
+                darker(ink, 0.5),
+            ));
+            for offset in [-2.0, 0.0, 2.0] {
+                painter.line_segment([at(offset * 0.72, ferrule + 1.5), at(offset * 0.18, foot - 1.0)], egui::Stroke::new(0.55, shine));
+            }
+        }
+        Tool::Pen => {
+            // The ordinary pen is the clean, slim ballpoint: narrow barrel, small metal cone,
+            // and a round tip rather than the broad point shared by the other tools.
+            let (w, lw) = (4.2, 3.8);
+            let grip = top + 9.0;
+            let nib = foot - 12.0;
+            hold(painter, w, lw, grip);
+            painter.add(shape(vec![at(-3.9, grip), at(3.9, grip), at(3.5, nib), at(-3.5, nib)], ink, darker(ink, 0.48)));
+            painter.line_segment([at(-3.4, grip + 3.0), at(3.4, grip + 3.0)], egui::Stroke::new(1.0, shine));
+            painter.add(shape(
+                vec![at(-3.5, nib), at(3.5, nib), at(0.65, foot - 2.2), at(-0.65, foot - 2.2)],
+                egui::Color32::from_rgb(0xb9, 0xbd, 0xc5),
+                body_edge,
+            ));
+            painter.circle_filled(at(0.0, foot - 1.0), 0.8, egui::Color32::from_gray(55));
         }
     }
 }
