@@ -17,19 +17,24 @@ Developer setup, workflow, and automation for local NoteCraft work.
 
 ### Prerequisites
 
-- **Rust:** [rustup.rs](https://rustup.rs) (latest stable)
+- **Rust:** [rustup.rs](https://rustup.rs), with the version pinned in `rust-toolchain.toml`
 - **Platform tools:** See platform-specific scripts below
 - **Git:** For cloning and version control
 
 ### Quick Setup (Recommended)
 
-The setup scripts handle Rust installation, platform tools, git hooks, xtask building, and verification. Run the one for your platform from the repository root:
+Each setup script is also the environment check. It checks every tool NoteCraft needs, installs
+only what is missing, and ends with "All green." or a list of what is not ready (exit status 1).
+On a machine that is already set up it changes nothing and reports all OK. Run the one for your
+platform from the repository root:
 
 **Windows (PowerShell 5+):**
 ```powershell
-# As administrator recommended (right-click → Run as administrator)
-.\SKILLS\nc-devx\scripts\setup.ps1
+.\SKILLS\nc-devx\scripts\setup.ps1              # check, and install what is missing
+.\SKILLS\nc-devx\scripts\setup.ps1 -CheckOnly   # check only, change nothing
+.\SKILLS\nc-devx\scripts\setup.ps1 -Packaging   # also .NET SDK and WiX, for the MSI
 ```
+Installing the C++ build tools or the .NET SDK asks for administrator rights (a UAC prompt).
 
 **Linux (bash/zsh):**
 ```bash
@@ -41,24 +46,24 @@ bash SKILLS/nc-devx/scripts/setup.sh
 bash SKILLS/nc-devx/scripts/setup.mac.sh
 ```
 
-These scripts will:
-1. Check and install Rust if needed
-2. Check platform tools (MSVC on Windows, Xcode on macOS, build-essential on Linux)
-3. Enable git hooks (`core.hooksPath = .githooks`)
+These scripts:
+1. Check, and install if missing, the platform tools: the MSVC C++ build tools on Windows
+   (winget), the Xcode Command Line Tools on macOS, a compiler, pkg-config and the window system
+   libraries on Linux (apt, dnf or pacman, with sudo)
+2. Check, and install if missing, rustup and the pinned Rust with clippy and rustfmt
+3. Turn the git hooks on (`core.hooksPath = .githooks`)
 4. Build xtask (development helper tool)
-5. Verify the build works
-6. Run a quick sanity test
 
-**Skip steps if re-running:**
+**Options:**
 ```bash
-# Windows: skip Rust check
+# Windows: -SkipRust, -SkipBuild, -Packaging, -CheckOnly
 .\SKILLS\nc-devx\scripts\setup.ps1 -SkipRust
 
-# Linux: skip both Rust and dependency checks
-SKIP_RUST=1 SKIP_DEPS=1 bash SKILLS/nc-devx/scripts/setup.sh
+# Linux: SKIP_RUST=1, SKIP_DEPS=1, SKIP_BUILD=1, CHECK_ONLY=1
+CHECK_ONLY=1 bash SKILLS/nc-devx/scripts/setup.sh
 
-# macOS: skip Xcode check
-SKIP_XCODE=1 bash SKILLS/nc-devx/scripts/setup.mac.sh
+# macOS: SKIP_RUST=1, SKIP_XCODE=1, SKIP_BUILD=1, CHECK_ONLY=1
+CHECK_ONLY=1 bash SKILLS/nc-devx/scripts/setup.mac.sh
 ```
 
 ### Manual Setup
@@ -73,8 +78,8 @@ git config core.hooksPath .githooks
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"  # On Linux/macOS
 
-# 3. Update Rust toolchain
-rustup install
+# 3. Install the Rust pinned in rust-toolchain.toml
+rustup toolchain install 1.99.1 --profile minimal --component clippy --component rustfmt
 
 # 4. Build the dev helper tool
 cargo build -p xtask

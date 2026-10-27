@@ -1,117 +1,115 @@
 #!/bin/bash
-# NoteCraft Developer Setup - macOS
-# Run: bash SKILLS/nc-devx/scripts/setup.mac.sh
+# NoteCraft developer setup and check - macOS
+# Run from the repository root: bash SKILLS/nc-devx/scripts/setup.mac.sh
 #
-# Options: SKIP_RUST=1, SKIP_XCODE=1, SKIP_BUILD=1
-
-set -e
+# Checks each tool NoteCraft needs. On a machine that is already set up it only reports, all OK.
+# What is missing is installed:
+#   - the Xcode Command Line Tools (the compiler and linker); this opens Apple's installer, and
+#     the script is run again once it finishes
+#   - rustup, and the Rust named in rust-toolchain.toml with clippy and rustfmt
+# Then it turns the git hooks on and builds xtask. Homebrew is not needed.
+#
+#   SKIP_RUST=1    leave Rust alone
+#   SKIP_XCODE=1   leave the Command Line Tools alone
+#   SKIP_BUILD=1   do not build xtask
+#   CHECK_ONLY=1   report what is missing, change nothing
+#
+# Exit status: 0 when everything needed is there, 1 otherwise.
 
 SKIP_RUST=${SKIP_RUST:-0}
 SKIP_XCODE=${SKIP_XCODE:-0}
 SKIP_BUILD=${SKIP_BUILD:-0}
+CHECK_ONLY=${CHECK_ONLY:-0}
 
-echo -e "\033[36mNoteCraft Developer Setup (macOS)\033[0m"
-echo -e "\033[36m=================================\033[0m"
-echo ""
+ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+cd "$ROOT" || exit 1
+FAILED=()
 
-# Step 1: Check Rust
-if [ "$SKIP_RUST" = "0" ]; then
-    echo -e "\033[32mStep 1: Checking Rust...\033[0m"
+ok() { echo -e "\033[32mOK   $*\033[0m"; }
+info() { echo -e "\033[33m...  $*\033[0m"; }
+bad() { echo -e "\033[31mFAIL $*\033[0m"; FAILED+=("$*"); }
+step() { echo; echo -e "\033[36m$*\033[0m"; }
+have() { command -v "$1" > /dev/null 2>&1; }
 
-    if command -v rustc &> /dev/null; then
-        RUST_VERSION=$(rustc --version)
-        echo -e "\033[32m✓ Rust is installed: $RUST_VERSION\033[0m"
-    else
-        echo -e "\033[33m✗ Rust not found. Installing from rustup.rs...\033[0m"
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-        source "$HOME/.cargo/env"
-        echo -e "\033[32m✓ Rust installed\033[0m"
-    fi
-    echo ""
-fi
+# Puts rustup's folder on PATH for this run, if it is there.
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-# Step 2: Check Xcode Command Line Tools
+echo -e "\033[36mNoteCraft developer setup (macOS)\033[0m"
+[ "$CHECK_ONLY" = "1" ] && echo "Check only: nothing is installed or changed."
+
 if [ "$SKIP_XCODE" = "0" ]; then
-    echo -e "\033[32mStep 2: Checking Xcode Command Line Tools...\033[0m"
-
-    if command -v xcode-select &> /dev/null && xcode-select -p &> /dev/null; then
-        echo -e "\033[32m✓ Xcode Command Line Tools installed\033[0m"
+    step "Xcode Command Line Tools"
+    if xcode-select -p > /dev/null 2>&1; then
+        ok "$(xcode-select -p)"
+    elif [ "$CHECK_ONLY" = "1" ]; then
+        bad "missing: xcode-select --install"
     else
-        echo -e "\033[33m✗ Xcode Command Line Tools not found.\033[0m"
-        echo -e "\033[33mInstalling via xcode-select...\033[0m"
+        info "opening Apple's installer for the Command Line Tools"
         xcode-select --install
-        echo -e "\033[33mPlease complete the installation in the dialog and re-run this script.\033[0m"
-        exit 1
-    fi
-    echo ""
-fi
-
-# Step 3: Check Homebrew (optional but recommended)
-echo -e "\033[32mStep 3: Checking Homebrew...\033[0m"
-
-if command -v brew &> /dev/null; then
-    echo -e "\033[32m✓ Homebrew is installed\033[0m"
-    BREW_PREFIX=$(brew --prefix)
-else
-    echo -e "\033[33m⚠ Homebrew not found (optional but recommended)\033[0m"
-    read -p "Install Homebrew now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "\033[33mInstalling Homebrew...\033[0m"
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        echo -e "\033[32m✓ Homebrew installed\033[0m"
+        bad "finish the Command Line Tools install in the dialog, then run this script again"
     fi
 fi
-echo ""
 
-# Step 4: Enable git hooks
-echo -e "\033[32mStep 4: Enabling git hooks...\033[0m"
-git config core.hooksPath .githooks
-echo -e "\033[32m✓ Git hooks enabled\033[0m"
-echo ""
+step "Git"
+if have git && git --version > /dev/null 2>&1; then ok "$(git --version)"; else bad "git is not installed (it comes with the Command Line Tools)"; fi
 
-# Step 5: Setup development environment
-echo -e "\033[32mStep 5: Setting up dev environment...\033[0m"
-
-# Update toolchain
-echo "  - Updating Rust toolchain..." >&2
-rustup install 2>&1 | grep -E "^(info|Updating)" || true
-echo "  ✓ Rust toolchain updated" >&2
-
-# Build xtask
-echo "  - Building xtask (dev helper)..." >&2
-cargo build -p xtask 2>&1 | tail -1 || true
-echo "  ✓ xtask built" >&2
-echo ""
-
-# Step 6: Verify build (unless skipped)
-if [ "$SKIP_BUILD" = "0" ]; then
-    echo -e "\033[32mStep 6: Verifying build...\033[0m"
-    cargo build -p notecraft 2>&1 | tail -3
-    echo -e "\033[32m✓ Build successful\033[0m"
-    echo ""
-
-    # Step 7: Run quick test
-    echo -e "\033[32mStep 7: Running quick test...\033[0m"
-    if cargo test --workspace --lib -- --test-threads=1 2>&1 | tail -3; then
-        echo -e "\033[32m✓ Tests passed\033[0m"
+if [ "$SKIP_RUST" = "0" ]; then
+    step "Rust"
+    channel=$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml)
+    if ! have rustup && [ "$CHECK_ONLY" != "1" ]; then
+        info "installing rustup from sh.rustup.rs"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+        [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+    fi
+    if have rustup; then
+        ok "$(rustup --version 2> /dev/null | head -n 1)"
+        if rustup toolchain list 2> /dev/null | grep -q "^$channel-"; then
+            ok "Rust $channel (pinned in rust-toolchain.toml)"
+        elif [ "$CHECK_ONLY" = "1" ]; then
+            bad "Rust $channel is not installed: rustup toolchain install $channel"
+        else
+            info "installing Rust $channel with clippy and rustfmt"
+            if rustup toolchain install "$channel" --profile minimal --component clippy --component rustfmt; then
+                ok "Rust $channel"
+            else
+                bad "rustup could not install Rust $channel"
+            fi
+        fi
     else
-        echo -e "\033[33mⓘ Some tests failed (may be expected on first run)\033[0m"
+        bad "rustup is not installed (https://rustup.rs)"
     fi
-    echo ""
 fi
 
-# Summary
-echo -e "\033[32mSetup Complete!\033[0m"
-echo -e "\033[32m===============\033[0m"
-echo ""
-echo -e "\033[36mQuick start commands:\033[0m"
-echo "  cargo run -p notecraft              # Run the app"
-echo "  cargo test --workspace              # Run all tests"
-echo "  cargo xtask ci                      # Run full CI gate"
-echo ""
-echo -e "\033[36mOptional development tools:\033[0m"
-echo "  brew install cargo-watch           # Auto-rebuild on changes"
-echo "  cargo watch -x check                # Watch and check"
-echo ""
-echo -e "\033[36mDocumentation: SKILLS/nc-devx/SKILL.md\033[0m"
+step "Git hooks"
+if [ "$(git config core.hooksPath)" = ".githooks" ]; then
+    ok "on (core.hooksPath = .githooks)"
+elif [ "$CHECK_ONLY" = "1" ]; then
+    bad "off: git config core.hooksPath .githooks"
+elif git config core.hooksPath .githooks; then
+    ok "turned on (core.hooksPath = .githooks)"
+else
+    bad "could not set core.hooksPath"
+fi
+
+if [ "$SKIP_BUILD" = "0" ] && [ "$CHECK_ONLY" != "1" ]; then
+    step "xtask"
+    if ! have cargo; then
+        bad "cargo is not on PATH, so xtask was not built"
+    elif cargo build -q -p xtask; then
+        ok "builds"
+    else
+        bad "cargo build -p xtask failed"
+    fi
+fi
+
+echo
+if [ ${#FAILED[@]} -eq 0 ]; then
+    echo -e "\033[32mAll green.\033[0m"
+    echo "  cargo run -p notecraft      run the app"
+    echo "  cargo xtask ci              the full gate"
+    echo "Open a new terminal if a tool was installed, so it is on PATH there too."
+    exit 0
+fi
+echo -e "\033[31mNot ready:\033[0m"
+printf '  - %s\n' "${FAILED[@]}"
+exit 1
