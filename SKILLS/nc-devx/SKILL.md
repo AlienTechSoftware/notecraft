@@ -170,6 +170,16 @@ cargo xtask ci
 
 ---
 
+## Test Coverage
+
+The baseline is [`docs/coverage.json`](../../docs/coverage.json). `cargo xtask coverage`
+compares a new run with it and warns when a figure falls by more than 0.5 points; it never
+fails. CI does the same on every pull request, as a job that cannot block a merge. Raise the
+baseline with `cargo xtask coverage --update` in the change that raised coverage. Details:
+[`docs/testing.md`](../../docs/testing.md#coverage).
+
+---
+
 ## Personally Identifiable Information (PII) Scanner
 
 NoteCraft checks for sensitive data before commits and pushes to prevent accidental leaks.

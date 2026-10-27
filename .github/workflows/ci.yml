@@ -67,3 +67,39 @@ jobs:
 
       - name: Quality gate
         run: cargo xtask ci
+
+  # Coverage against docs/coverage.json. A drop is a warning on the pull request and a table on
+  # the run's summary page, never a red mark: the job may fail without failing the workflow, and
+  # `cargo xtask coverage` itself exits 0 when coverage falls. See docs/testing.md#coverage.
+  coverage:
+    name: coverage (warns, never blocks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev \
+            libxi-dev libgtk-3-dev libfontconfig1-dev libfreetype-dev \
+            libvulkan1 mesa-vulkan-drivers
+
+      - name: Install Rust and cargo-llvm-cov
+        run: |
+          rustup install
+          rustup component add llvm-tools
+          cargo install cargo-llvm-cov --locked --version 0.9.1
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: coverage
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Coverage compared with docs/coverage.json
+        run: cargo xtask coverage

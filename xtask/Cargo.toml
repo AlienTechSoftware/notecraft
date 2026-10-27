@@ -11,3 +11,4 @@ description = "Repository tasks: cargo xtask ci | fmt | clippy | test | layers |
 workspace = true
 
 [dependencies]
+serde_json = { workspace = true }

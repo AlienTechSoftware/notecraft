@@ -68,16 +68,29 @@ Code that reads files, parameters or user text is written to survive junk:
 
 ## Coverage
 
-Line coverage needs `cargo-llvm-cov`, which is not installed by default (installing it needs
+Coverage needs `cargo-llvm-cov`, which is not installed by default (installing it needs
 the maintainer's permission):
 
 ```bash
-rustup component add llvm-tools-preview
-cargo install cargo-llvm-cov
-cargo xtask coverage
+rustup component add llvm-tools
+cargo install cargo-llvm-cov --locked
+cargo xtask coverage            # measure, and compare with docs/coverage.json
+cargo xtask coverage --update   # measure, and make this run the new baseline
 ```
 
-Last measurement (2026-10-17): 87.8% of lines, 87.3% of regions, workspace-wide. The weakest files are `apps/notecraft/src/main.rs` (29%, the window start-up), `xtask` (58%) and `crates/ui-egui/src/app.rs` (70%). Re-measure before quoting the number later.
+The baseline is [`coverage.json`](coverage.json): the total line, function and region
+coverage, line coverage per crate, and when, where and with what it was measured. It covers
+the workspace without `xtask`.
+
+The comparison warns and never fails. A figure that falls by more than 0.5 points is printed
+as a warning, and the task still succeeds. On a pull request the `coverage` job in
+[`ci.yml`](../.github/workflows/ci.yml) runs it, shows each drop as an annotation and puts the
+table on the run's summary page; the job is allowed to fail, so it never blocks a merge. It is
+not part of `cargo xtask ci` or the pre-push hook, because a coverage run rebuilds everything.
+
+When a change raises coverage, run `--update` in the same pull request, so the new figure
+lands with the code that earned it and git keeps the history. The figures depend on the
+platform (Windows-only code counts only on Windows), and the file says which one it came from.
 
 ## Clipboard in tests
 

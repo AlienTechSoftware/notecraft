@@ -13,7 +13,8 @@
 //!           punctuation (no em or en dashes, no curly quotes) in Markdown, per .agents/TONE.md;
 //!           add `--fix` to rewrite those issues
 //! screenshots  regenerate docs/images from the real window with the headless runner
-//! coverage  line coverage with cargo-llvm-cov, if it is installed
+//! coverage  coverage with cargo-llvm-cov, compared with docs/coverage.json (warns, never fails);
+//!           `--update` writes this run as the new baseline
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
 //! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format; --replace approves overwriting a changed scratch copy
 //! ```
@@ -23,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod coverage;
 mod version;
 
 /// The layer of each workspace crate. A crate may depend only on crates in lower layers.
@@ -455,16 +457,6 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn coverage(root: &Path) -> Result<(), String> {
-    let have = Command::new("cargo").args(["llvm-cov", "--version"]).current_dir(root).output().map(|o| o.status.success()).unwrap_or(false);
-    if !have {
-        return Err(
-            "cargo-llvm-cov is not installed. Install it with: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov".into()
-        );
-    }
-    cargo(root, &["llvm-cov", "--workspace", "--summary-only"])
-}
-
 fn run(task: &str, options: &[String]) -> Result<(), String> {
     let root = root();
     match task {
@@ -482,7 +474,7 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
             text(&root, fix)
         }
         "screenshots" => screenshots(&root),
-        "coverage" => coverage(&root),
+        "coverage" => coverage::run(&root, options),
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
         "demo" => {

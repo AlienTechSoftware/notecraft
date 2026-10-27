@@ -1,0 +1,77 @@
+{
+  "about": "Test coverage of the workspace, from `cargo xtask coverage --update`. CI warns on a pull request that lowers it by more than 0.5 points; it does not block. See SKILLS/nc-devx/SKILL.md.",
+  "crates": {
+    "apps/notecraft": {
+      "count": 394,
+      "lines": 47.5
+    },
+    "apps/notecraft-cli": {
+      "count": 297,
+      "lines": 57.9
+    },
+    "crates/diagram": {
+      "count": 320,
+      "lines": 97.5
+    },
+    "crates/engine": {
+      "count": 1040,
+      "lines": 94.1
+    },
+    "crates/formats": {
+      "count": 1874,
+      "lines": 98.0
+    },
+    "crates/import": {
+      "count": 1240,
+      "lines": 65.0
+    },
+    "crates/ink": {
+      "count": 1160,
+      "lines": 98.6
+    },
+    "crates/input-language": {
+      "count": 48,
+      "lines": 27.1
+    },
+    "crates/math": {
+      "count": 1095,
+      "lines": 95.7
+    },
+    "crates/mcp": {
+      "count": 493,
+      "lines": 86.6
+    },
+    "crates/model": {
+      "count": 960,
+      "lines": 98.3
+    },
+    "crates/onenote": {
+      "count": 1656,
+      "lines": 86.8
+    },
+    "crates/store": {
+      "count": 2093,
+      "lines": 89.3
+    },
+    "crates/text": {
+      "count": 539,
+      "lines": 97.0
+    },
+    "crates/ui-egui": {
+      "count": 16720,
+      "lines": 79.2
+    }
+  },
+  "measured": {
+    "commit": "35817b5",
+    "date": "2026-10-26",
+    "platform": "windows",
+    "rust": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "tool": "cargo-llvm-cov 0.9.1"
+  },
+  "total": {
+    "functions": 83.7,
+    "lines": 83.3,
+    "regions": 83.5
+  }
+}
