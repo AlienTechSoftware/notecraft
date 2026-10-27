@@ -20,7 +20,7 @@
   <a href="docs/coverage.json"><img alt="Line coverage on Windows, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.windows&label=coverage%20%C2%B7%20windows&color=2f9e44&style=flat-square"></a>
   <a href="docs/coverage.json"><img alt="Line coverage on Linux, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.linux&label=coverage%20%C2%B7%20linux&color=2f9e44&style=flat-square"></a>
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-2b47b5?style=flat-square&logo=rust&logoColor=white">
-  <img alt="Runs on Windows today; macOS and Linux are untested" src="https://img.shields.io/badge/runs%20on-Windows%20today-3b5bdb?style=flat-square">
+  <img alt="Runs on Windows and Linux" src="https://img.shields.io/badge/runs%20on-Windows%20%26%20Linux-3b5bdb?style=flat-square">
   <img alt="Licensed MIT or Apache-2.0, at your option" src="https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-3b5bdb?style=flat-square">
   <img alt="Drivable from a command line, a control channel and an MCP server" src="https://img.shields.io/badge/agents-CLI%20%C2%B7%20control%20channel%20%C2%B7%20MCP-3b5bdb?style=flat-square">
 </p>
@@ -262,7 +262,7 @@ the earlier versions and their notes. `<ver>` in a file name is the version numb
 |---|---|---|
 | Windows x64 (64-bit Intel and AMD) | `notecraft-<ver>-windows-x64.msi` | `notecraft-<ver>-windows-x64-portable.zip` |
 
-Windows x64 is the only build. macOS and Linux are untested, so there are no builds for them; the
+Windows x64 and Linux x64 builds are available. macOS is untested, so there is no build for it; the
 [Quick start](#quick-start) builds from source.
 
 **The builds are not code-signed yet.** Windows SmartScreen may show "Windows protected your PC".
@@ -294,7 +294,7 @@ it is not finished, it has had little use, and a notebook you care about should 
 folder format can still change before 0.1. The other Craft apps describe themselves the same way.
 What is missing:
 
-- Built and run on **Windows only**. The code avoids OS features, but macOS and Linux are untested.
+- Built and run on **Windows and Linux**. The code avoids OS features, but macOS is untested.
 - **Right-to-left text is half there.** Arabic and Hebrew draw, and a page, a line or a run
   can be given a direction. A line that mixes the two directions is still drawn in one order,
   and the window is not mirrored. Measured, not assumed; the stages are in the roadmap.
