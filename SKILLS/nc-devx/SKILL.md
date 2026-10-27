@@ -170,6 +170,28 @@ cargo xtask ci
 
 ---
 
+## Quality Levels
+
+Each level includes the ones before it. The hooks run L1 and L2 for you once
+`git config core.hooksPath .githooks` is set (the setup script does it); CI runs L3.
+
+| Level | When | What runs | Where | Time |
+|---|---|---|---|---|
+| **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
+| **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main` or carrying a merge commit. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
+| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` or carrying a merge commit stops the push. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
+| **L3** | Pull request | L2 on Linux in CI, plus the branch name check and the coverage job (warns, never blocks). The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
+| **L4** | Release | The `nc-reelase-signoff` checklist: version, demo parity, packaging, installers, release notes. By hand today; to be automated, starting with the installer smoke test on a clean profile | `SKILLS/nc-reelase-signoff` | by hand |
+
+Coverage is not in a hook: it rebuilds the workspace with instrumentation, which takes
+minutes. Run `cargo xtask coverage` on demand before opening a pull request that adds code or
+tests; CI runs it on every pull request.
+
+Never skip a level with `--no-verify` for your own work (AGENTS.md). If a hook stops you on
+work that is not yours, such as another session's half-written file, say so in the report.
+
+---
+
 ## Test Coverage
 
 The baseline is [`docs/coverage.json`](../../docs/coverage.json). `cargo xtask coverage`

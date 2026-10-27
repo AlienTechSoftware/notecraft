@@ -1,0 +1,7 @@
+#!/bin/sh
+# Quality level L1, the message half: a subject line `type(scope): what`, at most 72
+# characters. Git's own merge and revert subjects, and `--fixup`, pass as they are.
+#
+# Skip once:        git commit --no-verify (only for work that is not yours; see AGENTS.md)
+set -e
+cargo xtask commit-msg "$1"

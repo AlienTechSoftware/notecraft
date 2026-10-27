@@ -15,6 +15,8 @@
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  coverage with cargo-llvm-cov, compared with docs/coverage.json (warns, never fails);
 //!           `--update` writes this run as the new baseline
+//! check-branch [--push]  the branch and history checks of quality levels L1 and L2
+//! commit-msg FILE        the commit message check, for the commit-msg hook
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
 //! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format; --replace approves overwriting a changed scratch copy
 //! ```
@@ -25,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod coverage;
+mod quality;
 mod version;
 
 /// The layer of each workspace crate. A crate may depend only on crates in lower layers.
@@ -475,6 +478,11 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         }
         "screenshots" => screenshots(&root),
         "coverage" => coverage::run(&root, options),
+        "check-branch" => quality::check_branch(&root, options),
+        "commit-msg" => match options {
+            [file] => quality::commit_msg(Path::new(file)),
+            _ => Err("usage: cargo xtask commit-msg FILE".into()),
+        },
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
         "demo" => {
@@ -493,7 +501,7 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!(
-            "unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage version demo demo-check demo-copy"
+            "unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage check-branch commit-msg version demo demo-check demo-copy"
         )),
     }
 }

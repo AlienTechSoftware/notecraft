@@ -12,7 +12,15 @@
 # commit too, and --no-verify is the honest way through that.
 set -e
 
-echo "pre-commit: pii, fmt, layers, assets, docs, text"
+echo "pre-commit (quality level L1): branch, pii, fmt, layers, assets, docs, text"
+
+# Not on main, and nothing from local/, target/ or my-notebooks/ staged. Being behind
+# origin/main is a warning here; the push stops on it.
+if ! cargo xtask check-branch; then
+    echo
+    echo "pre-commit: the branch check failed. See SKILLS/nc-devx/SKILL.md, quality levels."
+    exit 1
+fi
 
 # Check for PII first (fail fast)
 if ! bash SKILLS/nc-devx/scripts/check-pii.sh; then

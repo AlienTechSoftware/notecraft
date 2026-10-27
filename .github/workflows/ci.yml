@@ -62,6 +62,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
+      # Quality level L3. The branch name is a warning; being up to date with main is the
+      # repository's "require branches to be up to date" setting.
+      - name: Branch check
+        run: cargo xtask check-branch
+
       - name: PII Scanner
         run: bash SKILLS/nc-devx/scripts/check-pii.sh
 

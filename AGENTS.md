@@ -137,6 +137,7 @@ purpose summary.
 | Skill | Level or role | Owns | Does not own / routes to |
 |---|---|---|---|
 | `nc-arch` | Level 1: architecture authority | System architecture, MVC boundaries, crate layering, ownership, data flow, and cross-platform constraints. | Does not define feature details or UI polish. Routes feature design to `nc-hl-design`. |
+| `nc-arch-x-plat` | Architecture rule: platforms | Union, not intersection: each platform branch uses what that platform does best, `<feature>.<platform>.<ext>` files, `cfg`-gated wiring, and a visible note for anything missing. | Does not own a feature's design. Applies inside `nc-arch` and every feature that touches a platform service. |
 | `nc-hl-design` | Level 2: design router | Feature scope, architecture handoff, state and data-flow design, decisions, risks, and acceptance criteria. | Does not replace `nc-arch` or implement MVC details. Routes the detailed design to the relevant specialist below. |
 | `nc-prod` | Product authority | Product requirements, non-negotiable behavior, local-file model, OneNote behavior, import, and format parity. | Does not design crate APIs or implement features. |
 | `nc-dom-ser` | MVC specialist: DOM and persistence | HTML and CMGFM page model, DOM semantics, serialization, deserialization, asset references, round trips, and cross-format parity. | Does not own general architecture or UI styling. Consult with `nc-arch`; route feature design through `nc-hl-design`. |
@@ -146,15 +147,33 @@ purpose summary.
 | `nc-uiux-dialogs` | MVC specialist: dialog view | Themed modal dialogs, confirmations, progress surfaces, privacy prompts, recovery prompts, and error states. | Does not own command behavior or persistence. Consult `nc-uiux-controls` for interaction details. |
 | `nc-uiux-bidi` | MVC specialist: text interaction | Bidirectional text, RTL controls, caret placement, selection, mixed-script behavior, and mirrored layout. | Does not own general editor serialization. Consult `nc-dom-ser` for persisted page representation. |
 | `nc-themes` | UI foundation specialist | Theme tokens, contrast, borders, typography, state colors, modal surfaces, and visual regression checks. | Does not own individual feature behavior or dialog flow. |
+| `nc-uiux-drawing` | MVC specialist: ink | Handwriting, drawing tools, stylus pressure, ink selection, and OneNote-compatible drawing workflows. | Does not own page serialization or theme tokens. Consult `nc-dom-ser` for stored ink and `nc-themes` for colours. |
 | `nc-uiux-icons` | UI foundation specialist | Licensed icon selection, local asset integration, semantic mapping, accessibility, and icon-state consistency. | Does not own Windows Shell asset extraction or page serialization. Consult `nc-dom-ser` and `nc-themes` where applicable. |
 | `nc-ua` | Product coverage specialist | User assistance, product coverage, multilingual demo content, generated outputs, scratch copies, and release consistency. | Does not replace implementation or design skills. |
 | `nc-reelase-signoff` | Release gate | Versioning, demo parity, tests, lint, packaging, installers, assets, and release evidence. | Does not implement features or waive failing gates. |
+| `nc-devx` | Developer experience | Machine setup and its check scripts, the quality levels L0 to L4, git hooks, coverage, the PII scanner, and the daily workflow. | Does not decide product or architecture. Owns how work is checked, not what is built. |
 
 Use the smallest set that covers the work, in this order when the change is substantial:
 `nc-arch` -> `nc-hl-design` -> the relevant MVC or UI specialist -> `nc-code-rust`.
 Add `nc-prod` when product requirements are involved, `nc-dom-ser` when page or DOM
 representation is involved, and `nc-reelase-signoff` for release work. `nc-ua` owns the
 user-facing coverage map, but it does not replace the implementation or design skills.
+
+## Quality levels
+
+Each level includes the ones before it. The detail, with every check, is in
+[`SKILLS/nc-devx/SKILL.md`](SKILLS/nc-devx/SKILL.md#quality-levels).
+
+| Level | When | What runs |
+|---|---|---|
+| **L0** | After each task | `cargo fmt`, clippy and tests for the crates changed |
+| **L1** | Before a commit (pre-commit and commit-msg hooks) | `cargo xtask check-branch` (not on `main`, branch prefix, nothing stray or huge staged, warns when behind `origin/main`), PII, fmt, layers, assets, docs, text; subject `type(scope): what` |
+| **L2** | Before a push (pre-push hook) | `cargo xtask check-branch --push` (rebased on the newest `origin/main`, no merge commits), PII, the full `cargo xtask ci` |
+| **L3** | Pull request (CI) | L2 on Linux, branch name check, coverage compared per platform (warns, never blocks), the pull request template's checklist |
+| **L4** | Release | `nc-reelase-signoff`; by hand today, automation planned, starting with the installer smoke test |
+
+Coverage runs on demand (`cargo xtask coverage`) and in CI on pull requests, not in a hook:
+it takes minutes.
 
 ## Runtime environments and local diagnostics
 
@@ -208,8 +227,10 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
 - **Page representation changes.** Apply [`SKILLS/nc-dom-ser/SKILL.md`](SKILLS/nc-dom-ser/SKILL.md) for changes crossing the page model, HTML/CMGFM, rendering, storage, or editor. `cargo xtask ci` must keep the cross-format and whole-demo parity checks green.
 - **One feature at a time.** One feature, one branch. Do not start a second branch, or work on a second feature, unless the owner asks for more than one. A request that arrives while a branch is open is answered or written down and waits; it does not start another branch. Land the branch before the next one begins: rebase it onto `origin/main`, run `cargo xtask ci`, check out `main`, pull it, and fast-forward the branch in, so the history stays a straight line. The owner says when to push. Delete the branch once it is merged.
 - **Git.** Do not commit, push or publish without explicit permission.
-- **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs the cheap gates (fmt, layers,
-  assets, docs, text), about two seconds. [`.githooks/pre-push`](.githooks/pre-push) runs the
+- **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs quality level L1 (the branch
+  check and the cheap gates: fmt, layers, assets, docs, text), a few seconds, and
+  [`.githooks/commit-msg`](.githooks/commit-msg) checks the subject line.
+  [`.githooks/pre-push`](.githooks/pre-push) runs L2: rebased on `origin/main`, then the
   whole of `cargo xtask ci`, a few minutes, so a red tree is caught before CI sees it. Git does
   not pick up a tracked hooks folder by itself, so each clone needs the `core.hooksPath` line
   above once. They check the working tree, not the index, so another session's half-written file

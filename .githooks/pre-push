@@ -10,6 +10,16 @@
 # Turn off for good: git config --unset core.hooksPath
 set -e
 
+# Quality level L2. Rebased on the newest origin/main, with no merge commits, so the branch
+# lands as a fast-forward. Coverage is not run here: it rebuilds everything, so it runs on
+# demand and in CI on the pull request.
+echo "pre-push (quality level L2): branch, pii, cargo xtask ci"
+if ! cargo xtask check-branch --push; then
+    echo
+    echo "pre-push: rebase on origin/main first. See SKILLS/nc-devx/SKILL.md, quality levels."
+    exit 1
+fi
+
 # PII check first (fail fast)
 echo "pre-push: checking for PII..."
 if ! bash SKILLS/nc-devx/scripts/check-pii.sh origin/main; then
