@@ -64,6 +64,15 @@ fn serve_mcp(root: &Path, connect: Option<String>) -> Result<(), String> {
     serve(backend.as_mut(), input.lock(), output.lock()).map_err(|e| format!("the connection to the client ended: {e}"))
 }
 
+/// The page `open` shows for `path`, through the engine's `open.page`.
+fn page_for(root: &Path, settings: Settings, path: &str) -> Result<PathBuf, String> {
+    let mut session = Session::new(root, settings).map_err(|e| e.to_string())?;
+    match session.run("open.page", &parse_params(&[format!("path={path}")])?).map_err(|e| e.to_string())? {
+        Output::Path(page) => Ok(page),
+        other => Err(format!("open.page answered {}", describe(&other))),
+    }
+}
+
 /// `open PATH`: shows a notebook, section group, section or page in NoteCraft. With
 /// `--connect PORT` the running window opens it; otherwise a new window starts on it. The path
 /// is checked here first, so a typo is reported in the terminal instead of in a window.
@@ -75,11 +84,7 @@ fn open_in_window(root: &Path, explicit_root: bool, connect: Option<String>, res
         window.call("ui.open", &serde_json::json!({ "path": path }))?;
         return Ok((format!("opened {path} in the window on port {port}"), true));
     }
-    let mut session = Session::new(root, Settings::default_location()).map_err(|e| e.to_string())?;
-    let page = match session.run("open.page", &parse_params(&[format!("path={path}")])?).map_err(|e| e.to_string())? {
-        Output::Path(page) => page,
-        other => return Err(format!("open.page answered {}", describe(&other))),
-    };
+    let page = page_for(root, Settings::default_location(), path)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name(format!("notecraft{}", std::env::consts::EXE_SUFFIX));
     if !exe.is_file() {
         return Err(format!("the NoteCraft app was not found next to notecraft-cli, at {}", display_path(&exe)));
@@ -363,10 +368,11 @@ mod tests {
         // A path that is not there is reported here, and no window starts.
         let e = run(args(&t, &["open", "work/no-such-page"])).err().unwrap_or_default();
         assert!(e.contains("no-such-page"), "{e}");
-        // A good path gets as far as looking for the app. The test binary has no window beside
-        // it, so none starts here; the real start is checked by hand and in packaging.
-        let e = run(args(&t, &["open", "work"])).err().unwrap_or_default();
-        assert!(e.contains("was not found next to notecraft-cli"), "{e}");
+        // A good path resolves to its first page. Checked below `open` itself: a test never
+        // starts a window, which would use the real profile and wait on its first-run dialog.
+        let settings = Settings::at(t.path().join("settings.toml"));
+        let page = page_for(&t.path().join("nb"), settings, "work").unwrap_or_else(|e| panic!("{e}"));
+        assert!(page.ends_with(Path::new("work").join("new-section-1").join("untitled-page")), "{}", page.display());
         // With --connect, a port with no window behind it says so.
         let e = run(args(&t, &["open", "work", "--connect", "127.0.0.1:1"])).err().unwrap_or_default();
         assert!(e.contains("key"), "{e}");
