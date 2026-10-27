@@ -78,9 +78,12 @@ cargo xtask coverage            # measure, and compare with docs/coverage.json
 cargo xtask coverage --update   # measure, and make this run the new baseline
 ```
 
-The baseline is [`coverage.json`](coverage.json): the total line, function and region
-coverage, line coverage per crate, and when, where and with what it was measured. It covers
-the workspace without `xtask`.
+The baseline is [`coverage.json`](coverage.json), one entry per platform: the total line,
+function and region coverage, line coverage per crate, and when and with what it was
+measured. It covers the workspace without `xtask`. A run is compared with its own platform
+only, because code for one platform counts only where it is built. `--update` writes the
+current platform and keeps the others. `badges` holds the README figures, with "not measured"
+for a platform that has no baseline yet. Linux is measured in CI; Windows on a Windows machine.
 
 The comparison warns and never fails. A figure that falls by more than 0.5 points is printed
 as a warning, and the task still succeeds. On a pull request the `coverage` job in
@@ -89,8 +92,7 @@ table on the run's summary page; the job is allowed to fail, so it never blocks 
 not part of `cargo xtask ci` or the pre-push hook, because a coverage run rebuilds everything.
 
 When a change raises coverage, run `--update` in the same pull request, so the new figure
-lands with the code that earned it and git keeps the history. The figures depend on the
-platform (Windows-only code counts only on Windows), and the file says which one it came from.
+lands with the code that earned it and git keeps the history.
 
 ## Clipboard in tests
 

@@ -1,10 +1,14 @@
 //! `cargo xtask coverage [--update]`: line, function and region coverage with cargo-llvm-cov,
-//! compared with the baseline in `docs/coverage.json`.
+//! compared with this platform's baseline in `docs/coverage.json`.
+//!
+//! Each platform has its own baseline, because code for one platform only (Windows' keyboard
+//! layouts, for one) counts only where it is built. A run is compared with its own platform and
+//! nothing else, so a Linux run never reports the Windows-only code as lost.
 //!
 //! A drop is a warning, never a failure: it is printed, shown as an annotation on GitHub and
-//! written to the job summary, and the task still succeeds. `--update` writes the numbers of
-//! this run as the new baseline, so a change that raises coverage carries the new figure in
-//! the same pull request and git keeps the history.
+//! written to the job summary, and the task still succeeds. `--update` writes this run as the
+//! baseline for this platform and leaves the others alone, so a change that raises coverage
+//! carries the new figure in the same pull request and git keeps the history.
 
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -18,6 +22,10 @@ pub const BASELINE: &str = "docs/coverage.json";
 /// How many percentage points a figure may fall before it is reported. Smaller moves are
 /// noise from tests that take a different path from run to run.
 const SLACK: f64 = 0.5;
+
+/// The platforms the README shows a badge for. One with no baseline reads "not measured", so
+/// the gap is in plain sight rather than left out.
+const PLATFORMS: [&str; 3] = ["windows", "linux", "macos"];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Share {
@@ -77,18 +85,36 @@ pub fn summarize(report: &Value) -> Result<Summary, String> {
     Ok(Summary { lines: share(&totals["lines"]), functions: share(&totals["functions"]), regions: share(&totals["regions"]), crates })
 }
 
-/// The baseline file's contents for this summary.
-pub fn baseline_json(s: &Summary, measured: Value) -> Value {
+/// One platform's baseline for this summary.
+pub fn platform_entry(s: &Summary, measured: Value) -> Value {
     let crates: Map<String, Value> = s.crates.iter().map(|(k, v)| (k.clone(), json!({"lines": v.percent(), "count": v.count}))).collect();
     json!({
-        "about": "Test coverage of the workspace, from `cargo xtask coverage --update`. CI warns on a pull request that lowers it by more than 0.5 points; it does not block. See SKILLS/nc-devx/SKILL.md.",
         "measured": measured,
         "total": {"lines": s.lines.percent(), "functions": s.functions.percent(), "regions": s.regions.percent()},
         "crates": crates,
     })
 }
 
-/// One sentence per figure that fell by more than `SLACK` since the baseline.
+/// The whole file with `entry` as the baseline for `platform`. The other platforms' baselines
+/// are kept; a file in any other shape is replaced.
+pub fn with_platform(existing: Option<&Value>, platform: &str, entry: Value) -> Value {
+    let mut platforms = existing.and_then(|e| e["platforms"].as_object()).cloned().unwrap_or_default();
+    platforms.insert(platform.to_string(), entry);
+    let badges: Map<String, Value> = PLATFORMS
+        .iter()
+        .map(|p| {
+            let shown = platforms.get(*p).and_then(|e| e["total"]["lines"].as_f64()).map_or("not measured".to_string(), |l| format!("{l:.1}%"));
+            ((*p).to_string(), json!(shown))
+        })
+        .collect();
+    json!({
+        "about": "Test coverage of the workspace per platform, from `cargo xtask coverage --update`. A run is compared with its own platform; CI warns on a pull request that lowers it by more than 0.5 points and does not block. `badges` feeds the README. See docs/testing.md.",
+        "badges": badges,
+        "platforms": platforms,
+    })
+}
+
+/// One sentence per figure that fell by more than `SLACK` since `baseline`, one platform's entry.
 pub fn drops(baseline: &Value, now: &Summary) -> Vec<String> {
     let mut out = Vec::new();
     let mut check = |what: String, before: Option<f64>, after: f64| {
@@ -108,8 +134,8 @@ pub fn drops(baseline: &Value, now: &Summary) -> Vec<String> {
     out
 }
 
-fn table(s: &Summary) -> String {
-    let mut t = String::from("| Crate | Lines | Covered |\n|---|---:|---:|\n");
+fn table(s: &Summary, platform: &str) -> String {
+    let mut t = format!("Platform: {platform}\n\n| Crate | Lines | Covered |\n|---|---:|---:|\n");
     let mut rows: Vec<_> = s.crates.iter().collect();
     rows.sort_by_key(|(_, s)| std::cmp::Reverse(s.count));
     for (k, v) in rows {
@@ -162,44 +188,43 @@ pub fn run(root: &Path, options: &[String]) -> Result<(), String> {
     let text = fs::read_to_string(&report_path).map_err(|e| format!("read {}: {e}", report_path.display()))?;
     let report: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", report_path.display()))?;
     let now = summarize(&report)?;
-    let shown = table(&now);
+    let platform = std::env::consts::OS;
+    let shown = table(&now, platform);
     println!("\n{shown}");
 
     let baseline_path = root.join(BASELINE);
+    let saved: Option<Value> = match fs::read_to_string(&baseline_path) {
+        Ok(text) => Some(serde_json::from_str(&text).map_err(|e| format!("{BASELINE}: {e}"))?),
+        Err(_) => None,
+    };
     let mut notes = Vec::new();
     if update {
         let measured = json!({
             "commit": first_line("git", &["rev-parse", "--short", "HEAD"], root),
             "date": first_line("git", &["log", "-1", "--format=%cs"], root),
-            "platform": std::env::consts::OS,
             "rust": first_line("rustc", &["--version"], root),
             "tool": tool,
         });
-        let body = serde_json::to_string_pretty(&baseline_json(&now, measured)).map_err(|e| e.to_string())?;
+        let file = with_platform(saved.as_ref(), platform, platform_entry(&now, measured));
+        let body = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
         fs::write(&baseline_path, format!("{body}\n")).map_err(|e| format!("write {}: {e}", baseline_path.display()))?;
-        println!("coverage: wrote {BASELINE}");
-    } else if let Ok(saved) = fs::read_to_string(&baseline_path) {
-        let baseline: Value = serde_json::from_str(&saved).map_err(|e| format!("{BASELINE}: {e}"))?;
-        let platform = baseline["measured"]["platform"].as_str().unwrap_or_default();
-        if !platform.is_empty() && platform != std::env::consts::OS {
-            notes.push(format!(
-                "the baseline was measured on {platform} and this run is on {}; code for one platform only moves the figures",
-                std::env::consts::OS
-            ));
-        }
-        let fell = drops(&baseline, &now);
+        println!("coverage: wrote the {platform} baseline in {BASELINE}");
+    } else if let Some(baseline) = saved.as_ref().map(|s| &s["platforms"][platform]).filter(|b| b.is_object()) {
+        let fell = drops(baseline, &now);
         if fell.is_empty() {
-            println!("coverage: nothing fell by more than {SLACK} points since {BASELINE}");
+            println!("coverage: nothing fell by more than {SLACK} points since the {platform} baseline");
         }
         for w in &fell {
             println!("warning: {w}");
             if std::env::var_os("GITHUB_ACTIONS").is_some() {
-                println!("::warning title=Coverage fell::{w}");
+                println!("::warning title=Coverage fell on {platform}::{w}");
             }
         }
         notes.extend(fell);
     } else {
-        println!("coverage: no {BASELINE} yet; `cargo xtask coverage --update` writes one");
+        let note = format!("there is no {platform} baseline in {BASELINE} yet; `cargo xtask coverage --update` on {platform} writes one");
+        println!("coverage: {note}");
+        notes.push(note);
     }
     // On GitHub the numbers also go on the run's summary page.
     if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY") {
@@ -233,9 +258,13 @@ mod tests {
         }]})
     }
 
+    fn summary() -> Summary {
+        summarize(&report()).unwrap_or_else(|e| panic!("{e}"))
+    }
+
     #[test]
     fn files_are_grouped_by_crate() {
-        let s = summarize(&report()).unwrap_or_else(|e| panic!("{e}"));
+        let s = summary();
         assert_eq!(s.lines, Share { covered: 75, count: 100 });
         assert_eq!(s.crates.get("crates/engine"), Some(&Share { covered: 50, count: 60 }));
         assert_eq!(s.crates.get("apps/notecraft"), Some(&Share { covered: 5, count: 20 }));
@@ -245,8 +274,8 @@ mod tests {
 
     #[test]
     fn only_a_real_drop_is_reported() {
-        let s = summarize(&report()).unwrap_or_else(|e| panic!("{e}"));
-        let same = baseline_json(&s, json!({}));
+        let s = summary();
+        let same = platform_entry(&s, json!({}));
         assert_eq!(same["total"]["lines"], json!(75.0));
         assert_eq!(same["crates"]["crates/engine"]["lines"], json!(83.3));
         assert!(drops(&same, &s).is_empty(), "the run it was written from does not drop");
@@ -262,5 +291,26 @@ mod tests {
         assert!(fell[1].contains("apps/notecraft"), "{fell:?}");
         // A crate the baseline has never seen is not a drop.
         assert!(drops(&json!({"total": {}, "crates": {}}), &s).is_empty());
+    }
+
+    #[test]
+    fn each_platform_keeps_its_own_baseline() {
+        let s = summary();
+        let first = with_platform(None, "windows", platform_entry(&s, json!({})));
+        assert_eq!(first["badges"], json!({"windows": "75.0%", "linux": "not measured", "macos": "not measured"}));
+
+        // Writing Linux keeps Windows as it was.
+        let mut lower = summary();
+        lower.lines = Share { covered: 60, count: 100 };
+        let both = with_platform(Some(&first), "linux", platform_entry(&lower, json!({})));
+        assert_eq!(both["platforms"]["windows"], first["platforms"]["windows"]);
+        assert_eq!(both["badges"]["linux"], json!("60.0%"));
+        assert_eq!(both["badges"]["windows"], json!("75.0%"));
+
+        // A file from before platforms were kept apart is replaced, not merged.
+        let old = json!({"total": {"lines": 90.0}, "crates": {}});
+        let fresh = with_platform(Some(&old), "linux", platform_entry(&s, json!({})));
+        assert!(fresh.get("total").is_none());
+        assert_eq!(fresh["platforms"].as_object().map(Map::len), Some(1));
     }
 }
