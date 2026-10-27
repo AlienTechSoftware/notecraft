@@ -1,7 +1,7 @@
 {
   "about": "Test coverage of the workspace per platform, from `cargo xtask coverage --update`. A run is compared with its own platform; CI warns on a pull request that lowers it by more than 0.5 points and does not block. `badges` feeds the README. See docs/testing.md.",
   "badges": {
-    "linux": "not measured",
+    "linux": "83.4%",
     "macos": "not measured",
     "windows": "83.3%"
   },
@@ -79,6 +79,81 @@
         "functions": 83.7,
         "lines": 83.3,
         "regions": 83.5
+      }
+    },
+    "linux": {
+      "crates": {
+        "apps/notecraft": {
+          "count": 394,
+          "lines": 47.5
+        },
+        "apps/notecraft-cli": {
+          "count": 302,
+          "lines": 57.3
+        },
+        "crates/diagram": {
+          "count": 320,
+          "lines": 97.5
+        },
+        "crates/engine": {
+          "count": 1040,
+          "lines": 94.1
+        },
+        "crates/formats": {
+          "count": 1874,
+          "lines": 98.0
+        },
+        "crates/import": {
+          "count": 1238,
+          "lines": 65.2
+        },
+        "crates/ink": {
+          "count": 1160,
+          "lines": 98.6
+        },
+        "crates/input-language": {
+          "count": 15,
+          "lines": 80.0
+        },
+        "crates/math": {
+          "count": 1095,
+          "lines": 95.7
+        },
+        "crates/mcp": {
+          "count": 493,
+          "lines": 86.6
+        },
+        "crates/model": {
+          "count": 960,
+          "lines": 98.3
+        },
+        "crates/onenote": {
+          "count": 1656,
+          "lines": 86.8
+        },
+        "crates/store": {
+          "count": 2047,
+          "lines": 90.5
+        },
+        "crates/text": {
+          "count": 539,
+          "lines": 97.0
+        },
+        "crates/ui-egui": {
+          "count": 16708,
+          "lines": 79.1
+        }
+      },
+      "measured": {
+        "commit": "ec6ac71",
+        "date": "2026-10-27",
+        "rust": "rustc 1.99.1 (5f94df478 2026-08-27)",
+        "tool": "cargo-llvm-cov 0.9.1"
+      },
+      "total": {
+        "functions": 83.7,
+        "lines": 83.4,
+        "regions": 83.6
       }
     }
   }
