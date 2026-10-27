@@ -842,19 +842,18 @@ impl NoteCraftApp {
         shown_in(self.session.root(), p, self.redact_paths)
     }
 
-    /// Opens the page at `path` (absolute, or relative to the notebooks folder) and
-    /// expands the tree down to it.
+    /// Opens `path` (absolute, or relative to the notebooks folder) and expands the tree down
+    /// to it. A notebook, section group or section opens on its first page.
     pub fn open_path(&mut self, path: &str) {
         // An explicit command-line/control request wins over the page saved by the
         // previous session. Otherwise the first frame's restore pass would replace the
         // requested page with a stale page from another notebook.
         self.restored = true;
-        match self.session.resolve(path) {
-            Ok(dir) => {
-                self.expand_to(&dir);
-                self.open_page(&dir);
-            }
-            Err(e) => self.fail(&e),
+        // A notebook or section opens on its first page, and a notebook kept elsewhere is
+        // opened first: the engine decides, so the command line and agents get the same page.
+        if let Some(Output::Path(dir)) = self.run("open.page", &params(&[("path", path)])) {
+            self.expand_to(&dir);
+            self.open_page(&dir);
         }
     }
 

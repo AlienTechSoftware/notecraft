@@ -2631,6 +2631,7 @@ dependencies = [
  "notecraft-import",
  "notecraft-mcp",
  "notecraft-store",
+ "serde_json",
  "winresource",
 ]
 

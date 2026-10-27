@@ -278,6 +278,10 @@ fn notebook_open(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(s.open_notebook(&path)?))
 }
 
+fn open_page(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(s.page_to_show(req(p, "path")?)?))
+}
+
 /// Puts a notebook away again. The folder and its notes are untouched.
 fn notebook_close(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = std::path::PathBuf::from(req(p, "path")?);
@@ -488,6 +492,13 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: notebook_open,
     },
     CommandSpec {
+        id: "open.page",
+        label: "Find the page to show for a notebook, section group, section or page",
+        params: "path (required): relative to the notebooks folder, or a full path. A page is itself; anything else gives its first page. A notebook kept somewhere else is opened first, and one that was put away is opened again",
+        changes_tree: true,
+        run: open_page,
+    },
+    CommandSpec {
         id: "notebook.close",
         label: "Put away a notebook without deleting it",
         params: "path (required): the notebook's folder. Nothing is deleted",
@@ -659,6 +670,48 @@ mod tests {
         // What is not a notebook is refused, and so is nothing at all.
         assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
         assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    #[test]
+    fn open_page_finds_the_page_for_a_notebook_a_section_or_a_page() {
+        let t = TempDir::new("engine-open-page");
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let root = t.path().join("notebooks");
+        let mut s = Session::new(&root, settings.clone()).expect("session");
+        let here = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        let section = here.join("new-section-1");
+        let page = section.join("untitled-page");
+        let open = |s: &mut Session, path: &str| s.run("open.page", &p(&[("path", path)])).map(path_of);
+
+        // A notebook and a section give their first page; a page is itself. Relative or full.
+        assert_eq!(open(&mut s, "here").expect("notebook"), page);
+        assert_eq!(open(&mut s, "here/new-section-1").expect("section"), page);
+        assert_eq!(open(&mut s, &section.to_string_lossy()).expect("full section path"), page);
+        assert_eq!(open(&mut s, &page.to_string_lossy()).expect("page"), page);
+
+        // A notebook that was put away is opened again.
+        s.run("notebook.close", &p(&[("path", &here.to_string_lossy())])).expect("close");
+        assert!(s.tree().is_empty());
+        assert_eq!(open(&mut s, "here").expect("closed notebook"), page);
+        assert_eq!(s.tree().len(), 1, "opened again");
+
+        // A notebook kept somewhere else is opened beside the others, even from one of its pages.
+        let away = t.path().join("away");
+        let made = path_of(Session::new(&away, settings.clone()).expect("other").run("notebook.create", &p(&[("name", "Elsewhere")])).expect("nb"));
+        let away_page = made.join("new-section-1").join("untitled-page");
+        assert_eq!(open(&mut s, &away_page.to_string_lossy()).expect("page elsewhere"), away_page);
+        assert_eq!(s.opened_elsewhere(), std::slice::from_ref(&made));
+        assert_eq!(s.tree().len(), 2);
+
+        // Nothing to show is an error, not an empty window.
+        let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("bare"));
+        let e = open(&mut s, &bare.to_string_lossy()).err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(e.contains("no page"), "{e}");
+        assert!(open(&mut s, "no/such/page").is_err());
+        // A folder that is not part of any notebook is refused rather than turned into one.
+        std::fs::create_dir_all(t.path().join("loose")).expect("dir");
+        assert!(open(&mut s, &t.path().join("loose").to_string_lossy()).is_err());
+        assert!(!t.path().join("loose").join("_node.toml").exists());
     }
 
     #[test]

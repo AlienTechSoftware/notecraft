@@ -4,8 +4,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 //! NoteCraft desktop app: a native window over the engine.
 //!
-//! Usage: `notecraft [--notebooks FOLDER] [--open PAGE] [--expand-all] [--control PORT]`. The notebooks folder defaults to the
+//! Usage: `notecraft [PATH] [--notebooks FOLDER] [--open PATH] [--expand-all] [--control PORT]`. The notebooks folder defaults to the
 //! `NOTECRAFT_NOTEBOOKS` environment variable, then `Documents/NoteCraft` in the home folder.
+//! PATH is a notebook, section group, section or page, relative to the notebooks folder or a
+//! full path; anything but a page opens on its first page. A notebook kept elsewhere is opened.
 
 mod applog;
 mod telemetry;
@@ -42,19 +44,28 @@ fn notebooks_dir(args: &[String]) -> PathBuf {
     notecraft_store::settings::default_notebooks_dir()
 }
 
-/// The first page inside a notebook folder, walking its sections in tree order.
-fn first_page_in(notebook: &std::path::Path) -> Option<PathBuf> {
-    fn walk(n: &notecraft_store::tree::Node) -> Option<PathBuf> {
-        if n.info.kind == notecraft_store::NodeKind::Page {
-            return Some(n.path.clone());
-        }
-        n.children.iter().find_map(walk)
-    }
-    notecraft_store::tree::load_tree(notebook).as_ref().and_then(walk)
-}
-
 fn flag_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Flags that take the word after them.
+const VALUE_FLAGS: [&str; 3] = ["--notebooks", "--open", "--control"];
+
+/// What to open: `--open PATH`, or else the first word that is neither a flag nor a flag's
+/// value, so `notecraft D:\Notes\Work` and a file manager's "Open with" both work.
+fn open_arg(args: &[String]) -> Option<String> {
+    if let Some(p) = flag_value(args, "--open") {
+        return Some(p);
+    }
+    let mut words = args.iter();
+    while let Some(a) = words.next() {
+        if VALUE_FLAGS.contains(&a.as_str()) {
+            words.next();
+        } else if !a.starts_with("--") {
+            return Some(a.clone());
+        }
+    }
+    None
 }
 
 fn icon() -> Option<egui::IconData> {
@@ -121,7 +132,7 @@ fn main() -> eframe::Result {
     if session.tree().is_empty() {
         match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
             Ok(notecraft_engine::Output::Path(dir)) => {
-                open_first = first_page_in(&dir).map(|p| p.to_string_lossy().into_owned());
+                open_first = Some(dir.to_string_lossy().into_owned());
             }
             Ok(_) => {}
             Err(e) => {
@@ -144,7 +155,7 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     applog::info(&format!("session open ({} tree nodes); starting the window", session.tree().len()));
-    let open = flag_value(&args, "--open");
+    let open = open_arg(&args);
     let expand = args.iter().any(|a| a == "--expand-all");
     let control_port: Option<u16> =
         flag_value(&args, "--control").or_else(|| std::env::var("NOTECRAFT_CONTROL_PORT").ok()).and_then(|p| p.parse().ok());
@@ -217,6 +228,17 @@ mod tests {
     fn a_trailing_flag_without_a_value_falls_back_to_the_default() {
         let args = vec!["--notebooks".to_string()];
         assert_eq!(notebooks_dir(&args), notecraft_store::settings::default_notebooks_dir());
+    }
+
+    #[test]
+    fn the_path_to_open_is_the_flag_or_the_first_plain_word() {
+        let a = |w: &[&str]| w.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(open_arg(&a(&["--open", "nb/page"])).as_deref(), Some("nb/page"));
+        assert_eq!(open_arg(&a(&["D:\\Notes\\Work"])).as_deref(), Some("D:\\Notes\\Work"));
+        // A flag's value is not the path, and a switch is skipped.
+        assert_eq!(open_arg(&a(&["--notebooks", "root", "--expand-all", "nb"])).as_deref(), Some("nb"));
+        assert_eq!(open_arg(&a(&["--control", "0", "--notebooks", "root"])), None);
+        assert_eq!(open_arg(&a(&[])), None);
     }
 
     #[test]

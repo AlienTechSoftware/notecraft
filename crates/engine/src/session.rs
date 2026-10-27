@@ -123,6 +123,26 @@ impl Session {
         let _ = self.settings.set(CLOSED_KEY, &line);
     }
 
+    /// The page to show for `path`: the page itself, or the first page inside a notebook,
+    /// section group or section. `path` is relative to the notebooks folder or absolute. A
+    /// notebook kept somewhere else is opened first, and one that was put away is opened again,
+    /// so the window, the command line and an agent all open the same thing the same way.
+    pub fn page_to_show(&mut self, path: &str) -> Result<PathBuf, EngineError> {
+        let p = Path::new(path);
+        let joined = if p.is_absolute() { p.to_path_buf() } else { self.root.join(p) };
+        let canon = std::fs::canonicalize(&joined).map_err(|_| StoreError::NotFound(path.to_string()))?;
+        let notebook = canon.ancestors().find(|a| tree::read_node(a).is_some_and(|n| n.kind == notecraft_store::NodeKind::Notebook));
+        if let Some(notebook) = notebook.map(Path::to_path_buf) {
+            let known = notebook.starts_with(&self.root) || self.extra.contains(&notebook);
+            if !known || self.closed.contains(&notebook) {
+                self.open_notebook(&notebook)?;
+            }
+        }
+        let dir = self.resolve(path)?;
+        let node = tree::load_tree(&dir).ok_or_else(|| EngineError::BadParam(format!("{path} is not a notebook, section group, section or page")))?;
+        first_page(&node).ok_or_else(|| EngineError::BadParam(format!("there is no page in {path} yet")))
+    }
+
     /// An absolute path or a path relative to the notebooks folder, resolved and
     /// confined to the notebooks folder.
     pub fn resolve(&self, path: &str) -> Result<PathBuf, EngineError> {
@@ -164,6 +184,14 @@ pub(crate) fn guarded<T>(f: impl FnOnce() -> T) -> Result<T, EngineError> {
             .unwrap_or_else(|| "unknown".into());
         EngineError::Panicked(msg)
     })
+}
+
+/// The node itself if it is a page, else the first page below it in tree order.
+fn first_page(n: &Node) -> Option<PathBuf> {
+    if n.info.kind == notecraft_store::NodeKind::Page {
+        return Some(n.path.clone());
+    }
+    n.children.iter().find_map(first_page)
 }
 
 #[cfg(test)]

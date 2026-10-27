@@ -214,6 +214,14 @@ Parameters:
 
 - path (required): a notebook folder anywhere on this machine, or an empty folder to initialize as a notebook named after the folder. The notebooks already open stay open, and this one is opened again next time
 
+## `open.page`
+
+Find the page to show for a notebook, section group, section or page (changes the tree).
+
+Parameters:
+
+- path (required): relative to the notebooks folder, or a full path. A page is itself; anything else gives its first page. A notebook kept somewhere else is opened first, and one that was put away is opened again
+
 ## `notebook.close`
 
 Put away a notebook without deleting it (changes the tree).

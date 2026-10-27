@@ -8,6 +8,7 @@
 //! notecraft-cli check NOTEBOOK                check a notebook against the folder rules
 //! notecraft-cli search TEXT                   search all pages
 //! notecraft-cli sample                        create the sample notebooks (for trying the app)
+//! notecraft-cli open PATH [--connect PORT]    show a notebook, section or page in the window
 //! notecraft-cli import onenote [SOURCE]       import OneNote section files (see `import onenote --help`)
 //! notecraft-cli import officeimo SOURCE       import through the optional OfficeIMO bridge
 //! ```
@@ -46,19 +47,51 @@ fn parse_params(words: &[String]) -> Result<Params, String> {
     Ok(p)
 }
 
+/// `PORT` or `HOST:PORT` from `--connect`.
+fn parse_port(target: &str) -> Result<u16, String> {
+    target.rsplit(':').next().unwrap_or(target).trim().parse().map_err(|_| format!("'{target}' is not a port"))
+}
+
 /// Serves the Model Context Protocol on stdin and stdout, headless or against a running window.
 fn serve_mcp(root: &Path, connect: Option<String>) -> Result<(), String> {
     let settings = Settings::default_location();
     let mut backend: Box<dyn Backend> = match connect {
-        Some(target) => {
-            let port: u16 = target.rsplit(':').next().unwrap_or(&target).trim().parse().map_err(|_| format!("'{target}' is not a port"))?;
-            Box::new(Remote::connect(port, &key_dir(&settings))?)
-        }
+        Some(target) => Box::new(Remote::connect(parse_port(&target)?, &key_dir(&settings))?),
         None => Box::new(Headless::open(root, settings)?),
     };
     let input = std::io::stdin();
     let output = std::io::stdout();
     serve(backend.as_mut(), input.lock(), output.lock()).map_err(|e| format!("the connection to the client ended: {e}"))
+}
+
+/// `open PATH`: shows a notebook, section group, section or page in NoteCraft. With
+/// `--connect PORT` the running window opens it; otherwise a new window starts on it. The path
+/// is checked here first, so a typo is reported in the terminal instead of in a window.
+fn open_in_window(root: &Path, explicit_root: bool, connect: Option<String>, rest: &[String]) -> Result<(String, bool), String> {
+    let path = rest.first().ok_or("usage: open PATH [--connect PORT]")?;
+    if let Some(target) = connect {
+        let port = parse_port(&target)?;
+        let mut window = Remote::connect(port, &key_dir(&Settings::default_location()))?;
+        window.call("ui.open", &serde_json::json!({ "path": path }))?;
+        return Ok((format!("opened {path} in the window on port {port}"), true));
+    }
+    let mut session = Session::new(root, Settings::default_location()).map_err(|e| e.to_string())?;
+    let page = match session.run("open.page", &parse_params(&[format!("path={path}")])?).map_err(|e| e.to_string())? {
+        Output::Path(page) => page,
+        other => return Err(format!("open.page answered {}", describe(&other))),
+    };
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name(format!("notecraft{}", std::env::consts::EXE_SUFFIX));
+    if !exe.is_file() {
+        return Err(format!("the NoteCraft app was not found next to notecraft-cli, at {}", display_path(&exe)));
+    }
+    let mut window = std::process::Command::new(&exe);
+    // The window keeps a notebooks folder given on its command line for next time, so it is
+    // only passed on when it was asked for here too.
+    if explicit_root {
+        window.arg("--notebooks").arg(root);
+    }
+    window.arg("--open").arg(&page).spawn().map_err(|e| format!("cannot start {}: {e}", display_path(&exe)))?;
+    Ok((format!("opening {} in a new window", display_path(&page)), true))
 }
 
 const IMPORT_HELP: &str = r"notecraft-cli import onenote [SOURCE] [options]
@@ -176,12 +209,19 @@ fn describe(o: &Output) -> String {
 }
 
 fn run(mut args: Vec<String>) -> Result<(String, bool), String> {
-    let root = take_flag_value(&mut args, "--notebooks").map(PathBuf::from).unwrap_or_else(default_notebooks_dir);
+    let explicit_root = take_flag_value(&mut args, "--notebooks").map(PathBuf::from);
     let connect = take_flag_value(&mut args, "--connect");
     let Some(cmd) = args.first().cloned() else {
         return Ok((HELP.to_string(), true));
     };
     let rest = args.get(1..).unwrap_or(&[]).to_vec();
+    if cmd == "open" {
+        // The folder the window would use: the one it remembers, unless one is given here.
+        let remembered = Settings::default_location().get("last_notebooks_root").map(PathBuf::from);
+        let root = explicit_root.clone().or(remembered).unwrap_or_else(default_notebooks_dir);
+        return open_in_window(&root, explicit_root.is_some(), connect, &rest);
+    }
+    let root = explicit_root.unwrap_or_else(default_notebooks_dir);
     if cmd == "commands" {
         let text = registry()
             .iter()
@@ -232,7 +272,7 @@ fn run(mut args: Vec<String>) -> Result<(String, bool), String> {
     }
 }
 
-const HELP: &str = "notecraft-cli commands | run ID key=value ... | tree | check NOTEBOOK | search TEXT | sample | import onenote [SOURCE] | import officeimo SOURCE | mcp [--connect PORT]   (add --notebooks FOLDER)";
+const HELP: &str = "notecraft-cli commands | run ID key=value ... | tree | check NOTEBOOK | search TEXT | sample | open PATH [--connect PORT] | import onenote [SOURCE] | import officeimo SOURCE | mcp [--connect PORT]   (add --notebooks FOLDER)";
 
 fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--version") {
@@ -312,6 +352,23 @@ mod tests {
         assert!(e.contains("is not a port"), "{e}");
         // A port with no window behind it says so instead of hanging.
         let e = run(args(&t, &["mcp", "--connect", "127.0.0.1:1"])).err().unwrap_or_default();
+        assert!(e.contains("key"), "{e}");
+    }
+
+    #[test]
+    fn open_checks_the_path_before_starting_a_window() {
+        let t = TempDir::new("cli-open");
+        run(args(&t, &["run", "notebook.create", "name=Work"])).expect("create");
+        assert!(run(args(&t, &["open"])).err().unwrap_or_default().contains("usage"));
+        // A path that is not there is reported here, and no window starts.
+        let e = run(args(&t, &["open", "work/no-such-page"])).err().unwrap_or_default();
+        assert!(e.contains("no-such-page"), "{e}");
+        // A good path gets as far as looking for the app. The test binary has no window beside
+        // it, so none starts here; the real start is checked by hand and in packaging.
+        let e = run(args(&t, &["open", "work"])).err().unwrap_or_default();
+        assert!(e.contains("was not found next to notecraft-cli"), "{e}");
+        // With --connect, a port with no window behind it says so.
+        let e = run(args(&t, &["open", "work", "--connect", "127.0.0.1:1"])).err().unwrap_or_default();
         assert!(e.contains("key"), "{e}");
     }
 

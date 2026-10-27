@@ -38,7 +38,7 @@ In a client's configuration file that looks like:
 |---|---|---|
 | Needs the app running | no | yes: `notecraft --control PORT` |
 | Sees | the notebooks folder on disk | what the person has open |
-| Tools | the nine that work on files | those nine and `inspect`, `open_page`, `screenshot` |
+| Tools | the nine that work on files, and `open`, which says what it would open | those ten and `inspect`, `screenshot` |
 
 Connecting needs the window's key, which the window writes to `control-key.local-PORT` beside
 the settings file; the server reads it from there, or from `NOTECRAFT_CONTROL_KEY`. The rest of
@@ -71,7 +71,7 @@ that channel is in [control-protocol.md](control-protocol.md).
 | `new_node` | `node.create` | section group, section or page |
 | `check` | `notebook.check` | reports, changes nothing |
 | `inspect` | `ui.inspect` | needs the window |
-| `open_page` | `ui.open` | needs the window |
+| `open` | `ui.open`, or `open.page` alone | a notebook, section group, section or page; anything but a page opens on its first page. With no window, an error that names the page and says how to start a window on it |
 | `screenshot` | `ui.screenshot` | needs the window |
 
 Deleting is deliberately not a tool of its own. `execute` can run `node.delete`, so a model has

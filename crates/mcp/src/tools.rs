@@ -100,10 +100,10 @@ pub static TOOLS: &[Tool] = &[
         writes: false,
     },
     Tool {
-        name: "open_page",
-        description: "Open a page in the running window, so the person sees it. Needs a running window.",
-        params: &[("path", "string", true, "the page to open")],
-        needs_window: true,
+        name: "open",
+        description: "Show a notebook, section group, section or page in the running window, so the person sees it. Anything but a page opens on its first page; a notebook kept elsewhere is opened first. With no window running, says which page it would be and how to start a window on it.",
+        params: &[("path", "string", true, "relative to the notebooks folder, or a full path")],
+        needs_window: false,
         writes: false,
     },
     Tool {
@@ -226,7 +226,17 @@ pub fn call(backend: &mut dyn Backend, name: &str, args: &Value) -> Result<Strin
         }
         "check" => execute(backend, "notebook.check", json!({"path": text(args, "path")?})),
         "inspect" => backend.call("ui.inspect", &json!({})).map(|v| render(&v)),
-        "open_page" => backend.call("ui.open", &json!({"path": text(args, "path")?})).map(|v| render(&v)),
+        "open" => {
+            let path = text(args, "path")?;
+            if backend.has_window() {
+                return backend.call("ui.open", &json!({"path": path})).map(|v| render(&v));
+            }
+            // Nothing to show it in. The path is still checked, so the answer is useful.
+            let page = execute(backend, "open.page", json!({"path": path.clone()}))?;
+            Err(format!(
+                "no NoteCraft window is running, so nothing was opened. The page is {page}. Start a window on it with `notecraft-cli open \"{path}\"`."
+            ))
+        }
         "screenshot" => {
             let mut p = json!({});
             if let (Some(path), Some(obj)) = (optional(args, "path"), p.as_object_mut()) {
@@ -296,6 +306,19 @@ mod tests {
         assert_eq!(with, TOOLS.len());
         assert_eq!(with - without, TOOLS.iter().filter(|t| t.needs_window).count());
         assert!(without > 0);
+    }
+
+    #[test]
+    fn open_without_a_window_names_the_page_and_how_to_show_it() {
+        let t = notecraft_store::testing::TempDir::new("mcp-open-headless");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let mut b = crate::Headless::open(&t.path().join("nb"), settings).unwrap_or_else(|e| panic!("{e}"));
+        call(&mut b, "new_notebook", &json!({"name": "Work"})).unwrap_or_else(|e| panic!("{e}"));
+        let e = call(&mut b, "open", &json!({"path": "work"})).err().unwrap_or_default();
+        assert!(e.contains("no NoteCraft window") && e.contains("untitled-page") && e.contains("notecraft-cli open"), "{e}");
+        // A path that is not there says so, not that a window is missing.
+        let e = call(&mut b, "open", &json!({"path": "work/nothing-here"})).err().unwrap_or_default();
+        assert!(!e.contains("no NoteCraft window"), "{e}");
     }
 
     #[test]
