@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml"><img alt="CI status on main" src="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/AlienTechSoftware/notecraft/releases/tag/0.0.6"><img alt="Latest release 0.0.6" src="https://img.shields.io/badge/latest%20release-0.0.6-3b5bdb?style=flat-square"></a>
   <a href="docs/coverage.json"><img alt="Line coverage on Windows, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.windows&label=coverage%20%C2%B7%20windows&color=2f9e44&style=flat-square"></a>
   <a href="docs/coverage.json"><img alt="Line coverage on Linux, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.linux&label=coverage%20%C2%B7%20linux&color=2f9e44&style=flat-square"></a>
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-2b47b5?style=flat-square&logo=rust&logoColor=white">
@@ -252,15 +253,15 @@ cargo xtask ci     # fmt, clippy -D warnings, every test, layers, assets, links,
 
 ## Downloads
 
-The first release is not published yet. When it is, the
-[latest release](https://github.com/AlienTechSoftware/notecraft/releases/latest) will list the
-builds below, and [all releases](https://github.com/AlienTechSoftware/notecraft/releases) will keep
+The [latest release](https://github.com/AlienTechSoftware/notecraft/releases/latest) lists the
+builds below, and [all releases](https://github.com/AlienTechSoftware/notecraft/releases) keeps
 the earlier versions and their notes. `<ver>` in a file name is the version number, and
 `SHA256SUMS.txt` lists a checksum for every file.
 
 | Build | Installer | Portable |
 |---|---|---|
 | Windows x64 (64-bit Intel and AMD) | `notecraft-<ver>-windows-x64.msi` | `notecraft-<ver>-windows-x64-portable.zip` |
+| Linux x64 (glibc, 64-bit Intel and AMD) | - | `notecraft-<ver>-linux-x64.tar.xz` |
 
 Windows x64 and Linux x64 builds are available. macOS is untested, so there is no build for it; the
 [Quick start](#quick-start) builds from source.
