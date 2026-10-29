@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NoteCraft Release Notes GIF Generator - High Contrast Edition
+NoteCraft Release Notes GIF Generator - Clean Design
 
-Professional, readable animated GIFs with emojis, perfect centering,
-and strong text contrast on dark backgrounds.
+Professional, minimal animated GIFs with emojis and dark text on light areas.
+No boxes, no clutter - just clean typography.
 
 Usage:
     python release-notes-gif-generator.py <version>
@@ -25,13 +25,13 @@ FONT_SIZE_BODY = 32
 LINE_HEIGHT = 60
 FRAME_DURATION = 3500
 
-# Colors - HIGH CONTRAST
-COLOR_PRIMARY = (255, 255, 255)          # White text
-COLOR_ACCENT = (100, 180, 255)           # Light blue
+# Colors - CLEAN
+COLOR_TITLE = (50, 50, 50)               # Dark gray for titles
+COLOR_TEXT = (70, 70, 70)                # Dark gray for body
+COLOR_ACCENT = (100, 180, 255)           # Light blue accent
 COLOR_ACCENT2 = (120, 220, 160)          # Teal
 COLOR_ACCENT3 = (255, 150, 100)          # Coral
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
-BG_BOX = (30, 30, 30, 220)               # Dark semi-transparent box
 
 
 def get_font(size, bold=False):
@@ -74,16 +74,16 @@ def draw_decorative_line(draw, x_start, x_end, y, width=3, color=(100, 180, 255)
 
 
 def draw_emoji_in_circle(draw, x, y, emoji, color, size=80):
-    """Draw emoji in a colored circle - properly centered."""
+    """Draw emoji in a colored circle."""
     box_size = size + 20
 
-    # Draw colored circle
+    # Colored circle
     draw.ellipse(
         [x - box_size//2, y - box_size//2, x + box_size//2, y + box_size//2],
         fill=color
     )
 
-    # Draw emoji - centered
+    # Emoji - centered and white
     try:
         emoji_font = get_font(int(size * 0.7))
         bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
@@ -98,33 +98,17 @@ def draw_emoji_in_circle(draw, x, y, emoji, color, size=80):
         pass
 
 
-def draw_text_with_background(draw, text, x, y, font, text_color, padding=15):
-    """Draw text with dark background box for readability."""
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-
-    # Dark background box
-    draw.rectangle(
-        [x - padding, y - padding, x + text_w + padding, y + text_h + padding],
-        fill=BG_BOX
-    )
-
-    # Text
-    draw.text((x, y), text, font=font, fill=text_color)
-
-
 def create_frame(background, data, frame_num, color_idx=0):
-    """Create a frame with high contrast and readability."""
+    """Create a clean, minimal frame."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
 
-    # STRONG dark overlay for contrast (0 to 150 alpha)
+    # Light overlay at top for text area clarity (optional subtle touch)
     overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    for y in range(int(h * 0.6)):
-        alpha = int(150 * (1 - (y / (h * 0.6))))
+    for y in range(int(h * 0.4)):
+        alpha = int(30 * (1 - (y / (h * 0.4))))
         overlay_draw.rectangle([(0, y), (w, y + 1)], fill=(0, 0, 0, alpha))
     frame = Image.alpha_composite(frame, overlay)
     draw = ImageDraw.Draw(frame)
@@ -148,29 +132,29 @@ def create_frame(background, data, frame_num, color_idx=0):
         draw_emoji_in_circle(draw, w // 2, y_offset + 50, emoji, color, size=80)
         y_offset += 140
 
-    # Title with background box
+    # Title - clean dark text
     if title:
         bbox = draw.textbbox((0, 0), title, font=title_font)
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        draw_text_with_background(draw, title, x, y_offset, title_font, color, padding=20)
-        y_offset += FONT_SIZE_TITLE + 40
+        draw.text((x, y_offset), title, font=title_font, fill=color)
+        y_offset += FONT_SIZE_TITLE + 20
 
     # Decorative line
     draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=color)
     y_offset += 30
 
-    # Subtitle with background box
+    # Subtitle
     if subtitle:
         bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        draw_text_with_background(draw, subtitle, x, y_offset, subtitle_font, COLOR_PRIMARY, padding=15)
-        y_offset += FONT_SIZE_SUBTITLE + 40
+        draw.text((x, y_offset), subtitle, font=subtitle_font, fill=COLOR_TEXT)
+        y_offset += FONT_SIZE_SUBTITLE + 30
 
-    # Body text with background boxes
+    # Body text
     for line in body:
         if not line.strip():
             y_offset += 15
@@ -180,7 +164,7 @@ def create_frame(background, data, frame_num, color_idx=0):
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        draw_text_with_background(draw, line, x, y_offset, body_font, COLOR_PRIMARY, padding=10)
+        draw.text((x, y_offset), line, font=body_font, fill=COLOR_TEXT)
         y_offset += LINE_HEIGHT
 
     return frame
@@ -271,7 +255,6 @@ def main():
 
     print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    # Slides with emoji
     slides = [
         {
             'emoji': '⭐',
@@ -311,12 +294,10 @@ def main():
         },
     ]
 
-    # Generate
     frames, frames_dir = generate_frames(version, slides)
     if not frames:
         sys.exit(1)
 
-    # Create GIF
     output_gif = version_dir / "RELEASE_NOTES.gif"
     if not create_gif(frames_dir, output_gif):
         sys.exit(1)
