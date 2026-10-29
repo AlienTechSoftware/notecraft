@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-NoteCraft Release Notes GIF Generator - Emoji Edition
+NoteCraft Release Notes GIF Generator - High Contrast Edition
 
-Generates vibrant, visually appealing animated GIFs with emoji icons,
-large typography, and professional layout.
+Professional, readable animated GIFs with emojis, perfect centering,
+and strong text contrast on dark backgrounds.
 
 Usage:
     python release-notes-gif-generator.py <version>
@@ -24,12 +25,13 @@ FONT_SIZE_BODY = 32
 LINE_HEIGHT = 60
 FRAME_DURATION = 3500
 
-# Colors
-COLOR_PRIMARY = (255, 255, 255)          # White
+# Colors - HIGH CONTRAST
+COLOR_PRIMARY = (255, 255, 255)          # White text
 COLOR_ACCENT = (100, 180, 255)           # Light blue
 COLOR_ACCENT2 = (120, 220, 160)          # Teal
 COLOR_ACCENT3 = (255, 150, 100)          # Coral
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
+BG_BOX = (30, 30, 30, 220)               # Dark semi-transparent box
 
 
 def get_font(size, bold=False):
@@ -71,7 +73,7 @@ def draw_decorative_line(draw, x_start, x_end, y, width=3, color=(100, 180, 255)
     draw.rectangle([x_start, y - width//2, x_end, y + width//2], fill=color)
 
 
-def draw_centered_emoji_circle(draw, x, y, emoji, color, size=80):
+def draw_emoji_in_circle(draw, x, y, emoji, color, size=80):
     """Draw emoji in a colored circle - properly centered."""
     box_size = size + 20
 
@@ -82,34 +84,52 @@ def draw_centered_emoji_circle(draw, x, y, emoji, color, size=80):
     )
 
     # Draw emoji - centered
-    emoji_font = get_font(int(size * 0.7))
-    bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
+    try:
+        emoji_font = get_font(int(size * 0.7))
+        bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        emoji_x = x - text_w // 2
+        emoji_y = y - text_h // 2
+
+        draw.text((emoji_x, emoji_y), emoji, font=emoji_font, fill=(255, 255, 255))
+    except:
+        pass
+
+
+def draw_text_with_background(draw, text, x, y, font, text_color, padding=15):
+    """Draw text with dark background box for readability."""
+    bbox = draw.textbbox((0, 0), text, font=font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # Perfect centering
-    emoji_x = x - text_w // 2
-    emoji_y = y - text_h // 2
+    # Dark background box
+    draw.rectangle(
+        [x - padding, y - padding, x + text_w + padding, y + text_h + padding],
+        fill=BG_BOX
+    )
 
-    draw.text((emoji_x, emoji_y), emoji, font=emoji_font, fill=(255, 255, 255))
+    # Text
+    draw.text((x, y), text, font=font, fill=text_color)
 
 
 def create_frame(background, data, frame_num, color_idx=0):
-    """Create a visually rich frame."""
+    """Create a frame with high contrast and readability."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
 
-    # Dark overlay for contrast
+    # STRONG dark overlay for contrast (0 to 150 alpha)
     overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    for y in range(int(h * 0.5)):
-        alpha = int(70 * (1 - (y / (h * 0.5))))
+    for y in range(int(h * 0.6)):
+        alpha = int(150 * (1 - (y / (h * 0.6))))
         overlay_draw.rectangle([(0, y), (w, y + 1)], fill=(0, 0, 0, alpha))
     frame = Image.alpha_composite(frame, overlay)
     draw = ImageDraw.Draw(frame)
 
-    # Parse data
+    # Data
     title = data.get('title', '')
     subtitle = data.get('subtitle', '')
     body = data.get('body', [])
@@ -123,38 +143,34 @@ def create_frame(background, data, frame_num, color_idx=0):
 
     y_offset = int(h * 0.08)
 
-    # Draw emoji circle at top center
+    # Emoji circle
     if emoji:
-        draw_centered_emoji_circle(draw, w // 2, y_offset + 50, emoji, color, size=80)
+        draw_emoji_in_circle(draw, w // 2, y_offset + 50, emoji, color, size=80)
         y_offset += 140
 
-    # Title
+    # Title with background box
     if title:
         bbox = draw.textbbox((0, 0), title, font=title_font)
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        # Shadow
-        draw.text((x + 2, y_offset + 2), title, font=title_font, fill=(0, 0, 0, 100))
-        # Main
-        draw.text((x, y_offset), title, font=title_font, fill=color)
-        y_offset += FONT_SIZE_TITLE + 20
+        draw_text_with_background(draw, title, x, y_offset, title_font, color, padding=20)
+        y_offset += FONT_SIZE_TITLE + 40
 
     # Decorative line
     draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=color)
     y_offset += 30
 
-    # Subtitle
+    # Subtitle with background box
     if subtitle:
         bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        draw.text((x + 2, y_offset + 2), subtitle, font=subtitle_font, fill=(0, 0, 0, 80))
-        draw.text((x, y_offset), subtitle, font=subtitle_font, fill=COLOR_PRIMARY)
-        y_offset += FONT_SIZE_SUBTITLE + 30
+        draw_text_with_background(draw, subtitle, x, y_offset, subtitle_font, COLOR_PRIMARY, padding=15)
+        y_offset += FONT_SIZE_SUBTITLE + 40
 
-    # Body
+    # Body text with background boxes
     for line in body:
         if not line.strip():
             y_offset += 15
@@ -164,8 +180,7 @@ def create_frame(background, data, frame_num, color_idx=0):
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
 
-        draw.text((x + 1, y_offset + 1), line, font=body_font, fill=(0, 0, 0, 60))
-        draw.text((x, y_offset), line, font=body_font, fill=COLOR_PRIMARY)
+        draw_text_with_background(draw, line, x, y_offset, body_font, COLOR_PRIMARY, padding=10)
         y_offset += LINE_HEIGHT
 
     return frame
@@ -191,7 +206,8 @@ def generate_frames(version, slides_data):
         path = frames_dir / f"frame_{i:03d}.png"
         frame.save(path, "PNG")
         frame_paths.append(path)
-        print(f"  {i}. {slide['emoji']} {slide['title']}")
+        emoji = slide.get('emoji', '?')
+        print(f"  {i}. {emoji} {slide['title']}")
 
     return frame_paths, frames_dir
 
