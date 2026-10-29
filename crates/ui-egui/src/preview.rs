@@ -317,7 +317,7 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir
     let rtl = dir_of(&spans, page).is_rtl();
     let x = if rtl { at.x } else { at.x - lead };
     let column = (width - lead).max(32.0);
-    let byte = crate::bidi::hit(&text, egui::vec2(x, at.y), size_of_block(block), column);
+    let byte = crate::bidi::hit(&text, egui::vec2(x, at.y), size_of_block(block), column, page);
     let mut start = 0usize;
     for s in &spans {
         if s.image.is_some() {

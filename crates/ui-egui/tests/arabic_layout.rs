@@ -129,7 +129,7 @@ fn a_number_inside_an_arabic_line_is_drawn_in_order() {
 
     // The digits are one piece, written the way they were typed, and they sit between the
     // two Arabic runs rather than at one end of the line.
-    let (drawn, size) = run_in_ui(|ui| bidi::runs(ui, line, &bidi::plain(line, 16.0, &t), 16.0, 400.0));
+    let (drawn, size) = run_in_ui(|ui| bidi::runs(ui, line, &bidi::plain(line, 16.0, &t), 16.0, 400.0, None));
     assert!(size.x > 0.0);
     let digits = drawn.iter().position(|d| d.galley.text().contains("17"));
     let at = digits.unwrap_or(usize::MAX);

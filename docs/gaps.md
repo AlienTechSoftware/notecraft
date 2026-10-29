@@ -135,9 +135,17 @@ it is fixed and tested, not when it is promised.
   is being typed in, which needs the page's own caret in the title box.
 - **The demo has a page with right-to-left in every element** - كل عنصر في العربية, under
   the Arabic How to - which is the corpus to look at after any change to text drawing.
-  **Known from it, and not fixed:** a numbered item puts its number on the left of a
-  right-to-left line (a bullet and a task box go to the right, as they should), and a line
-  that starts with a Latin tag word such as `TODO:` is read as left to right and flips.
+  **Known from it, and not fixed:** a numbered item is written `1.` with the full stop on
+  the right of the number, as in a left-to-right line; a browser writes it on the left,
+  `.1`, in a right-to-left list. The number itself does sit on the right of the line, beside
+  the words, in both formats: measured through the page painter on 2026-10-29.
+  **Fixed on 2026-10-29:** a line on a right-to-left page that starts with a Latin word,
+  such as `TODO: راجع هذه الصفحة`, hung from the right edge but read left to right inside
+  it, so `TODO` was drawn at the far left end of the line. parley takes a paragraph's base
+  direction from its first strong letter and cannot be told otherwise, so the bidi painter
+  now lays such a line out with the page's direction mark in front; the drawing, a click,
+  the caret and the arrow keys all use that layout. `crates/ui-egui/tests/rtl_quality.rs`
+  measures it.
   **Found there and fixed:** a picture low on a long page was drawn nothing at all tall,
   because egui fits a picture into the height the layout has left and a page that scrolls
   has none once the blocks above have filled the view. It was not a right-to-left fault -

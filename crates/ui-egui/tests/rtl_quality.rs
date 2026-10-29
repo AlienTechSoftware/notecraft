@@ -58,8 +58,8 @@ fn home_and_end_go_to_the_visual_ends_of_a_right_to_left_line() {
     let t = Theme::DEFAULT.tokens();
     let (home, end) = in_frame(|ui| {
         let pieces = bidi::plain(LINE, 16.0, &t);
-        let home = bidi::caret(ui, LINE, &pieces, 0, 16.0, 400.0).map(|r| r.min.x).unwrap_or(0.0);
-        let end = bidi::caret(ui, LINE, &pieces, LINE.len(), 16.0, 400.0).map(|r| r.min.x).unwrap_or(0.0);
+        let home = bidi::caret(ui, LINE, &pieces, 0, 16.0, 400.0, None).map(|r| r.min.x).unwrap_or(0.0);
+        let end = bidi::caret(ui, LINE, &pieces, LINE.len(), 16.0, 400.0, None).map(|r| r.min.x).unwrap_or(0.0);
         (home, end)
     });
     assert!(home > end + 50.0, "Home is at the right edge and End at the left: home {home}, end {end}");
@@ -79,11 +79,11 @@ fn a_step_never_lands_between_a_letter_and_its_diacritic() {
     // Every stop the caret makes walking the word. In a right-to-left word the left
     // arrow is the one that goes forward through the letters, which is itself worth
     // saying: at the start of the word the right arrow has nowhere to go.
-    assert_eq!(bidi::step(VOWELLED, 0, true, 16.0, 400.0), 0, "the right arrow is already at the start of a right-to-left word");
+    assert_eq!(bidi::step(VOWELLED, 0, true, 16.0, 400.0, None), 0, "the right arrow is already at the start of a right-to-left word");
     let mut stops = vec![0usize];
     let mut at = 0usize;
     for _ in 0..12 {
-        let next = bidi::step(VOWELLED, at, false, 16.0, 400.0);
+        let next = bidi::step(VOWELLED, at, false, 16.0, 400.0, None);
         if next == at {
             break;
         }
@@ -107,7 +107,7 @@ fn a_click_inside_a_vowelled_letter_lands_beside_it() {
     // Points across the word, from its left edge to its right.
     for step in 0..40 {
         let x = step as f32 * 3.0;
-        let at = bidi::hit(VOWELLED, egui::vec2(x, 8.0), 16.0, 400.0);
+        let at = bidi::hit(VOWELLED, egui::vec2(x, 8.0), 16.0, 400.0, None);
         assert!(!marks.contains(&at), "a click at x={x} landed on the mark at {at}");
     }
 }
@@ -141,7 +141,7 @@ fn a_bracket_in_a_right_to_left_line_reaches_egui_as_it_was_typed() {
     let t = Theme::DEFAULT.tokens();
     let drawn: Vec<char> = in_frame(|ui| {
         let pieces = bidi::plain(BRACKETED, 16.0, &t);
-        let (runs, _) = bidi::runs(ui, BRACKETED, &pieces, 16.0, 400.0);
+        let (runs, _) = bidi::runs(ui, BRACKETED, &pieces, 16.0, 400.0, None);
         runs.iter().flat_map(|d| d.galley.text().chars().collect::<Vec<_>>()).collect()
     });
     assert!(drawn.contains(&'('), "the opening bracket is handed over as itself: {drawn:?}");
@@ -175,17 +175,17 @@ fn a_line_is_justified_by_stretching_the_letters_not_the_spaces() {
         // wraps the line is no width at all, which is how the search knows to stop.
         let line_height = {
             let pieces = bidi::plain(SENTENCE, 18.0, &t);
-            bidi::runs(ui, SENTENCE, &pieces, 18.0, COLUMN).1.y
+            bidi::runs(ui, SENTENCE, &pieces, 18.0, COLUMN, None).1.y
         };
         let mut width = |s: &str| {
             let pieces = bidi::plain(s, 18.0, &t);
             // Laid out in the column, the painter reports the column's own width, so the
             // height is what says whether the line still fits; the ink width comes from
             // laying the same line out with nothing to wrap against.
-            if bidi::runs(ui, s, &pieces, 18.0, COLUMN).1.y > line_height + 1.0 {
+            if bidi::runs(ui, s, &pieces, 18.0, COLUMN, None).1.y > line_height + 1.0 {
                 return f32::INFINITY;
             }
-            bidi::runs(ui, s, &pieces, 18.0, f32::INFINITY).1.x
+            bidi::runs(ui, s, &pieces, 18.0, f32::INFINITY, None).1.x
         };
         let natural = width(SENTENCE);
         // The strongest of Word's three: this test is about whether kashida can fill a
@@ -230,7 +230,7 @@ fn a_whole_paragraph_is_justified_except_its_last_line() {
         let pieces = bidi::plain(PARAGRAPH, SIZE, &t);
         let (out, moved) = bidi::stretched(ui, PARAGRAPH, &pieces, SIZE, COLUMN, notecraft_model::justify::Strength::High);
         // Every line as it is drawn: its left edge and its right edge in the column.
-        let (drawn, _) = bidi::runs(ui, &out, &moved, SIZE, COLUMN);
+        let (drawn, _) = bidi::runs(ui, &out, &moved, SIZE, COLUMN, None);
         let mut rows: Vec<(f32, f32, f32)> = Vec::new();
         for d in &drawn {
             let (left, right) = (d.at.x, d.at.x + d.galley.rect.width());
@@ -281,7 +281,7 @@ fn paragraph_picture(plain: &str, justified: &str, column: f32, size: f32) {
         ui.add_space(16.0);
         for text in [plain.as_str(), justified.as_str()] {
             let pieces = bidi::plain(text, size, &t);
-            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column);
+            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column, None);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(column, used.y.max(24.0)), egui::Sense::hover());
             bidi::paint(ui, rect.min, &drawn);
             ui.painter().rect_stroke(
@@ -313,7 +313,7 @@ fn picture(plain: &str, justified: &str, column: f32) {
         ui.add_space(20.0);
         for line in [plain.as_str(), justified.as_str()] {
             let pieces = bidi::plain(line, 18.0, &t);
-            let (drawn, size) = bidi::runs(ui, line, &pieces, 18.0, column);
+            let (drawn, size) = bidi::runs(ui, line, &pieces, 18.0, column, None);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(column, size.y.max(24.0)), egui::Sense::hover());
             bidi::paint(ui, rect.min, &drawn);
             // The column the line is being justified into, so the eye can see which
@@ -529,7 +529,7 @@ fn the_three_justify_strengths_differ_on_the_page() {
 fn drawn_lines(text: &str, size: f32, column: f32, t: &notecraft_ui_egui::theme::Tokens) -> Vec<(f32, f32, f32)> {
     in_frame(|ui| {
         let pieces = bidi::plain(text, size, t);
-        let (drawn, _) = bidi::runs(ui, text, &pieces, size, column);
+        let (drawn, _) = bidi::runs(ui, text, &pieces, size, column, None);
         let mut rows: Vec<(f32, f32, f32)> = Vec::new();
         for d in &drawn {
             let (left, right) = (d.at.x, d.at.x + d.galley.rect.width());
@@ -560,7 +560,7 @@ fn strengths_picture(plain: &str, stretched: &[String; 3], column: f32, size: f3
         ui.add_space(14.0);
         for (label, text) in labels.iter().zip(&all) {
             let pieces = bidi::plain(text, size, &t);
-            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column);
+            let (drawn, used) = bidi::runs(ui, text, &pieces, size, column, None);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(column + 70.0, used.y.max(24.0)), egui::Sense::hover());
             bidi::paint(ui, rect.min, &drawn);
             ui.painter().text(
@@ -626,7 +626,7 @@ fn an_arrow_key_walks_a_mixed_line_the_way_it_points() {
         let x_at = |at: usize| -> f32 {
             in_frame(|ui| {
                 let pieces = bidi::plain(line, 16.0, &t);
-                bidi::caret(ui, line, &pieces, at, 16.0, W).map(|r| r.min.x).unwrap_or(f32::NAN)
+                bidi::caret(ui, line, &pieces, at, 16.0, W, None).map(|r| r.min.x).unwrap_or(f32::NAN)
             })
         };
         for right in [false, true] {
@@ -638,7 +638,7 @@ fn an_arrow_key_walks_a_mixed_line_the_way_it_points() {
             let mut was = x_at(at);
             let mut stops = 1;
             for _ in 0..64 {
-                let next = bidi::step(line, at, right, 16.0, W);
+                let next = bidi::step(line, at, right, 16.0, W, None);
                 if next == at {
                     break;
                 }
@@ -662,10 +662,72 @@ fn an_arrow_key_walks_a_mixed_line_the_way_it_points() {
     for line in ["السعر 123 ريال", "مرحبا hello بك"] {
         let mut at = line.len();
         for _ in 0..6 {
-            let forward = bidi::step(line, at, true, 16.0, W);
-            let back = bidi::step(line, forward, false, 16.0, W);
+            let forward = bidi::step(line, at, true, 16.0, W, None);
+            let back = bidi::step(line, forward, false, 16.0, W, None);
             assert_eq!(back, at, "{line:?}: right then left came back to {at}, not {back}");
             at = forward;
         }
     }
+}
+
+/// 1.4 of the bar. A line whose direction comes from the page reads that way inside, and
+/// not only from that edge.
+///
+/// Measured: **the bar**, from 2026-10-29, and a plain fault before that. parley takes a
+/// paragraph's base direction from its first strong letter and cannot be told otherwise, so
+/// a list item `TODO: راجع هذه الصفحة` on a page set right to left was hung from the right
+/// edge and laid out left to right inside it: `TODO:` was drawn at the far left end of the
+/// line, after the Arabic it comes before, which is what `docs/gaps.md` called the line
+/// that "flips". A browser with `dir="rtl"` on the page puts `TODO:` at the right edge,
+/// where the line starts. The line is laid out with the page's direction mark in front now.
+#[test]
+fn a_line_that_starts_in_latin_reads_the_way_the_page_does() {
+    const TODO: &str = "TODO: راجع هذه الصفحة";
+    let t = Theme::DEFAULT.tokens();
+    // Where `TODO:` and the first Arabic word are drawn, by the page painter.
+    let places = |page: Option<notecraft_model::Dir>| -> (f32, f32) {
+        let h = harness();
+        let blocks = notecraft_ui_egui::preview::blocks_for(notecraft_model::PageFormat::Cmgfm, TODO);
+        let mut frame = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+            fonts::install_once(ui.ctx());
+            ui.set_width(560.0);
+            notecraft_ui_egui::preview::show(ui, &blocks, std::path::Path::new("."), &t, page, &Default::default());
+        });
+        let at = |word: &str| {
+            frame
+                .shapes
+                .iter()
+                .find_map(|c| match &c.shape {
+                    // The colon after `TODO` is neutral, so on a right-to-left page it goes
+                    // with the Arabic and `TODO` is a run of its own; on a left-to-right one
+                    // the two are drawn together.
+                    egui::Shape::Text(text) if text.galley.text().trim_end_matches(':') == word => Some(text.pos.x),
+                    _ => None,
+                })
+                .unwrap_or(f32::NAN)
+        };
+        let out = (at("TODO"), at("راجع"));
+        frame.textures_delta.clear();
+        out
+    };
+
+    let (latin, arabic) = places(Some(notecraft_model::Dir::Rtl));
+    assert!(latin.is_finite() && arabic.is_finite(), "both words were drawn: {latin} and {arabic}");
+    assert!(latin > arabic, "on a right-to-left page the line starts at the right, with TODO there: {latin} and {arabic}");
+    // A page that says nothing leaves the line to its first letter, which is Latin.
+    let (latin, arabic) = places(None);
+    assert!(latin < arabic, "with no page direction the line reads left to right: {latin} and {arabic}");
+
+    // A click and the caret go through the same layout as the drawing, or a click on
+    // `TODO:` would land in the Arabic beside it.
+    let rtl = Some(notecraft_model::Dir::Rtl);
+    let near_right = bidi::hit(TODO, egui::vec2(395.0, 8.0), 16.0, 400.0, rtl);
+    assert!(near_right <= "TODO:".len(), "a click at the right edge lands in TODO: (byte {near_right})");
+    let near_left = bidi::hit(TODO, egui::vec2(5.0, 8.0), 16.0, 400.0, rtl);
+    assert!(near_left > "TODO:".len(), "a click at the left edge lands in the Arabic (byte {near_left})");
+    let start = in_frame(|ui| {
+        let pieces = bidi::plain(TODO, 16.0, &t);
+        bidi::caret(ui, TODO, &pieces, 0, 16.0, 400.0, rtl).map(|r| r.min.x).unwrap_or(f32::NAN)
+    });
+    assert!(start > 300.0, "the start of the line is at the right edge, and so is a caret there: {start}");
 }

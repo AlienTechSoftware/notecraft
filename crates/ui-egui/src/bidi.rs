@@ -18,6 +18,7 @@ use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Align, Align2, Color32, Pos2, Rect, Ui, Vec2, pos2, vec2};
 use notecraft_model::justify::Strength;
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 thread_local! {
@@ -85,8 +86,11 @@ pub struct Drawn {
 /// and draws each run; its galley can be about a pixel wider than parley's run (egui rounds
 /// each advance), which leans into the gap after it and never accumulates. The caret and
 /// the selection below are mapped through the same places.
-pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32) -> (Vec<Drawn>, Vec2) {
-    let Some(split) = split(text, size, max_width) else { return (Vec::new(), Vec2::ZERO) };
+///
+/// `page` is the page's direction, which decides the line's own when it has no mark (see
+/// [`based`]).
+pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> (Vec<Drawn>, Vec2) {
+    let Some(split) = split(text, size, max_width, page) else { return (Vec::new(), Vec2::ZERO) };
     let space = space_width(ui, size);
     let mut out: Vec<Drawn> = Vec::new();
     let mut size_used = Vec2::ZERO;
@@ -192,11 +196,43 @@ struct Split {
     lines: Vec<notecraft_text::Line>,
 }
 
-fn split(text: &str, size: f32, max_width: f32) -> Option<Split> {
+/// The line as parley is given it, and how many bytes were put in front of it for that.
+///
+/// parley takes a paragraph's base direction from its first strong letter and cannot be
+/// told otherwise: 0.11 hands its own bidi resolver no base level. That is right for a line
+/// that answers for itself and wrong for one whose direction comes from the page. A list
+/// item `TODO: راجع هذه الصفحة` on a page set right to left was hung from the right edge
+/// and still laid out left to right inside it, so `TODO:` landed at the far end of the line
+/// instead of at its start. A direction mark in front settles it the way
+/// `notecraft_model::direction_in` says, which is what a paragraph's own mark already does.
+/// Every byte parley hands back is moved back past the mark, so no caller ever sees it.
+fn based(text: &str, page: Option<notecraft_model::Dir>) -> (Cow<'_, str>, usize) {
+    let want = notecraft_model::direction_in(text, page);
+    if want == notecraft_model::direction(text) {
+        return (Cow::Borrowed(text), 0);
+    }
+    let mark = if want.is_rtl() { notecraft_model::text::RLM } else { notecraft_model::text::LRM };
+    (Cow::Owned(format!("{mark}{text}")), mark.len_utf8())
+}
+
+/// A range of the marked line, as a range of the line.
+fn unmarked(range: std::ops::Range<usize>, shift: usize) -> std::ops::Range<usize> {
+    range.start.saturating_sub(shift)..range.end.saturating_sub(shift)
+}
+
+fn split(text: &str, size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> Option<Split> {
+    let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let mut engine = t.try_borrow_mut().ok()?;
-        let layout = engine.layout(text, size, Some(max_width));
-        Some(Split { lines: notecraft_text::lines(&layout) })
+        let layout = engine.layout(&laid, size, Some(max_width));
+        let mut lines = notecraft_text::lines(&layout);
+        for line in &mut lines {
+            line.text = unmarked(line.text.clone(), shift);
+            for run in &mut line.runs {
+                run.text = unmarked(run.text.clone(), shift);
+            }
+        }
+        Some(Split { lines })
     })
 }
 
@@ -241,7 +277,7 @@ pub fn line_at(ui: &Ui, painter: &egui::Painter, at: Pos2, align: Align2, text: 
     }
     let pieces = [(0..text.len(), TextFormat { font_id: font.clone(), color, ..TextFormat::default() })];
     // Nothing to wrap against: a label is one line, however long it is.
-    let (drawn, _) = runs(ui, text, &pieces, size, f32::INFINITY);
+    let (drawn, _) = runs(ui, text, &pieces, size, f32::INFINITY, page);
     let left = drawn.iter().map(|d| d.at.x).fold(f32::INFINITY, f32::min);
     let right = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(f32::NEG_INFINITY, f32::max);
     let tall = drawn.iter().map(|d| d.galley.rect.height()).fold(0.0_f32, f32::max);
@@ -296,11 +332,11 @@ pub fn show(
     let (long, drawn, used) = match justify {
         Some(strength) => {
             let (long, moved) = stretched(ui, text, pieces, size, max_width, strength);
-            let (drawn, used) = runs(ui, &long, &moved, size, max_width);
+            let (drawn, used) = runs(ui, &long, &moved, size, max_width, page);
             (long, drawn, used)
         }
         None => {
-            let (drawn, used) = runs(ui, text, pieces, size, max_width);
+            let (drawn, used) = runs(ui, text, pieces, size, max_width, page);
             (text.to_string(), drawn, used)
         }
     };
@@ -403,7 +439,8 @@ fn remembered(ui: &Ui, text: &str, size: f32, max_width: f32, strength: Strength
 
 /// Stretches every line of the paragraph but the last to `max_width`.
 fn stretch(ui: &Ui, text: &str, size: f32, max_width: f32, strength: Strength) -> String {
-    let Some(split) = split(text, size, max_width) else { return text.to_string() };
+    // Where the lines break does not depend on which way they read, so the page is not asked.
+    let Some(split) = split(text, size, max_width, None) else { return text.to_string() };
     let lines = split.lines;
     // One line is all last line, and the last line of a paragraph is never justified: a
     // closing half-sentence pulled out to the margin is the mark of a bad typesetter.
@@ -442,10 +479,10 @@ fn stretch_line(ui: &Ui, core: &str, size: f32, max_width: f32, strength: Streng
     let mut width = |s: &str| -> f32 {
         let pieces = [(0..s.len(), format.clone())];
         // A stretch that wraps the line is no width at all, which is how the search stops.
-        if split(s, size, max_width).is_none_or(|l| l.lines.len() > 1) {
+        if split(s, size, max_width, None).is_none_or(|l| l.lines.len() > 1) {
             return f32::INFINITY;
         }
-        runs(ui, s, &pieces, size, f32::INFINITY).1.x
+        runs(ui, s, &pieces, size, f32::INFINITY, None).1.x
     };
     notecraft_text::kashida::justify(core, max_width, strength, &mut width)
 }
@@ -505,8 +542,8 @@ fn run_of(drawn: &[Drawn], at: usize) -> Option<&Drawn> {
 }
 
 /// Where the caret belongs on a line, in the drawn runs' own space.
-pub fn caret(ui: &Ui, text: &str, pieces: &[Piece], at: usize, size: f32, max_width: f32) -> Option<Rect> {
-    let (drawn, _) = runs(ui, text, pieces, size, max_width);
+pub fn caret(ui: &Ui, text: &str, pieces: &[Piece], at: usize, size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> Option<Rect> {
+    let (drawn, _) = runs(ui, text, pieces, size, max_width, page);
     caret_in(text, &drawn, at, size)
 }
 
@@ -518,8 +555,17 @@ fn caret_in(text: &str, drawn: &[Drawn], at: usize, size: f32) -> Option<Rect> {
 
 /// The rectangles to paint behind a selection between two bytes. A selection that covers
 /// both directions is more than one rectangle, one per run it touches.
-pub fn selection(ui: &Ui, text: &str, pieces: &[Piece], from: usize, to: usize, size: f32, max_width: f32) -> Vec<Rect> {
-    let (drawn, _) = runs(ui, text, pieces, size, max_width);
+pub fn selection(
+    ui: &Ui,
+    text: &str,
+    pieces: &[Piece],
+    from: usize,
+    to: usize,
+    size: f32,
+    max_width: f32,
+    page: Option<notecraft_model::Dir>,
+) -> Vec<Rect> {
+    let (drawn, _) = runs(ui, text, pieces, size, max_width, page);
     selection_in(text, &drawn, from, to, size, space_width(ui, size))
 }
 
@@ -618,12 +664,13 @@ fn inside_a_letter(text: &str, at: usize) -> bool {
 ///
 /// A stop is a boundary between letters: the insides of a letter are left out, so a step
 /// never lands between a letter and the mark that hangs on it.
-pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32) -> usize {
+pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> usize {
+    let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return at };
-        let layout = engine.layout(text, size, Some(max_width));
+        let layout = engine.layout(&laid, size, Some(max_width));
         let place = |b: usize| {
-            let r = notecraft_text::caret_rect(&layout, notecraft_text::Caret::at(b), 1.0);
+            let r = notecraft_text::caret_rect(&layout, notecraft_text::Caret::at(b + shift), 1.0);
             (r.x0, r.y0)
         };
         let (here_x, here_y) = place(at);
@@ -657,9 +704,9 @@ pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32) -> us
         // where the next line begins. The marks are stepped past the same way as before.
         let mut now = at;
         for _ in 0..8 {
-            let caret = notecraft_text::Caret::at(now);
+            let caret = notecraft_text::Caret::at(now + shift);
             let moved = if right { notecraft_text::step_right(&layout, caret) } else { notecraft_text::step_left(&layout, caret) };
-            let next = moved.index();
+            let next = moved.index().saturating_sub(shift);
             if next == now {
                 return now;
             }
@@ -681,20 +728,22 @@ fn stops(text: &str) -> Vec<usize> {
 }
 
 /// The word under a point: what a double click takes.
-pub fn word_at(text: &str, at: Vec2, size: f32, max_width: f32) -> std::ops::Range<usize> {
+pub fn word_at(text: &str, at: Vec2, size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> std::ops::Range<usize> {
+    let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return 0..0 };
-        let layout = engine.layout(text, size, Some(max_width));
-        notecraft_text::word_at(&layout, at.x, at.y)
+        let layout = engine.layout(&laid, size, Some(max_width));
+        unmarked(notecraft_text::word_at(&layout, at.x, at.y), shift)
     })
 }
 
 /// The byte a click at `x`, `y` (from the top left of the line) lands on.
-pub fn hit(text: &str, at: Vec2, size: f32, max_width: f32) -> usize {
+pub fn hit(text: &str, at: Vec2, size: f32, max_width: f32, page: Option<notecraft_model::Dir>) -> usize {
+    let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return 0 };
-        let layout = engine.layout(text, size, Some(max_width));
-        let index = notecraft_text::caret_at(&layout, at.x, at.y).index();
+        let layout = engine.layout(&laid, size, Some(max_width));
+        let index = notecraft_text::caret_at(&layout, at.x, at.y).index().saturating_sub(shift);
         // A click near a letter that carries a haraka can land between the two; the caret
         // belongs before the letter, not inside it.
         let mut now = index;
@@ -738,7 +787,7 @@ mod tests {
         let line = "ما الذي يمكنك فعله هنا";
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            let (drawn, _) = runs(ui, line, &plain(line, 16.0, &t), 16.0, 400.0);
+            let (drawn, _) = runs(ui, line, &plain(line, 16.0, &t), 16.0, 400.0, None);
             assert_eq!(drawn.len(), 5, "one for each word: {:?}", drawn.iter().map(|d| d.galley.text().to_string()).collect::<Vec<_>>());
             // The first word of the line is the rightmost thing on it, and each word after
             // it is further left, with a gap between them.
@@ -765,7 +814,7 @@ mod tests {
         let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0);
+            let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0, None);
             assert!(drawn.len() >= 3, "{} runs", drawn.len());
             let space = space_width(ui, 16.0);
             assert!(space > 1.0, "a space has a width: {space}");
@@ -801,7 +850,7 @@ mod tests {
         let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            let (drawn, used) = runs(ui, LONG, &plain(LONG, 16.0, &t), 16.0, 300.0);
+            let (drawn, used) = runs(ui, LONG, &plain(LONG, 16.0, &t), 16.0, 300.0, None);
             let mut lines: std::collections::BTreeMap<i32, (f32, f32)> = std::collections::BTreeMap::new();
             for d in &drawn {
                 let e = lines.entry(d.at.y.round() as i32).or_insert((f32::INFINITY, 0.0));
@@ -821,7 +870,7 @@ mod tests {
             assert!(lefts.last().is_some_and(|l| *l > 10.0), "the last line hangs from the right, not the left: {lefts:?}");
             assert!((used.x - 300.0).abs() < 4.0, "the block is as wide as the column: {}", used.x);
 
-            let (ltr, _) = runs(ui, "Hello مرحبا world", &plain("Hello مرحبا world", 16.0, &t), 16.0, 300.0);
+            let (ltr, _) = runs(ui, "Hello مرحبا world", &plain("Hello مرحبا world", 16.0, &t), 16.0, 300.0, None);
             assert!(ltr.first().is_some_and(|d| d.at.x.abs() < 1.0), "a left-to-right line starts at the left");
         });
         frame.textures_delta.clear();
@@ -855,7 +904,7 @@ mod tests {
         let ctx = ctx_with_fonts();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0);
+            let (drawn, size) = runs(ui, PRICE, &plain(PRICE, 16.0, &t), 16.0, 400.0, None);
             assert!(drawn.len() >= 3, "Arabic, digits, Arabic: {} runs", drawn.len());
             assert!(size.x > 0.0 && size.y > 0.0);
             let xs: Vec<f32> = drawn.iter().map(|d| d.at.x).collect();
@@ -883,11 +932,11 @@ mod tests {
             crate::fonts::install_once(ui.ctx());
             let pieces = plain(PRICE, 16.0, &t);
             // Nothing selected, nothing painted.
-            assert!(selection(ui, PRICE, &pieces, 4, 4, 16.0, 400.0).is_empty());
+            assert!(selection(ui, PRICE, &pieces, 4, 4, 16.0, 400.0, None).is_empty());
 
-            let (drawn, size) = runs(ui, PRICE, &pieces, 16.0, 400.0);
+            let (drawn, size) = runs(ui, PRICE, &pieces, 16.0, 400.0, None);
             assert!(drawn.len() > 2, "the line is drawn as several runs: {}", drawn.len());
-            let all = selection(ui, PRICE, &pieces, 0, PRICE.len(), 16.0, 400.0);
+            let all = selection(ui, PRICE, &pieces, 0, PRICE.len(), 16.0, 400.0, None);
             assert_eq!(all.len(), 1, "the whole of one line is one band: {all:?}");
 
             // The band runs the length of the drawn line, spaces and all, where the
@@ -902,7 +951,7 @@ mod tests {
             // A selection of the digits alone is still only the digits: joining a line's
             // rectangles must not reach past what was asked for.
             let start = PRICE.find("123").unwrap_or(0);
-            let digits = selection(ui, PRICE, &pieces, start, start + 3, 16.0, 400.0);
+            let digits = selection(ui, PRICE, &pieces, start, start + 3, 16.0, 400.0, None);
             assert_eq!(digits.len(), 1, "the digits are one run: {digits:?}");
             let run = drawn.iter().find(|d| d.galley.text().contains("123")).map(|d| (d.at.x, d.galley.rect.width()));
             if let (Some(rect), Some((x, w))) = (digits.first(), run) {
@@ -932,7 +981,7 @@ mod tests {
     #[test]
     fn a_double_click_takes_the_word_under_the_pointer() {
         // The middle of the line is the number; the far right is the first word.
-        let word = word_at(PRICE, vec2(500.0, 8.0), 16.0, 400.0);
+        let word = word_at(PRICE, vec2(500.0, 8.0), 16.0, 400.0, None);
         assert_eq!(PRICE.get(word.clone()).map(str::trim), Some("السعر"), "{word:?}");
         assert!(!word.is_empty());
     }
@@ -944,15 +993,15 @@ mod tests {
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
             let pieces = plain(PRICE, 16.0, &t);
-            let start = caret(ui, PRICE, &pieces, 0, 16.0, 400.0).unwrap_or(Rect::ZERO);
-            let end = caret(ui, PRICE, &pieces, PRICE.len(), 16.0, 400.0).unwrap_or(Rect::ZERO);
+            let start = caret(ui, PRICE, &pieces, 0, 16.0, 400.0, None).unwrap_or(Rect::ZERO);
+            let end = caret(ui, PRICE, &pieces, PRICE.len(), 16.0, 400.0, None).unwrap_or(Rect::ZERO);
             assert!(start.height() > 4.0, "a caret bar: {start:?}");
             // The line reads right to left, so the start of the text is at the right.
             assert!(start.min.x > end.min.x, "start on the right, end on the left: {start:?} {end:?}");
             // And the caret never lands outside the drawn line.
-            let (_, size) = runs(ui, PRICE, &pieces, 16.0, 400.0);
+            let (_, size) = runs(ui, PRICE, &pieces, 16.0, 400.0, None);
             for at in [0, 5, 9, PRICE.len()] {
-                let r = caret(ui, PRICE, &pieces, at, 16.0, 400.0).unwrap_or(Rect::ZERO);
+                let r = caret(ui, PRICE, &pieces, at, 16.0, 400.0, None).unwrap_or(Rect::ZERO);
                 assert!(r.min.x >= -1.0 && r.min.x <= size.x + 1.0, "{at}: {r:?} inside {size:?}");
             }
         });
@@ -960,12 +1009,12 @@ mod tests {
 
         // The line reads right to left, so the first character is at the right edge and
         // there is nowhere further right to go; the way forward through the text is left.
-        assert_eq!(step(PRICE, 0, true, 16.0, 400.0), 0, "the start is already the right end");
-        let left = step(PRICE, 0, false, 16.0, 400.0);
+        assert_eq!(step(PRICE, 0, true, 16.0, 400.0, None), 0, "the start is already the right end");
+        let left = step(PRICE, 0, false, 16.0, 400.0, None);
         assert_ne!(left, 0, "a step left moves forward through the text");
-        assert_eq!(step(PRICE, left, true, 16.0, 400.0), 0, "and back again");
+        assert_eq!(step(PRICE, left, true, 16.0, 400.0, None), 0, "and back again");
         // A click near the right edge lands at the beginning of the text.
-        let at = hit(PRICE, vec2(500.0, 8.0), 16.0, 400.0);
+        let at = hit(PRICE, vec2(500.0, 8.0), 16.0, 400.0, None);
         assert!(at <= 4, "the right edge is the start of the line: {at}");
     }
     /// A justified paragraph is drawn from stretched words, so the formats of its pieces

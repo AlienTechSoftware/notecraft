@@ -339,7 +339,7 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         out.response
     } else {
         let pieces = crate::bidi::plain(&ed.title_buf, 26.0 * zoom, tokens);
-        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0 * zoom, width);
+        let (drawn, size) = crate::bidi::runs(ui, &ed.title_buf, &pieces, 26.0 * zoom, width, ed.page_dir);
         let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y.max(34.0)), egui::Sense::click());
         crate::bidi::paint(ui, rect.min, &drawn);
         if resp.clicked() {
