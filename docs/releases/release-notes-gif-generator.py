@@ -258,49 +258,49 @@ def main():
 
     print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    # Simple numbers with colors and clear descriptions
+    # Release highlights with numbers and colors
     slides = [
         {
             'number': 1,
             'circle_color': (100, 180, 255),
             'title': f'NoteCraft v{version}',
-            'subtitle': 'Quality Release',
-            'body': ['High-performance note taking', 'Cross-platform ready'],
+            'subtitle': 'Linux Support & Installation',
+            'body': ['Cross-platform deployment', 'Windows, macOS, Linux ready'],
         },
         {
             'number': 2,
             'circle_color': (120, 220, 160),
-            'title': 'RTL Text Handling',
-            'subtitle': 'Improved Caret',
-            'body': ['Better cursor positioning', 'in right-to-left scripts'],
+            'title': 'Ink & Stylus Support',
+            'subtitle': 'Windows Improvements',
+            'body': ['Better pen input handling', 'Enhanced tablet experience'],
         },
         {
             'number': 3,
             'circle_color': (100, 180, 255),
-            'title': 'GitHub Actions Fixed',
-            'subtitle': 'CI Status Reports',
-            'body': ['Proper branch protection', 'Zero-delay status reporting'],
+            'title': 'RTL & CICD Fixes',
+            'subtitle': 'Language & Pipeline',
+            'body': ['Right-to-left text fixes', 'GitHub Actions improvements'],
         },
         {
             'number': 4,
             'circle_color': (120, 220, 160),
-            'title': 'Installation Testing',
-            'subtitle': 'Fresh Profile Verified',
-            'body': ['Complete Windows verification', '13 language notebooks ready'],
+            'title': 'Local File Support',
+            'subtitle': 'HTML & Markdown Open',
+            'body': ['Open HTML files directly', 'Full Markdown support'],
         },
         {
             'number': 5,
             'circle_color': (255, 150, 100),
-            'title': 'Demo Parity',
-            'subtitle': 'Perfect Sync',
-            'body': ['HTML and CMGFM identical', 'Pixel-perfect rendering'],
+            'title': 'Vega + D3 Charts',
+            'subtitle': 'Data Visualization',
+            'body': ['Interactive visualizations', 'Professional charts'],
         },
         {
             'number': 6,
             'circle_color': (100, 180, 255),
-            'title': 'Ready for Release',
-            'subtitle': 'All Systems Go',
-            'body': ['Full quality gate passed', 'Production ready'],
+            'title': 'Debug Logging',
+            'subtitle': 'Improved Diagnostics',
+            'body': ['Better troubleshooting', 'Enhanced diagnostics'],
         },
     ]
 
