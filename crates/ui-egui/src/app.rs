@@ -147,7 +147,10 @@ fn replace_attachment_icon(format: PageFormat, snippet: &str, name: &str, icon_l
 
 #[cfg(test)]
 mod attachment_reference_tests {
-    use super::{PageFormat, attachment_icon_exists, replace_attachment_icon};
+    use super::{PageFormat, replace_attachment_icon};
+
+    #[cfg(not(target_os = "windows"))]
+    use super::attachment_icon_exists;
 
     #[test]
     fn html_repair_changes_only_the_image_source() {

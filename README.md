@@ -290,7 +290,7 @@ the version and write no file.
 
 ## Status and what is missing
 
-NoteCraft is **alpha**, version 0.0.6. It is not a ready product: it runs and it is tested, but
+NoteCraft is **alpha**, version 0.0.7. It is not a ready product: it runs and it is tested, but
 it is not finished, it has had little use, and a notebook you care about should have a backup. The
 folder format can still change before 0.1. The other Craft apps describe themselves the same way.
 What is missing:

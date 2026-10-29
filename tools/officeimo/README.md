@@ -12,7 +12,7 @@ Build a self-contained release bundle with:
 pwsh tools/officeimo/package.ps1 `
   -BridgeProject path/to/OfficeIMO.NoteCraft.Poc.csproj `
   -Rid win-x64 `
-  -Version 0.0.6 `
+  -Version 0.0.7 `
   -OutputRoot path/to/release
 ```
 
