@@ -123,13 +123,6 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     number = data.get('number', frame_num)
     circle_color = data.get('circle_color', COLORS[color_idx % len(COLORS)])
 
-    # Version in top-right corner
-    version_font = get_font(int(FONT_SIZE_BODY * 0.6))
-    version_text = f"v{version}"
-    bbox = draw.textbbox((0, 0), version_text, font=version_font)
-    text_w = bbox[2] - bbox[0]
-    draw.text((w - text_w - 20, 15), version_text, font=version_font, fill=COLOR_TEXT)
-
     # Fonts
     title_font = get_font(FONT_SIZE_TITLE, bold=True)
     subtitle_font = get_font(FONT_SIZE_SUBTITLE)
@@ -141,27 +134,33 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     draw_number_circle(draw, w // 2, y_offset + 50, number, circle_color, size=80)
     y_offset += 140
 
-    # Title
-    if title:
-        bbox = draw.textbbox((0, 0), title, font=title_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-
-        draw.text((x, y_offset), title, font=title_font, fill=circle_color)
-        y_offset += FONT_SIZE_TITLE + 20
+    # Title on all frames: NoteCraft v0.0.7 (large)
+    frame_title = f"NoteCraft v{version}"
+    bbox = draw.textbbox((0, 0), frame_title, font=title_font)
+    text_w = bbox[2] - bbox[0]
+    x = (w - text_w) // 2
+    draw.text((x, y_offset), frame_title, font=title_font, fill=circle_color)
+    y_offset += FONT_SIZE_TITLE + 20
 
     # Line
     draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=circle_color)
     y_offset += 30
 
-    # Subtitle
-    if subtitle:
-        bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
+    # Subtitle: feature title + feature subtitle
+    feature_title = title  # e.g., "Ink & Stylus Support"
+    if feature_title:
+        bbox = draw.textbbox((0, 0), feature_title, font=subtitle_font)
         text_w = bbox[2] - bbox[0]
         x = (w - text_w) // 2
+        draw.text((x, y_offset), feature_title, font=subtitle_font, fill=circle_color)
+        y_offset += FONT_SIZE_SUBTITLE + 15
 
-        draw.text((x, y_offset), subtitle, font=subtitle_font, fill=COLOR_TEXT)
-        y_offset += FONT_SIZE_SUBTITLE + 30
+    if subtitle:
+        bbox = draw.textbbox((0, 0), subtitle, font=body_font)
+        text_w = bbox[2] - bbox[0]
+        x = (w - text_w) // 2
+        draw.text((x, y_offset), subtitle, font=body_font, fill=COLOR_TEXT)
+        y_offset += FONT_SIZE_SUBTITLE + 15
 
     # Body
     for line in body:
