@@ -1180,7 +1180,7 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     h.state_mut().add_welcome();
     settle(&mut h);
     assert_eq!(h.state().session().tree().len(), 1, "no second copy");
-    assert_eq!(h.state().status(), "The welcome notebook is already here");
+    assert_eq!(h.state().status(), "Updated the welcome notebook");
 }
 
 /// The same thing over a real loopback connection, with the key file.
