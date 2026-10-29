@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NoteCraft Release Notes GIF Generator - Emoji with Natural Colors
-
-Clean, professional GIFs with recognizable emoji in natural colors.
+NoteCraft Release Notes GIF Generator - Simple Numbers, Clean Design
 
 Usage:
     python release-notes-gif-generator.py <version>
@@ -13,7 +11,6 @@ Usage:
 import sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-import subprocess
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
@@ -21,6 +18,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 FONT_SIZE_TITLE = 64
 FONT_SIZE_SUBTITLE = 48
 FONT_SIZE_BODY = 32
+FONT_SIZE_NUMBER = 80
 LINE_HEIGHT = 60
 FRAME_DURATION = 3500
 
@@ -30,6 +28,7 @@ COLOR_TEXT = (70, 70, 70)
 COLOR_ACCENT = (100, 180, 255)
 COLOR_ACCENT2 = (120, 220, 160)
 COLOR_ACCENT3 = (255, 150, 100)
+COLOR_NUMBER = (255, 255, 255)  # White numbers for contrast
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
 
 
@@ -72,8 +71,8 @@ def draw_decorative_line(draw, x_start, x_end, y, width=3, color=(100, 180, 255)
     draw.rectangle([x_start, y - width//2, x_end, y + width//2], fill=color)
 
 
-def draw_emoji_circle(draw, x, y, emoji, emoji_color, circle_color, size=80):
-    """Draw colored circle with emoji in natural colors."""
+def draw_number_circle(draw, x, y, number, circle_color, size=80):
+    """Draw colored circle with large white number."""
     box_size = size + 20
 
     # Colored circle background
@@ -82,23 +81,23 @@ def draw_emoji_circle(draw, x, y, emoji, emoji_color, circle_color, size=80):
         fill=circle_color
     )
 
-    # Emoji with natural color
+    # White number inside
     try:
-        emoji_font = get_font(int(size * 0.7))
-        bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
+        number_font = get_font(FONT_SIZE_NUMBER, bold=True)
+        bbox = draw.textbbox((0, 0), str(number), font=number_font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
 
-        emoji_x = x - text_w // 2
-        emoji_y = y - text_h // 2
+        number_x = x - text_w // 2
+        number_y = y - text_h // 2
 
-        draw.text((emoji_x, emoji_y), emoji, font=emoji_font, fill=emoji_color)
-    except:
-        pass
+        draw.text((number_x, number_y), str(number), font=number_font, fill=COLOR_NUMBER)
+    except Exception as e:
+        print(f"Warning: Could not draw number: {e}")
 
 
 def create_frame(background, data, frame_num, color_idx=0):
-    """Create a frame with emoji."""
+    """Create a frame with number."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
@@ -116,8 +115,7 @@ def create_frame(background, data, frame_num, color_idx=0):
     title = data.get('title', '')
     subtitle = data.get('subtitle', '')
     body = data.get('body', [])
-    emoji = data.get('emoji', '⭐')
-    emoji_color = data.get('emoji_color', (255, 255, 255))
+    number = data.get('number', frame_num)
     circle_color = data.get('circle_color', COLORS[color_idx % len(COLORS)])
 
     # Fonts
@@ -127,8 +125,8 @@ def create_frame(background, data, frame_num, color_idx=0):
 
     y_offset = int(h * 0.08)
 
-    # Emoji in circle
-    draw_emoji_circle(draw, w // 2, y_offset + 50, emoji, emoji_color, circle_color, size=80)
+    # Number in circle
+    draw_number_circle(draw, w // 2, y_offset + 50, number, circle_color, size=80)
     y_offset += 140
 
     # Title
@@ -189,9 +187,8 @@ def generate_frames(version, slides_data):
         path = frames_dir / f"frame_{i:03d}.png"
         frame.save(path, "PNG")
         frame_paths.append(path)
-        emoji = slide['emoji']
         title = slide['title']
-        print(f"  {i}. {emoji} {title}")
+        print(f"  {i}. {title}")
 
     return frame_paths, frames_dir
 
@@ -209,6 +206,7 @@ def create_gif(frames_dir, output, duration=FRAME_DURATION):
         pattern = str(frames_dir / "frame_*.png")
         for cmd in ["magick", "convert"]:
             try:
+                import subprocess
                 subprocess.run(
                     [cmd, "convert", "-delay", str(duration // 10), "-loop", "0",
                      pattern, str(output)],
@@ -255,51 +253,45 @@ def main():
 
     print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    # Emoji with natural colors (RGB)
+    # Simple numbers with colors and clear descriptions
     slides = [
         {
-            'emoji': '⭐',
-            'emoji_color': (255, 200, 0),    # Gold/yellow
+            'number': 1,
             'circle_color': (100, 180, 255),
             'title': f'NoteCraft v{version}',
             'subtitle': 'Quality Release',
             'body': ['High-performance note taking', 'Cross-platform ready'],
         },
         {
-            'emoji': '🌍',
-            'emoji_color': (50, 150, 255),   # Blue
+            'number': 2,
             'circle_color': (120, 220, 160),
             'title': 'RTL Text Handling',
             'subtitle': 'Improved Caret',
             'body': ['Better cursor positioning', 'in right-to-left scripts'],
         },
         {
-            'emoji': '⚡',
-            'emoji_color': (255, 220, 0),   # Yellow
+            'number': 3,
             'circle_color': (100, 180, 255),
             'title': 'GitHub Actions Fixed',
             'subtitle': 'CI Status Reports',
             'body': ['Proper branch protection', 'Zero-delay status reporting'],
         },
         {
-            'emoji': '✓',
-            'emoji_color': (100, 200, 100), # Green
+            'number': 4,
             'circle_color': (120, 220, 160),
             'title': 'Installation Testing',
             'subtitle': 'Fresh Profile Verified',
             'body': ['Complete Windows verification', '13 language notebooks ready'],
         },
         {
-            'emoji': '💎',
-            'emoji_color': (200, 100, 255), # Purple
+            'number': 5,
             'circle_color': (255, 150, 100),
             'title': 'Demo Parity',
             'subtitle': 'Perfect Sync',
             'body': ['HTML and CMGFM identical', 'Pixel-perfect rendering'],
         },
         {
-            'emoji': '🚀',
-            'emoji_color': (255, 100, 100), # Red
+            'number': 6,
             'circle_color': (100, 180, 255),
             'title': 'Ready for Release',
             'subtitle': 'All Systems Go',
@@ -317,13 +309,7 @@ def main():
 
     size_mb = output_gif.stat().st_size / (1024 * 1024)
     print(f"\n✅ {output_gif.name} ({size_mb:.2f} MB, {len(frames)} frames)")
-    print("\nEmoji with natural colors (recognizable):")
-    print("  ⭐ Gold star")
-    print("  🌍 Blue globe")
-    print("  ⚡ Yellow lightning")
-    print("  ✓ Green checkmark")
-    print("  💎 Purple diamond")
-    print("  🚀 Red rocket")
+    print("\nFrames: 1=Quality, 2=RTL, 3=CI, 4=Testing, 5=Demo, 6=Ready")
 
 
 if __name__ == "__main__":
