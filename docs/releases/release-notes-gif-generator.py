@@ -134,12 +134,12 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     draw_number_circle(draw, w // 2, y_offset + 50, number, circle_color, size=80)
     y_offset += 140
 
-    # Title on all frames: NoteCraft v0.0.7 (large)
+    # Title on all frames: NoteCraft v0.0.7 (large, black)
     frame_title = f"NoteCraft v{version}"
     bbox = draw.textbbox((0, 0), frame_title, font=title_font)
     text_w = bbox[2] - bbox[0]
     x = (w - text_w) // 2
-    draw.text((x, y_offset), frame_title, font=title_font, fill=circle_color)
+    draw.text((x, y_offset), frame_title, font=title_font, fill=(0, 0, 0))  # Black
     y_offset += FONT_SIZE_TITLE + 20
 
     # Line
