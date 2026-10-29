@@ -135,9 +135,9 @@ fn main() -> eframe::Result {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
-    // The Welcome notebook, a tour of the app, is deployed on every startup to ensure
-    // demo updates reach all installations. On first run (empty folder), it opens automatically.
-    // The notebook is a normal one after deployment: the user can change or delete it.
+    // The Welcome notebook, a tour of the app, is deployed on every startup (ensures fresh demo).
+    // On first run (empty tree), it opens automatically. It's a normal notebook after deployment:
+    // the user can change or delete it.
     let mut open_first: Option<String> = None;
     // Problems found before the window opens. The window shows each one in an alert.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
@@ -148,6 +148,8 @@ fn main() -> eframe::Result {
             if tree_was_empty {
                 open_first = Some(dir.to_string_lossy().into_owned());
             }
+            // Reload tree after deployment to pick up fresh demo
+            session.refresh();
         }
         Ok(_) => {}
         Err(e) => {
@@ -157,8 +159,6 @@ fn main() -> eframe::Result {
             startup_alerts.push(("welcome-notebook-deploy", message));
         }
     }
-    // Refresh the tree after deployment to pick up the latest version
-    session.refresh();
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
     let mut viewport = egui::ViewportBuilder::default()
