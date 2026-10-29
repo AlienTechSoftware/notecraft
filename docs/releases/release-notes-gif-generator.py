@@ -261,37 +261,37 @@ def main():
     # Define slides with rich content
     slides = [
         {
-            'icon': '📝',
+            'icon': '★',
             'title': f'NoteCraft v{version}',
             'subtitle': 'Quality Release',
             'body': ['High-performance note taking', 'Cross-platform ready'],
         },
         {
-            'icon': '🌍',
+            'icon': '◇',
             'title': 'RTL Text Handling',
             'subtitle': 'Improved Caret',
             'body': ['Better cursor positioning', 'in right-to-left scripts'],
         },
         {
-            'icon': '⚙️',
+            'icon': '⚙',
             'title': 'GitHub Actions Fixed',
             'subtitle': 'CI Status Reports',
             'body': ['Proper branch protection integration', 'Zero-delay status reporting'],
         },
         {
-            'icon': '✅',
+            'icon': '✓',
             'title': 'Installation Testing',
             'subtitle': 'Fresh Profile Verified',
             'body': ['Complete Windows verification', '13 language notebooks ready'],
         },
         {
-            'icon': '📊',
+            'icon': '◆',
             'title': 'Demo Parity',
             'subtitle': 'Perfect Sync',
             'body': ['HTML and CMGFM identical', 'Pixel-perfect rendering'],
         },
         {
-            'icon': '🚀',
+            'icon': '→',
             'title': 'Ready for Release',
             'subtitle': 'All Systems Go',
             'body': ['Full quality gate passed', 'Production ready'],
