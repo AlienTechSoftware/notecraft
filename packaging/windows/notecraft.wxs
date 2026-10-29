@@ -49,7 +49,7 @@
     <CustomAction Id="DeleteOldDemo" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
         Impersonate="yes" Return="ignore" />
     <CustomAction Id="SetDeleteOldDemoCommand" Property="DeleteOldDemo"
-        Value="cmd.exe /c rmdir /s /q &quot;%USERPROFILE%\Documents\NoteCraft\welcome-to-notecraft&quot;" />
+        Value="powershell.exe -NoProfile -Command &quot;$path = Join-Path $env:USERPROFILE 'Documents\NoteCraft\welcome-to-notecraft'; if (Test-Path $path) { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue }; exit 0&quot;" />
     <CustomAction Id="LaunchNotecraft" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec"
         Impersonate="yes" Return="ignore" />
     <UI>
