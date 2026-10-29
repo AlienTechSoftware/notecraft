@@ -1165,7 +1165,7 @@ pub fn show_blocks(
                         if let Some(done) = lead(ui, &block, t) {
                             ticked = Some(done);
                         }
-                        let w = write_rtl(ui, c, size, t, id);
+                        let w = write_rtl(ui, c, size, t, id, page);
                         let resp = w.response.clone();
                         wrote = Some(w);
                         resp
@@ -1766,14 +1766,15 @@ pub struct Wrote {
 /// (`crates/ui-egui/tests/arabic_layout.rs`). So the line is drawn by the bidi painter,
 /// which puts the runs where the Unicode algorithm says, and the caret is NoteCraft's own:
 /// a click asks parley which character is under the pointer, and the arrow keys step the
-/// way the eye moves, not the way the bytes run.
-pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id) -> Wrote {
+/// way the eye moves, not the way the bytes run. `page` is the page's direction, which the
+/// line reads in when it has no mark of its own, the same as when it is not being written in.
+pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id, page: Option<notecraft_model::Dir>) -> Wrote {
     let width = ui.available_width().max(32.0);
     let pieces = vec![(
         0..c.text.len(),
         egui::text::TextFormat { font_id: egui::FontId::proportional(size), color: t.text, ..egui::text::TextFormat::default() },
     )];
-    let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width);
+    let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width, page);
     // The block's own id, the same one the egui text box uses for a line without
     // right-to-left text in it, so the focus carries over when a line becomes one or stops
     // being one under the caret.
@@ -1822,7 +1823,7 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     if let Some(p) = resp.interact_pointer_pos().or(carried) {
         let point = p - rect.min;
         if resp.double_clicked() {
-            let word = crate::bidi::word_at(&c.text, point, size, width);
+            let word = crate::bidi::word_at(&c.text, point, size, width, page);
             anchor = word.start;
             at = word.end;
             resp.request_focus();
@@ -1833,15 +1834,15 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
             // recognised and nothing is ever selected inside a block the caret already sat
             // in. That is what the owner saw.
             let began = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
-            anchor = crate::bidi::hit(&c.text, began - rect.min, size, width);
-            at = crate::bidi::hit(&c.text, point, size, width);
+            anchor = crate::bidi::hit(&c.text, began - rect.min, size, width, page);
+            at = crate::bidi::hit(&c.text, point, size, width, page);
             resp.request_focus();
         } else if resp.clicked() && !resp.dragged() {
-            at = crate::bidi::hit(&c.text, point, size, width);
+            at = crate::bidi::hit(&c.text, point, size, width, page);
             anchor = at;
             resp.request_focus();
         } else if resp.dragged() || carried.is_some() {
-            at = crate::bidi::hit(&c.text, point, size, width);
+            at = crate::bidi::hit(&c.text, point, size, width, page);
             resp.request_focus();
         }
     }
@@ -1862,10 +1863,10 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let delete = pressed(Key::Delete).is_some();
         let moved = left || right || home || end;
         if left {
-            at = crate::bidi::step(&c.text, at, false, size, width);
+            at = crate::bidi::step(&c.text, at, false, size, width, page);
         }
         if right {
-            at = crate::bidi::step(&c.text, at, true, size, width);
+            at = crate::bidi::step(&c.text, at, true, size, width, page);
         }
         if home {
             at = 0;
@@ -1926,7 +1927,7 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
 
     // What is selected, painted behind the words, one rectangle per run it covers.
     if resp.has_focus() && anchor != at {
-        let shapes: Vec<egui::Shape> = crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width)
+        let shapes: Vec<egui::Shape> = crate::bidi::selection(ui, &c.text, &pieces, anchor, at, size, width, page)
             .into_iter()
             .map(|r| {
                 let r = egui::Rect::from_min_max(rect.min + r.min.to_vec2(), rect.min + r.max.to_vec2());
@@ -1937,7 +1938,7 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     }
     // The caret itself, drawn where parley says it belongs on the line.
     if resp.has_focus()
-        && let Some(bar) = crate::bidi::caret(ui, &c.text, &pieces, at, size, width)
+        && let Some(bar) = crate::bidi::caret(ui, &c.text, &pieces, at, size, width, page)
     {
         let bar = egui::Rect::from_min_max(rect.min + bar.min.to_vec2(), rect.min + bar.max.to_vec2());
         let bar = egui::Rect::from_min_size(bar.min, vec2(1.5, bar.height().max(size)));
@@ -2193,7 +2194,7 @@ fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Po
     let column = (resp.rect.width() - lead).max(32.0);
     let (size, strong) = size_of(block);
     let at = if crate::bidi::paints(&drawn, page) {
-        let byte = crate::bidi::hit(&drawn, vec2(x, rel.y), size, column);
+        let byte = crate::bidi::hit(&drawn, vec2(x, rel.y), size, column, page);
         drawn.get(..byte).unwrap_or(drawn.as_str()).chars().count()
     } else {
         char_at(ui, &drawn, size, strong, t, column, vec2(x, rel.y), page)
