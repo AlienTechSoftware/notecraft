@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NoteCraft Release Notes GIF Generator - Clean Design
+NoteCraft Release Notes GIF Generator - Shapes Edition
 
-Professional, minimal animated GIFs with emojis and dark text on light areas.
-No boxes, no clutter - just clean typography.
+Professional, minimal animated GIFs with colorful shapes (not emoji).
+Clean dark text on light background - reliable, no rendering issues.
 
 Usage:
     python release-notes-gif-generator.py <version>
@@ -25,10 +25,10 @@ FONT_SIZE_BODY = 32
 LINE_HEIGHT = 60
 FRAME_DURATION = 3500
 
-# Colors - CLEAN
-COLOR_TITLE = (50, 50, 50)               # Dark gray for titles
-COLOR_TEXT = (70, 70, 70)                # Dark gray for body
-COLOR_ACCENT = (100, 180, 255)           # Light blue accent
+# Colors
+COLOR_TITLE = (50, 50, 50)
+COLOR_TEXT = (70, 70, 70)
+COLOR_ACCENT = (100, 180, 255)           # Light blue
 COLOR_ACCENT2 = (120, 220, 160)          # Teal
 COLOR_ACCENT3 = (255, 150, 100)          # Coral
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
@@ -73,8 +73,8 @@ def draw_decorative_line(draw, x_start, x_end, y, width=3, color=(100, 180, 255)
     draw.rectangle([x_start, y - width//2, x_end, y + width//2], fill=color)
 
 
-def draw_emoji_in_circle(draw, x, y, emoji, color, size=80):
-    """Draw emoji in a colored circle."""
+def draw_shape_circle(draw, x, y, shape_type, color, size=80):
+    """Draw a colored circle with geometric shapes inside - no emoji."""
     box_size = size + 20
 
     # Colored circle
@@ -83,28 +83,80 @@ def draw_emoji_in_circle(draw, x, y, emoji, color, size=80):
         fill=color
     )
 
-    # Emoji - centered and white
-    try:
-        emoji_font = get_font(int(size * 0.7))
-        bbox = draw.textbbox((0, 0), emoji, font=emoji_font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
+    # Draw shape inside (geometric, not emoji)
+    center_x = x
+    center_y = y
+    inner_size = size // 2.5
 
-        emoji_x = x - text_w // 2
-        emoji_y = y - text_h // 2
+    if shape_type == 0:  # Star shape
+        # Draw filled star
+        points = []
+        for i in range(10):
+            angle = i * 36 - 90
+            import math
+            rad = math.radians(angle)
+            if i % 2 == 0:
+                r = inner_size * 0.8
+            else:
+                r = inner_size * 0.3
+            px = center_x + r * math.cos(rad)
+            py = center_y + r * math.sin(rad)
+            points.append((px, py))
+        draw.polygon(points, fill=(255, 255, 255))
 
-        draw.text((emoji_x, emoji_y), emoji, font=emoji_font, fill=(255, 255, 255))
-    except:
-        pass
+    elif shape_type == 1:  # Earth/Globe - circles
+        draw.ellipse([center_x - inner_size, center_y - inner_size,
+                      center_x + inner_size, center_y + inner_size],
+                     outline=(255, 255, 255), width=3)
+        draw.ellipse([center_x - inner_size//2, center_y - inner_size//3,
+                      center_x + inner_size//3, center_y + inner_size//3],
+                     fill=(255, 255, 255))
+
+    elif shape_type == 2:  # Lightning bolt
+        points = [
+            (center_x, center_y - inner_size),
+            (center_x + inner_size//2, center_y - inner_size//3),
+            (center_x + inner_size//4, center_y),
+            (center_x + inner_size, center_y + inner_size//2),
+            (center_x, center_y + inner_size//4),
+            (center_x + inner_size//3, center_y - inner_size//2),
+        ]
+        draw.polygon(points, fill=(255, 255, 255))
+
+    elif shape_type == 3:  # Checkmark
+        points = [
+            (center_x - inner_size//2, center_y),
+            (center_x - inner_size//4, center_y + inner_size//2),
+            (center_x + inner_size, center_y - inner_size//2),
+        ]
+        draw.line(points, fill=(255, 255, 255), width=6)
+
+    elif shape_type == 4:  # Diamond
+        points = [
+            (center_x, center_y - inner_size),
+            (center_x + inner_size, center_y),
+            (center_x, center_y + inner_size),
+            (center_x - inner_size, center_y),
+        ]
+        draw.polygon(points, fill=(255, 255, 255))
+
+    elif shape_type == 5:  # Arrow/Rocket
+        points = [
+            (center_x + inner_size, center_y),
+            (center_x - inner_size, center_y - inner_size//2),
+            (center_x - inner_size//2, center_y),
+            (center_x - inner_size, center_y + inner_size//2),
+        ]
+        draw.polygon(points, fill=(255, 255, 255))
 
 
 def create_frame(background, data, frame_num, color_idx=0):
-    """Create a clean, minimal frame."""
+    """Create a clean frame."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
 
-    # Light overlay at top for text area clarity (optional subtle touch)
+    # Light overlay at top
     overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     for y in range(int(h * 0.4)):
@@ -117,7 +169,7 @@ def create_frame(background, data, frame_num, color_idx=0):
     title = data.get('title', '')
     subtitle = data.get('subtitle', '')
     body = data.get('body', [])
-    emoji = data.get('emoji', '✨')
+    shape = data.get('shape', 0)
     color = data.get('color', COLORS[color_idx % len(COLORS)])
 
     # Fonts
@@ -127,12 +179,11 @@ def create_frame(background, data, frame_num, color_idx=0):
 
     y_offset = int(h * 0.08)
 
-    # Emoji circle
-    if emoji:
-        draw_emoji_in_circle(draw, w // 2, y_offset + 50, emoji, color, size=80)
-        y_offset += 140
+    # Colored shape circle
+    draw_shape_circle(draw, w // 2, y_offset + 50, shape, color, size=80)
+    y_offset += 140
 
-    # Title - clean dark text
+    # Title
     if title:
         bbox = draw.textbbox((0, 0), title, font=title_font)
         text_w = bbox[2] - bbox[0]
@@ -141,7 +192,7 @@ def create_frame(background, data, frame_num, color_idx=0):
         draw.text((x, y_offset), title, font=title_font, fill=color)
         y_offset += FONT_SIZE_TITLE + 20
 
-    # Decorative line
+    # Line
     draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=color)
     y_offset += 30
 
@@ -154,7 +205,7 @@ def create_frame(background, data, frame_num, color_idx=0):
         draw.text((x, y_offset), subtitle, font=subtitle_font, fill=COLOR_TEXT)
         y_offset += FONT_SIZE_SUBTITLE + 30
 
-    # Body text
+    # Body
     for line in body:
         if not line.strip():
             y_offset += 15
@@ -190,8 +241,8 @@ def generate_frames(version, slides_data):
         path = frames_dir / f"frame_{i:03d}.png"
         frame.save(path, "PNG")
         frame_paths.append(path)
-        emoji = slide.get('emoji', '?')
-        print(f"  {i}. {emoji} {slide['title']}")
+        title = slide['title']
+        print(f"  {i}. {title}")
 
     return frame_paths, frames_dir
 
@@ -257,37 +308,37 @@ def main():
 
     slides = [
         {
-            'emoji': '⭐',
+            'shape': 0,
             'title': f'NoteCraft v{version}',
             'subtitle': 'Quality Release',
             'body': ['High-performance note taking', 'Cross-platform ready'],
         },
         {
-            'emoji': '🌍',
+            'shape': 1,
             'title': 'RTL Text Handling',
             'subtitle': 'Improved Caret',
             'body': ['Better cursor positioning', 'in right-to-left scripts'],
         },
         {
-            'emoji': '⚡',
+            'shape': 2,
             'title': 'GitHub Actions Fixed',
             'subtitle': 'CI Status Reports',
             'body': ['Proper branch protection', 'Zero-delay status reporting'],
         },
         {
-            'emoji': '✓',
+            'shape': 3,
             'title': 'Installation Testing',
             'subtitle': 'Fresh Profile Verified',
             'body': ['Complete Windows verification', '13 language notebooks ready'],
         },
         {
-            'emoji': '💎',
+            'shape': 4,
             'title': 'Demo Parity',
             'subtitle': 'Perfect Sync',
             'body': ['HTML and CMGFM identical', 'Pixel-perfect rendering'],
         },
         {
-            'emoji': '🚀',
+            'shape': 5,
             'title': 'Ready for Release',
             'subtitle': 'All Systems Go',
             'body': ['Full quality gate passed', 'Production ready'],
@@ -304,6 +355,13 @@ def main():
 
     size_mb = output_gif.stat().st_size / (1024 * 1024)
     print(f"\n✅ {output_gif.name} ({size_mb:.2f} MB, {len(frames)} frames)")
+    print("\nShapes used (guaranteed to render):")
+    print("  1. Star")
+    print("  2. Globe")
+    print("  3. Lightning bolt")
+    print("  4. Checkmark")
+    print("  5. Diamond")
+    print("  6. Rocket/Arrow")
 
 
 if __name__ == "__main__":
