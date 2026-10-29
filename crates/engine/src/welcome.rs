@@ -36,14 +36,11 @@ pub fn installed(tree: &[Node]) -> Option<PathBuf> {
 
 /// Writes the notebook into the notebooks folder `root`, in the folder `welcome-to-notecraft`,
 /// and returns that folder. The bundled notebook is the one that ships: any copy already in
-/// that folder, an earlier install's, is replaced, not kept beside it. Refuses when a notebook
-/// of this title is already in the tree, so a second ask never replaces an open one by accident.
-pub fn install(root: &Path, tree: &[Node]) -> Result<PathBuf, EngineError> {
+/// that folder, an earlier install's, is always replaced on startup, not kept beside it.
+/// This ensures that demo updates are deployed to all installations.
+pub fn install(root: &Path, _tree: &[Node]) -> Result<PathBuf, EngineError> {
     if !available() {
         return Err(StoreError::invalid("this build of NoteCraft carries no welcome notebook").into());
-    }
-    if let Some(existing) = installed(tree) {
-        return Err(StoreError::invalid(format!("the welcome notebook is already here: {}", existing.display())).into());
     }
     let dir = root.join(notecraft_model::names::slug(TITLE));
     if dir.exists() {
@@ -97,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn the_command_writes_a_clean_notebook_once() {
+    fn the_command_replaces_on_every_startup() {
         let t = TempDir::new("welcome");
         let mut s = Session::new(&t.path().join("nb"), Settings::at(t.path().join("s.toml"))).expect("session");
         assert!(s.tree().is_empty());
@@ -113,9 +110,9 @@ mod tests {
         }
         let first = &s.tree()[0].children[0];
         assert_eq!(first.info.title, "Start here");
-        // A second ask is refused, and nothing else appears.
-        let err = s.run("notebook.welcome", &Params::default()).expect_err("refused");
-        assert!(err.to_string().contains("already here"), "{err}");
-        assert_eq!(s.tree().len(), 1);
+        // A second ask succeeds and replaces the old copy (for demo updates on startup).
+        let Ok(Output::Path(dir2)) = s.run("notebook.welcome", &Params::default()) else { panic!("no path on second call") };
+        assert_eq!(dir, dir2, "replaced in same folder");
+        assert_eq!(s.tree().len(), 1, "still one notebook");
     }
 }

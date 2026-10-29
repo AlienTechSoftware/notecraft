@@ -86,14 +86,15 @@ def draw_number_circle(draw, x, y, number, circle_color, size=80):
         number_font = get_font(FONT_SIZE_NUMBER, bold=True)
         text = str(number)
 
-        # Get bounding box to measure text dimensions
-        bbox = draw.textbbox((x, y), text, font=number_font)
+        # Measure text at origin to get dimensions
+        bbox = draw.textbbox((0, 0), text, font=number_font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
 
-        # Center the text - position so bounding box is centered on circle center
-        text_x = x - text_w // 2
-        text_y = y - text_h // 2
+        # Center by subtracting half width and height
+        # textbbox returns (left, top, right, bottom)
+        text_x = x - text_w // 2 - bbox[0]
+        text_y = y - text_h // 2 - bbox[1]
 
         draw.text((text_x, text_y), text, font=number_font, fill=COLOR_NUMBER)
     except Exception as e:
