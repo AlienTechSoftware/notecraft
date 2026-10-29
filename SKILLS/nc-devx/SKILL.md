@@ -44,6 +44,31 @@ bash SKILLS/nc-devx/scripts/setup.sh
 For Ubuntu on WSL2, see [`references/wsl.md`](references/wsl.md) for package
 installation, build/test commands, and WSLg UI diagnostics.
 
+### Linux release packages
+
+Build a portable Linux tarball from the repository root:
+
+```bash
+packaging/linux/package.sh
+```
+
+The output is written under `dist/linux/`. Use `--skip-build` to package an
+existing release binary, or request optional formats explicitly:
+
+```bash
+packaging/linux/package.sh --formats tar
+packaging/linux/package.sh --formats appimage
+packaging/linux/package.sh --formats deb,rpm
+```
+
+AppImage requires `appimagetool`; Debian and RPM packages require `nfpm`.
+The script does not install or download those tools. Validate the portable
+packaging path with:
+
+```bash
+packaging/linux/test.sh
+```
+
 **macOS (bash/zsh):**
 ```bash
 bash SKILLS/nc-devx/scripts/setup.mac.sh

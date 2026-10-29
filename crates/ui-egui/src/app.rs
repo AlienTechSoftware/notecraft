@@ -123,7 +123,7 @@ fn attachment_icon_exists(page: &Path, name: &str) -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        page.join("assets").join(format!("{name}.svg")).is_file()
+        page.join("assets").join(format!("{name}.svg")).is_file() || page.join("assets").join(format!("{name}.png")).is_file()
     }
 }
 
@@ -147,7 +147,7 @@ fn replace_attachment_icon(format: PageFormat, snippet: &str, name: &str, icon_l
 
 #[cfg(test)]
 mod attachment_reference_tests {
-    use super::{PageFormat, replace_attachment_icon};
+    use super::{PageFormat, attachment_icon_exists, replace_attachment_icon};
 
     #[test]
     fn html_repair_changes_only_the_image_source() {
@@ -162,6 +162,17 @@ mod attachment_reference_tests {
         let input = "[![brief.docx](assets/brief.docx.svg) brief.docx](assets/brief.docx)";
         let output = replace_attachment_icon(PageFormat::Cmgfm, input, "brief.docx", "assets/brief.docx.png");
         assert_eq!(output, "[![brief.docx](assets/brief.docx.png) brief.docx](assets/brief.docx)");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn a_windows_png_sidecar_is_a_valid_icon_on_posix() {
+        let t = notecraft_store::testing::TempDir::new("attachment-icon");
+        let page = t.path().join("page");
+        std::fs::create_dir_all(page.join("assets")).expect("assets");
+        std::fs::write(page.join("assets/brief.docx"), b"attachment").expect("attachment");
+        std::fs::write(page.join("assets/brief.docx.png"), b"png sidecar").expect("icon");
+        assert!(attachment_icon_exists(&page, "brief.docx"));
     }
 }
 

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=NoteCraft
+GenericName=Note Taking Application
+Comment=Notes as plain files in plain folders
+Exec=notecraft %U
+TryExec=notecraft
+Icon=com.alientechsoftware.notecraft
+Terminal=false
+StartupNotify=true
+Categories=Office;Utility;
+MimeType=x-scheme-handler/notecraft;

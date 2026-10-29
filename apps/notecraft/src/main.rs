@@ -38,10 +38,24 @@ fn notebooks_dir(args: &[String]) -> PathBuf {
     if let Some(i) = args.iter().position(|a| a == "--notebooks") {
         return args.get(i + 1).map(PathBuf::from).unwrap_or_else(notecraft_store::settings::default_notebooks_dir);
     }
-    if let Some(saved) = Settings::default_location().get("last_notebooks_root") {
-        return PathBuf::from(saved);
+    if let Some(saved) = Settings::default_location().get("last_notebooks_root")
+        && let Some(path) = saved_notebooks_dir(&saved)
+    {
+        return path;
+    }
+    let local = PathBuf::from("my-notebooks");
+    if local.is_dir() {
+        return local;
     }
     notecraft_store::settings::default_notebooks_dir()
+}
+
+fn saved_notebooks_dir(saved: &str) -> Option<PathBuf> {
+    #[cfg(not(target_os = "windows"))]
+    if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
+        return None;
+    }
+    Some(PathBuf::from(saved))
 }
 
 fn flag_value(args: &[String], name: &str) -> Option<String> {
@@ -228,6 +242,14 @@ mod tests {
     fn a_trailing_flag_without_a_value_falls_back_to_the_default() {
         let args = vec!["--notebooks".to_string()];
         assert_eq!(notebooks_dir(&args), notecraft_store::settings::default_notebooks_dir());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn a_windows_saved_path_is_not_used_on_linux() {
+        assert_eq!(saved_notebooks_dir(r"\\?\C:\Notes"), None);
+        assert_eq!(saved_notebooks_dir(r"C:\Notes"), None);
+        assert_eq!(saved_notebooks_dir("/mnt/c/Notes"), Some(PathBuf::from("/mnt/c/Notes")));
     }
 
     #[test]

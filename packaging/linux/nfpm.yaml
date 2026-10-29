@@ -1,0 +1,46 @@
+name: notecraft
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: 1
+section: utils
+priority: optional
+maintainer: NoteCraft maintainers <notecraft@example.invalid>
+homepage: https://github.com/AlienTechSoftware/notecraft
+license: MIT OR Apache-2.0
+description: |-
+  NoteCraft is a clean-room note taking app.
+  Notes live as plain files in plain folders.
+contents:
+  - src: ${STAGE}/usr/bin/notecraft
+    dst: /usr/bin/notecraft
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/
+    dst: /usr/share/
+    type: tree
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libwayland-client0
+      - libx11-6
+      - libxcursor1
+      - libxi6
+      - libvulkan1 | libegl1
+    recommends:
+      - mesa-vulkan-drivers
+      - libegl-mesa0
+      - xdg-desktop-portal
+  rpm:
+    depends:
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libX11.so.6()(64bit)
+      - libXcursor.so.1()(64bit)
+      - libXi.so.6()(64bit)
+      - (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit))
