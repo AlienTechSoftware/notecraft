@@ -101,8 +101,8 @@ def draw_number_circle(draw, x, y, number, circle_color, size=80):
         print(f"Warning: Could not draw number: {e}")
 
 
-def create_frame(background, data, frame_num, color_idx=0):
-    """Create a frame with number."""
+def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
+    """Create a frame with number and version."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
@@ -122,6 +122,13 @@ def create_frame(background, data, frame_num, color_idx=0):
     body = data.get('body', [])
     number = data.get('number', frame_num)
     circle_color = data.get('circle_color', COLORS[color_idx % len(COLORS)])
+
+    # Version in top-right corner
+    version_font = get_font(int(FONT_SIZE_BODY * 0.6))
+    version_text = f"v{version}"
+    bbox = draw.textbbox((0, 0), version_text, font=version_font)
+    text_w = bbox[2] - bbox[0]
+    draw.text((w - text_w - 20, 15), version_text, font=version_font, fill=COLOR_TEXT)
 
     # Fonts
     title_font = get_font(FONT_SIZE_TITLE, bold=True)
@@ -188,7 +195,7 @@ def generate_frames(version, slides_data):
     print(f"Generating {len(slides_data)} frames:")
 
     for i, slide in enumerate(slides_data, 1):
-        frame = create_frame(background, slide, i, color_idx=i)
+        frame = create_frame(background, slide, i, version=version, color_idx=i)
         path = frames_dir / f"frame_{i:03d}.png"
         frame.save(path, "PNG")
         frame_paths.append(path)
