@@ -70,6 +70,9 @@
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="NoteCraft"
               Description="NoteCraft note taking" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
               Icon="NotecraftIcon.ico" IconIndex="0" />
+          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="NoteCraft"
+              Description="NoteCraft note taking" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
+              Icon="NotecraftIcon.ico" IconIndex="0" />
         </File>
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\notecraft.exe" Value="[#NotecraftExe]" Type="string" />
       </Component>

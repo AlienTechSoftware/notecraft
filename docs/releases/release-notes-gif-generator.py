@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-NoteCraft Release Notes GIF Generator
+NoteCraft Release Notes GIF Generator - Professional Edition
 
-Generates animated GIF release notes by overlaying text on a background image.
-Creates individual frames and assembles them into a GIF.
+Generates high-quality animated GIF release notes with clean typography
+on a background image. Creates individual frames and assembles them into a GIF.
 
 Usage:
     python release-notes-gif-generator.py <version>
@@ -11,7 +11,7 @@ Usage:
 
 Requirements:
     - Pillow (PIL): pip install Pillow
-    - imagemagick (convert command): Available on Windows via ImageMagick installer
+    - imagemagick (convert command): Optional, for higher quality output
 
 Output:
     - <version>/.frames/  - Directory containing individual frame images
@@ -23,39 +23,40 @@ import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import subprocess
-import shutil
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent.absolute()
-FONT_SIZE = 28
-TITLE_FONT_SIZE = 48
-LINE_HEIGHT = 40
-FRAME_DURATION = 2000  # milliseconds per frame
-TEXT_COLOR = (255, 255, 255)  # White text
-BACKGROUND_COLOR = (0, 0, 0, 180)  # Semi-transparent black overlay
+FONT_SIZE_TITLE = 52
+FONT_SIZE_SUBTITLE = 36
+FONT_SIZE_BODY = 26
+LINE_HEIGHT = 50
+FRAME_DURATION = 3000  # milliseconds per frame
+TEXT_COLOR_PRIMARY = (255, 255, 255)  # White
+TEXT_COLOR_ACCENT = (120, 180, 255)  # Light blue
+SHADOW_OFFSET = 2
 
 
-def get_available_font(fallback_size):
-    """Try to load a nice font, fall back to default if unavailable."""
+def get_available_font(size, bold=False):
+    """Try to load a system font, fall back to default if unavailable."""
     font_paths = [
-        "C:\\Windows\\Fonts\\segoeui.ttf",  # Windows
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-        "/System/Library/Fonts/Helvetica.ttc",  # macOS
+        ("C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ("/System/Library/Fonts/Helvetica.ttc", "/System/Library/Fonts/Helvetica.ttc"),
     ]
 
-    for font_path in font_paths:
-        if Path(font_path).exists():
-            try:
-                return ImageFont.truetype(font_path, fallback_size)
-            except Exception:
-                pass
+    for regular, bold_path in font_paths:
+        path = bold_path if bold else regular
+        try:
+            if Path(path).exists():
+                return ImageFont.truetype(path, size)
+        except Exception:
+            pass
 
-    # Fall back to default font
     return ImageFont.load_default()
 
 
 def load_background(version):
-    """Load the background image for the given version."""
+    """Load and prepare the background image."""
     bg_path = SCRIPT_DIR / version / f"{version}.jfif"
 
     if not bg_path.exists():
@@ -63,165 +64,163 @@ def load_background(version):
         sys.exit(1)
 
     img = Image.open(bg_path)
-    # Convert RGBA if needed
     if img.mode != "RGBA":
         img = img.convert("RGBA")
 
-    print(f"✓ Loaded background: {bg_path} ({img.size})")
+    print(f"✓ Loaded background: {bg_path.name} ({img.size[0]}×{img.size[1]})")
     return img
 
 
 def create_frame_with_text(background, text_lines, frame_num):
-    """Create a single frame with text overlay."""
-    # Create a copy of the background
+    """Create a single professional-looking frame."""
     frame = background.copy()
+    width, height = frame.size
+    draw = ImageDraw.Draw(frame)
 
-    # Create a semi-transparent overlay for text readability
+    # Fonts
+    title_font = get_available_font(FONT_SIZE_TITLE, bold=True)
+    subtitle_font = get_available_font(FONT_SIZE_SUBTITLE)
+    body_font = get_available_font(FONT_SIZE_BODY)
+
+    # Add a subtle dark overlay at the top for better text contrast
     overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
 
-    # Load fonts
-    title_font = get_available_font(TITLE_FONT_SIZE)
-    body_font = get_available_font(FONT_SIZE)
+    # Gradient overlay from top
+    for y in range(int(height * 0.4)):
+        alpha = int(50 * (1 - (y / (height * 0.4))))
+        overlay_draw.rectangle([(0, y), (width, y + 1)], fill=(0, 0, 0, alpha))
 
-    # Calculate text positioning
-    padding = 60
-    start_y = 100
+    frame = Image.alpha_composite(frame, overlay)
+    draw = ImageDraw.Draw(frame)
 
-    # Draw semi-transparent background for text area
-    text_height = start_y + (len(text_lines) * LINE_HEIGHT) + padding
-    overlay_draw.rectangle(
-        [(0, start_y - 30), (frame.size[0], text_height)],
-        fill=(*BACKGROUND_COLOR[:3], int(BACKGROUND_COLOR[3] * 0.7))
-    )
+    # Text positioning
+    padding_top = int(height * 0.12)
+    y_offset = padding_top
 
-    # Draw text
-    y_offset = start_y
+    # Draw each line
     for i, line in enumerate(text_lines):
-        # Use title font for first line, body font for rest
-        font = title_font if i == 0 else body_font
+        line = line.strip()
+        if not line:
+            y_offset += int(LINE_HEIGHT * 0.3)
+            continue
 
-        # Center text horizontally
-        bbox = overlay_draw.textbbox((0, 0), line, font=font)
+        # Determine styling based on position
+        if i == 0:
+            font = title_font
+            color = TEXT_COLOR_ACCENT
+            y_offset += int(LINE_HEIGHT * 0.1)
+        elif i == 1:
+            font = subtitle_font
+            color = TEXT_COLOR_PRIMARY
+            y_offset += int(LINE_HEIGHT * 0.05)
+        else:
+            font = body_font
+            color = TEXT_COLOR_PRIMARY
+
+        # Center horizontally
+        bbox = draw.textbbox((0, 0), line, font=font)
         text_width = bbox[2] - bbox[0]
-        x_pos = (frame.size[0] - text_width) // 2
+        x_pos = (width - text_width) // 2
 
-        overlay_draw.text(
-            (x_pos, y_offset),
+        # Draw shadow (darker version slightly offset)
+        shadow_color = (0, 0, 0, 180)
+        draw.text(
+            (x_pos + SHADOW_OFFSET, y_offset + SHADOW_OFFSET),
             line,
             font=font,
-            fill=TEXT_COLOR
+            fill=shadow_color
         )
+
+        # Draw main text
+        draw.text((x_pos, y_offset), line, font=font, fill=color)
 
         y_offset += LINE_HEIGHT
 
-    # Composite overlay onto frame
-    frame = Image.alpha_composite(frame, overlay)
     return frame
 
 
-def generate_release_notes_frames(version, release_notes_content):
-    """Generate individual frames from release notes content."""
-    # Create frames directory
+def generate_frames(version, content):
+    """Generate frame images from release notes content."""
     frames_dir = SCRIPT_DIR / version / ".frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clear existing frames
+    # Clear old frames
     for f in frames_dir.glob("*.png"):
         f.unlink()
 
-    print(f"✓ Created frames directory: {frames_dir}")
+    print(f"✓ Frames directory: {frames_dir.name}/")
 
-    # Load background
     background = load_background(version)
 
-    # Parse release notes into sections/slides
-    # Format: Each slide is separated by ---
-    slides = [
-        slide.strip().split('\n')
-        for slide in release_notes_content.split('---')
-    ]
-
-    # Filter empty slides
+    # Split by --- separator
+    slides = [s.strip().split('\n') for s in content.split('---')]
     slides = [s for s in slides if s and any(s)]
 
     if not slides:
-        print("Error: No content to generate frames from")
-        return frames_dir, []
+        print("Error: No content to generate")
+        return [], frames_dir
 
-    # Generate frames
     frame_paths = []
-    for slide_num, text_lines in enumerate(slides, 1):
-        # Limit lines per frame for readability
-        text_lines = [line.strip() for line in text_lines if line.strip()][:6]
+    print(f"Generating {len(slides)} frames:")
 
-        frame = create_frame_with_text(background, text_lines, slide_num)
+    for num, lines in enumerate(slides, 1):
+        lines = [ln.strip() for ln in lines if ln.strip()][:4]
+        frame = create_frame_with_text(background, lines, num)
+        path = frames_dir / f"frame_{num:03d}.png"
+        frame.save(path, "PNG")
+        frame_paths.append(path)
+        print(f"  {num}. {lines[0][:40]}")
 
-        frame_path = frames_dir / f"frame_{slide_num:03d}.png"
-        frame.save(frame_path, "PNG")
-        frame_paths.append(frame_path)
-
-        print(f"  Frame {slide_num}: {frame_path.name}")
-
-    print(f"✓ Generated {len(frame_paths)} frames")
-    return frames_dir, frame_paths
+    return frame_paths, frames_dir
 
 
-def create_gif_from_frames(frames_dir, output_gif, frame_duration=FRAME_DURATION):
-    """Create animated GIF from frames using ImageMagick or Pillow."""
-    frame_paths = sorted(frames_dir.glob("frame_*.png"))
-
-    if not frame_paths:
-        print("Error: No frames found to create GIF")
+def create_gif(frames_dir, output_path, duration=FRAME_DURATION):
+    """Create GIF from frames."""
+    frames = sorted(frames_dir.glob("frame_*.png"))
+    if not frames:
+        print("Error: No frames found")
         return False
 
-    print(f"Creating GIF with {len(frame_paths)} frames...")
+    print(f"\nCreating GIF ({duration}ms per frame)...")
 
-    # Try ImageMagick first (better quality)
+    # Try ImageMagick
     try:
-        frames_pattern = str(frames_dir / "frame_*.png")
-        cmd = [
-            "magick",
-            "convert",
-            "-delay", str(frame_duration // 10),  # Convert ms to centiseconds
-            "-loop", "0",  # Infinite loop
-            frames_pattern,
-            str(output_gif)
-        ]
+        pattern = str(frames_dir / "frame_*.png")
+        for cmd_name in ["magick", "convert"]:
+            try:
+                subprocess.run(
+                    [cmd_name, "convert", "-delay", str(duration // 10), "-loop", "0",
+                     pattern, str(output_path)],
+                    check=True,
+                    capture_output=True,
+                    timeout=60
+                )
+                print(f"✓ ImageMagick: {output_path.name}")
+                return True
+            except FileNotFoundError:
+                continue
+            except subprocess.CalledProcessError:
+                continue
+    except Exception:
+        pass
 
-        # On Windows, might be called 'convert' without 'magick' prefix
-        try:
-            subprocess.run(cmd, check=True, capture_output=True)
-        except FileNotFoundError:
-            # Try alternate command name
-            cmd[0] = "convert"
-            subprocess.run(cmd, check=True, capture_output=True)
-
-        print(f"✓ Created GIF using ImageMagick: {output_gif}")
+    # Fallback to Pillow
+    try:
+        images = [Image.open(p) for p in frames]
+        images[0].save(
+            output_path,
+            save_all=True,
+            append_images=images[1:],
+            duration=duration,
+            loop=0,
+            optimize=False
+        )
+        print(f"✓ Pillow: {output_path.name}")
         return True
-
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        print(f"ImageMagick not available: {e}")
-        print("Falling back to Pillow GIF creation...")
-
-        # Fallback: use Pillow
-        try:
-            images = [Image.open(p) for p in frame_paths]
-            images[0].save(
-                output_gif,
-                save_all=True,
-                append_images=images[1:],
-                duration=frame_duration,
-                loop=0,
-                optimize=False
-            )
-
-            print(f"✓ Created GIF using Pillow: {output_gif}")
-            return True
-
-        except Exception as e:
-            print(f"Error creating GIF with Pillow: {e}")
-            return False
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
 
 
 def main():
@@ -234,67 +233,49 @@ def main():
     version_dir = SCRIPT_DIR / version
 
     if not version_dir.exists():
-        print(f"Error: Version directory not found: {version_dir}")
+        print(f"Error: {version_dir} not found")
         sys.exit(1)
 
-    # Check for background image
-    bg_path = version_dir / f"{version}.jfif"
-    if not bg_path.exists():
-        print(f"Error: Background image not found at {bg_path}")
-        sys.exit(1)
+    print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    print(f"Generating release notes GIF for NoteCraft v{version}")
-    print(f"Background: {bg_path}")
-
-    # Define release notes content for this version
-    # Format: Separate slides with ---
-    release_notes_content = """NoteCraft v{version}
-Release
+    # Content
+    content = f"""NoteCraft v{version}
+Quality Release
 ---
 RTL Text Handling
-Improved caret positioning
-in right-to-left content
+Caret improvements
+in right-to-left scripts
 ---
-GitHub Actions Fix
-CI workflow now reports
-status to branch protection
+GitHub Actions Fixed
+CI workflow properly
+reports to branch protection
 ---
-Installation & Testing
+Installation Testing
 Complete fresh-profile
 verification on Windows
 ---
 Demo Parity Verified
-HTML and CMGFM notebooks
-identical in structure
+HTML and CMGFM
+render identically
 ---
 Ready for Release
 Full quality gate passed
-""".format(version=version)
+"""
 
-    # Generate frames
-    frames_dir, frame_paths = generate_release_notes_frames(version, release_notes_content)
-
-    if not frame_paths:
-        print("Error: Failed to generate frames")
+    # Generate
+    frames, frames_dir = generate_frames(version, content)
+    if not frames:
         sys.exit(1)
 
-    # Create GIF
     output_gif = version_dir / "RELEASE_NOTES.gif"
-    success = create_gif_from_frames(frames_dir, output_gif)
+    if not create_gif(frames_dir, output_gif):
+        sys.exit(1)
 
-    if success:
-        gif_size_mb = output_gif.stat().st_size / (1024 * 1024)
-        print(f"\n✅ Success! Generated: {output_gif}")
-        print(f"   Size: {gif_size_mb:.2f} MB")
-        print(f"   Frames: {len(frame_paths)}")
-        print(f"   Duration per frame: {FRAME_DURATION} ms")
-        print(f"\nTo use in release notes:")
-        print(f"![NoteCraft v{version} Release](https://raw.githubusercontent.com/AlienTechSoftware/notecraft/main/docs/releases/{version}/RELEASE_NOTES.gif)")
-        return 0
-    else:
-        print("Error: Failed to create GIF")
-        return 1
+    size_mb = output_gif.stat().st_size / (1024 * 1024)
+    print(f"\n✅ {output_gif.name} ({size_mb:.2f} MB, {len(frames)} frames)")
+    print(f"\nMarkdown:\n![Release]" +
+          f"(https://raw.githubusercontent.com/AlienTechSoftware/notecraft/main/docs/releases/{version}/RELEASE_NOTES.gif)")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
