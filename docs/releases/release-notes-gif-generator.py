@@ -72,7 +72,7 @@ def draw_decorative_line(draw, x_start, x_end, y, width=3, color=(100, 180, 255)
 
 
 def draw_number_circle(draw, x, y, number, circle_color, size=80):
-    """Draw colored circle with large white number."""
+    """Draw colored circle with large white number centered."""
     box_size = size + 20
 
     # Colored circle background
@@ -81,17 +81,21 @@ def draw_number_circle(draw, x, y, number, circle_color, size=80):
         fill=circle_color
     )
 
-    # White number inside
+    # White number inside - centered both horizontally and vertically
     try:
         number_font = get_font(FONT_SIZE_NUMBER, bold=True)
-        bbox = draw.textbbox((0, 0), str(number), font=number_font)
+        text = str(number)
+
+        # Get bounding box to measure text dimensions
+        bbox = draw.textbbox((x, y), text, font=number_font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
 
-        number_x = x - text_w // 2
-        number_y = y - text_h // 2
+        # Center the text - position so bounding box is centered on circle center
+        text_x = x - text_w // 2
+        text_y = y - text_h // 2
 
-        draw.text((number_x, number_y), str(number), font=number_font, fill=COLOR_NUMBER)
+        draw.text((text_x, text_y), text, font=number_font, fill=COLOR_NUMBER)
     except Exception as e:
         print(f"Warning: Could not draw number: {e}")
 
