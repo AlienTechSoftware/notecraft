@@ -4,7 +4,8 @@
 #
 # Checks each tool NoteCraft needs. On a machine that is already set up it only reports, all OK.
 # What is missing is installed:
-#   - a C compiler, pkg-config and the window system libraries, through apt, dnf or pacman (sudo)
+#   - a C compiler, pkg-config and the window system libraries, through apt, dnf or pacman
+#     (sudo, or the WSL root launcher when non-interactive sudo cannot prompt)
 #   - rustup, and the Rust named in rust-toolchain.toml with clippy and rustfmt
 # Then it turns the git hooks on and builds xtask.
 #
@@ -30,6 +31,19 @@ bad() { echo -e "\033[31mFAIL $*\033[0m"; FAILED+=("$*"); }
 step() { echo; echo -e "\033[36m$*\033[0m"; }
 have() { command -v "$1" > /dev/null 2>&1; }
 
+install_apt_packages() {
+    packages=(build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libfontconfig1-dev libfreetype6-dev)
+    if have sudo && sudo -n true 2> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y "${packages[@]}"
+    elif have wsl.exe; then
+        info "sudo is not available non-interactively; using wsl.exe -u root"
+        wsl.exe -u root -- apt-get update && wsl.exe -u root -- apt-get install -y "${packages[@]}"
+    else
+        bad "sudo cannot prompt and wsl.exe is unavailable; install by hand: ${missing[*]}"
+        return 1
+    fi
+}
+
 # Puts rustup's folder on PATH for this run, if it is there.
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
@@ -54,7 +68,7 @@ if [ "$SKIP_DEPS" = "0" ]; then
     else
         info "missing: ${missing[*]}; installing"
         if have apt-get; then
-            sudo apt-get update && sudo apt-get install -y build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libfontconfig1-dev libfreetype6-dev
+            install_apt_packages
         elif have dnf; then
             sudo dnf install -y gcc pkg-config libxkbcommon-devel wayland-devel libX11-devel fontconfig-devel freetype-devel
         elif have pacman; then

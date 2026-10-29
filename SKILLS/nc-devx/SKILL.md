@@ -41,6 +41,9 @@ Installing the C++ build tools or the .NET SDK asks for administrator rights (a 
 bash SKILLS/nc-devx/scripts/setup.sh
 ```
 
+For Ubuntu on WSL2, see [`references/wsl.md`](references/wsl.md) for package
+installation, build/test commands, and WSLg UI diagnostics.
+
 **macOS (bash/zsh):**
 ```bash
 bash SKILLS/nc-devx/scripts/setup.mac.sh
