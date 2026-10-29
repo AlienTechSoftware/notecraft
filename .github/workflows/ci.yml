@@ -108,3 +108,21 @@ jobs:
 
       - name: Coverage compared with docs/coverage.json
         run: cargo xtask coverage
+
+  # Report overall CI status to branch protection. The gate and coverage jobs both complete,
+  # but GitHub's branch protection rule requires a top-level "CI" status check. This job
+  # depends on both and reports overall success, so the branch protection check passes once
+  # all CI work is done (whether coverage passed its own checks or not, per its continue-on-error).
+  ci-status:
+    name: CI
+    runs-on: ubuntu-latest
+    needs: [gate, coverage]
+    if: always()
+    steps:
+      - name: Check CI result
+        run: |
+          if [[ "${{ needs.gate.result }}" == "failure" ]]; then
+            echo "❌ Quality gate failed"
+            exit 1
+          fi
+          echo "✅ CI checks passed"
