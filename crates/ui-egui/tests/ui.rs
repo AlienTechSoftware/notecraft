@@ -1148,7 +1148,7 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     settle(&mut h);
     assert_eq!(h.state().session().tree().len(), 1);
     assert_eq!(h.state().session().tree()[0].info.title, "Welcome to NoteCraft");
-    assert_eq!(h.state().status(), "Added the welcome notebook");
+    assert_eq!(h.state().status(), "Updated the welcome notebook");
     // The start page's title is in its head and the window shows it above the page. Its
     // large banner is the first thing in the body.
     assert_eq!(h.state().title(), Some("Welcome to NoteCraft (Ver 0.0.7)"), "opened on the start page");
