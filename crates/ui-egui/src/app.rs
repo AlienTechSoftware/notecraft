@@ -2299,20 +2299,23 @@ impl NoteCraftApp {
     /// Adds the Welcome notebook and opens it on its start page; if it is already in the
     /// folder, opens that one instead.
     pub fn add_welcome(&mut self) {
-        let existing = notecraft_engine::welcome::installed(self.session.tree());
-        let (dir, message) = match existing {
-            Some(dir) => (dir, "The welcome notebook is already here"),
-            None => match self.run("notebook.welcome", &Params::default()) {
-                Some(Output::Path(dir)) => (dir, "Added the welcome notebook"),
-                _ => return,
-            },
+        // Always call install to replace with the current bundled demo version
+        // (allows demo updates on every startup)
+        let message = match self.run("notebook.welcome", &Params::default()) {
+            Some(Output::Path(dir)) => {
+                // Refresh the session to pick up the newly replaced content
+                self.session.refresh();
+                // Now open the updated demo
+                self.remember_recent_notebook(&dir);
+                self.open.insert(dir.clone());
+                self.selected = Some(dir.clone());
+                if let Some(first) = first_page_under(self.session.tree(), &dir) {
+                    self.open_path(&path_str(&first));
+                }
+                "Updated the welcome notebook".to_string()
+            }
+            _ => return,
         };
-        self.remember_recent_notebook(&dir);
-        self.open.insert(dir.clone());
-        self.selected = Some(dir.clone());
-        if let Some(first) = first_page_under(self.session.tree(), &dir) {
-            self.open_path(&path_str(&first));
-        }
         // After the page opened, so the message is the one the user reads.
         if !self.status_is_error {
             self.say(message);
