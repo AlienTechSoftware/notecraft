@@ -271,7 +271,7 @@ def main():
             'circle_color': (100, 180, 255),
             'title': f'NoteCraft v{version}',
             'subtitle': 'Linux Support & Installation',
-            'body': ['Cross-platform deployment', 'Windows, macOS, Linux ready'],
+            'body': ['Cross-platform deployment', 'Windows, Linux ready'],
         },
         {
             'number': 2,
