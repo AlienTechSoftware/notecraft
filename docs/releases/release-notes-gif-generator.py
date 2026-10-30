@@ -199,7 +199,8 @@ def generate_frames(version, slides_data):
         frame.save(path, "PNG")
         frame_paths.append(path)
         title = slide['title']
-        print(f"  {i}. {title}")
+        body_text = " / ".join(slide.get('body', []))
+        print(f"  {i}. {title} — {body_text}")
 
     return frame_paths, frames_dir
 
