@@ -661,7 +661,10 @@ pub(crate) fn show_block_zoomed(
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
     let response = ui.interact(rect, id, egui::Sense::click());
     if let Some(kind) = object_kind(block) {
+        // Read every response flag before `data_mut`: `clicked` and
+        // `double_clicked` take the context lock that `data_mut` holds.
         let clicked = response.clicked();
+        let double_clicked = response.double_clicked();
         let pointer = response.interact_pointer_pos();
         ui.data_mut(|data| {
             let mut hits = data.get_temp::<Vec<(usize, egui::Rect, String)>>(object_hits_id()).unwrap_or_default();
@@ -670,7 +673,7 @@ pub(crate) fn show_block_zoomed(
             if clicked {
                 data.insert_temp(object_clicked_id(), (i, kind.to_string()));
             }
-            if response.double_clicked() {
+            if double_clicked {
                 data.insert_temp(object_double_clicked_id(), (i, kind.to_string()));
             }
         });
