@@ -8,74 +8,82 @@
 
 ## Priority Tiers
 
+**Note:** Ongoing work items (RTL, OneNote import, Markdown format) are tracked in "Known Gaps" below.
+This section lists NEW FEATURES for v0.0.8.
+
 ### 🔴 P0: Critical (Must Have)
 
-#### 1. RTL Text & Caret Excellence
-**Owner requirement:** "The caret and the right-to-left experience must be the best of any note taking application" (2026-10-19)
-- [ ] Full RTL (Arabic, Hebrew, Persian, Urdu) support with proper text direction
-- [ ] Caret positioning accuracy in mixed LTR/RTL text
-- [ ] Text selection and navigation in RTL scripts
-- [ ] Visual parity with OneNote, Obsidian, Notion in RTL handling
-- **Reference:** `work/rtl-and-caret-bar.md`
-
-#### 2. OneNote Import Completeness
-- [ ] Close remaining format/content gaps from v0.0.7
-- [ ] Support all OneNote section types
-- [ ] Preserve formatting, images, attachments
-- [ ] Handle nested sections and page hierarchies
-- **Reference:** `work/onenote-importer-plan.md`
-
-### 🟡 P1: High Priority (Should Have)
-
-#### 3. Localization & i18n System
+#### 1. Localization & i18n System (with RTL UI Mirroring)
+**IMPORTANT:** RTL language support requires SEPARATE MIRRORING BRANCH (very involved)
 - [ ] Design NoteCraft's i18n architecture (independent vs launcher integration)
 - [ ] Support 10+ languages (minimum parity with v0.0.7 launcher)
 - [ ] Locale selector in UI
 - [ ] RTL-aware locale handling
+- [ ] **SEPARATE BRANCH:** UI mirroring for RTL layouts (Arabic, Hebrew, Persian, Urdu)
+  - [ ] Right-aligned components
+  - [ ] Mirrored icons and controls
+  - [ ] RTL-first responsive design
 - **Blocker:** Need clarity on i18n integration with ArtCraft Launcher
 
-#### 4. Performance & Scalability
-- [ ] Optimize rendering for large notebooks (1000+ pages)
-- [ ] Efficient notebook tree loading
-- [ ] Search performance improvement
-- [ ] Memory footprint reduction
-- **Metric:** Sub-100ms page load, instant search on <10k notes
+### 🟡 P1: High Priority (Should Have)
 
-#### 5. Markdown Format Improvements
-- [ ] Full CommonMark + GFM (CMGFM) support
-- [ ] Better syntax highlighting for Markdown
-- [ ] Live preview mode for .md pages
-- [ ] Table editing in Markdown view
+#### 2. Performance Instrumentation & Analysis Tool
+- [ ] Integrate Rust performance profiling tools (flamegraph, cargo-flamegraph, criterion)
+- [ ] Add structured logging to capture performance metrics
+- [ ] Create log consumer tool that generates visualizations:
+  - [ ] Flame charts (CPU time distribution)
+  - [ ] Gantt charts (operation timeline)
+  - [ ] Waterfall charts (dependency chains)
+- [ ] Performance benchmarks against previous versions
+- **Investigation needed:** Available Rust instrumentation (tracing, pprof, etc.)
 
 ### 🟢 P2: Medium Priority (Nice to Have)
 
-#### 6. Canvas & Layout Features
+#### 3. Canvas & Layout Features
 - [ ] Improved free-form canvas editing
 - [ ] Better positioning/alignment tools
 - [ ] Grouped elements/containers
 - [ ] Multi-select operations
 
-#### 7. Collaboration Features (Future)
+#### 4. Collaboration Features (Future)
 - [ ] Local multi-user access (read-only or sharing)
 - [ ] Conflict resolution for synced edits
 - [ ] Change history/versioning
 
-#### 8. Plugin/Extension System (Exploratory)
+#### 5. Plugin/Extension System (Exploratory)
 - [ ] Plugin API design
 - [ ] Custom rendering or data transformers
 - [ ] Community extensions
 
 ---
 
-## Known Gaps from v0.0.7
+## Parallel Branches (NOT in v0.0.8 core)
 
-| Category | Issue | Impact | P-Level |
-|----------|-------|--------|---------|
-| RTL | Caret positioning in mixed text | Critical for RTL users | P0 |
-| i18n | No integrated i18n system | Blocks localization | P1 |
-| OneNote | Format gaps (tables, embedded objects) | Import incomplete | P0 |
-| Performance | Slow load on large notebooks | UX regression | P1 |
-| Markdown | No live preview mode | Feature parity gap | P2 |
+These are SEPARATE INITIATIVES that can run in parallel:
+
+### Branch: `feat/rtl-ui-mirroring`
+**Scope:** RTL UI layout mirroring for right-to-left languages
+**Why separate:** Very involved, affects entire UI codebase
+**Schedule:** Start after i18n base architecture is in place
+**Owner approval required:** Yes (significant UX change)
+
+### Branch: `feat/perf-instrumentation`
+**Scope:** Performance profiling, logging, analysis tool
+**Why separate:** Tool-building separate from core app
+**Dependencies:** Need to investigate Rust instrumentation options first
+**Deliverable:** Standalone performance analysis tool + flamegraph integration
+
+---
+
+## Ongoing Work (NOT new features for v0.0.8)
+
+These are continuous improvements tracked separately:
+
+| Item | Status | Reference |
+|------|--------|-----------|
+| **RTL text & caret excellence** | Ongoing | `work/rtl-and-caret-bar.md` |
+| **OneNote import completeness** | Ongoing | `work/onenote-importer-plan.md` |
+| **Markdown format improvements** | Ongoing | Feature backlog |
 
 ---
 
