@@ -3705,6 +3705,32 @@ fn double_clicking_an_attachment_card_opens_it() {
     assert!(h.query_all_by_label_contains("Open attachment").count() >= 1, "double click opened the attachment prompt: {}", look_at(&mut h));
 }
 
+/// Issue #15: a click beside a formula, diagram or picture lands on its row's own
+/// response. Reading that response's click state inside `data_mut` took the context lock twice
+/// and froze the window (a debug build panics after 10s).
+#[test]
+fn clicking_beside_a_formula_does_not_deadlock() {
+    let (_t, mut app, s) = sample_app("ui-object-row-click");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "Some words.\n\n$$\nx^2\n$$\n"}}))
+        .expect("write a page with a formula");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,700,2"}}))
+        .expect("arrange the page in a wide box");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the formula page");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+    for count in [1, 2] {
+        ask(&mut h, "ui.click", json!({"x": ox + 680.0, "y": oy + 60.0, "count": count})).expect("click beside the formula");
+        settle(&mut h);
+    }
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(2), "the page still draws its formula");
+}
+
 #[test]
 fn delete_and_backspace_remove_a_selected_picture() {
     for key in ["Delete", "Backspace"] {
