@@ -416,9 +416,6 @@ pub fn show(
         if hovered || editing || busy || is_sel {
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
             if image_object {
-                // Always show handles for images so they can be resized
-                let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
-                ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
                 // The handles are deliberately square and theme-coloured, like the
                 // selection affordance in the reference UI. The right-edge grip remains
                 // the live resize target; the other handles make the object boundary
@@ -434,6 +431,11 @@ pub fn show(
                     frame.center_bottom(),
                     frame.right_bottom(),
                 ];
+
+                let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
+
+                // Check if any handle is being hovered to show accent border
+                let mut any_handle_hovered = false;
 
                 // Create interact areas for each resize handle and set cursor icons
                 for (idx, point) in handle_positions.iter().enumerate() {
@@ -455,6 +457,7 @@ pub fn show(
 
                     if handle_response.hovered() {
                         ui.ctx().set_cursor_icon(cursor);
+                        any_handle_hovered = true;
                     }
 
                     // Handle resize drag
@@ -508,6 +511,11 @@ pub fn show(
                     // Draw the handle
                     ui.painter().rect_filled(Rect::from_center_size(*point, vec2(size, size)), 1.0, t.editor);
                     ui.painter().rect_stroke(Rect::from_center_size(*point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
+                }
+
+                // Show accent border only when hovering over handles
+                if any_handle_hovered {
+                    ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
                 }
             } else {
                 ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
