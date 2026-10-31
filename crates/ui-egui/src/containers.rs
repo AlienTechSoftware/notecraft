@@ -414,7 +414,10 @@ pub fn show(
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
-            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+            // Skip faint stroke for images; they show accent stroke on handle hover instead
+            if !image_object {
+                ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+            }
             if image_object {
                 // The handles are deliberately square and theme-coloured, like the
                 // selection affordance in the reference UI. The right-edge grip remains
