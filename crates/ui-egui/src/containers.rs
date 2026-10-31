@@ -443,7 +443,7 @@ pub fn show(
                 // Create interact areas for each resize handle and set cursor icons
                 for (idx, point) in handle_positions.iter().enumerate() {
                     let handle_rect = Rect::from_center_size(*point, vec2(size * 2.0, size * 2.0));
-                    let handle_response = ui.interact(handle_rect, ui.id().with(("image-resize", i, idx)), Sense::drag());
+                    let handle_response = ui.interact(handle_rect, ui.id().with(("image-resize", i, idx)), Sense::click_and_drag());
 
                     // Set appropriate cursor based on handle position
                     let cursor = match idx {
@@ -465,11 +465,13 @@ pub fn show(
 
                     // Handle resize drag
                     if handle_response.dragged() {
+                        let delta = handle_response.drag_delta();
+                        log::debug!("resize drag: idx={} delta={:?} zoom={}", idx, delta, zoom);
                         if let Some(c) = boxes.get_mut(i) {
-                            let delta = handle_response.drag_delta();
                             let mut new_x = c.x;
                             let mut new_y = c.y;
                             let mut new_width = c.width;
+                            log::debug!("before: x={} y={} width={}", new_x, new_y, new_width);
 
                             // Adjust position and size based on which handle is being dragged
                             match idx {
@@ -505,7 +507,10 @@ pub fn show(
 
                             // Ensure minimum width
                             new_width = new_width.max(container::MIN_WIDTH);
+                            log::debug!("after: x={} y={} width={}", new_x, new_y, new_width);
                             *c = Container::new(new_x, new_y, new_width, c.blocks);
+                        } else {
+                            log::warn!("resize: boxes.get_mut({}) failed", i);
                         }
                         out.boxes = true;
                         log::debug!("image resized: container={i} handle={}", idx);
