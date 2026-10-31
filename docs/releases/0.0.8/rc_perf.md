@@ -373,6 +373,7 @@ RUST_LOG=info,notecraft::formats=debug cargo run --bin notecraft
 
 ## Related Documents
 
+- `rc_feature.md` - v0.0.8 feature planning (perf is P1 item #2)
 - `work/PERF_INSTRUMENTATION.md` - Detailed research on Rust profiling tools
 - `docs/profiling.md` - User guide for profiling NoteCraft (to be created)
 - `work/perf-baseline-0.0.6.md` - Performance baseline (to be created)
