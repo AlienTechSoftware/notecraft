@@ -416,27 +416,98 @@ pub fn show(
         if hovered || editing || busy || is_sel {
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
             if image_object {
-                if is_sel || drag.hovered() || drag.dragged() {
-                    let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
-                    ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
-                    // The handles are deliberately square and theme-coloured, like the
-                    // selection affordance in the reference UI. The right-edge grip remains
-                    // the live resize target; the other handles make the object boundary
-                    // clear at every corner and edge.
-                    let size = (6.0 * zoom).max(4.0);
-                    for point in [
-                        frame.left_top(),
-                        frame.center_top(),
-                        frame.right_top(),
-                        frame.left_center(),
-                        frame.right_center(),
-                        frame.left_bottom(),
-                        frame.center_bottom(),
-                        frame.right_bottom(),
-                    ] {
-                        ui.painter().rect_filled(Rect::from_center_size(point, vec2(size, size)), 1.0, t.editor);
-                        ui.painter().rect_stroke(Rect::from_center_size(point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
+                // Always show handles for images so they can be resized
+                let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
+                ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
+                // The handles are deliberately square and theme-coloured, like the
+                // selection affordance in the reference UI. The right-edge grip remains
+                // the live resize target; the other handles make the object boundary
+                // clear at every corner and edge.
+                let size = (6.0 * zoom).max(4.0);
+                let handle_positions = [
+                    frame.left_top(),
+                    frame.center_top(),
+                    frame.right_top(),
+                    frame.left_center(),
+                    frame.right_center(),
+                    frame.left_bottom(),
+                    frame.center_bottom(),
+                    frame.right_bottom(),
+                ];
+
+                // Create interact areas for each resize handle and set cursor icons
+                for (idx, point) in handle_positions.iter().enumerate() {
+                    let handle_rect = Rect::from_center_size(*point, vec2(size * 2.0, size * 2.0));
+                    let handle_response = ui.interact(handle_rect, ui.id().with(("image-resize", i, idx)), Sense::drag());
+
+                    // Set appropriate cursor based on handle position
+                    let cursor = match idx {
+                        0 => egui::CursorIcon::ResizeNwSe,       // left_top
+                        1 => egui::CursorIcon::ResizeVertical,   // center_top
+                        2 => egui::CursorIcon::ResizeNeSw,       // right_top
+                        3 => egui::CursorIcon::ResizeHorizontal, // left_center
+                        4 => egui::CursorIcon::ResizeHorizontal, // right_center
+                        5 => egui::CursorIcon::ResizeNeSw,       // left_bottom
+                        6 => egui::CursorIcon::ResizeVertical,   // center_bottom
+                        7 => egui::CursorIcon::ResizeNwSe,       // right_bottom
+                        _ => egui::CursorIcon::Default,
+                    };
+
+                    if handle_response.hovered() {
+                        ui.ctx().set_cursor_icon(cursor);
                     }
+
+                    // Handle resize drag
+                    if handle_response.dragged() {
+                        if let Some(c) = boxes.get_mut(i) {
+                            let delta = handle_response.drag_delta();
+                            let mut new_x = c.x;
+                            let mut new_y = c.y;
+                            let mut new_width = c.width;
+
+                            // Adjust position and size based on which handle is being dragged
+                            match idx {
+                                0 => {
+                                    new_x += delta.x / zoom;
+                                    new_y += delta.y / zoom;
+                                    new_width -= delta.x / zoom;
+                                } // left_top
+                                1 => {
+                                    new_y += delta.y / zoom;
+                                } // center_top
+                                2 => {
+                                    new_y += delta.y / zoom;
+                                    new_width += delta.x / zoom;
+                                } // right_top
+                                3 => {
+                                    new_x += delta.x / zoom;
+                                    new_width -= delta.x / zoom;
+                                } // left_center
+                                4 => {
+                                    new_width += delta.x / zoom;
+                                } // right_center
+                                5 => {
+                                    new_x += delta.x / zoom;
+                                    new_width -= delta.x / zoom;
+                                } // left_bottom
+                                6 => {} // center_bottom - no horizontal resize
+                                7 => {
+                                    new_width += delta.x / zoom;
+                                } // right_bottom
+                                _ => {}
+                            }
+
+                            // Ensure minimum width
+                            new_width = new_width.max(container::MIN_WIDTH);
+                            *c = Container::new(new_x, new_y, new_width, c.blocks);
+                        }
+                        out.boxes = true;
+                        log::debug!("image resized: container={i} handle={}", idx);
+                    }
+
+                    // Draw the handle
+                    ui.painter().rect_filled(Rect::from_center_size(*point, vec2(size, size)), 1.0, t.editor);
+                    ui.painter().rect_stroke(Rect::from_center_size(*point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
                 }
             } else {
                 ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
