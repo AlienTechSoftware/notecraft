@@ -105,6 +105,7 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
     if range.end > blocks.len() {
         return false;
     }
+    log::debug!("REMOVE_CONTAINER: i={} blocks={:?}", at, range);
     blocks.drain(range);
     boxes.remove(at);
     true
@@ -875,9 +876,11 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     // turn into one column the moment somebody clicks near the middle.
     let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
     blocks.push(Block::Paragraph(Vec::new()));
+    let block_idx = blocks.len() - 1;
+    let box_idx = boxes.len();
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
-    *caret =
-        Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+    log::debug!("CREATE_BOX: i={} at_pos=({:.0},{:.0}) width={:.0} holds_block={} (triggered by click)", box_idx, at.x, at.y, width, block_idx);
+    *caret = Some(pageedit::Caret { block: block_idx, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
 }
 
 #[cfg(test)]
