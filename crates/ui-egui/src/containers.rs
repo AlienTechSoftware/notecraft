@@ -414,9 +414,13 @@ pub fn show(
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
+            log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; they show accent stroke on handle hover instead
             if !image_object {
+                log::debug!("draw faint stroke for non-image");
                 ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+            } else {
+                log::debug!("skip faint stroke (image_object=true)");
             }
             if image_object {
                 // The handles are deliberately square and theme-coloured, like the
@@ -522,8 +526,12 @@ pub fn show(
                 }
 
                 // Show accent border only when hovering over handles
+                log::debug!("image: i={} any_handle_hovered={}", i, any_handle_hovered);
                 if any_handle_hovered {
+                    log::debug!("draw accent border for image");
                     ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
+                } else {
+                    log::debug!("skip accent border (no handle hovered)");
                 }
             } else {
                 ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
