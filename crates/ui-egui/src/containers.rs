@@ -220,6 +220,16 @@ pub fn show(
         let range = container::blocks_of(boxes, i);
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
         let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
+        log::debug!(
+            "CONTAINER: i={} pos=({:.0},{:.0}) width={:.0} blocks={:?} image_object={} contains_image={}",
+            i,
+            b.x,
+            b.y,
+            b.width,
+            range,
+            image_object,
+            contains_image
+        );
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
         let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
