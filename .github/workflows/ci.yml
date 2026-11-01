@@ -111,9 +111,6 @@ jobs:
 
   coverage:
     name: coverage (warns, never blocks)
-    # Coverage is intentionally post-merge: it is non-blocking and repeats the full
-    # instrumented workspace build on every pull request otherwise.
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     continue-on-error: true
