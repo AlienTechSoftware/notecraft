@@ -102,8 +102,7 @@ const MAX_SIDE: u32 = 20_000;
 /// The picture on the clipboard, encoded as PNG. `None` when there is no picture on it,
 /// when the clipboard cannot be read, or when what is there is not a sane size.
 pub fn picture() -> Option<Picture> {
-    let mut board = arboard::Clipboard::new().ok()?;
-    let image = board.get_image().ok()?;
+    let image = image_on_board()?;
     let (w, h) = (u32::try_from(image.width).ok()?, u32::try_from(image.height).ok()?);
     if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
         return None;
@@ -118,8 +117,29 @@ pub fn picture() -> Option<Picture> {
 /// Whether a picture is on the clipboard now. Used to decide whether to offer a menu item,
 /// so it must be cheap enough to ask while drawing a frame and must never block.
 pub fn has_picture() -> bool {
-    arboard::Clipboard::new().ok().and_then(|mut b| b.get_image().ok()).is_some()
+    image_on_board().is_some()
 }
+
+/// Another program can hold the clipboard open for a moment (VirtualBox's clipboard sync
+/// does, just after a copy), and asking once then made Ctrl+V do nothing. Only that case is
+/// retried, and briefly: an empty clipboard or one with no picture answers at once.
+fn image_on_board() -> Option<arboard::ImageData<'static>> {
+    let mut board = arboard::Clipboard::new().map_err(|e| log::warn!("clipboard could not be opened: {e}")).ok()?;
+    for attempt in 1..=OCCUPIED_ATTEMPTS {
+        match board.get_image() {
+            Ok(image) => return Some(image),
+            Err(arboard::Error::ClipboardOccupied) if attempt < OCCUPIED_ATTEMPTS => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(arboard::Error::ClipboardOccupied) => {
+                log::warn!("clipboard picture not read: another program kept the clipboard open");
+                return None;
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+const OCCUPIED_ATTEMPTS: u32 = 5;
 
 /// The text on the clipboard, for the menu item that pastes without the keyboard.
 /// Puts text on the clipboard. The window itself does not need this - egui writes the

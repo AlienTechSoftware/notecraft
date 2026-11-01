@@ -38,6 +38,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
     let pointer = ui.ctx().pointer_latest_pos();
     let opened_now = ui.input(|i| i.pointer.secondary_clicked());
     if opened_now && let Some(at) = pointer.filter(|p| body.contains(*p)) {
+        log::debug!("context menu: right-clicked at {:?}", at);
         ui.data_mut(|d| d.insert_temp(id(), at));
     }
     let Some(at) = state(ui) else { return };

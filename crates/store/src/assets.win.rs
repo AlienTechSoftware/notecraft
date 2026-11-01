@@ -11,13 +11,9 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Saves the Windows Shell icon associated with `source` as a PNG at `target`.
 pub(super) fn shell_icon(source: &Path, target: &Path) -> Result<(), String> {
-    let source_text = source.to_string_lossy();
-    let target_text = target.to_string_lossy();
-    let source_text = source_text.strip_prefix(r"\\?\").unwrap_or(&source_text);
-    let target_text = target_text.strip_prefix(r"\\?\").unwrap_or(&target_text);
     let output = std::process::Command::new("powershell.exe")
-        .env("NC_ICON_SOURCE", source_text)
-        .env("NC_ICON_TARGET", target_text)
+        .env("NC_ICON_SOURCE", crate::tree::display_path(source))
+        .env("NC_ICON_TARGET", crate::tree::display_path(target))
         .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", SCRIPT])
         .output()

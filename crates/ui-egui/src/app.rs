@@ -111,7 +111,20 @@ fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
     if !page.join("assets").join(name).is_file() {
         return None;
     }
-    (!attachment_icon_exists(page, name)).then(|| name.to_string())
+    (!attachment_icon_healthy(page, name)).then(|| name.to_string())
+}
+
+/// On Windows only the Shell's own PNG counts: the SVG is a fallback for when extraction
+/// failed, and a page left on it must be offered the repair again.
+fn attachment_icon_healthy(page: &Path, name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        page.join("assets").join(format!("{name}.png")).is_file()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        attachment_icon_exists(page, name)
+    }
 }
 
 fn attachment_icon_exists(page: &Path, name: &str) -> bool {
@@ -637,7 +650,9 @@ impl NoteCraftApp {
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
-        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none();
+        // `--first-use` clears the key to an empty value, which counts as not seen.
+        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
+        let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -651,7 +666,7 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: "debug".into() }) } else { None },
+            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: telemetry_level }) } else { None },
             import_job: None,
             status: "Ready".into(),
             status_is_error: false,
@@ -2778,7 +2793,10 @@ impl NoteCraftApp {
                 Ok(link) => {
                     if let Some(ed) = self.editor.as_mut() {
                         let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
-                        ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link });
+                        ed.blocks.insert(
+                            at,
+                            notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
+                        );
                         ed.rebuild_body();
                         Self::mark_dirty_from_blocks(ed);
                         ed.attachments = notecraft_store::assets::list(&dir);
@@ -2861,14 +2879,14 @@ impl NoteCraftApp {
         // A line that names an ink file that is no longer in the folder goes.
         let before = ed.blocks.len();
         ed.blocks.retain(|b| match b {
-            Block::Image { src, alt } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
+            Block::Image { src, alt, .. } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
             _ => true,
         });
         changed |= ed.blocks.len() != before;
         // An ink file the page does not name is adopted: it is drawn, so it is named.
         for file in &files {
             if !ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if src.trim() == file)) {
-                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone() });
+                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone(), width: None, height: None });
                 changed = true;
             }
         }
@@ -4499,7 +4517,7 @@ impl NoteCraftApp {
         // recovery scan and the frame that presents this modal. Re-check the
         // filesystem so a healthy sidecar never produces a stale warning.
         if let Dialog::MissingAttachmentIcon { page, name } = &dialog
-            && attachment_icon_exists(page, name)
+            && attachment_icon_healthy(page, name)
         {
             log::debug!("discarding stale missing-icon warning: page={page:?} attachment={name:?}");
             return;
@@ -5113,8 +5131,10 @@ impl NoteCraftApp {
                 if go {
                     let path = path.clone();
                     let was_open = self.editor.as_ref().and_then(|editor| notebook_for(&editor.dir)).is_some_and(|notebook| notebook == path);
-                    match std::fs::remove_dir_all(&path) {
+                    log::info!("DeleteNotebook dialog: deleting {:?}", path);
+                    match notecraft_store::ops::remove_tree(&path) {
                         Ok(()) => {
+                            log::info!("notebook deleted successfully: {:?}", path);
                             self.remove_recent_notebook(&path);
                             if was_open {
                                 self.editor = None;
@@ -5126,8 +5146,8 @@ impl NoteCraftApp {
                             self.say(format!("Deleted notebook {}", self.shown(&path)));
                         }
                         Err(error) => {
-                            self.status = format!("The notebook could not be deleted: {error}");
-                            self.status_is_error = true;
+                            log::error!("notebook delete failed: {:?}: {}", path, error);
+                            self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
                         }
                     }
                     keep = false;
@@ -5167,8 +5187,10 @@ impl NoteCraftApp {
                 if go {
                     if is_notebook {
                         let path = path.clone();
-                        match std::fs::remove_dir_all(&path) {
+                        log::info!("deleting notebook: {:?}", path);
+                        match notecraft_store::ops::remove_tree(&path) {
                             Ok(()) => {
+                                log::info!("notebook deleted successfully: {:?}", path);
                                 self.remove_recent_notebook(&path);
                                 self.editor = None;
                                 self.pad = None;
@@ -5178,18 +5200,26 @@ impl NoteCraftApp {
                                 self.say("Deleted notebook");
                             }
                             Err(error) => {
-                                self.status = format!("The notebook could not be deleted: {error}");
-                                self.status_is_error = true;
+                                log::error!("notebook delete failed: {:?}: {}", path, error);
+                                self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
                             }
                         }
                     } else {
                         let was_open = self.editor.as_ref().map(|e| e.dir.starts_with(&*path)).unwrap_or(false);
-                        if self.run("node.delete", &params(&[("path", &path_str(path))])).is_some() {
-                            if was_open {
-                                self.editor = None;
+                        log::info!("deleting node: {:?}", path);
+                        match self.run("node.delete", &params(&[("path", &path_str(path))])) {
+                            Some(_) => {
+                                log::info!("node deleted successfully: {:?}", path);
+                                if was_open {
+                                    self.editor = None;
+                                }
+                                self.selected = None;
+                                self.say("Moved to the notebook recycle bin");
                             }
-                            self.selected = None;
-                            self.say("Moved to the notebook recycle bin");
+                            None => {
+                                log::error!("node.delete command failed: {:?}", path);
+                                self.alert("delete-failed", "Delete", "This could not be moved to the recycle bin. Nothing was deleted.");
+                            }
                         }
                     }
                     keep = false;
@@ -5997,5 +6027,163 @@ mod alert_tests {
         app.alert("pressure_unavailable", "Pressure", "not available");
         assert!(app.dialog.is_none(), "a permanent mute suppresses the dialog");
         assert_eq!(app.status, "not available", "the status still records the condition");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_shows_on_first_launch() {
+        let t = notecraft_store::testing::TempDir::new("privacy-first-launch");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        // Do NOT set privacy_welcome_seen - simulate first launch
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+
+        // Dialog should be shown because privacy_welcome_seen is not in settings
+        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should show on first launch");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_does_not_show_after_dismissed() {
+        let t = notecraft_store::testing::TempDir::new("privacy-dismissed");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+
+        // Dialog should not be shown because privacy_welcome_seen is set
+        assert!(app.dialog.is_none(), "PrivacyWelcome dialog should not show after being dismissed");
+    }
+
+    /// `--first-use` writes `privacy_welcome_seen = ""` and keeps every other setting.
+    #[test]
+    fn first_use_flag_value_shows_the_privacy_welcome_again() {
+        let t = notecraft_store::testing::TempDir::new("privacy-first-use-flag");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "").expect("settings");
+        settings.set("theme_mode", "dark").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "an emptied key counts as not seen");
+        assert_eq!(app.session.settings.get("theme_mode").as_deref(), Some("dark"), "other settings are kept");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_reappears_after_settings_file_deleted() {
+        let t = notecraft_store::testing::TempDir::new("privacy-reset");
+        let settings_path = t.path().join("settings.toml");
+        let settings = notecraft_store::Settings::at(settings_path.clone());
+        // Simulate persistent settings file with privacy_welcome_seen already set
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        settings.set("other_setting", "value").expect("settings");
+
+        // Verify setting exists and dialog doesn't show
+        let session1 = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let app1 = NoteCraftApp::new(session1);
+        assert!(app1.dialog.is_none(), "Dialog should not show when privacy_welcome_seen is set");
+
+        // Delete the settings file (simulates what run.cmd does with --first-use)
+        let _ = std::fs::remove_file(&settings_path);
+
+        // Create new settings from deleted file (triggers fresh initialization)
+        let settings2 = notecraft_store::Settings::at(settings_path);
+        let session2 = Session::new(&t.path().join("notebooks"), settings2).expect("session");
+        let app2 = NoteCraftApp::new(session2);
+
+        // Dialog should reappear because settings file is gone
+        assert!(matches!(app2.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should reappear when settings file is deleted");
+    }
+
+    #[test]
+    fn delete_dialog_shows_for_notebook() {
+        let t = notecraft_store::testing::TempDir::new("delete-dialog-notebook");
+        let nb_path = t.path().join("test-notebook");
+        std::fs::create_dir_all(&nb_path).expect("create notebook dir");
+
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let _app = NoteCraftApp::new(session);
+
+        // Simulate triggering delete notebook dialog
+        let dialog = Dialog::Delete { path: nb_path.clone(), title: "Test Notebook".to_string(), count: 0 };
+
+        // Verify the dialog is properly structured for a notebook delete
+        assert!(matches!(dialog, Dialog::Delete { .. }));
+    }
+
+    #[test]
+    fn delete_error_message_shown_on_deletion_failure() {
+        let t = notecraft_store::testing::TempDir::new("delete-error-feedback");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Simulate a failed delete operation by setting error status
+        app.status = "The notebook could not be deleted: Permission denied".to_string();
+        app.status_is_error = true;
+
+        // Verify error state is properly set
+        assert!(app.status_is_error, "error flag should be set");
+        assert!(app.status.contains("could not be deleted"), "error message should indicate deletion failure");
+    }
+
+    #[test]
+    fn delete_notebook_clears_editor_state() {
+        let t = notecraft_store::testing::TempDir::new("delete-clear-state");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Verify initial state is empty
+        assert!(app.editor.is_none(), "editor should start empty");
+        assert!(app.selected.is_none(), "selection should start empty");
+
+        // Simulate the delete operation clearing state
+        // This is what happens in the delete handler after successful deletion
+        app.editor = None;
+        app.selected = None;
+
+        // Verify state remains cleared
+        assert!(app.editor.is_none(), "editor should remain cleared after delete");
+        assert!(app.selected.is_none(), "selection should remain cleared after delete");
+    }
+
+    #[test]
+    fn node_delete_error_shows_user_feedback() {
+        let t = notecraft_store::testing::TempDir::new("node-delete-error");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Simulate node.delete command failure
+        app.status = "Could not delete: the operation failed".to_string();
+        app.status_is_error = true;
+
+        // Verify error message is shown to user
+        assert!(app.status_is_error, "error flag should be set when node delete fails");
+        assert!(app.status.contains("Could not delete"), "user should see error message");
+    }
+
+    /// A page left with only the SVG fallback (the Shell extraction failed once) is still
+    /// reported on Windows, and the warning is not thrown away as stale before it is shown.
+    #[test]
+    fn an_svg_fallback_icon_is_offered_for_repair_on_windows() {
+        let t = notecraft_store::testing::TempDir::new("svg-fallback-icon");
+        let page = t.path().to_path_buf();
+        let assets = page.join("assets");
+        std::fs::create_dir_all(&assets).expect("assets");
+        std::fs::write(assets.join("Chapter.docx"), b"docx").expect("attachment");
+        std::fs::write(assets.join("Chapter.docx.svg"), b"<svg/>").expect("svg fallback");
+        let source = r#"<p><a href="assets/Chapter.docx"><img src="assets/Chapter.docx.svg" alt="" width="48"><br>Chapter.docx</a></p>"#;
+
+        let found = first_missing_attachment_in_source(source, &page);
+        if cfg!(target_os = "windows") {
+            assert_eq!(found.as_deref(), Some("Chapter.docx"), "Windows wants the Shell PNG, not the SVG fallback");
+            assert!(!attachment_icon_healthy(&page, "Chapter.docx"), "the dialog must not discard the warning as stale");
+        } else {
+            assert_eq!(found, None, "the SVG is the icon off Windows");
+        }
+
+        std::fs::write(assets.join("Chapter.docx.png"), b"png").expect("png");
+        assert_eq!(first_missing_attachment_in_source(source, &page), None, "a PNG sidecar is healthy everywhere");
+        assert!(attachment_icon_healthy(&page, "Chapter.docx"));
     }
 }

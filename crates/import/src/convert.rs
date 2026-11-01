@@ -86,7 +86,7 @@ impl Ctx<'_, '_> {
                 self.numbers.clear();
                 if let Some(span) = self.attachment(content) {
                     let block = match span.image.clone() {
-                        Some(src) => Block::Image { alt: span.text, src },
+                        Some(src) => Block::Image { alt: span.text, src, width: None, height: None },
                         None => Block::Paragraph(vec![span]),
                     };
                     self.out.blocks.push(block);

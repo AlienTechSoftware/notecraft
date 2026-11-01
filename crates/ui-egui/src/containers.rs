@@ -105,6 +105,7 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
     if range.end > blocks.len() {
         return false;
     }
+    log::debug!("REMOVE_CONTAINER: i={} blocks={:?}", at, range);
     blocks.drain(range);
     boxes.remove(at);
     true
@@ -146,7 +147,22 @@ pub fn show(
     let mut out = Moved::default();
     let area = ui.available_rect_before_wrap();
     out.origin = area.min;
-    *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
+    let fitted = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
+    if fitted != *boxes {
+        // Issue #18: the arrangement did not account for the blocks, so it was thrown away and
+        // replaced by one box. Something changed the blocks without changing the boxes.
+        log::warn!(
+            "FIT_COLLAPSE: boxes={} counted={} blocks={} -> one box {:?}",
+            boxes.len(),
+            boxes.iter().map(|c| c.blocks).sum::<usize>(),
+            blocks.len(),
+            fitted.first()
+        );
+    }
+    *boxes = fitted;
+    for (i, c) in boxes.iter().enumerate().filter(|(_, c)| c.blocks == 0) {
+        log::debug!("EMPTY_BOX: i={i} pos=({:.0},{:.0}) width={:.0} holds no block", c.x, c.y, c.width);
+    }
 
     // Which container the caret is in, so that a block added or removed inside it is
     // counted against the right one.
@@ -220,6 +236,16 @@ pub fn show(
         let range = container::blocks_of(boxes, i);
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
         let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
+        log::debug!(
+            "CONTAINER: i={} pos=({:.0},{:.0}) width={:.0} blocks={:?} image_object={} contains_image={}",
+            i,
+            b.x,
+            b.y,
+            b.width,
+            range,
+            image_object,
+            contains_image
+        );
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
         let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
@@ -349,9 +375,9 @@ pub fn show(
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
 
-        // A click on the handle selects the container. A right click anywhere in it does too,
-        // unless the caret is in it with words selected: then the right click belongs to
-        // those words, and the page's menu cuts and copies them.
+        // A click or right click on the handle selects the container, as in OneNote. A right
+        // click on the words belongs to the words: the page's menu opens and the box stays
+        // as it was.
         let words_selected = words_in.is_some_and(|w| w.0 == i);
         // A right click on selected words: the text box is about to forget the selection, so
         // ask for it back. The page's own menu opens, and its Cut, Copy and the toolbar's Bold
@@ -364,13 +390,14 @@ pub fn show(
             ui.data_mut(|d| d.insert_temp(pageedit::restore_selection_id(), (block_at, primary, secondary)));
         }
         let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
-        let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected && !image_right_click;
+        let right_here = right_click && pointer.is_some_and(|p| bar.contains(p)) && !words_selected && !image_right_click;
         if drag.clicked() || right_here {
             sel = Some(i);
             *caret = None;
             out.changed.caret = true;
         }
         if right_here {
+            log::debug!("container {}: right-clicked, selected={:?}", i, sel);
             menu_at = pointer;
             opened_now = true;
             // Read before the store is locked: asking the context for it inside would wait on itself.
@@ -385,19 +412,102 @@ pub fn show(
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
             let image_rect = object_rect;
             let size = (6.0 * zoom).max(4.0);
-            for point in [
-                image_rect.left_top(),
-                image_rect.center_top(),
-                image_rect.right_top(),
-                image_rect.left_center(),
-                image_rect.right_center(),
-                image_rect.left_bottom(),
-                image_rect.center_bottom(),
-                image_rect.right_bottom(),
-            ] {
-                let handle = Rect::from_center_size(point, vec2(size, size));
-                ui.painter().rect_filled(handle, 1.0, t.editor);
-                ui.painter().rect_stroke(handle, 1.0, egui::Stroke::new(1.0 * zoom, t.accent), egui::StrokeKind::Inside);
+
+            // Create interactive handle widgets for images (every frame, not just when hovered)
+            if image_object {
+                let handle_positions = [
+                    image_rect.left_top(),
+                    image_rect.center_top(),
+                    image_rect.right_top(),
+                    image_rect.left_center(),
+                    image_rect.right_center(),
+                    image_rect.left_bottom(),
+                    image_rect.center_bottom(),
+                    image_rect.right_bottom(),
+                ];
+
+                let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
+
+                for (idx, point) in handle_positions.iter().enumerate() {
+                    let handle_rect = Rect::from_center_size(*point, vec2(size * 2.0, size * 2.0));
+                    let handle_response = ui.interact(handle_rect, ui.id().with(("image-resize", i, idx)), Sense::click_and_drag());
+
+                    // Set cursor icon on hover
+                    let cursor = match idx {
+                        0 => egui::CursorIcon::ResizeNwSe,       // left_top
+                        1 => egui::CursorIcon::ResizeVertical,   // center_top
+                        2 => egui::CursorIcon::ResizeNeSw,       // right_top
+                        3 => egui::CursorIcon::ResizeHorizontal, // left_center
+                        4 => egui::CursorIcon::ResizeHorizontal, // right_center
+                        5 => egui::CursorIcon::ResizeNeSw,       // left_bottom
+                        6 => egui::CursorIcon::ResizeVertical,   // center_bottom
+                        7 => egui::CursorIcon::ResizeNwSe,       // right_bottom
+                        _ => egui::CursorIcon::Default,
+                    };
+
+                    if handle_response.hovered() {
+                        ui.ctx().set_cursor_icon(cursor);
+                    }
+
+                    // Handle resize drag
+                    if handle_response.dragged() {
+                        let delta = handle_response.drag_delta();
+                        log::debug!("resize drag: idx={} delta={:?} zoom={}", idx, delta, zoom);
+                        if let Some(c) = boxes.get_mut(i) {
+                            let mut new_x = c.x;
+                            let mut new_y = c.y;
+                            let mut new_width = c.width;
+
+                            match idx {
+                                0 => {
+                                    new_x += delta.x / zoom;
+                                    new_y += delta.y / zoom;
+                                    new_width -= delta.x / zoom;
+                                }
+                                1 => {
+                                    new_y += delta.y / zoom;
+                                }
+                                2 => {
+                                    new_y += delta.y / zoom;
+                                    new_width += delta.x / zoom;
+                                }
+                                3 => {
+                                    new_x += delta.x / zoom;
+                                    new_width -= delta.x / zoom;
+                                }
+                                4 => {
+                                    new_width += delta.x / zoom;
+                                }
+                                5 => {
+                                    new_x += delta.x / zoom;
+                                    new_width -= delta.x / zoom;
+                                }
+                                6 => {}
+                                7 => {
+                                    new_width += delta.x / zoom;
+                                }
+                                _ => {}
+                            }
+
+                            new_width = new_width.max(container::MIN_WIDTH);
+                            *c = Container::new(new_x, new_y, new_width, c.blocks);
+
+                            // Update Block::Image.width
+                            let range = container::blocks_of(boxes, i);
+                            for block_idx in range {
+                                if let Some(Block::Image { width, .. }) = blocks.get_mut(block_idx) {
+                                    *width = Some(new_width);
+                                    log::debug!("image block width updated to {}", new_width);
+                                }
+                            }
+                        }
+                        out.boxes = true;
+                    }
+
+                    // Draw handle
+                    ui.painter().rect_filled(Rect::from_center_size(*point, vec2(size, size)), 1.0, t.editor);
+                    ui.painter().rect_stroke(Rect::from_center_size(*point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
+                }
             }
         }
         if is_sel {
@@ -414,31 +524,14 @@ pub fn show(
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
-            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
-            if image_object {
-                if is_sel || drag.hovered() || drag.dragged() {
-                    let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
-                    ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
-                    // The handles are deliberately square and theme-coloured, like the
-                    // selection affordance in the reference UI. The right-edge grip remains
-                    // the live resize target; the other handles make the object boundary
-                    // clear at every corner and edge.
-                    let size = (6.0 * zoom).max(4.0);
-                    for point in [
-                        frame.left_top(),
-                        frame.center_top(),
-                        frame.right_top(),
-                        frame.left_center(),
-                        frame.right_center(),
-                        frame.left_bottom(),
-                        frame.center_bottom(),
-                        frame.right_bottom(),
-                    ] {
-                        ui.painter().rect_filled(Rect::from_center_size(point, vec2(size, size)), 1.0, t.editor);
-                        ui.painter().rect_stroke(Rect::from_center_size(point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
-                    }
-                }
-            } else {
+            log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
+            // Skip faint stroke for images; the selection affordance shows the picture boundary
+            if !image_object {
+                log::debug!("draw faint stroke for non-image");
+                ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+            }
+            // Images: affordance is drawn in selection block above (on object_rect, the picture rect)
+            if !image_object {
                 ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
                 for n in 0..3 {
                     let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0 * zoom, bar.center().y);
@@ -597,6 +690,7 @@ pub fn show(
     let now = blocks.len();
     if now != before {
         let which = caret_box.unwrap_or(0).min(boxes.len().saturating_sub(1));
+        log::debug!("BLOCK_COUNT: {before} -> {now} credited to box {which} (caret_box={caret_box:?})");
         if let Some(c) = boxes.get_mut(which) {
             let grew = now as i64 - before as i64;
             c.blocks = (c.blocks as i64 + grew).max(0) as usize;
@@ -610,6 +704,7 @@ pub fn show(
         && container::blocks_of(boxes, i).is_empty()
     {
         let at = container::blocks_of(boxes, i).start.min(blocks.len());
+        log::debug!("FILL_EMPTY_BOX: i={i} inserts empty paragraph at block {at} (triggered by click)");
         blocks.insert(at, Block::Paragraph(Vec::new()));
         if let Some(c) = boxes.get_mut(i) {
             c.blocks += 1;
@@ -770,9 +865,11 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     // turn into one column the moment somebody clicks near the middle.
     let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
     blocks.push(Block::Paragraph(Vec::new()));
+    let block_idx = blocks.len() - 1;
+    let box_idx = boxes.len();
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
-    *caret =
-        Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+    log::debug!("CREATE_BOX: i={} at_pos=({:.0},{:.0}) width={:.0} holds_block={} (triggered by click)", box_idx, at.x, at.y, width, block_idx);
+    *caret = Some(pageedit::Caret { block: block_idx, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
 }
 
 #[cfg(test)]
@@ -780,7 +877,7 @@ mod tests {
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};
-        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into() }));
+        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into(), width: None, height: None }));
         assert!(block_has_image(&Block::Paragraph(vec![Span {
             image: Some("assets/picture.png".into()),
             text: "picture".into(),

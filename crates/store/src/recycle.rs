@@ -156,7 +156,7 @@ pub fn restore(notebook: &Path, id: &str) -> Result<()> {
         return Err(StoreError::invalid("the original section no longer exists"));
     }
     fs::rename(entry.join("item"), &destination).map_err(|e| StoreError::io("restore", &destination, e))?;
-    fs::remove_dir_all(&entry).map_err(|e| StoreError::io("clean up", &entry, e))
+    crate::ops::remove_tree(&entry).map_err(|e| StoreError::io("clean up", &entry, e))
 }
 
 /// Permanently remove one recycled item.
@@ -169,7 +169,7 @@ pub fn purge(notebook: &Path, id: &str) -> Result<()> {
     if !entry.join("recycled.toml").is_file() {
         return Err(StoreError::NotFound(format!("recycle-bin item {id}")));
     }
-    fs::remove_dir_all(&entry).map_err(|e| StoreError::io("purge", &entry, e))
+    crate::ops::remove_tree(&entry).map_err(|e| StoreError::io("purge", &entry, e))
 }
 
 #[cfg(test)]
