@@ -3312,15 +3312,15 @@ fn look_at(h: &mut Harness<'_, NoteCraftApp>) -> Value {
     ask(h, "ui.inspect", json!({})).expect("inspect")
 }
 
-/// A right click on a container selects it, with everything in it, and its menu's Delete takes
+/// A right click on a container's handle selects it, with everything in it, and its menu's Delete takes
 /// the box and its content off the page.
 #[test]
 fn right_click_selects_a_container_and_delete_removes_it_with_its_content() {
     let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-select");
     let before = h.state().body().unwrap_or_default().to_string();
 
-    // Inside the first box, below its handle, on its words.
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    // On the box's handle, along its top edge.
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -3340,6 +3340,20 @@ fn right_click_selects_a_container_and_delete_removes_it_with_its_content() {
     assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "nothing is selected any more");
     let after = h.state().body().unwrap_or_default().to_string();
     assert!(after.len() < before.len(), "the page is shorter: {} then {}", before.len(), after.len());
+}
+
+/// A right click on a box's words, with nothing selected, does not select the whole box: the
+/// page's menu opens and the box is left as it was.
+#[test]
+fn right_click_on_a_boxs_words_does_not_select_the_box() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-words-right");
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click the words");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "the box is not selected: {v}");
+    assert!(h.query_all_by_label("Table").count() >= 1, "the page's menu is open");
 }
 
 /// A click on the handle selects too, and the Delete key then removes the box and its content.
@@ -3480,7 +3494,7 @@ fn copy_and_cut_on_a_box_reach_the_clipboard() {
         let (_t, mut h, blocks, (ox, oy)) = two_boxes_on(&format!("ui-box-{label}"), &board);
         let before = h.state().body().unwrap_or_default().to_string();
         let words = needle(&before, 0, 2);
-        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
         for _ in 0..6 {
             pump(&mut h);
         }
@@ -3843,7 +3857,7 @@ fn escape_closes_the_menu_and_its_toolbar() {
 #[test]
 fn a_boxs_menu_has_no_formatting_toolbar() {
     let (_t, mut h, _, (ox, oy)) = two_boxes("ui-minibar-box");
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click");
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
     for _ in 0..8 {
         pump(&mut h);
     }

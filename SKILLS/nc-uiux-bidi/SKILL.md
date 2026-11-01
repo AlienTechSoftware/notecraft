@@ -27,3 +27,5 @@ placement, selection, and mirrored layout.
 
 Read `work/rtl-and-caret-bar.md` before changing this area. Run focused bidi/caret tests and the
 cross-platform UI checks; record visual review at matching scale and theme.
+
+See `references/GOTCHAS_AND_GAPS.md` for cross-app RTL lessons and common pitfalls from NoteCraft and Wordcraft.

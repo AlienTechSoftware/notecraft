@@ -36,6 +36,7 @@ This section lists NEW FEATURES for v0.0.8.
   - [ ] Waterfall charts (dependency chains)
 - [ ] Performance benchmarks against previous versions
 - **Investigation needed:** Available Rust instrumentation (tracing, pprof, etc.)
+- **See also:** `rc_perf.md` for detailed implementation strategy
 
 ### 🟢 P2: Medium Priority (Nice to Have)
 

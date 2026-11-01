@@ -479,7 +479,25 @@ impl Writer {
             ("img", _) => {
                 let alt = attr(attrs, "alt").unwrap_or_default();
                 let src = attr(attrs, "src").unwrap_or_default();
-                self.push(&format!("![{alt}]({src})"));
+                let width = attr(attrs, "width").and_then(|w| w.parse::<f32>().ok()).filter(|v| v.is_finite());
+                let height = attr(attrs, "height").and_then(|h| h.parse::<f32>().ok()).filter(|v| v.is_finite());
+
+                // Block-level img with size: output as HTML. Inline or no size: use markdown.
+                if (width.is_some() || height.is_some()) && self.href.is_empty() && !self.in_cell {
+                    self.block_break();
+                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    if let Some(w) = width {
+                        img_tag.push_str(&format!(" width=\"{}\"", w as i32));
+                    }
+                    if let Some(h) = height {
+                        img_tag.push_str(&format!(" height=\"{}\"", h as i32));
+                    }
+                    img_tag.push('>');
+                    self.push(&img_tag);
+                    self.block_break();
+                } else {
+                    self.push(&format!("![{alt}]({src})"));
+                }
             }
             ("video" | "audio", false) => {
                 let src = attr(attrs, "src").unwrap_or_default();

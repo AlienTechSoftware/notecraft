@@ -264,6 +264,25 @@ mod tests {
         assert!(!p.join("assets").join("shell-icon-check.docx.svg").exists(), "a native Shell icon does not need the SVG fallback");
     }
 
+    /// The same page reached as a verbatim network share (`\\?\UNC\...`), the way a notebook
+    /// on a shared folder is opened. Stripping only `\\?\` once sent the Shell `UNC\...`.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_icons_work_on_a_network_share() {
+        let t = TempDir::new("assets-shell-icon-unc");
+        let p = page(&t);
+        fs::write(p.join("assets").join("share-check.docx"), b"test document").expect("attachment");
+        let local = crate::tree::display_path(&fs::canonicalize(&p).expect("canonical"));
+        let (drive, rest) = local.split_once(":\\").expect("a drive path");
+        let shared = std::path::PathBuf::from(format!(r"\\?\UNC\localhost\{drive}$\{rest}"));
+        assert!(shared.join("assets").join("share-check.docx").is_file(), "the admin share reaches the page: {shared:?}");
+
+        ensure_icon(&shared, "share-check.docx").expect("icon");
+
+        assert!(p.join("assets").join("share-check.docx.png").is_file(), "the Shell icon is made through the share");
+        assert!(!p.join("assets").join("share-check.docx.svg").exists(), "no SVG fallback on a share");
+    }
+
     #[test]
     fn only_pages_take_attachments() {
         let t = TempDir::new("assets4");

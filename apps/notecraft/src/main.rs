@@ -121,7 +121,7 @@ fn main() -> eframe::Result {
     }
     let root = notebooks_dir(&args);
     applog::info(&format!("notebooks folder: {}", root.display()));
-    let mut session = match Session::new(&root, Settings::default_location()) {
+    let session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
             applog::line("ERROR", &format!("cannot open the notebooks folder {}: {e}", root.display()));
@@ -135,30 +135,22 @@ fn main() -> eframe::Result {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
+    // Reset first-use flag for testing (shows logging consent dialog again)
+    if args.iter().any(|arg| arg == "--first-use") {
+        let _ = session.settings.set("privacy_welcome_seen", "");
+        applog::info("First-use flag set: privacy welcome dialog will show");
+    }
     // The Welcome notebook, a tour of the app, is deployed on every startup (ensures fresh demo).
     // On first run (empty tree), it opens automatically. It's a normal notebook after deployment:
     // the user can change or delete it.
-    let mut open_first: Option<String> = None;
+    let open_first: Option<String> = None;
     // Problems found before the window opens. The window shows each one in an alert.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
-    let tree_was_empty = session.tree().is_empty();
-    match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
-        Ok(notecraft_engine::Output::Path(dir)) => {
-            // On first run, open the welcome notebook automatically
-            if tree_was_empty {
-                open_first = Some(dir.to_string_lossy().into_owned());
-            }
-            // Reload tree after deployment to pick up fresh demo
-            session.refresh();
-        }
-        Ok(_) => {}
-        Err(e) => {
-            // A release build on Windows has no console; the window shows the message in a box.
-            let message = format!("The Welcome notebook could not be deployed to {}: {e}", session.root().display());
-            eprintln!("{message}");
-            startup_alerts.push(("welcome-notebook-deploy", message));
-        }
-    }
+
+    // NOTE: Welcome notebook auto-deployment removed. Apps should not do setup at startup.
+    // Users can access tutorials from the File menu or Settings > Help.
+    // First launch will show logging consent dialog instead (when implemented).
+
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
     let mut viewport = egui::ViewportBuilder::default()

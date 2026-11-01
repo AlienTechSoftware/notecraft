@@ -606,7 +606,7 @@ pub(crate) fn show_block_zoomed(
             // the words. Another program opening the page sees the handwriting; here the
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
-            Block::Image { alt, src } => {
+            Block::Image { alt, src, .. } => {
                 match image_uri(page_dir, src) {
                     Some(uri) => {
                         let response = ui.add(
@@ -826,6 +826,11 @@ mod tests {
         assert_eq!(image_uri(dir, "assets/a.png").as_deref(), Some("file:///notes/nb/page/assets/a.png"));
         assert_eq!(image_uri(Path::new("C:\\n\\p"), "assets/a b.png").as_deref(), Some("file:///C:/n/p/assets/a%20b.png"));
         assert_eq!(image_uri(Path::new(r"\\?\C:\n\p"), "assets/a.png").as_deref(), Some("file:///C:/n/p/assets/a.png"), "no verbatim prefix");
+        assert_eq!(
+            image_uri(Path::new(r"\\?\UNC\VBoxSvr\C_DRIVE\p"), "assets/a.png").as_deref(),
+            Some("file:////VBoxSvr/C_DRIVE/p/assets/a.png"),
+            "a network share keeps its two leading slashes, not a UNC folder"
+        );
         assert_eq!(image_uri(dir, "https://x.test/a.png"), None);
         assert_eq!(image_uri(dir, "assets/../../secret.png"), None);
         assert_eq!(image_uri(dir, "assets/"), None);
@@ -855,7 +860,7 @@ mod tests {
 
     #[test]
     fn rich_blocks_share_object_selection_kinds() {
-        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into() }), Some("image"));
+        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None }), Some("image"));
         assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
         assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), Some("code"));
         assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));
