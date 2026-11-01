@@ -569,14 +569,15 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             ui.separator();
             match entry.kind {
                 Kind::Picture => {
-                    let uri = crate::preview::image_uri(dir, &entry.name);
-                    match uri {
-                        Some(uri) => {
+                    let path = dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
+                    match std::fs::read(&path) {
+                        Ok(bytes) => {
                             egui::ScrollArea::both().id_salt("code-picture").max_height(height - 40.0).show(ui, |ui| {
-                                ui.add(egui::Image::new(uri).max_width(ui.available_width()).fit_to_original_size(1.0));
+                                let uri = format!("bytes://source-view/{}", entry.name);
+                                ui.add(egui::Image::from_bytes(uri, bytes).max_width(ui.available_width()).fit_to_original_size(1.0));
                             });
                         }
-                        None => {
+                        Err(_) => {
                             ui.label(egui::RichText::new("This picture cannot be shown here.").color(t.muted));
                         }
                     }
@@ -589,11 +590,15 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let path = dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
                     ui.label(egui::RichText::new("Document renderer coming soon").small().color(t.muted));
                     let icon = attachment_icon_name(&entry.name);
-                    if let Some(uri) =
-                        crate::preview::image_uri(dir, &icon).or_else(|| crate::preview::image_uri(dir, &format!("{}{}", entry.name, ".svg")))
+                    let icon_path = dir.join(icon.replace('/', std::path::MAIN_SEPARATOR_STR));
+                    let fallback_path = dir.join(format!("{}.svg", entry.name).replace('/', std::path::MAIN_SEPARATOR_STR));
+                    if let Some((uri, bytes)) = std::fs::read(&icon_path)
+                        .map(|bytes| (format!("bytes://source-view/{}", icon), bytes))
+                        .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (format!("bytes://source-view/{}.svg", entry.name), bytes)))
+                        .ok()
                     {
                         ui.horizontal(|ui| {
-                            ui.add(egui::Image::new(uri).fit_to_exact_size(vec2(72.0, 84.0)));
+                            ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(vec2(72.0, 84.0)));
                             ui.vertical(|ui| {
                                 ui.label(egui::RichText::new(&entry.name).strong());
                                 ui.label(
