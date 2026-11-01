@@ -6159,10 +6159,10 @@ mod alert_tests {
         assert!(app.status.contains("Could not delete"), "user should see error message");
     }
 
-    /// A page left with only the SVG fallback (the Shell extraction failed once) is still
-    /// reported on Windows, and the warning is not thrown away as stale before it is shown.
+    /// A page left with only the SVG fallback (the Shell extraction failed once) still has a
+    /// usable icon and must not be reported as missing.
     #[test]
-    fn an_svg_fallback_icon_is_offered_for_repair_on_windows() {
+    fn an_svg_fallback_icon_is_accepted_everywhere() {
         let t = notecraft_store::testing::TempDir::new("svg-fallback-icon");
         let page = t.path().to_path_buf();
         let assets = page.join("assets");
@@ -6171,13 +6171,8 @@ mod alert_tests {
         std::fs::write(assets.join("Chapter.docx.svg"), b"<svg/>").expect("svg fallback");
         let source = r#"<p><a href="assets/Chapter.docx"><img src="assets/Chapter.docx.svg" alt="" width="48"><br>Chapter.docx</a></p>"#;
 
-        let found = first_missing_attachment_in_source(source, &page);
-        if cfg!(target_os = "windows") {
-            assert_eq!(found.as_deref(), Some("Chapter.docx"), "Windows wants the Shell PNG, not the SVG fallback");
-            assert!(!attachment_icon_healthy(&page, "Chapter.docx"), "the dialog must not discard the warning as stale");
-        } else {
-            assert_eq!(found, None, "the SVG is the icon off Windows");
-        }
+        assert_eq!(first_missing_attachment_in_source(source, &page), None, "the SVG fallback is a valid icon");
+        assert!(attachment_icon_healthy(&page, "Chapter.docx"));
 
         std::fs::write(assets.join("Chapter.docx.png"), b"png").expect("png");
         assert_eq!(first_missing_attachment_in_source(source, &page), None, "a PNG sidecar is healthy everywhere");
