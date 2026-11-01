@@ -2784,24 +2784,7 @@ impl NoteCraftApp {
             return;
         };
         if let Some(picture) = self.clipboard.picture() {
-            let name = crate::clipboard::picture_name();
-            let (w, h) = (picture.width, picture.height);
-            match notecraft_store::assets::attach_bytes(&dir, &name, &picture.png) {
-                Ok(link) => {
-                    if let Some(ed) = self.editor.as_mut() {
-                        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
-                        ed.blocks.insert(
-                            at,
-                            notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
-                        );
-                        ed.rebuild_body();
-                        Self::mark_dirty_from_blocks(ed);
-                        ed.attachments = notecraft_store::assets::list(&dir);
-                    }
-                    self.say(format!("Pasted a picture, {w} by {h}"));
-                }
-                Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
-            }
+            self.paste_picture(&dir, picture);
             return;
         }
         // Browsers, Word and other editors offer a formatted clipboard flavour as well
@@ -2825,9 +2808,6 @@ impl NoteCraftApp {
         }
         match self.clipboard.text() {
             Some(text) => {
-                // The same reading as Ctrl+V: a box that was copied comes back whole, several lines
-                // become lines of their own, a table stays a table. Put in as one text, as this once
-                // did, the lines ran together in a single paragraph with their Markdown showing.
                 let new = pageedit::blocks_to_paste(&text);
                 match self.editor.as_mut() {
                     Some(ed) if !new.is_empty() && ed.writable => {
@@ -2844,6 +2824,27 @@ impl NoteCraftApp {
                 self.say("Pasted");
             }
             None => self.say("There is nothing on the clipboard to paste"),
+        }
+    }
+
+    fn paste_picture(&mut self, dir: &std::path::Path, picture: crate::clipboard::Picture) {
+        let name = crate::clipboard::picture_name();
+        let (w, h) = (picture.width, picture.height);
+        match notecraft_store::assets::attach_bytes(dir, &name, &picture.png) {
+            Ok(link) => {
+                if let Some(ed) = self.editor.as_mut() {
+                    let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+                    ed.blocks.insert(
+                        at,
+                        notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
+                    );
+                    ed.rebuild_body();
+                    Self::mark_dirty_from_blocks(ed);
+                    ed.attachments = notecraft_store::assets::list(dir);
+                }
+                self.say(format!("Pasted a picture, {w} by {h}"));
+            }
+            Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
         }
     }
 
@@ -3531,22 +3532,23 @@ impl NoteCraftApp {
             return;
         }
         let ours = self.words_are_ours();
-        // Paste has one more case than the others: with a box picked, or with the caret
-        // nowhere, no text box is listening and the ribbon's Paste is the only way in.
-        let nobody = self.editor.as_ref().is_some_and(|e| e.caret.is_none());
         if copy && ours {
             self.clipboard("copy");
         }
         if cut && ours {
             self.clipboard("cut");
         }
-        // A screenshot has no text for egui's text widget to consume. Route it through
-        // NoteCraft even when the caret is inside an ordinary text editor; otherwise Ctrl+V
-        // appears to do nothing because egui handles the key before `paste_here` can inspect
-        // the system image clipboard.
-        let picture = paste && self.clipboard.has_picture();
-        if paste && (picture || ours || nobody) {
-            self.paste_here();
+        // A screenshot has no text for egui's text widget to consume. Route every Ctrl+V
+        // through the same paste path; it reads the image clipboard exactly once. Probing
+        // with has_picture() first was racy with VirtualBox clipboard synchronisation and
+        // could make the actual image read miss the clipboard handoff.
+        if paste {
+            let picture = self.clipboard.picture();
+            if let (Some(picture), Some(dir)) = (picture, self.editor.as_ref().map(|e| e.dir.clone())) {
+                self.paste_picture(&dir, picture);
+            } else if ours || self.editor.as_ref().is_some_and(|e| e.caret.is_none()) {
+                self.paste_here();
+            }
         }
         if all && ours {
             self.select_all_in_block();
