@@ -592,10 +592,9 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let icon = attachment_icon_name(&entry.name);
                     let icon_path = dir.join(icon.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let fallback_path = dir.join(format!("{}.svg", entry.name).replace('/', std::path::MAIN_SEPARATOR_STR));
-                    if let Some((uri, bytes)) = std::fs::read(&icon_path)
+                    if let Ok((uri, bytes)) = std::fs::read(&icon_path)
                         .map(|bytes| (format!("bytes://source-view/{}", icon), bytes))
                         .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (format!("bytes://source-view/{}.svg", entry.name), bytes)))
-                        .ok()
                     {
                         ui.horizontal(|ui| {
                             ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(vec2(72.0, 84.0)));
