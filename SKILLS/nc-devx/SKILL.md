@@ -3,7 +3,7 @@ name: nc-devx
 description: 'NoteCraft developer experience. One-time setup, development workflow, common tasks (lint, test, run app, git hooks), and platform-specific scripts. Fast feedback loop for local work.'
 license: MIT
 metadata:
-  version: "0.0.20261024"
+  version: "0.0.20261101"
   related_skills: [code-assistant, nc-arch, nc-code-rust]
 ---
 
@@ -208,12 +208,27 @@ Each level includes the ones before it. The hooks run L1 and L2 for you once
 | **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
 | **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main` or carrying a merge commit. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
 | **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` or carrying a merge commit stops the push. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
-| **L3** | Pull request | L2 on Linux in CI, plus the branch name check and the coverage job (warns, never blocks). The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
+| **L3** | Pull request | L2 on Linux in CI, plus the branch name check and split fmt, clippy, test, and static-check jobs. Coverage is post-merge on `main` pushes and manual runs; it is non-blocking. The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
 | **L4** | Release | The `nc-reelase-signoff` checklist: version, demo parity, packaging, installers, release notes. By hand today; to be automated, starting with the installer smoke test on a clean profile | `SKILLS/nc-reelase-signoff` | by hand |
 
 Coverage is not in a hook: it rebuilds the workspace with instrumentation, which takes
 minutes. Run `cargo xtask coverage` on demand before opening a pull request that adds code or
-tests; CI runs it on every pull request.
+tests; CI runs it after pushes to `main` and through manual workflow dispatch, not on every pull
+request, because it is non-blocking and repeats the full instrumented build.
+
+### CI resource and duplication policy
+
+The GitHub workflow keeps the expensive checks separate so failures identify the responsible
+phase. Rust jobs set `CARGO_BUILD_JOBS=2` and reduce dev/test debug information to lower linker
+memory and disk pressure. Heavy jobs print CPU count, memory, and disk capacity before building.
+The test job may retry only errors that identify runner infrastructure pressure (`No space left
+on device`, linker I/O failure, `Bus error`, or signal 7); ordinary compiler and test failures are
+never retried.
+
+Coverage is deliberately post-merge because it is a warning-only, instrumented rebuild. Do not
+move it back into pull-request CI without measuring the added time and runner resource use first.
+Do not select a larger runner unless the repository's GitHub account explicitly provides that
+runner label; record the measured resource need and the cost/availability decision in the PR.
 
 Never skip a level with `--no-verify` for your own work (AGENTS.md). If a hook stops you on
 work that is not yours, such as another session's half-written file, say so in the report.
