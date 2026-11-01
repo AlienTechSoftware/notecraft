@@ -83,8 +83,15 @@ fn open_arg(args: &[String]) -> Option<String> {
 }
 
 fn icon() -> Option<egui::IconData> {
-    let img = image::load_from_memory(notecraft_ui_egui::LOGO_PNG).ok()?.into_rgba8();
+    let img = match image::load_from_memory(notecraft_ui_egui::LOGO_PNG) {
+        Ok(img) => img.into_rgba8(),
+        Err(error) => {
+            applog::info(&format!("app icon decode failed: {error}"));
+            return None;
+        }
+    };
     let (width, height) = img.dimensions();
+    applog::info(&format!("app icon decoded: source=embedded-logo-png size={width}x{height} rgba_bytes={}", img.as_raw().len()));
     Some(egui::IconData { rgba: img.into_raw(), width, height })
 }
 
@@ -159,7 +166,10 @@ fn main() -> eframe::Result {
         .with_title("NoteCraft")
         .with_decorations(!own_frame);
     if let Some(icon) = icon() {
+        applog::info(&format!("app icon installed on native viewport: size={}x{} rgba_bytes={}", icon.width, icon.height, icon.rgba.len()));
         viewport = viewport.with_icon(icon);
+    } else {
+        applog::info("app icon was not installed on native viewport");
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     applog::info(&format!("session open ({} tree nodes); starting the window", session.tree().len()));

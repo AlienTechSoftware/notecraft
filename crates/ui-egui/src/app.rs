@@ -114,17 +114,11 @@ fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
     (!attachment_icon_healthy(page, name)).then(|| name.to_string())
 }
 
-/// On Windows only the Shell's own PNG counts: the SVG is a fallback for when extraction
-/// failed, and a page left on it must be offered the repair again.
+/// A generated PNG is preferred on Windows, but the deterministic SVG fallback is also a
+/// complete icon. In particular, Shell extraction can fail for files on a UNC-mounted
+/// enlistment even though the fallback renders correctly.
 fn attachment_icon_healthy(page: &Path, name: &str) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        page.join("assets").join(format!("{name}.png")).is_file()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        attachment_icon_exists(page, name)
-    }
+    attachment_icon_exists(page, name)
 }
 
 fn attachment_icon_exists(page: &Path, name: &str) -> bool {
@@ -653,6 +647,7 @@ impl NoteCraftApp {
         // `--first-use` clears the key to an empty value, which counts as not seen.
         let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
+        log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -1146,7 +1141,9 @@ impl NoteCraftApp {
             {
                 let key = format!("{}::{name}", dir.display());
                 log::warn!("attachment recovery scan found missing icon: page={:?} attachment={name:?}", dir);
-                if self.icon_recovery_reported.insert(key) {
+                // Do not let page recovery replace the first-use privacy dialog. The normal
+                // frame pass below will offer recovery after the user answers that dialog.
+                if self.dialog.is_none() && self.icon_recovery_reported.insert(key) {
                     self.dialog = Some(Dialog::MissingAttachmentIcon { page: dir.to_path_buf(), name });
                 }
             } else {

@@ -35,6 +35,20 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
     Some(file_uri(&full))
 }
 
+/// Load attachment bytes directly. This is deliberately used by the live page renderer:
+/// notebooks in the Windows VM are exposed through a UNC path, and the generic file loader
+/// cannot reliably open the resulting `file:////server/share/...` URI even when the file is
+/// present and valid.
+fn image_bytes(page_dir: &Path, src: &str) -> Option<(String, Vec<u8>)> {
+    let rel = src.strip_prefix("assets/")?;
+    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
+        return None;
+    }
+    let path = page_dir.join("assets").join(rel);
+    let bytes = std::fs::read(&path).ok()?;
+    Some((format!("bytes://page-image/{rel}"), bytes))
+}
+
 /// `file:///C:/dir/a%20b.png` or `file:///home/me/a%20b.png`: the form egui's file
 /// loader reads on every platform (three slashes, spaces and symbols percent-encoded).
 fn file_uri(path: &str) -> String {
@@ -347,12 +361,12 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
-            match image_uri(page_dir, src) {
-                Some(uri) => {
+            match image_bytes(page_dir, src) {
+                Some((uri, bytes)) => {
                     // A linked image is the attachment-card form used by NoteCraft. Keep its
                     // generated shell icon compact; standalone images still use the picture box.
                     let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, zoom) };
-                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(size).sense(egui::Sense::hover()));
+                    let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     *object_rect = Some(response.rect);
                     if response.hovered() {
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
@@ -607,10 +621,10 @@ pub(crate) fn show_block_zoomed(
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
             Block::Image { alt, src, .. } => {
-                match image_uri(page_dir, src) {
-                    Some(uri) => {
+                match image_bytes(page_dir, src) {
+                    Some((uri, bytes)) => {
                         let response = ui.add(
-                            egui::Image::new(uri)
+                            egui::Image::from_bytes(uri, bytes)
                                 .max_width(ui.available_width())
                                 .max_height(480.0 * zoom)
                                 .fit_to_original_size(1.0)
