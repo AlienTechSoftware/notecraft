@@ -164,6 +164,7 @@ fn main() -> eframe::Result {
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([820.0, 520.0])
         .with_title("NoteCraft")
+        .with_app_id("com.alientechsoftware.notecraft")
         .with_decorations(!own_frame);
     if let Some(icon) = icon() {
         applog::info(&format!("app icon installed on native viewport: size={}x{} rgba_bytes={}", icon.width, icon.height, icon.rgba.len()));
