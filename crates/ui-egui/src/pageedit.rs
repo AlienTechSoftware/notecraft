@@ -556,6 +556,66 @@ pub fn block_text(block: &Block) -> String {
     }
 }
 
+/// The single editor character used for an inline image. It keeps an image atomic while
+/// the TextEdit caret moves through the surrounding words.
+const INLINE_IMAGE_CHAR: char = '\u{fffc}';
+
+fn inline_image_arrow_target(text: &str, at: usize, right: bool) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    if right && chars.get(at) == Some(&INLINE_IMAGE_CHAR) {
+        Some(at + 1)
+    } else if !right && at > 0 && chars.get(at - 1) == Some(&INLINE_IMAGE_CHAR) {
+        Some(at - 1)
+    } else {
+        None
+    }
+}
+
+fn inline_image_navigation_edge(text: &str, range: egui::text::CCursorRange, right: bool) -> Option<usize> {
+    let a = range.primary.index.0.min(range.secondary.index.0);
+    let b = range.primary.index.0.max(range.secondary.index.0);
+    if b == a + 1 && text.chars().nth(a) == Some(INLINE_IMAGE_CHAR) { Some(if right { b } else { a }) } else { None }
+}
+
+fn logical_inline_text(text: &str) -> String {
+    let spans = parse_inline(text);
+    let mut logical = String::new();
+    let mut source_at = 0;
+    for span in spans {
+        let source = spans_to_markdown(std::slice::from_ref(&span));
+        let Some(relative) = text.get(source_at..).and_then(|rest| rest.find(&source)) else {
+            return text.to_string();
+        };
+        let start = source_at + relative;
+        logical.push_str(&text[source_at..start]);
+        if span.image.is_some() {
+            logical.push(INLINE_IMAGE_CHAR);
+        } else {
+            logical.push_str(&text[start..start + source.len()]);
+        }
+        source_at = start + source.len();
+    }
+    logical.push_str(&text[source_at..]);
+    logical
+}
+
+fn markdown_from_logical_text(original: &str, logical: &str) -> String {
+    let images: Vec<String> =
+        parse_inline(original).into_iter().filter(|span| span.image.is_some()).map(|span| spans_to_markdown(std::slice::from_ref(&span))).collect();
+    let mut image = images.into_iter();
+    let mut markdown = String::new();
+    for character in logical.chars() {
+        if character == INLINE_IMAGE_CHAR {
+            if let Some(value) = image.next() {
+                markdown.push_str(&value);
+            }
+        } else {
+            markdown.push(character);
+        }
+    }
+    markdown
+}
+
 /// Clicking under the page writes at its end: in the last empty block if there is one,
 /// else in a new one. The canvas of containers uses it for the room under the boxes.
 pub fn click_below(blocks: &mut Vec<Block>, caret: &mut Option<Caret>) -> bool {
@@ -837,14 +897,16 @@ fn frame_block(ui: &Ui, top: f32, editing: bool, t: &Tokens, zoom: f32) {
 /// the marker is drawn as a mark beside the line and showing it as words again the moment
 /// the caret arrives makes the line jump.
 pub fn caret_text(block: &Block) -> String {
-    Tag::split(&block_text(block)).1.to_string()
+    logical_inline_text(Tag::split(&block_text(block)).1)
 }
 
 /// Puts the caret's text back into a block, keeping the tag the block already carries.
 pub fn set_caret_text(block: &mut Block, text: &str) {
-    let tag = Tag::split(&block_text(block)).0;
+    let current = block_text(block);
+    let (tag, body) = Tag::split(&current);
+    let text = markdown_from_logical_text(body, text);
     let whole = match tag {
-        Some(t) => Tag::set(text, Some(t)),
+        Some(t) => Tag::set(&text, Some(t)),
         None => text.to_string(),
     };
     set_block_text(block, &whole);
@@ -1252,6 +1314,45 @@ pub fn show_blocks(
                             })
                             .inner
                     } else {
+                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id)
+                            && let Some(range) = state.cursor.char_range()
+                        {
+                            let at = range.primary.index.0;
+                            let arrow = ui.input(|input| {
+                                input.events.iter().find_map(|event| match event {
+                                    egui::Event::Key { key: Key::ArrowLeft, pressed: true, modifiers, .. }
+                                        if !modifiers.shift && !modifiers.command && !modifiers.alt =>
+                                    {
+                                        Some(false)
+                                    }
+                                    egui::Event::Key { key: Key::ArrowRight, pressed: true, modifiers, .. }
+                                        if !modifiers.shift && !modifiers.command && !modifiers.alt =>
+                                    {
+                                        Some(true)
+                                    }
+                                    _ => None,
+                                })
+                            });
+                            if let Some(right) = arrow
+                                && let Some(target) = inline_image_arrow_target(&c.text, at, right)
+                            {
+                                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(target))));
+                                state.store(ui.ctx(), id);
+                                ui.input_mut(|input| {
+                                    input.events.retain(|event| {
+                                        !matches!(
+                                            event,
+                                            egui::Event::Key {
+                                                key: Key::ArrowLeft | Key::ArrowRight,
+                                                pressed: true,
+                                                modifiers,
+                                                ..
+                                            } if !modifiers.shift && !modifiers.command && !modifiers.alt
+                                        )
+                                    });
+                                });
+                            }
+                        }
                         egui::TextEdit::singleline(&mut c.text)
                             .id(id)
                             .frame(egui::Frame::NONE)
@@ -1260,11 +1361,45 @@ pub fn show_blocks(
                             .layouter(&mut layouter)
                             .show(ui)
                     };
-                    if let Some(range) = out.cursor_range {
+                    let mut cursor_range = out.cursor_range;
+                    let (left, right, shift) = ui.input(|input| {
+                        let mut left = false;
+                        let mut right = false;
+                        let mut shift = false;
+                        for event in &input.events {
+                            if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
+                                if *key == Key::ArrowLeft {
+                                    left = true;
+                                    shift |= modifiers.shift;
+                                } else if *key == Key::ArrowRight {
+                                    right = true;
+                                    shift |= modifiers.shift;
+                                }
+                            }
+                        }
+                        (left, right, shift)
+                    });
+                    if !shift
+                        && let Some(range) = cursor_range
+                        && let Some(at) = if right {
+                            inline_image_navigation_edge(&c.text, range, true)
+                        } else if left {
+                            inline_image_navigation_edge(&c.text, range, false)
+                        } else {
+                            None
+                        }
+                        && let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id)
+                    {
+                        let cursor = egui::text::CCursor::new(at);
+                        cursor_range = Some(egui::text::CCursorRange::one(cursor));
+                        state.cursor.set_char_range(cursor_range);
+                        state.store(ui.ctx(), id);
+                    }
+                    if let Some(range) = cursor_range {
                         input_caret = Some(out.galley.pos_from_cursor(range.primary).translate(out.galley_pos.to_vec2()));
                     }
-                    at_start = out.cursor_range.is_some_and(|r| r.primary.index.0 == 0 && r.secondary.index.0 == 0);
-                    if let Some(r) = out.cursor_range {
+                    at_start = cursor_range.is_some_and(|r| r.primary.index.0 == 0 && r.secondary.index.0 == 0);
+                    if let Some(r) = cursor_range {
                         selection = Some((r.primary.index.0, r.secondary.index.0));
                     }
                     out.response
@@ -2329,6 +2464,40 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    #[test]
+    fn inline_images_are_one_logical_caret_character() {
+        let mut block = blocks("before ![a picture](assets/picture.png) after").remove(0);
+
+        assert_eq!(caret_text(&block), "before \u{fffc} after");
+
+        set_caret_text(&mut block, "before \u{fffc} and after");
+        assert_eq!(block_text(&block), "before ![a picture](assets/picture.png) and after");
+
+        set_caret_text(&mut block, "before  after");
+        assert_eq!(block_text(&block), "before  after");
+    }
+
+    #[test]
+    fn arrow_navigation_crosses_an_inline_image_without_selecting_it() {
+        let text = "before \u{fffc} after";
+        let image = text.chars().position(|c| c == INLINE_IMAGE_CHAR).unwrap();
+        let range = egui::text::CCursorRange::two(egui::text::CCursor::new(image), egui::text::CCursor::new(image + 1));
+
+        assert_eq!(inline_image_arrow_target(text, image, true), Some(image + 1));
+        assert_eq!(inline_image_arrow_target(text, image + 1, false), Some(image));
+        assert_eq!(inline_image_navigation_edge(text, range, true), Some(image + 1));
+        assert_eq!(inline_image_navigation_edge(text, range, false), Some(image));
+    }
+
+    #[test]
+    fn inline_image_mapping_preserves_tags() {
+        let mut block = blocks("#important before ![a picture](assets/picture.png) after").remove(0);
+
+        assert_eq!(caret_text(&block), "before \u{fffc} after");
+        set_caret_text(&mut block, "before \u{fffc} now");
+        assert_eq!(block_text(&block), "#important before ![a picture](assets/picture.png) now");
     }
 
     /// A click is measured against the words on the page; the caret lives in the text with
