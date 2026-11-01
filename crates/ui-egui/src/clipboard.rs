@@ -133,7 +133,10 @@ fn image_on_board() -> Option<arboard::ImageData<'static>> {
                 log::warn!("clipboard picture not read: another program kept the clipboard open");
                 return None;
             }
-            Err(_) => return None,
+            Err(error) => {
+                log::debug!("clipboard picture read unavailable: {error}");
+                return None;
+            }
         }
     }
     None

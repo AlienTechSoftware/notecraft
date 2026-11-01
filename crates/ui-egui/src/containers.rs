@@ -414,7 +414,7 @@ pub fn show(
             let size = (6.0 * zoom).max(4.0);
 
             // Create interactive handle widgets for images (every frame, not just when hovered)
-            if image_object {
+            if image_can_resize(kind) {
                 let handle_positions = [
                     image_rect.left_top(),
                     image_rect.center_top(),
@@ -850,6 +850,10 @@ fn block_has_image(block: &Block) -> bool {
     }
 }
 
+fn image_can_resize(kind: &str) -> bool {
+    kind == "image"
+}
+
 /// Whether the pointer is over open paper, not over a box.
 fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
@@ -884,6 +888,13 @@ mod tests {
             ..Span::default()
         }])));
         assert!(!block_has_image(&Block::Paragraph(vec![Span { text: "ordinary text".into(), ..Span::default() }])));
+    }
+
+    #[test]
+    fn only_image_objects_get_resize_handles() {
+        assert!(image_can_resize("image"));
+        assert!(!image_can_resize("link"));
+        assert!(!image_can_resize("file"));
     }
 
     /// A box that holds the heading repeating the page title does not carry it when copied.
