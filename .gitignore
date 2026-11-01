@@ -11,6 +11,12 @@ out/
 # Also ignore notebook folders under a Windows extended-path prefix passed through WSL.
 *my-notebooks/
 /my-notes/
+
+# Stray directories created from malformed Windows path strings during local
+# development. Keep the exact names out of Git until their source is fixed.
+/Zdevp-NoteCraftwork/
+/Cdevp-NoteCraft.reposo-NoteCraft_2my-notebooks/
+
 # Pictures a failing visual test writes next to the one it compared.
 /crates/*/tests/**/*.diff.png
 /crates/*/tests/**/*.new.png

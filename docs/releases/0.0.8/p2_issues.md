@@ -41,7 +41,7 @@ selection behavior with `.\run.cmd`.
 
 ### Active inline-image behavior
 
-**Detailed issue:** Inline image caret behavior is tracked in the current implementation and regression tests; a standalone issue file is not present in this checkout.
+**Detailed issue:** [issue_image_inline.md](./issue_image_inline.md)
 
 An inline image is an atomic object in the text flow:
 
@@ -469,5 +469,3 @@ Add platform-specific, installer, demo, parity, or visual checks whenever the
 issue touches those surfaces. Do not claim Windows/Linux/macOS support,
 installer readiness, or visual correctness without running the corresponding
 check.
-
-
