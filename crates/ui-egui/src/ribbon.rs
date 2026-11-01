@@ -767,10 +767,10 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if small(ui, Some(Icon::ListNumber), "", "Numbering", "A numbered list", false, t).clicked() {
                     acts.push(Act::Block("number"));
                 }
-                if mark_button(ui, Mark::IndentLess, "Decrease indent", "Less indent (Shift+Tab)", false, t).clicked() {
+                if mark_button(ui, Mark::IndentLess, "Decrease indentation", "Decrease indentation (Shift+Tab)", false, t).clicked() {
                     acts.push(Act::Indent(false));
                 }
-                if mark_button(ui, Mark::IndentMore, "Increase indent", "More indent (Tab)", false, t).clicked() {
+                if mark_button(ui, Mark::IndentMore, "Increase indentation", "Increase indentation (Tab)", false, t).clicked() {
                     acts.push(Act::Indent(true));
                 }
                 align_menu(ui, t, acts);
@@ -784,11 +784,11 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     // Page direction is NoteCraft's own: OneNote has no such thing, and a notebook written
-    // in Arabic wants one. The paragraph's direction is in the alignment menu above, where
-    // OneNote and Word keep it, and here as well: a writer who has come looking for the
-    // direction controls should find all of them in one place rather than be sent back to
-    // a menu under an alignment button. The rarer run direction is in the More menu.
-    group(ui, "Direction", t, |ui| {
+    // in Arabic wants one. It stays visible in the ribbon as page setup rather than being
+    // hidden in a Word-style dialog. Paragraph direction remains available beside it,
+    // while the alignment menu remains the primary place for paragraph alignment and
+    // direction.
+    group(ui, "Page Setup", t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Page").size(10.5).color(t.muted));
@@ -1032,7 +1032,7 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 /// and is the one of the four NoteCraft has an answer for that no other note taking
 /// application does (see `notecraft_text::kashida`).
 fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = small(ui, Some(Icon::DirLtr), "", "Alignment and direction", "Alignment, and which way this paragraph reads", false, t);
+    let resp = small(ui, Some(Icon::ParaLtr), "", "Alignment and direction", "Alignment, and which way this paragraph reads", false, t);
     let open_id = egui::Id::new("ribbon-align-menu");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
@@ -1047,8 +1047,12 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(200.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
-                    for (label, what) in [("Align Left", "Align left"), ("Center", "Centring"), ("Align Right", "Align right")] {
-                        if ui.button(label).clicked() {
+                    for (icon, label, what) in [
+                        (Icon::AlignLeft, "Align Left", "Align left"),
+                        (Icon::AlignCenter, "Center", "Centring"),
+                        (Icon::AlignRight, "Align Right", "Align right"),
+                    ] {
+                        if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
                             acts.push(Act::NotBuilt(what));
                             picked = true;
                         }
@@ -1056,17 +1060,12 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                     // Word's three, under the names Word gives them, so a writer of Arabic
                     // meets what they already know. They decide how many kashidas a line
                     // may take; `docs/rtl-in-word-and-onenote.md` has the comparison.
-                    for strength in notecraft_model::justify::Strength::ALL {
-                        let label = match strength {
-                            notecraft_model::justify::Strength::Low => "Justify Low",
-                            notecraft_model::justify::Strength::Medium => "Justify Medium",
-                            notecraft_model::justify::Strength::High => "Justify High",
-                        };
-                        if ui
-                            .button(label)
-                            .on_hover_text("Fill the column. Arabic is stretched at the joins of its letters, not at its spaces")
-                            .clicked()
-                        {
+                    for (strength, icon, label) in [
+                        (notecraft_model::justify::Strength::Low, Icon::JustifyLow, "Justify Low"),
+                        (notecraft_model::justify::Strength::Medium, Icon::JustifyMedium, "Justify Medium"),
+                        (notecraft_model::justify::Strength::High, Icon::JustifyHigh, "Justify High"),
+                    ] {
+                        if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
                             acts.push(Act::Justify(strength));
                             picked = true;
                         }
@@ -1099,19 +1098,7 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 /// One direction choice in a menu, with the icon that identifies its scope: paragraph mark
 /// for paragraph flow or caret-and-triangle for the direction of a text run.
 fn direction_row(ui: &mut Ui, icon: Option<Icon>, label: &str, t: &Tokens) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(150.0), 24.0), Sense::click());
-    let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 3.0, t.row_hover);
-    }
-    if let Some(icon) = icon {
-        icons::paint_ribbon(ui, Rect::from_min_size(egui::pos2(rect.min.x + 4.0, rect.center().y - 8.0), vec2(16.0, 16.0)), icon, t.text);
-    }
-    painter.text(egui::pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
-    let enabled = ui.is_enabled();
-    let said = label.to_string();
-    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &said));
-    resp
+    floating::menu_row(ui, icon.map(Glyph::Icon), label, t)
 }
 
 /// The less common direction for a selected or newly typed run, kept in a compact menu like

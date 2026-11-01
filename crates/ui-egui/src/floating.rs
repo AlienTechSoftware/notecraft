@@ -129,8 +129,8 @@ pub fn text_bar() -> Bar {
                 button(i(Icon::ListNumber), "Numbering", "A numbered list", Act::Block("number")),
             ],
             vec![
-                button(m(Mark::IndentLess), "Decrease indent", "Less indent (Shift+Tab)", Act::Indent(false)),
-                button(m(Mark::IndentMore), "Increase indent", "More indent (Tab)", Act::Indent(true)),
+                button(m(Mark::IndentLess), "Decrease indentation", "Decrease indentation (Shift+Tab)", Act::Indent(false)),
+                button(m(Mark::IndentMore), "Increase indentation", "Increase indentation (Tab)", Act::Indent(true)),
                 button(i(Icon::Quote), "Quote", "Quote this paragraph", Act::Block("quote")),
                 button(m(Mark::ToDo), "To Do", "Tag this line as a to-do", Act::Tag(Tag::ToDo)),
                 button(m(Mark::Important), "Important", "Tag this line as important", Act::Tag(Tag::Important)),

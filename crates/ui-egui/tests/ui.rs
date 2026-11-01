@@ -3802,7 +3802,7 @@ fn right_click_on_selected_words_keeps_them_selected_and_shows_the_mini_toolbar(
     let (at, anchor) = (v.pointer("/page/caret/at").and_then(Value::as_u64), v.pointer("/page/caret/anchor").and_then(Value::as_u64));
     assert!(at.is_some() && at != anchor, "the words are still selected after the right click: {at:?} {anchor:?}");
     // The Home tab has a Bold, an Italic and the rest of them; the toolbar is drawn over them.
-    for name in ["Bold", "Italic", "Strikethrough", "Bullets", "Numbering", "Decrease indent", "Increase indent"] {
+    for name in ["Bold", "Italic", "Strikethrough", "Bullets", "Numbering", "Decrease indentation", "Increase indentation"] {
         assert!(h.query_all_by_label(name).count() >= 2, "{name} is on the ribbon and on the floating toolbar");
     }
     for name in ["To Do", "Important", "Quote", "Clear Formatting"] {
