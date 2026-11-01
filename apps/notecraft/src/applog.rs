@@ -25,13 +25,24 @@ pub fn init(dir: PathBuf, debug: bool) {
     }
     let _ = PATH.set(file);
     if log::set_logger(&Logger).is_ok() {
-        log::set_max_level(if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info });
+        log::set_max_level(if debug || rust_log_requests_debug() { log::LevelFilter::Debug } else { log::LevelFilter::Info });
     }
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         line("PANIC", &format!("{info}\n{}", std::backtrace::Backtrace::force_capture()));
         previous(info);
     }));
+}
+
+fn rust_log_requests_debug() -> bool {
+    std::env::var("RUST_LOG").ok().is_some_and(|value| rust_log_requests_debug_from(&value))
+}
+
+fn rust_log_requests_debug_from(value: &str) -> bool {
+    value
+        .split(',')
+        .map(str::trim)
+        .any(|directive| matches!(directive, "debug" | "trace") || directive.ends_with("=debug") || directive.ends_with("=trace"))
 }
 
 /// Appends one line, `time level text`. Never fails the caller.
@@ -97,5 +108,13 @@ mod tests {
         assert_eq!(format_utc(0), "1970-01-01 00:00:00");
         assert_eq!(format_utc(951_782_400), "2000-02-29 00:00:00");
         assert_eq!(format_utc(1_792_340_000), "2026-10-18 16:13:20");
+    }
+
+    #[test]
+    fn recognizes_debug_rust_log_directives() {
+        for value in ["debug", "trace", "notecraft_ui_egui=debug", "notecraft_ui_egui=trace"] {
+            assert!(rust_log_requests_debug_from(value));
+        }
+        assert!(!rust_log_requests_debug_from("info,notecraft_ui_egui=warn"));
     }
 }

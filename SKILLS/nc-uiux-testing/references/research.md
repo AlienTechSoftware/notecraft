@@ -28,6 +28,25 @@ platform drivers remain useful for release smoke tests and for proving that
 the packaged binary is accessible to real desktop tools, but they should not
 replace the fast, deterministic in-process suite.
 
+## NoteCraft test-first rule
+
+Starting with version 0.0.7, new UI behavior and user-facing behavior follow a
+test-driven workflow:
+
+1. Define the requirement and observable acceptance criteria first.
+2. Add the tests before implementation and run them once to verify the expected
+   failure.
+3. Implement the behavior that satisfies the contract.
+4. Verify with the narrowest reliable test layer, then run the relevant broader
+   checks.
+
+Use pure tests for geometry and model rules. Use the real `egui_kittest` harness
+for pointer, keyboard, accessibility, selection, dragging, and other
+interaction behavior. Use visual tests for layout, theme, icon, and painting
+requirements. A lower-level test does not replace an end-to-end UI test when
+the user-visible interaction is the requirement. Reproducible UI bugs require a
+regression test.
+
 ## Question being answered
 
 The original question was whether there is a well-maintained open-source

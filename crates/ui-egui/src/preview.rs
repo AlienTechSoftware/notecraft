@@ -7,7 +7,7 @@
 
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{FontId, RichText, Stroke, Ui};
+use egui::{FontId, RichText, Stroke, Ui, vec2};
 use notecraft_formats::html;
 use notecraft_formats::markdown::{self, Block, Span};
 use notecraft_model::Dir;
@@ -620,16 +620,14 @@ pub(crate) fn show_block_zoomed(
             // the words. Another program opening the page sees the handwriting; here the
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
-            Block::Image { alt, src, .. } => {
+            Block::Image { alt, src, width, height } => {
                 match image_bytes(page_dir, src) {
                     Some((uri, bytes)) => {
-                        let response = ui.add(
-                            egui::Image::from_bytes(uri, bytes)
-                                .max_width(ui.available_width())
-                                .max_height(480.0 * zoom)
-                                .fit_to_original_size(1.0)
-                                .sense(egui::Sense::hover()),
-                        );
+                        let image = egui::Image::from_bytes(uri, bytes).sense(egui::Sense::hover());
+                        let response = match (width, height) {
+                            (Some(width), Some(height)) => ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom))),
+                            _ => ui.add(image.max_width(ui.available_width()).max_height(480.0 * zoom).fit_to_original_size(1.0)),
+                        };
                         rendered_object_rect = Some(response.rect);
                         if response.hovered() {
                             log::debug!(

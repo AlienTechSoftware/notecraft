@@ -3689,6 +3689,35 @@ fn clicking_a_picture_selects_the_picture_only() {
 }
 
 #[test]
+fn dragging_a_picture_right_edge_resizes_it() {
+    let (_t, mut app, s) = sample_app("ui-picture-right-edge-resize");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "![the koala](assets/koala.png)\n"}}))
+        .expect("write one-picture page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}}))
+        .expect("arrange the picture");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0})).expect("select the picture");
+    settle(&mut h);
+    let before = look_at(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).expect("picture container width");
+    let edge_x = ox + before + 6.0;
+    let edge_y = oy + 120.0;
+    ask(&mut h, "ui.press", json!({"x": edge_x, "y": edge_y})).expect("press the right edge");
+    ask(&mut h, "ui.move", json!({"x": edge_x + 60.0, "y": edge_y})).expect("drag the right edge");
+    ask(&mut h, "ui.release", json!({"x": edge_x + 60.0, "y": edge_y})).expect("release the right edge");
+    settle(&mut h);
+    let after = look_at(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).expect("resized picture container width");
+    assert!(after > before + 30.0, "right edge drag did not resize the picture: before={before}, after={after}, state={}", look_at(&mut h));
+}
+
+#[test]
 fn double_clicking_an_attachment_card_opens_it() {
     let (t, mut app, s) = sample_app("ui-attachment-double-click");
     let page = s.md_page.to_string_lossy().to_string();

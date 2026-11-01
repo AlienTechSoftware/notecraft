@@ -416,6 +416,23 @@ Hooks are in `.githooks/` and run automatically after `git config core.hooksPath
 
 ## Quick Feedback Loop
 
+### TDD workflow for UI and behavior changes
+
+From version 0.0.7 onward, use this order for new UI behavior and user-facing
+features:
+
+1. Record the requirement and observable acceptance criteria.
+2. Add focused tests for the criteria before changing production code.
+3. Run the new tests and confirm they fail for the expected missing behavior.
+4. Implement the behavior, keeping the change scoped to the contract.
+5. Run the focused tests, then the changed-crate checks and the applicable
+   quality level.
+
+Use the real `egui_kittest` harness for pointer, keyboard, accessibility, and
+other user-visible UI behavior. Use lower-level tests for pure geometry or model
+rules, but do not use them as a substitute when the interaction itself is part
+of the requirement. Every fixed, reproducible bug should gain a regression test.
+
 For rapid iteration during development:
 
 ```bash
