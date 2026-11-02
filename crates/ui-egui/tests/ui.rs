@@ -3745,13 +3745,9 @@ fn double_clicking_an_attachment_card_opens_it() {
     let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
     let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
-    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("first click card");
-    // Drain only the first click's two pointer frames. Avoid settle's long image-load wait here:
-    // the product double-click window is 0.75 seconds, and a slow CI runner must still see the
-    // second click as part of the same gesture.
-    pump_at(&mut h, 1.0);
-    pump_at(&mut h, 1.1);
-    assert_eq!(h.query_all_by_label_contains("Open attachment").count(), 0, "single click only selects the attachment: {}", look_at(&mut h));
+    // Send one native double-click gesture. The single-click selection path is covered by the
+    // picture-selection test; keeping this test to one gesture avoids coupling two separate
+    // gestures to the runner's frame timing.
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
     for time in [1.2, 1.3, 1.4, 1.5, 1.6, 1.7] {
         pump_at(&mut h, time);
