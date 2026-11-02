@@ -35,6 +35,11 @@ name or mark.
 
 ## Making a release
 
+macOS test packages are built separately from the Windows release workflow. See
+[`packaging/macos/README.md`](../packaging/macos/README.md) for Apple Silicon build, DMG and CLI
+verification commands. Pull requests can produce ad-hoc signed macOS artifacts for review;
+public distribution still requires Developer ID signing and notarization.
+
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.
 2. Start the build, either way:
@@ -73,7 +78,11 @@ dialog shows once.
 Each file also gets a build provenance attestation. Check a download with
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-Windows x64 is the only target. macOS and Linux are untested, so they are not built.
+The official release workflow currently builds Windows x64 only. macOS packaging has been
+validated locally on Apple Silicon, and the separate macOS pull-request workflow produces
+review artifacts for Apple Silicon and Intel. These are not official macOS releases. A maintainer
+must decide the release policy, complete cross-machine testing, sign with Developer ID and
+notarize the packages before public macOS distribution. Linux release packaging remains untested.
 
 ## Signing
 
