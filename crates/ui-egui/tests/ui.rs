@@ -108,11 +108,6 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
     h.step();
 }
 
-fn pump_at(h: &mut Harness<'_, NoteCraftApp>, time: f64) {
-    h.input_mut().time = Some(time);
-    pump(h);
-}
-
 /// Steps until pictures loaded in the background have arrived.
 ///
 /// It steps frames rather than calling `Harness::run`, which gives up when a window asks
@@ -3754,8 +3749,8 @@ fn double_clicking_an_attachment_card_opens_it() {
     // picture-selection test; keeping this test to one gesture avoids coupling two separate
     // gestures to the runner's frame timing.
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
-    for time in [1.2, 1.3, 1.4, 1.5, 1.6, 1.7] {
-        pump_at(&mut h, time);
+    for _ in 0..6 {
+        pump(&mut h);
     }
     assert!(h.query_all_by_label_contains("Open attachment").count() >= 1, "double click opened the attachment prompt: {}", look_at(&mut h));
 }
