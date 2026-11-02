@@ -1,9 +1,17 @@
 ---
 name: nc-uiux-testing
 description: Test and automate NoteCraft's desktop UI, including semantic interaction, screenshot capture, visual verification, accessibility integration, and platform-specific automation.
+license: MIT
+metadata:
+  version: "0.0.20261102"
+  related_skills: [nc-uiux-features, nc-ua, nc-reelase-signoff, nc-devx]
 ---
 
 # nc-uiux-testing
+
+## Job to be done
+
+Validate NoteCraft UI behavior with reproducible interaction tests, visual evidence, accessibility checks, and platform-aware boundaries.
 
 This is the canonical skill for NoteCraft UI automation and visual test evidence.
 Use it when a task drives the application, checks UI behavior or pixels, captures

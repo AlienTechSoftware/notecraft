@@ -1,6 +1,6 @@
 ---
 name: nc-prod
-description: 'Critical product principles and non-negotiable requirements for NoteCraft. Local file persistence, DOM/format serialization parity, OneNote look/feel, friction-free import. Reference when evaluating features, making design decisions, or reviewing changes. Used alongside nc-arch and nc-hl-design.'
+description: Assess NoteCraft features and design decisions against product requirements for local files, format parity, OneNote behavior, and import.
 license: MIT
 metadata:
   version: "0.0.20261024"
@@ -10,6 +10,10 @@ metadata:
 ---
 
 # nc-prod - NoteCraft Product Principles
+
+## Job to be done
+
+Assess NoteCraft changes against the product requirements and non-negotiable user promises.
 
 ## Runtime profiles and local-only diagnostics
 

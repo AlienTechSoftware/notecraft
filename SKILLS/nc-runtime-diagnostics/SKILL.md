@@ -9,6 +9,10 @@ metadata:
 
 # nc-runtime-diagnostics
 
+## Job to be done
+
+Diagnose NoteCraft runtime failures from local logs, sessions, settings, manifests, and privacy-preserving evidence.
+
 Use this skill when an agent must understand a NoteCraft failure from runtime
 evidence, find logs or telemetry, correlate an issue with a session, explain
 what data is local, or add diagnostic behavior. It is the canonical operational

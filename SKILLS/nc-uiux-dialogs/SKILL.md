@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-dialogs
 
+## Job to be done
+
+Design and verify NoteCraft modal dialogs with themed surfaces, explicit focus paths, safe actions, and documented dismissal.
+
 Use this skill for any modal, confirmation, progress, privacy, warning, or error dialog.
 
 ## Rules

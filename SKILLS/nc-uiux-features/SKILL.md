@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-features
 
+## Job to be done
+
+Implement complete NoteCraft user-facing features with coherent flows, persistence, accessibility, and regression coverage.
+
 Use this skill when a feature crosses ribbon, page content, settings, storage, or dialogs.
 
 ## Required shape

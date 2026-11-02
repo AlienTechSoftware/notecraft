@@ -9,6 +9,10 @@ metadata:
 
 # nc-arch-x-plat - Cross-platform by union
 
+## Job to be done
+
+Design platform boundaries that preserve each platform's useful capabilities without leaking platform details into shared contracts.
+
 Use this skill whenever code touches something the operating system provides: the clipboard,
 files and the shell, file dialogs, opening files and folders, icons, printing, fonts, windows,
 notifications, paths, or installers.

@@ -9,6 +9,10 @@ metadata:
 
 # nc-ua - User assistant and demo steward
 
+## Job to be done
+
+Author NoteCraft user-facing coverage while preserving multilingual demo parity, generated outputs, and public guidance.
+
 Use this skill when changing the welcome/demo notebook, user-facing guidance, translations,
 release screenshots, generated scratch copies, or the set of product features presented to users.
 

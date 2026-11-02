@@ -1,6 +1,6 @@
 ---
 name: nc-arch
-description: 'NoteCraft architectural principles and design patterns (WORK IN PROGRESS). Documents how crates relate, data flows, ownership, and cross-cutting concerns. Foundation for design work and code reviews. Being refined as implementation evolves. Reference when architecting new features or reviewing major changes.'
+description: Define NoteCraft system architecture and design boundaries for crate relationships, data flow, ownership, and cross-cutting concerns.
 license: MIT
 metadata:
   version: "0.0.20261024.1"
@@ -10,7 +10,11 @@ metadata:
 
 # nc-arch - NoteCraft Architecture
 
-**STATUS: WORK IN PROGRESS** - This skill is being built as the implementation evolves. Principles here are derived from the current codebase (`o-NoteCraft_2`) and will be refined as new features are added.
+## Job to be done
+
+Define NoteCraft system architecture while preserving crate boundaries, ownership, and platform-neutral contracts.
+
+**STATUS: EVOLVING** - This skill is maintained against the current implementation in this checkout and refined as new features are added.
 
 ---
 

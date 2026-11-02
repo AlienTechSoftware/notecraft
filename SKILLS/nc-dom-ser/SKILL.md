@@ -1,6 +1,6 @@
 ---
 name: nc-dom-ser
-description: 'NoteCraft DOM/Format Serialization: HTML and CommonMark dual-format support with semantic parity. Enforces hard requirement: both formats identical in structure and visual rendering.'
+description: Serialize and deserialize NoteCraft HTML and CMGFM pages while preserving semantic, structural, and visual parity.
 license: MIT
 metadata:
   version: "0.0.20261024"
@@ -8,6 +8,10 @@ metadata:
 ---
 
 # nc-dom-ser - NoteCraft Format Serialization
+
+## Job to be done
+
+Serialize and deserialize NoteCraft page content while preserving semantic, structural, and cross-format parity.
 
 ## Core Requirement (Hard Rule)
 

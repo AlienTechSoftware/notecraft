@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-bidi
 
+## Job to be done
+
+Implement and verify bidirectional text interactions while preserving logical caret, selection, and mixed-script behavior.
+
 Use this skill for Arabic, Hebrew, Persian, Urdu, mixed-direction text, RTL page controls, caret
 placement, selection, and mirrored layout.
 

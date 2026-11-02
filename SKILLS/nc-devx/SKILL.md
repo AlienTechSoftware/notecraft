@@ -9,6 +9,10 @@ metadata:
 
 # nc-devx - NoteCraft Developer Experience
 
+## Job to be done
+
+Verify NoteCraft developer workflows with fast feedback and intact quality gates across supported environments.
+
 Developer setup, workflow, and automation for local NoteCraft work.
 
 ---

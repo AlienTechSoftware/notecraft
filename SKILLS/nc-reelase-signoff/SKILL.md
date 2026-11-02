@@ -9,6 +9,10 @@ metadata:
 
 # nc-reelase-signoff
 
+## Job to be done
+
+Verify NoteCraft release readiness with complete version, demo, test, packaging, installer, asset, and evidence checks.
+
 Use this skill before declaring a NoteCraft release ready. The name preserves the repository's
 requested `reelase` spelling for discoverability.
 
