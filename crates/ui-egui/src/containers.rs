@@ -277,6 +277,19 @@ pub fn show(
             *caret = None;
             out.changed.caret = true;
             log::debug!("embedded object selected: container={i} block={block} kind={kind}");
+            if kind == "image" {
+                let now = ui.input(|input| input.time);
+                let prior = ui.data(|data| data.get_temp::<(usize, f64)>(crate::preview::object_click_state_id()));
+                let is_double = prior.is_some_and(|(previous, at)| previous == *block && now - at <= 0.75);
+                if is_double {
+                    ui.data_mut(|data| data.remove::<(usize, f64)>(crate::preview::object_click_state_id()));
+                    if let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir)) {
+                        out.changed.link = Some(href);
+                    }
+                } else {
+                    ui.data_mut(|data| data.insert_temp(crate::preview::object_click_state_id(), (*block, now)));
+                }
+            }
         }
         if let Some((block, _)) = object_double_clicked.as_ref().filter(|(block, _)| range.contains(block))
             && let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir))

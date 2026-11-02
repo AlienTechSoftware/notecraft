@@ -1,7 +1,7 @@
 # Image frame and resize: root cause and fix design (issue #18)
 
 - Date: 2026-10-31
-- Status: IMPLEMENTATION IN PROGRESS; image resize path implemented and tested, full gate still blocked.
+- Status: IMPLEMENTATION VERIFIED locally; full CI gate passes on 2026-11-01.
 - Issue: https://github.com/AlienTechSoftware/notecraft/issues/18
 - Skills applied: `nc-dom-ser`, `nc-hl-design`, `nc-arch`.
 
@@ -61,15 +61,27 @@ Focused verification:
 - Application logging tests: 2 passed.
 - Format, build, and clippy checks passed during the implementation work.
 
-Remaining gate blocker:
+The former gate blocker, `double_clicking_an_attachment_card_opens_it`, was
+reproduced and fixed in `crates/ui-egui/src/containers.rs`. Inline object clicks
+were selecting the card, but the controller consumed the click before the
+double-click transition could be recognized. The existing time-based transition
+now runs on the controller's `object_clicked` event.
 
-- The full UI suite still fails at
-  `double_clicking_an_attachment_card_opens_it`.
-- The failure is independent of the standalone image resize changes and was
-  reproduced in isolation.
-- The push hook correctly refused to push while `cargo xtask ci` is red.
-- The attachment-card failure must be investigated or explicitly tracked before
-  the branch can be reported as fully ready.
+The visual 2D resize report was then reproduced from session
+`20261102014334-00012ac000000000`. The page stored the requested size
+(`523 x 847`) and the resize log kept the height fixed, but egui rendered the
+image at about `523 x 178`. `fit_to_exact_size` preserves the source aspect
+ratio by default, so explicit resized dimensions were being visually ignored.
+The renderer now calls `maintain_aspect_ratio(false)` for images with stored
+width and height. Natural-size images keep the old aspect-preserving path.
+
+Verification on 2026-11-01:
+
+- `cargo fmt --all -- --check` passed.
+- `cargo test -p notecraft-ui-egui image_resize` passed: 9 tests.
+- `cargo test -p notecraft-ui-egui --test ui double_clicking_an_attachment_card_opens_it -- --exact --nocapture` passed.
+- `cargo xtask demo-check` passed: 662 files up to date.
+- `cargo xtask ci` passed: clippy, workspace tests, layers, assets, docs, text and demo parity; UI suite 124 passed.
 
 Manual handoff:
 

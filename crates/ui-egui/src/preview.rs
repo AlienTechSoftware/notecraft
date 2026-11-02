@@ -625,7 +625,9 @@ pub(crate) fn show_block_zoomed(
                     Some((uri, bytes)) => {
                         let image = egui::Image::from_bytes(uri, bytes).sense(egui::Sense::hover());
                         let response = match (width, height) {
-                            (Some(width), Some(height)) => ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom))),
+                            (Some(width), Some(height)) => {
+                                ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom)).maintain_aspect_ratio(false))
+                            }
                             _ => ui.add(image.max_width(ui.available_width()).max_height(480.0 * zoom).fit_to_original_size(1.0)),
                         };
                         rendered_object_rect = Some(response.rect);
