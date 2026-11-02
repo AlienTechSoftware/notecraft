@@ -29,7 +29,7 @@ fi
 WORK="${CARGO_TARGET_DIR:-$ROOT/target}/packaging/macos"
 APP="$WORK/NoteCraft.app"
 rm -rf "$WORK"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$OUT"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$APP/Contents/Resources/demo" "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
 for binary in notecraft notecraft-cli; do
@@ -61,6 +61,15 @@ iconutil --convert icns "$ICONSET" --output "$APP/Contents/Resources/notecraft.i
 for file in LICENSE-MIT LICENSE-APACHE NOTICE; do
   cp "$ROOT/$file" "$APP/Contents/Resources/licenses/$file"
 done
+
+# Carry the same release demo as the Windows and Linux packages. The application deploys
+# its embedded copy to the current user's ~/Documents/NoteCraft on first launch; this copy
+# makes the macOS artifact self-auditing and available to packaging inspection tools.
+cp -R "$ROOT/docs/demo/DemoNotebook" "$APP/Contents/Resources/demo/"
+[ -f "$APP/Contents/Resources/demo/DemoNotebook/html/00-start/welcome/index.html" ] || {
+  echo "demo notebook was not staged in the macOS app" >&2
+  exit 1
+}
 
 identity="${APPLE_SIGNING_IDENTITY:-}"
 if [ -n "$identity" ]; then

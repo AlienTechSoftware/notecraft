@@ -69,7 +69,16 @@ fn saved_notebooks_dir(saved: &str) -> Option<PathBuf> {
     if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
         return None;
     }
-    Some(PathBuf::from(saved))
+    let path = PathBuf::from(saved);
+    should_remember_notebooks_root(&path).then_some(path)
+}
+
+/// Test/screenshot sandboxes are valid explicit roots but must never become the next
+/// production default through `last_notebooks_root`.
+fn should_remember_notebooks_root(root: &std::path::Path) -> bool {
+    let temp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    !root.starts_with(temp)
 }
 
 fn flag_value(args: &[String], name: &str) -> Option<String> {
@@ -152,7 +161,7 @@ fn main() -> eframe::Result {
     // An explicit command-line root becomes the next launch's remembered notebook root.
     // This prevents a demo or another deliberately selected notebook from being replaced
     // by the old default folder on the next start.
-    if args.iter().any(|arg| arg == "--notebooks") {
+    if args.iter().any(|arg| arg == "--notebooks") && should_remember_notebooks_root(&root) {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
@@ -272,6 +281,18 @@ mod tests {
     fn a_trailing_flag_without_a_value_falls_back_to_the_default() {
         let args = vec!["--notebooks".to_string()];
         assert_eq!(notebooks_dir(&args), notecraft_store::settings::default_notebooks_dir());
+    }
+
+    #[test]
+    fn a_temp_notebooks_root_is_not_persisted_as_the_production_default() {
+        assert!(!should_remember_notebooks_root(&std::env::temp_dir()));
+        assert!(should_remember_notebooks_root(std::path::Path::new("Documents/NoteCraft")));
+    }
+
+    #[test]
+    fn a_saved_temp_root_is_not_used_as_the_production_default() {
+        let saved = std::env::temp_dir().to_string_lossy().into_owned();
+        assert_eq!(saved_notebooks_dir(&saved), None);
     }
 
     #[cfg(not(target_os = "windows"))]

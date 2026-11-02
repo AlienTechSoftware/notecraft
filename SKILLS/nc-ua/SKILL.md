@@ -36,6 +36,23 @@ Demo and help content must show:
 
 When documenting features, mention which layers of the notebook they touch (metadata, page content, assets).
 
+## Welcome notebook deployment location
+
+The bundled Welcome notebook is user-facing product content and must be deployed into the
+current user's normal notebook root, never into a temporary test directory, the application
+installation directory, or the macOS app bundle as the user's working copy:
+
+- Windows: `%USERPROFILE%\Documents\NoteCraft\welcome-to-notecraft`
+- Linux: `$HOME/Documents/NoteCraft/welcome-to-notecraft`
+- macOS: `$HOME/Documents/NoteCraft/welcome-to-notecraft`
+
+The application may carry an embedded or packaged copy as an installation payload, but first
+launch must write the usable notebook to the profile-relative location above. Test and screenshot
+harnesses may use temporary roots for isolation; they must not persist those roots as the next
+production notebook location. Release verification must inspect the installed result and confirm
+the profile-relative path, both generated demo formats where the package carries them, and the
+visible workspace version.
+
 ## Product coverage ownership
 
 `nc-ua` maintains the user-facing feature coverage map for the whole product. The map must
