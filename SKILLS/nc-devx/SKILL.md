@@ -211,6 +211,20 @@ Each level includes the ones before it. The hooks run L1 and L2 for you once
 | **L3** | Pull request | L2 on Linux in CI, plus the branch name check, split fmt, clippy, test, static-check, and non-blocking coverage jobs. The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
 | **L4** | Release | The `nc-reelase-signoff` checklist: version, demo parity, packaging, installers, release notes. By hand today; to be automated, starting with the installer smoke test on a clean profile | `SKILLS/nc-reelase-signoff` | by hand |
 
+### Linear history is a policy choice
+
+The L2 push gate currently rejects merge commits and asks contributors to rebase onto
+`origin/main`. This keeps branch logs simple and can help automated changelog generation and
+bisecting, but it is not a correctness or release-safety requirement. A merge commit can preserve
+the true integration point, the source branch provenance, and the conflict resolution that was
+reviewed.
+
+Consider allowing merge commits on `rc_*` or other integration branches when preserving that
+provenance is more valuable than a straight-line log. If the rule is relaxed, keep the substantive
+gates unchanged: PII scanning, formatting, clippy, the complete test suite, static checks, demo
+parity, and release signoff. Do not bypass hooks or weaken those gates merely to preserve a merge
+commit.
+
 Coverage is not in a hook: it rebuilds the workspace with instrumentation, which takes
 minutes. Run `cargo xtask coverage` on demand before opening a pull request that adds code or
 tests; CI runs it on pull requests and after pushes to `main`, but it is non-blocking because it
