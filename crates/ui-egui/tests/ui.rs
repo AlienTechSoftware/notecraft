@@ -3741,9 +3741,10 @@ fn double_clicking_an_attachment_card_opens_it() {
     let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
     let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0})).expect("first click card");
-    // One frame is enough to process the selection. Avoid settle's long image-load wait here:
+    // Drain only the first click's two pointer frames. Avoid settle's long image-load wait here:
     // the product double-click window is 0.75 seconds, and a slow CI runner must still see the
     // second click as part of the same gesture.
+    pump(&mut h);
     pump(&mut h);
     assert_eq!(h.query_all_by_label_contains("Open attachment").count(), 0, "single click only selects the attachment: {}", look_at(&mut h));
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
