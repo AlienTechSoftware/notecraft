@@ -1,7 +1,7 @@
-# v0.0.8 Enhancement: Bidi UI and Ribbon Alignment
+# v0.0.9 Candidate: Bidi UI and Ribbon Alignment
 
-**Status:** Planned  
-**Branch:** `feat/v0.0.8_bidi`  
+**Status:** Deferred from v0.0.8; candidate for v0.0.9
+**Branch:** `feat/v0.0.8_bidi` (historical planning branch)
 **Base:** `81d78cf116818834f4bf3e22493a9729df3c11a1`  
 **Scope:** Bidi-related ribbon controls, icons, labels, and page setup placement
 

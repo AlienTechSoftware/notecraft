@@ -1,7 +1,7 @@
 # Image frame and resize: root cause and fix design (issue #18)
 
 - Date: 2026-10-31
-- Status: ROOT CAUSE CONFIRMED in the running app. Fix designed, not implemented.
+- Status: Major issue remains open; implementation is not release-ready.
 - Issue: https://github.com/AlienTechSoftware/notecraft/issues/18
 - Skills applied: `nc-dom-ser`, `nc-hl-design`, `nc-arch`.
 
@@ -398,7 +398,15 @@ frame.
 
 ---
 
-## 6. Acceptance criteria
+## 6. Current disposition
+
+The model, controller, and view changes described in this document are partially
+implemented, but image resize remains a major user-facing issue. Existing tests
+cover selected paths; they do not establish reliable behavior across the full
+interaction sequence. Do not close issue #18 or treat image resize as release-ready
+until the observed failures are reproduced, fixed, and covered by regression tests.
+
+## 7. Acceptance criteria
 
 1. Picture hovered: exactly one rectangle, equal to the drawn picture rect (within 0.5pt).
 2. Picture selected and hovered: one rectangle and 8 handles, all on the picture rect.
@@ -414,7 +422,7 @@ frame.
 9. Pictures without a stored size look and serialize exactly as today. `cargo xtask demo-check`
    passes with no change to `docs/demo/DemoNotebook`.
 
-## 7. Test plan
+## 8. Test plan
 
 No mocks; real fixtures and real temporary folders (`AGENTS.md`).
 
@@ -433,7 +441,7 @@ No mocks; real fixtures and real temporary folders (`AGENTS.md`).
   and theme.
 - Gate: `cargo xtask ci`.
 
-## 8. Risks
+## 9. Risks
 
 - **Older readers.** A page saved with a sized picture and opened by NoteCraft 0.0.7 loses the
   size, as it does today; nothing worse. In CMGFM, 0.0.7 shows the inline `<img>` tag as text

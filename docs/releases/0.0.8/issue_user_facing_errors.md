@@ -1,7 +1,7 @@
 # User-Facing Error Messages - Sanitize Technical Details
 
 - Date: 2026-10-31
-- Status: Bug report
+- Status: Original startup case fixed; generic error audit deferred
 - Branch: `feat/v0.0.8`
 - Severity: High (user confusion, bad UX)
 
@@ -81,6 +81,14 @@ Err(e) => {
 When notebook deployment fails (file I/O, permissions, etc.), the raw error is passed to the user.
 
 ---
+
+## Current disposition
+
+The specific raw error described here came from Welcome notebook auto-deployment,
+which was removed from startup. The broader rule remains valid: technical details
+belong in logs, while user-facing messages should explain the action and recovery.
+Keep this as a future audit rather than treating the removed deployment error as
+an open v0.0.8 blocker.
 
 ## Solution Approach
 

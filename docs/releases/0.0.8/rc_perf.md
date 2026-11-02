@@ -1,6 +1,6 @@
 # NoteCraft v0.0.8 Release Candidate - Performance & Instrumentation
 
-**Status:** Planning & Investigation  
+**Status:** Full profiling/dashboard deferred to v0.0.9; research retained here
 **Target Release:** Q4 2026 or Q1 2027  
 **Branch:** `0.0.8_perf` (active)  
 **Related:** `feat/perf-instrumentation` (future implementation branch)
@@ -80,9 +80,9 @@ Add lightweight instrumentation to NoteCraft so performance data can be collecte
 
 ---
 
-## Phase 2: Performance Analysis Tool (v0.0.8 or v0.0.9)
+## Phase 2: Performance Analysis Tool (v0.0.9)
 
-**Status:** Future (scoped for Phase 2)
+**Status:** Deferred to v0.0.9
 
 ### Goal
 Create a standalone tool that consumes tracing logs and generates performance visualizations.
@@ -285,7 +285,7 @@ RUST_LOG=info,notecraft::formats=debug cargo run --bin notecraft
 - [ ] Performance analysis tool designed (not implemented)
 - [ ] At least one optimization implemented (verified by benchmark)
 
-### v0.0.9+ (Out of scope for v0.0.8)
+### v0.0.9 (Moved out of v0.0.8)
 - [ ] Optimization tooling fully built
 - [ ] 10%+ improvement in at least one metric
 - [ ] Continuous performance monitoring in CI
@@ -330,7 +330,7 @@ RUST_LOG=info,notecraft::formats=debug cargo run --bin notecraft
 | 1.3 Memory tracking | 2-3 days | `memory-stats` integration |
 | 1.4 Testing & validation | 2-3 days | Verify tracing works end-to-end |
 | **Phase 1 Subtotal** | **2-3 weeks** | |
-| **Phase 2: Tools (Future)** | 2-3 weeks | Not in v0.0.8 |
+| **Phase 2: Tools (v0.0.9)** | 2-3 weeks | Deferred from v0.0.8 |
 | | | |
 | **Parallel: Analysis** | 1 week | Profiling, baseline, recommendations |
 
@@ -367,7 +367,7 @@ RUST_LOG=info,notecraft::formats=debug cargo run --bin notecraft
    - **Current recommendation:** Informational, no blocking
 
 4. **Tools:** Should we build the performance analysis tool in v0.0.8 or defer?
-   - **Current recommendation:** Defer to v0.0.9
+   - **Owner decision:** Defer to v0.0.9
 
 ---
 

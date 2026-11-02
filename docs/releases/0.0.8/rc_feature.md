@@ -27,7 +27,7 @@ This section lists NEW FEATURES for v0.0.8.
 
 ### 🟡 P1: High Priority (Should Have)
 
-#### 2. Performance Instrumentation & Analysis Tool
+#### 2. Performance Instrumentation & Analysis Tool (moved to v0.0.9)
 - [ ] Integrate Rust performance profiling tools (flamegraph, cargo-flamegraph, criterion)
 - [ ] Add structured logging to capture performance metrics
 - [ ] Create log consumer tool that generates visualizations:
@@ -58,7 +58,7 @@ This section lists NEW FEATURES for v0.0.8.
 
 ---
 
-## Parallel Branches (NOT in v0.0.8 core)
+## Deferred to v0.0.9 (NOT in v0.0.8 core)
 
 These are SEPARATE INITIATIVES that can run in parallel:
 
@@ -68,11 +68,18 @@ These are SEPARATE INITIATIVES that can run in parallel:
 **Schedule:** Start after i18n base architecture is in place
 **Owner approval required:** Yes (significant UX change)
 
+### Bidi UI alignment
+
+The ribbon and bidi UI alignment work is deferred to v0.0.9. Keep the design
+proposal here as planning context; it is not a v0.0.8 acceptance criterion.
+
 ### Branch: `feat/perf-instrumentation`
 **Scope:** Performance profiling, logging, analysis tool
 **Why separate:** Tool-building separate from core app
 **Dependencies:** Need to investigate Rust instrumentation options first
 **Deliverable:** Standalone performance analysis tool + flamegraph integration
+
+The full profiling workflow and dashboard are v0.0.9 candidates, not v0.0.8 work.
 
 ---
 

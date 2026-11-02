@@ -1,7 +1,7 @@
 # Missing PrivacyWelcome Dialog on Startup
 
 - Date: 2026-10-31
-- Status: Bug report - found in testing
+- Status: Fixed and regression-tested
 - Branch: `feat/v0.0.8`
 - Severity: High (user doesn't know logging level)
 
@@ -54,7 +54,13 @@ Without it, user has no way to know:
 
 ---
 
-## Next Steps
+## Resolution
+
+The startup condition now treats a missing or empty `privacy_welcome_seen` value
+as first use. The fix is covered by tests for first launch, dismissal, the
+`--first-use` flag, and settings-file removal.
+
+## Historical Investigation Notes
 
 1. Add logging to trace when `privacy_welcome_seen` is checked
 2. Verify the condition evaluates correctly

@@ -1,7 +1,7 @@
 # Duplicate Notebook in Sidebar Bug
 
 - Date: 2026-10-31
-- Status: Bug report - found in testing
+- Status: Obsolete as originally reported; startup auto-deployment was removed
 - Branch: `feat/v0.0.8`
 - Severity: High (breaks UI, confuses users)
 
@@ -27,7 +27,14 @@ The "Welcome to NoteCraft" notebook appears **twice** in the sidebar notebook li
 
 ---
 
-## Next Steps
+## Current disposition
+
+The reported duplicate was associated with the old startup Welcome notebook
+deployment path. Startup no longer installs that notebook. The explicit File-menu
+action is intended to add or refresh one Welcome notebook and should be monitored
+if a new duplicate report appears.
+
+## Historical Next Steps
 
 1. Check the notebooks folder structure on disk
 2. Search for where notebooks are loaded/added to the tree

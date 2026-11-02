@@ -1,7 +1,7 @@
 # Infinite canvas drawing outside text blocks: investigation
 
 - Date: 2026-10-31
-- Status: INVESTIGATED; fix not implemented
+- Status: Investigated; not fixed; future version
 - Issue: https://github.com/AlienTechSoftware/notecraft/issues/22
 - Release target: 0.0.8
 

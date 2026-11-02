@@ -1,7 +1,7 @@
 # First Launch: Remove Welcome Notebook, Add Logging Consent Dialog
 
 - Date: 2026-10-31
-- Status: Specified, not yet implemented
+- Status: Fixed in the current startup path; this note is retained as history
 - Branch: `feat/v0.0.8`
 
 ---
@@ -126,6 +126,13 @@ fn show_first_launch_dialog() -> bool {
 - Tests: Verify first-launch behavior
 
 ---
+
+## Current disposition
+
+- Welcome notebook auto-deployment was removed in `d4d93bb`.
+- The privacy welcome flow is implemented and covered by regression tests.
+- The welcome notebook remains available as an explicit File-menu action.
+- The original acceptance list below is historical and should not be read as open work.
 
 ## Acceptance Criteria
 

@@ -1,7 +1,7 @@
 # Block hit testing and initial sizing (issue - blocks)
 
 - Date: 2026-10-31
-- Status: Specified, not yet implemented
+- Status: Partially addressed; remaining sizing review deferred
 - Branch: `feat/v0.0.8`
 
 Two UX improvements for page editing:
