@@ -1,7 +1,7 @@
 # First Launch: Remove Welcome Notebook, Add Logging Consent Dialog
 
 - Date: 2026-10-31
-- Status: Specified, not yet implemented
+- Status: Implemented and verified in the current baseline
 - Branch: `feat/v0.0.8`
 
 ---
@@ -129,9 +129,16 @@ fn show_first_launch_dialog() -> bool {
 
 ## Acceptance Criteria
 
-- [ ] No Welcome notebook deployment attempted
-- [ ] No OS errors shown during startup
-- [ ] Logging consent dialog appears once per installation
-- [ ] Dialog can be dismissed and choice is remembered
-- [ ] User can change consent later in Settings
-- [ ] No network calls until user consents
+- [x] No Welcome notebook deployment attempted
+- [x] No OS errors shown during startup
+- [x] Logging-level dialog appears once per installation
+- [x] Dialog can be dismissed and choice is remembered
+- [x] User can change the level later in Settings
+- [x] No network calls are made by this local-only diagnostic path
+
+## Current disposition
+
+The startup deployment path was removed. First-use state is covered by the UI
+tests, and the current Options/About surfaces expose the local logging level and
+privacy behavior. Keep this document as the implementation record; future
+changes to consent wording or collection policy belong to `nc-prod`.

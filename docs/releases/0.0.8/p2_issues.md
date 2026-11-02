@@ -170,8 +170,8 @@ Acceptance:
 **Status:** Appears implemented in the current baseline; verify before closing  
 **References:**
 
-- [issue_first_launch_dialog.md](./issue_first_launch_dialog.md)
-- [issue_missing_privacy_dialog.md](./issue_missing_privacy_dialog.md)
+- [issue_first_launch_dialog.md](./done/issue_first_launch_dialog.md)
+- [issue_missing_privacy_dialog.md](./done/issue_missing_privacy_dialog.md)
 - [`apps/notecraft/src/main.rs`](../../../apps/notecraft/src/main.rs)
 - [`crates/ui-egui/src/app.rs`](../../../crates/ui-egui/src/app.rs)
 

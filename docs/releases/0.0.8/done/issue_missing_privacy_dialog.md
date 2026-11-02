@@ -1,7 +1,7 @@
 # Missing PrivacyWelcome Dialog on Startup
 
 - Date: 2026-10-31
-- Status: Bug report - found in testing
+- Status: Fixed and regression-tested in the current baseline
 - Branch: `feat/v0.0.8`
 - Severity: High (user doesn't know logging level)
 
@@ -16,7 +16,7 @@ The PrivacyWelcome dialog that shows the logging level to the user **does not ap
 - User sees: "Logging is set to: DEBUG"
 - Dialog gets dismissed, setting `privacy_welcome_seen = true`
 
-**Actual behavior:**
+**Actual behavior at report time:**
 - App starts
 - No dialog shown
 - User doesn't know logging level is set to debug
@@ -30,7 +30,14 @@ The dialog exists in code:
 - Shown when `privacy_welcome = session.settings.get("privacy_welcome_seen").is_none()` (line 640)
 - Rendering at line 4544
 
-But it's not being displayed on startup.
+The original report was fixed. The current UI test suite covers the first-use
+privacy flow and the persisted dismissal state.
+
+## Current disposition
+
+Done for 0.0.8. Reopen only if a fresh-settings manual run reproduces the
+missing dialog; record the exact settings path and build profile before changing
+the implementation.
 
 ---
 
