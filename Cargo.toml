@@ -26,10 +26,10 @@ notecraft-mcp = { path = "crates/mcp" }
 notecraft-ui-egui = { path = "crates/ui-egui" }
 
 # Versions match the sibling Craft apps (storytold/wordcraft).
-eframe = "0.36"
-egui = "0.36"
-egui_extras = { version = "0.36", default-features = false, features = ["image", "file", "svg_text"] }
-egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
+eframe = "0.37"
+egui = "0.37"
+egui_extras = { version = "0.37", default-features = false, features = ["image", "file", "svg_text"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 serde_json = "1"
 zip = "4"
 # Equations: a pure Rust, KaTeX compatible TeX maths typesetter. Pinned exactly, because it is

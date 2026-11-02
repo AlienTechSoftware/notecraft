@@ -65,6 +65,28 @@ accidentally, remove focus, or create a new block.
 - PageUp and PageDown preserve normal visual caret behavior across lines.
 - Clicking text before or after the image places the caret in the text flow.
 - Clicking the image uses the defined image-selection behavior, not a new block.
+
+### Whole-block image navigation contract
+
+The same atomic-character rule applies to a standalone `Block::Image` in the
+page stream. In LTR text, the image has three transient navigation states:
+
+```text
+caret before image -> image selected -> caret after image
+```
+
+- Right Arrow from the caret immediately before the image selects the image.
+- Right Arrow from the selected image clears the selection and places a focused
+  caret immediately after the image. If the image is the last block, that caret
+  must allow typing a new line.
+- Left Arrow from the selected image places the caret immediately before it.
+- Up and Down use the image's visual rectangle as one large atomic character:
+  entering it from an adjacent writable line selects it; leaving a selected
+  image goes to the nearest writable line in the requested direction.
+- No arrow sequence may leave the caret invisible, move the caret into the
+  non-writable image block, or trap keyboard navigation.
+- The image source, dimensions, and persisted block order are unchanged by
+  navigation alone.
 - Clicking inside the owning block must never create another block.
 
 ## Editing and selection behavior
@@ -103,6 +125,9 @@ Both formats must preserve equivalent semantics:
 - relative asset paths;
 - multiple images in one paragraph;
 - image at the start, middle, and end of a block.
+- standalone image at the start, middle, and end of the page stream;
+- Right, Left, Up, and Down from before, on, and after a standalone image;
+- image as the final block followed by Enter and typed text;
 
 ## Observed failure
 

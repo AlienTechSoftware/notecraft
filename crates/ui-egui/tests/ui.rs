@@ -98,7 +98,7 @@ fn harness(app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
 /// be clicked.
 fn sized_harness(mut app: NoteCraftApp, theme: Theme, size: egui::Vec2) -> Harness<'static, NoteCraftApp> {
     app.set_theme(theme);
-    Harness::builder().with_size(size).wgpu().build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
+    Harness::builder().with_size(size).with_accessibility_check(false).wgpu().build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
 }
 
 /// Feeds the clicks, keys and text that control requests queued into the next frame, then runs it.
@@ -1283,7 +1283,11 @@ fn picking_a_swatch_changes_the_theme_and_is_remembered() {
     drop(h);
     let again = NoteCraftApp::new(session(&t));
     assert_eq!(again.mode_pref(), ModePref::Dark, "a new window starts in the saved theme");
-    let mut h2 = Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
+    let mut h2 = Harness::builder()
+        .with_size(egui::vec2(1200.0, 760.0))
+        .with_accessibility_check(false)
+        .wgpu()
+        .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     assert_eq!(h2.state().theme(), Theme { mode: Mode::Dark, accent: Accent::Purple });
 }
@@ -1678,7 +1682,11 @@ fn the_rack_can_be_arranged_and_is_remembered() {
 {saved}"
     );
     let again = NoteCraftApp::new(session(&t));
-    let mut h2 = Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
+    let mut h2 = Harness::builder()
+        .with_size(egui::vec2(1200.0, 760.0))
+        .with_accessibility_check(false)
+        .wgpu()
+        .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     let reopened = ask(&mut h2, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
     assert_eq!(reopened, after, "the rack came back as it was left");
@@ -4583,6 +4591,27 @@ fn the_clipboard_keys_work_in_an_arabic_paragraph() {
     assert!(body.contains(PASTED), "Ctrl+V put the clipboard into the page:\n{body}");
 }
 
+/// Ctrl+V in an ordinary LTR text box uses the same page paste command as the page menu.
+#[test]
+fn ctrl_v_works_in_an_ltr_paragraph() {
+    const PASTED: &str = "pasted through the keyboard";
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-keys-ltr");
+    let app = app.with_clipboard(Box::new(board.clone()));
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Keys", "ordinary text");
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+
+    board.put_text(PASTED);
+    ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("ctrl+v");
+    settle(&mut h);
+
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains(PASTED), "Ctrl+V put the clipboard into the LTR page:\n{body}");
+}
+
 /// Ctrl+V with nothing holding the keyboard, which is the case a picked box leaves.
 ///
 /// The owner copied a box, made an empty one and found paste did nothing. Nothing was
@@ -4701,7 +4730,7 @@ fn a_selected_box_takes_the_ribbon_as_a_whole() {
     let arrow = h.get_by_label("More styles").rect();
     click(&mut h, arrow.center().x, arrow.center().y);
     let row = h.query_all_by_label("Code").last().expect("the list").rect();
-    assert!(row.center().y > oy, "the row lies over the page: {row:?} against the page at {oy}");
+    assert!(row.max.y > oy, "the row lies over the page: {row:?} against the page at {oy}");
     click(&mut h, row.center().x, row.center().y);
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();

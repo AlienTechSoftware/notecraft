@@ -367,7 +367,7 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
             ui.memory_mut(|m| m.request_focus(title_id));
         }
         let name = ed.title_buf.clone();
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, &name));
         egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
     if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
@@ -553,8 +553,6 @@ pub struct NoteCraftApp {
     control: Option<Receiver<ControlRequest>>,
     control_server: Option<ControlServer>,
     event_frames: std::collections::VecDeque<Vec<egui::Event>>,
-    screenshots: Vec<(u64, ControlRequest, Option<PathBuf>)>,
-    next_screenshot: u64,
     show_source: bool,
     /// The code view: which of the page's files is picked, and its text while it is read
     /// or edited.
@@ -596,6 +594,7 @@ pub struct NoteCraftApp {
     pending_copy: Option<String>,
     /// Matching HTML flavor for the same copied item, when one is available.
     pending_copy_html: Option<String>,
+    keyboard_paste_requested: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
     /// The page fills the window: the notebooks are hidden until it is turned off.
@@ -624,6 +623,12 @@ impl NoteCraftApp {
     pub fn with_clipboard(mut self, board: Box<dyn crate::clipboard::Board>) -> NoteCraftApp {
         self.clipboard = board;
         self
+    }
+
+    /// Queues a native keyboard paste captured before egui processes the shortcut.
+    pub fn queue_keyboard_paste(&mut self) {
+        log::debug!("queued native keyboard paste");
+        self.keyboard_paste_requested = true;
     }
 
     pub fn new(session: Session) -> NoteCraftApp {
@@ -679,8 +684,6 @@ impl NoteCraftApp {
             control: None,
             control_server: None,
             event_frames: std::collections::VecDeque::new(),
-            screenshots: Vec::new(),
-            next_screenshot: 1,
             show_source,
             code: crate::codeview::State::default(),
             ribbon_tab: "Home".to_string(),
@@ -700,6 +703,7 @@ impl NoteCraftApp {
             theme_window: false,
             pending_copy: None,
             pending_copy_html: None,
+            keyboard_paste_requested: false,
             backstage: None,
             full_page: false,
             focus_search: false,
@@ -2843,8 +2847,10 @@ impl NoteCraftApp {
     fn paste_picture(&mut self, dir: &std::path::Path, picture: crate::clipboard::Picture) {
         let name = crate::clipboard::picture_name();
         let (w, h) = (picture.width, picture.height);
+        log::debug!("clipboard image paste received: width={w} height={h} bytes={}", picture.png.len());
         match notecraft_store::assets::attach_bytes(dir, &name, &picture.png) {
             Ok(link) => {
+                log::debug!("clipboard image paste attached: name={name:?} link={link:?}");
                 if let Some(ed) = self.editor.as_mut() {
                     let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
                     ed.blocks.insert(
@@ -3538,6 +3544,9 @@ impl NoteCraftApp {
                     || i.events.iter().any(|e| {
                         matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
                     })
+                    || i.raw.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
+                    })
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -3556,10 +3565,14 @@ impl NoteCraftApp {
         // with has_picture() first was racy with VirtualBox clipboard synchronisation and
         // could make the actual image read miss the clipboard handoff.
         if paste {
+            // Consume the shortcut before the text widgets draw. Otherwise an LTR TextEdit
+            // handles Ctrl+V itself while the page menu goes through `paste_here`, giving the
+            // two entry points different behavior.
+            ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::V) || i.consume_key(Modifiers::CTRL, Key::V));
             let picture = self.clipboard.picture();
             if let (Some(picture), Some(dir)) = (picture, self.editor.as_ref().map(|e| e.dir.clone())) {
                 self.paste_picture(&dir, picture);
-            } else if ours || self.editor.as_ref().is_some_and(|e| e.caret.is_none()) {
+            } else {
                 self.paste_here();
             }
         }
@@ -4500,7 +4513,7 @@ impl NoteCraftApp {
                     ui.separator();
                     let (current, source) = self.session.settings.global_format();
                     let mut chosen = current;
-                    egui::ComboBox::from_id_salt("default-format").selected_text(current.label()).show_ui(ui, |ui| {
+                    egui::ComboBox::from_label("Default format").selected_text(current.label()).show_ui(ui, |ui| {
                         for f in PageFormat::ALL {
                             ui.selectable_value(&mut chosen, f, f.label());
                         }
@@ -4572,10 +4585,13 @@ impl NoteCraftApp {
                 let mut accepted = false;
                 let mut denied = false;
                 let screen = ctx.viewport_rect();
-                egui::Area::new("privacy-welcome-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
-                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
-                    ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                });
+                egui::Area::new(egui::Id::new("privacy-welcome-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(
+                    ctx,
+                    |ui| {
+                        let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
                 egui::Window::new("Welcome to NoteCraft")
                     .title_bar(false)
                     .collapsible(false)
@@ -4593,7 +4609,7 @@ impl NoteCraftApp {
                         );
                         ui.add_space(6.0);
                         ui.label("Choose a local collection level. Logging is off by default in release builds.");
-                        egui::ComboBox::from_id_salt("privacy-welcome-level").selected_text(level.as_str()).show_ui(ui, |ui| {
+                        egui::ComboBox::from_label("Local collection level").selected_text(level.as_str()).show_ui(ui, |ui| {
                             for choice in ["none", "usage", "warning", "error", "debug"] {
                                 ui.selectable_value(level, choice.into(), choice);
                             }
@@ -4689,14 +4705,14 @@ impl NoteCraftApp {
                 let mut repair = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new("missing-attachment-icon-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("missing-attachment-icon-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Attachment recovery")
                     .title_bar(false)
                     .collapsible(false)
@@ -4753,14 +4769,14 @@ impl NoteCraftApp {
                 let mut restore = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new("unreferenced-attachment-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("unreferenced-attachment-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Attachment recovery")
                     .title_bar(false)
                     .collapsible(false)
@@ -4812,14 +4828,14 @@ impl NoteCraftApp {
                 let mut open = false;
                 let mut cancel = false;
                 let mut suppress = self.open_attachment_warning_suppressed;
-                egui::Area::new("open-attachment-warning-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("open-attachment-warning-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Open attachment")
                     .title_bar(false)
                     .collapsible(false)
@@ -5066,7 +5082,7 @@ impl NoteCraftApp {
                 let mut go = false;
                 let mut cancel = false;
                 let screen = ctx.viewport_rect();
-                egui::Area::new("delete-file-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+                egui::Area::new(egui::Id::new("delete-file-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
                     let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
                     ui.painter().rect_filled(response.rect, 0.0, Color32::from_black_alpha(150));
                 });
@@ -5405,24 +5421,6 @@ impl NoteCraftApp {
     }
 
     fn poll_control(&mut self, ctx: &Context) {
-        // Finish screenshot requests whose picture has arrived.
-        let arrived: Vec<(u64, std::sync::Arc<egui::ColorImage>)> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Screenshot { user_data, image, .. } => {
-                        user_data.data.as_ref().and_then(|d| d.downcast_ref::<u64>()).map(|id| (*id, image.clone()))
-                    }
-                    _ => None,
-                })
-                .collect()
-        });
-        for (id, image) in arrived {
-            if let Some(pos) = self.screenshots.iter().position(|(n, _, _)| *n == id) {
-                let (_, req, path) = self.screenshots.remove(pos);
-                req.respond(encode_screenshot(&image, path.as_deref()));
-            }
-        }
         let mut pending = Vec::new();
         if let Some(rx) = &self.control {
             while let Ok(req) = rx.try_recv() {
@@ -5438,11 +5436,10 @@ impl NoteCraftApp {
     pub fn handle_control(&mut self, ctx: &Context, req: ControlRequest) {
         if req.method == "ui.screenshot" {
             let path = req.params.get("path").and_then(Value::as_str).map(PathBuf::from);
-            let id = self.next_screenshot;
-            self.next_screenshot += 1;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(id)));
+            ctx.request_screenshot(move |image| {
+                req.respond(encode_screenshot(&image, path.as_deref()));
+            });
             ctx.request_repaint();
-            self.screenshots.push((id, req, path));
             return;
         }
         let result = self.control_method(ctx, &req.method, &req.params);
@@ -5592,6 +5589,7 @@ impl NoteCraftApp {
                     delta: vec2(dx, dy),
                     modifiers: egui::Modifiers::NONE,
                     phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                 }]);
                 ctx.request_repaint();
                 Ok(json!({}))
@@ -5774,6 +5772,11 @@ impl NoteCraftApp {
                 ctx.copy_text(text);
             }
         }
+        if self.keyboard_paste_requested {
+            self.keyboard_paste_requested = false;
+            log::debug!("queued keyboard paste dispatched to paste_here");
+            self.paste_here();
+        }
         self.clipboard_keys(ctx);
         self.poll_control(ctx);
         self.poll_import(ctx);
@@ -5845,7 +5848,7 @@ fn theme_swatch(ui: &mut Ui, theme: Theme, selected: bool) -> egui::Response {
 }
 
 fn format_picker(ui: &mut Ui, format: &mut Option<PageFormat>) {
-    egui::ComboBox::from_id_salt("dialog-format")
+    egui::ComboBox::from_label("Page format")
         .selected_text(format.map(|f| f.label()).unwrap_or("Inherit (notebook, section or global setting)"))
         .show_ui(ui, |ui| {
             ui.selectable_value(format, None, "Inherit (notebook, section or global setting)");
