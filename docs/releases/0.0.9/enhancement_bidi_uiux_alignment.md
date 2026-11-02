@@ -225,4 +225,4 @@ Review the controls in at least:
 ## Related documents
 
 - [`docs/rtl-in-word-and-onenote.md`](../../rtl-in-word-and-onenote.md)
-- [`docs/releases/0.0.8/rc_feature.md`](./rc_feature.md)
+- [`docs/releases/0.0.8/rc_feature.md`](../0.0.8/rc_feature.md)

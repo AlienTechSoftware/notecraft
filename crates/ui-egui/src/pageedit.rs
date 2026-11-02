@@ -1336,6 +1336,17 @@ pub fn show_blocks(
                             if let Some(right) = arrow
                                 && let Some(target) = inline_image_arrow_target(&c.text, at, right)
                             {
+                                log::debug!(
+                                    "inline-image caret navigation: block={} direction={} before={} target={} text_chars={} selection=({}, {}) focus={}",
+                                    i,
+                                    if right { "right" } else { "left" },
+                                    at,
+                                    target,
+                                    c.text.chars().count(),
+                                    range.primary.index.0,
+                                    range.secondary.index.0,
+                                    true,
+                                );
                                 state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(target))));
                                 state.store(ui.ctx(), id);
                                 ui.input_mut(|input| {
@@ -1391,6 +1402,16 @@ pub fn show_blocks(
                         && let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id)
                     {
                         let cursor = egui::text::CCursor::new(at);
+                        log::debug!(
+                            "inline-image caret selection correction: block={} direction={} before=({}, {}) after={} text_chars={} focus={}",
+                            i,
+                            if right { "right" } else { "left" },
+                            range.primary.index.0,
+                            range.secondary.index.0,
+                            at,
+                            c.text.chars().count(),
+                            true,
+                        );
                         cursor_range = Some(egui::text::CCursorRange::one(cursor));
                         state.cursor.set_char_range(cursor_range);
                         state.store(ui.ctx(), id);

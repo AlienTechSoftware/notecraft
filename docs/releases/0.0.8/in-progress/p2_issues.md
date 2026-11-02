@@ -147,7 +147,7 @@ Priority meanings:
 ### P0-1: Infinite-canvas drawing outside text blocks
 
 **Status:** Investigated; fix not implemented  
-**Reference:** [issue_infinte_canvas.md](./issue_infinte_canvas.md)  
+**Reference:** [issue_infinte_canvas.md](../issue_infinte_canvas.md)
 **Related issue:** GitHub #22
 
 With Draw selected, ink should begin and continue anywhere on the page,
@@ -170,10 +170,10 @@ Acceptance:
 **Status:** Appears implemented in the current baseline; verify before closing  
 **References:**
 
-- [issue_first_launch_dialog.md](./done/issue_first_launch_dialog.md)
-- [issue_missing_privacy_dialog.md](./done/issue_missing_privacy_dialog.md)
-- [`apps/notecraft/src/main.rs`](../../../apps/notecraft/src/main.rs)
-- [`crates/ui-egui/src/app.rs`](../../../crates/ui-egui/src/app.rs)
+- [issue_first_launch_dialog.md](../done/issue_first_launch_dialog.md)
+- [issue_missing_privacy_dialog.md](../done/issue_missing_privacy_dialog.md)
+- [`apps/notecraft/src/main.rs`](../../../../apps/notecraft/src/main.rs)
+- [`crates/ui-egui/src/app.rs`](../../../../crates/ui-egui/src/app.rs)
 
 The Welcome notebook auto-deployment code is removed from startup, but the
 first-use flow needs one clear product decision. Decide whether the initial
@@ -199,7 +199,7 @@ dialog.
 
 **Status:** Needs a focused audit; the original Welcome-deployment example is
 obsolete in this baseline  
-**Reference:** [issue_user_facing_errors.md](./issue_user_facing_errors.md)
+**Reference:** [issue_user_facing_errors.md](../issue_user_facing_errors.md)
 
 Technical paths, raw OS codes, and implementation terms must not be shown in
 normal user-facing messages. Technical details belong in logs. The original
@@ -208,10 +208,10 @@ the same pattern may still exist in clipboard, file, import, and save errors.
 
 Audit at least:
 
-- [`apps/notecraft/src/main.rs`](../../../apps/notecraft/src/main.rs)
-- [`crates/ui-egui/src/app.rs`](../../../crates/ui-egui/src/app.rs)
-- [`crates/ui-egui/src/backstage.rs`](../../../crates/ui-egui/src/backstage.rs)
-- [`crates/store/`](../../../crates/store/)
+- [`apps/notecraft/src/main.rs`](../../../../apps/notecraft/src/main.rs)
+- [`crates/ui-egui/src/app.rs`](../../../../crates/ui-egui/src/app.rs)
+- [`crates/ui-egui/src/backstage.rs`](../../../../crates/ui-egui/src/backstage.rs)
+- [`crates/store/`](../../../../crates/store/)
 
 Acceptance:
 
@@ -226,7 +226,7 @@ Acceptance:
 ### P1-1: Block creation, hit testing, and click-to-caret
 
 **Status:** Specified; not implemented  
-**Reference:** [issue_block_hit_test.md](./issue_block_hit_test.md)
+**Reference:** [issue_block_hit_test.md](../issue_block_hit_test.md)
 
 New blocks should have a useful initial width and clicking inside a block
 should activate it and place the caret near the clicked line and character.
@@ -255,7 +255,7 @@ Acceptance:
 ### P1-2: Duplicate notebook in the sidebar
 
 **Status:** Likely local setup issue; verify and close if not reproducible  
-**Reference:** [issue_duplicate_notebook.md](./issue_duplicate_notebook.md)
+**Reference:** [issue_duplicate_notebook.md](../issue_duplicate_notebook.md)
 
 The Welcome notebook was observed twice in the notebook tree. Determine
 whether the cause is duplicate filesystem data, duplicate insertion during
@@ -279,7 +279,7 @@ Acceptance:
 ### P1-3: Clipboard interoperability
 
 **Status:** Plain text works; rich clipboard support is incomplete  
-**References:** [`ROADMAP.md`](../../../ROADMAP.md), [`docs/gaps.md`](../../gaps.md)
+**References:** [`ROADMAP.md`](../../../../ROADMAP.md), [`docs/gaps.md`](../../../gaps.md)
 
 Implement or explicitly scope:
 
@@ -296,7 +296,7 @@ preserving the existing user-visible behavior.
 ### P1-4: OneNote import completeness and scope decision
 
 **Status:** Required product area; incomplete  
-**References:** [`ROADMAP.md`](../../../ROADMAP.md), [`docs/gaps.md`](../../gaps.md)
+**References:** [`ROADMAP.md`](../../../../ROADMAP.md), [`docs/gaps.md`](../../../gaps.md)
 
 The importer has been exercised against 443 real backup files, but missing
 areas include:
@@ -318,7 +318,7 @@ decision pending. Select a concrete 0.0.8 scope and document what is deferred.
 ### P1-5: Validate Linux and macOS support claims
 
 **Status:** Unverified release claim  
-**References:** [`docs/gaps.md`](../../gaps.md), [`ROADMAP.md`](../../../ROADMAP.md)
+**References:** [`docs/gaps.md`](../../../gaps.md), [`ROADMAP.md`](../../../../ROADMAP.md)
 
 The application has been built and run on Windows, but Linux and macOS
 behavior is not established.
@@ -331,7 +331,7 @@ claiming support.
 ### P1-6: Investigate the AMD graphics crash
 
 **Status:** Unreproduced; release risk remains  
-**Reference:** [`docs/gaps.md`](../../gaps.md)
+**Reference:** [`docs/gaps.md`](../../../gaps.md)
 
 A release build reportedly crashed repeatedly on one Windows machine with AMD
 graphics. Test explicit wgpu backends, capture the backend and driver in the
@@ -341,7 +341,7 @@ workaround is required.
 ### P1-7: Clean-machine installer validation
 
 **Status:** Package built; installation lifecycle not validated  
-**Reference:** [`docs/gaps.md`](../../gaps.md)
+**Reference:** [`docs/gaps.md`](../../../gaps.md)
 
 Test a clean Windows machine or VM for:
 
@@ -359,7 +359,7 @@ This is a release-gate verification task rather than an immediate code issue.
 ### P1-8: Large notebook and attachment load testing
 
 **Status:** Caps exist; measured behavior is missing  
-**Reference:** [`docs/gaps.md`](../../gaps.md)
+**Reference:** [`docs/gaps.md`](../../../gaps.md)
 
 Create representative real fixtures and measure startup, page open, editing,
 save, search, memory, and frame responsiveness for large notebooks, many
@@ -370,7 +370,7 @@ containers, images, ink, attachments, and diagrams.
 ### P2-1: Decide the scope of RTL UI mirroring
 
 **Status:** Text support is partial; full chrome mirroring is planned  
-**Reference:** [enhancement_bidi_uiux_alignment.md](./enhancement_bidi_uiux_alignment.md)
+**Reference:** [enhancement_bidi_uiux_alignment.md](../../0.0.9/enhancement_bidi_uiux_alignment.md)
 
 Remaining areas include mirrored application chrome, advanced RTL selection,
 run isolates, Latin font consistency, and digit options. Full UI mirroring is
@@ -380,7 +380,7 @@ a substantial cross-cutting change. Explicitly decide whether it belongs in
 ### P2-2: Page editing structural limitations
 
 **Status:** Known product limitation  
-**Reference:** [`docs/gaps.md`](../../gaps.md)
+**Reference:** [`docs/gaps.md`](../../../gaps.md)
 
 The editor still has limitations around cross-block selection, editing tables,
 pictures, and horizontal rules, and preserving freeform arrangement when page
@@ -390,7 +390,7 @@ work unless the release scope changes.
 ### P2-3: Performance baseline measurements
 
 **Status:** Plan exists; measurements do not  
-**Reference:** [rc_perf.md](./rc_perf.md)
+**Reference:** [rc_perf.md](../../0.0.9/rc_perf.md)
 
 Start with measurable baselines for startup, frame time, page parse/load/save,
 search, memory, and large demo pages. Defer a full flame-chart/Gantt/waterfall

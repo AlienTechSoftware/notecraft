@@ -12,7 +12,7 @@ flow and must not break editing of the paragraph that owns them.
 **Owner:** `nc-uiux-features`, with support from `nc-uiux-controls`,
 `nc-uiux-bidi`, `nc-dom-ser`, and `nc-code-rust`.
 
-**Related design reference:** [`work/inline-images-and-anchors.md`](../../../work/inline-images-and-anchors.md)
+**Related design reference:** [`work/inline-images-and-anchors.md`](../../../../work/inline-images-and-anchors.md)
 
 **Related release handoff:** [`p2_issues.md`](./p2_issues.md)
 
