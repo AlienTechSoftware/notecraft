@@ -1,7 +1,7 @@
 # Image frame and resize: root cause and fix design (issue #18)
 
 - Date: 2026-10-31
-- Status: ROOT CAUSE CONFIRMED in the running app. Fix designed, not implemented.
+- Status: IMPLEMENTATION VERIFIED locally; full CI gate passes on 2026-11-01.
 - Issue: https://github.com/AlienTechSoftware/notecraft/issues/18
 - Skills applied: `nc-dom-ser`, `nc-hl-design`, `nc-arch`.
 
@@ -29,6 +29,73 @@ Five separate causes were found and each was reproduced in the running app:
 The owner's rule is "every element in the DOM has a 1:1 representation in the page file".
 That rule is broken in two places: the picture's size (F2) and the empty paragraph (F3). The
 other three are view and controller bugs that turn those gaps into what is seen on screen.
+
+## Current handoff status (2026-11-01)
+
+The image resize implementation is now present on branch `0.0.8_image_resize`,
+commit `8df9b54`, but that commit has not been pushed because the required
+pre-push gate is red.
+
+Implemented and verified:
+
+- Standalone pictures render from stored `Block::Image.width` and `height`.
+- The drawn picture rectangle is used for selection and resize affordances.
+- Resize handles are created every frame while the picture is selected.
+- Resize ownership is kept separate from image movement.
+- Left and right edges change width only.
+- Top and bottom edges change height only.
+- Edge resizing does not preserve aspect ratio.
+- Corner resizing preserves aspect ratio unless Shift is held.
+- Left and top edges move the picture origin.
+- A 16pt minimum is enforced on each dimension.
+- The resize drag uses the pointer position captured at drag start, avoiding
+  frame-delta oscillation.
+- Detailed resize diagnostics are written to `%APPDATA%\NoteCraft\notecraft.log`.
+- `RUST_LOG=notecraft_ui_egui=debug` now enables debug logging in the custom
+  application logger.
+
+Focused verification:
+
+- Image resize geometry tests: 9 passed.
+- Right-edge `egui_kittest` drag test: passed.
+- Application logging tests: 2 passed.
+- Format, build, and clippy checks passed during the implementation work.
+
+The former gate blocker, `double_clicking_an_attachment_card_opens_it`, was
+reproduced and fixed in `crates/ui-egui/src/containers.rs`. Inline object clicks
+were selecting the card, but the controller consumed the click before the
+double-click transition could be recognized. The existing time-based transition
+now runs on the controller's `object_clicked` event.
+
+The visual 2D resize report was then reproduced from session
+`20261102014334-00012ac000000000`. The page stored the requested size
+(`523 x 847`) and the resize log kept the height fixed, but egui rendered the
+image at about `523 x 178`. `fit_to_exact_size` preserves the source aspect
+ratio by default, so explicit resized dimensions were being visually ignored.
+The renderer now calls `maintain_aspect_ratio(false)` for images with stored
+width and height. Natural-size images keep the old aspect-preserving path.
+
+Verification on 2026-11-01:
+
+- `cargo fmt --all -- --check` passed.
+- `cargo test -p notecraft-ui-egui image_resize` passed: 9 tests.
+- `cargo test -p notecraft-ui-egui --test ui double_clicking_an_attachment_card_opens_it -- --exact --nocapture` passed.
+- `cargo xtask demo-check` passed: 662 files up to date.
+- `cargo xtask ci` passed: clippy, workspace tests, layers, assets, docs, text and demo parity; UI suite 124 passed.
+
+Manual handoff:
+
+1. Run `.\run.cmd` from the open repository.
+2. Select a standalone picture.
+3. Drag the center of the left or right edge. Width must change while height
+   remains fixed, allowing a visibly non-proportional stretch.
+4. Drag the center of the top or bottom edge. Height must change while width
+   remains fixed.
+5. Drag a corner. Width and height must change together, preserving aspect
+   ratio unless Shift is held.
+6. Review `%APPDATA%\NoteCraft\notecraft.log` for `resize drag` and
+   `image resize` entries. The log includes the handle index, frame delta,
+   total delta, start pointer, current pointer, width, and height.
 
 ---
 

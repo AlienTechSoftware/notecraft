@@ -235,6 +235,7 @@ pub fn show(
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
+        let standalone_image = range.len() == 1 && matches!(blocks.get(range.start), Some(Block::Image { .. }));
         let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
         log::debug!(
             "CONTAINER: i={} pos=({:.0},{:.0}) width={:.0} blocks={:?} image_object={} contains_image={}",
@@ -276,6 +277,19 @@ pub fn show(
             *caret = None;
             out.changed.caret = true;
             log::debug!("embedded object selected: container={i} block={block} kind={kind}");
+            if kind == "image" {
+                let now = ui.input(|input| input.time);
+                let prior = ui.data(|data| data.get_temp::<(usize, f64)>(crate::preview::object_click_state_id()));
+                let is_double = prior.is_some_and(|(previous, at)| previous == *block && now - at <= 0.75);
+                if is_double {
+                    ui.data_mut(|data| data.remove::<(usize, f64)>(crate::preview::object_click_state_id()));
+                    if let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir)) {
+                        out.changed.link = Some(href);
+                    }
+                } else {
+                    ui.data_mut(|data| data.insert_temp(crate::preview::object_click_state_id(), (*block, now)));
+                }
+            }
         }
         if let Some((block, _)) = object_double_clicked.as_ref().filter(|(block, _)| range.contains(block))
             && let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir))
@@ -312,7 +326,17 @@ pub fn show(
         // Pictures own their visible rectangle. The parent container must not also claim that
         // rectangle: two overlapping interactions made a picture click intermittently select the
         // whole page/container instead of the picture.
-        let image_rect = Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom));
+        let drawn_image_rect = standalone_image
+            .then(|| {
+                ui.data(|data| data.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()))
+                    .and_then(|hits| hits.iter().find(|(block, _, kind)| *block == range.start && kind == "image").map(|(_, rect, _)| *rect))
+            })
+            .flatten();
+        let image_rect = drawn_image_rect.unwrap_or_else(|| Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom)));
+        let resize_handle_size = (6.0 * zoom).max(4.0);
+        let pointer_on_resize_handle = image_object
+            && object_sel.as_ref().is_some_and(|(_, kind)| image_can_resize(kind))
+            && pointer.is_some_and(|p| resize_handle_rects(image_rect, resize_handle_size).iter().any(|rect| rect.contains(p)));
         if contains_image {
             log::debug!(
                 "image candidate: container={i} blocks={}..{} standalone={} frame={:?} image_rect={:?} pointer={:?}",
@@ -327,6 +351,7 @@ pub fn show(
         let image_hit = image_object
             .then(|| ui.interact(image_rect, ui.id().with(("image-object", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move));
         if let Some(response) = &image_hit
+            && !pointer_on_resize_handle
             && (response.clicked() || response.secondary_clicked() || response.dragged())
         {
             if response.clicked() {
@@ -360,16 +385,7 @@ pub fn show(
                 object_sel
             );
         }
-        if let Some(response) = &image_hit
-            && response.dragged()
-        {
-            let d = response.drag_delta();
-            if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
-            }
-            out.boxes = true;
-            log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
-        }
+        let mut resize_drag_active = false;
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
@@ -411,7 +427,7 @@ pub fn show(
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
             let image_rect = object_rect;
-            let size = (6.0 * zoom).max(4.0);
+            let size = resize_handle_size;
 
             // Create interactive handle widgets for images (every frame, not just when hovered)
             if image_can_resize(kind) {
@@ -449,59 +465,83 @@ pub fn show(
                         ui.ctx().set_cursor_icon(cursor);
                     }
 
+                    if handle_response.hovered() || handle_response.drag_started() || handle_response.dragged() || handle_response.drag_stopped() {
+                        log::debug!(
+                            "image resize handle: container={} block={} idx={} rect={:?} pointer={:?} hovered={} pressed={} drag_started={} dragged={} drag_stopped={} delta={:?} standalone={} selected={:?}",
+                            i,
+                            *block,
+                            idx,
+                            handle_rect,
+                            pointer,
+                            handle_response.hovered(),
+                            handle_response.is_pointer_button_down_on(),
+                            handle_response.drag_started(),
+                            handle_response.dragged(),
+                            handle_response.drag_stopped(),
+                            handle_response.drag_delta(),
+                            standalone_image,
+                            object_sel,
+                        );
+                    }
+                    resize_drag_active |= handle_response.drag_started() || handle_response.dragged();
+
+                    let resize_state_id = ui.id().with(("image-resize-state", i, idx));
+                    if handle_response.drag_started() {
+                        let width = blocks
+                            .get(*block)
+                            .and_then(|block| match block {
+                                Block::Image { width, .. } => *width,
+                                _ => None,
+                            })
+                            .unwrap_or(image_rect.width() / zoom);
+                        let height = blocks
+                            .get(*block)
+                            .and_then(|block| match block {
+                                Block::Image { height, .. } => *height,
+                                _ => None,
+                            })
+                            .unwrap_or(image_rect.height() / zoom);
+                        if let (Some(container), Some(pointer)) = (boxes.get(i), pointer) {
+                            ui.data_mut(|data| {
+                                data.insert_temp(resize_state_id, ImageResizeStart { x: container.x, y: container.y, width, height, pointer });
+                            });
+                        }
+                    }
+
                     // Handle resize drag
-                    if handle_response.dragged() {
-                        let delta = handle_response.drag_delta();
-                        log::debug!("resize drag: idx={} delta={:?} zoom={}", idx, delta, zoom);
+                    if handle_response.dragged() && standalone_image {
+                        let frame_delta = handle_response.drag_delta();
+                        let block_idx = *block;
+                        let shift = ui.input(|input| input.modifiers.shift);
+                        let Some(start) = ui.data(|data| data.get_temp::<ImageResizeStart>(resize_state_id)) else {
+                            continue;
+                        };
+                        let delta = pointer.map_or(frame_delta, |current| current - start.pointer);
+                        log::debug!(
+                            "resize drag: idx={} frame_delta={:?} total_delta={:?} start_pointer={:?} pointer={:?} zoom={}",
+                            idx,
+                            frame_delta,
+                            delta,
+                            start.pointer,
+                            pointer,
+                            zoom
+                        );
+                        let geometry = resize_image(start.width, start.height, delta / zoom, idx, shift);
                         if let Some(c) = boxes.get_mut(i) {
-                            let mut new_x = c.x;
-                            let mut new_y = c.y;
-                            let mut new_width = c.width;
-
-                            match idx {
-                                0 => {
-                                    new_x += delta.x / zoom;
-                                    new_y += delta.y / zoom;
-                                    new_width -= delta.x / zoom;
-                                }
-                                1 => {
-                                    new_y += delta.y / zoom;
-                                }
-                                2 => {
-                                    new_y += delta.y / zoom;
-                                    new_width += delta.x / zoom;
-                                }
-                                3 => {
-                                    new_x += delta.x / zoom;
-                                    new_width -= delta.x / zoom;
-                                }
-                                4 => {
-                                    new_width += delta.x / zoom;
-                                }
-                                5 => {
-                                    new_x += delta.x / zoom;
-                                    new_width -= delta.x / zoom;
-                                }
-                                6 => {}
-                                7 => {
-                                    new_width += delta.x / zoom;
-                                }
-                                _ => {}
-                            }
-
-                            new_width = new_width.max(container::MIN_WIDTH);
-                            *c = Container::new(new_x, new_y, new_width, c.blocks);
-
-                            // Update Block::Image.width
-                            let range = container::blocks_of(boxes, i);
-                            for block_idx in range {
-                                if let Some(Block::Image { width, .. }) = blocks.get_mut(block_idx) {
-                                    *width = Some(new_width);
-                                    log::debug!("image block width updated to {}", new_width);
-                                }
-                            }
+                            c.x = start.x + geometry.offset.x;
+                            c.y = start.y + geometry.offset.y;
+                            c.width = geometry.width;
+                        }
+                        if let Some(Block::Image { width, height, .. }) = blocks.get_mut(block_idx) {
+                            *width = Some(geometry.width);
+                            *height = Some(geometry.height);
+                            log::debug!("image resize: block={block_idx} width={} height={}", geometry.width, geometry.height);
                         }
                         out.boxes = true;
+                        out.changed.blocks = true;
+                    }
+                    if handle_response.drag_stopped() {
+                        ui.data_mut(|data| data.remove::<ImageResizeStart>(resize_state_id));
                     }
 
                     // Draw handle
@@ -509,6 +549,17 @@ pub fn show(
                     ui.painter().rect_stroke(Rect::from_center_size(*point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
                 }
             }
+        }
+        if let Some(response) = &image_hit
+            && response.dragged()
+            && !resize_drag_active
+        {
+            let d = response.drag_delta();
+            if let Some(c) = boxes.get_mut(i) {
+                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
+            }
+            out.boxes = true;
+            log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
         }
         if is_sel {
             sel_frame = Some(frame);
@@ -854,6 +905,82 @@ fn image_can_resize(kind: &str) -> bool {
     kind == "image"
 }
 
+fn resize_handle_rects(rect: Rect, size: f32) -> [Rect; 8] {
+    [
+        rect.left_top(),
+        rect.center_top(),
+        rect.right_top(),
+        rect.left_center(),
+        rect.right_center(),
+        rect.left_bottom(),
+        rect.center_bottom(),
+        rect.right_bottom(),
+    ]
+    .map(|point| Rect::from_center_size(point, vec2(size * 2.0, size * 2.0)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ImageResize {
+    offset: egui::Vec2,
+    width: f32,
+    height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ImageResizeStart {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    pointer: egui::Pos2,
+}
+
+fn resize_image(width: f32, height: f32, delta: egui::Vec2, handle: usize, shift: bool) -> ImageResize {
+    const MIN: f32 = 16.0;
+    let aspect = (width / height).max(f32::EPSILON);
+    let corner = matches!(handle, 0 | 2 | 5 | 7);
+    let preserve_aspect = corner && !shift;
+    let mut new_width = width;
+    let mut new_height = height;
+    let mut offset = egui::Vec2::ZERO;
+
+    match handle {
+        0 | 3 | 5 => {
+            new_width = width - delta.x;
+            offset.x = delta.x;
+        }
+        2 | 4 | 7 => new_width = width + delta.x,
+        _ => {}
+    }
+    match handle {
+        0..=2 => {
+            new_height = height - delta.y;
+            offset.y = delta.y;
+        }
+        5..=7 => new_height = height + delta.y,
+        _ => {}
+    }
+
+    if preserve_aspect {
+        let width_change = new_width - width;
+        let height_change = new_height - height;
+        let signed = if width_change.abs() >= height_change.abs() * aspect { width_change } else { height_change * aspect };
+        new_width = (width + signed).max(MIN);
+        new_height = (new_width / aspect).max(MIN);
+        if matches!(handle, 0 | 3 | 5) {
+            offset.x = width - new_width;
+        }
+        if matches!(handle, 0..=2) {
+            offset.y = height - new_height;
+        }
+    } else {
+        new_width = new_width.max(MIN);
+        new_height = new_height.max(MIN);
+    }
+
+    ImageResize { offset, width: new_width, height: new_height }
+}
+
 /// Whether the pointer is over open paper, not over a box.
 fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
@@ -895,6 +1022,92 @@ mod tests {
         assert!(image_can_resize("image"));
         assert!(!image_can_resize("link"));
         assert!(!image_can_resize("file"));
+    }
+
+    #[test]
+    fn image_resize_preserves_aspect_ratio_for_corners() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(40.0, 0.0), 7, false);
+        assert_eq!(resized, ImageResize { offset: egui::Vec2::ZERO, width: 240.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_allows_free_corner_scaling_with_shift() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(40.0, 20.0), 7, true);
+        assert_eq!(resized, ImageResize { offset: egui::Vec2::ZERO, width: 240.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_moves_left_and_top_edges_with_the_picture() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(20.0, 10.0), 0, true);
+        assert_eq!(resized, ImageResize { offset: egui::vec2(20.0, 10.0), width: 180.0, height: 90.0 });
+    }
+
+    #[test]
+    fn image_resize_changes_only_the_horizontal_edge_axis() {
+        let left = resize_image(200.0, 100.0, egui::vec2(20.0, 35.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(20.0, 35.0), 4, false);
+        assert_eq!(left, ImageResize { offset: egui::vec2(20.0, 0.0), width: 180.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 220.0, height: 100.0 });
+    }
+
+    #[test]
+    fn image_resize_changes_only_the_vertical_edge_axis() {
+        let top = resize_image(200.0, 100.0, egui::vec2(35.0, 20.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(35.0, 20.0), 6, false);
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, 20.0), width: 200.0, height: 80.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_each_edge_stretches_only_in_its_direction() {
+        let left = resize_image(200.0, 100.0, egui::vec2(-30.0, 45.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(30.0, 45.0), 4, false);
+        let top = resize_image(200.0, 100.0, egui::vec2(45.0, -20.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(45.0, 20.0), 6, false);
+
+        assert_eq!(left, ImageResize { offset: egui::vec2(-30.0, 0.0), width: 230.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 230.0, height: 100.0 });
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, -20.0), width: 200.0, height: 120.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_edges_shrink_without_changing_the_other_dimension() {
+        let left = resize_image(200.0, 100.0, egui::vec2(35.0, -45.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(-35.0, -45.0), 4, false);
+        let top = resize_image(200.0, 100.0, egui::vec2(-45.0, 25.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(-45.0, -25.0), 6, false);
+
+        assert_eq!(left, ImageResize { offset: egui::vec2(35.0, 0.0), width: 165.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 165.0, height: 100.0 });
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, 25.0), width: 200.0, height: 75.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 75.0 });
+    }
+
+    #[test]
+    fn image_resize_edges_enforce_the_minimum_dimension() {
+        let left = resize_image(20.0, 100.0, egui::vec2(100.0, 50.0), 3, false);
+        let right = resize_image(20.0, 100.0, egui::vec2(-100.0, 50.0), 4, false);
+        let top = resize_image(100.0, 20.0, egui::vec2(50.0, 100.0), 1, false);
+        let bottom = resize_image(100.0, 20.0, egui::vec2(50.0, -100.0), 6, false);
+
+        assert_eq!(left.width, 16.0);
+        assert_eq!(left.height, 100.0);
+        assert_eq!(right.width, 16.0);
+        assert_eq!(right.height, 100.0);
+        assert_eq!(top.width, 100.0);
+        assert_eq!(top.height, 16.0);
+        assert_eq!(bottom.width, 100.0);
+        assert_eq!(bottom.height, 16.0);
+    }
+
+    #[test]
+    fn image_resize_corners_are_the_only_handles_that_change_both_dimensions() {
+        for handle in [0, 2, 5, 7] {
+            let resized = resize_image(200.0, 100.0, egui::vec2(30.0, 20.0), handle, true);
+            assert_ne!(resized.width, 200.0, "corner {handle} changes width");
+            assert_ne!(resized.height, 100.0, "corner {handle} changes height");
+        }
     }
 
     /// A box that holds the heading repeating the page title does not carry it when copied.

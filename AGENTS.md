@@ -12,6 +12,12 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
 - **Understand first.** Read the host contract and this file, inspect status and
   branch, then read relevant code, design docs, tests and existing work notes.
   State the issue and likely cause before changing code.
+- **Test-driven feature work.** From version 0.0.7 onward, begin new UI
+  behavior and user-facing features with explicit requirements and observable
+  acceptance criteria. Write tests for those criteria before implementation,
+  run them once to confirm the expected failure, then implement until they
+  pass. Add regression tests for bug fixes whenever the behavior is testable.
+  Finish with focused checks and the relevant broader quality gates.
 - **Plan before implementation.** Share scope, acceptance criteria, likely
   files, risks and verification. For substantial work, include the estimate
   required by the host guide and wait for the owner's CHECKPOINT nod.
@@ -41,6 +47,12 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
   and outcomes. Run the repository's relevant checks before committing as well.
   Commit substantial tested work in coherent chunks when authorized. Do not
   push, merge, publish or release without explicit authorization.
+- **Completion and ready-to-test handoff.** Do not claim a change is done
+  before finishing the relevant linting, build, focused tests, broader checks
+  required by the change, self-test, and reflection. Review the result for
+  correctness, regressions, and unfinished work. Only after all of these are
+  complete may you state explicitly that it is **ready to test**, and you must
+  include the exact checks and their results.
 - **Never skip the gates.** Do not use `--no-verify` on commit or push, do not bypass or edit the hooks to get past them, and do not push while a gate is red. If a gate fails, find the cause and fix it, or stop and report it to the owner. A failing or flaky test is a failure, not something to push around. Re-run a flaky test only to diagnose it; the gate must pass before the push.
 - **External contribution path.** Contributors may use their own fork or clone
   and submit a pull request to this repository. Pull requests are reviewed
