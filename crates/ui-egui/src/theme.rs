@@ -192,6 +192,8 @@ pub struct Tokens {
     pub panel: Color32,
     pub editor: Color32,
     pub faint: Color32,
+    /// The outline of an active text container, kept separate from other faint surfaces.
+    pub container_border: Color32,
     pub text: Color32,
     pub accent: Color32,
     pub notebook: Color32,
@@ -339,6 +341,7 @@ impl Tokens {
         let panel = mix(panel0, acc, tint);
         let editor = mix(editor0, acc, tint * 0.5);
         let faint = mix(faint0, acc, tint);
+        let container_border = faint_line(editor, text, 2.5);
         let muted = ensure_contrast(if dark { rgb((165, 157, 187)) } else { rgb((95, 88, 117)) }, panel, 4.5, dark);
         let accent = ensure_contrast(acc, panel, 3.0, dark);
         // The band: the accent, taken darker until white writing reads on it (7, so it still reads under the hover tint), and in the
@@ -352,6 +355,7 @@ impl Tokens {
             panel,
             editor,
             faint,
+            container_border,
             text,
             accent,
             notebook: accent,
@@ -433,6 +437,7 @@ mod tests {
             let name = theme.label();
             assert!(contrast(t.text, t.panel) >= 7.0, "{name}: text on panel {:.2}", contrast(t.text, t.panel));
             assert!(contrast(t.text, t.editor) >= 7.0, "{name}: text on editor {:.2}", contrast(t.text, t.editor));
+            assert!(contrast(t.container_border, t.editor) >= 2.5, "{name}: container border {:.2}", contrast(t.container_border, t.editor));
             assert!(contrast(t.strong, t.panel) >= 7.0, "{name}: strong text");
             assert!(contrast(t.muted, t.panel) >= 4.5, "{name}: muted text {:.2}", contrast(t.muted, t.panel));
             assert!(contrast(t.muted, t.code_bg) >= 3.5, "{name}: muted on code background {:.2}", contrast(t.muted, t.code_bg));
