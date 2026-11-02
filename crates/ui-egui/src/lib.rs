@@ -1,4 +1,5 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![allow(deprecated)]
 //! NoteCraft egui front end (layer L6).
 //!
 //! A thin, swappable layer over the engine: nothing below it depends on egui. It

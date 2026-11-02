@@ -492,7 +492,7 @@ pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
 /// A page written before the stamp was plain has its date wrapped in italics, and the
 /// marks would be shown as marks the moment the caret landed there. They come off, and
 /// the line is saved plain from then on.
-fn text_for_caret(blocks: &[Block], i: usize) -> String {
+pub(crate) fn text_for_caret(blocks: &[Block], i: usize) -> String {
     let Some(block) = blocks.get(i) else { return String::new() };
     if is_page_stamp(blocks, i) {
         let Block::Paragraph(spans) = block else { return caret_text(block) };
@@ -543,6 +543,8 @@ pub struct Changed {
     pub link: Option<String>,
     /// A table column was dragged: the page's own widths need writing back.
     pub columns: bool,
+    /// A keyboard navigation request to select a whole-block embedded object.
+    pub select_object: Option<(usize, String)>,
 }
 
 /// The text of a block as it is edited: the inline marks only.
@@ -938,6 +940,32 @@ fn contains_inline_image(block: &Block) -> bool {
     )
 }
 
+/// Finds the next block that can own the caret, skipping whole-block objects such as images.
+/// A caret must never be left on a block that has no editor to render it.
+fn adjacent_writable(blocks: &[Block], from: usize, down: bool, shown_title: &str) -> Option<usize> {
+    let mut at = from;
+    loop {
+        at = if down { at.checked_add(1)? } else { at.checked_sub(1)? };
+        let block = blocks.get(at)?;
+        if !is_title_echo(blocks, at, shown_title) && is_writable(block) {
+            return Some(at);
+        }
+    }
+}
+
+pub(crate) fn previous_writable_block(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
+    adjacent_writable(blocks, from, false, shown_title)
+}
+
+fn image_boundary_id() -> egui::Id {
+    egui::Id::new("caret-before-whole-block-image")
+}
+
+fn next_whole_block_image(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
+    let image = from.checked_add(1)?;
+    (blocks.get(image).is_some_and(|block| matches!(block, Block::Image { .. })) && !is_title_echo(blocks, image, shown_title)).then_some(image)
+}
+
 /// True for a block that is one run of words and can therefore be turned into another
 /// kind of one: a heading into a quote, a paragraph into a list item.
 ///
@@ -1272,10 +1300,10 @@ pub fn show_blocks(
                         action = Some(Action::Indent(i, !shift));
                     } else if escape {
                         action = Some(Action::Leave);
-                    } else if up && i > 0 && !is_title_echo(blocks, i - 1, shown_title) {
-                        action = Some(Action::Move(i - 1));
-                    } else if down && i + 1 < count {
-                        action = Some(Action::Move(i + 1));
+                    } else if up {
+                        action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                    } else if down {
+                        action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
                     }
                 }
                 frame_block(ui, top, true, t, zoom);
@@ -1489,7 +1517,7 @@ pub fn show_blocks(
                 }
                 changed.blocks = true;
             }
-            let (enter, backspace, tab, shift, escape, up, down) = ui.input(|i| {
+            let (enter, backspace, tab, shift, escape, up, down, right, left) = ui.input(|i| {
                 (
                     i.key_pressed(Key::Enter),
                     i.key_pressed(Key::Backspace),
@@ -1498,6 +1526,8 @@ pub fn show_blocks(
                     i.key_pressed(Key::Escape),
                     i.key_pressed(Key::ArrowUp),
                     i.key_pressed(Key::ArrowDown),
+                    i.key_pressed(Key::ArrowRight),
+                    i.key_pressed(Key::ArrowLeft),
                 )
             });
             let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
@@ -1510,10 +1540,30 @@ pub fn show_blocks(
                     action = Some(Action::Indent(i, !shift));
                 } else if escape {
                     action = Some(Action::Leave);
-                } else if up && i > 0 && !is_title_echo(blocks, i - 1, shown_title) {
-                    action = Some(Action::Move(i - 1));
-                } else if down && i + 1 < count {
-                    action = Some(Action::Move(i + 1));
+                } else if up {
+                    action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                } else if down {
+                    if let Some(image) = next_whole_block_image(blocks, i, shown_title) {
+                        ui.data_mut(|data| data.insert_temp(image_boundary_id(), (i, image)));
+                    } else {
+                        action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
+                    }
+                } else if right {
+                    let at_end = selection.is_some_and(|(a, b)| a == b && a == c.text.chars().count());
+                    let boundary = ui.data(|data| data.get_temp::<(usize, usize)>(image_boundary_id()));
+                    if boundary.is_some_and(|(before, _)| before == i) {
+                        if let Some((_, image)) = boundary {
+                            changed.select_object = Some((image, "image".to_string()));
+                            ui.data_mut(|data| data.remove::<(usize, usize)>(image_boundary_id()));
+                        }
+                    } else if at_end && let Some(image) = next_whole_block_image(blocks, i, shown_title) {
+                        ui.data_mut(|data| data.insert_temp(image_boundary_id(), (i, image)));
+                    }
+                } else if left {
+                    let boundary = ui.data(|data| data.get_temp::<(usize, usize)>(image_boundary_id()));
+                    if boundary.is_some_and(|(before, _)| before == i) {
+                        ui.data_mut(|data| data.remove::<(usize, usize)>(image_boundary_id()));
+                    }
                 }
             }
             frame_block(ui, top, true, t, zoom);
@@ -2533,6 +2583,22 @@ mod tests {
         assert_eq!(inline_image_arrow_target(text, image + 1, false), Some(image));
         assert_eq!(inline_image_navigation_edge(text, range, true), Some(image + 1));
         assert_eq!(inline_image_navigation_edge(text, range, false), Some(image));
+    }
+
+    #[test]
+    fn vertical_navigation_skips_a_whole_block_image() {
+        let blocks = blocks("one\n\n![a picture](assets/picture.png)\n\nthree");
+        assert_eq!(blocks.iter().filter(|b| matches!(b, Block::Image { .. })).count(), 1);
+        assert_eq!(adjacent_writable(&blocks, 0, true, ""), Some(2));
+        assert_eq!(adjacent_writable(&blocks, 2, false, ""), Some(0));
+    }
+
+    #[test]
+    fn whole_block_image_has_a_caret_boundary_before_it() {
+        let blocks = blocks("one\n\n![a picture](assets/picture.png)\n\nthree");
+        assert_eq!(next_whole_block_image(&blocks, 0, ""), Some(1));
+        assert_eq!(previous_writable_block(&blocks, 1, ""), Some(0));
+        assert_eq!(next_whole_block_image(&blocks, 2, ""), None);
     }
 
     #[test]

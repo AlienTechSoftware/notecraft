@@ -274,6 +274,9 @@ pub fn show(
         if changed.link.is_some() {
             out.changed.link = changed.link;
         }
+        if changed.select_object.is_some() {
+            out.changed.select_object = changed.select_object;
+        }
         if let Some((block, kind)) = object_clicked.as_ref().filter(|(block, _)| range.contains(block)) {
             object_sel = Some((*block, kind.clone()));
             sel = None;
@@ -697,6 +700,13 @@ pub fn show(
             menu_at = None;
         }
     }
+    if let Some((block, kind)) = out.changed.select_object.take() {
+        object_sel = Some((block, kind.clone()));
+        *caret = None;
+        out.changed.caret = true;
+        log::debug!("keyboard selected embedded object: block={block} kind={kind}");
+    }
+
     // A press outside the selected container and its menu, or Escape, lets go of the selection.
     // So does the caret arriving in a container: the words are being edited, not the box.
     if sel.is_some() {
@@ -715,6 +725,16 @@ pub fn show(
     }
     if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
         object_sel = None;
+    }
+    if let Some((block, _)) = object_sel
+        && ui.input(|i| i.key_pressed(Key::ArrowLeft))
+        && let Some(previous) = pageedit::previous_writable_block(blocks, block, shown_title)
+    {
+        let text = pageedit::text_for_caret(blocks, previous);
+        *caret = Some(pageedit::Caret { block: previous, text, focus: true, selection: (0, 0), place: None, cell: None, span: None });
+        object_sel = None;
+        out.changed.caret = true;
+        log::debug!("keyboard moved from embedded object to caret: image_block={block} caret_block={previous}");
     }
     // Embedded objects have their own selection, separate from the containing box.
     // Both keys should remove the selected object, just as they remove selected text.

@@ -420,7 +420,7 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
     ui.label(egui::RichText::new("Choose what NoteCraft records locally. Nothing is uploaded automatically.").size(12.0).color(t.muted));
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Level:").strong());
-        egui::ComboBox::from_id_salt("telemetry-level").selected_text(level).show_ui(ui, |ui| {
+        egui::ComboBox::from_label("Level").selected_text(level).show_ui(ui, |ui| {
             for choice in ["none", "usage", "warning", "error", "debug"] {
                 if ui.selectable_label(level == choice, choice).clicked() {
                     acts.push(Act::SetTelemetryLevel(choice.into()));

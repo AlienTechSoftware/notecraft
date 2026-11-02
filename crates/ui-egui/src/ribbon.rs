@@ -2414,7 +2414,7 @@ view",
                 acts.push(Act::Zoom(1));
             }
             rows(ui, |ui| {
-                egui::ComboBox::from_id_salt("page-zoom-percent").width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
+                egui::ComboBox::from_label("Zoom").width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
                     for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
                         if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
                             acts.push(Act::ZoomTo(percent));

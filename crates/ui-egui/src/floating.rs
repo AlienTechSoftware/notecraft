@@ -78,7 +78,7 @@ pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Re
     painter.text(egui::pos2(rect.min.x + ICON_COL + 2.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), t.text);
     let enabled = ui.is_enabled();
     let name = label.to_string();
-    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, checked, name.clone()));
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::CheckBox, enabled, checked, name.clone()));
     resp
 }
 

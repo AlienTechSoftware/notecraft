@@ -26,6 +26,20 @@ struct Shell {
 impl eframe::App for Shell {
     /// Puts the clicks, keys and text that control requests queued into the next frame.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let mut keyboard_paste = false;
+        raw_input.events.retain(|event| {
+            let is_paste = matches!(
+                event,
+                egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. }
+                    if modifiers.ctrl || modifiers.command
+            ) || matches!(event, egui::Event::PasteImage(_));
+            keyboard_paste |= is_paste;
+            !is_paste
+        });
+        if keyboard_paste {
+            log::debug!("raw keyboard paste captured before egui clipboard handling");
+            self.app.queue_keyboard_paste();
+        }
         raw_input.events.extend(self.app.take_events());
     }
 
