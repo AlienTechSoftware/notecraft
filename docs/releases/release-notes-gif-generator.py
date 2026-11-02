@@ -14,6 +14,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
+
+def version_directory(version):
+    """Return the release directory whether the script is central or beside one release."""
+    return SCRIPT_DIR if SCRIPT_DIR.name == version else SCRIPT_DIR / version
+
 # Typography
 FONT_SIZE_TITLE = 64
 FONT_SIZE_SUBTITLE = 48
@@ -53,7 +58,8 @@ def get_font(size, bold=False):
 
 def load_background(version):
     """Load background image."""
-    candidates = [SCRIPT_DIR / version / f"{version}.jfif", SCRIPT_DIR / version / f"{version}.png"]
+    version_dir = version_directory(version)
+    candidates = [version_dir / f"{version}.jfif", version_dir / f"{version}.png"]
     bg_path = next((path for path in candidates if path.exists()), None)
     if bg_path is None:
         print(f"Error: Background not found (tried {', '.join(path.name for path in candidates)})")
@@ -103,7 +109,7 @@ def draw_number_circle(draw, x, y, number, circle_color, size=80):
 
 
 def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
-    """Create a frame with number and version."""
+    """Create a frame with the title high and the slide content left of the artwork."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
@@ -129,38 +135,32 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     subtitle_font = get_font(FONT_SIZE_SUBTITLE)
     body_font = get_font(FONT_SIZE_BODY)
 
-    y_offset = int(h * 0.08)
+    # Keep the title close to the board's upper border. The artwork occupies the
+    # lower-right corner, so the feature copy uses a left column with breathing room.
+    y_offset = int(h * 0.055)
 
-    # Number in circle
-    draw_number_circle(draw, w // 2, y_offset + 50, number, circle_color, size=80)
-    y_offset += 140
-
-    # Title on all frames: NoteCraft v0.0.7 (large, black)
+    # Title on all frames: NoteCraft v<version> (large, black)
     frame_title = f"NoteCraft v{version}"
     bbox = draw.textbbox((0, 0), frame_title, font=title_font)
     text_w = bbox[2] - bbox[0]
     x = (w - text_w) // 2
     draw.text((x, y_offset), frame_title, font=title_font, fill=(0, 0, 0))  # Black
-    y_offset += FONT_SIZE_TITLE + 20
+    y_offset += FONT_SIZE_TITLE + 10
 
     # Line
-    draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=circle_color)
-    y_offset += 30
+    content_x = int(w * 0.12)
+    content_right = int(w * 0.67)
+    draw_decorative_line(draw, content_x, content_right, y_offset, width=3, color=circle_color)
+    y_offset += 24
 
     # Subtitle: feature title + feature subtitle
     feature_title = title  # e.g., "Ink & Stylus Support"
     if feature_title:
-        bbox = draw.textbbox((0, 0), feature_title, font=subtitle_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-        draw.text((x, y_offset), feature_title, font=subtitle_font, fill=circle_color)
+        draw.text((content_x, y_offset), feature_title, font=subtitle_font, fill=circle_color)
         y_offset += FONT_SIZE_SUBTITLE + 15
 
     if subtitle:
-        bbox = draw.textbbox((0, 0), subtitle, font=body_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-        draw.text((x, y_offset), subtitle, font=body_font, fill=COLOR_TEXT)
+        draw.text((content_x, y_offset), subtitle, font=body_font, fill=COLOR_TEXT)
         y_offset += FONT_SIZE_SUBTITLE + 15
 
     # Body
@@ -169,11 +169,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
             y_offset += 15
             continue
 
-        bbox = draw.textbbox((0, 0), line, font=body_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-
-        draw.text((x, y_offset), line, font=body_font, fill=COLOR_TEXT)
+        draw.text((content_x, y_offset), line, font=body_font, fill=COLOR_TEXT)
         y_offset += LINE_HEIGHT
 
     return frame
@@ -181,7 +177,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
 
 def generate_frames(version, slides_data):
     """Generate frames."""
-    frames_dir = SCRIPT_DIR / version / ".frames"
+    frames_dir = version_directory(version) / ".frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     for f in frames_dir.glob("*.png"):
@@ -258,7 +254,7 @@ def main():
         sys.exit(1)
 
     version = sys.argv[1]
-    version_dir = SCRIPT_DIR / version
+    version_dir = version_directory(version)
 
     if not version_dir.exists():
         print(f"Error: {version_dir} not found")
