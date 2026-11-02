@@ -673,6 +673,18 @@ pub(crate) fn show_block_zoomed(
     }
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
+    if is_blank(block) {
+        log::debug!(
+            "empty block rendered: block={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
+            i,
+            rect.min.x,
+            rect.min.y,
+            rect.max.x,
+            rect.max.y,
+            rect.width(),
+            rect.height()
+        );
+    }
     let response = ui.interact(rect, id, egui::Sense::click());
     if let Some(kind) = object_kind(block) {
         // Read every response flag before `data_mut`: `clicked` and

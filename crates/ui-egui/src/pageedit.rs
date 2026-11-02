@@ -1544,6 +1544,18 @@ pub fn show_blocks(
                 })
                 .inner;
             let resp = out.response;
+            log::debug!(
+                "page block rendered: block={} stamp={} kind={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
+                i,
+                stamp,
+                block_kind(&block),
+                resp.rect.min.x,
+                resp.rect.min.y,
+                resp.rect.max.x,
+                resp.rect.max.y,
+                resp.rect.width(),
+                resp.rect.height()
+            );
             // Dragging across words is how a reader selects them, and until now a drag that
             // began on a paragraph the caret was not already in did nothing at all: the
             // block answered a click and nothing answered a press that moved. So the caret
