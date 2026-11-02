@@ -930,6 +930,14 @@ pub fn is_writable(block: &Block) -> bool {
     !matches!(block, Block::Rule | Block::Image { .. })
 }
 
+fn contains_inline_image(block: &Block) -> bool {
+    matches!(
+        block,
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. }
+            if spans.iter().any(|span| span.image.is_some())
+    )
+}
+
 /// True for a block that is one run of words and can therefore be turned into another
 /// kind of one: a heading into a quote, a paragraph into a list item.
 ///
@@ -1582,7 +1590,10 @@ pub fn show_blocks(
                 action = Some(Action::SetTask(i, done));
             } else if (resp.clicked() || resp.double_clicked()) && is_writable(&block) {
                 // A click on a link follows it; anywhere else it puts the caret there.
-                match resp.interact_pointer_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)) {
+                let link = (!contains_inline_image(&block))
+                    .then(|| resp.interact_pointer_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page)))
+                    .flatten();
+                match link {
                     Some(href) => changed.link = Some(href),
                     None => {
                         let at = resp.interact_pointer_pos().map(|p| char_under(ui, &block, &resp, p, t, page));
