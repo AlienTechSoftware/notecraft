@@ -25,14 +25,18 @@ FONT_SIZE_SUBTITLE = 48
 FONT_SIZE_BODY = 32
 FONT_SIZE_NUMBER = 80
 LINE_HEIGHT = 60
-FRAME_DURATION = 3500
+# Give readers enough time to scan two lines of release text. This is deliberately conservative
+# because GitHub's release page and image previewers do not provide playback controls.
+FRAME_DURATION = 6000
 
 # Colors
 COLOR_TITLE = (50, 50, 50)
 COLOR_TEXT = (70, 70, 70)
-COLOR_ACCENT = (100, 180, 255)
-COLOR_ACCENT2 = (120, 220, 160)
-COLOR_ACCENT3 = (255, 150, 100)
+# The artwork backgrounds are pale, so pastel accents disappear into them. Keep these darker and
+# more saturated for readable titles, rules and number circles in both light and dark previews.
+COLOR_ACCENT = (30, 115, 210)
+COLOR_ACCENT2 = (25, 145, 85)
+COLOR_ACCENT3 = (210, 90, 25)
 COLOR_NUMBER = (255, 255, 255)  # White numbers for contrast
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
 
