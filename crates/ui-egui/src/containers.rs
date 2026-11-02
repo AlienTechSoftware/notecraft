@@ -704,6 +704,7 @@ pub fn show(
         object_sel = Some((block, kind.clone()));
         *caret = None;
         out.changed.caret = true;
+        ui.ctx().request_repaint();
         log::debug!("keyboard selected embedded object: block={block} kind={kind}");
     }
 
