@@ -48,8 +48,11 @@ name or mark.
 - The workflow writes its own fixed text into the draft, not the notes in
   `docs/releases/<version>/RELEASE_NOTES.md`. After the draft exists, replace its body with those
   notes: `gh release edit v<version> --draft --notes-file <file>`.
-- A relative image in the notes does not show on a release page. Link the picture with its
-  absolute URL on `main`, such as `https://raw.githubusercontent.com/AlienTechSoftware/notecraft/main/docs/releases/<version>/<file>`.
+- Release notes are body content below the GitHub release title: do not add a duplicate H1 title
+  such as `# NoteCraft <version>` to `RELEASE_NOTES.md`.
+- Relative images are unreliable on a release page. Use absolute release-asset URLs for the
+  artwork and animated GIF, upload both assets, and verify that both the image and GIF render
+  before publishing. The release is not complete if either asset is only present in the checkout.
 - Where `pwsh` is not installed, run the packaging script with
   `powershell -NoProfile -ExecutionPolicy Bypass -File packaging/windows/package.ps1`.
 
