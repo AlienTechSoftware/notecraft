@@ -33,6 +33,7 @@ const GRIP: f32 = 10.0;
 const PAD: f32 = 6.0;
 const INITIAL_PAGE_LINES: f32 = 20.0;
 const EMPTY_LINE_HEIGHT: f32 = 22.0;
+const TRAILING_LINE_HEIGHT: f32 = 22.0;
 
 /// Which container is selected. Kept in the ui's own store, as the page's menu keeps its place.
 fn selected_id() -> Id {
@@ -298,7 +299,7 @@ pub fn show(
         {
             out.changed.link = Some(href);
         }
-        let used = initial_page_height(blocks, &range, child.min_rect().height().max(18.0));
+        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0));
         // The move handle sits above the content frame, so it can never cover its top border.
         let frame_at = pos2(at.x, at.y + handle);
         let frame = Rect::from_min_size(frame_at, vec2(b.width * zoom + 2.0 * pad, used + pad));
@@ -908,8 +909,9 @@ fn image_can_resize(kind: &str) -> bool {
 }
 
 /// Keep a date-only new page usable without serializing empty paragraphs into the file.
-fn initial_page_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32) -> f32 {
-    if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) { used.max(INITIAL_PAGE_LINES * EMPTY_LINE_HEIGHT) } else { used }
+fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32) -> f32 {
+    let minimum = if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) { INITIAL_PAGE_LINES * EMPTY_LINE_HEIGHT } else { 0.0 };
+    used.max(minimum) + TRAILING_LINE_HEIGHT
 }
 
 fn resize_handle_rects(rect: Rect, size: f32) -> [Rect; 8] {
@@ -1034,13 +1036,19 @@ mod tests {
     #[test]
     fn a_date_only_new_page_gets_a_twenty_line_writing_surface() {
         let blocks = page("Monday, 2 November 2026, 05:05\n");
-        assert_eq!(initial_page_height(&blocks, &(0..1), 24.0), 440.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 24.0), 462.0);
     }
 
     #[test]
     fn an_existing_multi_block_page_keeps_its_content_height() {
         let blocks = page("Monday, 2 November 2026, 05:05\n\ntext\n");
-        assert_eq!(initial_page_height(&blocks, &(0..2), 46.0), 46.0);
+        assert_eq!(container_content_height(&blocks, &(0..2), 46.0), 68.0);
+    }
+
+    #[test]
+    fn a_block_with_an_inline_image_keeps_one_line_below_the_object() {
+        let blocks = page("text ![picture](assets/picture.png)\n");
+        assert_eq!(container_content_height(&blocks, &(0..1), 80.0), 102.0);
     }
 
     #[test]
