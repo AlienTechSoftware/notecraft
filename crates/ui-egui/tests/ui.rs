@@ -108,6 +108,11 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
     h.step();
 }
 
+fn pump_at(h: &mut Harness<'_, NoteCraftApp>, time: f64) {
+    h.input_mut().time = Some(time);
+    pump(h);
+}
+
 /// Steps until pictures loaded in the background have arrived.
 ///
 /// It steps frames rather than calling `Harness::run`, which gives up when a window asks
@@ -3744,11 +3749,13 @@ fn double_clicking_an_attachment_card_opens_it() {
     // Drain only the first click's two pointer frames. Avoid settle's long image-load wait here:
     // the product double-click window is 0.75 seconds, and a slow CI runner must still see the
     // second click as part of the same gesture.
-    pump(&mut h);
-    pump(&mut h);
+    pump_at(&mut h, 1.0);
+    pump_at(&mut h, 1.1);
     assert_eq!(h.query_all_by_label_contains("Open attachment").count(), 0, "single click only selects the attachment: {}", look_at(&mut h));
     ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
-    settle(&mut h);
+    for time in [1.2, 1.3, 1.4, 1.5, 1.6, 1.7] {
+        pump_at(&mut h, time);
+    }
     assert!(h.query_all_by_label_contains("Open attachment").count() >= 1, "double click opened the attachment prompt: {}", look_at(&mut h));
 }
 
