@@ -34,6 +34,9 @@ contents:
     dst: /usr/share/doc/notecraft/LICENSE-APACHE
   - src: ${STAGE}/usr/share/doc/notecraft/NOTICE
     dst: /usr/share/doc/notecraft/NOTICE
+  - src: ${STAGE}/usr/share/notecraft/demo/
+    dst: /usr/share/notecraft/demo/
+    type: tree
 overrides:
   deb:
     depends:

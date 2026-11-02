@@ -1,13 +1,13 @@
 # NoteCraft v0.0.8
 
-**Status:** In development / partially complete
-**Base Branch:** `main`
-**Target Issues:** #18 (image resize, completed), performance instrumentation (deferred)
+**Status:** Release candidate / packaging verification
+**Base Branch:** `rc_0.0.8`
+**Release notes:** [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
 ## Scope
 
-Version 0.0.8 focused on fixing critical image resize functionality and recording
-the release-confidence work that remains for later versions.
+Version 0.0.8 focuses on reliable image editing and navigation, right-to-left
+writing, attachment behavior, and repeatable Windows/Linux release packaging.
 
 ### Primary Issues
 - **#18:** Image resize - implemented and verified
@@ -19,12 +19,16 @@ the release-confidence work that remains for later versions.
 - ✅ Double-border and faint-border regressions removed
 - ✅ Dragging resizes the image and persists dimensions
 - ✅ First-use/privacy flow covered by tests
+- ✅ Inline-image caret and keyboard navigation covered by UI tests
+- ✅ `Ctrl+V` image paste covered by UI tests
+- ✅ Windows MSI and portable ZIP include the demo notebook
+- ✅ Linux tar, DEB, and AppImage paths include the demo notebook
 - 📝 Performance instrumentation remains deferred
 
 ## Timeline
-- **Development:** Core fixes complete; follow-up work remains
-- **Testing:** Current repository gate passes
-- **Release:** TBD
+- **Development:** Core 0.0.8 scope complete; lower-priority work remains documented
+- **Testing:** Full repository gate and packaging smoke tests pass on the RC
+- **Release:** Owner-controlled final release decision
 
 ## Architecture
 ### Image Resize Bug Investigation

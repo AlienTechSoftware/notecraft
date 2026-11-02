@@ -53,9 +53,10 @@ def get_font(size, bold=False):
 
 def load_background(version):
     """Load background image."""
-    bg_path = SCRIPT_DIR / version / f"{version}.jfif"
-    if not bg_path.exists():
-        print(f"Error: Background not found")
+    candidates = [SCRIPT_DIR / version / f"{version}.jfif", SCRIPT_DIR / version / f"{version}.png"]
+    bg_path = next((path for path in candidates if path.exists()), None)
+    if bg_path is None:
+        print(f"Error: Background not found (tried {', '.join(path.name for path in candidates)})")
         sys.exit(1)
 
     img = Image.open(bg_path)
@@ -265,8 +266,55 @@ def main():
 
     print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    # Release highlights with numbers and colors
-    slides = [
+    # Release highlights with numbers and colors. Keep the content here rather than
+    # hand-editing generated frames so rerunning this script is deterministic.
+    if version == "0.0.8":
+        slides = [
+        {
+            'number': 1,
+            'circle_color': (100, 180, 255),
+            'title': 'Image editing',
+            'subtitle': 'Resize and navigate images',
+            'body': ['Resize images with visible handles', 'Move the caret around inline images'],
+        },
+        {
+            'number': 2,
+            'circle_color': (120, 220, 160),
+            'title': 'Paste images',
+            'subtitle': 'A top-requested workflow',
+            'body': ['Ctrl+V pastes images into the page', 'Image files travel with the page'],
+        },
+        {
+            'number': 3,
+            'circle_color': (100, 180, 255),
+            'title': 'RTL writing',
+            'subtitle': 'Better caret and text navigation',
+            'body': ['Arabic, Hebrew, Persian and Urdu support', 'Visual caret movement and selection'],
+        },
+        {
+            'number': 4,
+            'circle_color': (120, 220, 160),
+            'title': 'Reliable attachments',
+            'subtitle': 'Selection behaves as expected',
+            'body': ['Single click selects an attachment', 'Double click opens it'],
+        },
+        {
+            'number': 5,
+            'circle_color': (255, 150, 100),
+            'title': 'Demo notebook',
+            'subtitle': 'HTML and CMGFM examples included',
+            'body': ['The bundled demo is generated from one source', 'The demo identifies itself as 0.0.8'],
+        },
+        {
+            'number': 6,
+            'circle_color': (100, 180, 255),
+            'title': 'Release confidence',
+            'subtitle': 'Windows and Linux packaging',
+            'body': ['Full quality gates and regression tests', 'Installers carry the demo notebook'],
+        },
+        ]
+    else:
+        slides = [
         {
             'number': 1,
             'circle_color': (100, 180, 255),
@@ -309,7 +357,7 @@ def main():
             'subtitle': 'Improved Diagnostics',
             'body': ['Better troubleshooting', 'Enhanced diagnostics'],
         },
-    ]
+        ]
 
     frames, frames_dir = generate_frames(version, slides)
     if not frames:

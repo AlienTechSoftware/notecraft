@@ -17,4 +17,15 @@ ARCHIVE="$DIST/notecraft-$VERSION-linux-$ARCH.tar.gz"
 tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/bin/notecraft" >/dev/null
 tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/applications/com.alientechsoftware.notecraft.desktop" >/dev/null
 tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/icons/hicolor/256x256/apps/com.alientechsoftware.notecraft.png" >/dev/null
+tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/DemoNotebook/html/00-start/welcome/index.html" >/dev/null
+tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/DemoNotebook/cmgfm/00-start/welcome/index.md" >/dev/null
 echo "linux packaging smoke test passed: $ARCHIVE"
+
+if command -v nfpm >/dev/null 2>&1 && command -v dpkg-deb >/dev/null 2>&1; then
+    PKG_DIST="$(mktemp -d)"
+    trap 'rm -rf "$DIST" "$PKG_DIST"' EXIT
+    DIST="$PKG_DIST" "$ROOT/packaging/linux/package.sh" --skip-build --formats deb
+    dpkg-deb -c "$PKG_DIST/notecraft-$VERSION-linux-$ARCH.deb" |
+        grep -F "/usr/share/notecraft/demo/DemoNotebook/html/00-start/welcome/index.html" >/dev/null
+    echo "debian package demo check passed"
+fi
