@@ -1151,7 +1151,8 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     assert_eq!(h.state().status(), "Updated the welcome notebook");
     // The start page's title is in its head and the window shows it above the page. Its
     // large banner is the first thing in the body.
-    assert_eq!(h.state().title(), Some("Welcome to NoteCraft (Ver 0.0.7)"), "opened on the start page");
+    let expected_title = format!("Welcome to NoteCraft (Ver {})", env!("CARGO_PKG_VERSION"));
+    assert_eq!(h.state().title(), Some(expected_title.as_str()), "opened on the start page");
     assert!(
         h.state().body().is_some_and(|b| b.starts_with("<p><img src=\"assets/banner-start.png\"")),
         "the first page is bundled as HTML: {:?}",

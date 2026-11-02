@@ -45,7 +45,7 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch NoteCraft" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WixShellExecTarget" Value="[#NotecraftExe]" />
-    <!-- Delete old demo notebook folder before launching app (ensures fresh 0.0.7 demo on upgrade) -->
+    <!-- Delete old demo notebook folder before launching app (ensures fresh bundled demo on upgrade) -->
     <CustomAction Id="DeleteOldDemo" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
         Impersonate="yes" Return="ignore" />
     <CustomAction Id="SetDeleteOldDemoCommand" Property="DeleteOldDemo"

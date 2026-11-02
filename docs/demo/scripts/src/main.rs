@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const NOTEBOOK_TITLE: &str = "Welcome to NoteCraft";
+const VERSION_MARK: &str = "{{version}}";
 /// Every node carries this date, so a rebuild changes nothing but what the content changed.
 const DATE: &str = "2026-10-18T00:00:00Z";
 const START_FOLDER: &str = "00-start";
@@ -106,8 +107,8 @@ fn main() -> ExitCode {
     let art = here.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|r| r.join("assets").join("demo")).unwrap_or_default();
     let out = here.parent().map(|p| p.join("DemoNotebook")).unwrap_or_else(|| PathBuf::from("DemoNotebook"));
     let result = match task.as_str() {
-        "build" => build_in_place(&content, &out, &art),
-        "check" => check_in_place(&content, &out, &art),
+        "build" => workspace_version(&here).and_then(|v| build_in_place(&content, &out, &art, &v)),
+        "check" => workspace_version(&here).and_then(|v| check_in_place(&content, &out, &art, &v)),
         other => Err(format!("unknown task '{other}'. Tasks: build check")),
     };
     match result {
@@ -119,9 +120,30 @@ fn main() -> ExitCode {
     }
 }
 
+fn workspace_version(here: &Path) -> Result<String, String> {
+    let root = here.parent().and_then(Path::parent).and_then(Path::parent).ok_or_else(|| "cannot find repository root".to_string())?;
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).map_err(|e| format!("read workspace manifest: {e}"))?;
+    let mut in_section = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_section = trimmed == "[workspace.package]";
+        } else if in_section
+            && let Some(rest) = trimmed.strip_prefix("version")
+            && let Some(value) = rest.trim_start().strip_prefix('=')
+        {
+            let version = value.trim().trim_matches('"');
+            if !version.is_empty() {
+                return Ok(version.to_string());
+            }
+        }
+    }
+    Err("workspace package version is missing".into())
+}
+
 /// Builds into `out`, replacing what is there. Only a folder that holds this notebook (or
 /// nothing) is replaced, so a wrong path cannot delete someone's notes.
-fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> {
+fn build_in_place(content: &Path, out: &Path, art: &Path, version: &str) -> Result<(), String> {
     if out.exists() {
         let old_node = notecraft_store::tree::read_node(out);
         let old_layout = old_node.as_ref().is_some_and(|n| n.title == NOTEBOOK_TITLE);
@@ -138,7 +160,7 @@ fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
         }
         fs::remove_dir_all(out).map_err(|e| format!("cannot clear {}: {e}", out.display()))?;
     }
-    let built = build(content, out, art)?;
+    let built = build(content, out, art, version)?;
     verify_pair(out)?;
     println!(
         "demo: built {} with {} languages ({}) and {} pages in each format",
@@ -151,11 +173,11 @@ fn build_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
 }
 
 /// Builds into a scratch folder and compares it with `out`, file by file.
-fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> {
+fn check_in_place(content: &Path, out: &Path, art: &Path, version: &str) -> Result<(), String> {
     let scratch = std::env::temp_dir().join(format!("notecraft-demo-check-{}", std::process::id()));
     let _ = fs::remove_dir_all(&scratch);
     let fresh = scratch.join("DemoNotebook");
-    let result = build(content, &fresh, art).and_then(|_| verify_pair(&fresh)).and_then(|()| {
+    let result = build(content, &fresh, art, version).and_then(|_| verify_pair(&fresh)).and_then(|()| {
         let want = snapshot(&fresh)?;
         let have = snapshot(out)?;
         let mut differences: Vec<String> = Vec::new();
@@ -183,11 +205,11 @@ fn check_in_place(content: &Path, out: &Path, art: &Path) -> Result<(), String> 
 }
 
 /// Writes the notebook under `out`, which must not exist yet.
-fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
+fn build(content: &Path, out: &Path, art: &Path, version: &str) -> Result<Built, String> {
     fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
     let mut full = Built::default();
     for (folder, format) in [("html", notecraft_model::PageFormat::Html), ("cmgfm", notecraft_model::PageFormat::Cmgfm)] {
-        let variant = build_variant(content, &out.join(folder), art, format)?;
+        let variant = build_variant(content, &out.join(folder), art, format, version)?;
         if full.languages.is_empty() {
             full.languages = variant.languages.clone();
         }
@@ -196,7 +218,7 @@ fn build(content: &Path, out: &Path, art: &Path) -> Result<Built, String> {
     Ok(full)
 }
 
-fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraft_model::PageFormat) -> Result<Built, String> {
+fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraft_model::PageFormat, version: &str) -> Result<Built, String> {
     let mut built = Built::default();
     fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
     let format_name = match target_format {
@@ -216,6 +238,8 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
     fs::create_dir_all(&start).map_err(|e| format!("cannot create {}: {e}", start.display()))?;
     write(&start.join("_node.toml"), &node_toml("section", START_TITLE, &id_for(START_FOLDER), 10, None, None))?;
     let start_page = read_source(&content.join("start").join("welcome.html"), 10)?;
+    let start_page =
+        Source { title: start_page.title.replace(VERSION_MARK, version), body: start_page.body.replace(VERSION_MARK, version), ..start_page };
     let list = language_list(&present);
     let body = start_page.body.replace(LANGUAGES_MARK, &list);
     let start_page = convert_source(Source { body, ..start_page }, target_format, &content.join("start").join("welcome.html"))?;
@@ -951,7 +975,7 @@ page-color: yellow
     fn both_full_format_notebooks_build_cleanly_and_the_same_way_twice() {
         let dir = scratch("build");
         let out = dir.join("DemoNotebook");
-        let built = build(&content_dir(), &out, &art_dir()).expect("build");
+        let built = build(&content_dir(), &out, &art_dir(), "0.0.0-test").expect("build");
         verify_pair(&out).expect("verify both notebooks");
         assert!(built.languages.contains(&"en".to_string()));
         let html = out.join("html");
@@ -983,7 +1007,7 @@ page-color: yellow
         assert!(html.join("10-en").join("how-to").join("page-formats").join("index.html").is_file());
         let first_build = snapshot(&out).expect("snapshot");
         let again = dir.join("Again");
-        build(&content_dir(), &again, &art_dir()).expect("build again");
+        build(&content_dir(), &again, &art_dir(), "0.0.0-test").expect("build again");
         assert_eq!(snapshot(&again).expect("snapshot"), first_build, "deterministic");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -994,7 +1018,7 @@ page-color: yellow
         let other = dir.join("Someone");
         fs::create_dir_all(&other).expect("dir");
         fs::write(other.join("_node.toml"), "kind = \"notebook\"\ntitle = \"Mine\"\nid = \"1\"\n").expect("node");
-        let err = build_in_place(&content_dir(), &other, &art_dir()).expect_err("refused");
+        let err = build_in_place(&content_dir(), &other, &art_dir(), "0.0.0-test").expect_err("refused");
         assert!(err.contains("not touching it"), "{err}");
         assert!(other.join("_node.toml").is_file(), "nothing was deleted");
         let _ = fs::remove_dir_all(&dir);
