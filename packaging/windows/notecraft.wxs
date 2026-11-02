@@ -70,6 +70,7 @@
 
     <Feature Id="Main" Title="NoteCraft" Level="1">
       <ComponentGroupRef Id="NotecraftFiles" />
+      <ComponentGroupRef Id="DemoFiles" />
     </Feature>
   </Package>
 
@@ -98,6 +99,12 @@
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
+      <!-- The generated demo is a required installation payload. The app deploys its HTML copy
+           into Documents on first start; keeping both formats here prevents packaging drift. -->
+      <Directory Id="DemoDir" Name="demo">
+        <Directory Id="DemoNotebookDir" Name="welcome-to-notecraft">
+        </Directory>
+      </Directory>
       <!-- The notices every copy must carry: the licences and the third-party notices. -->
       <Component Id="Notices" Guid="FD6430D6-FBDD-431D-9A3B-8267B72103B4">
         <File Id="NoticeFile" Source="$(var.BinDir)\NOTICE" KeyPath="yes" />
@@ -121,5 +128,8 @@
         </Directory>
       </Directory>
     </DirectoryRef>
+    <ComponentGroup Id="DemoFiles" Directory="DemoNotebookDir">
+      <Files Include="$(var.BinDir)\demo\welcome-to-notecraft\**" />
+    </ComponentGroup>
   </Fragment>
 </Wix>

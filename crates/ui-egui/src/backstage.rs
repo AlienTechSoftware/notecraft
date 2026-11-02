@@ -455,9 +455,28 @@ fn options_page(ui: &mut Ui, root: &std::path::Path, level: &str, session_id: Op
             .color(t.muted),
     );
     ui.colored_label(t.warn, "This does not delete notebooks or pages. It cannot be undone.");
-    if open_action(ui, "Reset app preferences…", 210.0, 34.0, t, false).clicked() {
+    if warning_action(ui, "Reset app preferences…", 210.0, 34.0, t).clicked() {
         acts.push(Act::ResetPreferences);
     }
+}
+
+fn warning_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens) -> egui::Response {
+    let response = ui
+        .add(
+            egui::Button::new(egui::RichText::new(label).size(14.0).color(t.warn))
+                .min_size(vec2(width, height))
+                .fill(t.panel)
+                .stroke(egui::Stroke::new(1.0, t.warn)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(label);
+    if response.hovered() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(2.0, t.warn), egui::StrokeKind::Inside);
+    }
+    if response.is_pointer_button_down_on() {
+        ui.painter().rect_stroke(response.rect, 4.0, egui::Stroke::new(3.0, t.strong), egui::StrokeKind::Inside);
+    }
+    response
 }
 
 #[cfg(test)]

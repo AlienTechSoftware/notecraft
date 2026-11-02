@@ -142,7 +142,7 @@ fn main() -> eframe::Result {
     }
     let root = notebooks_dir(&args);
     applog::info(&format!("notebooks folder: {}", root.display()));
-    let session = match Session::new(&root, Settings::default_location()) {
+    let mut session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
             applog::line("ERROR", &format!("cannot open the notebooks folder {}: {e}", root.display()));
@@ -161,16 +161,27 @@ fn main() -> eframe::Result {
         let _ = session.settings.set("privacy_welcome_seen", "");
         applog::info("First-use flag set: privacy welcome dialog will show");
     }
-    // The Welcome notebook, a tour of the app, is deployed on every startup (ensures fresh demo).
-    // On first run (empty tree), it opens automatically. It's a normal notebook after deployment:
-    // the user can change or delete it.
-    let open_first: Option<String> = None;
+    // The Welcome notebook is part of the installed product. Replace the user's old copy on
+    // every startup so an upgrade always exposes the demo shipped with this build.
+    let tree_was_empty = session.tree().is_empty();
+    let mut open_first: Option<String> = None;
     // Problems found before the window opens. The window shows each one in an alert.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
 
-    // NOTE: Welcome notebook auto-deployment removed. Apps should not do setup at startup.
-    // Users can access tutorials from the File menu or Settings > Help.
-    // First launch will show logging consent dialog instead (when implemented).
+    match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
+        Ok(notecraft_engine::Output::Path(dir)) => {
+            if tree_was_empty {
+                open_first = Some(dir.to_string_lossy().into_owned());
+            }
+            session.refresh();
+        }
+        Ok(_) => {}
+        Err(e) => {
+            let message = format!("The Welcome notebook could not be deployed to {}: {e}", session.root().display());
+            eprintln!("{message}");
+            startup_alerts.push(("welcome-notebook-deploy", message));
+        }
+    }
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
