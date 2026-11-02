@@ -149,8 +149,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
 
     # Line
     content_x = int(w * 0.12)
-    content_right = int(w * 0.67)
-    draw_decorative_line(draw, content_x, content_right, y_offset, width=3, color=circle_color)
+    draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=circle_color)
     y_offset += 24
 
     # Subtitle: feature title + feature subtitle
