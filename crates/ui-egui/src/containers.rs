@@ -581,7 +581,7 @@ pub fn show(
             // Skip faint stroke for images; the selection affordance shows the picture boundary
             if !image_object {
                 log::debug!("draw faint stroke for non-image");
-                ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.container_border), egui::StrokeKind::Inside);
             }
             // Images: affordance is drawn in selection block above (on object_rect, the picture rect)
             if !image_object {
