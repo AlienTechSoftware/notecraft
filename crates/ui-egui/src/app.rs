@@ -1091,11 +1091,24 @@ impl NoteCraftApp {
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
             let arranged = in_the_text.is_some() || !older.is_empty();
             let mut boxes = in_the_text.unwrap_or(older);
+            log::debug!(
+                "page loaded for layout: page={:?} format={:?} blocks={} arranged={} stored_containers={:?}",
+                dir,
+                page.format,
+                blocks.len(),
+                arranged,
+                boxes
+            );
             // A never-arranged blank page still gets one empty writing box. A
             // page whose last box was deliberately deleted remains boxless so
             // its open paper can create a new box on the next click.
             if blocks.is_empty() && !arranged && boxes.is_empty() {
                 boxes.push(notecraft_model::Container::new(0.0, 0.0, 360.0, 0));
+                log::debug!(
+                    "default page block created: page={:?} block_count={} container=(x=0,y=0,width=360,blocks=0) empty_block_min_height=22",
+                    dir,
+                    blocks.len()
+                );
             }
             // The page as it was opened is the first step of its history: undo goes back
             // this far and no further.
