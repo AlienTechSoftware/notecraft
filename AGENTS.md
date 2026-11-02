@@ -162,6 +162,7 @@ purpose summary.
 | `nc-uiux-drawing` | MVC specialist: ink | Handwriting, drawing tools, stylus pressure, ink selection, and OneNote-compatible drawing workflows. | Does not own page serialization or theme tokens. Consult `nc-dom-ser` for stored ink and `nc-themes` for colours. |
 | `nc-uiux-icons` | UI foundation specialist | Licensed icon selection, local asset integration, semantic mapping, accessibility, and icon-state consistency. | Does not own Windows Shell asset extraction or page serialization. Consult `nc-dom-ser` and `nc-themes` where applicable. |
 | `nc-uiux-testing` | UI automation and visual verification specialist | NoteCraft UI automation, semantic interaction tests, headless and real-window screenshot capture, visual assertions, accessibility-test integration, platform automation boundaries, and test evidence. | Does not own product documentation or demo content. Routes User Assistance assets and public screenshot selection to `nc-ua`; routes release acceptance evidence to `nc-reelase-signoff`. |
+| `nc-runtime-diagnostics` | Runtime diagnostics specialist | Local application logs, telemetry sessions, settings and diagnostic paths, session correlation, event schemas, redaction, export/clear behavior, and troubleshooting evidence. | Does not set product privacy policy, implement logging, or own CI/machine setup. Routes privacy decisions to `nc-prod`, Rust implementation to `nc-code-rust`, architecture to `nc-arch`, and developer environment issues to `nc-devx`. |
 | `nc-ua` | Product coverage specialist | User assistance, product coverage, multilingual demo content, generated outputs, scratch copies, public documentation screenshots, and demo-notebook consistency. | Does not own screenshot capture mechanics or UI automation. Consumes `nc-uiux-testing` and does not replace implementation or design skills. |
 | `nc-reelase-signoff` | Release gate | Versioning, demo parity, tests, lint, packaging, installers, assets, and release evidence. | Does not implement features or waive failing gates. |
 | `nc-devx` | Developer experience | Machine setup and its check scripts, the quality levels L0 to L4, git hooks, coverage, the PII scanner, and the daily workflow. | Does not decide product or architecture. Owns how work is checked, not what is built. |
@@ -169,7 +170,8 @@ purpose summary.
 Use the smallest set that covers the work, in this order when the change is substantial:
 `nc-arch` -> `nc-hl-design` -> the relevant MVC or UI specialist -> `nc-code-rust`.
 Add `nc-prod` when product requirements are involved, `nc-dom-ser` when page or DOM
-representation is involved, and `nc-reelase-signoff` for release work. `nc-ua` owns the
+representation is involved, `nc-runtime-diagnostics` when logs, telemetry, sessions, or
+runtime evidence are involved, and `nc-reelase-signoff` for release work. `nc-ua` owns the
 user-facing coverage map, but it does not replace the implementation or design skills.
 
 ## Quality levels

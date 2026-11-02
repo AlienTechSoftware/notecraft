@@ -13,6 +13,11 @@ metadata:
 
 ## Runtime profiles and local-only diagnostics
 
+The operational details for finding logs, correlating telemetry sessions, reading manifests,
+exporting evidence, and troubleshooting runtime failures live in
+[`nc-runtime-diagnostics`](../nc-runtime-diagnostics/SKILL.md). This skill remains the authority
+for the product and privacy decisions that those diagnostics must obey.
+
 There are three supported runtime environments: `debug`, `release`, and `production`. There are
 five user-visible local logging levels: `None`, `Usage`, `Warning`, `Error`, and `Debug`. Debug
 builds default to `Debug`; release and production default to `None` unless the user chooses a
