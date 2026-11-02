@@ -1,5 +1,3 @@
-![NoteCraft 0.0.8 release notes](https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/0.0.8.png)
-
 ![NoteCraft 0.0.8 animated release tour](https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/RELEASE_NOTES.gif)
 
 NoteCraft 0.0.8 is an alpha release focused on making image-heavy and right-to-left notes more reliable, while improving the release and installation path.
