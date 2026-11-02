@@ -145,7 +145,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     text_w = bbox[2] - bbox[0]
     x = (w - text_w) // 2
     draw.text((x, y_offset), frame_title, font=title_font, fill=(0, 0, 0))  # Black
-    y_offset += FONT_SIZE_TITLE + 10
+    y_offset += FONT_SIZE_TITLE + 24
 
     # Line
     content_x = int(w * 0.12)
