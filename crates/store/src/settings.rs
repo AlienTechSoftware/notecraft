@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn notebooks_default_is_under_the_current_users_documents_folder() {
-        assert_eq!(default_notebooks_dir_for_home(r"C:\Users\Ada"), PathBuf::from(r"C:\Users\Ada\Documents\NoteCraft"));
+        assert_eq!(default_notebooks_dir_for_home(r"C:\Users\Ada"), PathBuf::from(r"C:\Users\Ada").join("Documents").join("NoteCraft"));
         assert_eq!(default_notebooks_dir_for_home("/home/ada"), PathBuf::from("/home/ada/Documents/NoteCraft"));
     }
 
