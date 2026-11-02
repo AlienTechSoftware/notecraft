@@ -191,7 +191,7 @@ cargo xtask ci
 | Run full CI gate | `cargo xtask ci` |
 | Regenerate demo notebook | `cargo xtask demo` |
 | Check demo parity | `cargo xtask demo-check` |
-| Rebuild docs/images | `cargo xtask screenshots` |
+| Rebuild docs/images | `cargo xtask screenshots` (capture mechanics: [`nc-uiux-testing`](../nc-uiux-testing/SKILL.md)) |
 | Check text style | `cargo xtask text` |
 | Verify layers | `cargo xtask layers` |
 | Check assets/ATTRIBUTION.md | `cargo xtask assets` |

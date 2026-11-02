@@ -89,6 +89,11 @@ the reason.
 
 ## Screenshots
 
+`nc-uiux-testing` owns the capture mechanics and visual-test rules. Read its
+[screenshot capture reference](../nc-uiux-testing/references/screenshot-capture.md)
+before changing the runner or adding a new capture path. This skill owns only
+the User Assistance policy for selecting, reviewing, and auditing public images.
+
 The pictures in `docs/images` (used by the README and release notes) are rebuilt headless:
 
 - Run `cargo xtask screenshots`. It plays `scripts/readme-screens.jsonl` through the off-screen
