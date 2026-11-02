@@ -5,6 +5,8 @@
 /.claude/
 .DS_Store
 .env
+__pycache__/
+*.py[cod]
 out/
 /out/
 /my-notebooks/
