@@ -957,12 +957,21 @@ pub(crate) fn previous_writable_block(blocks: &[Block], from: usize, shown_title
     adjacent_writable(blocks, from, false, shown_title)
 }
 
+pub(crate) fn next_writable_block(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
+    adjacent_writable(blocks, from, true, shown_title)
+}
+
 fn image_boundary_id() -> egui::Id {
     egui::Id::new("caret-before-whole-block-image")
 }
 
 fn next_whole_block_image(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
     let image = from.checked_add(1)?;
+    (blocks.get(image).is_some_and(|block| matches!(block, Block::Image { .. })) && !is_title_echo(blocks, image, shown_title)).then_some(image)
+}
+
+fn previous_whole_block_image(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
+    let image = from.checked_sub(1)?;
     (blocks.get(image).is_some_and(|block| matches!(block, Block::Image { .. })) && !is_title_echo(blocks, image, shown_title)).then_some(image)
 }
 
@@ -1301,9 +1310,17 @@ pub fn show_blocks(
                     } else if escape {
                         action = Some(Action::Leave);
                     } else if up {
-                        action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                        if let Some(image) = previous_whole_block_image(blocks, i, shown_title) {
+                            changed.select_object = Some((image, "image".to_string()));
+                        } else {
+                            action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                        }
                     } else if down {
-                        action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
+                        if let Some(image) = next_whole_block_image(blocks, i, shown_title) {
+                            changed.select_object = Some((image, "image".to_string()));
+                        } else {
+                            action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
+                        }
                     }
                 }
                 frame_block(ui, top, true, t, zoom);
@@ -1541,10 +1558,14 @@ pub fn show_blocks(
                 } else if escape {
                     action = Some(Action::Leave);
                 } else if up {
-                    action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                    if let Some(image) = previous_whole_block_image(blocks, i, shown_title) {
+                        changed.select_object = Some((image, "image".to_string()));
+                    } else {
+                        action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
+                    }
                 } else if down {
                     if let Some(image) = next_whole_block_image(blocks, i, shown_title) {
-                        ui.data_mut(|data| data.insert_temp(image_boundary_id(), (i, image)));
+                        changed.select_object = Some((image, "image".to_string()));
                     } else {
                         action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
                     }
@@ -2597,7 +2618,9 @@ mod tests {
     fn whole_block_image_has_a_caret_boundary_before_it() {
         let blocks = blocks("one\n\n![a picture](assets/picture.png)\n\nthree");
         assert_eq!(next_whole_block_image(&blocks, 0, ""), Some(1));
+        assert_eq!(previous_whole_block_image(&blocks, 2, ""), Some(1));
         assert_eq!(previous_writable_block(&blocks, 1, ""), Some(0));
+        assert_eq!(next_writable_block(&blocks, 1, ""), Some(2));
         assert_eq!(next_whole_block_image(&blocks, 2, ""), None);
     }
 

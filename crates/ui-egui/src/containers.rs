@@ -726,15 +726,49 @@ pub fn show(
     if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
         object_sel = None;
     }
-    if let Some((block, _)) = object_sel
-        && ui.input(|i| i.key_pressed(Key::ArrowLeft))
-        && let Some(previous) = pageedit::previous_writable_block(blocks, block, shown_title)
-    {
-        let text = pageedit::text_for_caret(blocks, previous);
-        *caret = Some(pageedit::Caret { block: previous, text, focus: true, selection: (0, 0), place: None, cell: None, span: None });
-        object_sel = None;
-        out.changed.caret = true;
-        log::debug!("keyboard moved from embedded object to caret: image_block={block} caret_block={previous}");
+    if let Some((block, _)) = object_sel {
+        let direction = ui.input(|i| {
+            if i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowUp) {
+                Some(false)
+            } else if i.key_pressed(Key::ArrowDown) {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if let Some(down) = direction {
+            let target = if down {
+                pageedit::next_writable_block(blocks, block, shown_title)
+            } else {
+                pageedit::previous_writable_block(blocks, block, shown_title)
+            };
+            if let Some(target) = target {
+                let text = pageedit::text_for_caret(blocks, target);
+                *caret =
+                    Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: down.then_some(0), cell: None, span: None });
+                object_sel = None;
+                out.changed.caret = true;
+                log::debug!(
+                    "keyboard moved from embedded object: image_block={block} direction={} caret_block={target}",
+                    if down { "down" } else { "up" }
+                );
+            }
+        } else if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
+            let target = pageedit::next_writable_block(blocks, block, shown_title);
+            let target = target.or_else(|| {
+                let at = block.saturating_add(1).min(blocks.len());
+                blocks.insert(at, Block::Paragraph(Vec::new()));
+                out.changed.blocks = true;
+                Some(at)
+            });
+            if let Some(target) = target {
+                let text = pageedit::text_for_caret(blocks, target);
+                *caret = Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None });
+                object_sel = None;
+                out.changed.caret = true;
+                log::debug!("keyboard moved after embedded object: image_block={block} caret_block={target}");
+            }
+        }
     }
     // Embedded objects have their own selection, separate from the containing box.
     // Both keys should remove the selected object, just as they remove selected text.
