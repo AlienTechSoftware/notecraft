@@ -183,7 +183,7 @@ Each level includes the ones before it. The detail, with every check, is in
 |---|---|---|
 | **L0** | After each task | `cargo fmt`, clippy and tests for the crates changed |
 | **L1** | Before a commit (pre-commit and commit-msg hooks) | `cargo xtask check-branch` (not on `main`, branch prefix, nothing stray or huge staged, warns when behind `origin/main`), PII, fmt, layers, assets, docs, text; subject `type(scope): what` |
-| **L2** | Before a push (pre-push hook) | `cargo xtask check-branch --push` (rebased on the newest `origin/main`, no merge commits), PII, the full `cargo xtask ci` |
+| **L2** | Before a push (pre-push hook) | `cargo xtask check-branch --push` (up to date with the newest `origin/main`; merge commits allowed), PII, the full `cargo xtask ci` |
 | **L3** | Pull request (CI) | L2 on Linux, branch name check, coverage compared per platform (warns, never blocks), the pull request template's checklist |
 | **L4** | Release | `nc-reelase-signoff`; by hand today, automation planned, starting with the installer smoke test |
 
@@ -240,12 +240,12 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
 - **Versions.** The version is 0.0.8, approved by the owner in words on 2026-11-02. It changes only when the owner says so, in words, for that change. No agent bumps it, runs `cargo xtask version set`, tags a release or starts a release with a version override on its own judgement, and an earlier approval does not cover the next bump. Semantic versioning, `MAJOR.MINOR.PATCH`, as the sibling Craft apps do. Still 0.x. A patch (0.1.0 to 0.1.1) is bug fixes only, or a rebuild after a packaging or workflow fix, and never changes the folder format. A minor (0.1.x to 0.2.0) adds features or changes behaviour, and resets the patch to 0. A pre-release adds a tag, `0.2.0-rc.1`. The version lives only in `[workspace.package]`; change it with `cargo xtask version set`. Tags are `v<version>`. Details in [`docs/releasing.md`](docs/releasing.md).
 - **Page model.** Read [`docs/dom_serialization/page-model.md`](docs/dom_serialization/page-model.md) before changing how a page is stored, edited on screen or shown as code. The page file names everything the page owns, and what the window shows and what the folder holds must never disagree. A new kind of page content is named in the page file, has a reader and writer in `notecraft_formats`, appears in the code view's list and has a round-trip test.
 - **Page representation changes.** Apply [`SKILLS/nc-dom-ser/SKILL.md`](SKILLS/nc-dom-ser/SKILL.md) for changes crossing the page model, HTML/CMGFM, rendering, storage, or editor. `cargo xtask ci` must keep the cross-format and whole-demo parity checks green.
-- **One feature at a time.** One feature, one branch. Do not start a second branch, or work on a second feature, unless the owner asks for more than one. A request that arrives while a branch is open is answered or written down and waits; it does not start another branch. Land the branch before the next one begins: rebase it onto `origin/main`, run `cargo xtask ci`, check out `main`, pull it, and fast-forward the branch in, so the history stays a straight line. The owner says when to push. Delete the branch once it is merged.
+- **One feature at a time.** One feature, one branch. Do not start a second branch, or work on a second feature, unless the owner asks for more than one. A request that arrives while a branch is open is answered or written down and waits; it does not start another branch. Land the branch before the next one begins: update it from `origin/main`, run `cargo xtask ci`, check out `main`, pull it, and integrate it. Merge commits are allowed when they preserve useful integration provenance. The owner says when to push. Delete the branch once it is merged.
 - **Git.** Do not commit, push or publish without explicit permission.
 - **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs quality level L1 (the branch
   check and the cheap gates: fmt, layers, assets, docs, text), a few seconds, and
   [`.githooks/commit-msg`](.githooks/commit-msg) checks the subject line.
-  [`.githooks/pre-push`](.githooks/pre-push) runs L2: rebased on `origin/main`, then the
+  [`.githooks/pre-push`](.githooks/pre-push) runs L2: up to date with `origin/main`, then the
   whole of `cargo xtask ci`, a few minutes, so a red tree is caught before CI sees it. Git does
   not pick up a tracked hooks folder by itself, so each clone needs the `core.hooksPath` line
   above once. They check the working tree, not the index, so another session's half-written file
