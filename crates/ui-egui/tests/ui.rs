@@ -3147,7 +3147,7 @@ Paper,12,
                 h.get_by_label("Table").click();
             } else {
                 // Re-establish the table caret before asking the ribbon to expose its tab.
-                h.get_by_label("Tea").click();
+                ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("back into the table");
                 settle(&mut h);
                 if h.query_all_by_label("Table").count() > 0 {
                     h.get_by_label("Table").click();
