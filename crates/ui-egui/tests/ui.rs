@@ -3164,7 +3164,10 @@ Paper,12,
             assert!(attempt < 2, "table ribbon did not expose read-back: {}", h.state().status());
             continue;
         }
-        h.get_by_label("Read back from it").click();
+        // The macOS runner can expose this button to accessibility while dropping the
+        // synthetic accessibility activation. Use the same coordinate click a user makes.
+        let read_back = h.get_by_label("Read back from it").rect();
+        ask(&mut h, "ui.click", json!({"x": read_back.center().x, "y": read_back.center().y})).expect("read back");
         settle(&mut h);
         let body = h.state().body().unwrap_or_default().to_string();
         if body.contains("Tea, green") {
