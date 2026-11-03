@@ -3133,7 +3133,7 @@ Paper,12,
     )
     .expect("the csv");
 
-    let cell = h.get_by_label("Tea").rect();
+    let mut cell = h.get_by_label("Tea").rect();
     ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("into the table");
     settle(&mut h);
     h.get_by_label("Table").click();
@@ -3145,6 +3145,12 @@ Paper,12,
         // Re-establish the table caret on every retry. On macOS the ribbon can remain
         // visible after an accessibility click even though the editor has lost its caret.
         if attempt > 0 {
+            if h.query_all_by_label("Table").count() > 0 {
+                h.get_by_label("Table").click();
+                settle(&mut h);
+            }
+            assert!(h.query_all_by_label("Tea").count() > 0, "table cell disappeared before retry");
+            cell = h.get_by_label("Tea").rect();
             ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("back into the table");
             settle(&mut h);
         }
