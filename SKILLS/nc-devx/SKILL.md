@@ -13,7 +13,9 @@ metadata:
 
 Verify NoteCraft developer workflows with fast feedback and intact quality gates across supported environments.
 
-Developer setup, workflow, and automation for local NoteCraft work.
+Developer setup, workflow, and automation for local NoteCraft work. The newcomer
+summary is [`README_DEV.md`](../../README_DEV.md); this skill is the detailed and
+authoritative reference for the gates and CI/CD lanes.
 
 ---
 
@@ -205,7 +207,8 @@ cargo xtask ci
 ## Quality Levels
 
 Each level includes the ones before it. The hooks run L1 and L2 for you once
-`git config core.hooksPath .githooks` is set (the setup script does it); CI runs L3.
+`git config core.hooksPath .githooks` is set (the setup script does it); GitHub PR
+CI runs L3; L4 is the release signoff and delivery process.
 
 | Level | When | What runs | Where | Time |
 |---|---|---|---|---|
@@ -213,7 +216,7 @@ Each level includes the ones before it. The hooks run L1 and L2 for you once
 | **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main`. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
 | **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
 | **L3** | Pull request | Code quality and cross-platform source validation: split fmt, clippy, static checks, demo checks, tests, and non-blocking coverage, plus build/test jobs for Linux, Windows, and macOS. No installers or publishing. | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
-| **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `SKILLS/nc-release-signoff` | release/manual |
+| **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `.github/workflows/packaging.yml`, `.github/workflows/release.yml`, `docs/releasing.md` | release/manual |
 
 ### CI lanes: quality, build, packaging, deployment
 
