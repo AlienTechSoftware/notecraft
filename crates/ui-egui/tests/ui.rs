@@ -3161,10 +3161,11 @@ Paper,12,
         }
         h.get_by_label("Read back from it").click();
         settle(&mut h);
-        if h.state().status().contains("Read back") {
+        let body = h.state().body().unwrap_or_default().to_string();
+        if body.contains("Tea, green") {
             break;
         }
-        assert!(attempt < 2, "read-back action did not complete: {:?}", h.state().status());
+        assert!(attempt < 2, "read-back action did not update the table: status={:?}, body={body}", h.state().status());
     }
 
     let body = h.state().body().unwrap_or_default().to_string();
