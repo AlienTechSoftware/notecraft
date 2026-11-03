@@ -221,6 +221,11 @@ The four quality levels above are developer gates. The CI delivery lanes are a s
 prevents a slow or privileged packaging step from hiding a source-quality or cross-platform build
 failure. New contributors should know which lane they are changing:
 
+**Budget constraint:** NoteCraft currently has no budget for CI, signing, notarization, or larger
+hosted runners. Prefer GitHub-hosted free-tier capacity and existing local/VM validation. Keep full
+packaging manual or release-only, do not select paid/larger runners, and do not introduce paid
+services or signing infrastructure without explicit owner approval.
+
 | Lane | Purpose | Trigger | Produces | Merge/deployment authority |
 |---|---|---|---|---|
 | **1. Code quality** | fmt, clippy, static checks, docs/assets/demo checks, and coverage | Every pull request and main push as configured | Check results and diagnostics | Required quality checks; coverage remains warning-only |
