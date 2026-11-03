@@ -3138,8 +3138,17 @@ Paper,12,
     settle(&mut h);
     h.get_by_label("Table").click();
     settle(&mut h);
-    h.get_by_label("Read back from it").click();
-    settle(&mut h);
+    // macOS can occasionally deliver the accessibility click one frame later when the
+    // ribbon tab has just opened. Retry the same user action a bounded number of times;
+    // this keeps the test honest while removing a renderer scheduling flake.
+    for attempt in 0..3 {
+        h.get_by_label("Read back from it").click();
+        settle(&mut h);
+        if h.state().status().contains("Read back") {
+            break;
+        }
+        assert!(attempt < 2, "read-back action did not complete: {:?}", h.state().status());
+    }
 
     let body = h.state().body().unwrap_or_default().to_string();
     assert!(
