@@ -212,8 +212,33 @@ Each level includes the ones before it. The hooks run L1 and L2 for you once
 | **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
 | **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main`. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
 | **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
-| **L3** | Pull request | L2 on Linux in CI, plus the branch name check, split fmt, clippy, test, static-check, and non-blocking coverage jobs. The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
-| **L4** | Release | The `nc-reelase-signoff` checklist: version, demo parity, packaging, installers, release notes. By hand today; to be automated, starting with the installer smoke test on a clean profile | `SKILLS/nc-reelase-signoff` | by hand |
+| **L3** | Pull request | Code quality and cross-platform source validation: split fmt, clippy, static checks, demo checks, tests, and non-blocking coverage, plus build/test jobs for Linux, Windows, and macOS. No installers or publishing. | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
+| **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `SKILLS/nc-release-signoff` | release/manual |
+
+### CI lanes: quality, build, packaging, deployment
+
+The four quality levels above are developer gates. The CI delivery lanes are a separate model that
+prevents a slow or privileged packaging step from hiding a source-quality or cross-platform build
+failure. New contributors should know which lane they are changing:
+
+| Lane | Purpose | Trigger | Produces | Merge/deployment authority |
+|---|---|---|---|---|
+| **1. Code quality** | fmt, clippy, static checks, docs/assets/demo checks, and coverage | Every pull request and main push as configured | Check results and diagnostics | Required quality checks; coverage remains warning-only |
+| **2. Platform build/test** | Prove the source builds and applicable tests pass on Linux, Windows, and macOS | Every pull request | Per-platform logs and test results | Required for merge; no installers |
+| **3. Packaging** | Build and inspect MSI/ZIP, Linux packages, and macOS artifacts | Manual, release branch/tag, or packaging-input changes | Versioned, checksumed workflow artifacts | Never publishes by itself |
+| **4. Installation/deployment** | Install/uninstall, first launch, notebook placement, upgrade/data persistence, then publish | Release candidate or explicit manual approval | Installation evidence and an approved release | Only this lane may deploy or publish |
+
+Rules:
+
+- Lanes 1 and 2 must stay fast, visible, and safe to run on untrusted pull requests.
+- Lane 3 is isolated because packaging tools, larger artifacts, and platform-specific setup are
+  expensive and more privileged than ordinary CI.
+- Lane 4 is isolated because it changes external state or publishes artifacts; it requires explicit
+  release authorization and must not be inferred from a green build.
+- A packaging success does not replace the three-platform build/test matrix. A green build does not
+  prove that an installer places files correctly.
+- Record runner label, Rust/toolchain version, artifact name, architecture, demo payload, notices,
+  and known limitations in packaging results.
 
 ### Linear history is a policy choice
 
