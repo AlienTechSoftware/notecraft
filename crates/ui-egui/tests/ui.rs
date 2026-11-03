@@ -3143,7 +3143,16 @@ Paper,12,
     // this keeps the test honest while removing a renderer scheduling flake.
     for attempt in 0..3 {
         if h.query_all_by_label("Read back from it").count() == 0 {
-            h.get_by_label("Table").click();
+            if h.query_all_by_label("Table").count() > 0 {
+                h.get_by_label("Table").click();
+            } else {
+                // Re-establish the table caret before asking the ribbon to expose its tab.
+                h.get_by_label("Tea").click();
+                settle(&mut h);
+                if h.query_all_by_label("Table").count() > 0 {
+                    h.get_by_label("Table").click();
+                }
+            }
             settle(&mut h);
         }
         if h.query_all_by_label("Read back from it").count() == 0 {
