@@ -1,50 +1,138 @@
 #!/usr/bin/env bash
-# Build a universal NoteCraft.app and drag-to-Applications DMG on macOS.
-# Signing is optional for local builds; notarization requires Apple credentials.
+# Build a NoteCraft.app, drag-to-Applications DMG and separate CLI archive on macOS.
+# Default: universal. Options: --arch aarch64|x86_64|universal, --out DIR, --no-build.
+# CARGO_TARGET_DIR and DIST may override the build and distribution directories.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="$(sed -n '/^\[workspace\.package\]/,/^\[/ { s/^version = "\([^"]*\)"/\1/p; }' "$ROOT/Cargo.toml" | head -n1)"
-[ -n "$VERSION" ] || { echo "could not read workspace version" >&2; exit 1; }
-
+ARCH=universal
 OUT="${DIST:-$ROOT/dist/macos}"
 BUILD=1
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
   case "$1" in
-    --out) OUT="${2:?--out needs a value}"; shift 2 ;;
+    --arch) [[ $# -ge 2 ]] || { echo "--arch needs a value" >&2; exit 2; }; ARCH="$2"; shift 2 ;;
+    --out) [[ $# -ge 2 ]] || { echo "--out needs a value" >&2; exit 2; }; OUT="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-targets=(aarch64-apple-darwin x86_64-apple-darwin)
-if [ "$BUILD" -eq 1 ]; then
+case "$ARCH" in
+  aarch64) targets=(aarch64-apple-darwin) ;;
+  x86_64) targets=(x86_64-apple-darwin) ;;
+  universal) targets=(aarch64-apple-darwin x86_64-apple-darwin) ;;
+  *) echo "unsupported architecture: $ARCH" >&2; exit 2 ;;
+esac
+[[ "$(uname -s)" = Darwin ]] || { echo "macOS is required" >&2; exit 1; }
+for tool in cargo git jq shasum lipo iconutil sips plutil codesign ditto hdiutil; do
+  command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
+done
+if [[ "$BUILD" = 1 ]]; then
+  command -v rustup >/dev/null || { echo "missing tool: rustup" >&2; exit 1; }
+fi
+VERSION="$(cd "$ROOT" && cargo metadata --no-deps --locked --format-version 1 | jq -er '[.packages[] | select(.name == "notecraft" or .name == "notecraft-cli") | .version] | if length == 2 and (unique | length) == 1 then .[0] else error("GUI and CLI Cargo versions differ or are missing") end')"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "invalid Cargo version: $VERSION" >&2; exit 1; }
+TARGET_ROOT="${CARGO_TARGET_DIR:-$ROOT/target}"
+mkdir -p "$TARGET_ROOT/packaging" "$OUT"
+TARGET_ROOT="$(cd "$TARGET_ROOT" && pwd)"
+OUT="$(cd "$OUT" && pwd)"
+DMG="$OUT/NoteCraft-$VERSION-macos-$ARCH.dmg"
+CLI_ZIP="$OUT/NoteCraft-cli-$VERSION-macos-$ARCH.zip"
+export MACOSX_DEPLOYMENT_TARGET=11.0
+
+sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+check_version() {
+  local actual
+  actual="$("$1" --version)" || { echo "cannot read executable version: $1" >&2; exit 1; }
+  [[ "$actual" = "$2 $VERSION" ]] || { echo "stale executable: $1 reports '$actual'; expected '$2 $VERSION'" >&2; exit 1; }
+}
+native_target() {
+  [[ ( "$1" = aarch64-apple-darwin && "$(uname -m)" = arm64 ) || \
+     ( "$1" = x86_64-apple-darwin && "$(uname -m)" = x86_64 ) ]]
+}
+
+source "$ROOT/packaging/OSX/provenance.sh"
+build_source="$(source_provenance "$ROOT")"
+echo "==> NoteCraft $VERSION ($ARCH)"
+if [[ "$BUILD" = 1 ]]; then
   rustup target add "${targets[@]}"
   for target in "${targets[@]}"; do
-    (cd "$ROOT" && MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli)
+    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli)
   done
 fi
+# Both slices must be built from the same inputs, including local uncommitted work.
+check_source_provenance "$build_source" "$(source_provenance "$ROOT")" 0
 
-WORK="${CARGO_TARGET_DIR:-$ROOT/target}/packaging/macos"
+WORK="$(mktemp -d "$TARGET_ROOT/packaging/notecraft-osx.XXXXXX")"
+RECORD_TMP=""
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$RECORD_TMP" ]]; then rm -f -- "$RECORD_TMP" || status=1; fi
+  rm -rf -- "$WORK" || status=1
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 APP="$WORK/NoteCraft.app"
-rm -rf "$WORK"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$APP/Contents/Resources/demo" "$OUT"
-OUT="$(cd "$OUT" && pwd)"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$APP/Contents/Resources/demo"
+
+# --no-build accepts only binaries recorded by a successful package build. The record
+# binds both executable hashes to the Cargo version and source identity, including foreign slices.
+for target in "${targets[@]}"; do
+  gui="$TARGET_ROOT/$target/release/notecraft"
+  cli="$TARGET_ROOT/$target/release/notecraft-cli"
+  record="$TARGET_ROOT/$target/release/.notecraft-osx-provenance"
+  [[ -x "$gui" && -x "$cli" ]] || { echo "missing executable for $target" >&2; exit 1; }
+  expected_arch="${target%%-*}"
+  [[ "$expected_arch" = aarch64 ]] && expected_arch=arm64
+  for binary in "$gui" "$cli"; do
+    [[ "$(lipo -archs "$binary")" = "$expected_arch" ]] || { echo "wrong architecture: $binary" >&2; exit 1; }
+  done
+  gui_hash="$(sha256 "$gui")"
+  cli_hash="$(sha256 "$cli")"
+  expected_record="$(printf '%s\n%s\n%s\n%s' "$VERSION" "$target" "$gui_hash" "$cli_hash")"
+  if [[ "$BUILD" = 0 ]]; then
+    [[ -f "$record" && ! -L "$record" ]] || { echo "missing build provenance for $target; build this target with package.sh first" >&2; exit 1; }
+    [[ "$(head -n 4 "$record")" = "$expected_record" ]] || { echo "stale or changed executable for $target; rebuild without --no-build" >&2; exit 1; }
+    check_source_provenance "$(tail -n +5 "$record")" "$build_source" 1
+  else
+    if native_target "$target"; then
+      check_version "$gui" notecraft
+      check_version "$cli" notecraft-cli
+    fi
+    [[ ! -L "$record" && ( ! -e "$record" || -f "$record" ) ]] || { echo "unsafe provenance path: $record" >&2; exit 1; }
+    RECORD_TMP="$(mktemp "$TARGET_ROOT/$target/release/.notecraft-osx-provenance.XXXXXX")"
+    printf '%s\n%s\n' "$expected_record" "$build_source" > "$RECORD_TMP"
+    mv -f "$RECORD_TMP" "$record"
+    RECORD_TMP=""
+  fi
+done
 
 for binary in notecraft notecraft-cli; do
   slices=()
   for target in "${targets[@]}"; do
-    candidate="$ROOT/target/$target/release/$binary"
+    candidate="$TARGET_ROOT/$target/release/$binary"
     [ -x "$candidate" ] || { echo "missing executable: $candidate" >&2; exit 1; }
     slices+=("$candidate")
   done
-  lipo -create "${slices[@]}" -output "$APP/Contents/MacOS/$binary"
+  if [[ "$ARCH" = universal ]]; then
+    lipo -create "${slices[@]}" -output "$APP/Contents/MacOS/$binary"
+  else
+    cp "${slices[0]}" "$APP/Contents/MacOS/$binary"
+  fi
+  chmod 755 "$APP/Contents/MacOS/$binary"
   lipo -info "$APP/Contents/MacOS/$binary"
 done
 
-build_number="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
-sed -e "s|@VERSION@|${VERSION%%[-+]*}|g" -e "s|@BUILD@|$build_number|g" \
+build_number="$(git -C "$ROOT" rev-list --count HEAD)"
+build_sha="$(printf '%s\n' "$build_source" | head -n 1)"
+if [[ "$(printf '%s\n' "$build_source" | sed -n '2p')" = dirty ]]; then build_sha="$build_sha-dirty"; fi
+sed -e "s|@VERSION@|${VERSION%%[-+]*}|g" -e "s|@FULL_VERSION@|$VERSION|g" \
+  -e "s|@BUILD@|$build_number|g" -e "s|@BUILD_SHA@|$build_sha|g" \
   "$ROOT/packaging/OSX/Info.plist.in" > "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
 
@@ -59,43 +147,83 @@ done
 iconutil --convert icns "$ICONSET" --output "$APP/Contents/Resources/notecraft.icns"
 
 for file in LICENSE-MIT LICENSE-APACHE NOTICE; do
-  cp "$ROOT/$file" "$APP/Contents/Resources/licenses/$file"
+  install -m 644 "$ROOT/$file" "$APP/Contents/Resources/licenses/$file"
 done
+install -m 644 "$ROOT/ATTRIBUTION.md" "$APP/Contents/Resources/ATTRIBUTION.md"
+ditto "$ROOT/licenses" "$APP/Contents/Resources/licenses"
 
 # Carry the same release demo as the Windows and Linux packages. The application deploys
 # its embedded copy to the current user's ~/Documents/NoteCraft on first launch; this copy
 # makes the macOS artifact self-auditing and available to packaging inspection tools.
 cp -R "$ROOT/docs/demo/DemoNotebook" "$APP/Contents/Resources/demo/"
-[ -f "$APP/Contents/Resources/demo/DemoNotebook/html/00-start/welcome/index.html" ] || {
-  echo "demo notebook was not staged in the macOS app" >&2
-  exit 1
-}
+for entry in html/00-start/welcome/index.html cmgfm/00-start/welcome/index.md; do
+  [[ -s "$APP/Contents/Resources/demo/DemoNotebook/$entry" ]] || {
+    echo "demo notebook entry was not staged in the macOS app: $entry" >&2
+    exit 1
+  }
+done
 
 identity="${APPLE_SIGNING_IDENTITY:-}"
-if [ -n "$identity" ]; then
-  codesign --force --timestamp --options runtime --entitlements "$ROOT/packaging/OSX/entitlements.plist" --sign "$identity" "$APP/Contents/MacOS/notecraft-cli"
-  codesign --force --timestamp --options runtime --entitlements "$ROOT/packaging/OSX/entitlements.plist" --sign "$identity" "$APP"
-  codesign --verify --strict --verbose=2 "$APP"
+sign() {
+  if [[ -n "$identity" ]]; then
+    if [[ "$1" = *.dmg ]]; then
+      codesign --force --timestamp --sign "$identity" "$1"
+    else
+      codesign --force --timestamp --options runtime --entitlements "$ROOT/packaging/OSX/entitlements.plist" --sign "$identity" "$1"
+    fi
+  else
+    codesign --force --timestamp=none --sign - "$1"
+  fi
+}
+sign "$APP/Contents/MacOS/notecraft-cli"
+sign "$APP"
+codesign --verify --strict --deep --verbose=2 "$APP"
+codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/notecraft-cli"
+if [[ "$ARCH" = universal || ( "$ARCH" = aarch64 && "$(uname -m)" = arm64 ) || \
+      ( "$ARCH" = x86_64 && "$(uname -m)" = x86_64 ) ]]; then
+  check_version "$APP/Contents/MacOS/notecraft" notecraft
+  check_version "$APP/Contents/MacOS/notecraft-cli" notecraft-cli
 else
-  echo "warning: APPLE_SIGNING_IDENTITY is unset; creating an ad-hoc signed test app" >&2
-  codesign --force --deep --sign - "$APP"
+  echo "==> skipping $ARCH execution on $(uname -m); verify on a native host"
 fi
 
 DMG_ROOT="$WORK/dmg"
 mkdir -p "$DMG_ROOT"
-cp -R "$APP" "$DMG_ROOT/"
+ditto "$APP" "$DMG_ROOT/NoteCraft.app"
+app_hash="$(sha256 "$DMG_ROOT/NoteCraft.app/Contents/MacOS/notecraft")"
+printf '%s\n%s\n%s\n%s\n' "$VERSION" "$ARCH" "$app_hash" "$build_source" > "$DMG_ROOT/BuildProvenance.txt"
 ln -s /Applications "$DMG_ROOT/Applications"
-DMG="$OUT/NoteCraft-$VERSION-macos-universal.dmg"
-rm -f "$DMG"
 hdiutil create -volname "NoteCraft $VERSION" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DMG"
+sign "$DMG"
+codesign --verify --strict --verbose=2 "$DMG"
 
-if [ -n "$identity" ]; then
-  codesign --force --timestamp --sign "$identity" "$DMG"
-  if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+CLI_DIR="$WORK/NoteCraft-cli-$VERSION-macos-$ARCH"
+mkdir -p "$CLI_DIR/licenses"
+install -m 755 "$APP/Contents/MacOS/notecraft-cli" "$CLI_DIR/notecraft-cli"
+for file in LICENSE-MIT LICENSE-APACHE NOTICE; do
+  install -m 644 "$ROOT/$file" "$CLI_DIR/licenses/$file"
+done
+install -m 644 "$ROOT/ATTRIBUTION.md" "$CLI_DIR/ATTRIBUTION.md"
+ditto "$ROOT/licenses" "$CLI_DIR/licenses"
+sign "$CLI_DIR/notecraft-cli"
+cli_hash="$(sha256 "$CLI_DIR/notecraft-cli")"
+printf '%s\n%s\n%s\n%s\n' "$VERSION" "$ARCH" "$cli_hash" "$build_source" > "$CLI_DIR/BuildProvenance.txt"
+codesign --verify --strict --verbose=2 "$CLI_DIR/notecraft-cli"
+if [[ "$ARCH" = universal || ( "$ARCH" = aarch64 && "$(uname -m)" = arm64 ) || \
+      ( "$ARCH" = x86_64 && "$(uname -m)" = x86_64 ) ]]; then
+  check_version "$CLI_DIR/notecraft-cli" notecraft-cli
+fi
+ditto -c -k --keepParent "$CLI_DIR" "$CLI_ZIP"
+check_source_provenance "$build_source" "$(source_provenance "$ROOT")" 0
+
+if [[ -n "$identity" ]]; then
+  if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" ]]; then
     xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
     xcrun stapler staple "$DMG"
   else
     echo "warning: signed but not notarized; Apple credentials are unset" >&2
   fi
+else
+  echo "warning: ad-hoc signed test packages; public distribution requires Developer ID and notarization" >&2
 fi
-echo "wrote $DMG"
+echo "wrote $DMG and $CLI_ZIP"

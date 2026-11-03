@@ -1,6 +1,63 @@
 # NoteCraft macOS packaging guide
 
-This directory is reserved for the NoteCraft macOS installer and distribution work.
+This directory contains the NoteCraft macOS app, DMG and CLI archive scripts. The packages have
+been built and smoke tested locally on Apple Silicon. They are test packages until a maintainer
+completes signing, notarization and installation checks on clean machines.
+
+## Build and verify test packages
+
+Use macOS with Xcode Command Line Tools, the pinned Rust toolchain in `rust-toolchain.toml`,
+`jq` and `shasum`. No Homebrew package is needed by the installed app.
+
+```sh
+rustup install
+packaging/OSX/package.sh --arch aarch64
+packaging/OSX/verify.sh aarch64
+packaging/OSX/test-stale.sh aarch64
+bash packaging/OSX/test-provenance.sh
+```
+
+The default `--arch universal` builds both Apple targets and combines the GUI and CLI with
+`lipo`. `--arch x86_64` produces Intel-only packages. The DMG and separate CLI zip are written to
+`dist/macos/` unless `--out DIR` or `DIST` selects another directory. `CARGO_TARGET_DIR` selects
+the Cargo build directory. The scripts leave build outputs in place and remove their own
+temporary staging directories. Use a separate output directory when retaining an earlier DMG.
+
+`--no-build` requires a clean Git working tree and a previous clean `package.sh` build for every
+requested target. Each record binds the Cargo version, target, executable hashes and full Git
+revision to the source state. Both universal slices must match the current source identity.
+Old records without source provenance must be rebuilt. The negative tests cover version/hash
+changes, same-version revision changes, dirty sources and mismatched universal slice provenance.
+
+Normal builds support uncommitted work. The source snapshot includes staged/unstaged Git changes
+and the contents of untracked, non-ignored files. It is checked before and after the build and
+packaging; inputs must not change during the command. Dirty builds get a `-dirty` suffix in
+`NoteCraftBuildCommit` and cannot be reused with `--no-build`, even if unchanged. Submodules and
+Git entries hidden by assume-unchanged or skip-worktree are rejected. Build inputs must belong
+to the Git source tree; ignored output directories are not source inputs. Custom target and
+output directories should be ignored or outside the source tree.
+
+The finished DMG and CLI archive carry version, post-signing binary hashes and source identity,
+checked by `verify.sh` against the current checkout. Bundle build numbers use the full Git commit
+count; the pull-request workflow fetches complete history for both architectures, and verification
+requires the bundle number to equal that count. On a host that cannot execute a requested
+architecture, successful Cargo builds and matching records establish source provenance;
+runtime behavior still needs a native host check.
+
+The app includes both executables, its icon, project licences, attribution and third-party
+notices. It retains the upstream demo payload at `Contents/Resources/demo/DemoNotebook` in both
+HTML and CMGFM formats. Verification compares the mounted payload with the official source.
+Bundling this payload does not establish per-user installation or edit persistence; see
+[the macOS installation gaps](issues.md) and [the shared installation design](../demo-notebook-install-design.md).
+The standalone CLI zip can be extracted without installing the app. Both packages are
+signed ad-hoc by default for local testing. A downloaded ad-hoc package can be rejected by
+Gatekeeper; do not change system security settings to test it.
+
+For a manual Finder check, use a disposable notebook directory. Open the DMG, drag
+`NoteCraft.app` into Applications, eject the DMG, and open the installed app. Create and edit a
+page, quit, relaunch, and confirm the notebook and edit remain. Remove only the test app after
+the check; keep the notebook directory to confirm an app removal does not remove notes. Test on
+another Mac before making a public release claim.
 
 The preferred direction is to follow the packaging tools and libraries already used by the
 ArtCraft applications, especially the sibling MailCraft macOS package. Do not introduce a new
@@ -45,7 +102,7 @@ Prefer these components unless an approved design says otherwise:
 | Code signing | Apple `codesign` | Required for Developer ID distribution and verification. |
 | Disk image | Apple `hdiutil` | Produces the conventional drag-to-Applications DMG used by the sibling package. |
 | Notarization | `xcrun notarytool` and `xcrun stapler` | Current Apple command-line workflow; do not use the retired `altool` path. |
-| CI host | A pinned GitHub-hosted macOS runner selected by the release workflow | Provides Xcode command-line tools and avoids pretending Linux can perform the final Apple signing step. |
+| CI host | Pinned GitHub-hosted macOS runners selected by the pull-request packaging workflow | Configured to build and verify review artifacts on Apple Silicon and Intel. |
 
 Homebrew may be documented for developer setup when an ArtCraft project already uses it, but it
 must not become a runtime dependency of the NoteCraft app or a hidden requirement of the release
@@ -58,8 +115,8 @@ artifact. Prefer tools supplied by macOS/Xcode and Rustup for the packaging path
 - Keep `CFBundleShortVersionString` and the artifact filename tied to that source.
 - Use a monotonically increasing numeric `CFBundleVersion` for the bundle build number, such as
   the CI build number or a documented repository revision count.
-- Choose a stable reverse-DNS bundle identifier under the NoteCraft project namespace and keep it
-  stable across upgrades. Record the decision before publishing the first signed build.
+- Keep `com.alientechsoftware.notecraft` as the stable bundle identifier, matching the native
+  viewport app ID. Confirm it with the maintainer before the first signed release.
 - Keep the minimum macOS version explicit in the build environment, Rust target configuration,
   and `Info.plist`; test on that minimum before release.
 
@@ -108,5 +165,5 @@ notarized, installed, and manually exercised artifact is the release outcome.
 - [Apple: hardened runtime](https://developer.apple.com/documentation/security/hardened-runtime).
 - [GitHub: choosing a runner for a job](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job).
 
-The next implementation agent should read this guide, inspect the sibling ArtCraft package again, and
-write the macOS-specific acceptance criteria before adding scripts or workflow jobs.
+The GitHub Actions workflow creates review artifacts only. The existing release workflow remains
+Windows-only; no macOS release is published by this package script or pull-request workflow.

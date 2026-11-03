@@ -147,17 +147,59 @@ fn layers(root: &Path) -> Result<(), String> {
     if problems.is_empty() { Ok(()) } else { Err(problems.join("\n")) }
 }
 
-fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
-    if let Ok(rd) = fs::read_dir(dir) {
-        for e in rd.filter_map(|e| e.ok()) {
-            let p = e.path();
-            if p.is_dir() {
-                files_under(&p, out);
-            } else {
-                out.push(p);
-            }
+fn generated_root_entry(root: &Path, path: &Path) -> bool {
+    if path.parent() != Some(root) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    matches!(name, ".git" | ".phase1" | "dist" | "target" | "out" | "prototypes" | "snapshots" | "my-notebooks")
+        || name.starts_with(".work-officeimo-")
+}
+
+fn files_under(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let meta = fs::symlink_metadata(dir).map_err(|e| format!("inspect {}: {e}", dir.display()))?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err(format!("not a regular source directory: {}", dir.display()));
+    }
+    let entries = fs::read_dir(dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("read an entry in {}: {e}", dir.display()))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|e| format!("inspect {}: {e}", path.display()))?;
+        // Skip generated root directories before inspecting their contents (such as DMG links).
+        // A worktree's .git is a file. Other regular files with these names are still source.
+        if generated_root_entry(root, &path) && (kind.is_dir() || path.file_name().is_some_and(|name| name == ".git")) {
+            continue;
+        }
+        if kind.is_dir() {
+            files_under(root, &path, out)?;
+        } else if kind.is_file() {
+            out.push(path);
+        } else {
+            return Err(format!("cannot validate a source symlink or special file: {}", path.display()));
         }
     }
+    Ok(())
+}
+
+/// Collect every regular file for an exact directory comparison. Reject links and special files.
+fn comparison_files_under(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = fs::read_dir(dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("read an entry in {}: {e}", dir.display()))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|e| format!("inspect {}: {e}", path.display()))?;
+        if kind.is_dir() {
+            comparison_files_under(&path, out)?;
+        } else if kind.is_file() {
+            out.push(path);
+        } else {
+            return Err(format!("cannot compare a symlink or special file: {}", path.display()));
+        }
+    }
+    Ok(())
 }
 
 /// Relative paths (with `/`) of asset files that ATTRIBUTION.md does not mention in backticks.
@@ -168,8 +210,8 @@ fn unattributed(attribution: &str, assets: &[String]) -> Vec<String> {
 fn assets(root: &Path) -> Result<(), String> {
     let attribution = fs::read_to_string(root.join("ATTRIBUTION.md")).map_err(|e| format!("ATTRIBUTION.md: {e}"))?;
     let mut files = Vec::new();
-    files_under(&root.join("assets"), &mut files);
-    files_under(&root.join("docs").join("images"), &mut files);
+    files_under(root, &root.join("assets"), &mut files)?;
+    files_under(root, &root.join("docs").join("images"), &mut files)?;
     let rel: Vec<String> = files
         .iter()
         .filter_map(|f| f.strip_prefix(root).ok())
@@ -213,7 +255,7 @@ fn relative_links(markdown: &str) -> Vec<String> {
 
 fn docs(root: &Path) -> Result<(), String> {
     let mut files = Vec::new();
-    files_under(&root.join("docs"), &mut files);
+    files_under(root, &root.join("docs"), &mut files)?;
     // The Welcome notebook's content files are laid out by `cargo xtask demo`; their links
     // are relative to the pages they become, and the generator checks every one against the
     // built notebook. The built notebook under docs/demo/DemoNotebook is checked here.
@@ -275,18 +317,11 @@ fn fixed_text(name: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
 
 fn text(root: &Path, fix: bool) -> Result<(), String> {
     let mut files = Vec::new();
-    files_under(root, &mut files);
-    let skip = ["target", ".git", "out", "prototypes", "snapshots", "my-notebooks"];
+    files_under(root, root, &mut files)?;
     let mut problems = Vec::new();
     let mut n = 0;
     for f in files {
         let rel = f.strip_prefix(root).unwrap_or(&f);
-        if rel.components().any(|c| {
-            let component = c.as_os_str().to_string_lossy();
-            skip.contains(&component.as_ref()) || component.starts_with(".work-officeimo-")
-        }) {
-            continue;
-        }
         let name = rel.to_string_lossy().replace('\\', "/");
         if !(name.ends_with(".rs") || name.ends_with(".toml") || name.ends_with(".md")) {
             continue;
@@ -412,8 +447,8 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
 fn same_directory(left: &Path, right: &Path) -> Result<bool, String> {
     let mut left_files = Vec::new();
     let mut right_files = Vec::new();
-    files_under(left, &mut left_files);
-    files_under(right, &mut right_files);
+    comparison_files_under(left, &mut left_files)?;
+    comparison_files_under(right, &mut right_files)?;
     let relative = |root: &Path, files: &mut Vec<PathBuf>| -> Result<(), String> {
         for file in files.iter_mut() {
             *file = file.strip_prefix(root).map_err(|e| format!("compare {}: {e}", file.display()))?.to_path_buf();
@@ -527,8 +562,120 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
+    struct TestTree(PathBuf);
+
+    impl TestTree {
+        fn new() -> Self {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock").as_nanos();
+            let path = std::env::temp_dir().join(format!("notecraft-xtask-{}-{stamp}", std::process::id()));
+            fs::create_dir(&path).expect("create test tree");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
     const MODEL: &str = "[package]\nname = \"notecraft-model\"\n\n[dependencies]\n";
     const GOOD_STORE: &str = "[package]\nname = \"notecraft-store\"\n[dependencies]\nnotecraft-model = { workspace = true }\nnotecraft-formats = { workspace = true }\n[dev-dependencies]\negui_kittest = { workspace = true }\n";
+
+    #[test]
+    fn generated_exclusions_apply_only_at_repository_root() {
+        let tree = TestTree::new();
+        for name in ["dist", "out", "target", "snapshots", ".phase1"] {
+            assert!(generated_root_entry(&tree.0, &tree.0.join(name)));
+            assert!(!generated_root_entry(&tree.0, &tree.0.join("docs").join(name)));
+            assert!(!generated_root_entry(&tree.0, &tree.0.join("assets").join(name)));
+        }
+        assert!(!generated_root_entry(&tree.0, &tree.0.join("docs")));
+    }
+
+    #[test]
+    fn walker_includes_nested_source_directories_with_generated_names() {
+        let tree = TestTree::new();
+        let nested = tree.0.join("docs/out");
+        fs::create_dir_all(&nested).expect("nested docs");
+        fs::write(nested.join("page.md"), "[link](missing.md)").expect("page");
+        let mut files = Vec::new();
+        files_under(&tree.0, &tree.0, &mut files).expect("walk source");
+        assert_eq!(files, vec![nested.join("page.md")]);
+        assert!(text(&tree.0, false).is_ok());
+        fs::write(nested.join("page.md"), "bad \u{2014} punctuation").expect("bad text");
+        assert!(text(&tree.0, false).is_err(), "nested generated names must not bypass text checks");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walker_rejects_source_file_symlinks() {
+        let tree = TestTree::new();
+        fs::write(tree.0.join("source.md"), "source").expect("source");
+        std::os::unix::fs::symlink("source.md", tree.0.join("linked.md")).expect("file link");
+        assert!(files_under(&tree.0, &tree.0, &mut Vec::new()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walker_rejects_source_directory_symlinks() {
+        let tree = TestTree::new();
+        fs::create_dir(tree.0.join("docs")).expect("docs");
+        std::os::unix::fs::symlink("docs", tree.0.join("linked")).expect("directory link");
+        assert!(files_under(&tree.0, &tree.0, &mut Vec::new()).is_err());
+        assert!(files_under(&tree.0, &tree.0.join("linked"), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn walker_excludes_generated_root_directories() {
+        let tree = TestTree::new();
+        for name in [".git", ".phase1", "dist", "target", "out", "prototypes", "snapshots", "my-notebooks", ".work-officeimo-test"] {
+            let generated = tree.0.join(name);
+            fs::create_dir(&generated).expect("generated directory");
+            fs::write(generated.join("not-source.md"), "generated").expect("generated file");
+            #[cfg(unix)]
+            std::os::unix::fs::symlink("/Applications", generated.join("Applications")).expect("DMG link");
+        }
+        let mut files = Vec::new();
+        files_under(&tree.0, &tree.0, &mut files).expect("skip generated trees");
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn walker_preserves_regular_files_with_generated_names() {
+        let tree = TestTree::new();
+        let source = tree.0.join("out");
+        fs::write(&source, "source").expect("source file");
+        let mut files = Vec::new();
+        files_under(&tree.0, &tree.0, &mut files).expect("walk regular file");
+        assert_eq!(files, vec![source]);
+    }
+
+    #[test]
+    fn directory_comparison_sees_nested_files_even_with_generated_names() {
+        let tree = TestTree::new();
+        let left = tree.0.join("left");
+        let right = tree.0.join("right");
+        fs::create_dir_all(left.join("snapshots")).expect("left");
+        fs::create_dir_all(right.join("snapshots")).expect("right");
+        fs::write(left.join("snapshots/page.md"), "original").expect("source file");
+        fs::write(right.join("snapshots/page.md"), "changed").expect("target file");
+        assert_eq!(same_directory(&left, &right), Ok(false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_comparison_rejects_an_extra_symlink() {
+        let tree = TestTree::new();
+        let left = tree.0.join("left");
+        let right = tree.0.join("right");
+        fs::create_dir(&left).expect("left");
+        fs::create_dir(&right).expect("right");
+        fs::write(left.join("page.md"), "same").expect("left page");
+        fs::write(right.join("page.md"), "same").expect("right page");
+        std::os::unix::fs::symlink("page.md", right.join("extra.md")).expect("extra link");
+        assert!(same_directory(&left, &right).is_err());
+    }
 
     #[test]
     fn reads_package_and_dependencies() {

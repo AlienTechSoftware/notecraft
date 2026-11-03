@@ -3728,8 +3728,7 @@ fn dragging_a_picture_right_edge_resizes_it() {
 
 // The native attachment-card double-click path is manually verified on Windows. The Linux
 // headless WGPU runner does not deliver the rendered attachment hit target consistently: the
-// same test stalls for the full suite timeout there while passing locally. Keep the test active
-// on the platform where the interaction is supported and covered by the manual release check.
+// same test stalls for the full suite timeout there while passing locally.
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn double_clicking_an_attachment_card_opens_it() {
@@ -3741,10 +3740,14 @@ fn double_clicking_an_attachment_card_opens_it() {
     let mut h = harness(app, LIGHT);
     settle(&mut h);
     ask(&mut h, "engine.execute", json!({"command": "page.attach", "params": {"path": page, "source": source.to_string_lossy()}})).expect("attach");
+    // Windows may extract a PNG Shell icon. macOS uses the generated SVG fallback.
+    // Name the icon that the attachment command actually wrote, so the rendered card exists.
+    let icon = if PathBuf::from(&page).join("assets/brief.docx.png").is_file() { "png" } else { "svg" };
+    assert!(PathBuf::from(&page).join(format!("assets/brief.docx.{icon}")).is_file(), "attachment icon exists");
     ask(
         &mut h,
         "engine.execute",
-        json!({"command": "page.save", "params": {"path": page, "body": "[![brief.docx](assets/brief.docx.png)](assets/brief.docx)"}}),
+        json!({"command": "page.save", "params": {"path": page, "body": format!("[![brief.docx](assets/brief.docx.{icon})](assets/brief.docx)")}}),
     )
     .expect("save attachment card");
     ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page, "boxes": "0,0,300,1"}}))
