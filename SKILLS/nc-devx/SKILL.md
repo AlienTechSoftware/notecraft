@@ -230,8 +230,8 @@ services or signing infrastructure without explicit owner approval.
 |---|---|---|---|---|
 | **1. Code quality** | fmt, clippy, static checks, docs/assets/demo checks, and coverage | Every pull request and main push as configured | Check results and diagnostics | Required quality checks; coverage remains warning-only |
 | **2. Platform build/test** | Prove the source builds and applicable tests pass on Linux, Windows, and macOS | Every pull request | Per-platform logs and test results | Required for merge; no installers |
-| **3. Packaging** | Build and inspect MSI/ZIP, Linux packages, and macOS artifacts | Manual, release branch/tag, or packaging-input changes | Versioned, checksumed workflow artifacts | Never publishes by itself |
-| **4. Installation/deployment** | Install/uninstall, first launch, notebook placement, upgrade/data persistence, then publish | Release candidate or explicit manual approval | Installation evidence and an approved release | Only this lane may deploy or publish |
+| **3. Packaging** | Build and inspect MSI/ZIP, Linux packages, and macOS artifacts | Manual `Packaging` workflow only | Versioned, checksumed workflow artifacts | Never publishes by itself |
+| **4. Installation/deployment** | Install/uninstall, first launch, notebook placement, upgrade/data persistence, then publish | Manual `Release` workflow after selecting a successful Packaging run | Installation evidence and an approved release | Only this lane may deploy or publish |
 
 Rules:
 
@@ -244,6 +244,8 @@ Rules:
   prove that an installer places files correctly.
 - Record runner label, Rust/toolchain version, artifact name, architecture, demo payload, notices,
   and known limitations in packaging results.
+- The `Packaging` workflow must finish successfully before `Release` is run. Pass its run ID to
+  `Release`; the release workflow downloads those exact artifacts instead of rebuilding them.
 
 ### Linear history is a policy choice
 

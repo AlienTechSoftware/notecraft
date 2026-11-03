@@ -37,11 +37,11 @@ name or mark.
 
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.
-2. Start the build, either way:
-   - Actions, Release, Run workflow (the version box overrides `Cargo.toml` for a test run), or
-   - merge `main` into the `release` branch and push.
-3. The run builds on a Windows runner and drafts a GitHub Release `NoteCraft v<version>`. Nothing
-   is published. Try the zip on a clean machine, then publish the draft by hand.
+2. Run Actions, Packaging, Run workflow on the approved commit. This manually builds and verifies
+   Linux, Windows, and macOS artifacts and uploads them without publishing anything.
+3. After the Packaging run is green, run Actions, Release, Run workflow and enter that run ID.
+   Release downloads those exact artifacts and drafts `NoteCraft v<version>`. Nothing is published.
+   Try the packages on clean machines, then publish the draft by hand.
 
 ### Notes and the draft
 
@@ -73,11 +73,10 @@ dialog shows once.
 Each file also gets a build provenance attestation. Check a download with
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-The official release workflow currently builds Windows x64 only. macOS test packages have been
-built and launched locally on Apple Silicon. A separate pull-request workflow is configured to
-build review artifacts for Apple Silicon and Intel; these are not official macOS releases. A
-maintainer must complete native Intel and clean-machine testing, Developer ID signing and
-notarization before public macOS distribution. This work does not change Linux release packaging.
+The manual Packaging workflow builds Windows x64, Linux x64, and macOS Apple Silicon/Intel
+artifacts. They are not official public releases until the separate Release workflow is run and
+the draft is reviewed. A maintainer must complete native Intel and clean-machine testing,
+Developer ID signing and notarization before public macOS distribution.
 
 ## Signing
 
