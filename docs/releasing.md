@@ -73,7 +73,11 @@ dialog shows once.
 Each file also gets a build provenance attestation. Check a download with
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-Windows x64 is the only target. macOS and Linux are untested, so they are not built.
+The official release workflow currently builds Windows x64 only. macOS test packages have been
+built and launched locally on Apple Silicon. A separate pull-request workflow is configured to
+build review artifacts for Apple Silicon and Intel; these are not official macOS releases. A
+maintainer must complete native Intel and clean-machine testing, Developer ID signing and
+notarization before public macOS distribution. This work does not change Linux release packaging.
 
 ## Signing
 
