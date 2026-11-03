@@ -3142,6 +3142,14 @@ Paper,12,
     // ribbon tab has just opened. Retry the same user action a bounded number of times;
     // this keeps the test honest while removing a renderer scheduling flake.
     for attempt in 0..3 {
+        if h.query_all_by_label("Read back from it").count() == 0 {
+            h.get_by_label("Table").click();
+            settle(&mut h);
+        }
+        if h.query_all_by_label("Read back from it").count() == 0 {
+            assert!(attempt < 2, "table ribbon did not expose read-back: {}", h.state().status());
+            continue;
+        }
         h.get_by_label("Read back from it").click();
         settle(&mut h);
         if h.state().status().contains("Read back") {
