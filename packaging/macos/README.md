@@ -35,8 +35,10 @@ Set `DIST` and `CARGO_TARGET_DIR` to choose other output locations. The version 
 `NoteCraft.icns` derived from the attributed PNG in `assets/brand/`, both project licenses,
 `NOTICE`, `ATTRIBUTION.md`, and the additional notices in `licenses/`.
 
-The GUI does not require the CLI. Its demo and UI assets are embedded in the executable. The
-package does not claim file type associations: open notebooks using NoteCraft's own interface.
+The GUI does not require the CLI. The package carries the generated `docs/demo/DemoNotebook`
+under `Contents/Resources/demo` so package inspection can confirm the release payload. The
+application's embedded demo remains the runtime source used for first launch. The package does
+not claim file type associations: open notebooks using NoteCraft's own interface.
 
 ## Install and use
 
@@ -75,7 +77,8 @@ publishing. The Apple Silicon package does not depend on those checks.
 Set `MACOS_SIGN_IDENTITY` to a Developer ID Application identity to sign with the hardened
 runtime and a secure timestamp. Signing credentials are never stored in this repository. The
 script does not submit packages for notarization; a maintainer must notarize and staple the app
-and DMG, then check them on a clean Mac before public distribution.
+and DMG, then check them on a clean Mac before public distribution. `CFBundleVersion` is a numeric
+repository build count, while the full Cargo version is retained in `NoteCraftVersion`.
 
 ## Troubleshooting
 

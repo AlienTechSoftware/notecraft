@@ -31,6 +31,7 @@ VERSION="$(cd "$ROOT" && cargo metadata --no-deps --locked --format-version 1 | 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "invalid Cargo version: $VERSION" >&2; exit 1; }
 SHORT_VERSION="${VERSION%%-*}"
 BUILD_SHA="$(git -C "$ROOT" rev-parse --short=12 HEAD)"
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || printf '1')"
 
 sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
 check_version() {
@@ -144,7 +145,14 @@ for doc in LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md; do
   install -m 644 "$ROOT/$doc" "$APP/Contents/Resources/$doc"
 done
 ditto "$ROOT/licenses" "$APP/Contents/Resources/licenses"
+mkdir -p "$APP/Contents/Resources/demo"
+ditto "$ROOT/docs/demo/DemoNotebook" "$APP/Contents/Resources/demo/DemoNotebook"
+[[ -s "$APP/Contents/Resources/demo/DemoNotebook/html/00-start/welcome/index.html" ]] || {
+  echo "demo notebook was not staged in the macOS app" >&2
+  exit 1
+}
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
+  -e "s/@BUILD_NUMBER@/$BUILD_NUMBER/g" \
   -e "s/@BUILD_SHA@/$BUILD_SHA/g" "$HERE/Info.plist.in" > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -lint "$APP/Contents/Info.plist"

@@ -61,6 +61,10 @@ mounted=1
 APP="$MOUNT/NoteCraft.app"
 [[ -x "$APP/Contents/MacOS/NoteCraft" ]]
 [[ -s "$APP/Contents/Resources/NoteCraft.icns" ]]
+[[ -s "$APP/Contents/Resources/demo/DemoNotebook/html/00-start/welcome/index.html" ]] || {
+  echo "demo notebook missing from app bundle" >&2
+  exit 1
+}
 for doc in LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md licenses/PDF-RENDERING-NOTICES.txt; do
   [[ -s "$APP/Contents/Resources/$doc" ]] || { echo "app notice missing: $doc" >&2; exit 1; }
 done
@@ -68,6 +72,8 @@ plutil -lint "$APP/Contents/Info.plist"
 [[ "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" = com.alientechsoftware.notecraft ]]
 [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist")" = "${VERSION%%-*}" ]]
 [[ "$(plutil -extract NoteCraftVersion raw -o - "$APP/Contents/Info.plist")" = "$VERSION" ]]
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || printf '1')"
+[[ "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" = "$BUILD_NUMBER" ]]
 codesign --verify --strict --deep --verbose=2 "$APP"
 check_provenance "$MOUNT/BuildProvenance.txt" "$APP/Contents/MacOS/NoteCraft"
 for arch in $EXPECTED; do
