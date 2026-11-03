@@ -3142,11 +3142,16 @@ Paper,12,
     // ribbon tab has just opened. Retry the same user action a bounded number of times;
     // this keeps the test honest while removing a renderer scheduling flake.
     for attempt in 0..3 {
+        // Re-establish the table caret on every retry. On macOS the ribbon can remain
+        // visible after an accessibility click even though the editor has lost its caret.
+        if attempt > 0 {
+            ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("back into the table");
+            settle(&mut h);
+        }
         if h.query_all_by_label("Read back from it").count() == 0 {
             if h.query_all_by_label("Table").count() > 0 {
                 h.get_by_label("Table").click();
             } else {
-                // Re-establish the table caret before asking the ribbon to expose its tab.
                 ask(&mut h, "ui.click", json!({"x": cell.center().x, "y": cell.center().y})).expect("back into the table");
                 settle(&mut h);
                 if h.query_all_by_label("Table").count() > 0 {
