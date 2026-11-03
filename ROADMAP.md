@@ -46,6 +46,20 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 
 ## Next (in this order)
 
+### v0.0.9 focus
+
+- **Infinite canvas**: drawing outside text blocks and across empty page space.
+- **Performance markers**: repeatable markers and measurements for startup, page loading,
+  editing, saving, search, memory, and rendering.
+- **UI test automation**: reliable scripted user journeys with screenshots and diagnostics.
+- **Cross-platform CI**: build and test Linux, Windows, and macOS on every pull request;
+  keep packaging and deployment in separate workflows.
+
+### v0.0.10 focus
+
+- **Android platform support**: build pipeline, touch UI, mobile file access, and feature parity
+  with v0.0.9.
+
 1. **Import, the rest**: the importer runs (`notecraft-cli import onenote`) and has been tried on
    a real set of 443 backup files. Still to do: ink, tags and page dates, the notebook table of
    contents (`.onetoc2`) for section order and colours, `.onepkg` packages, an import command in
