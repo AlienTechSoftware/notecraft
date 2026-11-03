@@ -3174,6 +3174,7 @@ Paper,12,
         // synthetic accessibility activation. Use the same coordinate click a user makes.
         let read_back = h.get_by_label("Read back from it").rect();
         ask(&mut h, "ui.click", json!({"x": read_back.center().x, "y": read_back.center().y})).expect("read back");
+        h.get_by_label("Read back from it").click();
         settle(&mut h);
         let body = h.state().body().unwrap_or_default().to_string();
         if body.contains("Tea, green") {
