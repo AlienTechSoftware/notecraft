@@ -3134,11 +3134,10 @@ impl NoteCraftApp {
             self.complain(&format!("No {name} beside this page: hand the table over first"));
             return;
         };
-        let Some(table) = notecraft_formats::csv::to_table(&text) else {
+        let Some((table, rows, columns)) = table_from_gridcraft_csv(&text) else {
             self.complain("That file has nothing in it to put back");
             return;
         };
-        let (rows, columns) = pageedit::table_size(&table).unwrap_or((0, 0));
         if let Some(block) = ed.blocks.get_mut(at) {
             *block = table;
         }
@@ -5829,6 +5828,12 @@ impl NoteCraftApp {
     }
 }
 
+fn table_from_gridcraft_csv(text: &str) -> Option<(notecraft_formats::markdown::Block, usize, usize)> {
+    let table = notecraft_formats::csv::to_table(text)?;
+    let (rows, columns) = pageedit::table_size(&table).unwrap_or((0, 0));
+    Some((table, rows, columns))
+}
+
 /// One swatch of the theme switcher: the surface colour, ringed and dotted in the accent.
 fn theme_swatch(ui: &mut Ui, theme: Theme, selected: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
@@ -5987,6 +5992,16 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
 #[cfg(test)]
 mod alert_tests {
     use super::*;
+
+    #[test]
+    fn gridcraft_csv_read_back_preserves_quoted_cells_and_adds_columns() {
+        let (table, rows, columns) =
+            table_from_gridcraft_csv("Item,Cost,Note\n\"Tea, green\",3.50,\"she said \"\"best\"\"\"\nPaper,12,\n").expect("CSV table");
+        assert_eq!((rows, columns), (3, 3));
+        let body = pageedit::to_body(PageFormat::Cmgfm, &[table]);
+        assert!(body.contains("Tea, green"));
+        assert!(body.contains("she said \"best\""));
+    }
 
     #[test]
     fn maximum_sensitivity_reaches_four_times_the_neutral_pen_width() {
