@@ -85,6 +85,12 @@
   find: 'if\s+!entry\.path\(\)\.is_file\(\)|if\s+!std::fs::metadata\(entry\.path\(\)\)\.is_ok_and\(\|m\| m\.is_file\(\)\)'
   replace: 'if !std::fs::metadata(entry.path()).is_ok_and(|m| m.is_file())'
 
+# A page's pictures (preview.rs image_bytes) are read with std::fs::read, which has no disk in the browser: the
+# picture drew as its alt text. The same one-line rule as codeview.rs reads them from the in-memory notebook.
+- file: crates/ui-egui/src/preview.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+
 # File::open in the browser must read from the same in-memory notebook as read_to_string and read_dir.
 - file: crates/model/src/playground.rs
   find: 'pub\s+mod\s+fs\s*\{'
