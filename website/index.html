@@ -13,6 +13,15 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="styles.css">
+<script>
+// Default is dark (one of the app's real 14 themes), not whatever the OS prefers —
+// set before first paint so there's no flash. See AGENTS.md / theme.js.
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("notecraft-theme"); } catch (e) {}
+  document.documentElement.setAttribute("data-theme", saved || "dark-default");
+})();
+</script>
 </head>
 <body>
 
@@ -21,11 +30,18 @@
     <img src="assets/icon-64.png" alt="" width="32" height="32">
     <span>NoteCraft</span>
   </a>
-  <nav>
+  <div class="nav-right">
     <a href="https://github.com/AlienTechSoftware/notecraft">GitHub</a>
     <a href="https://github.com/AlienTechSoftware/notecraft#readme">Docs</a>
+    <div class="theme-picker">
+      <button type="button" class="theme-toggle" aria-haspopup="true">
+        <span class="swatch" aria-hidden="true"></span>
+        Theme
+      </button>
+      <div class="theme-popover" role="menu" aria-label="Choose a theme"></div>
+    </div>
     <a href="demo/" class="cta-small">Open demo</a>
-  </nav>
+  </div>
 </header>
 
 <main>
@@ -88,5 +104,6 @@
   </p>
 </footer>
 
+<script src="theme.js"></script>
 </body>
 </html>
