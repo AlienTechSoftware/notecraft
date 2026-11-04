@@ -225,6 +225,13 @@ main {
   font-weight: 600;
 }
 
+.testing-badge {
+  display: block;
+  margin: 0 auto 14px;
+  height: auto;
+  max-width: 90%;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -266,11 +273,26 @@ main {
   margin: 0 auto;
 }
 
+.wordmark-banner {
+  display: block;
+  margin: 8px auto 28px;
+  max-width: 90%;
+  height: auto;
+}
+
 .features {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
   padding: 24px 0 56px;
+}
+
+.crafting-illustration {
+  display: block;
+  margin: 0 auto 48px;
+  max-width: 90%;
+  height: auto;
+  border-radius: 20px;
 }
 
 .feature {
