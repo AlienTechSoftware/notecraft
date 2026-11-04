@@ -83,8 +83,10 @@ jobs:
       - name: Install wasm-opt
         run: |
           set -eu
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq binaryen
+          # Pinned, not apt's binaryen: the Ubuntu runner's packaged version is too old to know
+          # --enable-bulk-memory-opt (confirmed live, 2026-11-04: "Unknown option").
+          curl -sSfL https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz | tar -xz -C /tmp
+          sudo cp /tmp/binaryen-version_133/bin/wasm-opt /usr/local/bin/
           wasm-opt --version
 
       - name: Install PyYAML
