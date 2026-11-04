@@ -266,9 +266,9 @@ main {
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--editor);
   color: var(--text);
-  border: 1px solid var(--faint);
+  border: 1px solid color-mix(in srgb, var(--text) 28%, var(--panel));
 }
 
 .demo-note {
