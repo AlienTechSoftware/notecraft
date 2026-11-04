@@ -266,9 +266,21 @@ main {
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--editor);
   color: var(--text);
-  border: 1px solid var(--faint);
+  border: 1px solid color-mix(in srgb, var(--text) 28%, var(--panel));
+}
+
+[data-theme^="light"] .btn-secondary {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--link);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--panel));
+}
+
+[data-theme^="dark"] .btn-secondary {
+  background: color-mix(in srgb, var(--accent) 26%, var(--panel));
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--panel));
 }
 
 .demo-note {
