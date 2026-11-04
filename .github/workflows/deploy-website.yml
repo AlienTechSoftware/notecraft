@@ -1,0 +1,101 @@
+# Deploy website/ (notecraft.cloud) to Azure Static Web Apps.
+#
+# DRAFT — written but not yet run or pushed. The static-page part (checkout, azure/static-web-apps-deploy)
+# is the standard pattern Azure's own GitHub integration generates; the "fetch the demo build" step below is
+# real (the release and asset naming were confirmed live against daijro/openplayground's `builds` release —
+# see repo's website/README or JOURNAL.md for the commands used to verify it) but has not been exercised by
+# an actual workflow run. Review it before enabling.
+#
+# What this buys, why the website lives in this repo instead of its own:
+#   - Every push to main that touches website/** redeploys the production site.
+#   - Every pull_request gets its own live preview URL (Azure Static Web Apps' built-in preview
+#     environments, free tier allows 3) — this is the whole reason the site is a subfolder here rather
+#     than a separate repo: Azure's preview-per-PR only works when the Static Web App is linked to the
+#     same repo the PR is opened against.
+#
+# Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
+# token — create the Free-tier resource first, then copy its token here; never commit it).
+#
+# The demo build (website/demo/, gitignored — see .gitignore) is NOT built in this workflow. It is built
+# continuously by daijro/openplayground's own pipeline (patches/onenote.yaml, scripts/build.mjs), which
+# tracks this repo's `main` on its "head" channel and publishes the result as a GitHub release asset named
+# onenote-head-<short-sha>-<patch-hash>.zip on daijro/openplayground's `builds` release (tag "builds").
+# Confirmed live on 2026-11-04: the asset for commit 33c0479 (this repo's then-current main) was already
+# published there. This workflow downloads that asset instead of re-running the whole patch+trunk+wasm-opt
+# pipeline a second time inside this repo.
+#
+# Known gap, left for review rather than guessed at: if a push lands here before openplayground's own
+# pipeline (15-minute poll, per its README) has caught up, no asset will match this commit yet. The "Fetch
+# demo build" step below fails loudly in that case (no silent fallback to a stale build) rather than
+# deploying a demo that doesn't match the pushed source — decide in review whether to retry-with-backoff,
+# fall back to the newest available build with a loud warning, or something else.
+
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+
+permissions:
+  contents: read
+  pull-requests: write # Azure's action comments the preview URL on the PR
+
+concurrency:
+  group: deploy-website-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: true
+
+jobs:
+  # Closing (or merging) a PR tears down its preview environment. No demo fetch needed for a close.
+  close_preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: close
+
+  deploy:
+    if: github.event_name == 'push' || github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch the demo build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          short_sha="${SHA:0:7}"
+          asset=$(gh release view builds --repo daijro/openplayground --json assets \
+            --jq ".assets[] | select(.name | test(\"^onenote-head-${short_sha}-\")) | .name" | head -1)
+          if [ -z "$asset" ]; then
+            echo "::error::No onenote-head-${short_sha}-*.zip asset yet on daijro/openplayground's 'builds' release."
+            echo "::error::Its own build pipeline polls every ~15 minutes (see its README) — it may not have caught up to this commit yet. Re-run this job, or see this workflow's header for other options."
+            exit 1
+          fi
+          echo "Using $asset"
+          gh release download builds --repo daijro/openplayground --pattern "$asset" --dir /tmp/demo-zip
+          mkdir -p website/demo
+          # ARCHIVE in build.mjs is "tar" on Windows dev hosts, "zip" on GitHub runners (linux) — this
+          # runs on ubuntu-latest, so the asset is a real zip.
+          unzip -q "/tmp/demo-zip/$asset" -d website/demo
+
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: "website"
+          output_location: ""
+          skip_app_build: true

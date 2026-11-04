@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoteCraft — Notes as plain files, in plain folders.</title>
+<meta name="description" content="NoteCraft is an open, clean-room alternative to OneNote, written in pure Rust. Notes live as plain HTML or Markdown files in plain folders, so any synced folder gives you cloud sync and backup — no server.">
+<link rel="icon" type="image/png" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/icon-128.png">
+<meta property="og:title" content="NoteCraft — Notes as plain files, in plain folders.">
+<meta property="og:description" content="An open, clean-room alternative to OneNote, written in pure Rust.">
+<meta property="og:image" content="assets/social-light.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="/">
+    <img src="assets/icon-64.png" alt="" width="32" height="32">
+    <span>NoteCraft</span>
+  </a>
+  <nav>
+    <a href="https://github.com/AlienTechSoftware/notecraft">GitHub</a>
+    <a href="https://github.com/AlienTechSoftware/notecraft#readme">Docs</a>
+    <a href="demo/" class="cta-small">Open demo</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <img class="hero-icon" src="assets/icon-256.png" alt="NoteCraft koala logo" width="140" height="140">
+    <h1>NoteCraft</h1>
+    <p class="tagline">Notes as plain files, in plain folders.</p>
+    <p class="subtitle">An open, clean-room alternative to OneNote, written in pure Rust.</p>
+
+    <ul class="pills">
+      <li>Rust</li>
+      <li>HTML + Markdown</li>
+      <li>No server</li>
+      <li>Windows, macOS, Linux</li>
+    </ul>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="demo/">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        Open the live demo
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/AlienTechSoftware/notecraft">View source on GitHub</a>
+    </div>
+    <p class="demo-note">Runs fully in your browser — a ~9&nbsp;MB WebAssembly download, nothing installed, nothing sent anywhere.</p>
+  </section>
+
+  <section class="features">
+    <div class="feature">
+      <h3>Your files stay yours</h3>
+      <p>Every notebook, section and page is a plain folder on disk. Point any sync tool — Dropbox, OneDrive, Syncthing, git — at the folder and you have backup and multi-device sync, with no NoteCraft server involved.</p>
+    </div>
+    <div class="feature">
+      <h3>Nest without limits</h3>
+      <p>Notebooks, section groups, sections and pages can all hold sub-pages, to any depth. OneNote stops at three levels of sub-pages — NoteCraft doesn't.</p>
+    </div>
+    <div class="feature">
+      <h3>HTML or Markdown, your call</h3>
+      <p>Pages are stored as clean HTML or CommonMark+GFM (<code>index.md</code>), configurable per page, section, notebook or globally. Open a page in any editor and it still makes sense.</p>
+    </div>
+    <div class="feature">
+      <h3>Clean-room, cross-platform</h3>
+      <p>Built from public requirements and documentation only — no Microsoft source, no decompiled binaries. One Rust codebase, native on Windows, macOS and Linux.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>
+    NoteCraft is open source under <abbr title="MIT OR Apache-2.0">MIT OR Apache-2.0</abbr>.
+    Copyright © 2026 AlienTech Software and the NoteCraft contributors.
+  </p>
+  <p>
+    The in-browser demo is built with <a href="https://github.com/daijro/openplayground">OpenPlayground</a>,
+    created by <a href="https://github.com/daijro">daijro</a> — thank you for making it possible to try
+    native Rust apps like this one with nothing to install.
+  </p>
+  <p class="trademark">
+    NoteCraft is not affiliated with, endorsed by or sponsored by Microsoft. OneNote is a trademark of
+    Microsoft Corporation, named here only to say what NoteCraft is an alternative to.
+  </p>
+</footer>
+
+</body>
+</html>
