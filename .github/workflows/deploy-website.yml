@@ -44,6 +44,10 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+    # Manual production redeploy with no source change (e.g. to retry once openplayground has
+    # caught up to a commit, or to refresh the live demo after a notecraft change with no website
+    # change of its own). Always deploys the demo build matching main's current tip.
 
 permissions:
   contents: read

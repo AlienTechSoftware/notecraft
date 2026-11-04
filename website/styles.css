@@ -74,11 +74,16 @@ a { color: var(--link); }
 }
 
 .nav-right a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-decoration: none;
   color: var(--band-text);
   opacity: 0.85;
   font-size: 0.95rem;
 }
+
+.nav-right a svg { flex-shrink: 0; }
 
 .nav-right a:hover { opacity: 1; }
 
@@ -329,6 +334,21 @@ footer p { margin: 6px 0; }
 @media (max-width: 640px) {
   .hero h1 { font-size: 2.2rem; }
   .features { grid-template-columns: 1fr; }
-  .nav-right { gap: 10px; }
   .theme-popover { right: -12px; }
+
+  .nav {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .nav-right {
+    gap: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .nav-right .cta-small {
+    margin-left: auto;
+  }
 }
