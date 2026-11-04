@@ -1,13 +1,20 @@
 # Deploy website/ (notecraft.cloud) to Azure Static Web Apps.
 #
-# Exercised live on 2026-11-04 via PR #37: the Azure deploy itself works; the first run's demo fetch
-# failed exactly as this file originally predicted (openplayground hadn't rebuilt the pushed commit yet)
-# and, at the time, correctly failed the whole job rather than deploy a mismatched demo — which also meant
-# the landing page didn't deploy either, even though it has nothing to do with openplayground. Fixed: the
-# "Fetch the demo build" step below is now best-effort and never fails the job. The site (landing page,
-# everything except demo/) always deploys. The demo falls back, in order: (1) the build matching the exact
-# commit being deployed, (2) the newest available onenote-head-*.zip build (a commit or two behind, loudly
-# warned in the run's log), (3) no demo this run (website/demo/ stays empty) if neither exists.
+# The demo (website/demo/, gitignored — see .gitignore) is built FROM SOURCE in this workflow, by this
+# repo, with no external build service. Earlier versions of this file fetched a pre-built wasm from
+# daijro/openplayground's own pipeline instead; that worked but meant every deploy depended on their build
+# having already caught up to the pushed commit (it visibly hadn't, the first few times this ran). Fully
+# self-sufficient now: the "Build the demo" step below applies .github/web-build/web.diff (new files:
+# apps/notecraft-web, crates/model/src/playground.rs, crates/ui-egui/src/playground_clipboard.rs) and
+# .github/web-build/patches.yaml (43 small source edits) to THIS checkout, then builds with trunk + wasm-opt
+# itself. That recipe is adapted from daijro/openplayground's patches/onenote.yaml (SPDX MIT OR Apache-2.0,
+# same as this repo) — see the website's footer for the credit, and .github/web-build/patches.yaml's own
+# header for the full provenance note. apply-web-diff.py does NOT use `git apply`: web.diff's own @@ hunk
+# headers are wrong for two of its six files (confirmed by counting: playground.rs claims 277 lines, is
+# really 280; playground_clipboard.rs claims 129, is really 206), and `git apply` trusts the header and
+# silently truncates rather than erroring. Verified locally end to end on 2026-11-04 in an isolated clone:
+# all 43 patches apply, `cargo check --target wasm32-unknown-unknown` passes, and a full `trunk build
+# --release` (the playground-web profile: LTO fat, one codegen unit) produces a working demo.
 #
 # What this buys, why the website lives in this repo instead of its own:
 #   - Every push to main that touches website/** redeploys the production site.
@@ -19,13 +26,6 @@
 # Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
 # token — create the Free-tier resource first, then copy its token here; never commit it). Set on
 # AlienTechSoftware/notecraft 2026-11-04.
-#
-# The demo build (website/demo/, gitignored — see .gitignore) is NOT built in this workflow. It is built
-# continuously by daijro/openplayground's own pipeline (patches/onenote.yaml, scripts/build.mjs), which
-# tracks this repo's `main` on its "head" channel and publishes the result as a GitHub release asset named
-# onenote-head-<short-sha>-<patch-hash>.zip on daijro/openplayground's `builds` release (tag "builds").
-# This workflow downloads that asset instead of re-running the whole patch+trunk+wasm-opt pipeline a
-# second time inside this repo.
 
 name: Deploy website
 
@@ -42,9 +42,9 @@ on:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
-    # Manual production redeploy with no source change (e.g. to retry once openplayground has
-    # caught up to a commit, or to refresh the live demo after a notecraft change with no website
-    # change of its own). Always deploys the demo build matching main's current tip.
+    # Manual production redeploy with no website/** source change (e.g. to refresh the live demo
+    # after an app-only commit, which this workflow's path filters wouldn't otherwise trigger on).
+    # Always builds and deploys from main's current tip.
 
 permissions:
   contents: read
@@ -71,33 +71,47 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fetch the demo build (best-effort — never blocks the site deploy)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install the wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install trunk
         run: |
-          set -u
-          mkdir -p website/demo
-          short_sha="${SHA:0:7}"
-          asset=$(gh release view builds --repo daijro/openplayground --json assets \
-            --jq ".assets[] | select(.name | test(\"^onenote-head-${short_sha}-\")) | .name" | head -1)
-          if [ -z "$asset" ]; then
-            echo "::warning::No onenote-head-${short_sha}-*.zip asset yet on daijro/openplayground's 'builds' release (its own pipeline polls ~15 min). Falling back to the newest available build so the site still deploys, with a demo that may be a commit or two behind."
-            asset=$(gh release view builds --repo daijro/openplayground --json assets \
-              --jq '[.assets[] | select(.name | test("^onenote-head-"))] | sort_by(.updated_at) | last | .name')
-          fi
-          if [ -z "$asset" ] || [ "$asset" = "null" ]; then
-            echo "::warning::No onenote-head-*.zip asset exists at all on daijro/openplayground's 'builds' release. Deploying the site with no demo this run — website/demo/ stays empty."
-            exit 0
-          fi
-          echo "Using $asset"
-          if ! gh release download builds --repo daijro/openplayground --pattern "$asset" --dir /tmp/demo-zip; then
-            echo "::warning::Could not download $asset — deploying the site with no demo this run."
-            exit 0
-          fi
-          # ARCHIVE in build.mjs is "tar" on Windows dev hosts, "zip" on GitHub runners (linux) — this
-          # runs on ubuntu-latest, so the asset is a real zip.
-          unzip -q "/tmp/demo-zip/$asset" -d website/demo
+          set -eu
+          curl -sSfL https://github.com/trunk-rs/trunk/releases/download/v0.22.0/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin
+          trunk --version
+
+      - name: Install wasm-opt
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq binaryen
+          wasm-opt --version
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Build the demo from source (no external build service)
+        run: |
+          set -eu
+          python3 .github/web-build/apply-web-diff.py . .github/web-build/web.diff
+          python3 .github/web-build/apply-web-patches.py . .github/web-build/patches.yaml
+          # Wasm SIMD: off by default for this target: egui's CPU rendering is noticeably faster with it
+          # (this is the same rustflag daijro/openplayground's build.mjs sets), every current browser has it.
+          mkdir -p .cargo
+          printf '[target.wasm32-unknown-unknown]\nrustflags = ["-Ctarget-feature=+simd128"]\n' >> .cargo/config.toml
+          cd apps/notecraft-web
+          trunk build --release --dist "$GITHUB_WORKSPACE/website/demo" --public-url ./
+          cd "$GITHUB_WORKSPACE"
+          for f in website/demo/*.wasm; do
+            # Same flags daijro/openplayground's build.mjs uses (WASM_OPT/WASM_FEATURES): these
+            # features match what Rust's wasm32-unknown-unknown target actually emits with SIMD
+            # enabled (the repo's own .cargo/config.toml, carried over by web.diff's new Cargo.toml).
+            wasm-opt -O3 --strip-debug \
+              --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong \
+              --enable-multivalue --enable-mutable-globals --enable-nontrapping-float-to-int \
+              --enable-reference-types --enable-sign-ext --enable-simd \
+              "$f" -o "$f"
+          done
 
       - uses: Azure/static-web-apps-deploy@v1
         with:
