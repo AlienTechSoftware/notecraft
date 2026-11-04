@@ -1,10 +1,13 @@
 # Deploy website/ (notecraft.cloud) to Azure Static Web Apps.
 #
-# DRAFT — written but not yet run or pushed. The static-page part (checkout, azure/static-web-apps-deploy)
-# is the standard pattern Azure's own GitHub integration generates; the "fetch the demo build" step below is
-# real (the release and asset naming were confirmed live against daijro/openplayground's `builds` release —
-# see repo's website/README or JOURNAL.md for the commands used to verify it) but has not been exercised by
-# an actual workflow run. Review it before enabling.
+# Exercised live on 2026-11-04 via PR #37: the Azure deploy itself works; the first run's demo fetch
+# failed exactly as this file originally predicted (openplayground hadn't rebuilt the pushed commit yet)
+# and, at the time, correctly failed the whole job rather than deploy a mismatched demo — which also meant
+# the landing page didn't deploy either, even though it has nothing to do with openplayground. Fixed: the
+# "Fetch the demo build" step below is now best-effort and never fails the job. The site (landing page,
+# everything except demo/) always deploys. The demo falls back, in order: (1) the build matching the exact
+# commit being deployed, (2) the newest available onenote-head-*.zip build (a commit or two behind, loudly
+# warned in the run's log), (3) no demo this run (website/demo/ stays empty) if neither exists.
 #
 # What this buys, why the website lives in this repo instead of its own:
 #   - Every push to main that touches website/** redeploys the production site.
@@ -14,21 +17,15 @@
 #     same repo the PR is opened against.
 #
 # Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
-# token — create the Free-tier resource first, then copy its token here; never commit it).
+# token — create the Free-tier resource first, then copy its token here; never commit it). Set on
+# AlienTechSoftware/notecraft 2026-11-04.
 #
 # The demo build (website/demo/, gitignored — see .gitignore) is NOT built in this workflow. It is built
 # continuously by daijro/openplayground's own pipeline (patches/onenote.yaml, scripts/build.mjs), which
 # tracks this repo's `main` on its "head" channel and publishes the result as a GitHub release asset named
 # onenote-head-<short-sha>-<patch-hash>.zip on daijro/openplayground's `builds` release (tag "builds").
-# Confirmed live on 2026-11-04: the asset for commit 33c0479 (this repo's then-current main) was already
-# published there. This workflow downloads that asset instead of re-running the whole patch+trunk+wasm-opt
-# pipeline a second time inside this repo.
-#
-# Known gap, left for review rather than guessed at: if a push lands here before openplayground's own
-# pipeline (15-minute poll, per its README) has caught up, no asset will match this commit yet. The "Fetch
-# demo build" step below fails loudly in that case (no silent fallback to a stale build) rather than
-# deploying a demo that doesn't match the pushed source — decide in review whether to retry-with-backoff,
-# fall back to the newest available build with a loud warning, or something else.
+# This workflow downloads that asset instead of re-running the whole patch+trunk+wasm-opt pipeline a
+# second time inside this repo.
 
 name: Deploy website
 
@@ -74,23 +71,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fetch the demo build
+      - name: Fetch the demo build (best-effort — never blocks the site deploy)
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          set -eu
+          set -u
+          mkdir -p website/demo
           short_sha="${SHA:0:7}"
           asset=$(gh release view builds --repo daijro/openplayground --json assets \
             --jq ".assets[] | select(.name | test(\"^onenote-head-${short_sha}-\")) | .name" | head -1)
           if [ -z "$asset" ]; then
-            echo "::error::No onenote-head-${short_sha}-*.zip asset yet on daijro/openplayground's 'builds' release."
-            echo "::error::Its own build pipeline polls every ~15 minutes (see its README) — it may not have caught up to this commit yet. Re-run this job, or see this workflow's header for other options."
-            exit 1
+            echo "::warning::No onenote-head-${short_sha}-*.zip asset yet on daijro/openplayground's 'builds' release (its own pipeline polls ~15 min). Falling back to the newest available build so the site still deploys, with a demo that may be a commit or two behind."
+            asset=$(gh release view builds --repo daijro/openplayground --json assets \
+              --jq '[.assets[] | select(.name | test("^onenote-head-"))] | sort_by(.updated_at) | last | .name')
+          fi
+          if [ -z "$asset" ] || [ "$asset" = "null" ]; then
+            echo "::warning::No onenote-head-*.zip asset exists at all on daijro/openplayground's 'builds' release. Deploying the site with no demo this run — website/demo/ stays empty."
+            exit 0
           fi
           echo "Using $asset"
-          gh release download builds --repo daijro/openplayground --pattern "$asset" --dir /tmp/demo-zip
-          mkdir -p website/demo
+          if ! gh release download builds --repo daijro/openplayground --pattern "$asset" --dir /tmp/demo-zip; then
+            echo "::warning::Could not download $asset — deploying the site with no demo this run."
+            exit 0
+          fi
           # ARCHIVE in build.mjs is "tar" on Windows dev hosts, "zip" on GitHub runners (linux) — this
           # runs on ubuntu-latest, so the asset is a real zip.
           unzip -q "/tmp/demo-zip/$asset" -d website/demo
