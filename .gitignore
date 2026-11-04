@@ -42,3 +42,8 @@ MEMORY.md
 /tools/officeimo/OfficeIMO.NoteCraft.Bridge/bin/
 /tools/officeimo/OfficeIMO.NoteCraft.Bridge/obj/
 /.work-officeimo-*/
+
+# website/demo is the compiled WASM build of notecraft-web. It is built fresh
+# by the deploy workflow (.github/workflows/deploy-website.yml), never
+# committed — a local copy here is for manual inspection only.
+/website/demo/

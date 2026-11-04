@@ -1,0 +1,125 @@
+# Deploy website/ (notecraft.cloud) to Azure Static Web Apps.
+#
+# The demo (website/demo/, gitignored — see .gitignore) is built FROM SOURCE in this workflow, by this
+# repo, with no external build service. Earlier versions of this file fetched a pre-built wasm from
+# daijro/openplayground's own pipeline instead; that worked but meant every deploy depended on their build
+# having already caught up to the pushed commit (it visibly hadn't, the first few times this ran). Fully
+# self-sufficient now: the "Build the demo" step below applies .github/web-build/web.diff (new files:
+# apps/notecraft-web, crates/model/src/playground.rs, crates/ui-egui/src/playground_clipboard.rs) and
+# .github/web-build/patches.yaml (43 small source edits) to THIS checkout, then builds with trunk + wasm-opt
+# itself. That recipe is adapted from daijro/openplayground's patches/onenote.yaml (SPDX MIT OR Apache-2.0,
+# same as this repo) — see the website's footer for the credit, and .github/web-build/patches.yaml's own
+# header for the full provenance note. apply-web-diff.py does NOT use `git apply`: web.diff's own @@ hunk
+# headers are wrong for two of its six files (confirmed by counting: playground.rs claims 277 lines, is
+# really 280; playground_clipboard.rs claims 129, is really 206), and `git apply` trusts the header and
+# silently truncates rather than erroring. Verified locally end to end on 2026-11-04 in an isolated clone:
+# all 43 patches apply, `cargo check --target wasm32-unknown-unknown` passes, and a full `trunk build
+# --release` (the playground-web profile: LTO fat, one codegen unit) produces a working demo.
+#
+# What this buys, why the website lives in this repo instead of its own:
+#   - Every push to main that touches website/** redeploys the production site.
+#   - Every pull_request gets its own live preview URL (Azure Static Web Apps' built-in preview
+#     environments, free tier allows 3) — this is the whole reason the site is a subfolder here rather
+#     than a separate repo: Azure's preview-per-PR only works when the Static Web App is linked to the
+#     same repo the PR is opened against.
+#
+# Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
+# token — create the Free-tier resource first, then copy its token here; never commit it). Set on
+# AlienTechSoftware/notecraft 2026-11-04.
+
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+    # Manual production redeploy with no website/** source change (e.g. to refresh the live demo
+    # after an app-only commit, which this workflow's path filters wouldn't otherwise trigger on).
+    # Always builds and deploys from main's current tip.
+
+permissions:
+  contents: read
+  pull-requests: write # Azure's action comments the preview URL on the PR
+
+concurrency:
+  group: deploy-website-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: true
+
+jobs:
+  # Closing (or merging) a PR tears down its preview environment. No demo fetch needed for a close.
+  close_preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: close
+
+  deploy:
+    if: github.event_name == 'push' || github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install trunk
+        run: |
+          set -eu
+          curl -sSfL https://github.com/trunk-rs/trunk/releases/download/v0.22.0/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin
+          trunk --version
+
+      - name: Install wasm-opt
+        run: |
+          set -eu
+          # Pinned, not apt's binaryen: the Ubuntu runner's packaged version is too old to know
+          # --enable-bulk-memory-opt (confirmed live, 2026-11-04: "Unknown option").
+          curl -sSfL https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz | tar -xz -C /tmp
+          sudo cp /tmp/binaryen-version_133/bin/wasm-opt /usr/local/bin/
+          wasm-opt --version
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Build the demo from source (no external build service)
+        run: |
+          set -eu
+          python3 .github/web-build/apply-web-diff.py . .github/web-build/web.diff
+          python3 .github/web-build/apply-web-patches.py . .github/web-build/patches.yaml
+          # Wasm SIMD: off by default for this target: egui's CPU rendering is noticeably faster with it
+          # (this is the same rustflag daijro/openplayground's build.mjs sets), every current browser has it.
+          mkdir -p .cargo
+          printf '[target.wasm32-unknown-unknown]\nrustflags = ["-Ctarget-feature=+simd128"]\n' >> .cargo/config.toml
+          cd apps/notecraft-web
+          trunk build --release --dist "$GITHUB_WORKSPACE/website/demo" --public-url ./
+          cd "$GITHUB_WORKSPACE"
+          for f in website/demo/*.wasm; do
+            # Same flags daijro/openplayground's build.mjs uses (WASM_OPT/WASM_FEATURES): these
+            # features match what Rust's wasm32-unknown-unknown target actually emits with SIMD
+            # enabled (the repo's own .cargo/config.toml, carried over by web.diff's new Cargo.toml).
+            wasm-opt -O3 --strip-debug \
+              --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong \
+              --enable-multivalue --enable-mutable-globals --enable-nontrapping-float-to-int \
+              --enable-reference-types --enable-sign-ext --enable-simd \
+              "$f" -o "$f"
+          done
+
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: "website"
+          output_location: ""
+          skip_app_build: true

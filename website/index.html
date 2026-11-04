@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoteCraft — Notes as plain files, in plain folders.</title>
+<meta name="description" content="NoteCraft is an open, clean-room alternative to OneNote, written in pure Rust. Notes live as plain HTML or Markdown files in plain folders, so any synced folder gives you cloud sync and backup — no server.">
+<link rel="icon" type="image/png" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/icon-128.png">
+<meta property="og:title" content="NoteCraft — Notes as plain files, in plain folders.">
+<meta property="og:description" content="An open, clean-room alternative to OneNote, written in pure Rust.">
+<meta property="og:image" content="assets/social-light.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="styles.css">
+<script>
+// Default is dark (one of the app's real 14 themes), not whatever the OS prefers —
+// set before first paint so there's no flash. See AGENTS.md / theme.js.
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("notecraft-theme"); } catch (e) {}
+  document.documentElement.setAttribute("data-theme", saved || "dark-default");
+})();
+</script>
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="/">
+    <img src="assets/icon-64.png" alt="" width="32" height="32">
+    <span>NoteCraft</span>
+  </a>
+  <div class="nav-right">
+    <a href="https://github.com/AlienTechSoftware/notecraft">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <a href="https://discord.gg/artcraft">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M14 2.5A13.3 13.3 0 0 0 10.8 1.5c-.14.25-.3.59-.42.86a12.3 12.3 0 0 0-3.76 0c-.11-.27-.28-.61-.42-.86A13.3 13.3 0 0 0 2 2.5C.36 5 .1 7.4.26 9.76c1.36 1 2.68 1.6 3.98 2 .32-.44.6-.9.85-1.4-.47-.17-.92-.39-1.35-.64.11-.08.22-.17.33-.25 2.61 1.21 5.44 1.21 8.02 0 .11.08.22.17.33.25-.43.25-.88.47-1.35.64.25.5.53.96.85 1.4 1.3-.4 2.62-1 3.98-2 .2-2.72-.5-5.1-2.1-7.26zM5.68 8.9c-.78 0-1.42-.72-1.42-1.6s.62-1.6 1.42-1.6c.8 0 1.44.73 1.42 1.6 0 .88-.62 1.6-1.42 1.6zm4.64 0c-.78 0-1.42-.72-1.42-1.6s.62-1.6 1.42-1.6c.8 0 1.44.73 1.42 1.6 0 .88-.61 1.6-1.42 1.6z"/></svg>
+      Discord
+    </a>
+    <a href="https://playground.daijro.dev/head/notecraft/">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="currentColor" d="M6.3 4.8v6.4L11 8z"/></svg>
+      Playground
+    </a>
+    <a href="https://github.com/AlienTechSoftware/notecraft#readme">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V5.41a1.5 1.5 0 0 0-.44-1.06L10.65 1.44A1.5 1.5 0 0 0 9.59 1H3.5zM9.5 2l3.5 3.5H10a.5.5 0 0 1-.5-.5V2zM4.5 7.5h7v1h-7v-1zm0 2.5h7v1h-7v-1zm0 2.5h4.5v1H4.5v-1z"/></svg>
+      Docs
+    </a>
+    <div class="theme-picker">
+      <button type="button" class="theme-toggle" aria-haspopup="true">
+        <span class="swatch" aria-hidden="true"></span>
+        Theme
+      </button>
+      <div class="theme-popover" role="menu" aria-label="Choose a theme"></div>
+    </div>
+    <a href="demo/" class="cta-small">Open demo</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <img class="hero-icon" src="assets/icon-256.png" alt="NoteCraft koala logo" width="140" height="140">
+    <h1>NoteCraft</h1>
+    <p class="tagline">Notes as plain files, in plain folders.</p>
+    <p class="subtitle">An open, clean-room alternative to OneNote, written in pure Rust.</p>
+
+    <ul class="pills">
+      <li>Rust</li>
+      <li>HTML + Markdown</li>
+      <li>No server</li>
+      <li>Windows, macOS, Linux</li>
+    </ul>
+
+    <img class="testing-badge" src="assets/badge-testing-needed.png" alt="Testing needed" width="380">
+
+    <div class="actions">
+      <a class="btn btn-primary" href="demo/">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        Open the live demo
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/AlienTechSoftware/notecraft">View source on GitHub</a>
+    </div>
+    <p class="demo-note">Runs fully in your browser — a ~9&nbsp;MB WebAssembly download, nothing installed, nothing sent anywhere.</p>
+  </section>
+
+  <img class="wordmark-banner" src="assets/notecraft-wordmark-bubble.png" alt="NoteCraft" width="420">
+
+  <section class="features">
+    <div class="feature">
+      <h3>Your files stay yours</h3>
+      <p>Every notebook, section and page is a plain folder on disk. Point any sync tool — Dropbox, OneDrive, Syncthing, git — at the folder and you have backup and multi-device sync, with no NoteCraft server involved.</p>
+    </div>
+    <div class="feature">
+      <h3>Nest without limits</h3>
+      <p>Notebooks, section groups, sections and pages can all hold sub-pages, to any depth. OneNote stops at three levels of sub-pages — NoteCraft doesn't.</p>
+    </div>
+    <div class="feature">
+      <h3>HTML or Markdown, your call</h3>
+      <p>Pages are stored as clean HTML or CommonMark+GFM (<code>index.md</code>), configurable per page, section, notebook or globally. Open a page in any editor and it still makes sense.</p>
+    </div>
+    <div class="feature">
+      <h3>Clean-room, cross-platform</h3>
+      <p>Built from public requirements and documentation only — no Microsoft source, no decompiled binaries. One Rust codebase, native on Windows, macOS and Linux.</p>
+    </div>
+  </section>
+
+  <img class="crafting-illustration" src="assets/koala-crafting.png" alt="A koala crafting a collage of nature drawings" width="520">
+</main>
+
+<footer>
+  <p>
+    NoteCraft is open source under <abbr title="MIT OR Apache-2.0">MIT OR Apache-2.0</abbr>.
+    Copyright © 2026 AlienTech Software and the NoteCraft contributors.
+  </p>
+  <p>
+    The in-browser demo is built by our own CI from a recipe adapted from
+    <a href="https://github.com/daijro/openplayground">OpenPlayground</a>, created by
+    <a href="https://github.com/daijro">daijro</a> — thank you for showing it's possible to run
+    native Rust apps like this one in a browser with nothing to install.
+  </p>
+  <p class="trademark">
+    NoteCraft is not affiliated with, endorsed by or sponsored by Microsoft. OneNote is a trademark of
+    Microsoft Corporation, named here only to say what NoteCraft is an alternative to.
+  </p>
+</footer>
+
+<script src="theme.js"></script>
+</body>
+</html>
