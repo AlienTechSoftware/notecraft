@@ -271,6 +271,12 @@ main {
   border: 1px solid color-mix(in srgb, var(--text) 28%, var(--panel));
 }
 
+[data-theme^="light"] .btn-secondary {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--link);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--panel));
+}
+
 .demo-note {
   color: var(--muted);
   font-size: 0.9rem;
