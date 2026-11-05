@@ -18,7 +18,7 @@ mod store;
 /// Builders for synthetic section files, for tests in this and other crates.
 #[cfg(feature = "testing")]
 pub mod testing {
-    pub use crate::store::build::{Line, One, OneNote};
+    pub use crate::store::build::{Attachment, FileDecl, Line, One, OneNote};
 }
 
 pub use error::{OneError, Result};
