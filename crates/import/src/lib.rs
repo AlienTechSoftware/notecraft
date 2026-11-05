@@ -445,6 +445,48 @@ mod tests {
         }
     }
 
+    // Build real .one section bytes from synthetic payloads in an isolated temporary folder.
+    #[test]
+    fn synthetic_images_and_attachments_survive_import_in_both_page_formats() {
+        let png = include_bytes!("../tests/fixtures/synthetic-pixel.png");
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><path d="M0 0L2 2" stroke="#000"/></svg>"##;
+        let document = b"synthetic attachment bytes";
+
+        for (format, page_file) in [(PageFormat::Html, "index.html"), (PageFormat::Cmgfm, "index.md")] {
+            let t = TempDir::new("import-synthetic-assets");
+            let (src, dest) = (t.path().join("src"), t.path().join("dest"));
+            let mut one = OneNote::new();
+            one.page_with_attachments(
+                "Assets",
+                1,
+                &[OneNote::line("Synthetic assets stay attached")],
+                &[
+                    OneNote::picture("sample.png", "Synthetic raster", "png", png),
+                    OneNote::picture("sample.svg", "Synthetic vector sketch", "svg", svg),
+                    OneNote::picture_without_data("missing.png", "Missing synthetic image", "png"),
+                    OneNote::file("sample.txt", "txt", document),
+                ],
+            );
+            section_file(&src, &["Work"], "Assets.one", one);
+            fs::write(src.join("Work").join("Broken.one"), b"synthetic damaged section").expect("write damaged synthetic section");
+
+            let mut options = Options::new(&src, &dest);
+            options.format = format;
+            let report = run(&options, &mut quiet).expect("import synthetic section");
+            assert_eq!((report.sections_imported, report.skipped.len()), (1, 1), "{report}");
+            assert_eq!((report.images, report.files, report.loss.missing_data), (2, 1, 1), "{report}");
+
+            let page_dir = dest.join("work").join("assets").join("assets");
+            let page = fs::read_to_string(page_dir.join(page_file)).expect("imported page");
+            assert!(page.contains("Synthetic assets stay attached"), "{page}");
+            assert!(page.contains("sample.png") && page.contains("sample.svg") && page.contains("sample.txt"), "{page}");
+            assert!(!page.contains("missing.png"), "a picture with missing data is not linked: {page}");
+            assert_eq!(fs::read(page_dir.join("assets").join("sample.png")).expect("PNG asset"), png);
+            assert_eq!(fs::read(page_dir.join("assets").join("sample.svg")).expect("SVG asset"), svg);
+            assert_eq!(fs::read(page_dir.join("assets").join("sample.txt")).expect("file asset"), document);
+        }
+    }
+
     #[test]
     fn running_twice_changes_nothing_and_replace_starts_over() {
         let t = TempDir::new("import-twice");

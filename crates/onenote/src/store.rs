@@ -666,6 +666,13 @@ pub mod build {
         pub props: Vec<u8>,
     }
 
+    /// An inserted-file object referenced by a picture or attachment in a synthetic section.
+    pub struct FileDecl {
+        pub oid: u32,
+        pub reference: String,
+        pub extension: String,
+    }
+
     impl One {
         pub fn new() -> One {
             One { data: vec![0; HEADER_SIZE as usize], next_list: 0x10, counts: Vec::new() }
@@ -734,8 +741,13 @@ pub mod build {
         /// The same, with extra entries in the global id table: the identities of other
         /// object spaces, which a property references by compact id.
         fn group_with_ids(&mut self, decls: &[Decl], extra: &[u32]) -> ChunkRef {
+            self.group_with_files(decls, &[], extra)
+        }
+
+        fn group_with_files(&mut self, decls: &[Decl], files: &[FileDecl], extra: &[u32]) -> ChunkRef {
             let mut nodes = vec![One::node(0x0B4, 0, None, &Self::egid(9)), One::node(0x022, 0, None, &[])];
-            let mut indexes: Vec<u32> = decls.iter().map(|d| d.oid >> 8).chain(extra.iter().copied()).collect();
+            let mut indexes: Vec<u32> =
+                decls.iter().map(|d| d.oid >> 8).chain(files.iter().map(|f| f.oid >> 8)).chain(extra.iter().copied()).collect();
             indexes.sort_unstable();
             indexes.dedup();
             for i in &indexes {
@@ -752,6 +764,14 @@ pub mod build {
                 rest.push(1); // reference count
                 nodes.push(One::node(0x0A4, 1, Some(blob), &rest));
             }
+            for file in files {
+                let mut rest = file.oid.to_le_bytes().to_vec();
+                rest.extend_from_slice(&0u32.to_le_bytes()); // the reader uses only the file reference
+                rest.push(1); // reference count
+                rest.extend_from_slice(&stored_string(&file.reference));
+                rest.extend_from_slice(&stored_string(&file.extension));
+                nodes.push(One::node(0x072, 0, None, &rest));
+            }
             nodes.push(One::node(0x0B8, 0, None, &[]));
             self.fragment(nodes)
         }
@@ -764,6 +784,12 @@ pub mod build {
         /// One object space whose objects reference other object spaces by compact id.
         pub fn space_ids(&mut self, gosid: u8, decls: &[Decl], root_oid: u32, extra_ids: &[u32]) -> ChunkRef {
             let group = self.group_with_ids(decls, extra_ids);
+            self.space_from_group(gosid, group, root_oid, false)
+        }
+
+        /// An object space with synthetic inserted files referenced by its properties.
+        pub fn space_with_files(&mut self, gosid: u8, decls: &[Decl], files: &[FileDecl], root_oid: u32, extra_ids: &[u32]) -> ChunkRef {
+            let group = self.group_with_files(decls, files, extra_ids);
             self.space_from_group(gosid, group, root_oid, false)
         }
 
@@ -858,12 +884,35 @@ pub mod build {
         }
     }
 
+    fn stored_string(value: &str) -> Vec<u8> {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        let mut out = (units.len() as u32).to_le_bytes().to_vec();
+        out.extend(units.into_iter().flat_map(u16::to_le_bytes));
+        out
+    }
+
     /// A whole section file with pages on it, built the way OneNote lays one out
     /// ([MS-ONE] 2.1.14, 2.2.17, 2.2.18): a section node listing a page series, the series
     /// pointing at one object space per page with its metadata beside it.
     #[derive(Default)]
     pub struct OneNote {
-        pages: Vec<(String, u8, Vec<Line>)>,
+        pages: Vec<(String, u8, Vec<Line>, Vec<Attachment>)>,
+    }
+
+    /// Synthetic picture or attached file on a page.
+    #[derive(Clone)]
+    pub struct Attachment {
+        kind: AttachmentKind,
+        name: String,
+        alt: String,
+        extension: String,
+        bytes: Option<Vec<u8>>,
+    }
+
+    #[derive(Clone)]
+    enum AttachmentKind {
+        Picture,
+        File,
     }
 
     /// One line of text on a page, with its marks.
@@ -912,7 +961,37 @@ pub mod build {
         /// Adds a page. `level` is OneNote's page level, 1 for a page and 2 or 3 for a
         /// sub-page of the page above it.
         pub fn page(&mut self, title: &str, level: u8, lines: &[Line]) {
-            self.pages.push((title.to_string(), level, lines.to_vec()));
+            self.pages.push((title.to_string(), level, lines.to_vec(), Vec::new()));
+        }
+
+        /// Adds a page containing synthetic inserted pictures and files.
+        pub fn page_with_attachments(&mut self, title: &str, level: u8, lines: &[Line], attachments: &[Attachment]) {
+            self.pages.push((title.to_string(), level, lines.to_vec(), attachments.to_vec()));
+        }
+
+        pub fn picture(name: &str, alt: &str, extension: &str, bytes: &[u8]) -> Attachment {
+            Attachment {
+                kind: AttachmentKind::Picture,
+                name: name.to_string(),
+                alt: alt.to_string(),
+                extension: extension.to_string(),
+                bytes: Some(bytes.to_vec()),
+            }
+        }
+
+        /// Adds a picture reference without its file data, for missing-data regression cases.
+        pub fn picture_without_data(name: &str, alt: &str, extension: &str) -> Attachment {
+            Attachment { kind: AttachmentKind::Picture, name: name.to_string(), alt: alt.to_string(), extension: extension.to_string(), bytes: None }
+        }
+
+        pub fn file(name: &str, extension: &str, bytes: &[u8]) -> Attachment {
+            Attachment {
+                kind: AttachmentKind::File,
+                name: name.to_string(),
+                alt: String::new(),
+                extension: extension.to_string(),
+                bytes: Some(bytes.to_vec()),
+            }
         }
 
         pub fn with_page(mut self, title: &str, lines: &[Line]) -> OneNote {
@@ -925,9 +1004,12 @@ pub mod build {
             let mut one = One::new();
             let mut spaces = Vec::new();
             // One object space per page: manifest, page, outline, elements and their text.
-            for (i, (_, _, lines)) in self.pages.iter().enumerate() {
+            let mut file_data = Vec::new();
+            let mut next_file = 0u8;
+            for (i, (_, _, lines, attachments)) in self.pages.iter().enumerate() {
                 let gosid = (10 + i) as u8;
                 let mut decls = Vec::new();
+                let mut file_decls = Vec::new();
                 let (manifest_oid, page_oid, outline_oid) = (0x0000_0101, 0x0000_0201, 0x0000_0301);
                 let mut manifest = Build::default();
                 manifest.objects(P_CONTENT_CHILDREN, &[page_oid]);
@@ -936,7 +1018,7 @@ pub mod build {
                 page.objects(P_ELEMENT_CHILDREN, &[outline_oid]);
                 decls.push(Decl { oid: page_oid, jcid: JCID_PROP_SET | J_PAGE, props: page.finish() });
                 // One outline element per line, each holding one rich text node.
-                let element_oids: Vec<u32> = (0..lines.len()).map(|n| ((4 + n * 3) as u32) << 8 | 1).collect();
+                let element_oids: Vec<u32> = (0..lines.len() + attachments.len()).map(|n| ((4 + n * 3) as u32) << 8 | 1).collect();
                 let mut outline = Build::default();
                 outline.objects(P_ELEMENT_CHILDREN, &element_oids);
                 decls.push(Decl { oid: outline_oid, jcid: JCID_PROP_SET | J_OUTLINE, props: outline.finish() });
@@ -956,7 +1038,37 @@ pub mod build {
                     style.bool(P_ITALIC, line.italic);
                     decls.push(Decl { oid: style_oid, jcid: JCID_PROP_SET | J_STYLE, props: style.finish() });
                 }
-                let list = one.space(gosid, &decls, manifest_oid);
+                for (n, attachment) in attachments.iter().enumerate() {
+                    let content_index = lines.len() + n;
+                    let element_oid = ((4 + content_index * 3) as u32) << 8 | 1;
+                    let content_oid = ((5 + content_index * 3) as u32) << 8 | 1;
+                    let container_oid = ((6 + content_index * 3) as u32) << 8 | 1;
+                    let guid = One::guid(128u8.wrapping_add(next_file));
+                    next_file = next_file.wrapping_add(1);
+                    file_decls.push(FileDecl { oid: container_oid, reference: format!("<ifndf>{guid}"), extension: attachment.extension.clone() });
+                    if let Some(bytes) = &attachment.bytes {
+                        file_data.push(one.file_data(guid, bytes));
+                    }
+
+                    let mut element = Build::default();
+                    element.objects(P_CONTENT_CHILDREN, &[content_oid]);
+                    decls.push(Decl { oid: element_oid, jcid: JCID_PROP_SET | J_OUTLINE_ELEMENT, props: element.finish() });
+                    let mut content = Build::default();
+                    match attachment.kind {
+                        AttachmentKind::Picture => {
+                            content.text(0x1C00_1DD7, &attachment.name);
+                            content.text(0x1C00_1E58, &attachment.alt);
+                            content.object(0x2000_1C3F, container_oid);
+                            decls.push(Decl { oid: content_oid, jcid: JCID_PROP_SET | 0x0011, props: content.finish() });
+                        }
+                        AttachmentKind::File => {
+                            content.text(0x1C00_1D9C, &attachment.name);
+                            content.object(0x2000_1D9B, container_oid);
+                            decls.push(Decl { oid: content_oid, jcid: JCID_PROP_SET | 0x0035, props: content.finish() });
+                        }
+                    }
+                }
+                let list = one.space_with_files(gosid, &decls, &file_decls, manifest_oid, &[]);
                 spaces.push((gosid, list));
             }
             // The section space: the section node, one page series, and the page metadata.
@@ -971,7 +1083,7 @@ pub mod build {
             series.spaces(P_CHILD_SPACES, &space_ids);
             series.objects(P_META_ABOVE, &meta_oids);
             decls.push(Decl { oid: series_oid, jcid: JCID_PROP_SET | J_PAGE_SERIES, props: series.finish() });
-            for (i, (title, level, _)) in self.pages.iter().enumerate() {
+            for (i, (title, level, _, _)) in self.pages.iter().enumerate() {
                 let mut meta = Build::default();
                 meta.text(P_CACHED_TITLE, title);
                 meta.u32(P_PAGE_LEVEL, u32::from(*level));
@@ -981,7 +1093,7 @@ pub mod build {
             let extra: Vec<u32> = (0..self.pages.len()).map(|i| (10 + i) as u32).collect();
             let section_list = one.space_ids(1, &decls, section_oid, &extra);
             spaces.insert(0, (1, section_list));
-            one.finish(&spaces, 1, Vec::new())
+            one.finish(&spaces, 1, file_data)
         }
     }
 }
