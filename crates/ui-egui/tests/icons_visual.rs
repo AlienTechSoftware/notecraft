@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 59] = [
+const ALL: [Icon; 65] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -56,6 +56,12 @@ const ALL: [Icon; 59] = [
     Icon::DirAuto,
     Icon::ParaAuto,
     Icon::Bars,
+    Icon::AlignLeft,
+    Icon::AlignCenter,
+    Icon::AlignRight,
+    Icon::JustifyLow,
+    Icon::JustifyMedium,
+    Icon::JustifyHigh,
     Icon::Eraser,
     Icon::Undo,
     Icon::Redo,
@@ -141,6 +147,12 @@ fn name(icon: Icon) -> &'static str {
         Icon::Diagram => "diagram",
         Icon::Quote => "quote",
         Icon::Bars => "bars",
+        Icon::AlignLeft => "align-left",
+        Icon::AlignCenter => "align-center",
+        Icon::AlignRight => "align-right",
+        Icon::JustifyLow => "justify-low",
+        Icon::JustifyMedium => "justify-medium",
+        Icon::JustifyHigh => "justify-high",
         Icon::ParaLtr => "para-ltr",
         Icon::ParaRtl => "para-rtl",
         Icon::CaretLtr => "caret-ltr",
@@ -431,6 +443,19 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(19.0, 6.0), (15.0, 9.0), (15.0, 13.0), (19.0, 13.0), (19.0, 9.0), (15.0, 9.0)]),
         ],
         Icon::Bars => vec![open(&[(4.0, 7.0), (20.0, 7.0)]), open(&[(4.0, 12.0), (20.0, 12.0)]), open(&[(4.0, 17.0), (20.0, 17.0)])],
+        Icon::AlignLeft => vec![open(&[(4.0, 6.0), (20.0, 6.0)]), open(&[(4.0, 12.0), (15.0, 12.0)]), open(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::AlignCenter => vec![open(&[(4.0, 6.0), (20.0, 6.0)]), open(&[(7.0, 12.0), (17.0, 12.0)]), open(&[(5.5, 18.0), (18.5, 18.0)])],
+        Icon::AlignRight => vec![open(&[(4.0, 6.0), (20.0, 6.0)]), open(&[(9.0, 12.0), (20.0, 12.0)]), open(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::JustifyLow => vec![
+            open(&[(4.0, 6.0), (10.0, 6.0)]),
+            open(&[(14.0, 6.0), (20.0, 6.0)]),
+            open(&[(4.0, 12.0), (10.0, 12.0)]),
+            open(&[(14.0, 12.0), (20.0, 12.0)]),
+            open(&[(4.0, 18.0), (10.0, 18.0)]),
+            open(&[(14.0, 18.0), (20.0, 18.0)]),
+        ],
+        Icon::JustifyMedium => vec![open(&[(4.0, 6.0), (12.0, 6.0)]), open(&[(4.0, 12.0), (16.0, 12.0)]), open(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::JustifyHigh => vec![open(&[(4.0, 6.0), (20.0, 6.0)]), open(&[(4.0, 12.0), (20.0, 12.0)]), open(&[(4.0, 18.0), (20.0, 18.0)])],
         Icon::DirLtr => vec![
             open(&[(5.0, 6.0), (17.0, 6.0)]),
             open(&[(5.0, 10.0), (19.0, 10.0)]),

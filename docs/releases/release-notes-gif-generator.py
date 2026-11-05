@@ -14,20 +14,29 @@ from PIL import Image, ImageDraw, ImageFont
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
+
+def version_directory(version):
+    """Return the release directory whether the script is central or beside one release."""
+    return SCRIPT_DIR if SCRIPT_DIR.name == version else SCRIPT_DIR / version
+
 # Typography
 FONT_SIZE_TITLE = 64
 FONT_SIZE_SUBTITLE = 48
 FONT_SIZE_BODY = 32
 FONT_SIZE_NUMBER = 80
 LINE_HEIGHT = 60
-FRAME_DURATION = 3500
+# Give readers enough time to scan two lines of release text. This is deliberately conservative
+# because GitHub's release page and image previewers do not provide playback controls.
+FRAME_DURATION = 6000
 
 # Colors
 COLOR_TITLE = (50, 50, 50)
 COLOR_TEXT = (70, 70, 70)
-COLOR_ACCENT = (100, 180, 255)
-COLOR_ACCENT2 = (120, 220, 160)
-COLOR_ACCENT3 = (255, 150, 100)
+# The artwork backgrounds are pale, so pastel accents disappear into them. Keep these darker and
+# more saturated for readable titles, rules and number circles in both light and dark previews.
+COLOR_ACCENT = (30, 115, 210)
+COLOR_ACCENT2 = (25, 145, 85)
+COLOR_ACCENT3 = (210, 90, 25)
 COLOR_NUMBER = (255, 255, 255)  # White numbers for contrast
 COLORS = [COLOR_ACCENT, COLOR_ACCENT2, COLOR_ACCENT3]
 
@@ -53,9 +62,11 @@ def get_font(size, bold=False):
 
 def load_background(version):
     """Load background image."""
-    bg_path = SCRIPT_DIR / version / f"{version}.jfif"
-    if not bg_path.exists():
-        print(f"Error: Background not found")
+    version_dir = version_directory(version)
+    candidates = [version_dir / f"{version}.jfif", version_dir / f"{version}.png"]
+    bg_path = next((path for path in candidates if path.exists()), None)
+    if bg_path is None:
+        print(f"Error: Background not found (tried {', '.join(path.name for path in candidates)})")
         sys.exit(1)
 
     img = Image.open(bg_path)
@@ -102,7 +113,7 @@ def draw_number_circle(draw, x, y, number, circle_color, size=80):
 
 
 def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
-    """Create a frame with number and version."""
+    """Create a frame with the title high and the slide content left of the artwork."""
     frame = background.copy()
     w, h = frame.size
     draw = ImageDraw.Draw(frame)
@@ -128,38 +139,31 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
     subtitle_font = get_font(FONT_SIZE_SUBTITLE)
     body_font = get_font(FONT_SIZE_BODY)
 
-    y_offset = int(h * 0.08)
+    # Keep the title close to the board's upper border. The artwork occupies the
+    # lower-right corner, so the feature copy uses a left column with breathing room.
+    y_offset = int(h * 0.055)
 
-    # Number in circle
-    draw_number_circle(draw, w // 2, y_offset + 50, number, circle_color, size=80)
-    y_offset += 140
-
-    # Title on all frames: NoteCraft v0.0.7 (large, black)
+    # Title on all frames: NoteCraft v<version> (large, black)
     frame_title = f"NoteCraft v{version}"
     bbox = draw.textbbox((0, 0), frame_title, font=title_font)
     text_w = bbox[2] - bbox[0]
     x = (w - text_w) // 2
     draw.text((x, y_offset), frame_title, font=title_font, fill=(0, 0, 0))  # Black
-    y_offset += FONT_SIZE_TITLE + 20
+    y_offset += FONT_SIZE_TITLE + 24
 
     # Line
+    content_x = int(w * 0.12)
     draw_decorative_line(draw, int(w * 0.2), int(w * 0.8), y_offset, width=3, color=circle_color)
-    y_offset += 30
+    y_offset += 24
 
     # Subtitle: feature title + feature subtitle
     feature_title = title  # e.g., "Ink & Stylus Support"
     if feature_title:
-        bbox = draw.textbbox((0, 0), feature_title, font=subtitle_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-        draw.text((x, y_offset), feature_title, font=subtitle_font, fill=circle_color)
+        draw.text((content_x, y_offset), feature_title, font=subtitle_font, fill=circle_color)
         y_offset += FONT_SIZE_SUBTITLE + 15
 
     if subtitle:
-        bbox = draw.textbbox((0, 0), subtitle, font=body_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-        draw.text((x, y_offset), subtitle, font=body_font, fill=COLOR_TEXT)
+        draw.text((content_x, y_offset), subtitle, font=body_font, fill=COLOR_TEXT)
         y_offset += FONT_SIZE_SUBTITLE + 15
 
     # Body
@@ -168,11 +172,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
             y_offset += 15
             continue
 
-        bbox = draw.textbbox((0, 0), line, font=body_font)
-        text_w = bbox[2] - bbox[0]
-        x = (w - text_w) // 2
-
-        draw.text((x, y_offset), line, font=body_font, fill=COLOR_TEXT)
+        draw.text((content_x, y_offset), line, font=body_font, fill=COLOR_TEXT)
         y_offset += LINE_HEIGHT
 
     return frame
@@ -180,7 +180,7 @@ def create_frame(background, data, frame_num, version="0.0.7", color_idx=0):
 
 def generate_frames(version, slides_data):
     """Generate frames."""
-    frames_dir = SCRIPT_DIR / version / ".frames"
+    frames_dir = version_directory(version) / ".frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     for f in frames_dir.glob("*.png"):
@@ -257,7 +257,7 @@ def main():
         sys.exit(1)
 
     version = sys.argv[1]
-    version_dir = SCRIPT_DIR / version
+    version_dir = version_directory(version)
 
     if not version_dir.exists():
         print(f"Error: {version_dir} not found")
@@ -265,8 +265,55 @@ def main():
 
     print(f"NoteCraft v{version} Release Notes GIF\n")
 
-    # Release highlights with numbers and colors
-    slides = [
+    # Release highlights with numbers and colors. Keep the content here rather than
+    # hand-editing generated frames so rerunning this script is deterministic.
+    if version == "0.0.8":
+        slides = [
+        {
+            'number': 1,
+            'circle_color': (100, 180, 255),
+            'title': 'Image editing',
+            'subtitle': 'Resize and navigate images',
+            'body': ['Resize images with visible handles', 'Move the caret around inline images'],
+        },
+        {
+            'number': 2,
+            'circle_color': (120, 220, 160),
+            'title': 'Paste images',
+            'subtitle': 'A top-requested workflow',
+            'body': ['Ctrl+V pastes images into the page', 'Image files travel with the page'],
+        },
+        {
+            'number': 3,
+            'circle_color': (100, 180, 255),
+            'title': 'RTL writing',
+            'subtitle': 'Better caret and text navigation',
+            'body': ['Arabic, Hebrew, Persian and Urdu support', 'Visual caret movement and selection'],
+        },
+        {
+            'number': 4,
+            'circle_color': (120, 220, 160),
+            'title': 'Reliable attachments',
+            'subtitle': 'Selection behaves as expected',
+            'body': ['Single click selects an attachment', 'Double click opens it'],
+        },
+        {
+            'number': 5,
+            'circle_color': (255, 150, 100),
+            'title': 'Demo notebook',
+            'subtitle': 'HTML and CMGFM examples included',
+            'body': ['The bundled demo is generated from one source', 'The demo identifies itself as 0.0.8'],
+        },
+        {
+            'number': 6,
+            'circle_color': (100, 180, 255),
+            'title': 'Release confidence',
+            'subtitle': 'Windows and Linux packaging',
+            'body': ['Full quality gates and regression tests', 'Installers carry the demo notebook'],
+        },
+        ]
+    else:
+        slides = [
         {
             'number': 1,
             'circle_color': (100, 180, 255),
@@ -309,7 +356,7 @@ def main():
             'subtitle': 'Improved Diagnostics',
             'body': ['Better troubleshooting', 'Enhanced diagnostics'],
         },
-    ]
+        ]
 
     frames, frames_dir = generate_frames(version, slides)
     if not frames:

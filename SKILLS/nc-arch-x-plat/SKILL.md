@@ -9,6 +9,10 @@ metadata:
 
 # nc-arch-x-plat - Cross-platform by union
 
+## Job to be done
+
+Design platform boundaries that preserve each platform's useful capabilities without leaking platform details into shared contracts.
+
 Use this skill whenever code touches something the operating system provides: the clipboard,
 files and the shell, file dialogs, opening files and folders, icons, printing, fonts, windows,
 notifications, paths, or installers.
@@ -57,6 +61,26 @@ notifications, paths, or installers.
   x64 is built; macOS and Linux are untested and are not claimed as supported.
 - A new platform backend is not finished until its boundary tests pass on that platform.
 
+### Path-test portability gotcha
+
+Shared path tests must be platform-neutral even when they describe a Windows, Linux or macOS
+user-facing location. Do not compare a joined path with a hard-coded string containing the
+separators of one operating system. That makes a valid implementation fail on another runner
+(for example, expecting `C:\\Users\\Ada\\Documents\\NoteCraft` while Linux correctly produces
+`C:\\Users\\Ada/Documents/NoteCraft` for a Windows-looking fixture).
+
+- Build expected paths with `PathBuf::from(...).join(...)` or the equivalent platform-aware API.
+- Keep the semantic assertion identical on every platform: the root is the current user's
+  `Documents/NoteCraft` folder.
+- Use platform-looking fixture roots only to test parsing or policy; never use their spelling as a
+  cross-platform separator expectation.
+- Run the focused test on at least Windows and Linux before claiming the path change is green.
+  A failure in one shared test can make both the normal test gate and coverage gate red.
+
+This is especially important for profile-relative notebook paths, installer payload paths and
+temporary test roots. The implementation may accept an explicit platform override, but the
+normal default and its tests must remain portable.
+
 ## Checklist for a change that touches the OS
 
 1. Name the boundary. Is it a new one, or does an existing one cover it?
@@ -64,4 +88,6 @@ notifications, paths, or installers.
 3. Write each platform branch with the richest native API it has.
 4. For a platform without a branch, show what is not built, and add it to `docs/gaps.md`.
 5. Test each branch that exists on its own platform, and say which platforms were not run.
-6. Update the feature-parity table and the relevant `SKILLS/*` notes.
+6. For path changes, check both separator behavior and the semantic location on Windows and Linux;
+   do not rely on a Windows-only local pass.
+7. Update the feature-parity table and the relevant `SKILLS/*` notes.

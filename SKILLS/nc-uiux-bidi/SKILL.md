@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-bidi
 
+## Job to be done
+
+Implement and verify bidirectional text interactions while preserving logical caret, selection, and mixed-script behavior.
+
 Use this skill for Arabic, Hebrew, Persian, Urdu, mixed-direction text, RTL page controls, caret
 placement, selection, and mirrored layout.
 
@@ -27,3 +31,5 @@ placement, selection, and mirrored layout.
 
 Read `work/rtl-and-caret-bar.md` before changing this area. Run focused bidi/caret tests and the
 cross-platform UI checks; record visual review at matching scale and theme.
+
+See `references/GOTCHAS_AND_GAPS.md` for cross-app RTL lessons and common pitfalls from NoteCraft and Wordcraft.

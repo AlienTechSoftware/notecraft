@@ -7,7 +7,7 @@
 
 use crate::theme::Tokens;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{FontId, RichText, Stroke, Ui};
+use egui::{FontId, RichText, Stroke, Ui, vec2};
 use notecraft_formats::html;
 use notecraft_formats::markdown::{self, Block, Span};
 use notecraft_model::Dir;
@@ -33,6 +33,20 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
     }
     let full = notecraft_store::tree::display_path(&page_dir.join("assets").join(rel));
     Some(file_uri(&full))
+}
+
+/// Load attachment bytes directly. This is deliberately used by the live page renderer:
+/// notebooks in the Windows VM are exposed through a UNC path, and the generic file loader
+/// cannot reliably open the resulting `file:////server/share/...` URI even when the file is
+/// present and valid.
+fn image_bytes(page_dir: &Path, src: &str) -> Option<(String, Vec<u8>)> {
+    let rel = src.strip_prefix("assets/")?;
+    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
+        return None;
+    }
+    let path = page_dir.join("assets").join(rel);
+    let bytes = std::fs::read(&path).ok()?;
+    Some((format!("bytes://page-image/{rel}"), bytes))
 }
 
 /// `file:///C:/dir/a%20b.png` or `file:///home/me/a%20b.png`: the form egui's file
@@ -347,12 +361,12 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
-            match image_uri(page_dir, src) {
-                Some(uri) => {
+            match image_bytes(page_dir, src) {
+                Some((uri, bytes)) => {
                     // A linked image is the attachment-card form used by NoteCraft. Keep its
                     // generated shell icon compact; standalone images still use the picture box.
                     let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, zoom) };
-                    let response = ui.add(egui::Image::new(uri).fit_to_exact_size(size).sense(egui::Sense::hover()));
+                    let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     *object_rect = Some(response.rect);
                     if response.hovered() {
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
@@ -606,16 +620,16 @@ pub(crate) fn show_block_zoomed(
             // the words. Another program opening the page sees the handwriting; here the
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
-            Block::Image { alt, src } => {
-                match image_uri(page_dir, src) {
-                    Some(uri) => {
-                        let response = ui.add(
-                            egui::Image::new(uri)
-                                .max_width(ui.available_width())
-                                .max_height(480.0 * zoom)
-                                .fit_to_original_size(1.0)
-                                .sense(egui::Sense::hover()),
-                        );
+            Block::Image { alt, src, width, height } => {
+                match image_bytes(page_dir, src) {
+                    Some((uri, bytes)) => {
+                        let image = egui::Image::from_bytes(uri, bytes).sense(egui::Sense::hover());
+                        let response = match (width, height) {
+                            (Some(width), Some(height)) => {
+                                ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom)).maintain_aspect_ratio(false))
+                            }
+                            _ => ui.add(image.max_width(ui.available_width()).max_height(480.0 * zoom).fit_to_original_size(1.0)),
+                        };
                         rendered_object_rect = Some(response.rect);
                         if response.hovered() {
                             log::debug!(
@@ -659,6 +673,18 @@ pub(crate) fn show_block_zoomed(
     }
     let end = ui.cursor().min;
     let rect = egui::Rect::from_min_max(start, egui::pos2(start.x + ui.available_width().max(1.0), end.y.max(start.y + 1.0)));
+    if is_blank(block) {
+        log::debug!(
+            "empty block rendered: block={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
+            i,
+            rect.min.x,
+            rect.min.y,
+            rect.max.x,
+            rect.max.y,
+            rect.width(),
+            rect.height()
+        );
+    }
     let response = ui.interact(rect, id, egui::Sense::click());
     if let Some(kind) = object_kind(block) {
         // Read every response flag before `data_mut`: `clicked` and
@@ -826,6 +852,11 @@ mod tests {
         assert_eq!(image_uri(dir, "assets/a.png").as_deref(), Some("file:///notes/nb/page/assets/a.png"));
         assert_eq!(image_uri(Path::new("C:\\n\\p"), "assets/a b.png").as_deref(), Some("file:///C:/n/p/assets/a%20b.png"));
         assert_eq!(image_uri(Path::new(r"\\?\C:\n\p"), "assets/a.png").as_deref(), Some("file:///C:/n/p/assets/a.png"), "no verbatim prefix");
+        assert_eq!(
+            image_uri(Path::new(r"\\?\UNC\VBoxSvr\C_DRIVE\p"), "assets/a.png").as_deref(),
+            Some("file:////VBoxSvr/C_DRIVE/p/assets/a.png"),
+            "a network share keeps its two leading slashes, not a UNC folder"
+        );
         assert_eq!(image_uri(dir, "https://x.test/a.png"), None);
         assert_eq!(image_uri(dir, "assets/../../secret.png"), None);
         assert_eq!(image_uri(dir, "assets/"), None);
@@ -855,7 +886,7 @@ mod tests {
 
     #[test]
     fn rich_blocks_share_object_selection_kinds() {
-        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into() }), Some("image"));
+        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None }), Some("image"));
         assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
         assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), Some("code"));
         assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));

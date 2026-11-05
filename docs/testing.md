@@ -42,6 +42,10 @@ comparison cannot pass silently. Nothing is committed that depends on one machin
 
 ## Looking at the window
 
+The canonical UI automation and screenshot workflow is [`nc-uiux-testing`](../SKILLS/nc-uiux-testing/SKILL.md).
+This document keeps the repository testing overview; read the skill for capture modes,
+visual evidence rules, and platform automation boundaries.
+
 Tests are not a substitute for looking.
 
 - **Review captures.** Set `NOTECRAFT_UI_VISUAL_DIR` to a folder and run

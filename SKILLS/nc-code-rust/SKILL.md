@@ -1,6 +1,6 @@
 ---
 name: nc-code-rust
-description: 'NoteCraft Rust code standards, best practices, and idiom guide. Enforces 2-space indentation, error handling with Result, logging with log crate macros, comprehensive testing, zero unsafe code, and architectural awareness. References: official Rust style guide, ArtCraft patterns, NoteCraft code-quality audits. Ensures code is production-ready, maintainable, and consistent across crates. Invoke with /nc-code-rust or reference in code-assistant calls.'
+description: Implement and review NoteCraft Rust code with project conventions, safe error handling, logging, testing, lint compliance, and architectural awareness.
 license: MIT
 metadata:
   version: "0.0.20261024"
@@ -8,6 +8,10 @@ metadata:
 ---
 
 # nc-code-rust - NoteCraft Rust Code Standards
+
+## Job to be done
+
+Implement NoteCraft Rust changes that satisfy the approved design, project conventions, lint rules, and regression requirements.
 
 ## Core Rules (Non-Negotiable)
 
@@ -498,5 +502,5 @@ Use `/nc-code-rust` for:
 ---
 
 **Last updated:** 2026-10-24  
-**Enforced in:** `C:\dev\p-NoteCraft\.repos\o-NoteCraft_2`  
+**Enforced in:** the current NoteCraft implementation checkout
 **Workspace lints:** `unsafe_code = "forbid"`, `clippy::all = "warn"`

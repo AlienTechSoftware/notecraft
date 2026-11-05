@@ -31,6 +31,9 @@ const HANDLE: f32 = 14.0;
 const GRIP: f32 = 10.0;
 /// The gap between a container's edge and the words inside it.
 const PAD: f32 = 6.0;
+const INITIAL_PAGE_LINES: f32 = 20.0;
+const EMPTY_LINE_HEIGHT: f32 = 22.0;
+const TRAILING_LINE_HEIGHT: f32 = 22.0;
 
 /// Which container is selected. Kept in the ui's own store, as the page's menu keeps its place.
 fn selected_id() -> Id {
@@ -105,6 +108,7 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
     if range.end > blocks.len() {
         return false;
     }
+    log::debug!("REMOVE_CONTAINER: i={} blocks={:?}", at, range);
     blocks.drain(range);
     boxes.remove(at);
     true
@@ -146,7 +150,22 @@ pub fn show(
     let mut out = Moved::default();
     let area = ui.available_rect_before_wrap();
     out.origin = area.min;
-    *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
+    let fitted = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
+    if fitted != *boxes {
+        // Issue #18: the arrangement did not account for the blocks, so it was thrown away and
+        // replaced by one box. Something changed the blocks without changing the boxes.
+        log::warn!(
+            "FIT_COLLAPSE: boxes={} counted={} blocks={} -> one box {:?}",
+            boxes.len(),
+            boxes.iter().map(|c| c.blocks).sum::<usize>(),
+            blocks.len(),
+            fitted.first()
+        );
+    }
+    *boxes = fitted;
+    for (i, c) in boxes.iter().enumerate().filter(|(_, c)| c.blocks == 0) {
+        log::debug!("EMPTY_BOX: i={i} pos=({:.0},{:.0}) width={:.0} holds no block", c.x, c.y, c.width);
+    }
 
     // Which container the caret is in, so that a block added or removed inside it is
     // counted against the right one.
@@ -219,7 +238,18 @@ pub fn show(
         let Some(b) = boxes.get(i).copied() else { continue };
         let range = container::blocks_of(boxes, i);
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
+        let standalone_image = range.len() == 1 && matches!(blocks.get(range.start), Some(Block::Image { .. }));
         let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
+        log::debug!(
+            "CONTAINER: i={} pos=({:.0},{:.0}) width={:.0} blocks={:?} image_object={} contains_image={}",
+            i,
+            b.x,
+            b.y,
+            b.width,
+            range,
+            image_object,
+            contains_image
+        );
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
         let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
@@ -244,19 +274,35 @@ pub fn show(
         if changed.link.is_some() {
             out.changed.link = changed.link;
         }
+        if changed.select_object.is_some() {
+            out.changed.select_object = changed.select_object;
+        }
         if let Some((block, kind)) = object_clicked.as_ref().filter(|(block, _)| range.contains(block)) {
             object_sel = Some((*block, kind.clone()));
             sel = None;
             *caret = None;
             out.changed.caret = true;
             log::debug!("embedded object selected: container={i} block={block} kind={kind}");
+            if kind == "image" {
+                let now = ui.input(|input| input.time);
+                let prior = ui.data(|data| data.get_temp::<(usize, f64)>(crate::preview::object_click_state_id()));
+                let is_double = prior.is_some_and(|(previous, at)| previous == *block && now - at <= 0.75);
+                if is_double {
+                    ui.data_mut(|data| data.remove::<(usize, f64)>(crate::preview::object_click_state_id()));
+                    if let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir)) {
+                        out.changed.link = Some(href);
+                    }
+                } else {
+                    ui.data_mut(|data| data.insert_temp(crate::preview::object_click_state_id(), (*block, now)));
+                }
+            }
         }
         if let Some((block, _)) = object_double_clicked.as_ref().filter(|(block, _)| range.contains(block))
             && let Some(href) = blocks.get(*block).and_then(|block| crate::preview::object_link(block, page_dir))
         {
             out.changed.link = Some(href);
         }
-        let used = child.min_rect().height().max(18.0);
+        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0));
         // The move handle sits above the content frame, so it can never cover its top border.
         let frame_at = pos2(at.x, at.y + handle);
         let frame = Rect::from_min_size(frame_at, vec2(b.width * zoom + 2.0 * pad, used + pad));
@@ -286,7 +332,17 @@ pub fn show(
         // Pictures own their visible rectangle. The parent container must not also claim that
         // rectangle: two overlapping interactions made a picture click intermittently select the
         // whole page/container instead of the picture.
-        let image_rect = Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom));
+        let drawn_image_rect = standalone_image
+            .then(|| {
+                ui.data(|data| data.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()))
+                    .and_then(|hits| hits.iter().find(|(block, _, kind)| *block == range.start && kind == "image").map(|(_, rect, _)| *rect))
+            })
+            .flatten();
+        let image_rect = drawn_image_rect.unwrap_or_else(|| Rect::from_min_size(inner.min, vec2(b.width * zoom, 480.0 * zoom)));
+        let resize_handle_size = (6.0 * zoom).max(4.0);
+        let pointer_on_resize_handle = image_object
+            && object_sel.as_ref().is_some_and(|(_, kind)| image_can_resize(kind))
+            && pointer.is_some_and(|p| resize_handle_rects(image_rect, resize_handle_size).iter().any(|rect| rect.contains(p)));
         if contains_image {
             log::debug!(
                 "image candidate: container={i} blocks={}..{} standalone={} frame={:?} image_rect={:?} pointer={:?}",
@@ -301,6 +357,7 @@ pub fn show(
         let image_hit = image_object
             .then(|| ui.interact(image_rect, ui.id().with(("image-object", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move));
         if let Some(response) = &image_hit
+            && !pointer_on_resize_handle
             && (response.clicked() || response.secondary_clicked() || response.dragged())
         {
             if response.clicked() {
@@ -334,24 +391,15 @@ pub fn show(
                 object_sel
             );
         }
-        if let Some(response) = &image_hit
-            && response.dragged()
-        {
-            let d = response.drag_delta();
-            if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
-            }
-            out.boxes = true;
-            log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
-        }
+        let mut resize_drag_active = false;
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
 
-        // A click on the handle selects the container. A right click anywhere in it does too,
-        // unless the caret is in it with words selected: then the right click belongs to
-        // those words, and the page's menu cuts and copies them.
+        // A click or right click on the handle selects the container, as in OneNote. A right
+        // click on the words belongs to the words: the page's menu opens and the box stays
+        // as it was.
         let words_selected = words_in.is_some_and(|w| w.0 == i);
         // A right click on selected words: the text box is about to forget the selection, so
         // ask for it back. The page's own menu opens, and its Cut, Copy and the toolbar's Bold
@@ -364,13 +412,14 @@ pub fn show(
             ui.data_mut(|d| d.insert_temp(pageedit::restore_selection_id(), (block_at, primary, secondary)));
         }
         let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
-        let right_here = right_click && pointer.is_some_and(|p| frame.contains(p)) && !words_selected && !image_right_click;
+        let right_here = right_click && pointer.is_some_and(|p| bar.contains(p)) && !words_selected && !image_right_click;
         if drag.clicked() || right_here {
             sel = Some(i);
             *caret = None;
             out.changed.caret = true;
         }
         if right_here {
+            log::debug!("container {}: right-clicked, selected={:?}", i, sel);
             menu_at = pointer;
             opened_now = true;
             // Read before the store is locked: asking the context for it inside would wait on itself.
@@ -384,21 +433,139 @@ pub fn show(
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
             let image_rect = object_rect;
-            let size = (6.0 * zoom).max(4.0);
-            for point in [
-                image_rect.left_top(),
-                image_rect.center_top(),
-                image_rect.right_top(),
-                image_rect.left_center(),
-                image_rect.right_center(),
-                image_rect.left_bottom(),
-                image_rect.center_bottom(),
-                image_rect.right_bottom(),
-            ] {
-                let handle = Rect::from_center_size(point, vec2(size, size));
-                ui.painter().rect_filled(handle, 1.0, t.editor);
-                ui.painter().rect_stroke(handle, 1.0, egui::Stroke::new(1.0 * zoom, t.accent), egui::StrokeKind::Inside);
+            let size = resize_handle_size;
+
+            // Create interactive handle widgets for images (every frame, not just when hovered)
+            if image_can_resize(kind) {
+                let handle_positions = [
+                    image_rect.left_top(),
+                    image_rect.center_top(),
+                    image_rect.right_top(),
+                    image_rect.left_center(),
+                    image_rect.right_center(),
+                    image_rect.left_bottom(),
+                    image_rect.center_bottom(),
+                    image_rect.right_bottom(),
+                ];
+
+                let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
+
+                for (idx, point) in handle_positions.iter().enumerate() {
+                    let handle_rect = Rect::from_center_size(*point, vec2(size * 2.0, size * 2.0));
+                    let handle_response = ui.interact(handle_rect, ui.id().with(("image-resize", i, idx)), Sense::click_and_drag());
+
+                    // Set cursor icon on hover
+                    let cursor = match idx {
+                        0 => egui::CursorIcon::ResizeNwSe,       // left_top
+                        1 => egui::CursorIcon::ResizeVertical,   // center_top
+                        2 => egui::CursorIcon::ResizeNeSw,       // right_top
+                        3 => egui::CursorIcon::ResizeHorizontal, // left_center
+                        4 => egui::CursorIcon::ResizeHorizontal, // right_center
+                        5 => egui::CursorIcon::ResizeNeSw,       // left_bottom
+                        6 => egui::CursorIcon::ResizeVertical,   // center_bottom
+                        7 => egui::CursorIcon::ResizeNwSe,       // right_bottom
+                        _ => egui::CursorIcon::Default,
+                    };
+
+                    if handle_response.hovered() {
+                        ui.ctx().set_cursor_icon(cursor);
+                    }
+
+                    if handle_response.hovered() || handle_response.drag_started() || handle_response.dragged() || handle_response.drag_stopped() {
+                        log::debug!(
+                            "image resize handle: container={} block={} idx={} rect={:?} pointer={:?} hovered={} pressed={} drag_started={} dragged={} drag_stopped={} delta={:?} standalone={} selected={:?}",
+                            i,
+                            *block,
+                            idx,
+                            handle_rect,
+                            pointer,
+                            handle_response.hovered(),
+                            handle_response.is_pointer_button_down_on(),
+                            handle_response.drag_started(),
+                            handle_response.dragged(),
+                            handle_response.drag_stopped(),
+                            handle_response.drag_delta(),
+                            standalone_image,
+                            object_sel,
+                        );
+                    }
+                    resize_drag_active |= handle_response.drag_started() || handle_response.dragged();
+
+                    let resize_state_id = ui.id().with(("image-resize-state", i, idx));
+                    if handle_response.drag_started() {
+                        let width = blocks
+                            .get(*block)
+                            .and_then(|block| match block {
+                                Block::Image { width, .. } => *width,
+                                _ => None,
+                            })
+                            .unwrap_or(image_rect.width() / zoom);
+                        let height = blocks
+                            .get(*block)
+                            .and_then(|block| match block {
+                                Block::Image { height, .. } => *height,
+                                _ => None,
+                            })
+                            .unwrap_or(image_rect.height() / zoom);
+                        if let (Some(container), Some(pointer)) = (boxes.get(i), pointer) {
+                            ui.data_mut(|data| {
+                                data.insert_temp(resize_state_id, ImageResizeStart { x: container.x, y: container.y, width, height, pointer });
+                            });
+                        }
+                    }
+
+                    // Handle resize drag
+                    if handle_response.dragged() && standalone_image {
+                        let frame_delta = handle_response.drag_delta();
+                        let block_idx = *block;
+                        let shift = ui.input(|input| input.modifiers.shift);
+                        let Some(start) = ui.data(|data| data.get_temp::<ImageResizeStart>(resize_state_id)) else {
+                            continue;
+                        };
+                        let delta = pointer.map_or(frame_delta, |current| current - start.pointer);
+                        log::debug!(
+                            "resize drag: idx={} frame_delta={:?} total_delta={:?} start_pointer={:?} pointer={:?} zoom={}",
+                            idx,
+                            frame_delta,
+                            delta,
+                            start.pointer,
+                            pointer,
+                            zoom
+                        );
+                        let geometry = resize_image(start.width, start.height, delta / zoom, idx, shift);
+                        if let Some(c) = boxes.get_mut(i) {
+                            c.x = start.x + geometry.offset.x;
+                            c.y = start.y + geometry.offset.y;
+                            c.width = geometry.width;
+                        }
+                        if let Some(Block::Image { width, height, .. }) = blocks.get_mut(block_idx) {
+                            *width = Some(geometry.width);
+                            *height = Some(geometry.height);
+                            log::debug!("image resize: block={block_idx} width={} height={}", geometry.width, geometry.height);
+                        }
+                        out.boxes = true;
+                        out.changed.blocks = true;
+                    }
+                    if handle_response.drag_stopped() {
+                        ui.data_mut(|data| data.remove::<ImageResizeStart>(resize_state_id));
+                    }
+
+                    // Draw handle
+                    ui.painter().rect_filled(Rect::from_center_size(*point, vec2(size, size)), 1.0, t.editor);
+                    ui.painter().rect_stroke(Rect::from_center_size(*point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
+                }
             }
+        }
+        if let Some(response) = &image_hit
+            && response.dragged()
+            && !resize_drag_active
+        {
+            let d = response.drag_delta();
+            if let Some(c) = boxes.get_mut(i) {
+                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
+            }
+            out.boxes = true;
+            log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
         }
         if is_sel {
             sel_frame = Some(frame);
@@ -414,31 +581,14 @@ pub fn show(
         // being dragged, the way a container shows its edges in OneNote.
         let busy = drag.dragged() || grip.dragged();
         if hovered || editing || busy || is_sel {
-            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.faint), egui::StrokeKind::Inside);
-            if image_object {
-                if is_sel || drag.hovered() || drag.dragged() {
-                    let stroke = egui::Stroke::new(1.5 * zoom, t.accent);
-                    ui.painter().rect_stroke(frame, 1.0 * zoom, stroke, egui::StrokeKind::Inside);
-                    // The handles are deliberately square and theme-coloured, like the
-                    // selection affordance in the reference UI. The right-edge grip remains
-                    // the live resize target; the other handles make the object boundary
-                    // clear at every corner and edge.
-                    let size = (6.0 * zoom).max(4.0);
-                    for point in [
-                        frame.left_top(),
-                        frame.center_top(),
-                        frame.right_top(),
-                        frame.left_center(),
-                        frame.right_center(),
-                        frame.left_bottom(),
-                        frame.center_bottom(),
-                        frame.right_bottom(),
-                    ] {
-                        ui.painter().rect_filled(Rect::from_center_size(point, vec2(size, size)), 1.0, t.editor);
-                        ui.painter().rect_stroke(Rect::from_center_size(point, vec2(size, size)), 1.0, stroke, egui::StrokeKind::Inside);
-                    }
-                }
-            } else {
+            log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
+            // Skip faint stroke for images; the selection affordance shows the picture boundary
+            if !image_object {
+                log::debug!("draw faint stroke for non-image");
+                ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.container_border), egui::StrokeKind::Inside);
+            }
+            // Images: affordance is drawn in selection block above (on object_rect, the picture rect)
+            if !image_object {
                 ui.painter().rect_filled(bar, 3.0 * zoom, if drag.hovered() || drag.dragged() { t.row_hover } else { t.faint });
                 for n in 0..3 {
                     let c = pos2(bar.center().x + (n as f32 - 1.0) * 5.0 * zoom, bar.center().y);
@@ -550,6 +700,14 @@ pub fn show(
             menu_at = None;
         }
     }
+    if let Some((block, kind)) = out.changed.select_object.take() {
+        object_sel = Some((block, kind.clone()));
+        *caret = None;
+        out.changed.caret = true;
+        ui.ctx().request_repaint();
+        log::debug!("keyboard selected embedded object: block={block} kind={kind}");
+    }
+
     // A press outside the selected container and its menu, or Escape, lets go of the selection.
     // So does the caret arriving in a container: the words are being edited, not the box.
     if sel.is_some() {
@@ -568,6 +726,50 @@ pub fn show(
     }
     if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
         object_sel = None;
+    }
+    if let Some((block, _)) = object_sel {
+        let direction = ui.input(|i| {
+            if i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowUp) {
+                Some(false)
+            } else if i.key_pressed(Key::ArrowDown) {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if let Some(down) = direction {
+            let target = if down {
+                pageedit::next_writable_block(blocks, block, shown_title)
+            } else {
+                pageedit::previous_writable_block(blocks, block, shown_title)
+            };
+            if let Some(target) = target {
+                let text = pageedit::text_for_caret(blocks, target);
+                *caret =
+                    Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: down.then_some(0), cell: None, span: None });
+                object_sel = None;
+                out.changed.caret = true;
+                log::debug!(
+                    "keyboard moved from embedded object: image_block={block} direction={} caret_block={target}",
+                    if down { "down" } else { "up" }
+                );
+            }
+        } else if ui.input(|i| i.key_pressed(Key::ArrowRight)) {
+            let target = pageedit::next_writable_block(blocks, block, shown_title);
+            let target = target.or_else(|| {
+                let at = block.saturating_add(1).min(blocks.len());
+                blocks.insert(at, Block::Paragraph(Vec::new()));
+                out.changed.blocks = true;
+                Some(at)
+            });
+            if let Some(target) = target {
+                let text = pageedit::text_for_caret(blocks, target);
+                *caret = Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None });
+                object_sel = None;
+                out.changed.caret = true;
+                log::debug!("keyboard moved after embedded object: image_block={block} caret_block={target}");
+            }
+        }
     }
     // Embedded objects have their own selection, separate from the containing box.
     // Both keys should remove the selected object, just as they remove selected text.
@@ -597,6 +799,7 @@ pub fn show(
     let now = blocks.len();
     if now != before {
         let which = caret_box.unwrap_or(0).min(boxes.len().saturating_sub(1));
+        log::debug!("BLOCK_COUNT: {before} -> {now} credited to box {which} (caret_box={caret_box:?})");
         if let Some(c) = boxes.get_mut(which) {
             let grew = now as i64 - before as i64;
             c.blocks = (c.blocks as i64 + grew).max(0) as usize;
@@ -610,6 +813,7 @@ pub fn show(
         && container::blocks_of(boxes, i).is_empty()
     {
         let at = container::blocks_of(boxes, i).start.min(blocks.len());
+        log::debug!("FILL_EMPTY_BOX: i={i} inserts empty paragraph at block {at} (triggered by click)");
         blocks.insert(at, Block::Paragraph(Vec::new()));
         if let Some(c) = boxes.get_mut(i) {
             c.blocks += 1;
@@ -814,6 +1018,92 @@ fn block_has_image(block: &Block) -> bool {
     }
 }
 
+fn image_can_resize(kind: &str) -> bool {
+    kind == "image"
+}
+
+/// Keep a date-only new page usable without serializing empty paragraphs into the file.
+fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32) -> f32 {
+    let minimum = if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) { INITIAL_PAGE_LINES * EMPTY_LINE_HEIGHT } else { 0.0 };
+    used.max(minimum) + TRAILING_LINE_HEIGHT
+}
+
+fn resize_handle_rects(rect: Rect, size: f32) -> [Rect; 8] {
+    [
+        rect.left_top(),
+        rect.center_top(),
+        rect.right_top(),
+        rect.left_center(),
+        rect.right_center(),
+        rect.left_bottom(),
+        rect.center_bottom(),
+        rect.right_bottom(),
+    ]
+    .map(|point| Rect::from_center_size(point, vec2(size * 2.0, size * 2.0)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ImageResize {
+    offset: egui::Vec2,
+    width: f32,
+    height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ImageResizeStart {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    pointer: egui::Pos2,
+}
+
+fn resize_image(width: f32, height: f32, delta: egui::Vec2, handle: usize, shift: bool) -> ImageResize {
+    const MIN: f32 = 16.0;
+    let aspect = (width / height).max(f32::EPSILON);
+    let corner = matches!(handle, 0 | 2 | 5 | 7);
+    let preserve_aspect = corner && !shift;
+    let mut new_width = width;
+    let mut new_height = height;
+    let mut offset = egui::Vec2::ZERO;
+
+    match handle {
+        0 | 3 | 5 => {
+            new_width = width - delta.x;
+            offset.x = delta.x;
+        }
+        2 | 4 | 7 => new_width = width + delta.x,
+        _ => {}
+    }
+    match handle {
+        0..=2 => {
+            new_height = height - delta.y;
+            offset.y = delta.y;
+        }
+        5..=7 => new_height = height + delta.y,
+        _ => {}
+    }
+
+    if preserve_aspect {
+        let width_change = new_width - width;
+        let height_change = new_height - height;
+        let signed = if width_change.abs() >= height_change.abs() * aspect { width_change } else { height_change * aspect };
+        new_width = (width + signed).max(MIN);
+        new_height = (new_width / aspect).max(MIN);
+        if matches!(handle, 0 | 3 | 5) {
+            offset.x = width - new_width;
+        }
+        if matches!(handle, 0..=2) {
+            offset.y = height - new_height;
+        }
+    } else {
+        new_width = new_width.max(MIN);
+        new_height = new_height.max(MIN);
+    }
+
+    ImageResize { offset, width: new_width, height: new_height }
+}
+
 /// Whether the pointer is over open paper, not over a box.
 fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
@@ -829,9 +1119,11 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     // turn into one column the moment somebody clicks near the middle.
     let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
     blocks.push(Block::Paragraph(Vec::new()));
+    let block_idx = blocks.len() - 1;
+    let box_idx = boxes.len();
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
-    *caret =
-        Some(pageedit::Caret { block: blocks.len() - 1, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+    log::debug!("CREATE_BOX: i={} at_pos=({:.0},{:.0}) width={:.0} holds_block={} (triggered by click)", box_idx, at.x, at.y, width, block_idx);
+    *caret = Some(pageedit::Caret { block: block_idx, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
 }
 
 #[cfg(test)]
@@ -839,13 +1131,124 @@ mod tests {
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};
-        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into() }));
+        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into(), width: None, height: None }));
         assert!(block_has_image(&Block::Paragraph(vec![Span {
             image: Some("assets/picture.png".into()),
             text: "picture".into(),
             ..Span::default()
         }])));
         assert!(!block_has_image(&Block::Paragraph(vec![Span { text: "ordinary text".into(), ..Span::default() }])));
+    }
+
+    #[test]
+    fn only_image_objects_get_resize_handles() {
+        assert!(image_can_resize("image"));
+        assert!(!image_can_resize("link"));
+        assert!(!image_can_resize("file"));
+    }
+
+    #[test]
+    fn a_date_only_new_page_gets_a_twenty_line_writing_surface() {
+        let blocks = page("Monday, 2 November 2026, 05:05\n");
+        assert_eq!(container_content_height(&blocks, &(0..1), 24.0), 462.0);
+    }
+
+    #[test]
+    fn an_existing_multi_block_page_keeps_its_content_height() {
+        let blocks = page("Monday, 2 November 2026, 05:05\n\ntext\n");
+        assert_eq!(container_content_height(&blocks, &(0..2), 46.0), 68.0);
+    }
+
+    #[test]
+    fn a_block_with_an_inline_image_keeps_one_line_below_the_object() {
+        let blocks = page("text ![picture](assets/picture.png)\n");
+        assert_eq!(container_content_height(&blocks, &(0..1), 80.0), 102.0);
+    }
+
+    #[test]
+    fn image_resize_preserves_aspect_ratio_for_corners() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(40.0, 0.0), 7, false);
+        assert_eq!(resized, ImageResize { offset: egui::Vec2::ZERO, width: 240.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_allows_free_corner_scaling_with_shift() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(40.0, 20.0), 7, true);
+        assert_eq!(resized, ImageResize { offset: egui::Vec2::ZERO, width: 240.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_moves_left_and_top_edges_with_the_picture() {
+        let resized = resize_image(200.0, 100.0, egui::vec2(20.0, 10.0), 0, true);
+        assert_eq!(resized, ImageResize { offset: egui::vec2(20.0, 10.0), width: 180.0, height: 90.0 });
+    }
+
+    #[test]
+    fn image_resize_changes_only_the_horizontal_edge_axis() {
+        let left = resize_image(200.0, 100.0, egui::vec2(20.0, 35.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(20.0, 35.0), 4, false);
+        assert_eq!(left, ImageResize { offset: egui::vec2(20.0, 0.0), width: 180.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 220.0, height: 100.0 });
+    }
+
+    #[test]
+    fn image_resize_changes_only_the_vertical_edge_axis() {
+        let top = resize_image(200.0, 100.0, egui::vec2(35.0, 20.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(35.0, 20.0), 6, false);
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, 20.0), width: 200.0, height: 80.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_each_edge_stretches_only_in_its_direction() {
+        let left = resize_image(200.0, 100.0, egui::vec2(-30.0, 45.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(30.0, 45.0), 4, false);
+        let top = resize_image(200.0, 100.0, egui::vec2(45.0, -20.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(45.0, 20.0), 6, false);
+
+        assert_eq!(left, ImageResize { offset: egui::vec2(-30.0, 0.0), width: 230.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 230.0, height: 100.0 });
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, -20.0), width: 200.0, height: 120.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 120.0 });
+    }
+
+    #[test]
+    fn image_resize_edges_shrink_without_changing_the_other_dimension() {
+        let left = resize_image(200.0, 100.0, egui::vec2(35.0, -45.0), 3, false);
+        let right = resize_image(200.0, 100.0, egui::vec2(-35.0, -45.0), 4, false);
+        let top = resize_image(200.0, 100.0, egui::vec2(-45.0, 25.0), 1, false);
+        let bottom = resize_image(200.0, 100.0, egui::vec2(-45.0, -25.0), 6, false);
+
+        assert_eq!(left, ImageResize { offset: egui::vec2(35.0, 0.0), width: 165.0, height: 100.0 });
+        assert_eq!(right, ImageResize { offset: egui::Vec2::ZERO, width: 165.0, height: 100.0 });
+        assert_eq!(top, ImageResize { offset: egui::vec2(0.0, 25.0), width: 200.0, height: 75.0 });
+        assert_eq!(bottom, ImageResize { offset: egui::Vec2::ZERO, width: 200.0, height: 75.0 });
+    }
+
+    #[test]
+    fn image_resize_edges_enforce_the_minimum_dimension() {
+        let left = resize_image(20.0, 100.0, egui::vec2(100.0, 50.0), 3, false);
+        let right = resize_image(20.0, 100.0, egui::vec2(-100.0, 50.0), 4, false);
+        let top = resize_image(100.0, 20.0, egui::vec2(50.0, 100.0), 1, false);
+        let bottom = resize_image(100.0, 20.0, egui::vec2(50.0, -100.0), 6, false);
+
+        assert_eq!(left.width, 16.0);
+        assert_eq!(left.height, 100.0);
+        assert_eq!(right.width, 16.0);
+        assert_eq!(right.height, 100.0);
+        assert_eq!(top.width, 100.0);
+        assert_eq!(top.height, 16.0);
+        assert_eq!(bottom.width, 100.0);
+        assert_eq!(bottom.height, 16.0);
+    }
+
+    #[test]
+    fn image_resize_corners_are_the_only_handles_that_change_both_dimensions() {
+        for handle in [0, 2, 5, 7] {
+            let resized = resize_image(200.0, 100.0, egui::vec2(30.0, 20.0), handle, true);
+            assert_ne!(resized.width, 200.0, "corner {handle} changes width");
+            assert_ne!(resized.height, 100.0, "corner {handle} changes height");
+        }
     }
 
     /// A box that holds the heading repeating the page title does not carry it when copied.

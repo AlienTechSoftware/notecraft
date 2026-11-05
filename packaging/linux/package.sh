@@ -63,6 +63,18 @@ install -Dm644 "$ROOT/LICENSE-MIT" "$STAGE/usr/share/doc/notecraft/LICENSE-MIT"
 install -Dm644 "$ROOT/LICENSE-APACHE" "$STAGE/usr/share/doc/notecraft/LICENSE-APACHE"
 install -Dm644 "$ROOT/NOTICE" "$STAGE/usr/share/doc/notecraft/NOTICE"
 
+# The demo notebook is a release payload, not only build-time test data. Keep both
+# generated formats so Linux users can inspect the same examples as Windows users.
+DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
+for format in html cmgfm; do
+    [ -d "$DEMO_SOURCE/$format" ] || { echo "required demo format is missing: $format" >&2; exit 1; }
+done
+mkdir -p "$STAGE/usr/share/notecraft/demo"
+cp -R "$DEMO_SOURCE" "$STAGE/usr/share/notecraft/demo/"
+[ -f "$STAGE/usr/share/notecraft/demo/DemoNotebook/html/00-start/welcome/index.html" ] || {
+    echo "demo notebook was not staged" >&2; exit 1;
+}
+
 if has_format tar; then
     mkdir -p "$DIST/tar"
     rm -rf "$DIST/tar/$BASENAME"

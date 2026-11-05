@@ -210,8 +210,35 @@ pub fn delete_node(root: &Path, path: &Path) -> Result<usize> {
     }
     let node = tree::load_tree(&path).ok_or_else(|| StoreError::invalid(format!("{} is not a NoteCraft node", path.display())))?;
     let count = node.count();
-    fs::remove_dir_all(&path).map_err(|e| StoreError::io("delete", &path, e))?;
+    remove_tree(&path).map_err(|e| StoreError::io("delete", &path, e))?;
     Ok(count)
+}
+
+/// Deletes a folder and everything in it. `fs::remove_dir_all` fails on a VirtualBox shared
+/// folder with OS error 234 ("More data is available"), because the share does not support
+/// the directory query it uses; the folder is then emptied entry by entry instead.
+pub fn remove_tree(path: &Path) -> std::io::Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(first) if path.exists() => {
+            log::warn!("remove_dir_all failed, deleting entry by entry: path={path:?} error={first}");
+            remove_entries(path)
+        }
+        Err(first) => Err(first),
+    }
+}
+
+fn remove_entries(dir: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            remove_entries(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+    }
+    fs::remove_dir(dir)
 }
 
 /// Gives a notebook, section group or section a colour, the way OneNote colours a notebook
@@ -559,5 +586,42 @@ mod tests {
         assert_eq!(delete_node(&r, &p).expect("delete"), 2);
         assert!(!p.exists());
         assert!(nb.exists());
+    }
+
+    /// The fallback `remove_tree` takes on a VirtualBox share, where `remove_dir_all` fails
+    /// with OS error 234: a whole notebook, nested folders and files, goes entry by entry.
+    #[test]
+    fn a_notebook_is_deleted_entry_by_entry() {
+        let t = TempDir::new("ops-remove-entries");
+        let s = settings(&t);
+        let r = root(&t);
+        let nb = create_notebook(&r, "NB", None, &s).expect("nb");
+        let sec = create_node(&nb, "Section", NodeKind::Section, None, &s).expect("section");
+        let p = create_node(&sec, "Page", NodeKind::Page, None, &s).expect("page");
+        fs::create_dir_all(p.join("assets")).expect("assets");
+        fs::write(p.join("assets").join("a.docx"), b"x").expect("attachment");
+
+        remove_entries(&nb).expect("delete entry by entry");
+        assert!(!nb.exists(), "the notebook folder is gone");
+        assert!(r.exists(), "the notebooks folder is kept");
+    }
+
+    /// The same delete through a verbatim network share path (`\\?\UNC\...`), the form a
+    /// notebook on a shared folder has in the app.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_notebook_on_a_network_share_is_deleted() {
+        let t = TempDir::new("ops-remove-unc");
+        let s = settings(&t);
+        let r = root(&t);
+        let nb = create_notebook(&r, "NB", None, &s).expect("nb");
+        create_node(&nb, "Section", NodeKind::Section, None, &s).expect("section");
+        let local = tree::display_path(&fs::canonicalize(&nb).expect("canonical"));
+        let (drive, rest) = local.split_once(":\\").expect("a drive path");
+        let shared = PathBuf::from(format!(r"\\?\UNC\localhost\{drive}$\{rest}"));
+        assert!(shared.is_dir(), "the admin share reaches the notebook: {shared:?}");
+
+        remove_tree(&shared).expect("delete through the share");
+        assert!(!nb.exists());
     }
 }

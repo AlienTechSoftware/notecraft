@@ -1,6 +1,6 @@
 ---
 name: nc-hl-design
-description: 'NoteCraft high-level design guidance. Use before starting new features, major refactors, or architectural work. Enforces understanding-first, sketches system boundaries, identifies data flows, and documents design decisions. Reference product principles, architectural patterns, and cross-platform considerations. Output: clear scopes, data flow diagrams, state machines, and acceptance criteria.'
+description: Design NoteCraft features, refactors, and architectural work with explicit scope, boundaries, data flow, decisions, risks, and acceptance criteria.
 license: MIT
 metadata:
   version: "0.0.20261024.2"
@@ -8,6 +8,10 @@ metadata:
 ---
 
 # nc-hl-design - NoteCraft High-Level Design
+
+## Job to be done
+
+Design approved NoteCraft changes with explicit scope, boundaries, data flow, risks, and observable acceptance criteria.
 
 ## Runtime and diagnostics baseline
 
@@ -54,6 +58,27 @@ For small, scoped work (single-file bug fix, obvious config change), use `code-a
 ## Design Phase (Mandatory Before Implementation)
 
 Follow this process. Do not skip to code.
+
+### Test-driven behavior contract
+
+For NoteCraft 0.0.7 and later, a design is not ready for implementation until
+the behavior has a testable contract:
+
+1. State the user requirement in plain language.
+2. Define observable acceptance criteria, including relevant edge cases and
+   interaction states.
+3. Identify the test layer that proves each criterion: model or geometry tests,
+   command/control tests, `egui_kittest` UI tests, accessibility queries, or
+   visual regression tests.
+4. Write the tests before the implementation and run them once. The initial
+   failure must demonstrate the missing behavior, not a malformed test.
+5. Implement the smallest complete change that makes the tests pass, then run
+   focused checks and the applicable quality gate.
+
+Do not treat a passing implementation-only test as proof of a new UI behavior.
+The test must exercise the user-visible contract at the narrowest reliable layer,
+with an end-to-end UI test for pointer, keyboard, accessibility, or visual
+behavior when lower-level tests cannot prove it.
 
 ### Step 1: Summarize Understanding
 

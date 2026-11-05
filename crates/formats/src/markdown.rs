@@ -31,7 +31,7 @@ pub enum Block {
     MathBlock(String),
     Table { head: Vec<Vec<Span>>, rows: Vec<Vec<Vec<Span>>> },
     Rule,
-    Image { alt: String, src: String },
+    Image { alt: String, src: String, width: Option<f32>, height: Option<f32> },
 }
 
 /// What a code block's language starts with when its lines are numbered: `123|rust`, or `123|` for no language.
@@ -270,6 +270,26 @@ fn starts_block(line: &str) -> bool {
     t.starts_with('#') || t.starts_with("```") || t.starts_with('>') || t.starts_with("$$") || list_marker(line).is_some()
 }
 
+fn parse_attr(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_lowercase();
+    let marker = format!("{name}=\"");
+    let start = lower.find(&marker)? + marker.len();
+    let end = tag.get(start..)?.find('"')?;
+    tag.get(start..start + end).map(str::to_string)
+}
+
+fn try_parse_img_block(line: &str) -> Option<Block> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("<img ") || !trimmed.ends_with('>') {
+        return None;
+    }
+    let src = parse_attr(trimmed, "src")?;
+    let alt = parse_attr(trimmed, "alt").unwrap_or_default();
+    let width = parse_attr(trimmed, "width").and_then(|w| w.parse::<f32>().ok()).filter(|v| v.is_finite());
+    let height = parse_attr(trimmed, "height").and_then(|h| h.parse::<f32>().ok()).filter(|v| v.is_finite());
+    Some(Block::Image { alt, src, width, height })
+}
+
 /// Parses a Markdown page body into blocks. Never panics.
 pub fn parse(src: &str) -> Vec<Block> {
     let text = src.replace("\r\n", "\n");
@@ -300,6 +320,9 @@ pub fn parse(src: &str) -> Vec<Block> {
             }
             i += 1;
             out.push(Block::MathBlock(body.join(" ").trim().to_string()));
+        } else if let Some(img_block) = try_parse_img_block(line) {
+            out.push(img_block);
+            i += 1;
         } else if t.starts_with('#') && t.trim_start_matches('#').starts_with(' ') && t.chars().take_while(|&c| c == '#').count() <= 6 {
             let level = t.chars().take_while(|&c| c == '#').count();
             let rest = t.trim_start_matches('#').trim();
@@ -351,7 +374,7 @@ pub fn parse(src: &str) -> Vec<Block> {
             if let [only] = spans.as_slice()
                 && let Some(src) = &only.image
             {
-                out.push(Block::Image { alt: only.text.clone(), src: src.clone() });
+                out.push(Block::Image { alt: only.text.clone(), src: src.clone(), width: None, height: None });
                 continue;
             }
             out.push(Block::Paragraph(spans));
@@ -453,7 +476,7 @@ mod tests {
     #[test]
     fn a_lone_image_is_an_image_block() {
         let b = parse("![alt text](assets/x.png)\n");
-        assert_eq!(b, vec![Block::Image { alt: "alt text".into(), src: "assets/x.png".into() }]);
+        assert_eq!(b, vec![Block::Image { alt: "alt text".into(), src: "assets/x.png".into(), width: None, height: None }]);
     }
 
     #[test]

@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-drawing
 
+## Job to be done
+
+Implement and verify NoteCraft drawing workflows that preserve natural ink, pressure, selection, and platform behavior.
+
 Use this skill for the Draw tab, pen and highlighter tools, stylus input, pressure response,
 ink rendering, erasing, lasso selection, shapes, and drawing-mode interactions.
 

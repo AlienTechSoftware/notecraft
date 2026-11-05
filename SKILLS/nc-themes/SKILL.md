@@ -9,6 +9,10 @@ metadata:
 
 # nc-themes
 
+## Job to be done
+
+Design and verify NoteCraft theme behavior across tokens, contrast, states, dialogs, and supported themes.
+
 Use this skill for colors, surfaces, typography contrast, borders, hover states, dialogs, and
 visual regressions.
 

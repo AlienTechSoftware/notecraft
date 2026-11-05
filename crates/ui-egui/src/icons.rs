@@ -58,6 +58,18 @@ pub enum Icon {
     Quote,
     /// Three thin lines, well apart: show or hide the notebooks column.
     Bars,
+    /// Three lines sharing a left edge: align the paragraph to the left.
+    AlignLeft,
+    /// Three lines sharing a centre: centre the paragraph.
+    AlignCenter,
+    /// Three lines sharing a right edge: align the paragraph to the right.
+    AlignRight,
+    /// Lines with modestly varying lengths: justify with low kashida strength.
+    JustifyLow,
+    /// Lines with medium variation: justify with medium kashida strength.
+    JustifyMedium,
+    /// Lines filling the column: justify with high kashida strength.
+    JustifyHigh,
     /// Lines of text with an arrow under them pointing right: this reads left to right.
     DirLtr,
     /// The same, mirrored: this reads right to left.
@@ -296,6 +308,19 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         ],
         // Three lines, thin and well apart, for the button that hides the notebooks.
         Icon::Bars => vec![path(&[(4.0, 7.0), (20.0, 7.0)]), path(&[(4.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 17.0), (20.0, 17.0)])],
+        Icon::AlignLeft => vec![path(&[(4.0, 6.0), (20.0, 6.0)]), path(&[(4.0, 12.0), (15.0, 12.0)]), path(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::AlignCenter => vec![path(&[(4.0, 6.0), (20.0, 6.0)]), path(&[(7.0, 12.0), (17.0, 12.0)]), path(&[(5.5, 18.0), (18.5, 18.0)])],
+        Icon::AlignRight => vec![path(&[(4.0, 6.0), (20.0, 6.0)]), path(&[(9.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::JustifyLow => vec![
+            path(&[(4.0, 6.0), (10.0, 6.0)]),
+            path(&[(14.0, 6.0), (20.0, 6.0)]),
+            path(&[(4.0, 12.0), (10.0, 12.0)]),
+            path(&[(14.0, 12.0), (20.0, 12.0)]),
+            path(&[(4.0, 18.0), (10.0, 18.0)]),
+            path(&[(14.0, 18.0), (20.0, 18.0)]),
+        ],
+        Icon::JustifyMedium => vec![path(&[(4.0, 6.0), (12.0, 6.0)]), path(&[(4.0, 12.0), (16.0, 12.0)]), path(&[(4.0, 18.0), (20.0, 18.0)])],
+        Icon::JustifyHigh => vec![path(&[(4.0, 6.0), (20.0, 6.0)]), path(&[(4.0, 12.0), (20.0, 12.0)]), path(&[(4.0, 18.0), (20.0, 18.0)])],
         // A block rubber leaning on the page: the body, the worn band across its foot, and
         // the line it sits on, which is what says it is rubbing something out.
         // An arrow curving back on itself to the left: take the last thing back.
@@ -650,7 +675,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 60] = [
+    pub const ALL: [Icon; 66] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -683,6 +708,12 @@ mod tests {
         Icon::DirAuto,
         Icon::ParaAuto,
         Icon::Bars,
+        Icon::AlignLeft,
+        Icon::AlignCenter,
+        Icon::AlignRight,
+        Icon::JustifyLow,
+        Icon::JustifyMedium,
+        Icon::JustifyHigh,
         Icon::Eraser,
         Icon::Undo,
         Icon::Redo,

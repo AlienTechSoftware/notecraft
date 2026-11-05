@@ -112,6 +112,25 @@ Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe') $Stage
 
+# The demo notebook is a required release payload. Keep both generated formats in the installed
+# package even though the app embeds the HTML copy for first-start deployment. This makes omission
+# visible in package inspection and gives future installers a stable payload to deploy.
+$DemoSource = Join-Path $Root 'docs\demo\DemoNotebook'
+foreach ($format in 'html', 'cmgfm') {
+  $formatDir = Join-Path $DemoSource $format
+  if (-not (Test-Path $formatDir -PathType Container)) { throw "required demo format is missing: $formatDir" }
+  $files = @(Get-ChildItem -Path $formatDir -File -Recurse)
+  if ($files.Count -eq 0) { throw "required demo format is empty: $formatDir" }
+  $languages = @(Get-ChildItem -Path $formatDir -Directory | Where-Object { $_.Name -match '^(1\d|2\d)-' })
+  if ($languages.Count -ne 13) { throw "demo format $format has $($languages.Count) language folders, expected 13" }
+}
+$DemoStage = Join-Path $Stage 'demo\welcome-to-notecraft'
+New-Item -ItemType Directory -Force -Path $DemoStage | Out-Null
+Copy-Item (Join-Path $DemoSource '*') $DemoStage -Recurse
+if (-not (Test-Path (Join-Path $DemoStage 'html\00-start\welcome\index.html'))) {
+  throw 'demo staging failed: HTML start page is missing'
+}
+
 # The importer is part of the Windows product, not an optional file that can silently be
 # omitted from a release. Build and stage the self-contained OfficeIMO bridge beside NoteCraft.
 $BridgeStage = Join-Path $TargetDir 'officeimo-package'
@@ -191,6 +210,7 @@ New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
 Copy-Item (Join-Path $Stage 'importers') $Portable -Recurse
 Copy-Item (Join-Path $Stage 'licenses') $Portable -Recurse
+Copy-Item (Join-Path $Stage 'demo') $Portable -Recurse
 foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }

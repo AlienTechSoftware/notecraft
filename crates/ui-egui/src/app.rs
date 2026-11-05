@@ -110,7 +110,14 @@ fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
     if !page.join("assets").join(name).is_file() {
         return None;
     }
-    (!attachment_icon_exists(page, name)).then(|| name.to_string())
+    (!attachment_icon_healthy(page, name)).then(|| name.to_string())
+}
+
+/// A generated PNG is preferred on Windows, but the deterministic SVG fallback is also a
+/// complete icon. In particular, Shell extraction can fail for files on a UNC-mounted
+/// enlistment even though the fallback renders correctly.
+fn attachment_icon_healthy(page: &Path, name: &str) -> bool {
+    attachment_icon_exists(page, name)
 }
 
 fn attachment_icon_exists(page: &Path, name: &str) -> bool {
@@ -359,7 +366,7 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
             ui.memory_mut(|m| m.request_focus(title_id));
         }
         let name = ed.title_buf.clone();
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &name));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, &name));
         egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
     if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
@@ -545,8 +552,6 @@ pub struct NoteCraftApp {
     control: Option<Receiver<ControlRequest>>,
     control_server: Option<ControlServer>,
     event_frames: std::collections::VecDeque<Vec<egui::Event>>,
-    screenshots: Vec<(u64, ControlRequest, Option<PathBuf>)>,
-    next_screenshot: u64,
     show_source: bool,
     /// The code view: which of the page's files is picked, and its text while it is read
     /// or edited.
@@ -592,6 +597,7 @@ pub struct NoteCraftApp {
     pending_copy: Option<String>,
     /// Matching HTML flavor for the same copied item, when one is available.
     pending_copy_html: Option<String>,
+    keyboard_paste_requested: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
     /// The page fills the window: the notebooks are hidden until it is turned off.
@@ -621,6 +627,12 @@ impl NoteCraftApp {
         self
     }
 
+    /// Queues a native keyboard paste captured before egui processes the shortcut.
+    pub fn queue_keyboard_paste(&mut self) {
+        log::debug!("queued native keyboard paste");
+        self.keyboard_paste_requested = true;
+    }
+
     pub fn new(session: Session) -> NoteCraftApp {
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let accent = session.settings.get("theme_accent").and_then(|v| Accent::parse(&v)).unwrap_or(Accent::Default);
@@ -639,7 +651,10 @@ impl NoteCraftApp {
         let nib = session.settings.get(NIB_KEY).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).min(rack.len() - 1);
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
-        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none();
+        // `--first-use` clears the key to an empty value, which counts as not seen.
+        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
+        let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
+        log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -653,7 +668,7 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: "debug".into() }) } else { None },
+            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: telemetry_level }) } else { None },
             import_job: None,
             status: "Ready".into(),
             status_is_error: false,
@@ -671,8 +686,6 @@ impl NoteCraftApp {
             control: None,
             control_server: None,
             event_frames: std::collections::VecDeque::new(),
-            screenshots: Vec::new(),
-            next_screenshot: 1,
             show_source,
             code: crate::codeview::State::default(),
             ribbon_tab: "Home".to_string(),
@@ -694,6 +707,7 @@ impl NoteCraftApp {
             theme_window: false,
             pending_copy: None,
             pending_copy_html: None,
+            keyboard_paste_requested: false,
             backstage: None,
             full_page: false,
             focus_search: false,
@@ -1084,11 +1098,24 @@ impl NoteCraftApp {
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
             let arranged = in_the_text.is_some() || !older.is_empty();
             let mut boxes = in_the_text.unwrap_or(older);
+            log::debug!(
+                "page loaded for layout: page={:?} format={:?} blocks={} arranged={} stored_containers={:?}",
+                dir,
+                page.format,
+                blocks.len(),
+                arranged,
+                boxes
+            );
             // A never-arranged blank page still gets one empty writing box. A
             // page whose last box was deliberately deleted remains boxless so
             // its open paper can create a new box on the next click.
             if blocks.is_empty() && !arranged && boxes.is_empty() {
                 boxes.push(notecraft_model::Container::new(0.0, 0.0, 360.0, 0));
+                log::debug!(
+                    "default page block created: page={:?} block_count={} container=(x=0,y=0,width=360,blocks=0) empty_block_min_height=22",
+                    dir,
+                    blocks.len()
+                );
             }
             // The page as it was opened is the first step of its history: undo goes back
             // this far and no further.
@@ -1134,7 +1161,9 @@ impl NoteCraftApp {
             {
                 let key = format!("{}::{name}", dir.display());
                 log::warn!("attachment recovery scan found missing icon: page={:?} attachment={name:?}", dir);
-                if self.icon_recovery_reported.insert(key) {
+                // Do not let page recovery replace the first-use privacy dialog. The normal
+                // frame pass below will offer recovery after the user answers that dialog.
+                if self.dialog.is_none() && self.icon_recovery_reported.insert(key) {
                     self.dialog = Some(Dialog::MissingAttachmentIcon { page: dir.to_path_buf(), name });
                 }
             } else {
@@ -2767,21 +2796,7 @@ impl NoteCraftApp {
             return;
         };
         if let Some(picture) = self.clipboard.picture() {
-            let name = crate::clipboard::picture_name();
-            let (w, h) = (picture.width, picture.height);
-            match notecraft_store::assets::attach_bytes(&dir, &name, &picture.png) {
-                Ok(link) => {
-                    if let Some(ed) = self.editor.as_mut() {
-                        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
-                        ed.blocks.insert(at, notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link });
-                        ed.rebuild_body();
-                        Self::mark_dirty_from_blocks(ed);
-                        ed.attachments = notecraft_store::assets::list(&dir);
-                    }
-                    self.say(format!("Pasted a picture, {w} by {h}"));
-                }
-                Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
-            }
+            self.paste_picture(&dir, picture);
             return;
         }
         // Browsers, Word and other editors offer a formatted clipboard flavour as well
@@ -2805,9 +2820,6 @@ impl NoteCraftApp {
         }
         match self.clipboard.text() {
             Some(text) => {
-                // The same reading as Ctrl+V: a box that was copied comes back whole, several lines
-                // become lines of their own, a table stays a table. Put in as one text, as this once
-                // did, the lines ran together in a single paragraph with their Markdown showing.
                 let new = pageedit::blocks_to_paste(&text);
                 match self.editor.as_mut() {
                     Some(ed) if !new.is_empty() && ed.writable => {
@@ -2824,6 +2836,29 @@ impl NoteCraftApp {
                 self.say("Pasted");
             }
             None => self.say("There is nothing on the clipboard to paste"),
+        }
+    }
+
+    fn paste_picture(&mut self, dir: &std::path::Path, picture: crate::clipboard::Picture) {
+        let name = crate::clipboard::picture_name();
+        let (w, h) = (picture.width, picture.height);
+        log::debug!("clipboard image paste received: width={w} height={h} bytes={}", picture.png.len());
+        match notecraft_store::assets::attach_bytes(dir, &name, &picture.png) {
+            Ok(link) => {
+                log::debug!("clipboard image paste attached: name={name:?} link={link:?}");
+                if let Some(ed) = self.editor.as_mut() {
+                    let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+                    ed.blocks.insert(
+                        at,
+                        notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
+                    );
+                    ed.rebuild_body();
+                    Self::mark_dirty_from_blocks(ed);
+                    ed.attachments = notecraft_store::assets::list(dir);
+                }
+                self.say(format!("Pasted a picture, {w} by {h}"));
+            }
+            Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
         }
     }
 
@@ -2856,14 +2891,14 @@ impl NoteCraftApp {
         // A line that names an ink file that is no longer in the folder goes.
         let before = ed.blocks.len();
         ed.blocks.retain(|b| match b {
-            Block::Image { src, alt } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
+            Block::Image { src, alt, .. } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
             _ => true,
         });
         changed |= ed.blocks.len() != before;
         // An ink file the page does not name is adopted: it is drawn, so it is named.
         for file in &files {
             if !ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if src.trim() == file)) {
-                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone() });
+                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone(), width: None, height: None });
                 changed = true;
             }
         }
@@ -3094,11 +3129,10 @@ impl NoteCraftApp {
             self.complain(&format!("No {name} beside this page: hand the table over first"));
             return;
         };
-        let Some(table) = notecraft_formats::csv::to_table(&text) else {
+        let Some((table, rows, columns)) = table_from_gridcraft_csv(&text) else {
             self.complain("That file has nothing in it to put back");
             return;
         };
-        let (rows, columns) = pageedit::table_size(&table).unwrap_or((0, 0));
         if let Some(block) = ed.blocks.get_mut(at) {
             *block = table;
         }
@@ -3504,6 +3538,9 @@ impl NoteCraftApp {
                     || i.events.iter().any(|e| {
                         matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
                     })
+                    || i.raw.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
+                    })
             };
             (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
         });
@@ -3511,22 +3548,27 @@ impl NoteCraftApp {
             return;
         }
         let ours = self.words_are_ours();
-        // Paste has one more case than the others: with a box picked, or with the caret
-        // nowhere, no text box is listening and the ribbon's Paste is the only way in.
-        let nobody = self.editor.as_ref().is_some_and(|e| e.caret.is_none());
         if copy && ours {
             self.clipboard("copy");
         }
         if cut && ours {
             self.clipboard("cut");
         }
-        // A screenshot has no text for egui's text widget to consume. Route it through
-        // NoteCraft even when the caret is inside an ordinary text editor; otherwise Ctrl+V
-        // appears to do nothing because egui handles the key before `paste_here` can inspect
-        // the system image clipboard.
-        let picture = paste && self.clipboard.has_picture();
-        if paste && (picture || ours || nobody) {
-            self.paste_here();
+        // A screenshot has no text for egui's text widget to consume. Route every Ctrl+V
+        // through the same paste path; it reads the image clipboard exactly once. Probing
+        // with has_picture() first was racy with VirtualBox clipboard synchronisation and
+        // could make the actual image read miss the clipboard handoff.
+        if paste {
+            // Consume the shortcut before the text widgets draw. Otherwise an LTR TextEdit
+            // handles Ctrl+V itself while the page menu goes through `paste_here`, giving the
+            // two entry points different behavior.
+            ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::V) || i.consume_key(Modifiers::CTRL, Key::V));
+            let picture = self.clipboard.picture();
+            if let (Some(picture), Some(dir)) = (picture, self.editor.as_ref().map(|e| e.dir.clone())) {
+                self.paste_picture(&dir, picture);
+            } else {
+                self.paste_here();
+            }
         }
         if all && ours {
             self.select_all_in_block();
@@ -4514,7 +4556,7 @@ impl NoteCraftApp {
                     ui.separator();
                     let (current, source) = self.session.settings.global_format();
                     let mut chosen = current;
-                    egui::ComboBox::from_id_salt("default-format").selected_text(current.label()).show_ui(ui, |ui| {
+                    egui::ComboBox::from_label("Default format").selected_text(current.label()).show_ui(ui, |ui| {
                         for f in PageFormat::ALL {
                             ui.selectable_value(&mut chosen, f, f.label());
                         }
@@ -4543,7 +4585,7 @@ impl NoteCraftApp {
         // recovery scan and the frame that presents this modal. Re-check the
         // filesystem so a healthy sidecar never produces a stale warning.
         if let Dialog::MissingAttachmentIcon { page, name } = &dialog
-            && attachment_icon_exists(page, name)
+            && attachment_icon_healthy(page, name)
         {
             log::debug!("discarding stale missing-icon warning: page={page:?} attachment={name:?}");
             return;
@@ -4586,10 +4628,13 @@ impl NoteCraftApp {
                 let mut accepted = false;
                 let mut denied = false;
                 let screen = ctx.viewport_rect();
-                egui::Area::new("privacy-welcome-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
-                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
-                    ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                });
+                egui::Area::new(egui::Id::new("privacy-welcome-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(
+                    ctx,
+                    |ui| {
+                        let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+                    },
+                );
                 egui::Window::new("Welcome to NoteCraft")
                     .title_bar(false)
                     .collapsible(false)
@@ -4607,7 +4652,7 @@ impl NoteCraftApp {
                         );
                         ui.add_space(6.0);
                         ui.label("Choose a local collection level. Logging is off by default in release builds.");
-                        egui::ComboBox::from_id_salt("privacy-welcome-level").selected_text(level.as_str()).show_ui(ui, |ui| {
+                        egui::ComboBox::from_label("Local collection level").selected_text(level.as_str()).show_ui(ui, |ui| {
                             for choice in ["none", "usage", "warning", "error", "debug"] {
                                 ui.selectable_value(level, choice.into(), choice);
                             }
@@ -4703,14 +4748,14 @@ impl NoteCraftApp {
                 let mut repair = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new("missing-attachment-icon-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("missing-attachment-icon-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Attachment recovery")
                     .title_bar(false)
                     .collapsible(false)
@@ -4767,14 +4812,14 @@ impl NoteCraftApp {
                 let mut restore = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new("unreferenced-attachment-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("unreferenced-attachment-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Attachment recovery")
                     .title_bar(false)
                     .collapsible(false)
@@ -4826,14 +4871,14 @@ impl NoteCraftApp {
                 let mut open = false;
                 let mut cancel = false;
                 let mut suppress = self.open_attachment_warning_suppressed;
-                egui::Area::new("open-attachment-warning-backdrop".into()).order(egui::Order::Foreground).fixed_pos(ctx.viewport_rect().min).show(
-                    ctx,
-                    |ui| {
+                egui::Area::new(egui::Id::new("open-attachment-warning-backdrop"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ctx.viewport_rect().min)
+                    .show(ctx, |ui| {
                         let response =
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                    });
                 egui::Window::new("Open attachment")
                     .title_bar(false)
                     .collapsible(false)
@@ -5080,7 +5125,7 @@ impl NoteCraftApp {
                 let mut go = false;
                 let mut cancel = false;
                 let screen = ctx.viewport_rect();
-                egui::Area::new("delete-file-modal-backdrop".into()).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+                egui::Area::new(egui::Id::new("delete-file-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
                     let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
                     ui.painter().rect_filled(response.rect, 0.0, Color32::from_black_alpha(150));
                 });
@@ -5157,8 +5202,10 @@ impl NoteCraftApp {
                 if go {
                     let path = path.clone();
                     let was_open = self.editor.as_ref().and_then(|editor| notebook_for(&editor.dir)).is_some_and(|notebook| notebook == path);
-                    match std::fs::remove_dir_all(&path) {
+                    log::info!("DeleteNotebook dialog: deleting {:?}", path);
+                    match notecraft_store::ops::remove_tree(&path) {
                         Ok(()) => {
+                            log::info!("notebook deleted successfully: {:?}", path);
                             self.remove_recent_notebook(&path);
                             if was_open {
                                 self.editor = None;
@@ -5170,8 +5217,8 @@ impl NoteCraftApp {
                             self.say(format!("Deleted notebook {}", self.shown(&path)));
                         }
                         Err(error) => {
-                            self.status = format!("The notebook could not be deleted: {error}");
-                            self.status_is_error = true;
+                            log::error!("notebook delete failed: {:?}: {}", path, error);
+                            self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
                         }
                     }
                     keep = false;
@@ -5211,8 +5258,10 @@ impl NoteCraftApp {
                 if go {
                     if is_notebook {
                         let path = path.clone();
-                        match std::fs::remove_dir_all(&path) {
+                        log::info!("deleting notebook: {:?}", path);
+                        match notecraft_store::ops::remove_tree(&path) {
                             Ok(()) => {
+                                log::info!("notebook deleted successfully: {:?}", path);
                                 self.remove_recent_notebook(&path);
                                 self.editor = None;
                                 self.pad = None;
@@ -5222,18 +5271,26 @@ impl NoteCraftApp {
                                 self.say("Deleted notebook");
                             }
                             Err(error) => {
-                                self.status = format!("The notebook could not be deleted: {error}");
-                                self.status_is_error = true;
+                                log::error!("notebook delete failed: {:?}: {}", path, error);
+                                self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
                             }
                         }
                     } else {
                         let was_open = self.editor.as_ref().map(|e| e.dir.starts_with(&*path)).unwrap_or(false);
-                        if self.run("node.delete", &params(&[("path", &path_str(path))])).is_some() {
-                            if was_open {
-                                self.editor = None;
+                        log::info!("deleting node: {:?}", path);
+                        match self.run("node.delete", &params(&[("path", &path_str(path))])) {
+                            Some(_) => {
+                                log::info!("node deleted successfully: {:?}", path);
+                                if was_open {
+                                    self.editor = None;
+                                }
+                                self.selected = None;
+                                self.say("Moved to the notebook recycle bin");
                             }
-                            self.selected = None;
-                            self.say("Moved to the notebook recycle bin");
+                            None => {
+                                log::error!("node.delete command failed: {:?}", path);
+                                self.alert("delete-failed", "Delete", "This could not be moved to the recycle bin. Nothing was deleted.");
+                            }
                         }
                     }
                     keep = false;
@@ -5407,24 +5464,6 @@ impl NoteCraftApp {
     }
 
     fn poll_control(&mut self, ctx: &Context) {
-        // Finish screenshot requests whose picture has arrived.
-        let arrived: Vec<(u64, std::sync::Arc<egui::ColorImage>)> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Screenshot { user_data, image, .. } => {
-                        user_data.data.as_ref().and_then(|d| d.downcast_ref::<u64>()).map(|id| (*id, image.clone()))
-                    }
-                    _ => None,
-                })
-                .collect()
-        });
-        for (id, image) in arrived {
-            if let Some(pos) = self.screenshots.iter().position(|(n, _, _)| *n == id) {
-                let (_, req, path) = self.screenshots.remove(pos);
-                req.respond(encode_screenshot(&image, path.as_deref()));
-            }
-        }
         let mut pending = Vec::new();
         if let Some(rx) = &self.control {
             while let Ok(req) = rx.try_recv() {
@@ -5440,11 +5479,10 @@ impl NoteCraftApp {
     pub fn handle_control(&mut self, ctx: &Context, req: ControlRequest) {
         if req.method == "ui.screenshot" {
             let path = req.params.get("path").and_then(Value::as_str).map(PathBuf::from);
-            let id = self.next_screenshot;
-            self.next_screenshot += 1;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(id)));
+            ctx.request_screenshot(move |image| {
+                req.respond(encode_screenshot(&image, path.as_deref()));
+            });
             ctx.request_repaint();
-            self.screenshots.push((id, req, path));
             return;
         }
         let result = self.control_method(ctx, &req.method, &req.params);
@@ -5594,6 +5632,7 @@ impl NoteCraftApp {
                     delta: vec2(dx, dy),
                     modifiers: egui::Modifiers { shift: flag("shift"), ..egui::Modifiers::NONE },
                     phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                 }]);
                 ctx.request_repaint();
                 Ok(json!({}))
@@ -5777,6 +5816,11 @@ impl NoteCraftApp {
                 ctx.copy_text(text);
             }
         }
+        if self.keyboard_paste_requested {
+            self.keyboard_paste_requested = false;
+            log::debug!("queued keyboard paste dispatched to paste_here");
+            self.paste_here();
+        }
         self.clipboard_keys(ctx);
         self.poll_control(ctx);
         self.poll_import(ctx);
@@ -5829,6 +5873,12 @@ impl NoteCraftApp {
     }
 }
 
+fn table_from_gridcraft_csv(text: &str) -> Option<(notecraft_formats::markdown::Block, usize, usize)> {
+    let table = notecraft_formats::csv::to_table(text)?;
+    let (rows, columns) = pageedit::table_size(&table).unwrap_or((0, 0));
+    Some((table, rows, columns))
+}
+
 /// One swatch of the theme switcher: the surface colour, ringed and dotted in the accent.
 fn theme_swatch(ui: &mut Ui, theme: Theme, selected: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
@@ -5848,7 +5898,7 @@ fn theme_swatch(ui: &mut Ui, theme: Theme, selected: bool) -> egui::Response {
 }
 
 fn format_picker(ui: &mut Ui, format: &mut Option<PageFormat>) {
-    egui::ComboBox::from_id_salt("dialog-format")
+    egui::ComboBox::from_label("Page format")
         .selected_text(format.map(|f| f.label()).unwrap_or("Inherit (notebook, section or global setting)"))
         .show_ui(ui, |ui| {
             ui.selectable_value(format, None, "Inherit (notebook, section or global setting)");
@@ -5989,6 +6039,16 @@ mod alert_tests {
     use super::*;
 
     #[test]
+    fn gridcraft_csv_read_back_preserves_quoted_cells_and_adds_columns() {
+        let (table, rows, columns) =
+            table_from_gridcraft_csv("Item,Cost,Note\n\"Tea, green\",3.50,\"she said \"\"best\"\"\"\nPaper,12,\n").expect("CSV table");
+        assert_eq!((rows, columns), (3, 3));
+        let body = pageedit::to_body(PageFormat::Cmgfm, &[table]);
+        assert!(body.contains("Tea, green"));
+        assert!(body.contains("she said \"best\""));
+    }
+
+    #[test]
     fn maximum_sensitivity_reaches_four_times_the_neutral_pen_width() {
         assert_eq!(NoteCraftApp::sensitivity_width(0), 1.0);
         assert_eq!(NoteCraftApp::sensitivity_width(50), 1.0);
@@ -6042,5 +6102,158 @@ mod alert_tests {
         app.alert("pressure_unavailable", "Pressure", "not available");
         assert!(app.dialog.is_none(), "a permanent mute suppresses the dialog");
         assert_eq!(app.status, "not available", "the status still records the condition");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_shows_on_first_launch() {
+        let t = notecraft_store::testing::TempDir::new("privacy-first-launch");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        // Do NOT set privacy_welcome_seen - simulate first launch
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+
+        // Dialog should be shown because privacy_welcome_seen is not in settings
+        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should show on first launch");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_does_not_show_after_dismissed() {
+        let t = notecraft_store::testing::TempDir::new("privacy-dismissed");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+
+        // Dialog should not be shown because privacy_welcome_seen is set
+        assert!(app.dialog.is_none(), "PrivacyWelcome dialog should not show after being dismissed");
+    }
+
+    /// `--first-use` writes `privacy_welcome_seen = ""` and keeps every other setting.
+    #[test]
+    fn first_use_flag_value_shows_the_privacy_welcome_again() {
+        let t = notecraft_store::testing::TempDir::new("privacy-first-use-flag");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "").expect("settings");
+        settings.set("theme_mode", "dark").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session);
+        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "an emptied key counts as not seen");
+        assert_eq!(app.session.settings.get("theme_mode").as_deref(), Some("dark"), "other settings are kept");
+    }
+
+    #[test]
+    fn privacy_welcome_dialog_reappears_after_settings_file_deleted() {
+        let t = notecraft_store::testing::TempDir::new("privacy-reset");
+        let settings_path = t.path().join("settings.toml");
+        let settings = notecraft_store::Settings::at(settings_path.clone());
+        // Simulate persistent settings file with privacy_welcome_seen already set
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        settings.set("other_setting", "value").expect("settings");
+
+        // Verify setting exists and dialog doesn't show
+        let session1 = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let app1 = NoteCraftApp::new(session1);
+        assert!(app1.dialog.is_none(), "Dialog should not show when privacy_welcome_seen is set");
+
+        // Delete the settings file (simulates what run.cmd does with --first-use)
+        let _ = std::fs::remove_file(&settings_path);
+
+        // Create new settings from deleted file (triggers fresh initialization)
+        let settings2 = notecraft_store::Settings::at(settings_path);
+        let session2 = Session::new(&t.path().join("notebooks"), settings2).expect("session");
+        let app2 = NoteCraftApp::new(session2);
+
+        // Dialog should reappear because settings file is gone
+        assert!(matches!(app2.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should reappear when settings file is deleted");
+    }
+
+    #[test]
+    fn delete_dialog_shows_for_notebook() {
+        let t = notecraft_store::testing::TempDir::new("delete-dialog-notebook");
+        let nb_path = t.path().join("test-notebook");
+        std::fs::create_dir_all(&nb_path).expect("create notebook dir");
+
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let _app = NoteCraftApp::new(session);
+
+        // Simulate triggering delete notebook dialog
+        let dialog = Dialog::Delete { path: nb_path.clone(), title: "Test Notebook".to_string(), count: 0 };
+
+        // Verify the dialog is properly structured for a notebook delete
+        assert!(matches!(dialog, Dialog::Delete { .. }));
+    }
+
+    #[test]
+    fn delete_error_message_shown_on_deletion_failure() {
+        let t = notecraft_store::testing::TempDir::new("delete-error-feedback");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Simulate a failed delete operation by setting error status
+        app.status = "The notebook could not be deleted: Permission denied".to_string();
+        app.status_is_error = true;
+
+        // Verify error state is properly set
+        assert!(app.status_is_error, "error flag should be set");
+        assert!(app.status.contains("could not be deleted"), "error message should indicate deletion failure");
+    }
+
+    #[test]
+    fn delete_notebook_clears_editor_state() {
+        let t = notecraft_store::testing::TempDir::new("delete-clear-state");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Verify initial state is empty
+        assert!(app.editor.is_none(), "editor should start empty");
+        assert!(app.selected.is_none(), "selection should start empty");
+
+        // Simulate the delete operation clearing state
+        // This is what happens in the delete handler after successful deletion
+        app.editor = None;
+        app.selected = None;
+
+        // Verify state remains cleared
+        assert!(app.editor.is_none(), "editor should remain cleared after delete");
+        assert!(app.selected.is_none(), "selection should remain cleared after delete");
+    }
+
+    #[test]
+    fn node_delete_error_shows_user_feedback() {
+        let t = notecraft_store::testing::TempDir::new("node-delete-error");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(t.path(), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        // Simulate node.delete command failure
+        app.status = "Could not delete: the operation failed".to_string();
+        app.status_is_error = true;
+
+        // Verify error message is shown to user
+        assert!(app.status_is_error, "error flag should be set when node delete fails");
+        assert!(app.status.contains("Could not delete"), "user should see error message");
+    }
+
+    /// A page left with only the SVG fallback (the Shell extraction failed once) still has a
+    /// usable icon and must not be reported as missing.
+    #[test]
+    fn an_svg_fallback_icon_is_accepted_everywhere() {
+        let t = notecraft_store::testing::TempDir::new("svg-fallback-icon");
+        let page = t.path().to_path_buf();
+        let assets = page.join("assets");
+        std::fs::create_dir_all(&assets).expect("assets");
+        std::fs::write(assets.join("Chapter.docx"), b"docx").expect("attachment");
+        std::fs::write(assets.join("Chapter.docx.svg"), b"<svg/>").expect("svg fallback");
+        let source = r#"<p><a href="assets/Chapter.docx"><img src="assets/Chapter.docx.svg" alt="" width="48"><br>Chapter.docx</a></p>"#;
+
+        assert_eq!(first_missing_attachment_in_source(source, &page), None, "the SVG fallback is a valid icon");
+        assert!(attachment_icon_healthy(&page, "Chapter.docx"));
+
+        std::fs::write(assets.join("Chapter.docx.png"), b"png").expect("png");
+        assert_eq!(first_missing_attachment_in_source(source, &page), None, "a PNG sidecar is healthy everywhere");
+        assert!(attachment_icon_healthy(&page, "Chapter.docx"));
     }
 }

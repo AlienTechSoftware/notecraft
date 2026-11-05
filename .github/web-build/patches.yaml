@@ -1,0 +1,223 @@
+# NoteCraft in the browser. This repo ships a desktop window only; these patches add the web build that
+# .github/workflows/deploy-website.yml compiles and deploys to notecraft.cloud, with wasm-opt. No external
+# build service is used or needed — this workflow does the whole build itself, in its own CI run.
+#
+# Recipe origin: adapted from daijro/openplayground's patches/onenote.yaml (SPDX MIT OR Apache-2.0, same as
+# this repo, per the header of the files these patches create). That project's own build pipeline inspired
+# this one; see the website's footer for the credit. Applied here with apply-web-patches.py, a small
+# from-scratch reimplementation of their rule format (not a copy of their build tooling) -- see that
+# script's own header. The live-collaboration rules (Playground session co-editing) are intentionally left
+# out: this build is a solo, no-sign-in demo.
+#
+# web.diff adds new files only:
+#   apps/notecraft-web/          the web crate build.mjs finds (Cargo.toml, Trunk.toml, index.html, src/main.rs): the
+#                                desktop window (crates/ui-egui) on the page's canvas; the notebooks folder kept in
+#                                Playground's Files as plain folders (browser:/NoteCraft/…), the sample notebooks on
+#                                the first start, pictures read from the folder, dropped files, "Open in NoteCraft",
+#                                the CJK face as a file beside the page (fetched when a page needs it), and a pen's
+#                                pressure from pointer events (eframe passes them on without it).
+#   crates/model/src/playground.rs  web shims for the library: an in-memory `std::fs` that notes every change, and
+#                                web-time's clock (wasm32-unknown-unknown has neither; SystemTime::now panics there).
+#   crates/ui-egui/src/playground_clipboard.rs  the `arboard` crates/ui-egui/src/clipboard.rs reads, from the
+#                                browser's clipboard (arboard has none for the browser).
+# The modules that use files or the clock take `std` from crates/model/src/playground.rs on wasm through ONE `use`
+# line at their end (a local `std` shadows the standard library's name in that module; everything else in it still
+# comes from the real std). Path::is_file / is_dir ask the real file system, so the three calls the tree needs read
+# the same through `fs::metadata` (what those methods do). Native builds see none of this: every rule adds wasm-only
+# lines, or an expression that does exactly what it replaces.
+# If upstream starts using std::fs or Instant in another module, give that module the same one-line rule.
+
+# Rule 1/28: web-time for the shims (already in Cargo.lock through eframe).
+# Verify: build.mjs check. If upstream adds it itself, drop it here.
+- file: crates/model/Cargo.toml
+  find: '(?![\s\S])'
+  after: "\n[target.'cfg(all(target_arch = \"wasm32\"))'.dependencies]\nweb-time = \"1\"\n"
+
+# Rule 1b/28: the web build's own profile (apps/notecraft-web/index.html names it): release with whole-program
+# optimisation, as the ArtCraft web profiles do (PhotoCraft's wasm-release): 13.4 -> 11.2 MB of wasm, 5.6 -> 4.5 MB
+# gzipped. A table of its own, so upstream's [profile.release] stays as it is.
+# If upstream adds a profile of this name, rename it here and in index.html.
+- file: Cargo.toml
+  find: '(?![\s\S])'
+  after: "\n# Playground's web build (patches/onenote.yaml): release with whole-program optimisation.\n[profile.playground-web]\ninherits = \"release\"\nlto = \"fat\"\ncodegen-units = 1\n"
+
+# Rule 2/28: the shims, as notecraft_model::playground on wasm.
+- file: crates/model/src/lib.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build (patches/onenote.yaml): files and the clock in the browser.\n#[cfg(target_arch = \"wasm32\")] #[doc(hidden)] pub mod playground;\n"
+
+# Rules 3-11/28: the clock (ids, timestamps, the autosave timer) and the files (the tree, pages, attachments,
+# settings, the session's folder) of the library's modules (see the top).
+- file: crates/model/src/id.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use crate::playground::std;\n"
+- file: crates/model/src/time.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use crate::playground::std;\n"
+- file: crates/store/src/tree.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/page.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files and the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/ops.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/assets.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/settings.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/engine/src/session.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/ui-egui/src/app.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files and the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+
+# The page source viewer reads the virtual notebook files too. Path::is_file asks the host file system,
+# so use the browser file-system shim for both enumeration and the file check.
+- file: crates/ui-egui/src/codeview.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/ui-egui/src/codeview.rs
+  find: 'if\s+!entry\.path\(\)\.is_file\(\)|if\s+!std::fs::metadata\(entry\.path\(\)\)\.is_ok_and\(\|m\| m\.is_file\(\)\)'
+  replace: 'if !std::fs::metadata(entry.path()).is_ok_and(|m| m.is_file())'
+
+# A page's pictures (preview.rs image_bytes) are read with std::fs::read, which has no disk in the browser: the
+# picture drew as its alt text. The same one-line rule as codeview.rs reads them from the in-memory notebook.
+- file: crates/ui-egui/src/preview.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+
+# File::open in the browser must read from the same in-memory notebook as read_to_string and read_dir.
+- file: crates/model/src/playground.rs
+  find: 'pub\s+mod\s+fs\s*\{'
+  after: "\n        /// A read handle into one file in the browser's in-memory notebook.\n        pub struct File { path: PathBuf, position: usize }\n\n        impl File {\n            pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {\n                let path = key(path.as_ref());\n                if !metadata(&path)?.is_file() {\n                    return Err(io::Error::new(io::ErrorKind::InvalidInput, \"not a file\"));\n                }\n                Ok(Self { path, position: 0 })\n            }\n        }\n\n        impl io::Read for File {\n            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {\n                let path = self.path.clone();\n                let position = self.position;\n                let count = TREE.with(|tree| match tree.borrow().entries.get(&path) {\n                    Some(Entry::File(bytes, _)) => {\n                        let start = position.min(bytes.len());\n                        let rest = &bytes[start..];\n                        let count = rest.len().min(buffer.len());\n                        buffer[..count].copy_from_slice(&rest[..count]);\n                        Ok(count)\n                    }\n                    _ => Err(missing(&path)),\n                })?;\n                self.position += count;\n                Ok(count)\n            }\n        }\n"
+
+# Add Seek to the browser File shim so ZIP-backed imports can read through the virtual notebook.
+- file: crates/model/src/playground.rs
+  find: '(impl\s+io::Read\s+for\s+File\s*\{[\s\S]*?\n        \})'
+  replace: "$1\n\n        impl io::Seek for File {\n            fn seek(&mut self, from: io::SeekFrom) -> io::Result<u64> {\n                let length = metadata(&self.path)?.len() as i64;\n                let position = self.position as i64;\n                let next = match from {\n                    io::SeekFrom::Start(n) => n as i64,\n                    io::SeekFrom::Current(n) => position.saturating_add(n),\n                    io::SeekFrom::End(n) => length.saturating_add(n),\n                };\n                if next < 0 { return Err(io::Error::new(io::ErrorKind::InvalidInput, \"negative seek\")); }\n                self.position = next as usize;\n                Ok(self.position as u64)\n            }\n        }"
+
+# Rules 12-15/28: the page file, the child folders, the attachments and the page open last, as `fs::metadata` reads
+# them (Path::is_file and is_dir are exactly that, through the real file system).
+# Verify: the tree shows the notebooks and a page with a picture lists it. If upstream changes: anchor on the
+# function that finds a page's file / lists child folders.
+- file: crates/store/src/tree.rs
+  find: '\|\(_,\s*p\)\|\s*p\.is_file\(\)'
+  replace: '|(_, p)| fs::metadata(p).is_ok_and(|m| m.is_file())'
+- file: crates/store/src/tree.rs
+  find: '\.filter\(\|p\|\s*p\.is_dir\(\)\)'
+  replace: '.filter(|p| fs::metadata(p).is_ok_and(|m| m.is_dir()))'
+- file: crates/store/src/assets.rs
+  find: '\.filter\(\|e\|\s*e\.path\(\)\.is_file\(\)\)'
+  replace: '.filter(|e| fs::metadata(e.path()).is_ok_and(|m| m.is_file()))'
+- file: crates/store/src/ops.rs
+  find: 'entry\.file_type\(\)\?\.is_dir\(\)'
+  replace: 'fs::metadata(entry.path()).is_ok_and(|m| m.is_dir())'
+# The page the window closed on opens again (its check asks the file system).
+- file: crates/ui-egui/src/app.rs
+  find: 'if\s+!path\.is_dir\(\)'
+  replace: 'if !std::fs::metadata(&path).is_ok_and(|m| m.is_dir())'
+
+# Rule 16/28: rfd has no FileDialog on wasm; the folder chooser (choose_notebooks_folder) picks nothing there (the
+# notebooks folder is Playground's Files). Native builds keep the dialog.
+# Verify: build.mjs check. If upstream moves the dialog: anchor on the new rfd call.
+- file: crates/ui-egui/src/app.rs
+  find: 'rfd::FileDialog::new\(\)[^;]*?\.pick_folder\(\)'
+  replace: '({ #[cfg(not(target_arch = "wasm32"))] { $& } #[cfg(target_arch = "wasm32")] { None::<std::path::PathBuf> } })'
+
+# The browser has no native file picker. Keep desktop behavior through a native re-export,
+# while making every picker call site compile and return no selection on wasm.
+- file: crates/ui-egui/src/app.rs
+  find: 'rfd::FileDialog::new\(\)'
+  replace: 'playground_rfd::FileDialog::new()'
+- file: crates/ui-egui/src/app.rs
+  find: 'let picker = rfd::FileDialog::new\(\)'
+  replace: 'let picker = playground_rfd::FileDialog::new()'
+- file: crates/ui-egui/src/app.rs
+  find: 'let mut picker = rfd::FileDialog::new\(\)'
+  replace: 'let mut picker = playground_rfd::FileDialog::new()'
+- file: crates/ui-egui/src/app.rs
+  find: 'rfd::FileDialog::new\(\)\.set_title\("Choose a OneNote notebook folder"\)'
+  replace: 'playground_rfd::FileDialog::new().set_title("Choose a OneNote notebook folder")'
+- file: crates/ui-egui/src/app.rs
+  find: 'rfd::FileDialog::new\(\)\.set_title\("Choose a file to import"\)'
+  replace: 'playground_rfd::FileDialog::new().set_title("Choose a file to import")'
+- file: crates/ui-egui/src/app.rs
+  find: 'rfd::FileDialog::new\(\)\.set_title\("Add file to this page"\)'
+  replace: 'playground_rfd::FileDialog::new().set_title("Add file to this page")'
+- file: crates/ui-egui/src/app.rs
+  find: '(?![\s\S])'
+  after: "\n#[cfg(target_arch = \"wasm32\")] mod playground_rfd {\n    use std::path::PathBuf;\n    pub struct FileDialog;\n    impl FileDialog {\n        pub fn new() -> Self { Self }\n        pub fn set_title(self, _: &str) -> Self { self }\n        pub fn set_file_name(self, _: impl AsRef<str>) -> Self { self }\n        pub fn pick_folder(self) -> Option<PathBuf> { None }\n        pub fn pick_file(self) -> Option<PathBuf> { None }\n        pub fn save_file(self) -> Option<PathBuf> { None }\n    }\n}\n#[cfg(not(target_arch = \"wasm32\"))] mod playground_rfd {\n    pub use ::rfd::FileDialog;\n}\n"
+
+- file: crates/ui-egui/src/app.rs
+  find: 'pub struct FileDialog;'
+  after: "\n    impl FileDialog { pub fn set_directory(self, _: impl AsRef<std::path::Path>) -> Self { self } pub fn add_filter(self, _: &str, _: &[&str]) -> Self { self } }\n"
+
+# Rule 17/28: upstream pins its toolchain (rust-toolchain.toml, profile minimal), which rustup installs without the
+# wasm target: CI then fails with "can't find crate for `core`". The pin also asks for the target here.
+# If upstream lists `targets` itself (or drops the pin), delete this rule.
+- file: rust-toolchain.toml
+  find: '^\[toolchain\]'
+  after: "\ntargets = [\"wasm32-unknown-unknown\"]"
+
+# Rules 18-19/28: the CJK face (16 MB, two copies in the binary: one per crate that names the const) stays out of the
+# wasm, which would otherwise be 46 MB, over the host's 25 MiB per file once gzipped. apps/notecraft-web copies the
+# file next to the page and loads it when a page needs those scripts (Arabic, Hebrew and Devanagari, 1 MB, stay in);
+# the window skips a face it has no bytes for (egui panics on one).
+# Verify: the wasm.gz is a few MB, a page in Chinese draws its letters a moment after it opens. If upstream renames
+# the const or the font list, follow it (and the file name in apps/notecraft-web/src/main.rs).
+- file: crates/text/src/lib.rs
+  find: 'pub\s+const\s+CJK\s*:\s*&\[u8\]\s*=\s*include_bytes!\(([^)]*)\);'
+  replace: "#[cfg(not(target_arch = \"wasm32\"))] pub const CJK: &[u8] = include_bytes!($1);\n    #[cfg(target_arch = \"wasm32\")] pub const CJK: &[u8] = &[];"
+- file: crates/ui-egui/src/fonts.rs
+  find: 'for\s*\(\s*name\s*,\s*bytes\s*\)\s*in\s+BUNDLED\s*\{'
+  after: "\n        #[cfg(target_arch = \"wasm32\")] if bytes.is_empty() { continue; }"
+
+# Rules 20-24/28: files in the modules upstream added since: the page's ink (ink.svg beside the page), the Welcome
+# notebook (File screen), and links between pages (which ask whether a path is a folder or a file).
+- file: crates/ui-egui/src/inkpad.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/ui-egui/src/history.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/engine/src/welcome.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/links.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/store/src/links.rs
+  find: '\bif\s+full\.is_dir\(\)'
+  replace: 'if std::fs::metadata(&full).is_ok_and(|m| m.is_dir())'
+- file: crates/store/src/links.rs
+  find: '\bif\s+full\.is_file\(\)'
+  replace: 'if std::fs::metadata(&full).is_ok_and(|m| m.is_file())'
+
+# Rules 25-28/28: the clipboard. crates/ui-egui/src/clipboard.rs reads pictures and words through arboard, which has
+# no browser clipboard (it does not compile for wasm32: "cannot find `Clipboard` in `platform`"). The web build drops
+# the crate and gives that module crates/ui-egui/src/playground_clipboard.rs (web.diff) under the name `arboard`,
+# which reads navigator.clipboard. The browser hands it over asynchronously (it may ask the person first), so the
+# ribbon's Paste asks for it and stops, and the window runs that Paste again in the frame it arrives. Copy, Cut and
+# Ctrl+V never go through this module: egui and the browser carry them as before.
+# Verify: build.mjs check; in the browser, copy words (or a picture) and click Home > Paste in a page: they go in at
+# the caret. If upstream reads more of arboard (set_text, set_image...), give playground_clipboard.rs the same
+# methods; if it moves the dependency or renames paste_here / pending_copy, anchor on the new spelling.
+# The dependency, kept for every target but wasm (a new table at the end, with the stand-in's web dependencies).
+- file: crates/ui-egui/Cargo.toml
+  find: '^(arboard\s*=[^\n]*\n)([\s\S]*)'
+  replace: "$2\n# Playground's web build (patches/onenote.yaml): arboard has no browser clipboard.\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\n$1\n[target.'cfg(all(target_arch = \"wasm32\"))'.dependencies]\nwasm-bindgen = \"0.2\"\nwasm-bindgen-futures = \"0.4\"\njs-sys = \"0.3\"\ngetrandom = { version = \"0.3\", features = [\"wasm_js\"] }\n"
+- file: crates/ui-egui/src/clipboard.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: the browser's clipboard (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] #[path = \"playground_clipboard.rs\"] pub(crate) mod arboard;\n"
+# The Paste waits for the browser's clipboard, then runs again with it.
+- file: crates/ui-egui/src/app.rs
+  find: '\bfn\s+paste_here\s*\(\s*&mut\s+self\s*\)\s*\{'
+  after: "\n        #[cfg(target_arch = \"wasm32\")] if let Some(note) = crate::clipboard::arboard::ask() { return self.say(note); }"
+- file: crates/ui-egui/src/app.rs
+  find: 'if\s+let\s+Some\(\s*text\s*\)\s*=\s*self\.pending_copy\.take\(\)'
+  before: "#[cfg(target_arch = \"wasm32\")] if crate::clipboard::arboard::arrived(ctx) { self.paste_here(); }\n        "

@@ -4,9 +4,8 @@
 //! check-branch          L1, before a commit: not on main, a branch name with a known prefix,
 //!                       nothing from local/, target/, my-notebooks/ or a log staged, no staged
 //!                       file over 10 MB; behind origin/main or a merge commit is a warning
-//! check-branch --push   L2, before a push: fetches main, and being behind origin/main or
-//!                       carrying a merge commit stops the push. Pushing main is allowed: that
-//!                       is how a branch lands, by fast-forward
+//! check-branch --push   L2, before a push: fetches main, and being behind origin/main stops the
+//!                       push. Merge commits are allowed so integration provenance is preserved.
 //! commit-msg FILE       the commit-msg hook: a subject line `type(scope): what`, at most 72
 //!                       characters
 //! ```
@@ -126,11 +125,6 @@ pub fn check_branch(root: &Path, options: &[String]) -> Result<(), String> {
         let behind: u32 = git(root, &["rev-list", "--count", "HEAD..origin/main"]).and_then(|n| n.parse().ok()).unwrap_or(0);
         if behind > 0 {
             let msg = format!("{behind} commit(s) on origin/main are not in '{branch}'. Rebase: git fetch origin && git rebase origin/main");
-            if push { problems.push(msg) } else { warnings.push(msg) }
-        }
-        let merges: u32 = git(root, &["rev-list", "--merges", "--count", "origin/main..HEAD"]).and_then(|n| n.parse().ok()).unwrap_or(0);
-        if merges > 0 {
-            let msg = format!("'{branch}' has {merges} merge commit(s); history stays a straight line, so rebase instead (AGENTS.md)");
             if push { problems.push(msg) } else { warnings.push(msg) }
         }
     } else {

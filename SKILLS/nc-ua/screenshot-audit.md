@@ -3,6 +3,9 @@
 Every picture NoteCraft ships, what made it, where it is used, and when it was last checked.
 Update this file in the same change that regenerates a picture. `nc-ua` owns it.
 
+Capture mechanics are owned by [`nc-uiux-testing`](../nc-uiux-testing/SKILL.md);
+this file inventories User Assistance and demo assets only.
+
 Last full audit: 2026-10-25, branch `feat/header-discord-link` (regenerated after the header change, commit `8d0c15d`). Only `hero.png` and `ribbon-insert.png` were checked by eye, and hero was re-checked after the Discord link.
 
 ## A. README and release pictures (`docs/images/`)

@@ -5,12 +5,20 @@
 /.claude/
 .DS_Store
 .env
+__pycache__/
+*.py[cod]
 out/
 /out/
 /my-notebooks/
 # Also ignore notebook folders under a Windows extended-path prefix passed through WSL.
 *my-notebooks/
 /my-notes/
+
+# Stray directories created from malformed Windows path strings during local
+# development. Keep the exact names out of Git until their source is fixed.
+/Zdevp-NoteCraftwork/
+/Cdevp-NoteCraft.reposo-NoteCraft_2my-notebooks/
+
 # Pictures a failing visual test writes next to the one it compared.
 /crates/*/tests/**/*.diff.png
 /crates/*/tests/**/*.new.png
@@ -34,3 +42,8 @@ MEMORY.md
 /tools/officeimo/OfficeIMO.NoteCraft.Bridge/bin/
 /tools/officeimo/OfficeIMO.NoteCraft.Bridge/obj/
 /.work-officeimo-*/
+
+# website/demo is the compiled WASM build of notecraft-web. It is built fresh
+# by the deploy workflow (.github/workflows/deploy-website.yml), never
+# committed — a local copy here is for manual inspection only.
+/website/demo/

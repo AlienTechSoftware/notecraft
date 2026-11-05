@@ -1,0 +1,917 @@
+diff --git a/apps/notecraft-web/Cargo.toml b/apps/notecraft-web/Cargo.toml
+new file mode 100644
+index 0000000..d9828a4
+--- /dev/null
++++ b/apps/notecraft-web/Cargo.toml
+@@ -0,0 +1,28 @@
++# NoteCraft in the browser, for Playground (patches/onenote.yaml in github.com/daijro/openplayground).
++# The window is crates/ui-egui; crates/model/src/playground.rs gives the library its files and clock on wasm.
++# Build with: trunk build --release   (from apps/notecraft-web)
++[package]
++name = "notecraft-web"
++version.workspace = true
++edition.workspace = true
++rust-version.workspace = true
++license.workspace = true
++publish.workspace = true
++description = "NoteCraft in the browser"
++
++[[bin]]
++name = "notecraft-web"
++path = "src/main.rs"
++
++[target.'cfg(target_arch = "wasm32")'.dependencies]
++notecraft-engine = { workspace = true }
++notecraft-formats = { workspace = true }
++notecraft-model = { workspace = true }
++notecraft-store = { workspace = true }
++notecraft-ui-egui = { workspace = true }
++eframe = { workspace = true }
++egui = { workspace = true }
++wasm-bindgen = "0.2"
++wasm-bindgen-futures = "0.4"
++js-sys = "0.3"
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "console"] }
+diff --git a/apps/notecraft-web/Trunk.toml b/apps/notecraft-web/Trunk.toml
+new file mode 100644
+index 0000000..0b57fe8
+--- /dev/null
++++ b/apps/notecraft-web/Trunk.toml
+@@ -0,0 +1,4 @@
++[build]
++target = "index.html"
++public_url = "./"
++filehash = true
+diff --git a/apps/notecraft-web/index.html b/apps/notecraft-web/index.html
+new file mode 100644
+index 0000000..a88777c
+--- /dev/null
++++ b/apps/notecraft-web/index.html
+@@ -0,0 +1,24 @@
++<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
++  <title>NoteCraft</title>
++  <link data-trunk rel="icon" href="../../assets/brand/notecraft-64.png" />
++  <link data-trunk rel="rust" data-bin="notecraft-web" data-wasm-opt="0" data-cargo-profile="playground-web" />
++  <!-- The CJK face, loaded when a page needs it (src/main.rs), with its licence -->
++  <link data-trunk rel="copy-file" href="../../assets/fonts/NotoSansCJKsc-Regular.otf" />
++  <link data-trunk rel="copy-file" href="../../assets/fonts/OFL-NotoSansCJKsc.txt" />
++  <style>
++    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f3f1f8; }
++    #notecraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
++    #notecraft_loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
++      color: #555; font: 14px system-ui, sans-serif; pointer-events: none; }
++    @media (prefers-color-scheme: dark) { html, body { background: #1d1b22; } #notecraft_loading { color: #bbb; } }
++  </style>
++</head>
++<body>
++  <canvas id="notecraft_canvas"></canvas>
++  <div id="notecraft_loading">Loading NoteCraft&hellip;</div>
++</body>
++</html>
+diff --git a/apps/notecraft-web/src/main.rs b/apps/notecraft-web/src/main.rs
+new file mode 100644
+index 0000000..f4394fb
+--- /dev/null
++++ b/apps/notecraft-web/src/main.rs
+@@ -0,0 +1,339 @@
++// SPDX-License-Identifier: MIT OR Apache-2.0
++//! NoteCraft in the browser, for Playground (patches/onenote.yaml in github.com/daijro/openplayground): the desktop
++//! window (crates/ui-egui) on the page's canvas.
++//!
++//! The notebooks folder is `/NoteCraft`, in memory (crates/model/src/playground.rs). Playground's Files keep it as the
++//! same plain folders at `browser:/NoteCraft/…`: it is read from there at start, and every file NoteCraft writes or
++//! removes is written or removed there after the frame (through the page's `globalThis.playgroundFiles`). The first
++//! start makes the sample notebooks. A page opened from a Playground invitation (`?pg-session=<room>`) keeps its
++//! notebooks in the tab only, so joining someone's session never touches this browser's own notebooks.
++//! Also: pictures in pages load from the in-memory folder, files dropped on the page can be inserted, and "Open in
++//! NoteCraft" on a page file opens it (one of these notebooks') or copies it into a Quick Notes notebook. The CJK face
++//! (16 MB) is a file next to the page, fetched the first time a page or a title needs it, and a pen's pressure
++//! (pointer events, which eframe passes on without it) reaches the window as the touch force its ink reads.
++
++#[cfg(target_arch = "wasm32")]
++mod web {
++    use eframe::egui;
++    use notecraft_engine::{Output, Params, Session};
++    use notecraft_model::playground::std::fs;
++    use notecraft_store::Settings;
++    use notecraft_ui_egui::NoteCraftApp;
++    use std::cell::RefCell;
++    use std::path::Path;
++    use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
++
++    /// The notebooks folder, in memory and in Files (`browser:/NoteCraft`).
++    pub const ROOT: &str = "/NoteCraft";
++    /// The settings (theme, the page open last), personal: a dot folder is not a notebook.
++    const SETTINGS: &str = "/NoteCraft/.notecraft/settings.toml";
++
++    thread_local! {
++        /// Files Playground handed in ("Open in NoteCraft"), for the next frame.
++        static OPENED: RefCell<Vec<JsValue>> = const { RefCell::new(Vec::new()) };
++        static CTX: std::cell::OnceCell<egui::Context> = const { std::cell::OnceCell::new() };
++        static CJK: RefCell<Face> = const { RefCell::new(Face::Wanted) };
++        static PEN: RefCell<Vec<PenReading>> = const { RefCell::new(Vec::new()) };
++    }
++
++    /// A pen's reading from the canvas's pointer events: phase, pointer, where (CSS pixels), pressure.
++    type PenReading = (egui::TouchPhase, f64, f64, f64, f32);
++
++    /// The CJK face, which crates/text leaves out of the wasm (patches/onenote.yaml): its file beside the page.
++    const CJK_FILE: &str = "NotoSansCJKsc-Regular.otf";
++    /// The name crates/text gives it, so the window has one face of that name either way.
++    const CJK_NAME: &str = "noto-sans-cjk-sc";
++
++    enum Face {
++        Wanted,
++        Loading,
++        Arrived(Vec<u8>),
++        Added,
++    }
++
++    /// Chinese, Japanese or Korean letters (and their punctuation and full-width forms).
++    fn cjk(text: &str) -> bool {
++        text.chars().any(|c| matches!(c as u32, 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7AF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x3FFFF))
++    }
++
++    /// `fetch(url)`'s bytes.
++    async fn fetch(url: &str) -> Option<Vec<u8>> {
++        let global = js_sys::global();
++        let response = wait(get(&global, "fetch").dyn_into::<js_sys::Function>().ok()?.call1(&global, &url.into()).ok()).await?;
++        if !get(&response, "ok").is_truthy() {
++            return None;
++        }
++        let read = get(&response, "arrayBuffer").dyn_into::<js_sys::Function>().ok()?;
++        Some(js_sys::Uint8Array::new(&wait(read.call0(&response).ok()).await?).to_vec())
++    }
++
++    /// Follows the canvas's pen pointers: eframe turns them into mouse events and drops their pressure.
++    fn listen_to_the_pen(canvas: &web_sys::HtmlCanvasElement) {
++        use egui::TouchPhase::{Cancel, End, Move, Start};
++        for (name, phase) in [("pointerdown", Start), ("pointermove", Move), ("pointerup", End), ("pointercancel", Cancel)] {
++            let read = Closure::<dyn Fn(JsValue)>::new(move |e: JsValue| {
++                if get(&e, "pointerType").as_string().as_deref() == Some("pen") {
++                    let n = |k: &str| get(&e, k).as_f64().unwrap_or(0.0);
++                    PEN.with_borrow_mut(|p| p.push((phase, n("pointerId"), n("offsetX"), n("offsetY"), n("pressure") as f32)));
++                }
++            });
++            let _ = canvas.add_event_listener_with_callback(name, read.as_ref().unchecked_ref());
++            read.forget();
++        }
++    }
++
++    fn api() -> Option<JsValue> {
++        js_sys::Reflect::get(&js_sys::global(), &"playgroundFiles".into()).ok().filter(JsValue::is_object)
++    }
++
++    fn get(o: &JsValue, k: &str) -> JsValue {
++        js_sys::Reflect::get(o, &k.into()).unwrap_or(JsValue::UNDEFINED)
++    }
++
++    /// `playgroundFiles[method](...args)`; None when the page has none or it threw.
++    fn call(method: &str, args: &[JsValue]) -> Option<JsValue> {
++        let api = api()?;
++        let f = get(&api, method).dyn_into::<js_sys::Function>().ok()?;
++        f.apply(&api, &args.iter().collect::<js_sys::Array>()).ok()
++    }
++
++    async fn wait(v: Option<JsValue>) -> Option<JsValue> {
++        let promise = v?.dyn_into::<js_sys::Promise>().ok()?;
++        wasm_bindgen_futures::JsFuture::from(promise).await.ok()
++    }
++
++    pub fn repaint() {
++        CTX.with(|c| c.get().map(egui::Context::request_repaint));
++    }
++
++    /// Opened from a Playground invitation: the session's notebooks stay in this tab.
++    fn invited() -> bool {
++        web_sys::window().and_then(|w| w.location().search().ok()).is_some_and(|q| q.split(['?', '&']).any(|p| p.starts_with("pg-session=")))
++    }
++
++    /// The notebooks this browser keeps in Files, into the in-memory folder. False when there are none (or no Files).
++    async fn load() -> bool {
++        let Some(list) = wait(call("files", &[format!("browser:{ROOT}").into()])).await else { return false };
++        let paths: Vec<String> = js_sys::Array::from(&list).iter().filter_map(|p| p.as_string()).collect();
++        for p in &paths {
++            if let (Some(local), Some(bytes)) = (p.strip_prefix("browser:"), wait(call("read", &[p.into()])).await) {
++                fs::put(Path::new(local), js_sys::Uint8Array::new(&bytes).to_vec());
++            }
++        }
++        !paths.is_empty()
++    }
++
++    /// Picture links in pages (`file:///NoteCraft/…/assets/x.png`), read from the in-memory folder.
++    struct Files;
++
++    impl egui::load::BytesLoader for Files {
++        fn id(&self) -> &str {
++            "notecraft::web::Files"
++        }
++        fn load(&self, _: &egui::Context, uri: &str) -> egui::load::BytesLoadResult {
++            let path = uri.strip_prefix("file://").ok_or(egui::load::LoadError::NotSupported)?.replace("%20", " ");
++            match fs::read(&path) {
++                Ok(bytes) => Ok(egui::load::BytesPoll::Ready { size: None, bytes: egui::load::Bytes::Shared(bytes.into()), mime: None }),
++                Err(e) => Err(egui::load::LoadError::Loading(e.to_string())),
++            }
++        }
++        fn forget(&self, _: &str) {}
++        fn forget_all(&self) {}
++        fn byte_size(&self) -> usize {
++            0
++        }
++    }
++
++    fn params(pairs: &[(&str, &str)]) -> Params {
++        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
++    }
++
++    pub struct Web {
++        pub app: NoteCraftApp,
++        /// The in-memory folder is kept in Files.
++        persist: bool,
++        unsaved: Option<bool>,
++    }
++
++    impl Web {
++        /// A page file Playground handed in: one of these notebooks' pages opens; any other becomes a new page in the
++        /// Quick Notes notebook.
++        fn open(&mut self, file: &JsValue) {
++            let name = get(file, "name").as_string().unwrap_or_default();
++            let path = get(file, "path").as_string().unwrap_or_default();
++            if let Some(dir) = path.strip_prefix("browser:").map(Path::new).filter(|p| p.starts_with(ROOT)).and_then(Path::parent)
++                && self.app.session().resolve(&dir.to_string_lossy()).is_ok()
++            {
++                return self.app.open_path(&dir.to_string_lossy());
++            }
++            let text = String::from_utf8_lossy(&js_sys::Uint8Array::new(&get(file, "bytes")).to_vec()).into_owned();
++            let (stem, ext) = name.rsplit_once('.').unwrap_or((&name, ""));
++            let (format, body) = if ext.eq_ignore_ascii_case("md") {
++                ("cmgfm", notecraft_formats::frontmatter::split_front(&text).1)
++            } else {
++                ("html", notecraft_formats::html::inner(&text))
++            };
++            let s = self.app.session_mut();
++            let path = |o: Output| if let Output::Path(p) = o { Some(p.to_string_lossy().into_owned()) } else { None };
++            let notebook = s.tree().iter().find(|n| n.info.title == "Quick Notes").map(|n| n.path.to_string_lossy().into_owned());
++            let notebook = notebook.or_else(|| s.run("notebook.create", &params(&[("name", "Quick Notes"), ("empty", "true")])).ok().and_then(path));
++            let Some(notebook) = notebook else { return };
++            let section = s
++                .tree()
++                .iter()
++                .find(|n| n.path.to_string_lossy() == notebook)
++                .and_then(|n| n.children.iter().find(|c| c.info.kind == notecraft_model::NodeKind::Section));
++            let section = section.map(|c| c.path.to_string_lossy().into_owned());
++            let section = section.or_else(|| {
++                s.run("node.create", &params(&[("parent", &notebook), ("kind", "section"), ("title", "Opened files")])).ok().and_then(path)
++            });
++            let Some(section) = section else { return };
++            let Some(page) =
++                s.run("node.create", &params(&[("parent", &section), ("kind", "page"), ("title", stem), ("format", format)])).ok().and_then(path)
++            else {
++                return;
++            };
++            let _ = s.run("page.save", &params(&[("path", &page), ("body", &body)]));
++            self.app.open_path(&page);
++        }
++
++        /// The CJK face: fetched once the open page or a title in the tree has those letters, then added behind the
++        /// window's faces (after the window has put its own in, which would replace it).
++        fn faces(&mut self) {
++            let ready = CJK.with_borrow_mut(|face| match face {
++                Face::Wanted => {
++                    fn titles(n: &notecraft_store::tree::Node) -> bool {
++                        cjk(&n.info.title) || n.children.iter().any(titles)
++                    }
++                    if self.app.body().is_some_and(cjk) || self.app.session().tree().iter().any(titles) {
++                        *face = Face::Loading;
++                        wasm_bindgen_futures::spawn_local(async {
++                            let bytes = fetch(CJK_FILE).await;
++                            CJK.set(bytes.map_or(Face::Added, Face::Arrived));
++                            repaint();
++                        });
++                    }
++                    None
++                }
++                Face::Arrived(_) => match std::mem::replace(face, Face::Added) {
++                    Face::Arrived(bytes) => Some(bytes),
++                    _ => None,
++                },
++                _ => None,
++            });
++            if let (Some(bytes), Some(ctx)) = (ready, CTX.with(|c| c.get().cloned())) {
++                use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
++                notecraft_ui_egui::fonts::install_once(&ctx);
++                let families = [egui::FontFamily::Proportional, egui::FontFamily::Monospace];
++                let families = families.map(|family| InsertFontFamily { family, priority: FontPriority::Lowest }).to_vec();
++                ctx.add_font(FontInsert::new(CJK_NAME, egui::FontData::from_owned(bytes), families));
++            }
++        }
++
++        /// After the window's frame: files handed in, the in-memory folder's changes to Files, the unsaved state.
++        fn after(&mut self) {
++            for file in OPENED.take() {
++                self.open(&file);
++            }
++            for p in fs::changes() {
++                if !self.persist || !p.starts_with(ROOT) {
++                    continue;
++                }
++                let target = JsValue::from(format!("browser:{}", p.to_string_lossy()));
++                match fs::metadata(&p) {
++                    Ok(m) if m.is_file() => {
++                        let bytes = fs::read(&p).unwrap_or_default();
++                        call("write", &[target, js_sys::Uint8Array::from(bytes.as_slice()).into()]);
++                    }
++                    Ok(_) => {}
++                    Err(_) => {
++                        call("remove", &[target]);
++                    }
++                }
++            }
++            self.faces();
++            let unsaved = self.app.is_dirty();
++            if self.unsaved.replace(unsaved) != Some(unsaved) {
++                call("setUnsaved", &[unsaved.into()]);
++            }
++        }
++    }
++
++    impl eframe::App for Web {
++        fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
++            raw_input.events.extend(self.app.take_events());
++            // The pen's pressure, as the touch force the window's stylus reader takes (as it gets it on Windows).
++            let zoom = f64::from(ctx.zoom_factor());
++            for (phase, id, x, y, pressure) in PEN.take() {
++                let pos = egui::pos2((x / zoom) as f32, (y / zoom) as f32);
++                let (device_id, id) = (egui::TouchDeviceId(1), egui::TouchId(id as u64));
++                raw_input.events.push(egui::Event::Touch { device_id, id, phase, pos, force: Some(pressure) });
++            }
++            // A dropped file is only a name on the web: its bytes go where that name points in the in-memory
++            // folder, so the window's "Insert the picture" / "Attach the file" copy it into the page.
++            for f in raw_input.dropped_files.clone() {
++                wasm_bindgen_futures::spawn_local(async move {
++                    if let Ok(bytes) = f.bytes_async().await {
++                        fs::put(f.path(), bytes);
++                    }
++                });
++            }
++        }
++
++        fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
++            self.app.show(ui);
++            self.after();
++        }
++
++        fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
++            Some(self)
++        }
++    }
++
++    pub fn start() {
++        let open = Closure::<dyn Fn(JsValue)>::new(|f: JsValue| {
++            OPENED.with_borrow_mut(|o| o.push(f));
++            repaint();
++        });
++        call("onOpen", &[open.into_js_value()]);
++        wasm_bindgen_futures::spawn_local(async {
++            let persist = !invited() && ["files", "write", "remove"].iter().all(|m| api().is_some_and(|a| get(&a, m).is_function()));
++            let had = persist && load().await;
++            let document = web_sys::window().and_then(|w| w.document()).expect("no document");
++            let canvas = document
++                .get_element_by_id("notecraft_canvas")
++                .and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok())
++                .expect("no #notecraft_canvas");
++            listen_to_the_pen(&canvas);
++            let started = eframe::WebRunner::new()
++                .start(
++                    canvas,
++                    eframe::WebOptions::default(),
++                    Box::new(move |cc| {
++                        CTX.with(|c| c.set(cc.egui_ctx.clone()).ok());
++                        cc.egui_ctx.add_bytes_loader(std::sync::Arc::new(Files));
++                        let session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
++                        // A fresh browser starts with the same bundled Welcome notebook as the desktop app.
++                        let first = !had && !invited();
++                        let mut app = NoteCraftApp::new(session);
++                        if first {
++                            app.add_welcome();
++                        }
++                        Ok(Box::new(Web { app, persist, unsaved: None }))
++                    }),
++                )
++                .await;
++            if let Some(loading) = document.get_element_by_id("notecraft_loading") {
++                match started {
++                    Ok(()) => loading.remove(),
++                    Err(e) => loading.set_text_content(Some(&format!("NoteCraft could not start: {e:?}"))),
++                }
++            }
++        });
++    }
++}
++
++fn main() {
++    #[cfg(target_arch = "wasm32")]
++    web::start();
++}
+diff --git a/crates/model/src/playground.rs b/crates/model/src/playground.rs
+new file mode 100644
+index 0000000..295f3b0
+--- /dev/null
++++ b/crates/model/src/playground.rs
+@@ -0,0 +1,277 @@
++// SPDX-License-Identifier: MIT OR Apache-2.0
++//! NoteCraft's browser build in Playground (patches/onenote.yaml in github.com/daijro/openplayground).
++//! wasm32-unknown-unknown has no files and no clock, so the modules that use them take `std` from here instead (one
++//! `#[cfg(target_arch = "wasm32")] use notecraft_model::playground::std;` line each): the same std, except
++//!   fs    an in-memory file system holding the notebooks folder; every change is noted (see [`std::fs::changes`]) so
++//!         the page can keep browser storage in step with it;
++//!   time  web-time's Instant and SystemTime, which work in the browser.
++
++pub mod std {
++    pub use ::std::*;
++
++    pub mod time {
++        pub use web_time::*;
++    }
++
++    pub mod fs {
++        pub use ::std::fs::*;
++        use ::std::{
++            cell::RefCell,
++            collections::{BTreeMap, BTreeSet},
++            io,
++            path::{Component, Path, PathBuf},
++        };
++
++        enum Entry {
++            Dir,
++            /// The bytes and their [`content_id`].
++            File(Vec<u8>, String),
++        }
++
++        #[derive(Default)]
++        struct Tree {
++            entries: BTreeMap<PathBuf, Entry>,
++            /// Paths written, created or removed since the last [`changes`].
++            changed: BTreeSet<PathBuf>,
++            /// Goes up with every change.
++            generation: u64,
++        }
++
++        thread_local! {
++            static TREE: RefCell<Tree> = RefCell::default();
++        }
++
++        fn with<T>(f: impl FnOnce(&mut Tree) -> T) -> T {
++            TREE.with(|t| f(&mut t.borrow_mut()))
++        }
++
++        /// An id that names the content: FNV-1a over the bytes, and their length.
++        // ponytail: not a cryptographic hash; collisions need intent, and the people who could craft one can edit the notebook anyway.
++        pub fn content_id(bytes: &[u8]) -> String {
++            let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3));
++            format!("{hash:016x}-{}", bytes.len())
++        }
++
++        /// `/a/./b/../c` -> `/a/c`: one spelling per file.
++        pub fn key(p: &Path) -> PathBuf {
++            let mut out = PathBuf::from("/");
++            for c in p.components() {
++                match c {
++                    Component::ParentDir => {
++                        out.pop();
++                    }
++                    Component::Normal(n) => out.push(n),
++                    _ => {}
++                }
++            }
++            out
++        }
++
++        fn missing(p: &Path) -> io::Error {
++            io::Error::new(io::ErrorKind::NotFound, format!("{} does not exist", p.display()))
++        }
++
++        impl Tree {
++            fn mark(&mut self, p: PathBuf) {
++                self.generation += 1;
++                self.changed.insert(p);
++            }
++            fn parents(&mut self, p: &Path) {
++                for dir in p.ancestors().skip(1) {
++                    self.entries.entry(dir.to_path_buf()).or_insert(Entry::Dir);
++                }
++            }
++            fn put(&mut self, p: PathBuf, bytes: Vec<u8>) {
++                self.parents(&p);
++                let id = content_id(&bytes);
++                self.entries.insert(p, Entry::File(bytes, id));
++            }
++            /// `p` and everything below it.
++            fn below(&self, p: &Path) -> Vec<PathBuf> {
++                self.entries.range(p.to_path_buf()..).map(|(k, _)| k).take_while(|k| k.starts_with(p)).cloned().collect()
++            }
++        }
++
++        /// Stores a file without noting a change (files the page loads from browser storage).
++        pub fn put(p: &Path, bytes: Vec<u8>) {
++            with(|t| t.put(key(p), bytes));
++        }
++
++        /// The paths changed since the last call: each now holds what browser storage should hold, or is gone.
++        pub fn changes() -> Vec<PathBuf> {
++            with(|t| ::std::mem::take(&mut t.changed).into_iter().collect())
++        }
++
++        /// Goes up with every change, so a caller can tell nothing changed.
++        pub fn generation() -> u64 {
++            with(|t| t.generation)
++        }
++
++        /// Every file at or below `root` with its bytes and content id, in path order.
++        pub fn walk(root: &Path, mut f: impl FnMut(&Path, &[u8], &str)) {
++            let root = key(root);
++            TREE.with(|t| {
++                for (p, e) in t.borrow().entries.range(root.clone()..).take_while(|(k, _)| k.starts_with(&root)) {
++                    if let Entry::File(bytes, id) = e {
++                        f(p, bytes, id);
++                    }
++                }
++            });
++        }
++
++        /// The content id of the file at `p`.
++        pub fn id_of(p: &Path) -> Option<String> {
++            TREE.with(|t| match t.borrow().entries.get(&key(p)) {
++                Some(Entry::File(_, id)) => Some(id.clone()),
++                _ => None,
++            })
++        }
++
++        pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(p: P, bytes: C) -> io::Result<()> {
++            let p = key(p.as_ref());
++            with(|t| {
++                t.put(p.clone(), bytes.as_ref().to_vec());
++                t.mark(p);
++            });
++            Ok(())
++        }
++
++        pub fn read<P: AsRef<Path>>(p: P) -> io::Result<Vec<u8>> {
++            TREE.with(|t| match t.borrow().entries.get(&key(p.as_ref())) {
++                Some(Entry::File(bytes, _)) => Ok(bytes.clone()),
++                _ => Err(missing(p.as_ref())),
++            })
++        }
++
++        pub fn read_to_string<P: AsRef<Path>>(p: P) -> io::Result<String> {
++            String::from_utf8(read(p)?).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
++        }
++
++        pub fn create_dir_all<P: AsRef<Path>>(p: P) -> io::Result<()> {
++            let p = key(p.as_ref());
++            with(|t| {
++                if !t.entries.contains_key(&p) {
++                    t.parents(&p);
++                    t.entries.insert(p.clone(), Entry::Dir);
++                    t.mark(p);
++                }
++            });
++            Ok(())
++        }
++
++        pub fn create_dir<P: AsRef<Path>>(p: P) -> io::Result<()> {
++            if metadata(p.as_ref()).is_ok() {
++                return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} exists", p.as_ref().display())));
++            }
++            create_dir_all(p)
++        }
++
++        pub fn remove_file<P: AsRef<Path>>(p: P) -> io::Result<()> {
++            let p = key(p.as_ref());
++            with(|t| match t.entries.get(&p) {
++                Some(Entry::File(..)) => {
++                    t.entries.remove(&p);
++                    t.mark(p);
++                    Ok(())
++                }
++                _ => Err(missing(&p)),
++            })
++        }
++
++        /// Removes an empty folder.
++        pub fn remove_dir<P: AsRef<Path>>(p: P) -> io::Result<()> {
++            let p = key(p.as_ref());
++            with(|t| {
++                if t.below(&p).len() != 1 || !matches!(t.entries.get(&p), Some(Entry::Dir)) {
++                    return Err(io::Error::other(format!("{} is not an empty folder", p.display())));
++                }
++                t.entries.remove(&p);
++                t.mark(p);
++                Ok(())
++            })
++        }
++
++        pub fn remove_dir_all<P: AsRef<Path>>(p: P) -> io::Result<()> {
++            let p = key(p.as_ref());
++            with(|t| {
++                let gone = t.below(&p);
++                if gone.is_empty() {
++                    return Err(missing(&p));
++                }
++                for g in gone {
++                    t.entries.remove(&g);
++                }
++                t.mark(p);
++                Ok(())
++            })
++        }
++
++        pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<()> {
++            let (from, to) = (key(from.as_ref()), key(to.as_ref()));
++            let bytes = read(&from)?;
++            with(|t| {
++                t.entries.remove(&from);
++                t.mark(from);
++                t.put(to.clone(), bytes);
++                t.mark(to);
++            });
++            Ok(())
++        }
++
++        pub fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<u64> {
++            let bytes = read(from)?;
++            let n = bytes.len() as u64;
++            write(to, bytes)?;
++            Ok(n)
++        }
++
++        pub fn canonicalize<P: AsRef<Path>>(p: P) -> io::Result<PathBuf> {
++            let p = key(p.as_ref());
++            metadata(&p).map(|_| p)
++        }
++
++        pub struct Metadata(Option<u64>);
++        impl Metadata {
++            pub fn len(&self) -> u64 {
++                self.0.unwrap_or(0)
++            }
++            pub fn is_file(&self) -> bool {
++                self.0.is_some()
++            }
++            pub fn is_dir(&self) -> bool {
++                self.0.is_none()
++            }
++        }
++
++        pub fn metadata<P: AsRef<Path>>(p: P) -> io::Result<Metadata> {
++            TREE.with(|t| match t.borrow().entries.get(&key(p.as_ref())) {
++                Some(Entry::File(bytes, _)) => Ok(Metadata(Some(bytes.len() as u64))),
++                Some(Entry::Dir) => Ok(Metadata(None)),
++                None => Err(missing(p.as_ref())),
++            })
++        }
++
++        pub struct DirEntry(PathBuf);
++        impl DirEntry {
++            pub fn path(&self) -> PathBuf {
++                self.0.clone()
++            }
++            pub fn file_name(&self) -> ::std::ffi::OsString {
++                self.0.file_name().unwrap_or_default().to_os_string()
++            }
++            pub fn metadata(&self) -> io::Result<Metadata> {
++                metadata(&self.0)
++            }
++            pub fn file_type(&self) -> io::Result<Metadata> {
++                metadata(&self.0)
++            }
++        }
++
++        pub fn read_dir<P: AsRef<Path>>(p: P) -> io::Result<::std::vec::IntoIter<io::Result<DirEntry>>> {
++            let dir = key(p.as_ref());
++            if !metadata(&dir)?.is_dir() {
++                return Err(io::Error::other(format!("{} is not a folder", dir.display())));
++            }
++            let entries =
++                TREE.with(|t| t.borrow().below(&dir).into_iter().filter(|k| k.parent() == Some(&dir)).map(|k| Ok(DirEntry(k))).collect::<Vec<_>>());
++            Ok(entries.into_iter())
++        }
++    }
++}
+diff --git a/crates/ui-egui/src/playground_clipboard.rs b/crates/ui-egui/src/playground_clipboard.rs
+new file mode 100644
+index 0000000..f851b31
+--- /dev/null
++++ b/crates/ui-egui/src/playground_clipboard.rs
+@@ -0,0 +1,129 @@
++// SPDX-License-Identifier: MIT OR Apache-2.0
++//! NoteCraft's browser build in Playground (patches/onenote.yaml in github.com/daijro/openplayground): the `arboard`
++//! that crates/ui-egui/src/clipboard.rs reads (`mod arboard` there on wasm), answered from the browser's clipboard.
++//! arboard itself has no browser clipboard, so the web build leaves it out.
++//!
++//! The browser hands its clipboard over asynchronously (navigator.clipboard.read, which may ask the person first), so
++//! the ribbon's Paste asks for it ([`ask`], first thing in `paste_here`) and runs again once it has arrived
++//! ([`arrived`], first thing in the window's frame): that run reads it here, picture or words, as the desktop reads
++//! arboard. Copy, Cut and Ctrl+V never come here: egui and the browser carry those.
++
++use std::borrow::Cow;
++use std::cell::RefCell;
++use wasm_bindgen::{JsCast as _, JsValue};
++
++/// Nothing to hand over: no read has arrived for this Paste, or the clipboard has no such thing.
++#[derive(Clone, Copy, PartialEq, Eq)]
++pub struct Error;
++
++impl Error {
++    #[allow(non_upper_case_globals)]
++    pub const ClipboardOccupied: Self = Self;
++}
++
++impl std::fmt::Display for Error {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str("the browser's clipboard has nothing to hand over")
++    }
++}
++
++/// A picture, as arboard gives it: unmultiplied RGBA rows.
++pub struct ImageData<'a> {
++    pub width: usize,
++    pub height: usize,
++    pub bytes: Cow<'a, [u8]>,
++}
++
++/// What the browser handed over for one Paste; `None` when it would not.
++type Read = Option<(Option<String>, Option<String>, Option<(usize, usize, Vec<u8>)>)>;
++
++enum State {
++    Idle,
++    Reading,
++    Arrived(Read),
++    /// The Paste runs again with it, this frame.
++    Serving(Read),
++}
++
++thread_local! {
++    static STATE: RefCell<State> = const { RefCell::new(State::Idle) };
++    static CTX: RefCell<Option<egui::Context>> = const { RefCell::new(None) };
++}
++
++pub struct Clipboard;
++
++pub struct Get;
++
++impl Get {
++    pub fn html(self) -> Result<String, Error> {
++        STATE.with_borrow(|s| match s {
++            State::Serving(Some((_, Some(html), _))) => Ok(html.clone()),
++            _ => Err(Error),
++        })
++    }
++}
++
++pub struct Set;
++
++impl Set {
++    pub fn html(self, html: String, alt: Option<String>) -> Result<(), Error> {
++        write_html(&html, alt.as_deref().unwrap_or("")).ok_or(Error)
++    }
++}
++
++impl Clipboard {
++    pub fn new() -> Result<Self, Error> {
++        Ok(Clipboard)
++    }
++
++    pub fn get_image(&mut self) -> Result<ImageData<'static>, Error> {
++        STATE.with_borrow(|s| match s {
++            State::Serving(Some((_, _, Some((width, height, rgba))))) => Ok(ImageData { width: *width, height: *height, bytes: Cow::Owned(rgba.clone()) }),
++            _ => Err(Error),
++        })
++    }
++
++    /// Copying goes through egui and the browser, not here.
++    pub fn set_text(&mut self, _text: String) -> Result<(), Error> {
++        Err(Error)
++    }
++
++    pub fn get_text(&mut self) -> Result<String, Error> {
++        STATE.with_borrow(|s| match s {
++            State::Serving(Some((Some(text), _, _))) => Ok(text.clone()),
++            _ => Err(Error),
++        })
++    }
++
++    pub fn get(&mut self) -> Get {
++        Get
++    }
++
++    pub fn set(&mut self) -> Set {
++        Set
++    }
++}
++
++/// The Paste: `None` when the browser's clipboard has arrived (read it now); otherwise what to say meanwhile, having
++/// asked the browser for it.
++pub fn ask() -> Option<&'static str> {
++    STATE.with_borrow_mut(|s| match s {
++        State::Serving(Some(_)) => None,
++        State::Serving(None) => Some("The browser did not hand over its clipboard: press Ctrl+V to paste"),
++        State::Idle => {
++            *s = State::Reading;
++            wasm_bindgen_futures::spawn_local(async {
++                let read = read().await;
++                STATE.set(State::Arrived(read));
++                CTX.with_borrow(|c| c.as_ref().map(egui::Context::request_repaint));
++            });
++            Some("Reading the clipboard…")
++        }
++        State::Reading | State::Arrived(_) => Some("Reading the clipboard…"),
++    })
++}
++
++/// Each frame: true when the browser's clipboard has just arrived, so the Paste that asked runs again.
++pub fn arrived(ctx: &egui::Context) -> bool {
++    CTX.with_borrow_mut(|c| { c.get_or_insert_with(|| ctx.clone()); });
++    STATE.with_borrow_mut(|s| {
++        let (next, again) = match std::mem::replace(s, State::Idle) {
++            State::Arrived(read) => (State::Serving(read), true),
++            State::Serving(_) => (State::Idle, false),
++            other => (other, false),
++        };
++        *s = next;
++        again
++    })
++}
++
++fn get(o: &JsValue, k: &str) -> JsValue {
++    js_sys::Reflect::get(o, &k.into()).unwrap_or(JsValue::UNDEFINED)
++}
++
++/// `o[method](...args)`, awaited.
++async fn call(o: &JsValue, method: &str, args: &[JsValue]) -> Option<JsValue> {
++    let f = get(o, method).dyn_into::<js_sys::Function>().ok()?;
++    let promise = f.apply(o, &args.iter().collect::<js_sys::Array>()).ok()?.dyn_into::<js_sys::Promise>().ok()?;
++    wasm_bindgen_futures::JsFuture::from(promise).await.ok()
++}
++
++/// The clipboard's words and its first picture.
++async fn read() -> Read {
++    let clipboard = get(&get(&js_sys::global(), "navigator"), "clipboard");
++    let items = call(&clipboard, "read", &[]).await?;
++    let (mut text, mut html, mut picture) = (None, None, None);
++    for item in js_sys::Array::from(&items).iter() {
++        for kind in js_sys::Array::from(&get(&item, "types")).iter().filter_map(|t| t.as_string()) {
++            if kind == "text/plain" && text.is_none() {
++                if let Some(blob) = call(&item, "getType", &[kind.into()]).await {
++                    text = call(&blob, "text", &[]).await.and_then(|t| t.as_string()).map(|t| t.replace("\r\n", "\n"));
++                }
++            } else if kind == "text/html" && html.is_none() {
++                if let Some(blob) = call(&item, "getType", &[kind.into()]).await {
++                    html = call(&blob, "text", &[]).await.and_then(|t| t.as_string());
++                }
++            } else if kind.starts_with("image/") && picture.is_none() {
++                let Some(blob) = call(&item, "getType", &[kind.into()]).await else { continue };
++                let Some(buffer) = call(&blob, "arrayBuffer", &[]).await else { continue };
++                picture = image::load_from_memory(&js_sys::Uint8Array::new(&buffer).to_vec()).ok().map(|i| {
++                    let i = i.to_rgba8();
++                    (i.width() as usize, i.height() as usize, i.into_raw())
++                });
++            }
++        }
++    }
++    Some((text, html, picture))
++}
++
++/// Writes both formats while the click's browser permission is active.
++fn write_html(html: &str, text: &str) -> Option<()> {
++    use js_sys::{Array, Function, Object, Promise, Reflect};
++    let global = js_sys::global();
++    let blob_ctor = get(&global, "Blob").dyn_into::<Function>().ok()?;
++    let make_blob = |data: &str, mime: &str| {
++        let parts = Array::new();
++        parts.push(&JsValue::from_str(data));
++        let options = Object::new();
++        Reflect::set(&options, &JsValue::from_str("type"), &JsValue::from_str(mime)).ok()?;
++        let args = Array::new();
++        args.push(&parts);
++        args.push(&options);
++        Reflect::construct(&blob_ctor, &args).ok()
++    };
++    let values = Object::new();
++    Reflect::set(&values, &JsValue::from_str("text/html"), &make_blob(html, "text/html")?).ok()?;
++    Reflect::set(&values, &JsValue::from_str("text/plain"), &make_blob(text, "text/plain")?).ok()?;
++    let item_ctor = get(&global, "ClipboardItem").dyn_into::<Function>().ok()?;
++    let item = Reflect::construct(&item_ctor, &Array::of1(&values)).ok()?;
++    let clipboard = get(&get(&global, "navigator"), "clipboard");
++    let write = get(&clipboard, "write").dyn_into::<Function>().ok()?;
++    let promise = write.apply(&clipboard, &Array::of1(&Array::of1(&item))).ok()?.dyn_into::<Promise>().ok()?;
++    wasm_bindgen_futures::spawn_local(async move {
++        let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
++    });
++    Some(())
++}

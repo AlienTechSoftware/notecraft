@@ -70,7 +70,21 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 }
             }
             Block::Rule => out.push_str("---\n"),
-            Block::Image { alt, src } => out.push_str(&format!("![{alt}]({src})\n")),
+            Block::Image { alt, src, width, height } => {
+                if width.is_some() || height.is_some() {
+                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    if let Some(w) = width {
+                        img_tag.push_str(&format!(" width=\"{}\"", *w as i32));
+                    }
+                    if let Some(h) = height {
+                        img_tag.push_str(&format!(" height=\"{}\"", *h as i32));
+                    }
+                    img_tag.push_str(">\n");
+                    out.push_str(&img_tag);
+                } else {
+                    out.push_str(&format!("![{alt}]({src})\n"));
+                }
+            }
         }
         last_was_item = is_item;
     }
@@ -103,7 +117,7 @@ fn block_to_text(block: &Block) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
         Block::Rule => String::new(),
-        Block::Image { alt, src } => readable_link(alt, src),
+        Block::Image { alt, src, .. } => readable_link(alt, src),
     }
 }
 
@@ -264,7 +278,17 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                 out.push_str("</table>\n");
             }
             Block::Rule => out.push_str("<hr>\n"),
-            Block::Image { alt, src } => out.push_str(&format!("<p><img src=\"{}\" alt=\"{}\"></p>\n", escape(src), escape(alt))),
+            Block::Image { alt, src, width, height } => {
+                let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(src), escape(alt));
+                if let Some(w) = width {
+                    img_tag.push_str(&format!(" width=\"{}\"", *w as i32));
+                }
+                if let Some(h) = height {
+                    img_tag.push_str(&format!(" height=\"{}\"", *h as i32));
+                }
+                img_tag.push('>');
+                out.push_str(&format!("<p>{}</p>\n", img_tag));
+            }
         }
         at += 1;
     }

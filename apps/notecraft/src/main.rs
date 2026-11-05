@@ -26,6 +26,20 @@ struct Shell {
 impl eframe::App for Shell {
     /// Puts the clicks, keys and text that control requests queued into the next frame.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let mut keyboard_paste = false;
+        raw_input.events.retain(|event| {
+            let is_paste = matches!(
+                event,
+                egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. }
+                    if modifiers.ctrl || modifiers.command
+            ) || matches!(event, egui::Event::PasteImage(_));
+            keyboard_paste |= is_paste;
+            !is_paste
+        });
+        if keyboard_paste {
+            log::debug!("raw keyboard paste captured before egui clipboard handling");
+            self.app.queue_keyboard_paste();
+        }
         raw_input.events.extend(self.app.take_events());
     }
 
@@ -55,7 +69,16 @@ fn saved_notebooks_dir(saved: &str) -> Option<PathBuf> {
     if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
         return None;
     }
-    Some(PathBuf::from(saved))
+    let path = PathBuf::from(saved);
+    should_remember_notebooks_root(&path).then_some(path)
+}
+
+/// Test/screenshot sandboxes are valid explicit roots but must never become the next
+/// production default through `last_notebooks_root`.
+fn should_remember_notebooks_root(root: &std::path::Path) -> bool {
+    let temp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    !root.starts_with(temp)
 }
 
 fn flag_value(args: &[String], name: &str) -> Option<String> {
@@ -83,8 +106,15 @@ fn open_arg(args: &[String]) -> Option<String> {
 }
 
 fn icon() -> Option<egui::IconData> {
-    let img = image::load_from_memory(notecraft_ui_egui::LOGO_PNG).ok()?.into_rgba8();
+    let img = match image::load_from_memory(notecraft_ui_egui::LOGO_PNG) {
+        Ok(img) => img.into_rgba8(),
+        Err(error) => {
+            applog::info(&format!("app icon decode failed: {error}"));
+            return None;
+        }
+    };
     let (width, height) = img.dimensions();
+    applog::info(&format!("app icon decoded: source=embedded-logo-png size={width}x{height} rgba_bytes={}", img.as_raw().len()));
     Some(egui::IconData { rgba: img.into_raw(), width, height })
 }
 
@@ -131,43 +161,50 @@ fn main() -> eframe::Result {
     // An explicit command-line root becomes the next launch's remembered notebook root.
     // This prevents a demo or another deliberately selected notebook from being replaced
     // by the old default folder on the next start.
-    if args.iter().any(|arg| arg == "--notebooks") {
+    if args.iter().any(|arg| arg == "--notebooks") && should_remember_notebooks_root(&root) {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
-    // The Welcome notebook, a tour of the app, is deployed on every startup (ensures fresh demo).
-    // On first run (empty tree), it opens automatically. It's a normal notebook after deployment:
-    // the user can change or delete it.
+    // Reset first-use flag for testing (shows logging consent dialog again)
+    if args.iter().any(|arg| arg == "--first-use") {
+        let _ = session.settings.set("privacy_welcome_seen", "");
+        applog::info("First-use flag set: privacy welcome dialog will show");
+    }
+    // The Welcome notebook is part of the installed product. Replace the user's old copy on
+    // every startup so an upgrade always exposes the demo shipped with this build.
+    let tree_was_empty = session.tree().is_empty();
     let mut open_first: Option<String> = None;
     // Problems found before the window opens. The window shows each one in an alert.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
-    let tree_was_empty = session.tree().is_empty();
+
     match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
         Ok(notecraft_engine::Output::Path(dir)) => {
-            // On first run, open the welcome notebook automatically
             if tree_was_empty {
                 open_first = Some(dir.to_string_lossy().into_owned());
             }
-            // Reload tree after deployment to pick up fresh demo
             session.refresh();
         }
         Ok(_) => {}
         Err(e) => {
-            // A release build on Windows has no console; the window shows the message in a box.
             let message = format!("The Welcome notebook could not be deployed to {}: {e}", session.root().display());
             eprintln!("{message}");
             startup_alerts.push(("welcome-notebook-deploy", message));
         }
     }
+
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([820.0, 520.0])
         .with_title("NoteCraft")
+        .with_app_id("com.alientechsoftware.notecraft")
         .with_decorations(!own_frame);
     if let Some(icon) = icon() {
+        applog::info(&format!("app icon installed on native viewport: size={}x{} rgba_bytes={}", icon.width, icon.height, icon.rgba.len()));
         viewport = viewport.with_icon(icon);
+    } else {
+        applog::info("app icon was not installed on native viewport");
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     applog::info(&format!("session open ({} tree nodes); starting the window", session.tree().len()));
@@ -244,6 +281,18 @@ mod tests {
     fn a_trailing_flag_without_a_value_falls_back_to_the_default() {
         let args = vec!["--notebooks".to_string()];
         assert_eq!(notebooks_dir(&args), notecraft_store::settings::default_notebooks_dir());
+    }
+
+    #[test]
+    fn a_temp_notebooks_root_is_not_persisted_as_the_production_default() {
+        assert!(!should_remember_notebooks_root(&std::env::temp_dir()));
+        assert!(should_remember_notebooks_root(std::path::Path::new("Documents/NoteCraft")));
+    }
+
+    #[test]
+    fn a_saved_temp_root_is_not_used_as_the_production_default() {
+        let saved = std::env::temp_dir().to_string_lossy().into_owned();
+        assert_eq!(saved_notebooks_dir(&saved), None);
     }
 
     #[cfg(not(target_os = "windows"))]

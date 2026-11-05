@@ -16,8 +16,26 @@ contents:
   - src: ${STAGE}/usr/bin/notecraft
     dst: /usr/bin/notecraft
     file_info: { mode: 0755 }
-  - src: ${STAGE}/usr/share/
-    dst: /usr/share/
+  - src: ${STAGE}/usr/share/applications/com.alientechsoftware.notecraft.desktop
+    dst: /usr/share/applications/com.alientechsoftware.notecraft.desktop
+  - src: ${STAGE}/usr/share/icons/hicolor/32x32/apps/com.alientechsoftware.notecraft.png
+    dst: /usr/share/icons/hicolor/32x32/apps/com.alientechsoftware.notecraft.png
+  - src: ${STAGE}/usr/share/icons/hicolor/64x64/apps/com.alientechsoftware.notecraft.png
+    dst: /usr/share/icons/hicolor/64x64/apps/com.alientechsoftware.notecraft.png
+  - src: ${STAGE}/usr/share/icons/hicolor/128x128/apps/com.alientechsoftware.notecraft.png
+    dst: /usr/share/icons/hicolor/128x128/apps/com.alientechsoftware.notecraft.png
+  - src: ${STAGE}/usr/share/icons/hicolor/256x256/apps/com.alientechsoftware.notecraft.png
+    dst: /usr/share/icons/hicolor/256x256/apps/com.alientechsoftware.notecraft.png
+  - src: ${STAGE}/usr/share/icons/hicolor/512x512/apps/com.alientechsoftware.notecraft.png
+    dst: /usr/share/icons/hicolor/512x512/apps/com.alientechsoftware.notecraft.png
+  - src: ${STAGE}/usr/share/doc/notecraft/LICENSE-MIT
+    dst: /usr/share/doc/notecraft/LICENSE-MIT
+  - src: ${STAGE}/usr/share/doc/notecraft/LICENSE-APACHE
+    dst: /usr/share/doc/notecraft/LICENSE-APACHE
+  - src: ${STAGE}/usr/share/doc/notecraft/NOTICE
+    dst: /usr/share/doc/notecraft/NOTICE
+  - src: ${STAGE}/usr/share/notecraft/demo/
+    dst: /usr/share/notecraft/demo/
     type: tree
 overrides:
   deb:

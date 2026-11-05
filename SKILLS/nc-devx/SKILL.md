@@ -3,13 +3,19 @@ name: nc-devx
 description: 'NoteCraft developer experience. One-time setup, development workflow, common tasks (lint, test, run app, git hooks), and platform-specific scripts. Fast feedback loop for local work.'
 license: MIT
 metadata:
-  version: "0.0.20261024"
+  version: "0.0.20261101"
   related_skills: [code-assistant, nc-arch, nc-code-rust]
 ---
 
 # nc-devx - NoteCraft Developer Experience
 
-Developer setup, workflow, and automation for local NoteCraft work.
+## Job to be done
+
+Verify NoteCraft developer workflows with fast feedback and intact quality gates across supported environments.
+
+Developer setup, workflow, and automation for local NoteCraft work. The newcomer
+summary is [`README_DEV.md`](../../README_DEV.md); this skill is the detailed and
+authoritative reference for the gates and CI/CD lanes.
 
 ---
 
@@ -191,7 +197,7 @@ cargo xtask ci
 | Run full CI gate | `cargo xtask ci` |
 | Regenerate demo notebook | `cargo xtask demo` |
 | Check demo parity | `cargo xtask demo-check` |
-| Rebuild docs/images | `cargo xtask screenshots` |
+| Rebuild docs/images | `cargo xtask screenshots` (capture mechanics: [`nc-uiux-testing`](../nc-uiux-testing/SKILL.md)) |
 | Check text style | `cargo xtask text` |
 | Verify layers | `cargo xtask layers` |
 | Check assets/ATTRIBUTION.md | `cargo xtask assets` |
@@ -201,19 +207,81 @@ cargo xtask ci
 ## Quality Levels
 
 Each level includes the ones before it. The hooks run L1 and L2 for you once
-`git config core.hooksPath .githooks` is set (the setup script does it); CI runs L3.
+`git config core.hooksPath .githooks` is set (the setup script does it); GitHub PR
+CI runs L3; L4 is the release signoff and delivery process.
 
 | Level | When | What runs | Where | Time |
 |---|---|---|---|---|
 | **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
-| **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main` or carrying a merge commit. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
-| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` or carrying a merge commit stops the push. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
-| **L3** | Pull request | L2 on Linux in CI, plus the branch name check and the coverage job (warns, never blocks). The pull request template's checklist: docs match the change, commands have tests, demo parity for page changes, pictures looked at for UI changes, attribution rows for new assets | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
-| **L4** | Release | The `nc-reelase-signoff` checklist: version, demo parity, packaging, installers, release notes. By hand today; to be automated, starting with the installer smoke test on a clean profile | `SKILLS/nc-reelase-signoff` | by hand |
+| **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main`. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
+| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
+| **L3** | Pull request | Code quality and cross-platform source validation: split fmt, clippy, static checks, demo checks, tests, and non-blocking coverage, plus build/test jobs for Linux, Windows, and macOS. No installers or publishing. | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
+| **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `.github/workflows/packaging.yml`, `.github/workflows/release.yml`, `docs/releasing.md` | release/manual |
+
+### CI lanes: quality, build, packaging, deployment
+
+The four quality levels above are developer gates. The CI delivery lanes are a separate model that
+prevents a slow or privileged packaging step from hiding a source-quality or cross-platform build
+failure. New contributors should know which lane they are changing:
+
+**Budget constraint:** NoteCraft currently has no budget for CI, signing, notarization, or larger
+hosted runners. Prefer GitHub-hosted free-tier capacity and existing local/VM validation. Keep full
+packaging manual or release-only, do not select paid/larger runners, and do not introduce paid
+services or signing infrastructure without explicit owner approval.
+
+| Lane | Purpose | Trigger | Produces | Merge/deployment authority |
+|---|---|---|---|---|
+| **1. Code quality** | fmt, clippy, static checks, docs/assets/demo checks, and coverage | Every pull request and main push as configured | Check results and diagnostics | Required quality checks; coverage remains warning-only |
+| **2. Platform build/test** | Prove the source builds and applicable tests pass on Linux, Windows, and macOS | Every pull request | Per-platform logs and test results | Required for merge; no installers |
+| **3. Packaging** | Build and inspect MSI/ZIP, Linux packages, and macOS artifacts | Manual `Packaging` workflow only | Versioned, checksumed workflow artifacts | Never publishes by itself |
+| **4. Installation/deployment** | Install/uninstall, first launch, notebook placement, upgrade/data persistence, then publish | Manual `Release` workflow after selecting a successful Packaging run | Installation evidence and an approved release | Only this lane may deploy or publish |
+
+Rules:
+
+- Lanes 1 and 2 must stay fast, visible, and safe to run on untrusted pull requests.
+- Lane 3 is isolated because packaging tools, larger artifacts, and platform-specific setup are
+  expensive and more privileged than ordinary CI.
+- Lane 4 is isolated because it changes external state or publishes artifacts; it requires explicit
+  release authorization and must not be inferred from a green build.
+- A packaging success does not replace the three-platform build/test matrix. A green build does not
+  prove that an installer places files correctly.
+- Record runner label, Rust/toolchain version, artifact name, architecture, demo payload, notices,
+  and known limitations in packaging results.
+- The `Packaging` workflow must finish successfully before `Release` is run. Pass its run ID to
+  `Release`; the release workflow downloads those exact artifacts instead of rebuilding them.
+
+### Linear history is a policy choice
+
+The L2 push gate now permits merge commits. A linear history can keep branch logs simple and can
+help automated changelog generation and bisecting, but it is not a correctness or release-safety
+requirement. A merge commit can preserve
+the true integration point, the source branch provenance, and the conflict resolution that was
+reviewed.
+
+Consider allowing merge commits on `rc_*` or other integration branches when preserving that
+provenance is more valuable than a straight-line log. If the rule is relaxed, keep the substantive
+gates unchanged: PII scanning, formatting, clippy, the complete test suite, static checks, demo
+parity, and release signoff. Do not bypass hooks or weaken those gates merely to preserve a merge
+commit.
 
 Coverage is not in a hook: it rebuilds the workspace with instrumentation, which takes
 minutes. Run `cargo xtask coverage` on demand before opening a pull request that adds code or
-tests; CI runs it on every pull request.
+tests; CI runs it on pull requests and after pushes to `main`, but it is non-blocking because it
+repeats the full instrumented build.
+
+### CI resource and duplication policy
+
+The GitHub workflow keeps the expensive checks separate so failures identify the responsible
+phase. Rust jobs set `CARGO_BUILD_JOBS=2` and reduce dev/test debug information to lower linker
+memory and disk pressure. Heavy jobs print CPU count, memory, and disk capacity before building.
+The test job may retry only errors that identify runner infrastructure pressure (`No space left
+on device`, linker I/O failure, `Bus error`, or signal 7); ordinary compiler and test failures are
+never retried.
+
+Coverage remains visible on pull requests so developers can think about coverage before merge;
+its warning-only result must not block merging. Do not select a larger runner unless the
+repository's GitHub account explicitly provides that runner label; record the measured resource
+need and the cost/availability decision in the PR.
 
 Never skip a level with `--no-verify` for your own work (AGENTS.md). If a hook stops you on
 work that is not yours, such as another session's half-written file, say so in the report.
@@ -400,6 +468,23 @@ Hooks are in `.githooks/` and run automatically after `git config core.hooksPath
 ---
 
 ## Quick Feedback Loop
+
+### TDD workflow for UI and behavior changes
+
+From version 0.0.7 onward, use this order for new UI behavior and user-facing
+features:
+
+1. Record the requirement and observable acceptance criteria.
+2. Add focused tests for the criteria before changing production code.
+3. Run the new tests and confirm they fail for the expected missing behavior.
+4. Implement the behavior, keeping the change scoped to the contract.
+5. Run the focused tests, then the changed-crate checks and the applicable
+   quality level.
+
+Use the real `egui_kittest` harness for pointer, keyboard, accessibility, and
+other user-visible UI behavior. Use lower-level tests for pure geometry or model
+rules, but do not use them as a substitute when the interaction itself is part
+of the requirement. Every fixed, reproducible bug should gain a regression test.
 
 For rapid iteration during development:
 

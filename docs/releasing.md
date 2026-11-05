@@ -7,10 +7,10 @@ name or mark.
 ## Versions
 
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
-- **The version is 0.0.7 and stays there until the owner approves a change, in words, each time.** The
+- **The version is 0.0.8 and stays there until the owner approves a change, in words, each time.** The
   rules below say what a number would mean once one is approved; they do not authorise a bump. The
   first release was `v0.0.1`. The owner approved 0.0.2 on 2026-10-19 for the title band, 0.0.3 on
-  2026-10-21, 0.0.6 on 2026-10-25, and 0.0.7 on 2026-10-29 for the current release.
+  2026-10-21, 0.0.6 on 2026-10-25, 0.0.7 on 2026-10-29, and 0.0.8 on 2026-11-02 for the current release.
 - Plain semantic versioning: `MAJOR.MINOR.PATCH`, with an optional `-rc.1` style tag. The Craft
   apps do the same, and they are all in the 0.x range today.
 - **Patch** (0.1.0 to 0.1.1): bug fixes only, or a rebuild after a packaging or workflow fix. No new
@@ -37,19 +37,22 @@ name or mark.
 
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.
-2. Start the build, either way:
-   - Actions, Release, Run workflow (the version box overrides `Cargo.toml` for a test run), or
-   - merge `main` into the `release` branch and push.
-3. The run builds on a Windows runner and drafts a GitHub Release `NoteCraft v<version>`. Nothing
-   is published. Try the zip on a clean machine, then publish the draft by hand.
+2. Run Actions, Packaging, Run workflow on the approved commit. This manually builds and verifies
+   Linux, Windows, and macOS artifacts and uploads them without publishing anything.
+3. After the Packaging run is green, run Actions, Release, Run workflow and enter that run ID.
+   Release downloads those exact artifacts and drafts `NoteCraft v<version>`. Nothing is published.
+   Try the packages on clean machines, then publish the draft by hand.
 
 ### Notes and the draft
 
 - The workflow writes its own fixed text into the draft, not the notes in
   `docs/releases/<version>/RELEASE_NOTES.md`. After the draft exists, replace its body with those
   notes: `gh release edit v<version> --draft --notes-file <file>`.
-- A relative image in the notes does not show on a release page. Link the picture with its
-  absolute URL on `main`, such as `https://raw.githubusercontent.com/AlienTechSoftware/notecraft/main/docs/releases/<version>/<file>`.
+- Release notes are body content below the GitHub release title: do not add a duplicate H1 title
+  such as `# NoteCraft <version>` to `RELEASE_NOTES.md`.
+- Relative images are unreliable on a release page. Use absolute release-asset URLs for the
+  artwork and animated GIF, upload both assets, and verify that both the image and GIF render
+  before publishing. The release is not complete if either asset is only present in the checkout.
 - Where `pwsh` is not installed, run the packaging script with
   `powershell -NoProfile -ExecutionPolicy Bypass -File packaging/windows/package.ps1`.
 
@@ -70,7 +73,10 @@ dialog shows once.
 Each file also gets a build provenance attestation. Check a download with
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-Windows x64 is the only target. macOS and Linux are untested, so they are not built.
+The manual Packaging workflow builds Windows x64, Linux x64, and macOS Apple Silicon/Intel
+artifacts. They are not official public releases until the separate Release workflow is run and
+the draft is reviewed. A maintainer must complete native Intel and clean-machine testing,
+Developer ID signing and notarization before public macOS distribution.
 
 ## Signing
 

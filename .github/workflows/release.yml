@@ -1,8 +1,7 @@
-# Builds a Windows release: an MSI installer and a portable zip, with checksums and a build
-# provenance attestation, and drafts a GitHub Release for the owner to review and publish.
+# Publishes artifacts from a separately-run Packaging workflow as a draft GitHub Release.
 #
-# Run it by hand (Actions > Release > Run workflow), or push to the `release` branch. Nothing is
-# published: the release is a draft, and every 0.x or -pre version is marked a pre-release.
+# Run Packaging first, then run this workflow by hand with its run ID. Nothing is published
+# automatically: the release is a draft, and every 0.x or -pre version is marked a pre-release.
 # See docs/releasing.md.
 #
 # Signing: packaging/windows/sign.ps1 signs when WINDOWS_CERTIFICATE or the AZURE_* secrets exist
@@ -11,10 +10,12 @@
 name: Release
 
 on:
-  push:
-    branches: [release]
   workflow_dispatch:
     inputs:
+      packaging_run_id:
+        description: "Successful Packaging workflow run ID whose artifacts should be published"
+        required: true
+        type: string
       version:
         description: "Version override for a test run, e.g. 0.1.0-rc.1 (empty: Cargo.toml)"
         type: string
@@ -28,20 +29,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows:
-    name: Windows x64
-    runs-on: windows-2025
-    timeout-minutes: 90
+  deploy:
+    name: Draft release from packaging artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write # the draft release
-      id-token: write # the attestation
-      attestations: write
     # Signing secrets, when they exist, live in the `release` environment.
     environment: release
     env:
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: "0"
-      RUST_BACKTRACE: "1"
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,52 +65,12 @@ jobs:
           } >>"$GITHUB_OUTPUT"
           echo "### NoteCraft v$v (\`${GITHUB_SHA::9}\`)" >>"$GITHUB_STEP_SUMMARY"
 
-      # No version named here on purpose: rust-toolchain.toml pins it.
-      - name: Install Rust (the version in rust-toolchain.toml)
-        shell: bash
+      - name: Download artifacts from the selected Packaging run
+        run: gh run download "${{ inputs.packaging_run_id }}" --repo "$GITHUB_REPOSITORY" --dir dist --pattern 'notecraft-*'
+      - name: Confirm packaging artifacts exist
         run: |
-          rustup install
-          rustc --version
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Install WiX
-        shell: pwsh
-        run: |
-          dotnet tool install --global wix --version 5.0.2
-          wix extension add -g WixToolset.UI.wixext/5.0.2
-          wix extension add -g WixToolset.Util.wixext/5.0.2
-
-      - name: Build the installer and the portable zip
-        shell: pwsh
-        env:
-          NOTECRAFT_VERSION: ${{ steps.v.outputs.version }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
-        run: ./packaging/windows/package.ps1
-
-      # The files in dist/release carry a signed statement of which commit and workflow built them.
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: |
-            dist/release/*.msi
-            dist/release/*.zip
-
-      - name: Upload the files as a run artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: notecraft-windows-x64
-          path: dist/release/*
-          if-no-files-found: error
+          test -n "$(find dist -type f -print -quit)"
+          find dist -type f -maxdepth 4 -print
 
       - name: Draft the GitHub Release
         shell: bash
@@ -124,8 +80,6 @@ jobs:
           if [ "${{ steps.v.outputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
           notes="**Alpha.** NoteCraft is not a finished product. It has had little use, and the folder format can still change. Keep a backup of any notebook you care about.
 
-          Windows x64 only. macOS and Linux are untested and not built.
-
           These files are **not signed**: Windows SmartScreen may show \"Windows protected your PC\".
           Choose More info, then Run anyway. Check a download against \`SHA256SUMS.txt\`, or with
           \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
@@ -134,4 +88,5 @@ jobs:
           an uninstall touches them. The app writes \`notecraft.log\` in \`%APPDATA%\NoteCraft\`: attach it
           to a bug report at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in
           docs/gaps.md."
-          gh release create "$tag" dist/release/* "${flags[@]}" --notes "$notes"
+          mapfile -t artifacts < <(find dist -type f -print)
+          gh release create "$tag" "${artifacts[@]}" "${flags[@]}" --notes "$notes"

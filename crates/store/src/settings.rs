@@ -35,7 +35,12 @@ pub fn default_notebooks_dir() -> PathBuf {
         return PathBuf::from(p);
     }
     let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    home.join("Documents").join("NoteCraft")
+    default_notebooks_dir_for_home(home)
+}
+
+/// The per-user notebook folder, kept separate so every platform can test the same contract.
+pub fn default_notebooks_dir_for_home(home: impl AsRef<Path>) -> PathBuf {
+    home.as_ref().join("Documents").join("NoteCraft")
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +146,12 @@ mod tests {
         let t = TempDir::new("settings1");
         let s = Settings::at(t.path().join("settings.toml"));
         assert_eq!(s.global_format(), (PageFormat::Html, FormatSource::BuiltIn));
+    }
+
+    #[test]
+    fn notebooks_default_is_under_the_current_users_documents_folder() {
+        assert_eq!(default_notebooks_dir_for_home(r"C:\Users\Ada"), PathBuf::from(r"C:\Users\Ada").join("Documents").join("NoteCraft"));
+        assert_eq!(default_notebooks_dir_for_home("/home/ada"), PathBuf::from("/home/ada/Documents/NoteCraft"));
     }
 
     #[test]

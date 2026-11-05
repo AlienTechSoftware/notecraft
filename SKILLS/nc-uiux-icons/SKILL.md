@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-icons
 
+## Job to be done
+
+Integrate NoteCraft icons with consistent semantics, accessibility, local licensing, and state behavior.
+
 Use this skill when adding or replacing icons in NoteCraft UI, ribbon controls, menus, dialogs,
 or the demo.
 

@@ -9,6 +9,10 @@ metadata:
 
 # nc-uiux-controls
 
+## Job to be done
+
+Implement NoteCraft interaction controls with clear hit regions, keyboard behavior, states, and selection semantics.
+
 Use this skill for buttons, ribbon controls, menus, galleries, split controls, toolbars, embedded
 object hit testing, selection, dragging, and small interaction regressions.
 

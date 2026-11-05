@@ -48,8 +48,12 @@ impl Node {
 }
 
 /// A path for people: without the `\\?\` prefix Windows adds to resolved paths.
+/// A verbatim network share `\\?\UNC\server\share` is `\\server\share`, not `UNC\server\share`.
 pub fn display_path(p: &Path) -> String {
     let s = p.to_string_lossy();
+    if let Some(share) = s.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
@@ -168,6 +172,8 @@ mod tests {
     #[test]
     fn display_paths_drop_the_windows_verbatim_prefix() {
         assert_eq!(display_path(Path::new(r"\\?\D:\notes\nb")), r"D:\notes\nb");
+        assert_eq!(display_path(Path::new(r"\\?\UNC\VBoxSvr\C_DRIVE\nb")), r"\\VBoxSvr\C_DRIVE\nb");
+        assert_eq!(display_path(Path::new(r"\\server\share\nb")), r"\\server\share\nb");
         assert_eq!(display_path(Path::new("/home/me/notes")), "/home/me/notes");
     }
 
