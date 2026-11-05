@@ -336,6 +336,70 @@ fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
 }
 
 #[test]
+fn pen_palette_owns_pointer_input_over_the_page_canvas() {
+    let (_t, mut app, sample) = sample_app("ui-ink-below-pen-palette");
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen black").click();
+    settle(&mut h);
+
+    // The active pen's chevron opens its palette over the page.
+    let pen = h.get_by_label("Pen black").rect();
+    let chevron = egui::pos2(pen.center().x, pen.max.y - 5.0);
+    ask(&mut h, "ui.click", json!({"x": chevron.x, "y": chevron.y})).expect("open the active pen palette");
+    settle(&mut h);
+
+    // This palette overlaps the page in the usual window size. Its visible swatch must
+    // receive the click instead of the page-wide ink response.
+    let swatch = h.get_by_label("red #d02121").rect();
+    let page = h.state().page_rect().expect("the page canvas is present");
+    assert!(page.intersects(swatch), "the palette covers part of the page in this scenario: {page:?} / {swatch:?}");
+    ask(&mut h, "ui.click", json!({"x": swatch.center().x, "y": swatch.center().y})).expect("choose the visible red swatch");
+    settle(&mut h);
+
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect the page ink")["ink"].clone();
+    assert_eq!(ink["colour"].as_str(), Some("#d02121"), "the popup receives the swatch click: {ink}");
+    assert_eq!(ink["strokes"].as_u64(), Some(0), "clicking the palette does not create page ink: {ink}");
+
+    // A stroke already in progress may cross the popup's rectangle. It must remain
+    // visible on the page but paint beneath the palette instead of over its controls.
+    let more_colours = h.get_by_label("More Colours").rect();
+    ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("hover the popup button");
+    settle(&mut h);
+    let before = h.render().expect("render the open palette before drawing");
+    let start = egui::pos2(page.max.x - 40.0, more_colours.center().y);
+    assert!(page.contains(start) && !more_colours.contains(start), "the stroke begins on page canvas outside the palette");
+    ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("start a page stroke");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("carry the stroke across the palette");
+    pump(&mut h);
+    let during = h.render().expect("render the stroke beneath the open palette");
+    let (sx, sy) = (before.width() as f32 / 1200.0, before.height() as f32 / 760.0);
+    let (x0, y0, x1, y1) = (
+        (more_colours.min.x * sx).floor().max(0.0) as u32,
+        (more_colours.min.y * sy).floor().max(0.0) as u32,
+        (more_colours.max.x * sx).ceil().min(before.width() as f32) as u32,
+        (more_colours.max.y * sy).ceil().min(before.height() as f32) as u32,
+    );
+    let red_ink_in_popup = (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let pixel = during.get_pixel(*x, *y);
+            pixel[0] > 170 && pixel[1] < 100 && pixel[2] < 100
+        })
+        .count();
+    assert_eq!(red_ink_in_popup, 0, "the red stroke must stay beneath the palette button: {red_ink_in_popup} red pixels");
+    ask(&mut h, "ui.release", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("finish the page stroke");
+    settle(&mut h);
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect the page stroke")["ink"].clone();
+    assert_eq!(ink["strokes"].as_u64(), Some(1), "the page keeps the stroke that crossed behind the palette: {ink}");
+    review(&mut h, "ink_palette_owns_pointer");
+}
+
+#[test]
 fn clicking_a_page_opens_it_and_a_container_toggles() {
     let (_t, mut app, _s) = sample_app("ui-click");
     app.expand_all();

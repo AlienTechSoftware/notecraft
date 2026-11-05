@@ -4303,7 +4303,10 @@ impl NoteCraftApp {
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
                             if let Some(pad) = pad.as_mut() {
-                                let layer = egui::LayerId::new(egui::Order::Foreground, ui.id().with("ink-overlay"));
+                                // Ink sits above page content, but below foreground controls such as
+                                // pen palettes. A foreground ink layer registered after the ribbon
+                                // paints across its menus when a stroke is already in progress.
+                                let layer = egui::LayerId::new(egui::Order::Middle, ui.id().with("ink-overlay"));
                                 let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(viewport));
                                 ink_changed |= crate::inkpad::show(&mut ink_ui, viewport, top, pad, pen, pressure, &tokens, zoom_scale);
                             }
