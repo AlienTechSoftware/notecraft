@@ -6,7 +6,7 @@
 
 ## Scope
 
-Version 0.0.9 focuses on three high-impact product and engineering outcomes.
+Version 0.0.9 focuses on four high-impact product and engineering outcomes.
 
 ### Committed wishlist
 
@@ -15,6 +15,16 @@ Version 0.0.9 focuses on three high-impact product and engineering outcomes.
   page loading, editing, saving, search, and rendering.
 - **UI test automation** - make important user journeys executable and diagnosable through the
   existing control and screenshot infrastructure.
+- **Internationalization** - prepare the app interface for translated catalogs, with persistent
+  language selection, English fallback, and an initial language proof. Add French and Spanish
+  versions of the standalone User Assistance guides as well. Follow the ArtCraft shared catalog
+  and runtime pattern; scope, estimate, and the compiler-version decision are recorded in
+  [`workspace_1.md`](workspace_1.md).
+
+### Issue candidates
+
+`_3` will review current GitHub votes and propose a limited set of issues. Add the selected issue
+numbers and acceptance criteria here after verifying the current list.
 
 ### Cross-platform quality gate
 
@@ -35,6 +45,12 @@ See the private host proposal:
 - `enhancement_bidi_uiux_alignment.md` - Bidi UI alignment candidate
 - `rc_perf.md` - Performance instrumentation and profiling plan
 - `feature_plan.md` - Implementation plan
+
+## Parallel Workspaces
+
+- [`workspace_1.md`](workspace_1.md) - Internationalization
+- [`workspace_2.md`](workspace_2.md) - Infinite canvas
+- [`workspace_3.md`](workspace_3.md) - Performance markers and voted GitHub issues
 
 ## Links
 - **GitHub Issue #20:** https://github.com/AlienTechSoftware/notecraft/issues/20
