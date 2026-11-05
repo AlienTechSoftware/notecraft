@@ -747,6 +747,65 @@ pub fn show(
     out
 }
 
+/// Draws the arranged page without registering text or container editing responses.
+/// Drawing and ink-selection tools own pointer input for the whole page; painting the
+/// ordinary text editors underneath them would still let egui update text selection.
+#[allow(clippy::too_many_arguments)]
+pub fn show_ink_view(
+    ui: &mut Ui,
+    blocks: &[Block],
+    boxes: &mut Vec<Container>,
+    page_dir: &std::path::Path,
+    t: &Tokens,
+    page: Option<notecraft_model::Dir>,
+    justified: &notecraft_model::justify::Justified,
+    shown_title: &str,
+    zoom: f32,
+) -> Moved {
+    let mut out = Moved::default();
+    let area = ui.available_rect_before_wrap();
+    out.origin = area.min;
+    *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
+    let mut bottom = area.min.y;
+
+    for (container_index, container) in boxes.iter().copied().enumerate() {
+        let range = container::blocks_of(boxes, container_index);
+        let inner = Rect::from_min_size(
+            pos2(area.min.x + container.x * zoom + PAD * zoom, area.min.y + container.y * zoom + HANDLE * zoom),
+            vec2(container.width * zoom, area.height()),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
+        child.set_width(container.width * zoom);
+        let child_id = child.id();
+        for index in range {
+            if pageedit::is_title_echo(blocks, index, shown_title) {
+                continue;
+            }
+            let Some(block) = blocks.get(index) else { continue };
+            let _ = crate::preview::show_block_zoomed(
+                &mut child,
+                block,
+                index,
+                page_dir,
+                t,
+                false,
+                page,
+                justified.strength_of(index),
+                None,
+                child_id.with(("ink-view-block", index)),
+                zoom,
+            );
+        }
+        let used = child.min_rect().height().max(18.0);
+        bottom = bottom.max(area.min.y + container.y * zoom + HANDLE * zoom + used + PAD * zoom);
+    }
+
+    // Child UIs do not advance the parent cursor; reserve their complete page-space extent
+    // so scrolling and the following ink-layer allocation match the editable page.
+    ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
+    out
+}
+
 fn block_has_image(block: &Block) -> bool {
     match block {
         Block::Image { .. } => true,

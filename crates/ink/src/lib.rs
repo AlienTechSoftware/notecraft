@@ -265,15 +265,30 @@ impl Stroke {
 /// A sheet of ink: the strokes on it, in the order they were drawn.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Drawing {
-    /// How big the sheet is, in points. The strokes are placed inside it.
+    /// Left edge of the SVG view box in page coordinates.
+    pub view_x: f32,
+    /// Top edge of the SVG view box in page coordinates.
+    pub view_y: f32,
+    /// Width of the SVG view box, in points.
     pub width: f32,
+    /// Height of the SVG view box, in points.
     pub height: f32,
     pub strokes: Vec<Stroke>,
 }
 
 impl Drawing {
     pub fn new(width: f32, height: f32) -> Self {
-        Self { width: width.max(1.0), height: height.max(1.0), strokes: Vec::new() }
+        Self { view_x: 0.0, view_y: 0.0, width: width.max(1.0), height: height.max(1.0), strokes: Vec::new() }
+    }
+
+    /// Sets the SVG view box while keeping all stroke coordinates in page space.
+    pub fn set_view_box(&mut self, x: f32, y: f32, width: f32, height: f32) {
+        if x.is_finite() && y.is_finite() && width.is_finite() && height.is_finite() {
+            self.view_x = x;
+            self.view_y = y;
+            self.width = width.max(1.0);
+            self.height = height.max(1.0);
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -285,7 +300,16 @@ impl Drawing {
         if stroke.is_empty() || self.strokes.len() >= MAX_STROKES {
             return false;
         }
-        self.strokes.push(stroke.sane());
+        let stroke = stroke.sane();
+        if let Some((left, top, right, bottom)) = stroke.bounds() {
+            let old_right = self.view_x + self.width;
+            let old_bottom = self.view_y + self.height;
+            self.view_x = self.view_x.min(left);
+            self.view_y = self.view_y.min(top);
+            self.width = (old_right.max(right) - self.view_x).max(1.0);
+            self.height = (old_bottom.max(bottom) - self.view_y).max(1.0);
+        }
+        self.strokes.push(stroke);
         true
     }
 

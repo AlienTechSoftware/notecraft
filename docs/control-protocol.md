@@ -50,7 +50,7 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `auth` | none | `{}` |
 | `engine.commands` | none | every command: `id`, `label`, `params`, `changesTree` |
 | `engine.execute` | `command`, `params` (object) | the command's output; same as `notecraft-cli run` |
-| `ui.inspect` | none | visible tree rows, open page (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; `across`: a selection dragged across more than one block, as the block and byte at each end, or null; `selectedContainer`: the index of the box that is selected, or null; `nav` (`back` and `forward` counts and the `current` page), `quickAccess` (which of Back, Forward, Undo and Redo are shown, `below`, `hidden`); `windowFrame` (`own` when the band across the top is the title bar, `system` when the system draws it); and `history`: how many steps of undo the page is keeping, where in them it is, and whether undo and redo have anywhere to go), theme, window size, `pageDiagrams` (the same counts for the Mermaid diagrams of the page as it is drawn, `found`, `drawn`, `drawing`, `failed`), `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
+| `ui.inspect` | none | visible tree rows, open page, canvas `viewOffset` in screen points (the caret: its block, text, `at` and `anchor` in characters; `containers`: the boxes the blocks are arranged in; `across`: a selection dragged across more than one block, as the block and byte at each end, or null; `selectedContainer`: the index of the box that is selected, or null; `nav` (`back` and `forward` counts and the `current` page), `quickAccess` (which of Back, Forward, Undo and Redo are shown, `below`, `hidden`); `windowFrame` (`own` when the band across the top is the title bar, `system` when the system draws it); and `history`: how many steps of undo the page is keeping, where in them it is, and whether undo and redo have anywhere to go), theme, window size, `pageDiagrams` (the same counts for the Mermaid diagrams of the page as it is drawn, `found`, `drawn`, `drawing`, `failed`), `panes` (whether the side panel is split into organisers and pages, and whether the organisers column is showing), `paper` (the rule lines behind the pages, by id) and `pen` (see below) |
 | `ui.open` | `path` (relative to the notebooks folder) | the same as `ui.inspect`, or an error |
 | `ui.expandAll`, `ui.collapseAll` | none | `{}` |
 | `ui.back`, `ui.forward` | none | `{}`; the page before or after in the pages opened, skipping any that are gone |
@@ -61,13 +61,15 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 | `ui.key` | `key` (an egui key name), modifiers | `{}` |
 | `ui.text` | `text` | `{}` (typed into the focused widget) |
 | `ui.paste` | `text` | `{}` (pasted, so a tab-separated table becomes a table) |
-| `ui.scroll` | `y` (required), `x` | `{}` (scrolls the page: negative `y` moves down it) |
+| `ui.scroll` | `y` (required), `x`, `shift` | `{}` (scrolls the canvas; negative `y` moves down it, and `shift: true` maps vertical wheel movement to horizontal canvas movement) |
 | `ui.resize` | `width`, `height` | `{}` |
 | `ui.screenshot` | `path` (optional) | the PNG saved to `path`, or returned as base64 |
 | `app.quit` | none | `{}` (saves first) |
 
-Coordinates are in points, not pixels. `engine.execute` saves the open page before it runs, so
-a command sees what the user sees. Paths in replies from the headless runner are redacted.
+Coordinates are in points, not pixels. Middle-button drag pans the canvas in both directions.
+Ordinary wheel movement scrolls vertically; Shift+wheel scrolls horizontally. `engine.execute`
+saves the open page before it runs, so a command sees what the user sees. Paths in replies from
+the headless runner are redacted.
 
 ### What `pen` reports
 

@@ -156,7 +156,7 @@ fn the_window_opens_and_shows_the_sample() {
 }
 
 #[test]
-fn mouse_warning_and_synthetic_ink_mode_cover_the_pressure_ribbon() {
+fn pressure_availability_is_detected_from_input_not_tab_selection() {
     let t = TempDir::new("ui-pressure-modes");
     let mut s = pressure_session(&t);
     let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
@@ -166,16 +166,12 @@ fn mouse_warning_and_synthetic_ink_mode_cover_the_pressure_ribbon() {
     let mut h = harness(app, LIGHT);
     settle(&mut h);
 
-    // Mouse mode: pointer events arrive without force, so the warning is shown and the
-    // sensitivity control is explicitly unavailable.
+    // Choosing Draw does not prove that a tablet pen lacks pressure. Until contact input
+    // arrives, the control may say unavailable, but the app must not issue a hardware warning.
     h.get_by_label("Draw").click();
     h.run();
-    assert!(h.query_all_by_label("Pressure sensitivity unavailable").count() > 0, "mouse mode warns");
-    assert!(h.query_all_by_label("Don't show this again in this session").count() > 0, "session suppression is offered");
-    assert!(h.query_all_by_label("Don't show this ever").count() > 0, "permanent suppression is offered");
-    h.get_by_label("OK").click();
-    h.run();
-    assert!(h.query_all_by_label("Pressure off").count() > 0, "mouse mode disables sensitivity");
+    assert_eq!(h.query_all_by_label("Don't show this ever").count(), 0, "no hardware warning before pen input");
+    assert!(h.query_all_by_label("Pressure off").count() > 0, "pressure stays off until a force reading arrives");
 
     // Ink mode: a force-bearing touch event is what the Windows input adapter supplies.
     h.input_mut().events.push(touch_event(egui::TouchPhase::Start, Some(0.25)));
@@ -187,6 +183,156 @@ fn mouse_warning_and_synthetic_ink_mode_cover_the_pressure_ribbon() {
     assert_eq!(diagnostics["seen"].as_bool(), Some(true), "the synthetic pen is detected: {diagnostics}");
     let pressure = diagnostics["pressure"].as_f64().unwrap_or_default();
     assert!((pressure - 0.8).abs() < 0.001, "the force reading reaches the app: {diagnostics}");
+}
+
+#[test]
+fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
+    for (label, markdown) in [("ui-canvas-pan-html", false), ("ui-canvas-pan-cmgfm", true)] {
+        let (_t, mut app, sample) = sample_app(label);
+        let path = if markdown { &sample.md_page } else { &sample.html_page };
+        app.open_path(&path.to_string_lossy());
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+
+        h.get_by_label("Draw").click();
+        settle(&mut h);
+        let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect canvas before pan");
+        let before_offset = before.pointer("/canvas/viewOffset").and_then(Value::as_array).expect("canvas view offset");
+        let (ox, oy) = (before_offset[0].as_f64().expect("horizontal view offset"), before_offset[1].as_f64().expect("vertical view offset"));
+        let before_origin = before.pointer("/page/origin").and_then(Value::as_array).expect("page origin before pan");
+        let origin = before_origin;
+        let (x, y) = (origin[0].as_f64().unwrap_or(0.0) + 700.0, origin[1].as_f64().unwrap_or(0.0) + 300.0);
+
+        ask(&mut h, "ui.press", json!({"x": x, "y": y, "button": "middle"})).expect("start pan");
+        pump(&mut h);
+        ask(&mut h, "ui.move", json!({"x": x + 80.0, "y": y + 60.0})).expect("move canvas");
+        pump(&mut h);
+        ask(&mut h, "ui.release", json!({"x": x + 80.0, "y": y + 60.0, "button": "middle"})).expect("finish pan");
+        settle(&mut h);
+
+        let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect canvas after pan");
+        let after_offset = after.pointer("/canvas/viewOffset").and_then(Value::as_array).expect("canvas view offset");
+        assert_ne!(after_offset[0].as_f64(), Some(ox), "horizontal pan moves the {label} canvas");
+        assert_ne!(after_offset[1].as_f64(), Some(oy), "vertical pan moves the {label} canvas");
+        let after_origin = after.pointer("/page/origin").and_then(Value::as_array).expect("page origin after pan");
+        assert!(
+            after_origin[0].as_f64().unwrap_or_default() > before_origin[0].as_f64().unwrap_or_default()
+                && after_origin[1].as_f64().unwrap_or_default() > before_origin[1].as_f64().unwrap_or_default(),
+            "middle drag moves page content with the {label} canvas: before={before_origin:?}, after={after_origin:?}"
+        );
+        review(&mut h, if markdown { "canvas_pan_cmgfm" } else { "canvas_pan_html" });
+        assert_eq!(after.pointer("/page/format").and_then(Value::as_str), Some(if markdown { "cmgfm" } else { "html" }));
+        assert_eq!(after.pointer("/ink/strokes").and_then(Value::as_u64), Some(0), "panning does not create ink");
+
+        h.get_by_label("Pen red").click();
+        settle(&mut h);
+        let origin = after.pointer("/page/origin").and_then(Value::as_array).expect("page origin after pan");
+        let (start_x, y) = (origin[0].as_f64().unwrap_or(0.0) - 15.0, origin[1].as_f64().unwrap_or(0.0) + 220.0);
+        let end_x = start_x + 80.0;
+        ask(&mut h, "ui.press", json!({"x": start_x, "y": y})).expect("draw in open canvas space");
+        pump(&mut h);
+        ask(&mut h, "ui.move", json!({"x": end_x, "y": y})).expect("continue canvas stroke");
+        pump(&mut h);
+        ask(&mut h, "ui.release", json!({"x": end_x, "y": y})).expect("finish canvas stroke");
+        settle(&mut h);
+
+        let drawn = ask(&mut h, "ui.inspect", json!({})).expect("inspect outside-page stroke");
+        assert_eq!(drawn.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "open canvas accepts ink for {label}: {drawn}");
+        let ink_file = path.join("ink.svg");
+        let svg = std::fs::read_to_string(&ink_file).unwrap_or_else(|error| panic!("saved canvas ink: {error}; state={drawn}"));
+        let ink_image = h.render().expect("render outside-page stroke");
+        review(&mut h, if markdown { "canvas_open_ink_cmgfm" } else { "canvas_open_ink_html" });
+        let red_canvas_pixels = ink_image
+            .pixels()
+            .enumerate()
+            .filter(|(index, pixel)| {
+                let x = *index as u32 % ink_image.width();
+                let y = *index as u32 / ink_image.width();
+                x > 300 && y > 160 && y < 725 && pixel[0] > 170 && pixel[1] < 100 && pixel[2] < 100
+            })
+            .count();
+        assert!(red_canvas_pixels > 5, "the outside-page stroke is visible in the canvas for {label}: {red_canvas_pixels} red pixels; {svg}");
+        assert!(svg.contains("viewBox=\"-"), "ink outside the former page bounds is framed in the SVG: {svg}");
+        ask(&mut h, "ui.open", json!({"path": path.to_string_lossy()})).expect("reload page and its ink");
+        settle(&mut h);
+        let reloaded = ask(&mut h, "ui.inspect", json!({})).expect("inspect reloaded ink");
+        assert_eq!(reloaded.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "the outside-page stroke reloads for {label}");
+
+        let selected_pen = ask(&mut h, "ui.inspect", json!({})).expect("inspect selected pen");
+        assert_eq!(
+            selected_pen.pointer("/canvas/viewOffset"),
+            Some(&json!([after_offset[0], after_offset[1]])),
+            "drawing and reloading keep the camera on {label}"
+        );
+        review(&mut h, if markdown { "canvas_selected_pen_cmgfm" } else { "canvas_selected_pen_html" });
+
+        ask(&mut h, "ui.scroll", json!({"y": -50.0})).expect("scroll down the canvas");
+        settle(&mut h);
+        let vertical = ask(&mut h, "ui.inspect", json!({})).expect("inspect vertical canvas scroll");
+        let vertical_offset = vertical.pointer("/canvas/viewOffset").and_then(Value::as_array).expect("canvas view offset");
+        assert_ne!(vertical_offset[1].as_f64(), after_offset[1].as_f64(), "vertical scrolling moves the {label} canvas");
+
+        ask(&mut h, "ui.scroll", json!({"y": -30.0, "shift": true})).expect("scroll sideways on the canvas");
+        settle(&mut h);
+        let scrolled = ask(&mut h, "ui.inspect", json!({})).expect("inspect two-dimensional canvas scroll");
+        let scroll_offset = scrolled.pointer("/canvas/viewOffset").and_then(Value::as_array).expect("canvas view offset");
+        assert_ne!(scroll_offset[0].as_f64(), vertical_offset[0].as_f64(), "shift-scroll moves the {label} canvas horizontally");
+        assert_eq!(scroll_offset[1].as_f64(), vertical_offset[1].as_f64(), "shift-scroll does not move the {label} canvas vertically");
+        let selected_pen = ask(&mut h, "ui.inspect", json!({})).expect("inspect after scroll");
+        assert_eq!(selected_pen.pointer("/canvas/viewOffset"), Some(&json!([scroll_offset[0], scroll_offset[1]])));
+        review(&mut h, if markdown { "canvas_scrolled_cmgfm" } else { "canvas_scrolled_html" });
+    }
+}
+
+#[test]
+fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
+    let (_t, mut app, sample) = sample_app("ui-ink-over-text");
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+
+    let text = h.state().body().unwrap_or_default().to_string();
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect text page");
+    let block_count = before.pointer("/page/blocks").and_then(Value::as_u64);
+    let caret_before = before.pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    let origin = before.pointer("/page/origin").and_then(Value::as_array).expect("page origin");
+    let (x, y) = (origin[0].as_f64().unwrap_or_default() + 70.0, origin[1].as_f64().unwrap_or_default() + 24.0);
+    ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("start ink on words");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": x + 36.0, "y": y + 4.0})).expect("draw over words");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": x + 36.0, "y": y + 4.0})).expect("finish ink");
+    settle(&mut h);
+
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect overlay drawing");
+    assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "the overlay owns the drag: {state}");
+    let body_after = h.state().body().unwrap_or_default().replace("<img src=\"ink.svg\" alt=\"Ink\">", "");
+    let normalize = |html: &str| notecraft_formats::html::to_markdown(html).replace("\n\n- [ ]", "\n- [ ]");
+    assert_eq!(normalize(&body_after), normalize(&text), "drawing leaves the page words unchanged apart from its ink reference");
+    assert_eq!(
+        state.pointer("/page/blocks").and_then(Value::as_u64),
+        block_count.map(|count| count + 1),
+        "the only added block names the separate ink layer"
+    );
+    assert_eq!(state.pointer("/page/caret").cloned().unwrap_or(Value::Null), caret_before, "drawing over words leaves the text caret alone: {state}");
+
+    let image = h.render().expect("render ink over words");
+    let region = egui::Rect::from_min_max(egui::pos2(x as f32 - 4.0, y as f32 - 4.0), egui::pos2(x as f32 + 42.0, y as f32 + 12.0));
+    let red_pixels = image
+        .pixels()
+        .enumerate()
+        .filter(|(index, pixel)| {
+            let px = *index as u32 % image.width();
+            let py = *index as u32 / image.width();
+            region.contains(egui::pos2(px as f32, py as f32)) && pixel[0] > 170 && pixel[1] < 100 && pixel[2] < 100
+        })
+        .count();
+    assert!(red_pixels > 3, "ink is painted above the text it crosses: {red_pixels} pixels");
+    review(&mut h, "canvas_draw_over_text");
 }
 
 #[test]

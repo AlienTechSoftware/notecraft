@@ -44,7 +44,6 @@ const RACK_KEY: &str = "pen_rack";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
-const PRESSURE_WARNING_KEY: &str = "pressure_unavailable";
 
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
@@ -558,6 +557,10 @@ pub struct NoteCraftApp {
     stylus: crate::stylus::Stylus,
     /// Where the page's words were drawn last frame, which is where its ink goes.
     page_rect: Option<egui::Rect>,
+    /// The canvas translation in screen points. It is UI state, so it never changes page data.
+    canvas_pan: egui::Vec2,
+    /// Last middle-button position while panning the canvas.
+    canvas_drag: Option<egui::Pos2>,
     /// What the pointer does on the page (the Draw tab).
     pointer: ribbon::Pointer,
     /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
@@ -608,7 +611,6 @@ pub struct NoteCraftApp {
     /// The clipboard the app reads and writes. The system's, unless the app was built with another.
     clipboard: Box<dyn crate::clipboard::Board>,
     open_attachment_warning_suppressed: bool,
-    pressure_warning_presented: bool,
 }
 
 impl NoteCraftApp {
@@ -676,6 +678,8 @@ impl NoteCraftApp {
             ribbon_tab: "Home".to_string(),
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
+            canvas_pan: egui::Vec2::ZERO,
+            canvas_drag: None,
             pointer: ribbon::Pointer::Write,
             rack,
             nib,
@@ -700,7 +704,6 @@ impl NoteCraftApp {
             queued_alerts: VecDeque::new(),
             clipboard: Box::new(crate::clipboard::System),
             open_attachment_warning_suppressed: false,
-            pressure_warning_presented: false,
         }
     }
 
@@ -2397,14 +2400,6 @@ impl NoteCraftApp {
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
-        if tab == "Draw" && !self.stylus.sample().pen && !self.pressure_warning_presented {
-            self.pressure_warning_presented = true;
-            self.alert(
-                PRESSURE_WARNING_KEY,
-                "Pressure sensitivity unavailable",
-                "The selected pen is not reporting Windows Ink pressure. Pressure sensitivity will be disabled. Enable Windows Ink and disable Mouse mode in the tablet driver's settings.",
-            );
-        }
         let view = ribbon::View {
             split_panes: self.split_panes,
             always_on_top: self.always_on_top,
@@ -4069,6 +4064,41 @@ impl NoteCraftApp {
             }
         }
         let editor_rect = ui.max_rect();
+        if self.editor.is_some() && !self.show_source {
+            let (pointer, middle_pressed, middle_down, wheel) = ui.input(|i| {
+                let pointer = i.pointer.interact_pos().filter(|p| editor_rect.contains(*p));
+                let wheel = if i.pointer.hover_pos().is_some_and(|p| editor_rect.contains(p)) {
+                    i.events.iter().fold(egui::Vec2::ZERO, |sum, event| match event {
+                        egui::Event::MouseWheel { delta, modifiers, .. } if !modifiers.ctrl => {
+                            if modifiers.shift {
+                                sum + egui::vec2(delta.y, 0.0)
+                            } else {
+                                sum + *delta
+                            }
+                        }
+                        _ => sum,
+                    })
+                } else {
+                    egui::Vec2::ZERO
+                };
+                (pointer, i.pointer.button_pressed(egui::PointerButton::Middle), i.pointer.button_down(egui::PointerButton::Middle), wheel)
+            });
+            self.canvas_pan += wheel;
+            self.canvas_pan.x = self.canvas_pan.x.clamp(-1.0e6, 1.0e6);
+            self.canvas_pan.y = self.canvas_pan.y.clamp(-1.0e6, 1.0e6);
+            if middle_pressed {
+                self.canvas_drag = pointer;
+            } else if middle_down {
+                if let (Some(last), Some(now)) = (self.canvas_drag, pointer) {
+                    self.canvas_pan += now - last;
+                    self.canvas_drag = Some(now);
+                }
+            } else {
+                self.canvas_drag = None;
+            }
+        } else {
+            self.canvas_drag = None;
+        }
         let wheel_zoom = ui.input(|i| i.pointer.hover_pos().filter(|p| editor_rect.contains(*p)).map_or(1.0, |_| i.zoom_delta()));
         if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
             #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -4191,25 +4221,23 @@ impl NoteCraftApp {
                             cols_moved: &mut bool,
                             follow: &mut Option<String>,
                             rename: &mut Option<String>| {
-                let scroll = egui::containers::scroll_area::ScrollSource {
-                    drag: egui::containers::scroll_area::DragScroll::Never,
-                    ..egui::containers::scroll_area::ScrollSource::default()
-                };
-                egui::ScrollArea::vertical().id_salt("preview").scroll_source(scroll).max_height(height).show(ui, |ui| {
-                    // Lines or squares behind the page, the way OneNote rules one. The
-                    // spacing comes from the paper chosen; NoteCraft's own two papers draw
-                    // every fifth line stronger, which the others do not.
-                    // The colour behind the words, and then the lines on it. Both are
-                    // the page's own when it carries them, as OneNote's page colour and
-                    // rule lines are the page's.
-                    if wide && let Some(wash) = page_colour {
-                        let area = ui.max_rect();
-                        ui.painter_at(area).rect_filled(area, 0.0, wash);
-                    }
-                    if wide && rules.on() {
-                        let area = ui.max_rect();
-                        crate::ribbon::paint_paper(&ui.painter_at(area), area, rules, zoom_scale, tokens.rule_line, tokens.rule_line_strong);
-                    }
+                let viewport = ui.available_rect_before_wrap().shrink2(vec2(0.0, 1.0));
+                if wide && let Some(wash) = page_colour {
+                    ui.painter_at(viewport).rect_filled(viewport, 0.0, wash);
+                }
+                if wide && rules.on() {
+                    crate::ribbon::paint_paper_canvas(
+                        &ui.painter_at(viewport),
+                        viewport,
+                        rules,
+                        zoom_scale,
+                        self.canvas_pan,
+                        tokens.rule_line,
+                        tokens.rule_line_strong,
+                    );
+                }
+                let content_rect = viewport.translate(self.canvas_pan);
+                ui.scope_builder(egui::UiBuilder::new().id_salt("page-canvas-content").max_rect(content_rect), |ui| {
                     // Which way lines fall when they say nothing themselves: the page's own
                     // direction, if the writer gave it one.
                     let page_dir = ed.page_dir;
@@ -4232,28 +4260,48 @@ impl NoteCraftApp {
                             // that block's own type. The markup is never shown here. The
                             // blocks sit in containers, which is where they are placed.
                             let top = ui.cursor().min;
+                            if let Some(pad) = pad.as_mut() {
+                                let layer = egui::LayerId::new(egui::Order::Foreground, ui.id().with("ink-overlay"));
+                                let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(viewport));
+                                ink_changed |= crate::inkpad::show(&mut ink_ui, viewport, top, pad, pen, pressure, &tokens, zoom_scale);
+                            }
                             // A press lets go of whatever was selected: the drag that may
                             // follow it builds a new one. Done here, once a frame, rather
                             // than inside the blocks, where a container drawn later would
                             // clear what an earlier one had just set.
-                            if ui.input(|i| i.pointer.any_pressed()) {
+                            let ink_owns_canvas = pen.pointer != ribbon::Pointer::Write;
+                            if ui.input(|i| i.pointer.any_pressed()) && !ink_owns_canvas {
                                 ed.across = None;
                             }
-                            let mut moved = crate::containers::show(
-                                ui,
-                                &mut ed.blocks,
-                                &mut ed.boxes,
-                                &mut ed.caret,
-                                &ed.dir,
-                                &tokens,
-                                page_dir,
-                                table_borders,
-                                &mut ed.columns,
-                                &ed.justified,
-                                &mut ed.across,
-                                if hide_title { "" } else { &shown_title },
-                                zoom_scale,
-                            );
+                            let mut moved = if ink_owns_canvas {
+                                crate::containers::show_ink_view(
+                                    ui,
+                                    &ed.blocks,
+                                    &mut ed.boxes,
+                                    &ed.dir,
+                                    &tokens,
+                                    page_dir,
+                                    &ed.justified,
+                                    if hide_title { "" } else { &shown_title },
+                                    zoom_scale,
+                                )
+                            } else {
+                                crate::containers::show(
+                                    ui,
+                                    &mut ed.blocks,
+                                    &mut ed.boxes,
+                                    &mut ed.caret,
+                                    &ed.dir,
+                                    &tokens,
+                                    page_dir,
+                                    table_borders,
+                                    &mut ed.columns,
+                                    &ed.justified,
+                                    &mut ed.across,
+                                    if hide_title { "" } else { &shown_title },
+                                    zoom_scale,
+                                )
+                            };
                             page_acts.append(&mut moved.acts);
                             if let Some((html, text)) = moved.copy.take()
                                 && self.clipboard.set_html(&html, &text).is_err()
@@ -4276,12 +4324,8 @@ impl NoteCraftApp {
                                 if want > used {
                                     ui.allocate_space(vec2(ui.available_width(), want - used));
                                 }
-                                let body =
-                                    egui::Rect::from_min_max(egui::pos2(ui.max_rect().min.x, top.y), egui::pos2(ui.max_rect().max.x, top.y + want));
+                                let body = viewport;
                                 page_rect = Some(body);
-                                if let Some(pad) = pad.as_mut() {
-                                    ink_changed |= crate::inkpad::show(ui, body, pad, pen, pressure, &tokens, zoom_scale);
-                                }
                                 // The page's own right-click menu. No widget is laid
                                 // over the page for it: a widget that senses clicks would
                                 // take the primary click away from the words, the ink and
@@ -5548,7 +5592,7 @@ impl NoteCraftApp {
                 self.event_frames.push_back(vec![egui::Event::MouseWheel {
                     unit: egui::MouseWheelUnit::Point,
                     delta: vec2(dx, dy),
-                    modifiers: egui::Modifiers::NONE,
+                    modifiers: egui::Modifiers { shift: flag("shift"), ..egui::Modifiers::NONE },
                     phase: egui::TouchPhase::Move,
                 }]);
                 ctx.request_repaint();
@@ -5611,6 +5655,7 @@ impl NoteCraftApp {
         let screen = ctx.content_rect();
         json!({
             "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
+            "canvas": {"viewOffset": [self.canvas_pan.x, self.canvas_pan.y]},
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},

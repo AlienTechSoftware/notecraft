@@ -91,7 +91,13 @@ pub fn write(drawing: &Drawing, flavour: Flavour) -> String {
     if flavour == Flavour::Editable {
         out.push_str(&format!(" xmlns:nc=\"{NS}\""));
     }
-    out.push_str(&format!(" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n", w = num(drawing.width), h = num(drawing.height)));
+    out.push_str(&format!(
+        " width=\"{w}\" height=\"{h}\" viewBox=\"{x} {y} {w} {h}\">\n",
+        x = num(drawing.view_x),
+        y = num(drawing.view_y),
+        w = num(drawing.width),
+        h = num(drawing.height)
+    ));
     out.push_str("  <title>Ink</title>\n");
     for stroke in &drawing.strokes {
         let ring = shape::outline(stroke);
@@ -167,7 +173,9 @@ pub fn read(text: &str) -> Result<(Drawing, usize), InkError> {
     let Some(open) = find_tag(text, "<svg") else { return Err(InkError::NotSvg) };
     let width = attr(open, "width").and_then(|v| v.trim().parse().ok()).unwrap_or(600.0);
     let height = attr(open, "height").and_then(|v| v.trim().parse().ok()).unwrap_or(400.0);
-    let mut drawing = Drawing::new(width, height);
+    let view_box = attr(open, "viewBox").as_deref().and_then(parse_view_box).unwrap_or([0.0, 0.0, width, height]);
+    let mut drawing = Drawing::new(view_box[2], view_box[3]);
+    drawing.set_view_box(view_box[0], view_box[1], view_box[2], view_box[3]);
     let mut flat = 0usize;
     for tag in tags(text, "<path") {
         if drawing.strokes.len() >= MAX_STROKES {
@@ -190,9 +198,19 @@ pub fn read(text: &str) -> Result<(Drawing, usize), InkError> {
             continue;
         }
         stroke.dabs.shrink_to_fit();
-        drawing.strokes.push(stroke);
+        drawing.add(stroke);
     }
     Ok((drawing, flat))
+}
+
+fn parse_view_box(value: &str) -> Option<[f32; 4]> {
+    let values: Vec<f32> =
+        value.split(|c: char| c.is_ascii_whitespace() || c == ',').filter(|v| !v.is_empty()).map(str::parse).collect::<Result<_, _>>().ok()?;
+    let [x, y, width, height] = values.as_slice() else { return None };
+    if ![x, y, width, height].into_iter().all(|v| v.is_finite()) || *width <= 0.0 || *height <= 0.0 {
+        return None;
+    }
+    Some([*x, *y, *width, *height])
 }
 
 /// The text of the first tag that begins with `open`, without its angle brackets.
@@ -309,6 +327,23 @@ mod tests {
         }
         // Writing it again gives the same file, so saving an unchanged page changes nothing.
         assert_eq!(write(&after, Flavour::Editable), text);
+    }
+
+    #[test]
+    fn an_unbounded_stroke_expands_and_round_trips_the_svg_view_box() {
+        let mut drawing = Drawing::new(820.0, 1100.0);
+        let mut stroke = Stroke::new(Tool::Pen, Rgb::BLACK, 4.0);
+        stroke.add(Dab::new(-40.0, -60.0, 1.0));
+        stroke.add(Dab::new(900.0, 1200.0, 1.0));
+        drawing.add(stroke);
+
+        let text = write(&drawing, Flavour::Editable);
+        assert!(text.contains("viewBox=\"-42 -62 944 1264\""), "the SVG encloses the whole stroke: {text}");
+        let (after, flat) = read(&text).expect("read the expanded drawing");
+        assert_eq!(flat, 0);
+        assert_eq!((after.view_x, after.view_y, after.width, after.height), (-42.0, -62.0, 944.0, 1264.0));
+        assert_eq!(after.strokes, drawing.strokes);
+        assert_eq!(write(&after, Flavour::Editable), text, "re-saving does not move or grow the view box");
     }
 
     #[test]

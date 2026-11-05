@@ -319,6 +319,47 @@ pub fn paint_paper(painter: &egui::Painter, area: egui::Rect, rules: RuleLines, 
     }
 }
 
+/// Paints rule lines in a viewport while keeping their phase attached to the infinite canvas.
+pub fn paint_paper_canvas(
+    painter: &egui::Painter,
+    area: egui::Rect,
+    rules: RuleLines,
+    scale: f32,
+    offset: egui::Vec2,
+    line: egui::Color32,
+    strong: egui::Color32,
+) {
+    if !rules.on() {
+        return;
+    }
+    let step = (rules.step() * scale).max(4.0);
+    let first_line = |min: f32, offset: f32| {
+        let phase = (offset - min).rem_euclid(step);
+        if phase < 0.01 { min + step } else { min + step - phase }
+    };
+    let index = |screen: f32, offset: f32| {
+        let line = ((screen - offset) / step).round();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        {
+            line.clamp(i64::MIN as f32, i64::MAX as f32) as i64
+        }
+    };
+    let colour = |n: i64| if rules.fives() && n.rem_euclid(5) == 0 { strong } else { line };
+
+    let mut y = first_line(area.min.y, offset.y);
+    while y < area.max.y {
+        painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, colour(index(y, offset.y))));
+        y += step;
+    }
+    if rules.squares() {
+        let mut x = first_line(area.min.x, offset.x);
+        while x < area.max.x {
+            painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, colour(index(x, offset.x))));
+            x += step;
+        }
+    }
+}
+
 /// What the View tab shows about the window.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct View<'a> {
@@ -1600,7 +1641,7 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
         let tip = if pressure_available {
             "How readily the pen answers pressure: turned up, a light hand lays down more ink"
         } else {
-            "Pressure is unavailable. Enable Windows Ink and disable XP-Pen Mouse mode."
+            "No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled."
         };
         resp.on_hover_text(tip);
         ui.label(

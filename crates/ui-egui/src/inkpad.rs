@@ -210,11 +210,10 @@ const HANDLE: f32 = 9.0;
 /// Draws a page's ink over the page, and takes what the pen does to it. `body` is the
 /// rectangle the page's words were drawn in; the ink is kept in that rectangle's own
 /// coordinates. Returns true when the ink changed.
-pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f32, t: &Tokens, zoom: f32) -> bool {
+pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pen: Pen, pressure: f32, t: &Tokens, zoom: f32) -> bool {
     use crate::ribbon::Pointer;
     let _ = t;
-    // Painting on the layer, not through the ui, so a stroke that runs past the words is
-    // still drawn: the ui's own box ends where the text does.
+    // Painting on the layer, not through the ui, so ink outside text remains visible.
     let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(body);
     for stroke in pad.drawing.strokes.iter().chain(pad.drawing_now.iter()) {
         let mut scaled = stroke.clone();
@@ -223,7 +222,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
             dab.x *= zoom;
             dab.y *= zoom;
         }
-        paint_stroke(&painter, body.min, &scaled);
+        paint_stroke(&painter, origin, &scaled);
     }
 
     // A pen or a rubber in the hand means the ink is not being held any more.
@@ -235,14 +234,14 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
     if !pad.held.is_empty()
         && let Some((x0, y0, x1, y1)) = pick::bounds(&pad.drawing, &pad.held)
     {
-        let box_ = egui::Rect::from_min_max(body.min + vec2(x0 * zoom, y0 * zoom), body.min + vec2(x1 * zoom, y1 * zoom)).expand(3.0);
+        let box_ = egui::Rect::from_min_max(origin + vec2(x0 * zoom, y0 * zoom), origin + vec2(x1 * zoom, y1 * zoom)).expand(3.0);
         painter.rect_stroke(box_, 2.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Outside);
         for corner in [box_.left_top(), box_.right_top(), box_.left_bottom(), box_.right_bottom()] {
             painter.rect_filled(egui::Rect::from_center_size(corner, vec2(7.0, 7.0)), 1.0, t.accent);
         }
     }
     if !pad.loop_now.is_empty() {
-        let path: Vec<egui::Pos2> = pad.loop_now.iter().map(|(x, y)| body.min + vec2(*x * zoom, *y * zoom)).collect();
+        let path: Vec<egui::Pos2> = pad.loop_now.iter().map(|(x, y)| origin + vec2(*x * zoom, *y * zoom)).collect();
         painter.add(egui::Shape::line(path, egui::Stroke::new(1.2, t.accent)));
     }
 
@@ -269,7 +268,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
     // Not egui's drag, which only begins once the pointer has travelled far enough: a pen
     // put down and lifted in one place is a dot, and a dot is ink.
     let down = resp.is_pointer_button_down_on();
-    let at = ui.ctx().pointer_interact_pos().filter(|p| body.contains(*p)).map(|p| ((p.x - body.min.x) / zoom, (p.y - body.min.y) / zoom));
+    let at = ui.ctx().pointer_interact_pos().filter(|p| body.contains(*p)).map(|p| ((p.x - origin.x) / zoom, (p.y - origin.y) / zoom));
     let mut changed = false;
     match pen.pointer {
         Pointer::Erase => {
@@ -330,7 +329,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
         }
         Pointer::Pick => {
             let held_box = pick::bounds(&pad.drawing, &pad.held).map(|(x0, y0, x1, y1)| {
-                egui::Rect::from_min_max(body.min + vec2(x0 * zoom, y0 * zoom), body.min + vec2(x1 * zoom, y1 * zoom)).expand(3.0)
+                egui::Rect::from_min_max(origin + vec2(x0 * zoom, y0 * zoom), origin + vec2(x1 * zoom, y1 * zoom)).expand(3.0)
             });
             let here = ui.ctx().pointer_interact_pos().unwrap_or(egui::Pos2::ZERO);
             if down && pad.grabbed.is_none() {
@@ -338,8 +337,8 @@ pub fn show(ui: &mut Ui, body: egui::Rect, pad: &mut Pad, pen: Pen, pressure: f3
                 // that stroke up, and anywhere else lets go.
                 let corner = held_box.and_then(|b| grab_corner(b, here));
                 match (corner, held_box, at) {
-                    (Some(c), Some(b), _) => pad.grabbed = Some((here, as_tuple(b, body, zoom), c)),
-                    (None, Some(b), _) if b.contains(here) => pad.grabbed = Some((here, as_tuple(b, body, zoom), Grab::Move)),
+                    (Some(c), Some(b), _) => pad.grabbed = Some((here, as_tuple(b, origin, zoom), c)),
+                    (None, Some(b), _) if b.contains(here) => pad.grabbed = Some((here, as_tuple(b, origin, zoom), Grab::Move)),
                     (_, _, Some((x, y))) => match pick::at(&pad.drawing, x, y, 3.0) {
                         Some(i) => {
                             pad.held = vec![i];
@@ -411,8 +410,8 @@ fn grab_corner(box_: egui::Rect, at: egui::Pos2) -> Option<Grab> {
 }
 
 /// A rectangle on the screen as the ink's own coordinates.
-fn as_tuple(b: egui::Rect, body: egui::Rect, zoom: f32) -> (f32, f32, f32, f32) {
-    ((b.min.x - body.min.x) / zoom, (b.min.y - body.min.y) / zoom, (b.max.x - body.min.x) / zoom, (b.max.y - body.min.y) / zoom)
+fn as_tuple(b: egui::Rect, origin: egui::Pos2, zoom: f32) -> (f32, f32, f32, f32) {
+    ((b.min.x - origin.x) / zoom, (b.min.y - origin.y) / zoom, (b.max.x - origin.x) / zoom, (b.max.y - origin.y) / zoom)
 }
 
 /// One stroke, as triangles between the two edges of its ribbon, with a round cap at each
@@ -494,6 +493,32 @@ mod tests {
         let text = std::fs::read_to_string(&plain).expect("read");
         assert!(text.contains("<path"), "the picture is there");
         assert!(!text.contains("nc:dabs"), "but the readings are not");
+    }
+
+    #[test]
+    fn ink_outside_the_old_sheet_is_saved_and_reloaded_at_its_page_coordinates() {
+        let t = TempDir::new("ink-layer-unbounded");
+        let page = t.path().to_path_buf();
+        let mut pad = Pad::of_page(&page);
+        let mut outside = Stroke::new(Tool::Pen, Rgb(0xd0, 0x21, 0x21), 4.0);
+        outside.add(Dab::new(-64.0, 1200.0, 0.6));
+        outside.add(Dab::new(-24.0, 1240.0, 1.0));
+        assert!(pad.drawing.add(outside));
+        pad.dirty = true;
+        pad.save().expect("save open canvas ink");
+
+        let reloaded = Pad::of_page(&page);
+        assert_eq!(reloaded.strokes(), 1);
+        let (x0, y0, x1, y1) = (
+            reloaded.drawing.view_x,
+            reloaded.drawing.view_y,
+            reloaded.drawing.view_x + reloaded.drawing.width,
+            reloaded.drawing.view_y + reloaded.drawing.height,
+        );
+        assert!(x0 < 0.0 && x1 >= SHEET_W, "viewBox retains negative and original coordinates: {x0}..{x1}");
+        assert!(y0 <= 0.0 && y1 > SHEET_H, "viewBox grows beyond the old sheet: {y0}..{y1}");
+        assert_eq!(reloaded.drawing.strokes[0].dabs[0].x, -64.0);
+        assert_eq!(reloaded.drawing.strokes[0].dabs[1].y, 1240.0);
     }
 
     #[test]
