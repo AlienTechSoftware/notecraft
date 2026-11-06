@@ -4324,11 +4324,13 @@ impl NoteCraftApp {
         let mut from_blocks = false;
         let mut boxes_moved = false;
         let mut cols_moved = false;
+        let mut justified_moved = false;
         // A file other than the page written in the code view, waiting to go to disk.
         let mut wrote_file: Option<(String, String)> = None;
         let mut file_action: Option<crate::codeview::FileAction> = None;
         let mut code = std::mem::take(&mut self.code);
         let mut save_cols: Option<(String, String)> = None;
+        let mut save_justified: Option<(String, String)> = None;
         // A link clicked in the page this frame, followed once the page's borrow is over.
         let mut follow: Option<String> = None;
         // The drawing on this page is lent to the block that holds it, and written back
@@ -4408,6 +4410,7 @@ impl NoteCraftApp {
                             _toggle: &mut bool,
                             boxes_moved: &mut bool,
                             cols_moved: &mut bool,
+                            justified_moved: &mut bool,
                             follow: &mut Option<String>,
                             rename: &mut Option<String>| {
                 let viewport = ui.available_rect_before_wrap().shrink2(vec2(0.0, 1.0));
@@ -4493,7 +4496,7 @@ impl NoteCraftApp {
                                     page_dir,
                                     table_borders,
                                     &mut ed.columns,
-                                    &ed.justified,
+                                    &mut ed.justified,
                                     &mut ed.across,
                                     if hide_title { "" } else { &shown_title },
                                     zoom_scale,
@@ -4541,6 +4544,11 @@ impl NoteCraftApp {
                             if moved.changed.columns {
                                 *cols_moved = true;
                             }
+                            // Blocks went in or out before a justified paragraph: its mark
+                            // moved with it, and is written into the page's file like the widths.
+                            if moved.justified {
+                                *justified_moved = true;
+                            }
                             ed.origin = moved.origin;
                             if moved.changed.link.is_some() {
                                 *follow = moved.changed.link;
@@ -4574,7 +4582,19 @@ impl NoteCraftApp {
                 wrote_file = out.wrote;
                 file_action = out.file_action;
             } else {
-                page(ui, ed, true, &mut changed, &mut from_blocks, &mut toggle_source, &mut boxes_moved, &mut cols_moved, &mut follow, &mut rename);
+                page(
+                    ui,
+                    ed,
+                    true,
+                    &mut changed,
+                    &mut from_blocks,
+                    &mut toggle_source,
+                    &mut boxes_moved,
+                    &mut cols_moved,
+                    &mut justified_moved,
+                    &mut follow,
+                    &mut rename,
+                );
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -4604,10 +4624,18 @@ impl NoteCraftApp {
                 let line = notecraft_model::tablecols::write(&ed.columns);
                 save_cols = Some((path, line));
             }
+            if justified_moved {
+                let path = path_str(&ed.dir);
+                let line = notecraft_model::justify::write(&ed.justified);
+                save_justified = Some((path, line));
+            }
         }
         self.cursor = cursor;
         if let Some((path, line)) = save_cols {
             self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
+        }
+        if let Some((path, line)) = save_justified {
+            self.run("page.justify", &params(&[("path", &path), ("blocks", &line)]));
         }
         self.code = code;
         if let Some((name, text)) = wrote_file {

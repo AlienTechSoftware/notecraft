@@ -113,6 +113,34 @@ impl Justified {
     pub fn blocks(&self) -> &[(usize, Strength)] {
         &self.blocks
     }
+
+    /// A block was put into the page at `at`. What is kept for a paragraph at or after it moves
+    /// down one with it, so it stays on the same paragraph. True when anything changed.
+    pub fn insert_block(&mut self, at: usize) -> bool {
+        let mut moved = false;
+        for (block, _) in &mut self.blocks {
+            if *block >= at {
+                *block += 1;
+                moved = true;
+            }
+        }
+        moved
+    }
+
+    /// The blocks in `gone` were taken off the page. A mark on one of them goes, and a mark
+    /// on a paragraph after them moves up with it, so it stays on the same paragraph. True
+    /// when anything changed.
+    pub fn remove_blocks(&mut self, gone: std::ops::Range<usize>) -> bool {
+        let before = self.blocks.clone();
+        let n = gone.len();
+        self.blocks.retain(|(at, _)| !gone.contains(at));
+        for (at, _) in &mut self.blocks {
+            if *at >= gone.end {
+                *at -= n;
+            }
+        }
+        self.blocks != before
+    }
 }
 
 /// Reads the line a page keeps: the block numbers, separated by commas, each with an
@@ -156,6 +184,21 @@ pub fn write(justified: &Justified) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mark_follows_its_paragraph_when_blocks_before_it_go() {
+        let mut marked = parse("0, 3:low, 7:high");
+        assert!(marked.remove_blocks(1..3));
+        assert_eq!(write(&marked), "0, 1:low, 5:high");
+        // A mark on a block that went goes with it.
+        assert!(marked.remove_blocks(1..2));
+        assert_eq!(write(&marked), "0, 4:high");
+        assert!(!marked.remove_blocks(9..12));
+        // A block put in before a paragraph moves its mark down; one after the last moves none.
+        assert!(marked.insert_block(2));
+        assert_eq!(write(&marked), "0, 5:high");
+        assert!(!marked.insert_block(6));
+    }
 
     #[test]
     fn the_justified_paragraphs_survive_the_round_trip() {

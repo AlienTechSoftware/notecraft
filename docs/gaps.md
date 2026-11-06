@@ -224,6 +224,16 @@ it is fixed and tested, not when it is promised.
   toolbar above it; none of those are here yet, and no entry is shown that does nothing. Move and
   resize are the bar and the right edge. A box is deleted without asking, as OneNote does, and
   Ctrl+Z brings it back: the page's history holds whole states of the page, boxes included.
+- **A blank box goes only when the caret leaves it on the page.** A box with nothing written in it
+  is taken away when the caret leaves it for another box, for open paper, for a picture, or with
+  Escape, as OneNote does (issue #21). Opening another page, or a caret moved from outside the
+  page (a search result, the control channel), leaves the blank box where it is, and it is saved
+  with the page. A to-do box with no words beside it is kept.
+- **Block numbers on the metadata line follow only some edits.** The widths of a table and the
+  justified paragraphs are kept against block numbers (next entry). They are moved when an empty
+  box is given its first line and when a blank box goes, but not yet when Enter splits a line,
+  when Backspace joins two, when a box is deleted or pasted, or when Ctrl+Z undoes any of these.
+  After those, a width or a justification can sit on the block next to the one it was given to.
 - **Table column widths and justification are still on a metadata line.** The boxes of a page are
   elements in its text, but the widths a table's columns were dragged to are kept in the head
   (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
