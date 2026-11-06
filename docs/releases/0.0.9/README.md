@@ -44,6 +44,7 @@ See the private host proposal:
 ## Related Documents
 - `enhancement_bidi_uiux_alignment.md` - Bidi UI alignment candidate
 - `rc_perf.md` - Performance instrumentation and profiling plan
+- [`adr-onenote-rs-import-evaluation.html`](adr-onenote-rs-import-evaluation.html) - Proposal to consolidate on one import backend, with acknowledgements, tradeoffs, and cost analysis
 - `feature_plan.md` - Implementation plan
 
 ## Parallel Workspaces
