@@ -59,9 +59,9 @@ pub fn available_languages() -> Vec<LanguageChoice> {
         .collect();
     languages.sort_by_key(|language| match language.code.as_str() {
         "en" => 0,
-        "en-XA" => 1,
-        "ar-XB" => 2,
-        _ => 3,
+        "en-XA" => 2,
+        "ar-XB" => 3,
+        _ => 1,
     });
     languages
 }
@@ -257,9 +257,9 @@ mod tests {
     fn embedded_languages_and_ltr_pseudo_locale_are_offered() {
         let languages = available_languages();
         let codes: Vec<&str> = languages.iter().map(|language| language.code.as_str()).collect();
-        assert_eq!(codes, ["en", "en-XA", "ar-XB", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh"]);
-        assert_eq!(languages[1].name, "English (Pseudo, LTR)");
-        assert_eq!(languages[2].name, "Arabic (Pseudo, RTL)");
+        assert_eq!(codes, ["en", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh", "en-XA", "ar-XB"]);
+        assert_eq!(languages[13].name, "English (Pseudo, LTR)");
+        assert_eq!(languages[14].name, "Arabic (Pseudo, RTL)");
         for (code, name) in [
             ("ar", "العربية"),
             ("de", "Deutsch"),

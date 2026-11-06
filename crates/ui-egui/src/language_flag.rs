@@ -20,10 +20,14 @@ pub fn paint_at(ui: &Ui, rect: Rect, code: &str) {
     let code = code.to_ascii_lowercase();
     if let Some(letter) = match code.as_str() {
         "ar" | "ar-xb" => Some("ض"),
-        "he" => Some("ע"),
+        "he" => Some("א"),
         _ => None,
     } {
-        p.text(rect.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(14.0), white);
+        let font = egui::FontId::proportional(14.0);
+        let center = rect.center();
+        for x_offset in [-0.65, 0.0, 0.65] {
+            p.text(center + vec2(x_offset, 0.0), egui::Align2::CENTER_CENTER, letter, font.clone(), white);
+        }
         p.rect_stroke(rect, 1.5, Stroke::new(0.7, c(0x707070)), egui::StrokeKind::Inside);
         return;
     }
@@ -123,7 +127,7 @@ mod tests {
 
     #[test]
     fn arabic_and_hebrew_locales_render_script_letters_instead_of_country_flags() {
-        for (code, expected) in [("ar", "ض"), ("ar-XB", "ض"), ("he", "ע")] {
+        for (code, expected) in [("ar", "ض"), ("ar-XB", "ض"), ("he", "א")] {
             let ctx = egui::Context::default();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ctx| {
                 crate::fonts::install_once(ctx);
@@ -138,7 +142,7 @@ mod tests {
                 })
                 .collect();
             output.textures_delta.clear();
-            assert_eq!(painted_text, [expected], "{code} should render its representative script letter");
+            assert_eq!(painted_text, [expected, expected, expected], "{code} should render its representative script letter with a bold overlay");
         }
     }
 }
