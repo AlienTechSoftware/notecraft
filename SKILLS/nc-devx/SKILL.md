@@ -88,6 +88,36 @@ These scripts:
 3. Turn the git hooks on (`core.hooksPath = .githooks`)
 4. Build xtask (development helper tool)
 
+### Android development
+
+Android APK builds use the Linux Android builder. On Windows, run it in WSL2 with Ubuntu 24.04.
+The Android bootstrap is separate from the desktop setup because it installs the Android SDK and
+NDK and asks you to review their licenses.
+
+**Windows PowerShell:**
+```powershell
+.\SKILLS\nc-devx\scripts\setup.android.ps1 -CheckOnly  # inspect; no changes
+.\SKILLS\nc-devx\scripts\setup.android.ps1              # install missing tools in WSL2
+```
+
+**Linux or WSL2:**
+```bash
+bash SKILLS/nc-devx/scripts/setup.android.sh --check-only # inspect; no changes
+bash SKILLS/nc-devx/scripts/setup.android.sh              # install missing tools
+```
+
+The bootstrap installs the Rust Android target for the exact channel in `rust-toolchain.toml`,
+`cargo-ndk`, JDK 21, Android command-line tools, platform-tools (`adb`), API 35, Build Tools
+35.0.0, and NDK 27.2.12479018. Set `ARTCRAFT_TARGET_SDK`, `ARTCRAFT_BUILD_TOOLS_VERSION`, or
+`ARTCRAFT_NDK_VERSION` to match a different builder configuration. Android SDK packages and
+licenses are installed under `$HOME/Android/Sdk` by default. In WSL, keep this SDK on the Linux
+filesystem; the setup script refuses an SDK path under `/mnt/` because the mounted Windows drive
+can reject Android SDK directory moves.
+
+For the builder checkout, APK build commands, device installation, and log capture, see
+[`references/android.md`](references/android.md). The standard `setup.sh` remains the prerequisite
+for Linux desktop development and its native build packages.
+
 **Options:**
 ```bash
 # Windows: -SkipRust, -SkipBuild, -Packaging, -CheckOnly
@@ -449,12 +479,14 @@ Hooks are in `.githooks/` and run automatically after `git config core.hooksPath
 
 ### Windows
 - **Setup script:** `SKILLS/nc-devx/scripts/setup.ps1`
+- **Android setup:** `SKILLS/nc-devx/scripts/setup.android.ps1` (runs in WSL2)
 - **Required tools:** Visual Studio Build Tools or MSVC, WiX (for installer builds)
 - **Shell:** PowerShell recommended; Git Bash also works
 - **Git hooks:** Use `CRLF` line endings (git config auto-handles)
 
 ### Linux
 - **Setup script:** `SKILLS/nc-devx/scripts/setup.sh`
+- **Android setup:** `bash SKILLS/nc-devx/scripts/setup.android.sh`
 - **Required tools:** gcc/clang, pkg-config
 - **Shell:** bash/zsh
 - **Notes:** Some features (e.g., native dialogs) use X11 or Wayland

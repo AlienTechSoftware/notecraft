@@ -6,6 +6,11 @@ when changing build scripts, workflows, packaging, or release behavior.
 
 New contributors can follow the step-by-step [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+Android APK development is an optional Linux/WSL2 lane. Bootstrap its Rust target, JDK, Android
+SDK/NDK, and ADB with [`setup.android.sh`](SKILLS/nc-devx/scripts/setup.android.sh); Windows users
+can launch it through [`setup.android.ps1`](SKILLS/nc-devx/scripts/setup.android.ps1). See the
+[`nc-devx Android guide`](SKILLS/nc-devx/references/android.md) for APK and device checks.
+
 ## First day
 
 1. Install the pinned Rust toolchain and platform dependencies with the setup script
