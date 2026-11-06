@@ -284,8 +284,8 @@ enum FindAct {
 fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
     let mut act = FindAct::None;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Find").small().color(t.muted));
-        let query = ui.add(egui::TextEdit::singleline(&mut find.query).id(id).desired_width(240.0).hint_text("Find in this file"));
+        ui.label(egui::RichText::new(crate::tl_id!("ui.find")).small().color(t.muted));
+        let query = ui.add(egui::TextEdit::singleline(&mut find.query).id(id).desired_width(240.0).hint_text(crate::tl_id!("ui.find_in_this_file")));
         if find.focus {
             query.request_focus();
             find.focus = false;
@@ -303,13 +303,13 @@ fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
             act = if shift { FindAct::Previous } else { FindAct::Next };
             query.request_focus();
         }
-        if ui.small_button("Previous").on_hover_text("Previous match (Shift+Enter)").clicked() {
+        if ui.small_button(crate::tl_id!("ui.previous")).on_hover_text(crate::tl_id!("ui.previous_match_shift_enter")).clicked() {
             act = FindAct::Previous;
         }
-        if ui.small_button("Next").on_hover_text("Next match (Enter, F3)").clicked() {
+        if ui.small_button(crate::tl_id!("ui.next")).on_hover_text(crate::tl_id!("ui.next_match_enter_f3")).clicked() {
             act = FindAct::Next;
         }
-        if ui.selectable_label(find.case, "Match case").clicked() {
+        if ui.selectable_label(find.case, crate::tl_id!("ui.match_case")).clicked() {
             find.case = !find.case;
             act = FindAct::Edited;
         }
@@ -322,7 +322,7 @@ fn find_bar(ui: &mut Ui, find: &mut Find, id: egui::Id, t: &Tokens) -> FindAct {
             format!("{} of {}{more}", find.current + 1, find.matches.len())
         };
         ui.label(egui::RichText::new(count).small().color(if find.matches.is_empty() && !find.query.is_empty() { t.warn } else { t.muted }));
-        if ui.small_button("Close").on_hover_text("Close the Find bar (Escape)").clicked() {
+        if ui.small_button(crate::tl_id!("ui.close")).on_hover_text(crate::tl_id!("ui.close_the_find_bar_escape")).clicked() {
             act = FindAct::Close;
         }
     });
@@ -510,7 +510,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
         ui.allocate_ui_with_layout(vec2(list_width, height), egui::Layout::top_down(egui::Align::LEFT), |ui| {
             let list_surface = ui.interact(ui.max_rect(), ui.id().with("file-list-surface"), egui::Sense::click());
             list_surface.context_menu(|ui| {
-                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Add file", t).clicked() {
+                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), crate::tl_id!("ui.add_file"), t).clicked() {
                     log::debug!("source file-list add file requested");
                     out.file_action = Some(FileAction::AddFile);
                     ui.close();
@@ -518,7 +518,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             });
             ui.set_min_width(list_width);
             ui.set_max_width(list_width);
-            ui.label(egui::RichText::new("FILES IN THIS PAGE").small().color(t.muted));
+            ui.label(egui::RichText::new(crate::tl_id!("ui.files_in_this_page")).small().color(t.muted));
             ui.add_space(2.0);
             egui::ScrollArea::vertical().id_salt("code-files").max_height(height - 24.0).show(ui, |ui| {
                 for entry in entries {
@@ -556,12 +556,12 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 ui.label(egui::RichText::new(&entry.name).monospace().strong());
                 ui.label(egui::RichText::new(size_text(entry.bytes)).small().color(t.muted));
                 if !entry.used {
-                    ui.label(egui::RichText::new("not used by the page").small().color(t.warn));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.not_used_by_the_page")).small().color(t.warn));
                 }
                 if !entry.kind.editable() {
-                    ui.label(egui::RichText::new("read-only").small().color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.read_only")).small().color(t.muted));
                 }
-                if entry.kind != Kind::PageFile && ui.small_button("Delete file").clicked() {
+                if entry.kind != Kind::PageFile && ui.small_button(crate::tl_id!("ui.delete_file")).clicked() {
                     log::debug!("source view delete requested from header: file={:?}", entry.name);
                     out.file_action = delete_action(entry);
                 }
@@ -578,17 +578,17 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                             });
                         }
                         Err(_) => {
-                            ui.label(egui::RichText::new("This picture cannot be shown here.").color(t.muted));
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.this_picture_cannot_be_shown_here")).color(t.muted));
                         }
                     }
                 }
                 Kind::Other => {
-                    ui.label(egui::RichText::new("Nothing here can show this kind of file.").color(t.muted));
-                    ui.label(egui::RichText::new("It is listed so the page's folder is not a secret.").small().color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.nothing_here_can_show_this_kind_of_file")).color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.it_is_listed_so_the_page_s_folder_is_not_a_secret")).small().color(t.muted));
                 }
                 Kind::Office | Kind::Pdf => {
                     let path = dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
-                    ui.label(egui::RichText::new("Document renderer coming soon").small().color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.document_renderer_coming_soon")).small().color(t.muted));
                     let icon = attachment_icon_name(&entry.name);
                     let icon_path = dir.join(icon.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let fallback_path = dir.join(format!("{}.svg", entry.name).replace('/', std::path::MAIN_SEPARATOR_STR));
@@ -601,13 +601,18 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                             ui.vertical(|ui| {
                                 ui.label(egui::RichText::new(&entry.name).strong());
                                 ui.label(
-                                    egui::RichText::new(if entry.kind == Kind::Pdf { "PDF document" } else { "Office document" }).color(t.muted),
+                                    egui::RichText::new(if entry.kind == Kind::Pdf {
+                                        crate::tl_id!("ui.pdf_document")
+                                    } else {
+                                        crate::tl_id!("ui.office_document")
+                                    })
+                                    .color(t.muted),
                                 );
-                                ui.label(egui::RichText::new("Text inspection is shown below.").small().color(t.muted));
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.text_inspection_is_shown_below")).small().color(t.muted));
                             });
                         });
                     } else {
-                        ui.label(egui::RichText::new("No generated preview icon is available.").color(t.warn));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.no_generated_preview_icon_is_available")).color(t.warn));
                     }
                     ui.separator();
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
@@ -621,14 +626,23 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     }
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(if entry.kind == Kind::Pdf { "PDF text inspection" } else { "Office text inspection" }).strong(),
+                            egui::RichText::new(if entry.kind == Kind::Pdf {
+                                crate::tl_id!("ui.pdf_text_inspection")
+                            } else {
+                                crate::tl_id!("ui.office_text_inspection")
+                            })
+                            .strong(),
                         );
-                        if ui.button("Open with associated app").clicked() {
+                        if ui.button(crate::tl_id!("ui.open_with_associated_app")).clicked() {
                             log::info!("source viewer opening associated application: file={:?}", path);
                             let _ = crate::app::open_file_for_viewer(&path);
                         }
                     });
-                    ui.label(egui::RichText::new("Read-only text extraction. Full document rendering is coming soon.").small().color(t.muted));
+                    ui.label(
+                        egui::RichText::new(crate::tl_id!("ui.read_only_text_extraction_full_document_rendering_is_coming_soon"))
+                            .small()
+                            .color(t.muted),
+                    );
                     egui::ScrollArea::vertical().id_salt("code-binary-text").show(ui, |ui| {
                         ui.add(
                             egui::TextEdit::multiline(&mut state.text)
@@ -642,11 +656,11 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 // says nothing about what is on the page.
                 Kind::Ink if !state.as_code => {
                     ui.horizontal(|ui| {
-                        if ui.small_button("Show the code").clicked() {
+                        if ui.small_button(crate::tl_id!("ui.show_the_code")).clicked() {
                             state.as_code = true;
                         }
                         let strokes = read_for_view(&dir.join(&entry.name)).0.matches("<path").count();
-                        ui.label(egui::RichText::new(format!("{strokes} stroke{}", if strokes == 1 { "" } else { "s" })).small().color(t.muted));
+                        ui.label(egui::RichText::new(crate::i18n::format_count_id("ui.n_stroke_n_strokes", strokes as u64)).small().color(t.muted));
                     });
                     let room = egui::vec2(ui.available_width(), (height - 70.0).max(80.0));
                     let (rect, _) = ui.allocate_exact_size(room, Sense::hover());
@@ -683,11 +697,11 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
                     }
-                    if entry.kind == Kind::Ink && ui.small_button("Show the strokes").clicked() {
+                    if entry.kind == Kind::Ink && ui.small_button(crate::tl_id!("ui.show_the_strokes")).clicked() {
                         state.as_code = false;
                     }
                     if entry.kind == Kind::Svg {
-                        ui.label(egui::RichText::new("Rendered SVG preview").small().color(t.muted));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.rendered_svg_preview")).small().color(t.muted));
                         let preview_height = (ui.available_height() * 0.34).clamp(150.0, 320.0);
                         let preview_room = egui::vec2(ui.available_width(), preview_height);
                         egui::Frame::new().fill(t.editor).inner_margin(6.0).show(ui, |ui| {
@@ -698,13 +712,13 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                             } else {
                                 ui.allocate_ui(preview_room, |ui| {
                                     ui.centered_and_justified(|ui| {
-                                        ui.label(egui::RichText::new("This SVG cannot be rendered here.").color(t.muted));
+                                        ui.label(egui::RichText::new(crate::tl_id!("ui.this_svg_cannot_be_rendered_here")).color(t.muted));
                                     });
                                 });
                             }
                         });
                         ui.separator();
-                        ui.label(egui::RichText::new("SVG source").small().color(t.muted));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.svg_source")).small().color(t.muted));
                     }
                     let warning = match entry.kind {
                         Kind::PageFile => Some("The whole file, head and all. The page is read again when the view closes."),
@@ -860,27 +874,31 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
     let full = page_dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
     let name = entry.name.clone();
     resp.context_menu(|ui| {
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), "Copy full path", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_full_path"), t).clicked() {
             *action = Some(FileAction::CopyPath(full.to_string_lossy().into_owned()));
             ui.close();
         }
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), "Open in folder", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_in_folder"), t).clicked() {
             *action = Some(FileAction::OpenFolder(full.parent().unwrap_or(page_dir).to_path_buf()));
             ui.close();
         }
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Open using shell", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), crate::tl_id!("ui.open_using_shell"), t).clicked() {
             *action = Some(FileAction::OpenShell(full.clone()));
             ui.close();
         }
         if entry.kind != Kind::PageFile {
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), crate::tl_id!("ui.delete"), t).clicked() {
                 *action = Some(FileAction::Delete(name.strip_prefix("assets/").unwrap_or(&name).to_string()));
                 ui.close();
             }
         }
     });
-    resp.on_hover_text(if entry.used { entry.name.clone() } else { format!("{}: not used by the page", entry.name) })
+    resp.on_hover_text(if entry.used {
+        entry.name.clone()
+    } else {
+        crate::i18n::format_message_id("ui.name_not_used_by_the_page", &[("name", &entry.name)])
+    })
 }
 
 #[cfg(test)]

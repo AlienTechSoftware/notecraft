@@ -45,6 +45,10 @@ const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
 
+fn default_telemetry_level(debug_build: bool) -> &'static str {
+    if debug_build { "debug" } else { "none" }
+}
+
 const ROW_HEIGHT: f32 = 24.0;
 const INDENT: f32 = 14.0;
 
@@ -54,20 +58,24 @@ fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
 }
 
+// i18n-ui-text: title
 fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
     egui::Frame::NONE.fill(tokens.band).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(egui::RichText::new(title).strong().size(17.0).color(tokens.band_text));
+        ui.label(egui::RichText::new(crate::tl!(title)).strong().size(17.0).color(tokens.band_text));
     });
     ui.add_space(10.0);
 }
 
 /// Modal actions use a readable size based on their label instead of egui's compact default.
+// i18n-ui-text: label
 fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
     modal_button_enabled(ui, tokens, label, primary, true)
 }
 
+// i18n-ui-text: label
 fn modal_button_enabled(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool, enabled: bool) -> egui::Response {
+    let label = crate::tl!(label);
     let width = (label.chars().count() as f32 * 8.0 + 32.0).max(92.0);
     let fill = if primary { tokens.accent } else { tokens.panel };
     let text = if primary { tokens.band_text } else { tokens.text };
@@ -544,6 +552,7 @@ pub struct NoteCraftApp {
     cursor: usize,
     tokens: Tokens,
     mode_pref: ModePref,
+    ui_language: String,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -635,6 +644,9 @@ impl NoteCraftApp {
 
     pub fn new(session: Session) -> NoteCraftApp {
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
+        let ui_language =
+            session.settings.get("ui_language").map(|value| crate::i18n::normalize_preference(&value)).unwrap_or_else(|| crate::i18n::AUTO.into());
+        crate::i18n::set_current(&ui_language);
         let accent = session.settings.get("theme_accent").and_then(|v| Accent::parse(&v)).unwrap_or(Accent::Default);
         let show_source = false;
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
@@ -653,7 +665,7 @@ impl NoteCraftApp {
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
         // `--first-use` clears the key to an empty value, which counts as not seen.
         let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
-        let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
+        let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         NoteCraftApp {
             session,
@@ -670,7 +682,7 @@ impl NoteCraftApp {
             editor: None,
             dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: telemetry_level }) } else { None },
             import_job: None,
-            status: "Ready".into(),
+            status: crate::tl_id!("ui.ready_2").into(),
             status_is_error: false,
             search: String::new(),
             searched: String::new(),
@@ -678,6 +690,7 @@ impl NoteCraftApp {
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
+            ui_language,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -832,8 +845,21 @@ impl NoteCraftApp {
         let a = self.session.settings.set("theme_mode", self.mode_pref.id());
         let b = self.session.settings.set("theme_accent", self.accent.id());
         if let Err(e) = a.and(b) {
-            self.status = format!("The theme could not be saved: {e}");
+            self.status = crate::i18n::format_message_id("ui.the_theme_could_not_be_saved_error", &[("error", &e.to_string())]);
             self.status_is_error = true;
+        }
+    }
+
+    fn set_ui_language(&mut self, language: String) {
+        if let Err(error) = self.session.settings.set("ui_language", &language) {
+            let error = error.to_string();
+            let message = crate::i18n::format_message_id("ui.could_not_save_the_interface_language_error", &[("error", &error)]);
+            self.complain(&message);
+        } else {
+            self.ui_language = language;
+            crate::i18n::set_current(&self.ui_language);
+            self.status = crate::tl_id!("ui.ready_2").to_string();
+            self.status_is_error = false;
         }
     }
 
@@ -907,7 +933,7 @@ impl NoteCraftApp {
                 self.expand_to(&dir);
                 self.open_page_inner(&dir);
             }
-            None => self.say("There is no earlier page"),
+            None => self.say(crate::tl_id!("ui.there_is_no_earlier_page")),
         }
     }
 
@@ -918,7 +944,7 @@ impl NoteCraftApp {
                 self.expand_to(&dir);
                 self.open_page_inner(&dir);
             }
-            None => self.say("There is no later page"),
+            None => self.say(crate::tl_id!("ui.there_is_no_later_page")),
         }
     }
 
@@ -1065,7 +1091,7 @@ impl NoteCraftApp {
     }
 
     fn fail(&mut self, e: &EngineError) {
-        self.status = e.to_string();
+        self.status = crate::i18n::format_message_id("ui.could_not_complete_the_action_error", &[("error", &e.to_string())]);
         self.status_is_error = true;
     }
 
@@ -1175,7 +1201,7 @@ impl NoteCraftApp {
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
-            self.say("Opened");
+            self.say(crate::tl_id!("ui.opened"));
         }
     }
 
@@ -1207,7 +1233,7 @@ impl NoteCraftApp {
                 moved += pad.absorb(dir, src);
             }
             if pad.dirty && pad.save().is_err() {
-                self.complain("Cannot write this page's ink");
+                self.complain(crate::tl_id!("ui.cannot_write_this_page_s_ink"));
                 return;
             }
         }
@@ -1227,11 +1253,15 @@ impl NoteCraftApp {
                 left += 1;
             }
         }
-        if left > 0 {
-            self.say(format!("Moved {moved} strokes onto the page; {left} old drawing files could not be removed"));
+        let message = if left > 0 {
+            crate::i18n::format_message_id(
+                "ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef",
+                &[("moved", &moved.to_string()), ("left", &left.to_string())],
+            )
         } else {
-            self.say(format!("Moved {moved} strokes from this page's old drawing onto the page itself"));
-        }
+            crate::i18n::format_message_id("ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5", &[("moved", &moved.to_string())])
+        };
+        self.say(&message);
     }
 
     fn save_now(&mut self) {
@@ -1246,7 +1276,7 @@ impl NoteCraftApp {
                     ed.dirty_since = None;
                     ed.last_saved = Some(ts);
                 }
-                self.say("Saved");
+                self.say(crate::tl_id!("ui.saved"));
             }
             Ok(_) => {}
             Err(e) => self.fail(&e),
@@ -1347,7 +1377,7 @@ impl NoteCraftApp {
             return;
         }
         let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
-            self.status = "Open a page first, then drop files onto it.".into();
+            self.status = crate::tl_id!("ui.open_a_page_first_then_drop_files_onto_it").into();
             self.status_is_error = true;
             return;
         };
@@ -1366,19 +1396,19 @@ impl NoteCraftApp {
                         log::debug!("file attach copied: name={name:?} link={link:?}");
                         let text = snippets::attachment(format, &link, &name);
                         self.insert(&text);
-                        self.say(format!("{name} is now a file in this page's folder"));
+                        self.say(crate::i18n::format_message_id("ui.name_is_now_a_file_in_this_page_s_folder", &[("name", &name)]));
                     }
-                    Some(_) => self.complain("The file was not attached: the attach command returned an unexpected result."),
+                    Some(_) => self.complain(crate::tl_id!("ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0")),
                     None => {
                         log::error!("file attach failed: name={name:?} page={:?} status={:?}", dir, self.status);
-                        self.complain(&format!("Could not attach {name} to this page."));
+                        self.complain(&crate::i18n::format_message_id("ui.could_not_attach_name_to_this_page", &[("name", &name)]));
                     }
                 }
             }
             FileChoice::Link => {
                 let text = snippets::file_link(format, &path_str(file), &name);
                 self.insert(&text);
-                self.say(format!("Linked {name} where it is; the file was not copied"));
+                self.say(crate::i18n::format_message_id("ui.linked_name_where_it_is_the_file_was_not_copied", &[("name", &name)]));
             }
             FileChoice::Printout => self.insert_printout(dir, file, format),
         }
@@ -1397,12 +1427,12 @@ impl NoteCraftApp {
         };
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) else {
-            self.complain(&format!("Could not attach {name} before rendering its pages"));
+            self.complain(&crate::i18n::format_message_id("ui.could_not_attach_name_before_rendering_its_pages", &[("name", &name)]));
             return;
         };
         let Some(base) = link.strip_prefix("assets/").and_then(|link| Path::new(link).file_name()).map(|name| name.to_string_lossy().into_owned())
         else {
-            self.complain("The attachment returned an invalid page link");
+            self.complain(crate::tl_id!("ui.the_attachment_returned_an_invalid_page_link"));
             return;
         };
         let assets = dir.join("assets");
@@ -1413,7 +1443,10 @@ impl NoteCraftApp {
                 for path in &generated {
                     let _ = std::fs::remove_file(path);
                 }
-                self.complain(&format!("Could not store printout page {}: {error}", index + 1));
+                self.complain(&crate::i18n::format_message_id(
+                    "ui.could_not_store_printout_page_page_error",
+                    &[("page", &(index + 1).to_string()), ("error", &error.to_string())],
+                ));
                 return;
             }
             generated.push(target);
@@ -1424,7 +1457,10 @@ impl NoteCraftApp {
             text.push_str(&snippets::printout_page(format, &image, index + 1));
         }
         self.insert(&text);
-        self.say(format!("Inserted {name} and {} printout page(s)", generated.len()));
+        self.say(crate::i18n::format_message_id(
+            "ui.inserted_name_and_count_printout_pages",
+            &[("name", &name), ("count", &generated.len().to_string())],
+        ));
     }
 
     // ---------- tree ----------
@@ -1482,7 +1518,7 @@ impl NoteCraftApp {
                         self.pad = None;
                         self.nav = NavHistory::default();
                     }
-                    self.say("Notebook closed; its files are still on disk");
+                    self.say(crate::tl_id!("ui.notebook_closed_its_files_are_still_on_disk"));
                 }
             }
             Act::RevealRoot => {
@@ -1500,7 +1536,7 @@ impl NoteCraftApp {
                 // "Untitled page" is only ever the display fallback, never real content.
                 if let Some(Output::Path(dir)) = self.run("node.create", &params(&[("parent", &path), ("kind", "page"), ("order", &order)])) {
                     self.open_page(&dir);
-                    self.say("New page");
+                    self.say(crate::tl_id!("ui.new_page"));
                 }
             }
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
@@ -1509,16 +1545,19 @@ impl NoteCraftApp {
                 let value = color.map_or("none", NodeColor::id);
                 if self.run("node.color", &params(&[("path", &path_str(&path)), ("color", value)])).is_some() {
                     self.say(match color {
-                        Some(c) => format!("Colour set to {}", c.label().to_lowercase()),
-                        None => "Colour removed".to_string(),
+                        Some(c) => {
+                            let colour = crate::tl!(c.label());
+                            crate::i18n::format_message_id("ui.colour_set_to_colour", &[("colour", &colour.to_lowercase())])
+                        }
+                        None => crate::tl_id!("ui.colour_removed").to_string(),
                     });
                 }
             }
             Act::CopyLink(path) => self.copy_link_to(&path),
             Act::Reveal(path) => match open_folder(&path) {
-                Ok(()) => self.say(format!("Opened {}", self.shown(&path))),
+                Ok(()) => self.say(crate::i18n::format_message_id("ui.opened_path", &[("path", &self.shown(&path))])),
                 Err(e) => {
-                    self.status = format!("The folder could not be opened: {e}");
+                    self.status = crate::i18n::format_message_id("ui.the_folder_could_not_be_opened_error", &[("error", &e.to_string())]);
                     self.status_is_error = true;
                 }
             },
@@ -1594,7 +1633,7 @@ impl NoteCraftApp {
         if node.info.kind == NodeKind::Page
             && let Some(f) = node.info.format
         {
-            painter.text(egui::pos2(rect.max.x - 30.0, cy), Align2::RIGHT_CENTER, f.short(), egui::FontId::proportional(10.5), t.muted);
+            painter.text(egui::pos2(rect.max.x - 30.0, cy), Align2::RIGHT_CENTER, crate::tl!(f.short()), egui::FontId::proportional(10.5), t.muted);
         }
         if resp.hovered() {
             painter.text(plus_rect.center(), Align2::CENTER_CENTER, "+", egui::FontId::proportional(16.0), t.strong);
@@ -1636,12 +1675,12 @@ impl NoteCraftApp {
                 }
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), "Rename...", t).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
             }
             if node.info.kind == NodeKind::Notebook
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), "Close notebook", t).clicked()
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
             {
                 acts.push(Act::CloseNotebook(node.path.clone()));
                 ui.close();
@@ -1650,7 +1689,7 @@ impl NoteCraftApp {
                 && floating::menu_row(
                     ui,
                     Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
-                    if open { "Collapse" } else { "Expand" },
+                    if open { crate::tl_id!("ui.collapse") } else { crate::tl_id!("ui.expand") },
                     t,
                 )
                 .clicked()
@@ -1660,7 +1699,7 @@ impl NoteCraftApp {
             }
             // Pages take the colour of their section, the way OneNote colours tabs.
             if node.info.kind != NodeKind::Page {
-                ui.menu_button("Colour", |ui| {
+                ui.menu_button(crate::tl_id!("ui.colour"), |ui| {
                     let dark = self.effective_mode.is_dark();
                     egui::Grid::new("node-colours").spacing([4.0, 4.0]).show(ui, |ui| {
                         for (i, c) in NodeColor::ALL.into_iter().enumerate() {
@@ -1674,25 +1713,30 @@ impl NoteCraftApp {
                         }
                     });
                     ui.add_space(2.0);
-                    if ui.button("No colour").clicked() {
+                    if ui.button(crate::tl_id!("ui.no_colour")).clicked() {
                         acts.push(Act::Color(node.path.clone(), None));
                         ui.close();
                     }
                 });
             }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), "Copy link to page", t)
-                .on_hover_text("A link to paste into another page")
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_link_to_page"), t)
+                .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
                 .clicked()
             {
                 acts.push(Act::CopyLink(node.path.clone()));
                 ui.close();
             }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), "Open folder", t).on_hover_text(self.shown(&node.path)).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_folder"), t)
+                .on_hover_text(self.shown(&node.path))
+                .clicked()
+            {
                 acts.push(Act::Reveal(node.path.clone()));
                 ui.close();
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), "Delete...", t).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+                .clicked()
+            {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
                 ui.close();
             }
@@ -1798,7 +1842,7 @@ impl NoteCraftApp {
         }
         // The choice between the system's title bar and this one, kept in the settings.
         handle.context_menu(|ui| {
-            let label = if self.frameless { "Use the system title bar" } else { "Use NoteCraft's own title bar" };
+            let label = if self.frameless { crate::tl_id!("ui.use_the_system_title_bar") } else { crate::tl_id!("ui.use_notecraft_s_own_title_bar") };
             if ui.button(label).clicked() {
                 self.frameless = !self.frameless;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!self.frameless));
@@ -1825,10 +1869,12 @@ impl NoteCraftApp {
         }
         right.add_space(4.0);
         self.theme_menu(&mut right, on);
+        right.add_space(4.0);
+        self.language_menu(&mut right, on);
         right.add_space(10.0);
         self.discord_link(&mut right, on);
         right.add_space(10.0);
-        let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search all pages").desired_width(200.0));
+        let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::tl_id!("ui.search_all_pages")).desired_width(200.0));
         if self.focus_search {
             resp.request_focus();
             self.focus_search = false;
@@ -1863,7 +1909,7 @@ impl NoteCraftApp {
             egui::FontId::proportional(13.0),
             on.text,
         );
-        let resp = resp.on_hover_text(DISCORD_URL);
+        let resp = resp.on_hover_text(crate::tl_id!("ui.open_the_artcraft_discord"));
         if resp.clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(DISCORD_URL));
         }
@@ -1899,7 +1945,7 @@ impl NoteCraftApp {
                     painter.line_segment([c + vec2(-5.0, 4.0), c + vec2(5.0, 4.0)], stroke);
                 }
             }
-            let label = if kind == "Maximize" && maximized { "Restore" } else { kind };
+            let label = if kind == crate::tl_id!("ui.maximize") && maximized { crate::tl_id!("ui.restore") } else { kind };
             let enabled = ui.is_enabled();
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
             if resp.on_hover_text(label).clicked() {
@@ -1955,6 +2001,8 @@ impl NoteCraftApp {
         let recent = self.recent_notebooks();
         let (root, redact) = (self.session.root().to_path_buf(), self.redact_paths);
         let show_path = move |p: &Path| shown_in(&root, p, redact);
+        let ui_language = self.ui_language.clone();
+        let languages = crate::i18n::available_languages();
         let mut acts = Vec::new();
         egui::CentralPanel::default().show(ui, |ui| {
             let telemetry_root = self.session.settings.path().parent().unwrap_or(std::path::Path::new(".")).join("telemetry");
@@ -1970,6 +2018,8 @@ impl NoteCraftApp {
                 &telemetry_root,
                 &telemetry_level,
                 session_id.as_deref(),
+                &ui_language,
+                &languages,
                 &tokens,
             );
         });
@@ -1986,7 +2036,7 @@ impl NoteCraftApp {
                 backstage::Act::ImportNotebookFolder => self.import_notebook_folder(),
                 backstage::Act::ImportFile => self.import_file(),
                 backstage::Act::ImportCloud => {
-                    self.status = "Cloud import is not implemented yet.".to_string();
+                    self.status = crate::tl_id!("ui.cloud_import_is_not_implemented_yet").to_string();
                     self.status_is_error = false;
                 }
                 backstage::Act::OpenNotebooksFolder => {
@@ -2004,13 +2054,17 @@ impl NoteCraftApp {
                 backstage::Act::SetTelemetryLevel(level) => {
                     let _ = self.session.settings.set("telemetry_level", &level);
                 }
+                backstage::Act::SetUiLanguage(language) => {
+                    self.set_ui_language(language);
+                }
                 backstage::Act::OpenTelemetryFolder(path) => {
                     // The folder is made on first use: it does not exist until a session has
                     // written to it, and Explorer opens Documents for a folder it cannot find.
                     match std::fs::create_dir_all(&path) {
                         Ok(()) => self.reveal(&path),
                         Err(e) => {
-                            self.status = format!("The diagnostics folder could not be created: {e}");
+                            self.status =
+                                crate::i18n::format_message_id("ui.the_diagnostics_folder_could_not_be_created_error", &[("error", &e.to_string())]);
                             self.status_is_error = true;
                         }
                     }
@@ -2022,7 +2076,7 @@ impl NoteCraftApp {
                         .ok()
                         .and_then(|r| r.filter_map(Result::ok).find(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)))
                         && let Some(destination) = rfd::FileDialog::new()
-                            .set_title("Export telemetry ZIP")
+                            .set_title(crate::tl_id!("ui.export_telemetry_zip"))
                             .set_file_name(format!("notecraft-{}-telemetry.zip", session.file_name().to_string_lossy()))
                             .save_file()
                     {
@@ -2034,7 +2088,8 @@ impl NoteCraftApp {
                     self.add_welcome();
                 }
                 backstage::Act::NotBuilt(name) => {
-                    self.status = format!("{name} is not built yet. See the roadmap for what is coming.");
+                    self.status =
+                        crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(name))]);
                     self.status_is_error = false;
                 }
             }
@@ -2091,7 +2146,7 @@ impl NoteCraftApp {
         if let Ok(serialized) = serde_json::to_string(&recent) {
             let _ = self.session.settings.set("recent_notebooks", &serialized);
         }
-        self.say("Removed notebook from the known notebooks list");
+        self.say(crate::tl_id!("ui.removed_notebook_from_the_known_notebooks_list"));
     }
 
     fn open_notebook_from_path(&mut self, path: &Path) {
@@ -2107,7 +2162,7 @@ impl NoteCraftApp {
             } else {
                 self.editor = None;
                 self.pad = None;
-                self.say(format!("Opened {}; it has no pages yet", self.shown(&opened)));
+                self.say(crate::i18n::format_message_id("ui.opened_path_it_has_no_pages_yet", &[("path", &self.shown(&opened))]));
             }
         }
     }
@@ -2117,7 +2172,7 @@ impl NoteCraftApp {
     /// holds notebooks opens all of them. Nothing is closed and nothing is moved.
     fn choose_notebooks_folder(&mut self) {
         let Some(picked) =
-            rfd::FileDialog::new().set_title("Choose a notebook, a folder of notebooks, or an empty folder for a new notebook").pick_folder()
+            rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f")).pick_folder()
         else {
             return;
         };
@@ -2131,7 +2186,7 @@ impl NoteCraftApp {
                 self.open.insert(opened.clone());
                 self.selected = Some(opened);
                 self.backstage = None;
-                self.say(format!("{} opened as an empty notebook", self.shown(&picked)));
+                self.say(crate::i18n::format_message_id("ui.path_opened_as_an_empty_notebook", &[("path", &self.shown(&picked))]));
             }
             return;
         }
@@ -2150,14 +2205,11 @@ impl NoteCraftApp {
             self.selected = Some(path);
         }
         self.backstage = None;
-        self.say(match opened_count {
-            1 => "Notebook opened".to_string(),
-            n => format!("{n} notebooks opened"),
-        });
+        self.say(crate::i18n::format_count_id("ui.n_notebook_opened_n_notebooks_opened", opened_count));
     }
 
     fn import_notebook_folder(&mut self) {
-        let mut dialog = rfd::FileDialog::new().set_title("Choose a OneNote notebook folder");
+        let mut dialog = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_onenote_notebook_folder"));
         if let Some(backup) = notecraft_import::discover::default_source() {
             dialog = dialog.set_directory(backup);
         }
@@ -2166,7 +2218,7 @@ impl NoteCraftApp {
     }
 
     fn import_file(&mut self) {
-        let mut dialog = rfd::FileDialog::new().set_title("Choose a file to import");
+        let mut dialog = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_file_to_import"));
         if let Some(backup) = notecraft_import::discover::default_source() {
             dialog = dialog.set_directory(backup);
         }
@@ -2207,9 +2259,17 @@ impl NoteCraftApp {
                 notecraft_import::officeimo::run_with_progress(&source_for_worker, &output_for_worker, bridge_format, &worker_cancel, &mut progress);
             let _ = tx.send(ImportMessage::Finished(result));
         });
-        self.import_job =
-            Some(ImportJob { rx, keep_alive: None, cancel, source, destination, current: "Starting OfficeIMO…".into(), index: 0, total: 0 });
-        self.status = "Importing…".into();
+        self.import_job = Some(ImportJob {
+            rx,
+            keep_alive: None,
+            cancel,
+            source,
+            destination,
+            current: crate::tl_id!("ui.starting_officeimo").into(),
+            index: 0,
+            total: 0,
+        });
+        self.status = crate::tl_id!("ui.importing").into();
         self.status_is_error = false;
     }
 
@@ -2230,7 +2290,7 @@ impl NoteCraftApp {
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    finished = Some(Err("OfficeIMO import worker stopped unexpectedly".into()));
+                    finished = Some(Err(crate::tl_id!("ui.officeimo_import_worker_stopped_unexpectedly").into()));
                     break;
                 }
             }
@@ -2241,13 +2301,13 @@ impl NoteCraftApp {
                 Ok(message) => {
                     let _ = self.run("tree.refresh", &Params::new());
                     log::info!("OfficeIMO import succeeded: source={} destination={}", job.source.display(), job.destination.display());
-                    self.status = message;
+                    self.status = crate::tl!(&message).to_string();
                     self.status_is_error = false;
                     self.open_notebook_from_path(&job.destination);
                 }
                 Err(error) => {
                     log::error!("OfficeIMO import failed: source={} destination={} error={error}", job.source.display(), job.destination.display());
-                    self.status = error;
+                    self.status = crate::i18n::format_message_id("ui.could_not_import_the_notebook_error", &[("error", &error)]);
                     self.status_is_error = true;
                 }
             }
@@ -2259,7 +2319,7 @@ impl NoteCraftApp {
     fn import_progress(&mut self, ctx: &Context) {
         let Some(job) = self.import_job.as_mut() else { return };
         let mut cancel = false;
-        egui::Window::new("Importing OneNote")
+        egui::Window::new(crate::tl_id!("ui.importing_onenote"))
             .collapsible(false)
             .resizable(false)
             .title_bar(false)
@@ -2267,22 +2327,24 @@ impl NoteCraftApp {
             .frame(modal_frame(&self.tokens))
             .show(ctx, |ui| {
                 ui.set_min_width(420.0);
-                modal_title(ui, &self.tokens, "Importing OneNote");
-                ui.label(egui::RichText::new("You can continue working while the import runs.").color(self.tokens.muted));
+                modal_title(ui, &self.tokens, crate::tl_id!("ui.importing_onenote"));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.you_can_continue_working_while_the_import_runs")).color(self.tokens.muted));
                 ui.add_space(12.0);
-                ui.label(egui::RichText::new(&job.current).strong());
+                ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&job.current)).strong());
                 let fraction = if job.total == 0 { 0.0 } else { job.index as f32 / job.total as f32 };
                 ui.add(egui::ProgressBar::new(fraction).fill(self.tokens.accent).show_percentage());
                 if job.total > 0 {
-                    ui.label(format!("{} of {} sections", job.index, job.total));
+                    let index = job.index.to_string();
+                    let total = job.total.to_string();
+                    ui.label(crate::i18n::format_message_id("ui.index_of_total_sections", &[("index", &index), ("total", &total)]));
                 } else {
-                    ui.label("Discovering sections…");
+                    ui.label(crate::tl_id!("ui.discovering_sections"));
                 }
                 ui.add_space(14.0);
                 ui.separator();
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if modal_button(ui, &self.tokens, "Cancel import", true).clicked() {
+                    if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel_import"), true).clicked() {
                         cancel = true;
                     }
                 });
@@ -2320,9 +2382,9 @@ impl NoteCraftApp {
 
     fn reveal(&mut self, path: &Path) {
         match open_folder(path) {
-            Ok(()) => self.say(format!("Opened {}", self.shown(path))),
+            Ok(()) => self.say(crate::i18n::format_message_id("ui.opened_path", &[("path", &self.shown(path))])),
             Err(e) => {
-                self.status = format!("The folder could not be opened: {e}");
+                self.status = crate::i18n::format_message_id("ui.the_folder_could_not_be_opened_error", &[("error", &e.to_string())]);
                 self.status_is_error = true;
             }
         }
@@ -2344,7 +2406,7 @@ impl NoteCraftApp {
                 if let Some(first) = first_page_under(self.session.tree(), &dir) {
                     self.open_path(&path_str(&first));
                 }
-                "Updated the welcome notebook".to_string()
+                crate::tl_id!("ui.updated_the_welcome_notebook").to_string()
             }
             _ => return,
         };
@@ -2369,7 +2431,7 @@ impl NoteCraftApp {
         let mut roots = vec![self.session.root().to_path_buf()];
         roots.extend(self.session.opened_elsewhere().iter().cloned());
         let Some(uri) = notecraft_store::links::page_uri(&roots, dir) else {
-            self.complain("That page is not in a notebook that is open");
+            self.complain(crate::tl_id!("ui.that_page_is_not_in_a_notebook_that_is_open"));
             return;
         };
         let title = notecraft_store::tree::read_node(dir).map(|n| n.title).unwrap_or_else(|| "Page".to_string());
@@ -2377,7 +2439,7 @@ impl NoteCraftApp {
         // anchor for clients that accept rich content.
         self.pending_copy = Some(format!("{title} ({uri})"));
         self.pending_copy_html = Some(crate::clipboard::html_link(&title, &uri));
-        self.say(format!("Link to \"{title}\" copied"));
+        self.say(crate::i18n::format_message_id("ui.link_to_title_copied", &[("title", &title)]));
     }
 
     pub fn follow_link(&mut self, ctx: &Context, href: &str) {
@@ -2391,7 +2453,7 @@ impl NoteCraftApp {
         match resolve_in(&roots, &page, href) {
             Link::Web(url) => {
                 ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
-                self.say(format!("Opened {url} in the browser"));
+                self.say(crate::i18n::format_message_id("ui.opened_url_in_the_browser", &[("url", &url)]));
             }
             Link::Node(dir) => {
                 if notecraft_store::tree::read_node(&dir).is_some_and(|n| n.kind == NodeKind::Page) {
@@ -2401,26 +2463,31 @@ impl NoteCraftApp {
                     self.selected = Some(dir.clone());
                     match first_page_under(self.session.tree(), &dir) {
                         Some(first) => self.open_path(&path_str(&first)),
-                        None => self.say(format!("Opened {}; it has no pages yet", self.shown(&dir))),
+                        None => self.say(crate::i18n::format_message_id("ui.opened_path_it_has_no_pages_yet", &[("path", &self.shown(&dir))])),
                     }
                 }
             }
             Link::File(file) => {
                 if self.open_attachment_warning_suppressed {
                     match open_file_for_viewer(&file) {
-                        Ok(()) => self.say(format!("Opening {}", self.shown(&file))),
-                        Err(e) => self.complain(&format!("The file could not be opened: {e}")),
+                        Ok(()) => self.say(crate::i18n::format_message_id("ui.opening_path", &[("path", &self.shown(&file))])),
+                        Err(e) => {
+                            self.complain(&crate::i18n::format_message_id("ui.the_file_could_not_be_opened_error", &[("error", &e.to_string())]))
+                        }
                     }
                 } else {
                     self.dialog = Some(Dialog::OpenAttachmentWarning { path: file });
                 }
             }
             Link::Missing(p) => {
-                self.status = format!("Nothing at {}: the link points to a page or file that is not there", self.shown(&p));
+                self.status = crate::i18n::format_message_id(
+                    "ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21",
+                    &[("path", &self.shown(&p))],
+                );
                 self.status_is_error = true;
             }
             Link::Outside => {
-                self.status = "That link points outside the notebooks folder, so it was not followed".to_string();
+                self.status = crate::tl_id!("ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91").to_string();
                 self.status_is_error = true;
             }
         }
@@ -2614,28 +2681,29 @@ impl NoteCraftApp {
             },
             ribbon::Act::AddPrintout => {
                 let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
-                    self.say("Open a page first");
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
                     return;
                 };
-                let picker = rfd::FileDialog::new()
-                    .set_title("Choose a PDF or Office document to print out")
-                    .add_filter("PDF and Office documents", &["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods", "rtf"]);
+                let picker = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_pdf_or_office_document_to_print_out")).add_filter(
+                    crate::tl_id!("ui.pdf_and_office_documents"),
+                    &["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods", "rtf"],
+                );
                 if let Some(file) = picker.pick_file() {
                     self.add_file(&dir, &file, FileChoice::Printout);
                 }
             }
             ribbon::Act::AddFile | ribbon::Act::AddPicture => {
                 let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
-                    self.say("Open a page first");
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
                     return;
                 };
                 let mut picker = rfd::FileDialog::new().set_title(if matches!(act, ribbon::Act::AddPicture) {
-                    "Choose a picture"
+                    crate::tl_id!("ui.choose_a_picture")
                 } else {
-                    "Choose a file to attach"
+                    crate::tl_id!("ui.choose_a_file_to_attach")
                 });
                 if matches!(act, ribbon::Act::AddPicture) {
-                    picker = picker.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+                    picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
                 }
                 if let Some(file) = picker.pick_file() {
                     self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
@@ -2653,8 +2721,8 @@ impl NoteCraftApp {
                     self.set_page_appearance(Some(r), None);
                 }
                 self.say(match r {
-                    ribbon::RuleLines::None => "No lines behind the page".to_string(),
-                    other => format!("{} behind the page", other.label()),
+                    ribbon::RuleLines::None => crate::tl_id!("ui.no_lines_behind_the_page").to_string(),
+                    other => crate::i18n::format_message_id("ui.paper_behind_the_page", &[("paper", crate::tl!(other.label()))]),
                 });
             }
             ribbon::Act::ToggleAlwaysOnTop => {
@@ -2662,13 +2730,21 @@ impl NoteCraftApp {
                 // Asked for on the next frame, where the context is at hand.
                 self.window_level_pending = true;
                 let _ = self.session.settings.set("always_on_top", if self.always_on_top { "true" } else { "false" });
-                self.say(if self.always_on_top { "This window stays on top" } else { "This window behaves like the others" });
+                self.say(if self.always_on_top {
+                    crate::tl_id!("ui.this_window_stays_on_top")
+                } else {
+                    crate::tl_id!("ui.this_window_behaves_like_the_others")
+                });
             }
             ribbon::Act::TogglePanes => {
                 self.split_panes = !self.split_panes;
                 self.organisers = true;
                 let _ = self.session.settings.set("split_panes", if self.split_panes { "true" } else { "false" });
-                self.say(if self.split_panes { "Notebooks and pages in their own columns" } else { "One tree of notebooks" });
+                self.say(if self.split_panes {
+                    crate::tl_id!("ui.notebooks_and_pages_in_their_own_columns")
+                } else {
+                    crate::tl_id!("ui.one_tree_of_notebooks")
+                });
             }
             ribbon::Act::ToggleTitle => {
                 self.hide_title = !self.hide_title;
@@ -2688,7 +2764,8 @@ impl NoteCraftApp {
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::NotBuilt(what) => {
-                self.status = format!("{what} is not built yet. See the roadmap for what is coming.");
+                self.status =
+                    crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
                 self.status_is_error = false;
             }
             ribbon::Act::Tag(tag) => self.apply_tag(tag),
@@ -2716,8 +2793,11 @@ impl NoteCraftApp {
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
-                    Some(c) => format!("The page is {}", c.label().to_lowercase()),
-                    None => "The page is the theme's own colour".to_string(),
+                    Some(c) => {
+                        let colour = crate::tl!(c.label());
+                        crate::i18n::format_message_id("ui.the_page_is_colour", &[("colour", &colour.to_lowercase())])
+                    }
+                    None => crate::tl_id!("ui.the_page_is_the_theme_s_own_colour").to_string(),
                 });
             }
             ribbon::Act::Undo => self.step_back(true),
@@ -2745,17 +2825,18 @@ impl NoteCraftApp {
         match edit {
             ribbon::RackEdit::Add(tool) => {
                 if self.rack.len() >= rack::MAX_NIBS {
-                    self.say("There is no room on the rack for another tool");
+                    self.say(crate::tl_id!("ui.there_is_no_room_on_the_rack_for_another_tool"));
                     return;
                 }
                 self.rack.push(rack::new_nib(tool));
                 self.nib = self.rack.len() - 1;
                 self.pointer = ribbon::Pointer::Draw;
-                self.say(format!("Added a {}", tool.label().to_lowercase()));
+                let tool = crate::tl!(tool.label());
+                self.say(crate::i18n::format_message_id("ui.added_a_tool", &[("tool", &tool.to_lowercase())]));
             }
             ribbon::RackEdit::Remove(i) => {
                 if !rack::remove(&mut self.rack, i) {
-                    self.say("The last tool stays on the rack");
+                    self.say(crate::tl_id!("ui.the_last_tool_stays_on_the_rack"));
                     return;
                 }
                 if self.nib >= self.rack.len() {
@@ -2763,7 +2844,7 @@ impl NoteCraftApp {
                 } else if self.nib > i {
                     self.nib -= 1;
                 }
-                self.say("Took it off the rack");
+                self.say(crate::tl_id!("ui.took_it_off_the_rack"));
             }
             ribbon::RackEdit::Move(i, left) => {
                 let to = rack::shift(&mut self.rack, i, left);
@@ -2792,7 +2873,7 @@ impl NoteCraftApp {
     /// directly instead.
     fn paste_here(&mut self) {
         let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
-            self.say("Open a page first");
+            self.say(crate::tl_id!("ui.open_a_page_first"));
             return;
         };
         if let Some(picture) = self.clipboard.picture() {
@@ -2814,7 +2895,7 @@ impl NoteCraftApp {
                 pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
-                self.say("Pasted formatted content");
+                self.say(crate::tl_id!("ui.pasted_formatted_content"));
                 return;
             }
         }
@@ -2833,9 +2914,9 @@ impl NoteCraftApp {
                     }
                     _ => self.insert_in_page(&text),
                 }
-                self.say("Pasted");
+                self.say(crate::tl_id!("ui.pasted"));
             }
-            None => self.say("There is nothing on the clipboard to paste"),
+            None => self.say(crate::tl_id!("ui.there_is_nothing_on_the_clipboard_to_paste")),
         }
     }
 
@@ -2856,9 +2937,12 @@ impl NoteCraftApp {
                     Self::mark_dirty_from_blocks(ed);
                     ed.attachments = notecraft_store::assets::list(dir);
                 }
-                self.say(format!("Pasted a picture, {w} by {h}"));
+                self.say(crate::i18n::format_message_id(
+                    "ui.pasted_a_picture_width_by_height",
+                    &[("width", &w.to_string()), ("height", &h.to_string())],
+                ));
             }
-            Err(e) => self.complain(&format!("Cannot save the pasted picture: {e}")),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_save_the_pasted_picture_error", &[("error", &e.to_string())])),
         }
     }
 
@@ -2952,17 +3036,17 @@ impl NoteCraftApp {
     /// Takes the last stroke back out of the drawing on this page.
     fn ink_undo(&mut self) {
         let Some(pad) = self.pad.as_mut() else {
-            self.say("There is no drawing on this page");
+            self.say(crate::tl_id!("ui.there_is_no_drawing_on_this_page"));
             return;
         };
         if !pad.undo() {
-            self.say("There is no stroke to take back");
+            self.say(crate::tl_id!("ui.there_is_no_stroke_to_take_back"));
             return;
         }
         let left = pad.strokes();
         match pad.save() {
-            Ok(()) => self.say(format!("Took the last stroke back; {left} left")),
-            Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
+            Ok(()) => self.say(crate::i18n::format_message_id("ui.took_the_last_stroke_back_count_left", &[("count", &left.to_string())])),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
         }
         // The page stops naming ink it no longer has.
         self.sync_ink_reference();
@@ -3001,11 +3085,11 @@ impl NoteCraftApp {
         let is_page_file = self.editor.as_ref().is_some_and(|e| e.format.page_file() == name);
         let path = dir.join(name.replace('/', std::path::MAIN_SEPARATOR_STR));
         if !path.starts_with(&dir) {
-            self.complain("That file is not in this page's folder");
+            self.complain(crate::tl_id!("ui.that_file_is_not_in_this_page_s_folder"));
             return;
         }
         if let Err(e) = notecraft_store::page::write_atomic(&path, text) {
-            self.complain(&format!("Cannot write {name}: {e}"));
+            self.complain(&crate::i18n::format_message_id("ui.cannot_write_name_error", &[("name", name), ("error", &e.to_string())]));
             return;
         }
         if is_page_file {
@@ -3082,7 +3166,7 @@ impl NoteCraftApp {
             }
         }
         if nothing {
-            self.say(if back { "Nothing to undo" } else { "Nothing to redo" });
+            self.say(if back { crate::tl_id!("ui.nothing_to_undo") } else { crate::tl_id!("ui.nothing_to_redo") });
         }
     }
 
@@ -3116,21 +3200,21 @@ impl NoteCraftApp {
     fn read_table_from_gridcraft(&mut self) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
-            self.say("Click in the table first");
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
             return;
         };
         if !matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Table { .. })) {
-            self.say("Click in a table first");
+            self.say(crate::tl_id!("ui.click_in_a_table_first"));
             return;
         }
         let file = ed.dir.join(format!("table-{}.csv", at + 1));
         let Ok(text) = std::fs::read_to_string(&file) else {
             let name = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
-            self.complain(&format!("No {name} beside this page: hand the table over first"));
+            self.complain(&crate::i18n::format_message_id("ui.no_name_beside_this_page_hand_the_table_over_first", &[("name", &name)]));
             return;
         };
         let Some((table, rows, columns)) = table_from_gridcraft_csv(&text) else {
-            self.complain("That file has nothing in it to put back");
+            self.complain(crate::tl_id!("ui.that_file_has_nothing_in_it_to_put_back"));
             return;
         };
         if let Some(block) = ed.blocks.get_mut(at) {
@@ -3139,7 +3223,10 @@ impl NoteCraftApp {
         ed.caret = None;
         ed.body = pageedit::to_body(ed.format, &ed.blocks);
         Self::mark_dirty_from_blocks(ed);
-        self.say(format!("Read back {rows} rows and {columns} columns"));
+        self.say(crate::i18n::format_message_id(
+            "ui.read_back_rows_rows_and_columns_columns",
+            &[("rows", &rows.to_string()), ("columns", &columns.to_string())],
+        ));
     }
 
     /// Hands the table the caret is in to GridCraft, which is where a spreadsheet
@@ -3147,7 +3234,7 @@ impl NoteCraftApp {
     /// the same door with the open spreadsheet behind it.
     fn hand_table_to_gridcraft(&mut self) {
         let Some(exe) = self.gridcraft.clone() else {
-            self.say("GridCraft is not installed");
+            self.say(crate::tl_id!("ui.gridcraft_is_not_installed"));
             return;
         };
         let Some(ed) = self.editor.as_ref() else { return };
@@ -3156,10 +3243,11 @@ impl NoteCraftApp {
         let name = format!("table-{}", at + 1);
         match crate::gridcraft::hand_over(&exe, &ed.dir, &name, block) {
             Ok(file) => {
-                let said = format!("{} is open in GridCraft", file.file_name().unwrap_or_default().to_string_lossy());
+                let name = file.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let said = crate::i18n::format_message_id("ui.name_is_open_in_gridcraft", &[("name", &name)]);
                 self.say(&said);
             }
-            Err(e) => self.complain(&format!("Cannot open the table in GridCraft: {e}")),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_the_table_in_gridcraft_error", &[("error", &e.to_string())])),
         }
     }
 
@@ -3185,7 +3273,7 @@ impl NoteCraftApp {
     /// so it can be found again.
     fn new_gridcraft(&mut self) {
         let Some(exe) = self.gridcraft.clone() else {
-            self.say("GridCraft is not installed");
+            self.say(crate::tl_id!("ui.gridcraft_is_not_installed"));
             return;
         };
         let Some(ed) = self.editor.as_ref() else { return };
@@ -3199,16 +3287,16 @@ impl NoteCraftApp {
         }
         let file = dir.join(&name);
         if let Err(e) = std::fs::write(&file, "") {
-            self.complain(&format!("Cannot write {name}: {e}"));
+            self.complain(&crate::i18n::format_message_id("ui.cannot_write_name_error", &[("name", &name), ("error", &e.to_string())]));
             return;
         }
         match std::process::Command::new(exe).arg(&file).spawn() {
             Ok(_) => {
                 self.insert_in_page(&format!("[{name}]({name})"));
-                let said = format!("{name} is open in GridCraft");
+                let said = crate::i18n::format_message_id("ui.name_is_open_in_gridcraft", &[("name", &name)]);
                 self.say(&said);
             }
-            Err(e) => self.complain(&format!("Cannot open GridCraft: {e}")),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_gridcraft_error", &[("error", &e.to_string())])),
         }
     }
 
@@ -3261,7 +3349,7 @@ impl NoteCraftApp {
         }
         let Some(to) = last else {
             // The rules said no: a table keeps its heading row and at least one column.
-            self.say("A table keeps its heading row and at least one column");
+            self.say(crate::tl_id!("ui.a_table_keeps_its_heading_row_and_at_least_one_column"));
             return;
         };
         let text = pageedit::cell_text(block, to).unwrap_or_default();
@@ -3274,26 +3362,26 @@ impl NoteCraftApp {
     /// sheet to put anywhere first.
     fn ink_insert(&mut self) {
         if self.editor.is_none() {
-            self.say("Open a page first");
+            self.say(crate::tl_id!("ui.open_a_page_first"));
             return;
         }
         self.pointer = ribbon::Pointer::Draw;
         self.ribbon_tab = "Draw".to_string();
-        self.say("Write anywhere on the page");
+        self.say(crate::tl_id!("ui.write_anywhere_on_the_page"));
     }
 
     /// Writes the drawing again with no pen readings in it, for sending somewhere else.
     fn ink_export_plain(&mut self) {
         let Some(pad) = self.pad.as_ref() else {
-            self.say("There is no drawing on this page");
+            self.say(crate::tl_id!("ui.there_is_no_drawing_on_this_page"));
             return;
         };
         match pad.save_plain() {
             Ok(path) => {
                 let shown = self.shown(&path);
-                self.say(format!("Saved the drawing as a picture: {shown}"));
+                self.say(crate::i18n::format_message_id("ui.saved_the_drawing_as_a_picture_path", &[("path", &shown)]));
             }
-            Err(e) => self.complain(&format!("Cannot write the picture: {e}")),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())])),
         }
     }
 
@@ -3301,7 +3389,7 @@ impl NoteCraftApp {
     fn apply_mark(&mut self, mark: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
@@ -3351,12 +3439,12 @@ impl NoteCraftApp {
     fn apply_direction(&mut self, dir: Option<notecraft_model::Dir>) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
         if !pageedit::set_direction(&mut ed.blocks, at, dir) {
-            self.say("A direction goes on a paragraph of text");
+            self.say(crate::tl_id!("ui.a_direction_goes_on_a_paragraph_of_text"));
             return;
         }
         ed.rebuild_body();
@@ -3368,9 +3456,9 @@ impl NoteCraftApp {
         }
         Self::mark_dirty_from_blocks(ed);
         self.say(match dir {
-            Some(d) if d.is_rtl() => "This paragraph reads right to left",
-            Some(_) => "This paragraph reads left to right",
-            None => "This paragraph reads whichever way its words do",
+            Some(d) if d.is_rtl() => crate::tl_id!("ui.this_paragraph_reads_right_to_left"),
+            Some(_) => crate::tl_id!("ui.this_paragraph_reads_left_to_right"),
+            None => crate::tl_id!("ui.this_paragraph_reads_whichever_way_its_words_do"),
         });
     }
 
@@ -3382,16 +3470,16 @@ impl NoteCraftApp {
     /// drawn, so the file another program reads is the sentences the writer typed.
     fn apply_justify(&mut self, strength: notecraft_model::justify::Strength) {
         let Some(ed) = self.editor.as_ref() else {
-            self.say("Open a page first");
+            self.say(crate::tl_id!("ui.open_a_page_first"));
             return;
         };
         let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
         if !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Paragraph(_))) {
-            self.say("Justification goes on a paragraph of text");
+            self.say(crate::tl_id!("ui.justification_goes_on_a_paragraph_of_text"));
             return;
         }
         // Asking for the strength a paragraph already has turns justification off, which
@@ -3413,10 +3501,10 @@ impl NoteCraftApp {
                 ed.justified = marked;
             }
             self.say(match want {
-                Some(notecraft_model::justify::Strength::Low) => "This paragraph fills the column, stretched lightly",
-                Some(notecraft_model::justify::Strength::Medium) => "This paragraph fills the column",
-                Some(notecraft_model::justify::Strength::High) => "This paragraph fills the column, stretched hard",
-                None => "This paragraph is ragged again",
+                Some(notecraft_model::justify::Strength::Low) => crate::tl_id!("ui.this_paragraph_fills_the_column_stretched_lightly"),
+                Some(notecraft_model::justify::Strength::Medium) => crate::tl_id!("ui.this_paragraph_fills_the_column"),
+                Some(notecraft_model::justify::Strength::High) => crate::tl_id!("ui.this_paragraph_fills_the_column_stretched_hard"),
+                None => crate::tl_id!("ui.this_paragraph_is_ragged_again"),
             });
         }
     }
@@ -3424,7 +3512,7 @@ impl NoteCraftApp {
     /// Which way the whole page reads. It is written into the page's own file.
     fn apply_page_direction(&mut self, dir: Option<notecraft_model::Dir>) {
         let Some(ed) = self.editor.as_ref() else {
-            self.say("Open a page first");
+            self.say(crate::tl_id!("ui.open_a_page_first"));
             return;
         };
         let path = path_str(&ed.dir);
@@ -3435,9 +3523,9 @@ impl NoteCraftApp {
                 ed.page_dir = dir;
             }
             self.say(match dir {
-                Some(d) if d.is_rtl() => "This page reads right to left",
-                Some(_) => "This page reads left to right",
-                None => "Every line of this page decides for itself",
+                Some(d) if d.is_rtl() => crate::tl_id!("ui.this_page_reads_right_to_left"),
+                Some(_) => crate::tl_id!("ui.this_page_reads_left_to_right"),
+                None => crate::tl_id!("ui.every_line_of_this_page_decides_for_itself"),
             });
         }
     }
@@ -3446,7 +3534,7 @@ impl NoteCraftApp {
     fn apply_embedding(&mut self, dir: notecraft_model::Dir) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
@@ -3460,9 +3548,9 @@ impl NoteCraftApp {
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
         self.say(if dir.is_rtl() {
-            "This run reads right to left. A mixed line is still drawn in one order; see the roadmap"
+            crate::tl_id!("ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074")
         } else {
-            "This run reads left to right. A mixed line is still drawn in one order; see the roadmap"
+            crate::tl_id!("ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f")
         });
     }
 
@@ -3470,7 +3558,7 @@ impl NoteCraftApp {
     fn apply_block_kind(&mut self, kind: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_ref() else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
@@ -3492,12 +3580,12 @@ impl NoteCraftApp {
     fn apply_tag(&mut self, tag: notecraft_model::Tag) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
-            self.status = "Click in the page first, then use the ribbon".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
         if !pageedit::set_tag(&mut ed.blocks, at, tag) {
-            self.say("A tag goes on a line of text");
+            self.say(crate::tl_id!("ui.a_tag_goes_on_a_line_of_text"));
             return;
         }
         ed.rebuild_body();
@@ -3508,7 +3596,7 @@ impl NoteCraftApp {
             }
         }
         Self::mark_dirty_from_blocks(ed);
-        self.say(format!("{} tag", tag.label()));
+        self.say(crate::i18n::format_message_id("ui.tag_tag", &[("tag", crate::tl!(tag.label()))]));
     }
 
     /// Cut or copy what is selected in the block the caret is in.
@@ -3604,7 +3692,7 @@ impl NoteCraftApp {
         let end = caret.text.chars().count();
         caret.selection = (end, 0);
         caret.place = None;
-        self.say("Paragraph selected");
+        self.say(crate::tl_id!("ui.paragraph_selected"));
     }
 
     fn clipboard(&mut self, which: &str) {
@@ -3614,7 +3702,7 @@ impl NoteCraftApp {
         if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
             let picked = pageedit::span_text(&ed.blocks, open);
             if picked.is_empty() {
-                self.say("Select some words first");
+                self.say(crate::tl_id!("ui.select_some_words_first"));
                 return;
             }
             let copied = pageedit::blocks_to_paste(&picked);
@@ -3628,18 +3716,18 @@ impl NoteCraftApp {
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
             }
-            self.say(if which == "cut" { "Cut" } else { "Copied" });
+            self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
             return;
         }
         let Some(caret) = ed.caret.as_mut() else {
-            self.status = "Click in the page first".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first").into();
             self.status_is_error = false;
             return;
         };
         let (a, b) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
         let picked: String = caret.text.chars().skip(a).take(b.saturating_sub(a)).collect();
         if picked.is_empty() {
-            self.status = "Select some words first".into();
+            self.status = crate::tl_id!("ui.select_some_words_first").into();
             self.status_is_error = false;
             return;
         }
@@ -3658,19 +3746,19 @@ impl NoteCraftApp {
             ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
         }
-        self.say(if which == "cut" { "Cut" } else { "Copied" });
+        self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
     }
 
     /// More or less indent on the list item the caret is in.
     fn indent_block(&mut self, deeper: bool) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(at) = ed.caret.as_ref().map(|c| c.block) else {
-            self.status = "Click in the page first".into();
+            self.status = crate::tl_id!("ui.click_in_the_page_first").into();
             self.status_is_error = false;
             return;
         };
         if !pageedit::indent(&mut ed.blocks, at, deeper) {
-            self.say("Only a list item can be indented");
+            self.say(crate::tl_id!("ui.only_a_list_item_can_be_indented"));
             return;
         }
         ed.rebuild_body();
@@ -3695,7 +3783,7 @@ impl NoteCraftApp {
         let Some(ed) = self.editor.as_mut() else { return };
         let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len());
         if !pageedit::insert_block(&mut ed.blocks, at, what) {
-            self.say("That is not something a page can hold");
+            self.say(crate::tl_id!("ui.that_is_not_something_a_page_can_hold"));
             return;
         }
         ed.rebuild_body();
@@ -3755,22 +3843,27 @@ impl NoteCraftApp {
         } else {
             icons::paint(&painter, icon_rect, Icon::Sun, tokens.accent);
         }
-        let label = format!("Theme: {}", current.label());
+        let theme_label = current.label();
+        let label = crate::i18n::format_message_id("ui.theme_theme_2", &[("theme", &theme_label)]);
         let enabled = ui.is_enabled();
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label));
-        let resp = resp.on_hover_text(format!("{} theme. Click to change it.", current.label()));
+        let theme_label = current.label();
+        let tip = crate::i18n::format_message_id("ui.theme_theme_click_to_change_it", &[("theme", &theme_label)]);
+        let resp = resp.on_hover_text(tip);
         egui::Popup::menu(&resp).show(|ui| {
             theme_grid(ui, current, &mut pick, &mut follow);
         });
         // The same chooser, as a window, for the ribbon's Theme button.
         if self.theme_window {
             let mut open = true;
-            egui::Window::new("Theme").collapsible(false).resizable(false).open(&mut open).anchor(Align2::RIGHT_TOP, vec2(-12.0, 120.0)).show(
-                ui.ctx(),
-                |ui| {
+            egui::Window::new(crate::tl_id!("ui.theme"))
+                .collapsible(false)
+                .resizable(false)
+                .open(&mut open)
+                .anchor(Align2::RIGHT_TOP, vec2(-12.0, 120.0))
+                .show(ui.ctx(), |ui| {
                     theme_grid(ui, current, &mut pick, &mut follow);
-                },
-            );
+                });
             if !open || pick.is_some() {
                 self.theme_window = false;
             }
@@ -3789,6 +3882,54 @@ impl NoteCraftApp {
         }
     }
 
+    /// A compact language picker beside the header's theme control.
+    fn language_menu(&mut self, ui: &mut Ui, tokens: Tokens) {
+        let languages = crate::i18n::available_languages();
+        let active_code = if self.ui_language == crate::i18n::AUTO { crate::i18n::current_code() } else { self.ui_language.clone() };
+        let active_name =
+            languages.iter().find(|language| language.code == active_code).map_or_else(|| active_code.clone(), |language| language.name.clone());
+        let badge = if active_code == "en-XA" {
+            "XA".to_string()
+        } else if active_code == "ar-XB" {
+            "XB".to_string()
+        } else {
+            active_code.split('-').next().unwrap_or("en").to_ascii_uppercase()
+        };
+        let label = crate::i18n::format_message_id("ui.interface_language_language", &[("language", &active_name)]);
+        let (rect, resp) = ui.allocate_exact_size(vec2(52.0, 24.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, 4.0, tokens.row_hover);
+        }
+        let flag_rect = egui::Rect::from_min_size(rect.left_top() + vec2(5.0, 5.0), vec2(20.0, 14.0));
+        crate::language_flag::paint_at(ui, flag_rect, &active_code);
+        ui.painter().text(rect.left_center() + vec2(36.0, 0.0), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.5), tokens.text);
+        let enabled = ui.is_enabled();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label));
+        let tip = crate::i18n::format_message_id("ui.language_click_to_change_it", &[("language", &active_name)]);
+        let resp = resp.on_hover_text(tip);
+        let mut picked = None;
+        egui::Popup::menu(&resp).style(crate::theme::picker_popup_style(tokens)).show(|ui| {
+            let automatic = crate::tl_id!("ui.automatic_system_language");
+            if ui.selectable_label(self.ui_language == crate::i18n::AUTO, automatic).clicked() {
+                picked = Some(crate::i18n::AUTO.to_string());
+            }
+            ui.separator();
+            for language in &languages {
+                let mut clicked = false;
+                ui.horizontal(|ui| {
+                    crate::language_flag::paint(ui, &language.code);
+                    clicked = ui.selectable_label(self.ui_language == language.code, &language.name).clicked();
+                });
+                if clicked {
+                    picked = Some(language.code.clone());
+                }
+            }
+        });
+        if let Some(language) = picked {
+            self.set_ui_language(language);
+        }
+    }
+
     fn search_popup(&mut self, ctx: &Context) {
         if self.search.trim().is_empty() {
             return;
@@ -3798,7 +3939,7 @@ impl NoteCraftApp {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_width(420.0);
                 if self.hits.is_empty() {
-                    ui.weak("No pages match.");
+                    ui.weak(crate::tl_id!("ui.no_pages_match"));
                 }
                 for h in &self.hits {
                     let r = ui.vertical(|ui| {
@@ -3848,16 +3989,16 @@ impl NoteCraftApp {
                 // In the one-tree layout the same button splits the panel and hides the
                 // notebooks, which is what pressing it in OneNote does.
                 split_now = Self::bars_button_at(ui).clicked();
-                ui.label(egui::RichText::new("NOTEBOOKS").small().color(self.tokens.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
             });
             ui.horizontal_wrapped(|ui| {
-                if ui.small_button("New notebook").clicked() {
+                if ui.small_button(crate::tl_id!("ui.new_notebook")).clicked() {
                     self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
                 }
-                if ui.small_button("Expand all").on_hover_text("Open every level").clicked() {
+                if ui.small_button(crate::tl_id!("ui.expand_all")).on_hover_text(crate::tl_id!("ui.open_every_level")).clicked() {
                     self.open = self.collect_branches().into_iter().collect();
                 }
-                if ui.small_button("Collapse all").clicked() {
+                if ui.small_button(crate::tl_id!("ui.collapse_all")).clicked() {
                     self.open.clear();
                 }
             });
@@ -3870,7 +4011,7 @@ impl NoteCraftApp {
             };
             egui::ScrollArea::vertical().auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
                 if self.session.tree().is_empty() {
-                    ui.weak("No notebooks yet. Use \"New notebook\".");
+                    ui.weak(crate::tl_id!("ui.no_notebooks_yet_use_new_notebook"));
                 }
                 for n in self.session.tree() {
                     self.draw_node(ui, n, 0, &mut acts);
@@ -3903,23 +4044,23 @@ impl NoteCraftApp {
             match section {
                 // Under the pages: a page at the end of this section.
                 Some(path) => {
-                    if ui.button("New page...").clicked() {
+                    if ui.button(crate::tl_id!("ui.new_page_2")).clicked() {
                         acts.push(Act::AddKind(path.to_path_buf(), NodeKind::Section, NodeKind::Page));
                         ui.close();
                     }
                 }
                 // Under the notebooks: a notebook, and the ways into the folder itself.
                 None => {
-                    if ui.button("New notebook...").clicked() {
+                    if ui.button(crate::tl_id!("ui.new_notebook_2")).clicked() {
                         acts.push(Act::NewNotebook);
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Open a folder...").clicked() {
+                    if ui.button(crate::tl_id!("ui.open_a_folder")).clicked() {
                         choose = true;
                         ui.close();
                     }
-                    if ui.button("Show the notebooks folder").clicked() {
+                    if ui.button(crate::tl_id!("ui.show_the_notebooks_folder")).clicked() {
                         reveal = true;
                         ui.close();
                     }
@@ -3966,8 +4107,9 @@ impl NoteCraftApp {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let enabled = ui.is_enabled();
-        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, "Add a page here"));
-        let resp = resp.on_hover_text("A page here");
+        let name = crate::tl_id!("ui.add_a_page_here");
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+        let resp = resp.on_hover_text(crate::tl_id!("ui.a_page_here"));
         if resp.clicked() {
             // Halfway between the two, or ten past the last one.
             let order = match (before, after) {
@@ -3993,7 +4135,7 @@ impl NoteCraftApp {
         icons::paint(&painter, egui::Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), Icon::Bars, colour);
         let enabled = ui.is_enabled();
         resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, BARS));
-        resp.on_hover_text("Show or hide the notebooks column")
+        resp.on_hover_text(crate::tl_id!("ui.show_or_hide_the_notebooks_column"))
     }
 
     /// The side panel as two columns: the organisers (notebooks, section groups and
@@ -4012,12 +4154,12 @@ impl NoteCraftApp {
                 // OneNote keeps it, and hides this column.
                 ui.horizontal(|ui| {
                     toggle |= Self::bars_button_at(ui).clicked();
-                    ui.label(egui::RichText::new("NOTEBOOKS").small().color(self.tokens.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
                 });
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
-                        ui.weak("No notebooks yet. Use \"New notebook\".");
+                        ui.weak(crate::tl_id!("ui.no_notebooks_yet_use_new_notebook"));
                     }
                     for n in self.session.tree() {
                         self.draw_row(ui, n, 0, acts, false);
@@ -4037,7 +4179,7 @@ impl NoteCraftApp {
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        if ui.button("Add page").on_hover_text("A new page in this section").clicked() {
+                        if ui.button(crate::tl_id!("ui.add_page")).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
                             acts.push(Act::Add(path.clone(), NodeKind::Section));
                         }
                     });
@@ -4046,7 +4188,7 @@ impl NoteCraftApp {
                     egui::ScrollArea::vertical().id_salt("pages").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                         let list: Vec<&Node> = pages.iter().filter(|p| p.info.kind == NodeKind::Page).collect();
                         if list.is_empty() {
-                            ui.weak("No pages in this section yet.");
+                            ui.weak(crate::tl_id!("ui.no_pages_in_this_section_yet"));
                         }
                         // A line between every pair, and above the first and below the
                         // last: hovering one offers a page in that place.
@@ -4065,7 +4207,7 @@ impl NoteCraftApp {
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        ui.weak("Choose a section to see its pages.");
+                        ui.weak(crate::tl_id!("ui.choose_a_section_to_see_its_pages"));
                     });
                 }
             }
@@ -4082,10 +4224,12 @@ impl NoteCraftApp {
                     ui.add_space(ui.available_height() * 0.22);
                     ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(128.0, 128.0)));
                     ui.add_space(8.0);
-                    ui.heading("NoteCraft");
-                    ui.label("Notes as plain folders. Open a page, or create a notebook to start.");
+                    ui.heading(crate::tl_id!("ui.notecraft"));
+                    ui.label(crate::tl_id!("ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start"));
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(format!("Notebooks folder: {}", self.shown(self.session.root()))).small().color(self.tokens.muted));
+                    let folder = self.shown(self.session.root());
+                    let message = crate::i18n::format_message_id("ui.notebooks_folder_folder", &[("folder", &folder)]);
+                    ui.label(egui::RichText::new(message).small().color(self.tokens.muted));
                 });
                 return;
             }
@@ -4209,16 +4353,19 @@ impl NoteCraftApp {
                 // it, and they stay out of the page.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let state = if ed.dirty_since.is_some() {
-                        "Editing...".to_string()
+                        crate::tl_id!("ui.editing").to_string()
                     } else {
-                        ed.last_saved.clone().map(|t| format!("Saved {t}")).unwrap_or_else(|| "Saved".into())
+                        ed.last_saved
+                            .clone()
+                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
+                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
                     };
                     ui.label(egui::RichText::new(state).small().color(tokens.muted));
                     ui.label(egui::RichText::new(ed.format.label()).small().color(tokens.muted));
                 });
             });
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("Drop a file onto the page to add it").small().color(tokens.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.drop_a_file_onto_the_page_to_add_it")).small().color(tokens.muted));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // The page controls, in OneNote's order: full page, search, source.
                     let full = icon_toggle(
@@ -4226,13 +4373,13 @@ impl NoteCraftApp {
                         if full_page { Icon::ExitFullPage } else { Icon::FullPage },
                         full_page,
                         &tokens,
-                        "Full page",
-                        if full_page { "Show the notebooks again" } else { "Give the page the whole window" },
+                        crate::tl_id!("ui.full_page"),
+                        if full_page { crate::tl_id!("ui.show_the_notebooks_again") } else { crate::tl_id!("ui.give_the_page_the_whole_window") },
                     );
                     if full.clicked() {
                         toggle_full_page = true;
                     }
-                    if icon_toggle(ui, Icon::Search, false, &tokens, "Search", "Search all pages").clicked() {
+                    if icon_toggle(ui, Icon::Search, false, &tokens, crate::tl_id!("ui.search"), crate::tl_id!("ui.search_all_pages")).clicked() {
                         focus_search = true;
                     }
                     if icon_toggle(
@@ -4240,8 +4387,8 @@ impl NoteCraftApp {
                         Icon::Code,
                         show_source,
                         &tokens,
-                        "Page source",
-                        if show_source { "Hide the page source" } else { "Show the page source" },
+                        crate::tl_id!("ui.page_source"),
+                        if show_source { crate::tl_id!("ui.hide_the_page_source") } else { crate::tl_id!("ui.show_the_page_source") },
                     )
                     .clicked()
                     {
@@ -4317,6 +4464,11 @@ impl NoteCraftApp {
                             let ink_owns_canvas = pen.pointer != ribbon::Pointer::Write;
                             if ui.input(|i| i.pointer.any_pressed()) && !ink_owns_canvas {
                                 ed.across = None;
+                            }
+                            // A page without a saved arrangement is one responsive sheet of
+                            // text. Keep its default box aligned with the available page width.
+                            if !ed.arranged && ed.boxes.len() == 1 {
+                                ed.boxes[0].width = crate::containers::responsive_default_width(ui.available_width(), zoom_scale);
                             }
                             let mut moved = if ink_owns_canvas {
                                 crate::containers::show_ink_view(
@@ -4402,7 +4554,7 @@ impl NoteCraftApp {
                             }
                             ui.add_space(14.0);
                             ui.label(
-                                egui::RichText::new("This page holds markup NoteCraft does not edit yet, so it is shown as it reads.")
+                                egui::RichText::new(crate::tl_id!("ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92"))
                                     .small()
                                     .color(tokens.muted),
                             );
@@ -4465,17 +4617,21 @@ impl NoteCraftApp {
             match action {
                 crate::codeview::FileAction::CopyPath(path) => {
                     ui.ctx().copy_text(path);
-                    self.say("Full path copied");
+                    self.say(crate::tl_id!("ui.full_path_copied"));
                 }
                 crate::codeview::FileAction::OpenFolder(path) => match open_folder(&path) {
-                    Ok(()) => self.say("Opened the containing folder"),
-                    Err(e) => self.complain(&format!("Could not open the containing folder: {e}")),
+                    Ok(()) => self.say(crate::tl_id!("ui.opened_the_containing_folder")),
+                    Err(e) => {
+                        self.complain(&crate::i18n::format_message_id("ui.could_not_open_the_containing_folder_error", &[("error", &e.to_string())]))
+                    }
                 },
                 crate::codeview::FileAction::OpenShell(path) => {
                     if self.open_attachment_warning_suppressed {
                         match open_file_for_viewer(&path) {
-                            Ok(()) => self.say("Opened using the associated application"),
-                            Err(e) => self.complain(&format!("Could not open the file: {e}")),
+                            Ok(()) => self.say(crate::tl_id!("ui.opened_using_the_associated_application")),
+                            Err(e) => {
+                                self.complain(&crate::i18n::format_message_id("ui.could_not_open_the_file_error", &[("error", &e.to_string())]))
+                            }
                         }
                     } else {
                         self.dialog = Some(Dialog::OpenAttachmentWarning { path });
@@ -4490,7 +4646,7 @@ impl NoteCraftApp {
                 }
                 crate::codeview::FileAction::AddFile => {
                     if let Some(dir) = self.editor.as_ref().map(|ed| ed.dir.clone())
-                        && let Some(file) = rfd::FileDialog::new().set_title("Add file to this page").pick_file()
+                        && let Some(file) = rfd::FileDialog::new().set_title(crate::tl_id!("ui.add_file_to_this_page")).pick_file()
                     {
                         self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
                     }
@@ -4521,8 +4677,8 @@ impl NoteCraftApp {
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
             match pad.save() {
-                Ok(()) => self.say(format!("Drawing saved, {strokes} strokes")),
-                Err(e) => self.complain(&format!("Cannot write the drawing: {e}")),
+                Ok(()) => self.say(crate::i18n::format_message_id("ui.drawing_saved_count_strokes", &[("count", &strokes.to_string())])),
+                Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
             }
             self.sync_ink_reference();
         }
@@ -4536,7 +4692,7 @@ impl NoteCraftApp {
             if let Some(ed) = self.editor.as_mut() {
                 ed.title = t;
             }
-            self.say("Title saved");
+            self.say(crate::tl_id!("ui.title_saved"));
         }
     }
 
@@ -4544,30 +4700,32 @@ impl NoteCraftApp {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let color = if self.status_is_error { self.tokens.warn } else { self.tokens.muted };
-                ui.label(egui::RichText::new(&self.status).color(color));
+                ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&self.status)).color(color));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} notebooks, {nodes} items  |  {}",
-                            self.session.tree().len(),
-                            self.shown(self.session.root())
-                        ))
-                        .small()
-                        .color(self.tokens.muted),
+                    let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);
+                    let items = crate::i18n::format_count_id("ui.n_item_n_items", nodes as u64);
+                    let folder = self.shown(self.session.root());
+                    let summary = crate::i18n::format_message_id(
+                        "ui.notebooks_items_folder",
+                        &[("notebooks", &notebooks), ("items", &items), ("folder", &folder)],
                     );
+                    ui.label(egui::RichText::new(summary).small().color(self.tokens.muted));
                     ui.separator();
                     let (current, source) = self.session.settings.global_format();
                     let mut chosen = current;
-                    egui::ComboBox::from_label("Default format").selected_text(current.label()).show_ui(ui, |ui| {
+                    egui::ComboBox::from_label(crate::tl_id!("ui.default_format")).selected_text(current.label()).show_ui(ui, |ui| {
                         for f in PageFormat::ALL {
                             ui.selectable_value(&mut chosen, f, f.label());
                         }
                     });
-                    ui.label(egui::RichText::new(format!("({})", source.label())).small().color(self.tokens.muted));
-                    ui.label(egui::RichText::new("New pages:").small().color(self.tokens.muted));
+                    ui.label(egui::RichText::new(format!("({})", crate::tl!(source.label()))).small().color(self.tokens.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.new_pages")).small().color(self.tokens.muted));
                     if chosen != current && self.run("settings.default_format.set", &params(&[("format", chosen.id())])).is_some() {
-                        self.say(format!("New pages use {} unless the notebook or section says otherwise", chosen.label()));
+                        self.say(crate::i18n::format_message_id(
+                            "ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6",
+                            &[("format", chosen.label())],
+                        ));
                     }
                 });
             });
@@ -4599,23 +4757,23 @@ impl NoteCraftApp {
             Dialog::ClearTelemetry { path } => {
                 let mut clear = false;
                 let mut cancel = false;
-                egui::Window::new("Clear telemetry")
+                egui::Window::new(crate::tl_id!("ui.clear_telemetry"))
                     .collapsible(false)
                     .resizable(false)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
                         ui.set_min_width(440.0);
-                        modal_title(ui, &self.tokens, "Clear telemetry");
-                        ui.label("Clear all local telemetry sessions and exported telemetry ZIP files?");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.clear_telemetry"));
+                        ui.label(crate::tl_id!("ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d"));
                         ui.add_space(5.0);
-                        ui.colored_label(self.tokens.warn, "This cannot be undone.");
+                        ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_cannot_be_undone"));
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 cancel = true;
                             }
-                            if modal_button(ui, &self.tokens, "Clear telemetry", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.clear_telemetry"), true).clicked() {
                                 clear = true;
                             }
                         });
@@ -4638,7 +4796,7 @@ impl NoteCraftApp {
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                     },
                 );
-                egui::Window::new("Welcome to NoteCraft")
+                egui::Window::new(crate::tl_id!("ui.welcome_to_notecraft"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4646,26 +4804,27 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Welcome to NoteCraft");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.welcome_to_notecraft"));
                         ui.set_min_width(520.0);
-                        ui.label("Thank you for trying NoteCraft!");
+                        ui.label(crate::tl_id!("ui.thank_you_for_trying_notecraft"));
                         ui.add_space(6.0);
-                        ui.label(
-                            "Privacy is our top priority. All logs and telemetry stay on this device. NoteCraft never sends them automatically.",
+                        ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
+                        ui.add_space(6.0);
+                        ui.label(crate::tl_id!("ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0"));
+                        egui::ComboBox::from_label(crate::tl_id!("ui.local_collection_level")).selected_text(crate::tl!(level.as_str())).show_ui(
+                            ui,
+                            |ui| {
+                                for choice in ["none", "usage", "warning", "error", "debug"] {
+                                    ui.selectable_value(level, choice.into(), crate::tl!(choice));
+                                }
+                            },
                         );
-                        ui.add_space(6.0);
-                        ui.label("Choose a local collection level. Logging is off by default in release builds.");
-                        egui::ComboBox::from_label("Local collection level").selected_text(level.as_str()).show_ui(ui, |ui| {
-                            for choice in ["none", "usage", "warning", "error", "debug"] {
-                                ui.selectable_value(level, choice.into(), choice);
-                            }
-                        });
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Accept", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.accept"), true).clicked() {
                                 accepted = true;
                             }
-                            if modal_button(ui, &self.tokens, "Deny", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.deny"), false).clicked() {
                                 denied = true;
                             }
                         });
@@ -4692,12 +4851,12 @@ impl NoteCraftApp {
                     .show(ctx, |ui| {
                         modal_title(ui, &self.tokens, title.as_str());
                         ui.set_min_width(420.0);
-                        ui.label(message.as_str());
+                        ui.label(crate::i18n::pseudo_dynamic(message));
                         ui.add_space(8.0);
-                        ui.checkbox(suppress, "Don't show this again in this session");
-                        ui.checkbox(suppress_forever, "Don't show this ever");
+                        ui.checkbox(suppress, crate::tl_id!("ui.don_t_show_this_again_in_this_session"));
+                        ui.checkbox(suppress_forever, crate::tl_id!("ui.don_t_show_this_ever"));
                         ui.add_space(12.0);
-                        if modal_button(ui, &self.tokens, "OK", true).clicked() {
+                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.ok"), true).clicked() {
                             ok = true;
                         }
                     });
@@ -4714,7 +4873,7 @@ impl NoteCraftApp {
             Dialog::ResetPreferences => {
                 let mut reset = false;
                 let mut cancel = false;
-                egui::Window::new("Reset app preferences")
+                egui::Window::new(crate::tl_id!("ui.reset_app_preferences"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4722,25 +4881,27 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Reset app preferences");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.reset_app_preferences"));
                         ui.set_min_width(460.0);
-                        ui.label("Reset NoteCraft's saved preferences to their built-in defaults?");
+                        ui.label(crate::tl_id!("ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults"));
                         ui.add_space(6.0);
-                        ui.colored_label(self.tokens.warn, "This does not delete notebooks or pages. It cannot be undone.");
+                        ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone"));
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Reset preferences", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.reset_preferences"), true).clicked() {
                                 reset = true;
                             }
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 cancel = true;
                             }
                         });
                     });
                 if reset {
                     match self.session.settings.reset() {
-                        Ok(()) => self.say("App preferences reset. Restart NoteCraft to apply every default."),
-                        Err(e) => self.complain(&format!("Could not reset app preferences: {e}")),
+                        Ok(()) => self.say(crate::tl_id!("ui.app_preferences_reset_restart_notecraft_to_apply_every_default")),
+                        Err(e) => {
+                            self.complain(&crate::i18n::format_message_id("ui.could_not_reset_app_preferences_error", &[("error", &e.to_string())]))
+                        }
                     }
                     keep = false;
                 } else if cancel {
@@ -4759,7 +4920,7 @@ impl NoteCraftApp {
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                     });
-                egui::Window::new("Attachment recovery")
+                egui::Window::new(crate::tl_id!("ui.attachment_recovery"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4767,19 +4928,21 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Attachment icon missing");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.attachment_icon_missing"));
                         ui.set_min_width(520.0);
-                        ui.label(egui::RichText::new(format!("NoteCraft found an attachment without its generated icon:\n{name}")).strong());
+                        let message =
+                            crate::i18n::format_message_id("ui.notecraft_found_an_attachment_without_its_generated_icon_name", &[("name", name)]);
+                        ui.label(egui::RichText::new(message).strong());
                         ui.add_space(6.0);
-                        ui.label("The original file is still safe. NoteCraft can regenerate the icon beside it.");
+                        ui.label(crate::tl_id!("ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a"));
                         ui.add_space(8.0);
-                        ui.checkbox(&mut suppress, "Do not warn about similar missing icons again this session");
+                        ui.checkbox(&mut suppress, crate::tl_id!("ui.do_not_warn_about_similar_missing_icons_again_this_session"));
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Repair icon", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.repair_icon"), true).clicked() {
                                 repair = true;
                             }
-                            if modal_button(ui, &self.tokens, "Leave it", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.leave_it"), false).clicked() {
                                 leave = true;
                             }
                         });
@@ -4795,11 +4958,14 @@ impl NoteCraftApp {
                     }) {
                         Ok(()) => {
                             log::info!("repaired missing attachment icon and reference: page={:?} attachment={name:?}", page);
-                            self.say(format!("Repaired the attachment icon for {name}"));
+                            self.say(crate::i18n::format_message_id("ui.repaired_the_attachment_icon_for_name", &[("name", name)]));
                         }
                         Err(e) => {
                             log::error!("could not repair missing attachment icon: page={:?} attachment={name:?} error={e}", page);
-                            self.complain(&format!("Could not repair the icon for {name}: {e}"));
+                            self.complain(&crate::i18n::format_message_id(
+                                "ui.could_not_repair_the_icon_for_name_error",
+                                &[("name", name), ("error", &e.to_string())],
+                            ));
                         }
                     }
                     keep = false;
@@ -4823,7 +4989,7 @@ impl NoteCraftApp {
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                     });
-                egui::Window::new("Attachment recovery")
+                egui::Window::new(crate::tl_id!("ui.attachment_recovery"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4831,19 +4997,21 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Attachment not linked");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.attachment_not_linked"));
                         ui.set_min_width(520.0);
-                        ui.label(egui::RichText::new(format!("NoteCraft found an attachment that is not referenced by this page:\n{name}")).strong());
+                        let message =
+                            crate::i18n::format_message_id("ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257", &[("name", name)]);
+                        ui.label(egui::RichText::new(message).strong());
                         ui.add_space(6.0);
-                        ui.label("The file is safe. NoteCraft can append a link to it at the end of the page.");
+                        ui.label(crate::tl_id!("ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716"));
                         ui.add_space(8.0);
-                        ui.checkbox(&mut suppress, "Do not warn about similar attachment issues again this session");
+                        ui.checkbox(&mut suppress, crate::tl_id!("ui.do_not_warn_about_similar_attachment_issues_again_this_session"));
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Append link", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.append_link"), true).clicked() {
                                 restore = true;
                             }
-                            if modal_button(ui, &self.tokens, "Leave it", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.leave_it"), false).clicked() {
                                 leave = true;
                             }
                         });
@@ -4853,12 +5021,15 @@ impl NoteCraftApp {
                     match self.repair_attachment_reference(page, name) {
                         Ok(true) => {
                             log::info!("restored unreferenced attachment link: page={:?} attachment={name:?}", page);
-                            self.say(format!("Added a link to {name} at the end of the page"));
+                            self.say(crate::i18n::format_message_id("ui.added_a_link_to_name_at_the_end_of_the_page", &[("name", name)]));
                         }
                         Ok(false) => log::debug!("attachment recovery found no change needed: page={:?} attachment={name:?}", page),
                         Err(e) => {
                             log::error!("could not restore unreferenced attachment link: page={:?} attachment={name:?} error={e}", page);
-                            self.complain(&format!("Could not restore the link for {name}: {e}"));
+                            self.complain(&crate::i18n::format_message_id(
+                                "ui.could_not_restore_the_link_for_name_error",
+                                &[("name", name), ("error", &e.to_string())],
+                            ));
                         }
                     }
                     keep = false;
@@ -4882,7 +5053,7 @@ impl NoteCraftApp {
                             ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                     });
-                egui::Window::new("Open attachment")
+                egui::Window::new(crate::tl_id!("ui.open_attachment"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4890,21 +5061,21 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Open attachment");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.open_attachment"));
                         ui.set_min_width(520.0);
-                        ui.label(egui::RichText::new("This file will be opened by its associated application.").strong());
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.this_file_will_be_opened_by_its_associated_application")).strong());
                         ui.add_space(6.0);
                         ui.label(self.shown(path).to_string());
                         ui.add_space(6.0);
-                        ui.label("Only open it if you trust the file and the person who created it.");
+                        ui.label(crate::tl_id!("ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it"));
                         ui.add_space(8.0);
-                        ui.checkbox(&mut suppress, "Do not warn again for this file type this session");
+                        ui.checkbox(&mut suppress, crate::tl_id!("ui.do_not_warn_again_for_this_file_type_this_session"));
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Open", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.open"), true).clicked() {
                                 open = true;
                             }
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 cancel = true;
                             }
                         });
@@ -4912,8 +5083,8 @@ impl NoteCraftApp {
                 if open {
                     self.open_attachment_warning_suppressed = suppress;
                     match open_file_for_viewer(path) {
-                        Ok(()) => self.say(format!("Opening {}", self.shown(path))),
-                        Err(e) => self.complain(&format!("Could not open the file: {e}")),
+                        Ok(()) => self.say(crate::i18n::format_message_id("ui.opening_path", &[("path", &self.shown(path))])),
+                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.could_not_open_the_file_error", &[("error", &e.to_string())])),
                     }
                     keep = false;
                 } else if cancel {
@@ -4930,8 +5101,12 @@ impl NoteCraftApp {
                 let left = files.len().saturating_sub(1);
                 let kind = notecraft_store::assets::media_kind(&name);
                 let mut chosen: Option<FileChoice> = None;
-                let title = if left > 0 { format!("Add {name} ({left} more)") } else { format!("Add {name}") };
-                egui::Window::new("file-options")
+                let title = if left > 0 {
+                    crate::i18n::format_message_id("ui.add_name_left_more", &[("name", &name), ("left", &left.to_string())])
+                } else {
+                    crate::i18n::format_message_id("ui.add_name", &[("name", &name)])
+                };
+                egui::Window::new(crate::tl_id!("ui.file_options"))
                     .collapsible(false)
                     .resizable(false)
                     .title_bar(false)
@@ -4940,48 +5115,54 @@ impl NoteCraftApp {
                     .show(ctx, |ui| {
                         ui.set_min_width(380.0);
                         modal_title(ui, &self.tokens, &title);
-                        ui.label(egui::RichText::new("What should happen to this file?").strong().size(16.0).color(self.tokens.text));
+                        ui.label(
+                            egui::RichText::new(crate::tl_id!("ui.what_should_happen_to_this_file")).strong().size(16.0).color(self.tokens.text),
+                        );
                         ui.add_space(6.0);
                         let copy_label = match kind {
-                            notecraft_store::assets::MediaKind::Image => "Insert the picture",
-                            notecraft_store::assets::MediaKind::Video => "Insert the video",
-                            notecraft_store::assets::MediaKind::Audio => "Insert the recording",
-                            notecraft_store::assets::MediaKind::Other => "Attach the file",
+                            notecraft_store::assets::MediaKind::Image => crate::tl_id!("ui.insert_the_picture"),
+                            notecraft_store::assets::MediaKind::Video => crate::tl_id!("ui.insert_the_video"),
+                            notecraft_store::assets::MediaKind::Audio => crate::tl_id!("ui.insert_the_recording"),
+                            notecraft_store::assets::MediaKind::Other => crate::tl_id!("ui.attach_the_file"),
                         };
                         if modal_button(ui, &self.tokens, copy_label, true).clicked() {
                             log::debug!("file attach choice clicked: choice=copy name={name:?}");
                             chosen = Some(FileChoice::Copy);
                         }
                         ui.label(
-                            egui::RichText::new("A copy goes into this page's folder, so the notebook carries it everywhere.")
+                            egui::RichText::new(crate::tl_id!("ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138"))
                                 .small()
                                 .color(self.tokens.muted),
                         );
                         ui.add_space(6.0);
                         let can_printout = printout::supports(&file);
-                        if modal_button_enabled(ui, &self.tokens, "Insert printout", false, can_printout).clicked() {
+                        if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.insert_printout"), false, can_printout).clicked() {
                             log::debug!("file attach choice clicked: choice=printout name={name:?}");
                             chosen = Some(FileChoice::Printout);
                         }
                         ui.label(
                             egui::RichText::new(if can_printout {
-                                "Copies the file and inserts one picture for each printed page."
+                                crate::tl_id!("ui.copies_the_file_and_inserts_one_picture_for_each_printed_page")
                             } else {
-                                "Printout is available for PDF and Office documents."
+                                crate::tl_id!("ui.printout_is_available_for_pdf_and_office_documents")
                             })
                             .small()
                             .color(self.tokens.muted),
                         );
                         ui.add_space(6.0);
-                        if modal_button(ui, &self.tokens, "Link to the file where it is", false).clicked() {
+                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.link_to_the_file_where_it_is"), false).clicked() {
                             log::debug!("file attach choice clicked: choice=link name={name:?}");
                             chosen = Some(FileChoice::Link);
                         }
-                        ui.label(egui::RichText::new("Nothing is copied. The link breaks if the file moves.").small().color(self.tokens.muted));
+                        ui.label(
+                            egui::RichText::new(crate::tl_id!("ui.nothing_is_copied_the_link_breaks_if_the_file_moves"))
+                                .small()
+                                .color(self.tokens.muted),
+                        );
                         ui.add_space(6.0);
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
                         });
@@ -4996,7 +5177,7 @@ impl NoteCraftApp {
             }
             Dialog::NewNotebook { name, format } => {
                 let mut go = false;
-                egui::Window::new("New notebook")
+                egui::Window::new(crate::tl_id!("ui.new_notebook"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -5004,9 +5185,9 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "New notebook");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.new_notebook"));
                         ui.set_min_width(420.0);
-                        ui.label("Name");
+                        ui.label(crate::tl_id!("ui.name_2"));
                         let r = ui.text_edit_singleline(name);
                         // Read Enter before asking for focus again: a new focus request hides the lost focus.
                         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -5014,11 +5195,12 @@ impl NoteCraftApp {
                         format_picker(ui, format);
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
                             let ready = !name.trim().is_empty();
-                            let create = ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, "Create", true).clicked()).inner;
+                            let create =
+                                ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, crate::tl_id!("ui.create"), true).clicked()).inner;
                             if (create || enter) && ready {
                                 go = true;
                             }
@@ -5031,7 +5213,7 @@ impl NoteCraftApp {
                     }
                     if let Some(Output::Path(dir)) = self.run("notebook.create", &p) {
                         self.open.insert(dir);
-                        self.say("Notebook created");
+                        self.say(crate::tl_id!("ui.notebook_created"));
                     }
                     keep = false;
                 }
@@ -5039,9 +5221,10 @@ impl NoteCraftApp {
             Dialog::Add { parent, parent_kind, title, kind, format } => {
                 let mut go = false;
                 let heading = if *parent_kind == NodeKind::Page {
-                    "Add a sub-page".to_string()
+                    crate::tl_id!("ui.add_a_sub_page").to_string()
                 } else {
-                    format!("Add inside this {}", parent_kind.label().to_lowercase())
+                    let kind = crate::tl!(parent_kind.label());
+                    crate::i18n::format_message_id("ui.add_inside_this_kind", &[("kind", &kind.to_lowercase())])
                 };
                 egui::Window::new(heading.clone())
                     .title_bar(false)
@@ -5055,28 +5238,32 @@ impl NoteCraftApp {
                         ui.set_min_width(420.0);
                         let kinds = parent_kind.may_contain();
                         if kinds.len() > 1 {
-                            ui.label("What to add");
+                            ui.label(crate::tl_id!("ui.what_to_add"));
                             ui.horizontal(|ui| {
                                 for k in kinds {
-                                    ui.selectable_value(kind, *k, k.label());
+                                    ui.selectable_value(kind, *k, crate::tl!(k.label()));
                                 }
                             });
                         }
-                        ui.label("Title");
+                        ui.label(crate::tl_id!("ui.title_2"));
                         let r = ui.text_edit_singleline(title);
                         // Read Enter before asking for focus again: a new focus request hides the lost focus.
                         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                         r.request_focus();
-                        let what = if *kind == NodeKind::Page { "Format for this page" } else { "Default format for pages below" };
-                        ui.label(what);
+                        ui.label(if *kind == NodeKind::Page {
+                            crate::tl_id!("ui.format_for_this_page")
+                        } else {
+                            crate::tl_id!("ui.default_format_for_pages_below")
+                        });
                         format_picker(ui, format);
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
                             let ready = !title.trim().is_empty();
-                            let create = ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, "Create", true).clicked()).inner;
+                            let create =
+                                ui.add_enabled_ui(ready, |ui| modal_button(ui, &self.tokens, crate::tl_id!("ui.create"), true).clicked()).inner;
                             if (create || enter) && ready {
                                 go = true;
                             }
@@ -5092,34 +5279,37 @@ impl NoteCraftApp {
                         if *kind == NodeKind::Page {
                             self.open_page(&dir);
                         }
-                        self.say("Created");
+                        self.say(crate::tl_id!("ui.created"));
                     }
                     keep = false;
                 }
             }
             Dialog::Rename { path, title } => {
                 let mut go = false;
-                egui::Window::new("Rename").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.label("Title (the folder name does not change)");
-                    let r = ui.text_edit_singleline(title);
-                    // Read Enter before asking for focus again: a new focus request hides the lost focus.
-                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    r.request_focus();
-                    ui.horizontal(|ui| {
-                        if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
-                            keep = false;
-                        }
-                        if (modal_button(ui, &self.tokens, "Rename", true).clicked() || enter) && !title.trim().is_empty() {
-                            go = true;
-                        }
-                    });
-                });
+                egui::Window::new(crate::tl_id!("ui.rename")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+                    ctx,
+                    |ui| {
+                        ui.label(crate::tl_id!("ui.title_the_folder_name_does_not_change"));
+                        let r = ui.text_edit_singleline(title);
+                        // Read Enter before asking for focus again: a new focus request hides the lost focus.
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                        r.request_focus();
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                                keep = false;
+                            }
+                            if (modal_button(ui, &self.tokens, crate::tl_id!("ui.rename"), true).clicked() || enter) && !title.trim().is_empty() {
+                                go = true;
+                            }
+                        });
+                    },
+                );
                 if go {
                     if self.run("node.title", &params(&[("path", &path_str(path)), ("title", title.trim())])).is_some() {
                         if self.editor.as_ref().map(|e| e.dir == *path).unwrap_or(false) {
                             self.open_page(path);
                         }
-                        self.say("Renamed");
+                        self.say(crate::tl_id!("ui.renamed"));
                     }
                     keep = false;
                 }
@@ -5132,7 +5322,7 @@ impl NoteCraftApp {
                     let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
                     ui.painter().rect_filled(response.rect, 0.0, Color32::from_black_alpha(150));
                 });
-                egui::Window::new("Delete file")
+                egui::Window::new(crate::tl_id!("ui.delete_file"))
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -5140,17 +5330,17 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, "Delete file");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_file"));
                         ui.set_min_width(420.0);
-                        ui.label(format!("Delete \"assets/{name}\" from this page's folder?"));
+                        ui.label(crate::i18n::format_message_id("ui.delete_assets_name_from_this_page_s_folder", &[("name", name)]));
                         ui.add_space(6.0);
-                        ui.colored_label(self.tokens.warn, "The file is removed from disk. Undo does not bring a file back.");
+                        ui.colored_label(self.tokens.warn, crate::tl_id!("ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back"));
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
-                            if modal_button(ui, &self.tokens, "Delete", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete"), true).clicked() {
                                 go = true;
                             }
                         });
@@ -5169,7 +5359,7 @@ impl NoteCraftApp {
                         if let Some(ed) = self.editor.as_mut() {
                             ed.attachments = notecraft_store::assets::list(&page);
                         }
-                        self.say("The file is gone");
+                        self.say(crate::tl_id!("ui.the_file_is_gone"));
                         // The page may have named the drawing it no longer has.
                         self.sync_ink_reference();
                     }
@@ -5178,7 +5368,7 @@ impl NoteCraftApp {
             }
             Dialog::DeleteNotebook { path, title } => {
                 let mut go = false;
-                egui::Window::new("Delete notebook")
+                egui::Window::new(crate::tl_id!("ui.delete_notebook"))
                     .collapsible(false)
                     .resizable(false)
                     .title_bar(false)
@@ -5186,18 +5376,18 @@ impl NoteCraftApp {
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
                         ui.set_min_width(440.0);
-                        modal_title(ui, &self.tokens, "Delete notebook");
-                        ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"));
+                        ui.label(crate::i18n::format_message_id("ui.delete_notebook_title_and_everything_inside_it", &[("title", title)]));
                         ui.add_space(4.0);
-                        ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");
+                        ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone"));
                         ui.add_space(14.0);
                         ui.separator();
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
-                            if modal_button(ui, &self.tokens, "Delete notebook", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"), true).clicked() {
                                 go = true;
                             }
                         });
@@ -5217,11 +5407,13 @@ impl NoteCraftApp {
                                 self.backstage = Some("Open");
                             }
                             let _ = self.run("tree.refresh", &Params::new());
-                            self.say(format!("Deleted notebook {}", self.shown(&path)));
+                            self.say(crate::i18n::format_message_id("ui.deleted_notebook_path", &[("path", &self.shown(&path))]));
                         }
                         Err(error) => {
                             log::error!("notebook delete failed: {:?}: {}", path, error);
-                            self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
+                            let message =
+                                crate::i18n::format_message_id("ui.the_notebook_could_not_be_deleted_error", &[("error", &error.to_string())]);
+                            self.alert("delete-failed", crate::tl_id!("ui.delete_notebook"), &message);
                         }
                     }
                     keep = false;
@@ -5230,7 +5422,7 @@ impl NoteCraftApp {
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
                 let is_notebook = notecraft_store::tree::read_node(path).is_some_and(|node| node.kind == NodeKind::Notebook);
-                egui::Window::new("Delete")
+                egui::Window::new(crate::tl_id!("ui.delete"))
                     .collapsible(false)
                     .resizable(false)
                     .title_bar(false)
@@ -5238,22 +5430,30 @@ impl NoteCraftApp {
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
                         ui.set_min_width(420.0);
-                        modal_title(ui, &self.tokens, "Delete notebook");
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"));
                         if is_notebook {
-                            ui.label(format!("Delete notebook \"{title}\" and everything inside it?"));
-                            ui.colored_label(self.tokens.warn, "This removes the notebook folder from disk and cannot be undone.");
+                            ui.label(crate::i18n::format_message_id("ui.delete_notebook_title_and_everything_inside_it", &[("title", title)]));
+                            ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone"));
                         } else {
-                            ui.label(format!(
-                                "Move \"{title}\" and everything inside it ({count} item{}) to this notebook's recycle bin?",
-                                if *count == 1 { "" } else { "s" }
+                            ui.label(crate::i18n::format_count_message_id(
+                                "ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1",
+                                *count as u64,
+                                &[("title", title)],
                             ));
-                            ui.label("You can restore it from History.");
+                            ui.label(crate::tl_id!("ui.you_can_restore_it_from_history"));
                         }
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
-                            if modal_button(ui, &self.tokens, if is_notebook { "Delete notebook" } else { "Move to recycle bin" }, true).clicked() {
+                            if modal_button(
+                                ui,
+                                &self.tokens,
+                                if is_notebook { crate::tl_id!("ui.delete_notebook") } else { crate::tl_id!("ui.move_to_recycle_bin") },
+                                true,
+                            )
+                            .clicked()
+                            {
                                 go = true;
                             }
                         });
@@ -5271,11 +5471,13 @@ impl NoteCraftApp {
                                 self.selected = None;
                                 self.open.remove(&path);
                                 let _ = self.run("tree.refresh", &Params::new());
-                                self.say("Deleted notebook");
+                                self.say(crate::tl_id!("ui.deleted_notebook"));
                             }
                             Err(error) => {
                                 log::error!("notebook delete failed: {:?}: {}", path, error);
-                                self.alert("delete-failed", "Delete notebook", &format!("The notebook could not be deleted: {error}"));
+                                let message =
+                                    crate::i18n::format_message_id("ui.the_notebook_could_not_be_deleted_error", &[("error", &error.to_string())]);
+                                self.alert("delete-failed", crate::tl_id!("ui.delete_notebook"), &message);
                             }
                         }
                     } else {
@@ -5288,11 +5490,15 @@ impl NoteCraftApp {
                                     self.editor = None;
                                 }
                                 self.selected = None;
-                                self.say("Moved to the notebook recycle bin");
+                                self.say(crate::tl_id!("ui.moved_to_the_notebook_recycle_bin"));
                             }
                             None => {
                                 log::error!("node.delete command failed: {:?}", path);
-                                self.alert("delete-failed", "Delete", "This could not be moved to the recycle bin. Nothing was deleted.");
+                                self.alert(
+                                    "delete-failed",
+                                    crate::tl_id!("ui.delete"),
+                                    crate::tl_id!("ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted"),
+                                );
                             }
                         }
                     }
@@ -5301,34 +5507,40 @@ impl NoteCraftApp {
             }
             Dialog::PageVersions { page, versions } => {
                 let mut restore: Option<String> = None;
-                egui::Window::new("Page versions").collapsible(false).resizable(true).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-                    ui.set_min_width(420.0);
-                    ui.label("Saved copies of this page");
-                    ui.add_space(6.0);
-                    if versions.is_empty() {
-                        ui.label("No saved versions yet. NoteCraft keeps a copy when the page changes.");
-                    } else {
-                        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                            for version in versions.iter() {
-                                ui.horizontal(|ui| {
-                                    ui.label(&version.created);
-                                    ui.label(egui::RichText::new(format!("{} KB", version.bytes.div_ceil(1024))).small().color(self.tokens.muted));
-                                    if modal_button(ui, &self.tokens, "Restore", true).clicked() {
-                                        restore = Some(version.id.clone());
-                                    }
-                                });
-                            }
-                        });
-                    }
-                    ui.add_space(8.0);
-                    if modal_button(ui, &self.tokens, "Close", false).clicked() {
-                        keep = false;
-                    }
-                });
+                egui::Window::new(crate::tl_id!("ui.page_versions_2"))
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(420.0);
+                        ui.label(crate::tl_id!("ui.saved_copies_of_this_page"));
+                        ui.add_space(6.0);
+                        if versions.is_empty() {
+                            ui.label(crate::tl_id!("ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad"));
+                        } else {
+                            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                                for version in versions.iter() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(&version.created);
+                                        let size = (version.bytes.div_ceil(1024)).to_string();
+                                        let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
+                                        ui.label(egui::RichText::new(size).small().color(self.tokens.muted));
+                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
+                                            restore = Some(version.id.clone());
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                        ui.add_space(8.0);
+                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
+                            keep = false;
+                        }
+                    });
                 if let Some(id) = restore {
                     if self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some() {
                         self.open_page(page);
-                        self.say("Restored the saved page version");
+                        self.say(crate::tl_id!("ui.restored_the_saved_page_version"));
                     }
                     keep = false;
                 }
@@ -5336,40 +5548,47 @@ impl NoteCraftApp {
             Dialog::RecycleBin { notebook, items } => {
                 let mut restore: Option<String> = None;
                 let mut purge: Option<(String, String)> = None;
-                egui::Window::new("Notebook recycle bin").collapsible(false).resizable(true).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
-                    ctx,
-                    |ui| {
+                egui::Window::new(crate::tl_id!("ui.notebook_recycle_bin_2"))
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
                         ui.set_min_width(460.0);
                         if items.is_empty() {
-                            ui.label("This notebook's recycle bin is empty.");
+                            ui.label(crate::tl_id!("ui.this_notebook_s_recycle_bin_is_empty"));
                         } else {
                             egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
                                 for item in items.iter() {
                                     ui.horizontal(|ui| {
                                         ui.label(&item.title);
                                         ui.label(
-                                            egui::RichText::new(format!("{} item(s) · {}", item.count, item.deleted))
-                                                .small()
-                                                .color(self.tokens.muted),
+                                            egui::RichText::new(crate::i18n::format_message_id(
+                                                "ui.count_deleted",
+                                                &[
+                                                    ("count", &crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64)),
+                                                    ("deleted", &item.deleted),
+                                                ],
+                                            ))
+                                            .small()
+                                            .color(self.tokens.muted),
                                         );
-                                        if modal_button(ui, &self.tokens, "Restore", true).clicked() {
+                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
                                             restore = Some(item.id.clone());
                                         }
-                                        if modal_button(ui, &self.tokens, "Delete permanently", true).clicked() {
+                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
                                             purge = Some((item.id.clone(), item.title.clone()));
                                         }
                                     });
                                 }
                             });
                         }
-                        if modal_button(ui, &self.tokens, "Close", false).clicked() {
+                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
                             keep = false;
                         }
-                    },
-                );
+                    });
                 if let Some(id) = restore {
                     if self.run("recycle.restore", &params(&[("notebook", &path_str(notebook)), ("id", &id)])).is_some() {
-                        self.say("Restored to the original location");
+                        self.say(crate::tl_id!("ui.restored_to_the_original_location"));
                         keep = false;
                     }
                 } else if let Some((id, title)) = purge {
@@ -5378,32 +5597,35 @@ impl NoteCraftApp {
             }
             Dialog::PurgeRecycleItem { notebook, id, title } => {
                 let mut purge = false;
-                egui::Window::new("Permanently delete?").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
-                    ctx,
-                    |ui| {
-                        ui.label(format!("Permanently delete \"{title}\" and everything inside it?"));
-                        ui.colored_label(self.tokens.warn, "This cannot be undone.");
+                egui::Window::new(crate::tl_id!("ui.permanently_delete"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.label(crate::i18n::format_message_id("ui.permanently_delete_title_and_everything_inside_it", &[("title", title)]));
+                        ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_cannot_be_undone"));
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, "Cancel", false).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
                                 keep = false;
                             }
-                            if modal_button(ui, &self.tokens, "Delete permanently", true).clicked() {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
                                 purge = true;
                             }
                         });
-                    },
-                );
+                    });
                 if purge && self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
-                    self.say("Permanently deleted");
+                    self.say(crate::tl_id!("ui.permanently_deleted"));
                     keep = false;
                 }
             }
             Dialog::Symbols => {
                 let mut chosen: Option<&'static str> = None;
-                egui::Window::new("Insert symbol").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
-                    ctx,
-                    |ui| {
-                        ui.label("Choose a symbol to insert at the caret");
+                egui::Window::new(crate::tl_id!("ui.insert_symbol"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.label(crate::tl_id!("ui.choose_a_symbol_to_insert_at_the_caret"));
                         ui.add_space(6.0);
                         for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
                         {
@@ -5420,11 +5642,10 @@ impl NoteCraftApp {
                             });
                         }
                         ui.add_space(6.0);
-                        if modal_button(ui, &self.tokens, "Close", false).clicked() {
+                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
                             keep = false;
                         }
-                    },
-                );
+                    });
                 if let Some(symbol) = chosen {
                     self.insert_in_page(symbol);
                     keep = false;
@@ -5793,6 +6014,7 @@ impl NoteCraftApp {
     }
     /// Draws the whole window. Call once per frame.
     pub fn show(&mut self, ui: &mut Ui) {
+        crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         if !self.loaders_installed {
@@ -5894,21 +6116,21 @@ fn theme_swatch(ui: &mut Ui, theme: Theme, selected: bool) -> egui::Response {
     if resp.hovered() {
         painter.circle_stroke(c, 12.0, egui::Stroke::new(1.0, ui.style().visuals.text_color()));
     }
-    let label = format!("Theme {}", theme.label());
+    let theme_label = theme.label();
+    let label = crate::i18n::format_message_id("ui.theme_theme", &[("theme", &theme_label)]);
     let enabled = ui.is_enabled();
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, selected, &label));
-    resp.on_hover_text(theme.label())
+    resp.on_hover_text(theme_label)
 }
 
 fn format_picker(ui: &mut Ui, format: &mut Option<PageFormat>) {
-    egui::ComboBox::from_label("Page format")
-        .selected_text(format.map(|f| f.label()).unwrap_or("Inherit (notebook, section or global setting)"))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(format, None, "Inherit (notebook, section or global setting)");
-            for f in PageFormat::ALL {
-                ui.selectable_value(format, Some(f), f.label());
-            }
-        });
+    let selected = format.map(PageFormat::label).unwrap_or(crate::tl_id!("ui.inherit_notebook_section_or_global_setting"));
+    egui::ComboBox::from_label(crate::tl_id!("ui.page_format")).selected_text(selected).show_ui(ui, |ui| {
+        ui.selectable_value(format, None, crate::tl_id!("ui.inherit_notebook_section_or_global_setting"));
+        for f in PageFormat::ALL {
+            ui.selectable_value(format, Some(f), f.label());
+        }
+    });
 }
 
 #[allow(dead_code)]
@@ -5940,8 +6162,9 @@ fn color_swatch(ui: &mut Ui, color: NodeColor, dark: bool, selected: bool) -> eg
         painter.circle_stroke(rect.center(), 10.0, egui::Stroke::new(2.0, ui.style().visuals.text_color()));
     }
     let enabled = ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, selected, color.label()));
-    resp.on_hover_text(color.label())
+    let label = crate::tl!(color.label());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, selected, label));
+    resp.on_hover_text(label)
 }
 
 /// Shows a folder in the operating system's file manager. An optional extra: everything the
@@ -6021,7 +6244,7 @@ fn first_page_under(tree: &[Node], at: &Path) -> Option<PathBuf> {
 fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, follow: &mut bool) {
     egui::Grid::new("theme-grid").spacing([6.0, 6.0]).show(ui, |ui| {
         for mode in [Mode::Light, Mode::Dark] {
-            ui.label(mode.label());
+            ui.label(crate::tl!(mode.label()));
             for accent in Accent::ALL {
                 let theme = Theme { mode, accent };
                 let selected = theme == current;
@@ -6033,13 +6256,21 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
         }
     });
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(format!("Accent: {}", current.accent.label())).small());
-    ui.checkbox(follow, "Follow the system light or dark setting");
+    let accent = crate::tl!(current.accent.label());
+    let label = crate::i18n::format_message_id("ui.accent_accent", &[("accent", accent)]);
+    ui.label(egui::RichText::new(label).small());
+    ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
 }
 
 #[cfg(test)]
 mod alert_tests {
     use super::*;
+
+    #[test]
+    fn release_builds_default_local_collection_to_off() {
+        assert_eq!(default_telemetry_level(false), "none");
+        assert_eq!(default_telemetry_level(true), "debug");
+    }
 
     #[test]
     fn gridcraft_csv_read_back_preserves_quoted_cells_and_adds_columns() {

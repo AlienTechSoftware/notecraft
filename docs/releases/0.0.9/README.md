@@ -1,7 +1,7 @@
 # NoteCraft v0.0.9
 
 **Status:** Planning  
-**Base Branch:** `next`  
+**Base Branch:** `rc_0.0.9`
 **Theme:** measurable performance, reliable infinite-canvas interaction, and durable UI quality
 
 ## Scope
@@ -54,4 +54,5 @@ See the private host proposal:
 
 ## Links
 - **GitHub Issue #20:** https://github.com/AlienTechSoftware/notecraft/issues/20
+- **GitHub Issue #31:** https://github.com/AlienTechSoftware/notecraft/issues/31
 - **Related:** v0.0.8, v0.0.10

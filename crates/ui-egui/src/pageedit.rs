@@ -2524,7 +2524,7 @@ fn lead(ui: &mut Ui, block: &Block, t: &Tokens) -> Option<bool> {
             mark,
             mark.color(t.text, t.accent),
         );
-        resp.on_hover_text(tag.label());
+        resp.on_hover_text(crate::tl!(tag.label()));
     }
     match block {
         Block::Item { ordered, number, task, depth, .. } => {
@@ -2532,18 +2532,23 @@ fn lead(ui: &mut Ui, block: &Block, t: &Tokens) -> Option<bool> {
             match task {
                 Some(done) => {
                     let mut v = *done;
-                    if ui.checkbox(&mut v, "").changed() {
+                    let response = ui.checkbox(&mut v, "");
+                    let enabled = ui.is_enabled();
+                    let name = crate::tl_id!("ui.to_do_2").to_string();
+                    response.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::CheckBox, enabled, v, name.clone()));
+                    if response.changed() {
                         ticked = Some(v);
                     }
                 }
                 None => {
+                    // i18n-exempt: This glyph is the visual bullet marker for an unordered list.
                     ui.label(egui::RichText::new(if *ordered { format!("{number}.") } else { "\u{2022}".to_string() }).color(t.muted));
                 }
             }
         }
         Block::Quote(_) => {
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("\u{2588}").color(t.quote_bar));
+            ui.label(egui::RichText::new(crate::tl_id!("ui.text_122")).color(t.quote_bar));
         }
         _ => {}
     }

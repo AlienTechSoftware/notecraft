@@ -31,7 +31,7 @@ index 0000000..d9828a4
 +wasm-bindgen = "0.2"
 +wasm-bindgen-futures = "0.4"
 +js-sys = "0.3"
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "console"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "Storage", "console"] }
 diff --git a/apps/notecraft-web/Trunk.toml b/apps/notecraft-web/Trunk.toml
 new file mode 100644
 index 0000000..0b57fe8
@@ -84,7 +84,8 @@ index 0000000..f4394fb
 +//!
 +//! The notebooks folder is `/NoteCraft`, in memory (crates/model/src/playground.rs). Playground's Files keep it as the
 +//! same plain folders at `browser:/NoteCraft/…`: it is read from there at start, and every file NoteCraft writes or
-+//! removes is written or removed there after the frame (through the page's `globalThis.playgroundFiles`). The first
++//! removes is written or removed there after the frame (through the page's `globalThis.playgroundFiles`). The standalone
++//! site keeps personal settings in that browser's local storage; an invitation session stays transient. The first
 +//! start makes the sample notebooks. A page opened from a Playground invitation (`?pg-session=<room>`) keeps its
 +//! notebooks in the tab only, so joining someone's session never touches this browser's own notebooks.
 +//! Also: pictures in pages load from the in-memory folder, files dropped on the page can be inserted, and "Open in
@@ -107,6 +108,7 @@ index 0000000..f4394fb
 +    pub const ROOT: &str = "/NoteCraft";
 +    /// The settings (theme, the page open last), personal: a dot folder is not a notebook.
 +    const SETTINGS: &str = "/NoteCraft/.notecraft/settings.toml";
++    const SETTINGS_KEY: &str = "notecraft.settings.v1";
 +
 +    thread_local! {
 +        /// Files Playground handed in ("Open in NoteCraft"), for the next frame.
@@ -191,6 +193,18 @@ index 0000000..f4394fb
 +        web_sys::window().and_then(|w| w.location().search().ok()).is_some_and(|q| q.split(['?', '&']).any(|p| p.starts_with("pg-session=")))
 +    }
 +
++    /// Browser-local preferences for the standalone site (Playground uses its Files API instead).
++    fn browser_settings() -> Option<web_sys::Storage> {
++        web_sys::window()?.local_storage().ok().flatten()
++    }
++
++    fn load_browser_settings() {
++        let Some(storage) = browser_settings() else { return };
++        if let Ok(Some(contents)) = storage.get_item(SETTINGS_KEY) {
++            fs::put(Path::new(SETTINGS), contents.into_bytes());
++        }
++    }
++
 +    /// The notebooks this browser keeps in Files, into the in-memory folder. False when there are none (or no Files).
 +    async fn load() -> bool {
 +        let Some(list) = wait(call("files", &[format!("browser:{ROOT}").into()])).await else { return false };
@@ -232,6 +246,8 @@ index 0000000..f4394fb
 +        pub app: NoteCraftApp,
 +        /// The in-memory folder is kept in Files.
 +        persist: bool,
++        /// Standalone site preferences use browser-local storage; invitation sessions stay transient.
++        local_settings: bool,
 +        unsaved: Option<bool>,
 +    }
 +
@@ -316,7 +332,19 @@ index 0000000..f4394fb
 +                self.open(&file);
 +            }
 +            for p in fs::changes() {
-+                if !self.persist || !p.starts_with(ROOT) {
++                if !p.starts_with(ROOT) {
++                    continue;
++                }
++                if !self.persist {
++                    if self.local_settings && p == Path::new(SETTINGS) {
++                        if let (Some(storage), Ok(bytes)) = (browser_settings(), fs::read(&p)) {
++                            if let Ok(contents) = String::from_utf8(bytes)
++                                && storage.set_item(SETTINGS_KEY, &contents).is_err()
++                            {
++                                web_sys::console::error_1(&"Could not save NoteCraft settings in this browser".into());
++                            }
++                        }
++                    }
 +                    continue;
 +                }
 +                let target = JsValue::from(format!("browser:{}", p.to_string_lossy()));
@@ -378,7 +406,11 @@ index 0000000..f4394fb
 +        call("onOpen", &[open.into_js_value()]);
 +        wasm_bindgen_futures::spawn_local(async {
 +            let persist = !invited() && ["files", "write", "remove"].iter().all(|m| api().is_some_and(|a| get(&a, m).is_function()));
++            let local_settings = !persist && !invited();
 +            let had = persist && load().await;
++            if !persist && !invited() {
++                load_browser_settings();
++            }
 +            let document = web_sys::window().and_then(|w| w.document()).expect("no document");
 +            let canvas = document
 +                .get_element_by_id("notecraft_canvas")
@@ -399,7 +431,7 @@ index 0000000..f4394fb
 +                        if first {
 +                            app.add_welcome();
 +                        }
-+                        Ok(Box::new(Web { app, persist, unsaved: None }))
++                        Ok(Box::new(Web { app, persist, local_settings, unsaved: None }))
 +                    }),
 +                )
 +                .await;

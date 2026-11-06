@@ -22,7 +22,9 @@ pub mod fonts;
 pub mod gridcraft;
 pub mod highlight;
 pub mod history;
+pub mod i18n;
 pub mod icons;
+pub mod language_flag;
 pub mod input_language {
     pub use notecraft_input_language::{Watcher, is_rtl, watch_changes};
 }
@@ -45,6 +47,22 @@ mod testing_dir;
 pub mod theme;
 
 pub use app::NoteCraftApp;
+
+/// Translate a source string supplied dynamically by an enum or a shared UI helper.
+#[macro_export]
+macro_rules! tl {
+    ($source:expr) => {
+        $crate::i18n::t($source)
+    };
+}
+
+/// Translate a user-facing string by its stable ID in `i18n/en.tsv`.
+#[macro_export]
+macro_rules! tl_id {
+    ($id:expr) => {
+        $crate::i18n::t_id($id)
+    };
+}
 
 /// The app icon (256 x 256, transparent corners). See ATTRIBUTION.md.
 pub const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-256.png");

@@ -2,7 +2,7 @@
 //! Repository tasks, run as `cargo xtask <task>`.
 //!
 //! ```text
-//! ci        fmt check, clippy -D warnings, tests, layers, assets, docs, text
+//! ci        fmt check, clippy -D warnings, tests, i18n-audit, layers, assets, docs, text
 //! fmt       cargo fmt --check
 //! clippy    cargo clippy --workspace --all-targets -- -D warnings
 //! test      cargo test --workspace
@@ -12,6 +12,7 @@
 //! text      check text files: no byte order mark in source, manifests or Markdown, and plain
 //!           punctuation (no em or en dashes, no curly quotes) in Markdown, per .agents/TONE.md;
 //!           add `--fix` to rewrite those issues
+//! i18n-audit check UI string IDs, hard-coded text, and locale catalog coverage
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  coverage with cargo-llvm-cov, compared with docs/coverage.json (warns, never fails);
 //!           `--update` writes this run as the new baseline
@@ -27,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod coverage;
+mod i18n_audit;
 mod quality;
 mod version;
 
@@ -501,6 +503,12 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         "fmt" => cargo(&root, &["fmt", "--all", "--", "--check"]),
         "clippy" => cargo(&root, &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
         "test" => cargo(&root, &["test", "--workspace"]),
+        "i18n-audit" => {
+            if !options.is_empty() {
+                return Err("usage: cargo xtask i18n-audit".into());
+            }
+            i18n_audit::run(&root)
+        }
         "layers" => layers(&root),
         "assets" => assets(&root),
         "docs" => docs(&root),
@@ -528,7 +536,7 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
         "ci" => {
-            for t in ["fmt", "clippy", "test", "layers", "assets", "docs", "text", "demo-check"] {
+            for t in ["fmt", "clippy", "test", "i18n-audit", "layers", "assets", "docs", "text", "demo-check"] {
                 println!("\n== {t} ==");
                 run(t, &[]).map_err(|e| format!("{t}: {e}"))?;
             }
@@ -536,7 +544,7 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!(
-            "unknown task '{other}'. Tasks: ci fmt clippy test layers assets docs text screenshots coverage check-branch commit-msg version demo demo-check demo-copy"
+            "unknown task '{other}'. Tasks: ci fmt clippy test i18n-audit layers assets docs text screenshots coverage check-branch commit-msg version demo demo-check demo-copy"
         )),
     }
 }
