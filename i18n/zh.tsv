@@ -4,6 +4,10 @@
 @plural	{n} notebook|{n} notebooks	{n} 个笔记本
 @plural	{n} stroke|{n} strokes	{n} 笔
 @id	language.name	中文（简体）
+@id	product.about	NoteCraft 是一个纯 Rust 开源项目，依据公开文档和独立编写的代码公开开发。它旨在将 OneNote 熟悉的组织方式与本地、可移植的文件结合，让你可以查看和备份笔记，并通过自己选择的服务和工具同步。
+@id	product.long_description	NoteCraft 是开源项目，以洁净室方式独立重建 OneNote 的笔记本体验。笔记本、分区、页面、图片和附件都以普通文件夹和文件的形式保存在你的设备上。你可以使用信任的工具，自主选择同步和备份方式，无需 NoteCraft 服务器或账户。
+@id	product.short_description	NoteCraft 是开源项目，以洁净室方式独立重建 OneNote 笔记本体验，并以本地文件为核心。笔记保存在你的设备上，同步和备份方式由你选择。
+@id	product.tagline	独立重建 OneNote 的笔记体验：文件保存在本地，同步方式由你选择。
 @id	ui.a_bullet_list	项目符号列表
 @id	ui.a_column_left_of_the_caret_s	光标左侧的一列
 @id	ui.a_column_right_of_the_caret_s	光标右侧的一列

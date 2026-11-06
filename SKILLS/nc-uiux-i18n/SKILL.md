@@ -19,6 +19,11 @@ labels and messages, tooltips, accessible names, validation feedback, status tex
 and errors shown to a user. A translated label must keep the same behavior and meaning as its
 English source.
 
+Product copy belongs in the catalogs too, even before every consumer is wired to them. Keep
+separate stable IDs for the tagline, short description, long description, and About text under
+`product.*`; do not reuse one field for another. This covers website metadata and visible copy as
+well as desktop UI, and prepares static consumers for catalog-backed generation or localization.
+
 The user's page content and stored notebook data are not interface strings. Keep document text,
 page names supplied by the user, file names, file formats, command IDs, settings keys, control
 protocol fields, CLI output, MCP responses, and diagnostic logs stable and untranslated. When an

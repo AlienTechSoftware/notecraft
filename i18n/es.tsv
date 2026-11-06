@@ -4,6 +4,10 @@
 @plural	{n} notebook|{n} notebooks	{n} cuaderno|{n} cuadernos
 @plural	{n} stroke|{n} strokes	{n} trazo|{n} trazos
 @id	language.name	Español
+@id	product.about	NoteCraft es un proyecto escrito íntegramente en Rust y desarrollado de forma abierta a partir de código propio, escrito de manera independiente, y documentación pública. Su objetivo es combinar la organización familiar de OneNote con archivos locales y portátiles que puedes inspeccionar, respaldar y sincronizar con los servicios y herramientas que elijas.
+@id	product.long_description	NoteCraft es una recreación independiente y de código abierto de la experiencia de cuadernos de OneNote, desarrollada mediante un proceso de sala limpia. Guarda cuadernos, secciones, páginas, imágenes y archivos adjuntos como carpetas y archivos normales en tu dispositivo. Elige cómo sincronizarlos y hacer copias de seguridad con herramientas en las que ya confías, sin necesitar un servidor ni una cuenta de NoteCraft.
+@id	product.short_description	NoteCraft es una recreación independiente y de código abierto de la experiencia de cuadernos de OneNote, desarrollada mediante un método de ingeniería de sala limpia y centrada en archivos locales. Mantén tus notas en tu dispositivo y sincronízalas o haz copias de seguridad con las herramientas que elijas.
+@id	product.tagline	Una recreación independiente de OneNote: archivos locales y sincronización a tu manera.
 @id	ui.a_bullet_list	Una lista con viñetas
 @id	ui.a_column_left_of_the_caret_s	Una columna a la izquierda del cursor
 @id	ui.a_column_right_of_the_caret_s	Una columna a la derecha del cursor

@@ -4,6 +4,10 @@
 @plural	{n} notebook|{n} notebooks	{n}ノートブック
 @plural	{n} stroke|{n} strokes	{n}ストローク
 @id	language.name	日本語
+@id	product.about	NoteCraftは、Rustのみで構築されたプロジェクトであり、独自コードと公開ドキュメントに基づいてオープンに開発されています。OneNoteの馴染みのある整理構造と、確認・バックアップ・ご自身で選んだサービスやツールでの同期が可能なローカルでポータブルなファイルを組み合わせることを目指しています。
+@id	product.long_description	NoteCraftは、OneNoteのノートブック体験のオープンソース・クリーンルーム再実装です。ノートブック、セクション、ページ、画像、添付ファイルを、デバイス上の通常のフォルダとファイルとして管理します。ご自身が信頼しているツールを使って、同期やバックアップのやり方を自由に選べます。NoteCraftのサーバーやアカウントは不要です。
+@id	product.short_description	NoteCraftは、ローカルファイルを軸に構築された、OneNoteのノートブック体験のオープンソース・クリーンルーム再実装です。ノートをデバイスに保持し、ご自身で選んだツールで同期やバックアップを行えます。
+@id	product.tagline	ローカルファイルと、ご自身の条件で同期を実現する、OneNoteのクリーンルーム再実装。
 @id	ui.a_bullet_list	箇条書きリスト
 @id	ui.a_column_left_of_the_caret_s	カーソルの左の列
 @id	ui.a_column_right_of_the_caret_s	カーソルの右の列

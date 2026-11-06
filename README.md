@@ -1,18 +1,20 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/notecraft-social-dark.png">
-    <img alt="NoteCraft. Notes as plain files, in plain folders. An open, clean-room alternative to OneNote, written in pure Rust." src="assets/brand/notecraft-social-light.png" width="100%">
+    <img alt="NoteCraft. A clean-room OneNote recreation for local files and sync on your terms." src="assets/brand/notecraft-social-light.png" width="100%">
   </picture>
 </p>
 
 <p align="center">
-  <b>Note taking and organization, written in pure Rust: an open, clean-room notebook app for people who want their notes to stay files.</b>
+  <b>A clean-room OneNote recreation for local files and sync on your terms.</b>
 </p>
 
 <p align="center">
-  Notebooks, section groups, sections and pages are plain folders on your disk, and a page is
-  one HTML or Markdown file beside its pictures. Any folder your sync tool already watches
-  becomes a synced notebook. No server, no account, no database.
+  NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience, built around local files. Keep your notes on your device and sync or back them up with the tools you choose.
+</p>
+
+<p align="center">
+  NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience. It keeps notebooks, sections, pages, pictures and attachments as ordinary folders and files on your device. You can choose how to sync and back them up, using tools you already trust, without a NoteCraft server or account.
 </p>
 
 <p align="center">

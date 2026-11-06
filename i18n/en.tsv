@@ -4,6 +4,10 @@
 @plural	{n} notebook|{n} notebooks	{n} notebook|{n} notebooks
 @plural	{n} stroke|{n} strokes	{n} stroke|{n} strokes
 @id	language.name	English
+@id	product.about	NoteCraft is a pure-Rust project developed in the open from original, independently written code and public documentation. Its goal is to pair the familiar organization of OneNote with local, portable files that you can inspect, back up, and sync with the services and tools you choose.
+@id	product.long_description	NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience. It keeps notebooks, sections, pages, pictures and attachments as ordinary folders and files on your device. You can choose how to sync and back them up, using tools you already trust, without a NoteCraft server or account.
+@id	product.short_description	NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience, built around local files. Keep your notes on your device and sync or back them up with the tools you choose.
+@id	product.tagline	A clean-room OneNote recreation for local files and sync on your terms.
 @id	ui.a_bullet_list	A bullet list
 @id	ui.a_column_left_of_the_caret_s	A column left of the caret's
 @id	ui.a_column_right_of_the_caret_s	A column right of the caret's

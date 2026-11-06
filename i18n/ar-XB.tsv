@@ -4,6 +4,10 @@
 @plural	{n} notebook|{n} notebooks	[[RLI]]$$${n} notebook@@@[[PDI]]|[[RLI]]$$${n} notebooks@@@[[PDI]]|[[RLI]]$$${n} notebooks@@@[[PDI]]|[[RLI]]$$${n} notebooks@@@[[PDI]]|[[RLI]]$$${n} notebooks@@@[[PDI]]|[[RLI]]$$${n} notebooks@@@[[PDI]]
 @plural	{n} stroke|{n} strokes	[[RLI]]$$${n} stroke@@@[[PDI]]|[[RLI]]$$${n} strokes@@@[[PDI]]|[[RLI]]$$${n} strokes@@@[[PDI]]|[[RLI]]$$${n} strokes@@@[[PDI]]|[[RLI]]$$${n} strokes@@@[[PDI]]|[[RLI]]$$${n} strokes@@@[[PDI]]
 @id	language.name	Arabic (Pseudo, RTL)
+@id	product.about	[[RLI]]$$$NoteCraft is a pure-Rust project developed in the open from original, independently written code and public documentation. Its goal is to pair the familiar organization of OneNote with local, portable files that you can inspect, back up, and sync with the services and tools you choose.@@@[[PDI]]
+@id	product.long_description	[[RLI]]$$$NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience. It keeps notebooks, sections, pages, pictures and attachments as ordinary folders and files on your device. You can choose how to sync and back them up, using tools you already trust, without a NoteCraft server or account.@@@[[PDI]]
+@id	product.short_description	[[RLI]]$$$NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience, built around local files. Keep your notes on your device and sync or back them up with the tools you choose.@@@[[PDI]]
+@id	product.tagline	[[RLI]]$$$A clean-room OneNote recreation for local files and sync on your terms.@@@[[PDI]]
 @id	ui.a_bullet_list	[[RLI]]$$$A bullet list@@@[[PDI]]
 @id	ui.a_column_left_of_the_caret_s	[[RLI]]$$$A column left of the caret's@@@[[PDI]]
 @id	ui.a_column_right_of_the_caret_s	[[RLI]]$$$A column right of the caret's@@@[[PDI]]

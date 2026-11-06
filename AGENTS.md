@@ -64,8 +64,7 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
 
 ## What this is
 
-NoteCraft is a pure-Rust, clean-room note taking app. Notebooks, section groups,
-sections and pages are plain folders. See [`docs/architecture.md`](docs/architecture.md).
+NoteCraft is an open-source, clean-room recreation of the OneNote notebook experience, built around local files. Keep your notes on your device and sync or back them up with the tools you choose. Notebooks, section groups, sections and pages are plain folders. See [`docs/architecture.md`](docs/architecture.md).
 
 ## Harmony, reuse and platforms
 
