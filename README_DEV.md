@@ -4,6 +4,8 @@ This is the short entry point for contributors. The detailed, authoritative CI/C
 rules live in [`SKILLS/nc-devx/SKILL.md`](SKILLS/nc-devx/SKILL.md). Read that file
 when changing build scripts, workflows, packaging, or release behavior.
 
+New contributors can follow the step-by-step [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## First day
 
 1. Install the pinned Rust toolchain and platform dependencies with the setup script

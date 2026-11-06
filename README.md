@@ -313,6 +313,9 @@ What is missing:
 
 ## Credits and licence
 
+Interested in contributing? Start with the [contributor guide](CONTRIBUTING.md), then see
+[`AGENTS.md`](AGENTS.md) for project skills and [`README_DEV.md`](README_DEV.md) for the developer workflow.
+
 NoteCraft is a clean-room project. The `.one` reader is built from Microsoft's published
 specifications ([MS-ONESTORE] and [MS-ONE]) and from using the app that writes those files,
 never from its code or its assets. The notes behind the format work are in [docs/research](docs/research).
