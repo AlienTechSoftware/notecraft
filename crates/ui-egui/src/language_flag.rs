@@ -2,7 +2,7 @@
 
 use egui::{Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-/// Draws a representative country flag; pseudo-locales get a neutral X marker.
+/// Draws a representative script marker or country flag for the selected locale.
 pub fn paint(ui: &mut Ui, code: &str) {
     let (rect, _) = ui.allocate_exact_size(vec2(20.0, 14.0), Sense::hover());
     paint_at(ui, rect, code);
@@ -17,12 +17,22 @@ pub fn paint_at(ui: &Ui, rect: Rect, code: &str) {
     let green = c(0x168447);
     let dark = c(0x202020);
     let pale = c(0xF5F2E9);
+    let code = code.to_ascii_lowercase();
+    if let Some(letter) = match code.as_str() {
+        "ar" | "ar-xb" => Some("ض"),
+        "he" => Some("ע"),
+        _ => None,
+    } {
+        p.text(rect.center(), egui::Align2::CENTER_CENTER, letter, egui::FontId::proportional(14.0), white);
+        p.rect_stroke(rect, 1.5, Stroke::new(0.7, c(0x707070)), egui::StrokeKind::Inside);
+        return;
+    }
     let stripe = |index: usize, color: Color32, count: usize| {
         let h = rect.height() / count as f32;
         let r = Rect::from_min_max(pos2(rect.left(), rect.top() + h * index as f32), pos2(rect.right(), rect.top() + h * (index + 1) as f32));
         p.rect_filled(r, 0.0, color);
     };
-    match code.to_ascii_lowercase().as_str() {
+    match code.as_str() {
         "de" => {
             stripe(0, dark, 3);
             stripe(1, red, 3);
@@ -56,13 +66,6 @@ pub fn paint_at(ui: &Ui, rect: Rect, code: &str) {
                 );
             }
         }
-        "he" => {
-            p.rect_filled(rect, 0.0, white);
-            for y in [0.22, 0.72] {
-                let yy = rect.top() + rect.height() * y;
-                p.line_segment([pos2(rect.left() + 2.0, yy), pos2(rect.right() - 2.0, yy)], Stroke::new(2.0, blue));
-            }
-        }
         "hi" => {
             stripe(0, c(0xFF9933), 3);
             stripe(1, white, 3);
@@ -93,16 +96,6 @@ pub fn paint_at(ui: &Ui, rect: Rect, code: &str) {
             p.rect_filled(rect, 0.0, red);
             p.circle_filled(pos2(rect.left() + 5.0, rect.top() + 4.0), 1.9, c(0xFFDE00));
         }
-        "ar" => {
-            stripe(0, green, 3);
-            stripe(1, white, 3);
-            stripe(2, dark, 3);
-            p.rect_filled(Rect::from_min_max(rect.min, pos2(rect.left() + rect.width() * 0.24, rect.bottom())), 0.0, red);
-        }
-        "ar-xb" => {
-            p.rect_filled(rect, 0.0, pale);
-            p.text(rect.center(), egui::Align2::CENTER_CENTER, "X", egui::FontId::proportional(11.0), blue);
-        }
         _ => {
             p.rect_filled(rect, 0.0, pale);
             p.text(rect.center(), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(10.0), dark);
@@ -116,14 +109,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_demo_and_pseudo_locale_has_a_flag_mapping() {
+    fn every_demo_and_pseudo_locale_has_a_marker_mapping() {
         for code in ["ar", "de", "en", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh", "en-XA", "ar-XB"] {
             let ctx = egui::Context::default();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ctx| {
+                crate::fonts::install_once(ctx);
                 egui::CentralPanel::default().show(ctx, |ui| paint(ui, code));
             });
-            assert!(!output.shapes.is_empty(), "{code} should paint a flag marker");
+            assert!(!output.shapes.is_empty(), "{code} should paint a language marker");
             output.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn arabic_and_hebrew_locales_render_script_letters_instead_of_country_flags() {
+        for (code, expected) in [("ar", "ض"), ("ar-XB", "ض"), ("he", "ע")] {
+            let ctx = egui::Context::default();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ctx| {
+                crate::fonts::install_once(ctx);
+                egui::CentralPanel::default().show(ctx, |ui| paint(ui, code));
+            });
+            let painted_text: Vec<String> = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect();
+            output.textures_delta.clear();
+            assert_eq!(painted_text, [expected], "{code} should render its representative script letter");
         }
     }
 }
