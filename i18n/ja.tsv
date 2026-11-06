@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	「{title}」とその中身（{n}項目）をこのノートブックのゴミ箱に移動しますか？
+@plural	{n} item|{n} items	{n}項目
+@plural	{n} notebook opened|{n} notebooks opened	{n}ノートブックが開かれました
+@plural	{n} notebook|{n} notebooks	{n}ノートブック
+@plural	{n} stroke|{n} strokes	{n}ストローク
+@id	language.name	日本語
+@id	ui.a_bullet_list	箇条書きリスト
+@id	ui.a_column_left_of_the_caret_s	カーソルの左の列
+@id	ui.a_column_right_of_the_caret_s	カーソルの右の列
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	コピーはこのページのフォルダに格納されるため、ノートブックはこれをどこへでも持ち歩きます。
+@id	ui.a_direction_goes_on_a_paragraph_of_text	方向は段落テキストに適用されます
+@id	ui.a_file_copied_in_or_linked_where_it_is	ファイル：コピーして取り込むか、既存の場所へのリンクを作成します
+@id	ui.a_link	リンク
+@id	ui.a_link_to_a_page_or_an_address	ページまたはアドレスへのリンク
+@id	ui.a_link_to_paste_into_another_page	他のページに貼り付けるためのリンク
+@id	ui.a_mermaid_diagram_kept_as_its_source	ソースとして保持されるMermaidダイアグラム
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	新しいノートブックは{folder}内のフォルダで、その中にセクションとページが1つずつ含まれます。
+@id	ui.a_new_page_in_this_section	このセクションに新しいページ
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	ページの横にスプレッドシートを新規作成し、GridCraftで開きます
+@id	ui.a_numbered_list	番号付きリスト
+@id	ui.a_page_here	ここにページを作成
+@id	ui.a_row_above_the_caret_s	カーソルの上の行
+@id	ui.a_row_below_the_caret_s	カーソルの下の行
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	テーブルは見出し行と少なくとも1つの列を保持します
+@id	ui.a_table_pick_its_size	テーブル：サイズを選択
+@id	ui.a_tag_goes_on_a_line_of_text	タグはテキストの行に適用されます
+@id	ui.a_to_do_box_on_this_line_ctrl_1	この行にチェックボックス（Ctrl+1）
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	NoteCraftのツアー。専用のページに表示されます。初回起動時に空のノートブックフォルダに追加されます；これを再度実行すると、追加するか、まだ存在する場合は開きます。
+@id	ui.about_notecraft	NoteCraftについて
+@id	ui.accent_accent	アクセント：{accent}
+@id	ui.accept	承諾
+@id	ui.add	追加
+@id	ui.add_a_blank_paragraph_at_the_caret	カーソルに空の段落を追加
+@id	ui.add_a_page_here	ここにページを追加
+@id	ui.add_a_sub_page	サブページを追加
+@id	ui.add_another_tool	別の{tool}を追加
+@id	ui.add_file	ファイルを追加
+@id	ui.add_file_to_this_page	このページにファイルを添付
+@id	ui.add_inside_this_kind	この{kind}内に追加
+@id	ui.add_name	{name}を追加
+@id	ui.add_name_left_more	{name}を追加（{left} さらに）
+@id	ui.add_page	ページを追加
+@id	ui.add_the_welcome_notebook	ウェルカムノートブックを追加
+@id	ui.add_tool	{tool}を追加
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	ページの末尾に{name}へのリンクを追加しました
+@id	ui.added_a_tool	{tool}を追加しました
+@id	ui.address	アドレス
+@id	ui.alignment	配置
+@id	ui.alignment_and_direction	配置と方向
+@id	ui.alignment_and_which_way_this_paragraph_reads	配置、およびこの段落の読み取り方向
+@id	ui.all_of_them_live_in_folder	すべて{folder}内に保存されます
+@id	ui.always_on_top	常に最前面に表示
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	TeXで記述された数式：開始するものを選択
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	アプリ設定がリセットされました。すべてのデフォルトを適用するにはNoteCraftを再起動してください。
+@id	ui.appearance	外観
+@id	ui.append_link	リンクを追加
+@id	ui.application_preferences	アプリケーション設定
+@id	ui.arrow	矢印
+@id	ui.attach_the_file	ファイルを添付
+@id	ui.attachment_icon_missing	添付ファイルのアイコンがありません
+@id	ui.attachment_not_linked	添付ファイルがリンクされていません
+@id	ui.attachment_recovery	添付ファイルの復元
+@id	ui.authors	著者
+@id	ui.auto	自動
+@id	ui.automatic_system_language	自動（システム言語）
+@id	ui.back	戻る
+@id	ui.back_to_the_notebook	ノートブックに戻る
+@id	ui.back_to_the_page_before_alt_left	前のページに戻る（Alt+←）
+@id	ui.basic_text	基本テキスト
+@id	ui.black	黒
+@id	ui.blue	青
+@id	ui.blue_2	青
+@id	ui.bold	太字
+@id	ui.bold_ctrl_b	太字（Ctrl+B）
+@id	ui.both_as_the_page_s_own_stamp_is_written	両方、ページ固有のスタンプとして記述されます
+@id	ui.browse_for_a_notebook	ノートブックを参照…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	{folder}内のノートブックを参照するか、別のフォルダを選択します。
+@id	ui.brush_pen	ブラシペン
+@id	ui.built_with	構築技術
+@id	ui.bullets	箇条書き
+@id	ui.cancel	キャンセル
+@id	ui.cancel_import	インポートをキャンセル
+@id	ui.cannot_open_gridcraft_error	GridCraftを開けません：{error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	GridCraftでテーブルを開けません：{error}
+@id	ui.cannot_save_the_pasted_picture_error	貼り付けた画像を保存できません：{error}
+@id	ui.cannot_write_name_error	{name}に書き込めません：{error}
+@id	ui.cannot_write_the_drawing_error	描画を保存できません：{error}
+@id	ui.cannot_write_the_picture_error	画像を保存できません：{error}
+@id	ui.cannot_write_this_page_s_ink	このページのインク（手書きデータ）を保存できません
+@id	ui.choose_a_custom_ink_colour	カスタムインクカラーを選択
+@id	ui.choose_a_file_to_attach	添付するファイルを選択
+@id	ui.choose_a_file_to_import	インポートするファイルを選択
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	ローカルコレクションレベルを選択します。リリースビルドではデフォルトでログ記録は無効です。
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	ノートブック、ノートブックのフォルダ、または新しいノートブック用の空のフォルダを選択
+@id	ui.choose_a_onenote_notebook_folder	OneNoteノートブックフォルダを選択
+@id	ui.choose_a_pdf_or_office_document_to_print_out	印刷するPDFまたはOffice文書を選択
+@id	ui.choose_a_picture	画像を選択
+@id	ui.choose_a_section_to_see_its_pages	ページを表示するセクションを選択します。
+@id	ui.choose_a_symbol_to_insert_at_the_caret	カーソルに挿入する記号を選択
+@id	ui.choose_how_to_insert_a_picture	画像の挿入方法を選択
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	NoteCraftがローカルで記録する内容を選択します。データは自動的にアップロードされません。
+@id	ui.chosen_for_this_page	このページ用に選択されました
+@id	ui.circle	円
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	すべてのローカルテレメトリセッションとエクスポートされたテレメトリZIPファイルをクリアしますか？
+@id	ui.clear_formatting	書式をクリア
+@id	ui.clear_formatting_2	書式をクリア
+@id	ui.clear_telemetry	テレメトリデータをクリア
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	ストロークをクリックして選択し、移動、伸縮、または削除します
+@id	ui.click_in_a_table_first	まずテーブル内をクリックしてください
+@id	ui.click_in_the_page_first	まずページ内をクリックしてください
+@id	ui.click_in_the_page_first_then_use_the_ribbon	まずページ内をクリックし、その後リボンを使用してください
+@id	ui.click_in_the_table_first	まずテーブル内をクリックしてください
+@id	ui.clipboard	クリップボード
+@id	ui.close	閉じる
+@id	ui.close_notebook	ノートブックを閉じる
+@id	ui.close_the_find_bar_escape	検索バーを閉じる（Esc）
+@id	ui.close_the_source_pane	ソースペインを閉じる
+@id	ui.cloud_import_is_not_implemented_yet	クラウドインポートはまだ実装されていません。
+@id	ui.code_2	コード
+@id	ui.code_in_one_line	1行のコード
+@id	ui.collapse	折りたたむ
+@id	ui.collapse_all	すべて折りたたむ
+@id	ui.college	大学
+@id	ui.college_ruled	大学規則
+@id	ui.colour	色
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	色が削除されました
+@id	ui.colour_set_to_colour	色を{colour}に設定
+@id	ui.colours	色
+@id	ui.columns_x_rows_table	{columns} x {rows} テーブル
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	お問い合わせ
+@id	ui.convert	変換
+@id	ui.convert_to_gridcraft_2	\nGridCraftに変換
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	GridCraftに変換できません: GridCraftがインストールされていません
+@id	ui.copied	コピーしました
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	ファイルをコピーし、印刷ページごとに画像を1つ挿入します。
+@id	ui.copy	コピー
+@id	ui.copy_full_path	フルパスをコピー
+@id	ui.copy_link_to_page	ページのリンクをコピー
+@id	ui.copy_the_selection	選択範囲をコピー
+@id	ui.could_not_attach_name_before_rendering_its_pages	ページをレンダリングする前に{name}を添付できませんでした
+@id	ui.could_not_attach_name_to_this_page	このページに{name}を添付できませんでした。
+@id	ui.could_not_complete_the_action_error	アクションを完了できません: {error}
+@id	ui.could_not_import_the_notebook_error	ノートブックをインポートできません: {error}
+@id	ui.could_not_open_the_containing_folder_error	親フォルダを開けません: {error}
+@id	ui.could_not_open_the_file_error	ファイルを開けません: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	{name}のアイコンを修復できません: {error}
+@id	ui.could_not_reset_app_preferences_error	アプリ設定をリセットできません: {error}
+@id	ui.could_not_restore_the_link_for_name_error	{name}のリンクを復元できません: {error}
+@id	ui.could_not_save_the_interface_language_error	インターフェース言語を保存できません: {error}
+@id	ui.could_not_store_printout_page_page_error	印刷ページ{page}を保存できません: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} アイテム、{colour} 色
+@id	ui.create	作成
+@id	ui.created	作成済み
+@id	ui.critical	重大
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V でページに貼り付け
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y で元に戻す
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z で最後の変更を取り消す
+@id	ui.current_session_id	現在のセッション: {id}
+@id	ui.custom	カスタム
+@id	ui.customize_quick_access_toolbar	クイック アクセス ツール バーをカスタマイズ
+@id	ui.customize_tags_not_built	タグのカスタマイズ... (未構築)
+@id	ui.cut	切り取り
+@id	ui.cut_2	切り取り
+@id	ui.cut_the_selection	選択範囲を切り取る
+@id	ui.dark	ダーク
+@id	ui.data	データ
+@id	ui.date	日付
+@id	ui.date_time_2	日付 &\n時刻
+@id	ui.debug	デバッグ
+@id	ui.decrease_indentation	インデントを減らす
+@id	ui.decrease_indentation_shift_tab	インデントを減らす (Shift+Tab)
+@id	ui.default	既定値
+@id	ui.default_format	既定の形式
+@id	ui.default_format_for_pages_below	以下のページの既定の形式
+@id	ui.definition	定義
+@id	ui.delete	削除
+@id	ui.delete_assets_name_from_this_page_s_folder	このページのフォルダから "assets/{name}" を削除しますか？
+@id	ui.delete_columns_2	\n列を削除
+@id	ui.delete_ellipsis	削除...
+@id	ui.delete_file	ファイルを削除
+@id	ui.delete_notebook	ノートブックを削除
+@id	ui.delete_notebook_2	ノートブックを削除...
+@id	ui.delete_notebook_title_and_everything_inside_it	ノートブック "{title}" とその中のすべての内容を削除しますか？
+@id	ui.delete_permanently	完全に削除
+@id	ui.delete_rows_2	\n行を削除
+@id	ui.delete_tool	ツールを削除
+@id	ui.delete_tool_2	{tool}を削除
+@id	ui.deleted_notebook	ノートブックが削除されました
+@id	ui.deleted_notebook_path	ノートブック {path} が削除されました
+@id	ui.deny	拒否
+@id	ui.diagram	図
+@id	ui.diamond	菱形
+@id	ui.direction_from_the_words	単語からの方向
+@id	ui.discovering_sections	セクションを検索しています…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	このセッションでは類似の添付ファイルの問題について再度警告しない
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	このセッションでは類似の欠落したアイコンについて再度警告しない
+@id	ui.do_not_warn_again_for_this_file_type_this_session	このセッションではこのファイルの種類について再度警告しない
+@id	ui.dock_to_desktop	デスクトップにドッキング
+@id	ui.document_renderer_coming_soon	ドキュメントレンダラーは近日公開予定
+@id	ui.don_t_show_this_again_in_this_session	このセッションでは今後このメッセージを表示しない
+@id	ui.don_t_show_this_ever	今後表示しない
+@id	ui.draw	描画
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	インクを囲むようにループを描いて選択します
+@id	ui.draw_here_2	\nここに描画
+@id	ui.drawing	描画中...
+@id	ui.drawing_saved_count_strokes	描画保存完了、{count} ストローク
+@id	ui.drawing_tools	描画ツール
+@id	ui.drop_a_file_onto_the_page_to_add_it	ファイルをページにドロップして追加します
+@id	ui.edit	編集
+@id	ui.editing	編集中...
+@id	ui.egui_and_eframe	egui と eframe
+@id	ui.ellipse	楕円形
+@id	ui.email	メール
+@id	ui.english	英語
+@id	ui.equation	数式
+@id	ui.equation_name	数式: {name}
+@id	ui.eraser	消しゴム
+@id	ui.error	エラー
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	数えやすいように、5行ごとに線がわずかに太くなります。
+@id	ui.every_line_of_this_page_decides_for_itself	このページの各行が個別に決定します
+@id	ui.every_paragraph_decides_for_itself	各段落が個別に決定します
+@id	ui.expand	展開
+@id	ui.expand_all	すべて展開
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	エクスポートはユーザーが選択したZIPを作成し、その後エクスポートされたセッションフォルダを削除します。
+@id	ui.export_current_session_zip	現在のセッションのZIPをエクスポート
+@id	ui.export_telemetry_zip	テレメトリのZIPをエクスポート
+@id	ui.eyedropper	スポイト
+@id	ui.eyedropper_not_built	スポイトはまだ構築されていません
+@id	ui.file	ファイル
+@id	ui.file_attachment_2	\n添付ファイル
+@id	ui.file_options	ファイルオプション
+@id	ui.file_printout_2	\n印刷物
+@id	ui.files	ファイル
+@id	ui.files_in_this_page	このページ内のファイル
+@id	ui.find	検索
+@id	ui.find_in_this_file	このファイル内を検索
+@id	ui.find_tags	タグを検索
+@id	ui.find_tags_3	\nタグを検索
+@id	ui.fit_the_page_to_the_available_width	ページを利用可能な幅に合わせてフィット
+@id	ui.folder_folder	フォルダー: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	システムのライトモードまたはダークモードの設定に従う
+@id	ui.format	書式
+@id	ui.format_background_2	\nの背景
+@id	ui.format_for_this_page	このページの書式設定
+@id	ui.format_painter	書式のコピー
+@id	ui.forward	次へ
+@id	ui.forward_to_the_page_after_alt_right	次のページに移動 (Alt+右矢印)
+@id	ui.fountain_pen	万年筆
+@id	ui.from_camera	カメラから
+@id	ui.from_online	オンラインから
+@id	ui.full_page	全画面
+@id	ui.full_page_view_2	\nの全画面表示
+@id	ui.full_path_copied	フルパスをコピーしました
+@id	ui.give_the_page_the_whole_window	ページをウィンドウ全体に表示する
+@id	ui.gray	グレー
+@id	ui.green	緑
+@id	ui.green_2	緑色
+@id	ui.grey	灰色
+@id	ui.gridcraft_is_not_installed	GridCraft がインストールされていません
+@id	ui.help	ヘルプ
+@id	ui.hide	非表示
+@id	ui.hide_everything_but_the_page	ページ以外のすべてを非表示にする
+@id	ui.hide_page_title	ページタイトルを非表示にする
+@id	ui.hide_the_page_source	ページのソースを非表示にする
+@id	ui.hide_the_page_title	ページタイトルを非表示にする
+@id	ui.highlight	強調表示
+@id	ui.highlighter	蛍光ペン
+@id	ui.history	履歴
+@id	ui.home	ホーム
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	アイデア
+@id	ui.images	画像
+@id	ui.immersive_reader	集中読書モード
+@id	ui.import_file	ファイルのインポート
+@id	ui.import_from_the_cloud	クラウドからインポート
+@id	ui.import_notebook_folder	ノートブックフォルダーをインポート
+@id	ui.important	重要
+@id	ui.importing	インポート中…
+@id	ui.importing_onenote	OneNote をインポート中
+@id	ui.increase_indentation	インデントを増やす
+@id	ui.increase_indentation_tab	インデントを増やす (Tab)
+@id	ui.index_of_total_sections	{total} のセクションのうち {index}
+@id	ui.info	情報
+@id	ui.inherit_notebook_section_or_global_setting	継承（ノートブック、セクション、またはグローバル設定による）
+@id	ui.input_mode	入力モード
+@id	ui.insert	挿入
+@id	ui.insert_a_common_symbol	一般的な記号を挿入
+@id	ui.insert_column_left_2	\n の左に列を挿入
+@id	ui.insert_column_right_2	\n の右に列を挿入
+@id	ui.insert_printout	印刷物を挿入
+@id	ui.insert_row_above_2	\n の上に行を挿入
+@id	ui.insert_row_below_2	\n の下に行を挿入
+@id	ui.insert_space_2	\n のスペースを挿入
+@id	ui.insert_symbol	記号を挿入
+@id	ui.insert_table_not_built	表の挿入... (未実装)
+@id	ui.insert_the_picture	画像を挿入
+@id	ui.insert_the_recording	録音を挿入
+@id	ui.insert_the_video	動画を挿入
+@id	ui.inserted_name_and_count_printout_pages	{name} と {count} の印刷ページを挿入しました
+@id	ui.interface_language	インターフェースの言語
+@id	ui.interface_language_language	インターフェースの言語: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	課題、ロードマップ、ドキュメントがすべて揃っています。NoteCraft はそれ自体でこれらや他のサービスにアクセスすることはありません。
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	ページのフォルダーが秘密でないようにリストされています。
+@id	ui.italic	斜体
+@id	ui.italic_ctrl_i	斜体 (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	段落のテキストに対して適用されます
+@id	ui.keep_this_window_above_the_others	このウィンドウを他のウィンドウの上に固定する
+@id	ui.label	ラベル
+@id	ui.label_not_built	{label} (未実装)
+@id	ui.label_not_built_yet	{label}: まだ実装されていません
+@id	ui.label_nothing_to_action	{label}: {action} するものがありません
+@id	ui.language_click_to_change_it	{language}。クリックして変更してください。
+@id	ui.large	大
+@id	ui.large_squares	大きなマス目
+@id	ui.laser_pointer	レーザーポインター
+@id	ui.lasso_select	\n で選択
+@id	ui.layout	レイアウト
+@id	ui.leave_it	そのままにする
+@id	ui.left_to_right	左から右へ
+@id	ui.level	レベル:
+@id	ui.licence	ライセンス
+@id	ui.light	ライト
+@id	ui.light_or_dark_and_the_accent_colour	ライトまたはダーク、およびアクセントカラー
+@id	ui.line	線
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	紙のようにページの背後にある罫線またはマス目
+@id	ui.link	リンク
+@id	ui.link_to_the_file_where_it_is	ファイルへのリンクを貼り付け
+@id	ui.link_to_title_copied	"{title}" へのリンクをコピーしました
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	{name} をその場所にリンクしました；ファイルはコピーされませんでした
+@id	ui.links	リンク
+@id	ui.live_captions	ライブキャプション
+@id	ui.local_collection_level	ローカルコレクションのレベル
+@id	ui.local_diagnostics	ローカル診断
+@id	ui.local_diagnostics_and_usage	ローカル診断と使用状況
+@id	ui.logging_folder_folder	ログフォルダー: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	ログとテレメトリはこのデバイス上に留まります。NoteCraft はそれらを自動的に送信しません。
+@id	ui.magenta	マゼンタ
+@id	ui.make_the_page_larger	ページを大きくする
+@id	ui.make_the_page_smaller	ページを小さくする
+@id	ui.many_thanks_to_its_authors_and_contributors	— 著者および貢献者に心より感謝いたします。
+@id	ui.markdown	Markdown
+@id	ui.match_case	大文字と小文字を区別
+@id	ui.math	数学
+@id	ui.maximize	最大化
+@id	ui.md_2	md
+@id	ui.media	メディア
+@id	ui.medium	中
+@id	ui.medium_squares	中程度のマス目
+@id	ui.meeting_details	会議の詳細
+@id	ui.meeting_details_3	\n の詳細
+@id	ui.meetings	会議
+@id	ui.merge	結合
+@id	ui.mermaid	Mermaid
+@id	ui.mint	ミント
+@id	ui.mit_license	MIT ライセンス
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT または Apache-2.0、お選びください。コアラのイラストはこれに含まれません；ATTRIBUTION.md を参照してください。
+@id	ui.mode	モード
+@id	ui.modify_tool	ツールを編集
+@id	ui.more	その他...
+@id	ui.more_2	その他
+@id	ui.more_colours	その他の色
+@id	ui.more_styles	その他のスタイル
+@id	ui.more_tags	その他のタグ
+@id	ui.move_left	左へ移動
+@id	ui.move_right	右へ移動
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	「{title}」およびその中のすべての内容（{n} アイテム）をこのノートブックのゴミ箱に移動しますか？|「{title}」およびその中のすべての内容（{n} アイテム）をこのノートブックのゴミ箱に移動しますか？
+@id	ui.move_to_recycle_bin	ゴミ箱へ移動
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	このページの以前の描画から {moved} のストロークをページ自体に移動しました
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} のストロークをページに移動しましたが、{left} の以前の描画ファイルを削除できませんでした
+@id	ui.moved_to_the_notebook_recycle_bin	ノートブックのゴミ箱へ移動しました
+@id	ui.n_item_n_items	{n} アイテム|{n} アイテム
+@id	ui.n_notebook_n_notebooks	{n} ノートブック|{n} ノートブック
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} ノートブックを開きました|{n} ノートブックを開きました
+@id	ui.n_stroke_n_strokes	{n} ストローク|{n} ストローク
+@id	ui.name_2	名前
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} はまだ構築されていません。今後の予定についてはロードマップをご覧ください。
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} はこのページのフォルダ内のファイルになりました
+@id	ui.name_is_open_in_gridcraft	{name} が GridCraft で開かれています
+@id	ui.name_not_used_by_the_page	{name}: ページで使用されていません
+@id	ui.narrow	狭くする
+@id	ui.narrow_ruled	罫線あり（狭）
+@id	ui.new_gridcraft_spreadsheet	新しい GridCraft スプレッドシート
+@id	ui.new_gridcraft_spreadsheet_not_installed	新しい GridCraft スプレッドシート（インストールされていません）
+@id	ui.new_notebook	新しいノートブック
+@id	ui.new_notebook_2	新しいノートブック...
+@id	ui.new_page	新しいページ
+@id	ui.new_page_2	新しいページ...
+@id	ui.new_pages	新しいページ:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	ノートブックまたはセクションで指定がない限り、新しいページは {format} を使用します
+@id	ui.new_quick_note	新しいクイックノート
+@id	ui.new_window	新しいウィンドウ
+@id	ui.next	次へ
+@id	ui.next_match_enter_f3	次の一致箇所 (Enter, F3)
+@id	ui.no	いいえ
+@id	ui.no_colour	色なし
+@id	ui.no_generated_preview_icon_is_available	生成されたプレビューアイコンは利用できません。
+@id	ui.no_lines_behind_the_page	ページの裏側に線はありません
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	このページの隣に {name} がありません: まずテーブルを渡してください
+@id	ui.no_notebooks_yet_use_new_notebook	ノートブックはまだありません。「新しいノートブック」を使用してください。
+@id	ui.no_pages_in_this_section_yet	このセクションにはまだページがありません。
+@id	ui.no_pages_match	一致するページはありません。
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	保存されたバージョンはまだありません。NoteCraft はページが変更されるたびにコピーを保持します。
+@id	ui.none	なし
+@id	ui.normal_view	通常\n表示
+@id	ui.not_built	構築されていません
+@id	ui.not_built_2	構築されていません
+@id	ui.not_built_yet	まだ構築されていません
+@id	ui.not_drawn_why	描画されていません: {why}
+@id	ui.not_used_by_the_page	ページで使用されていません
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	純粋な Rust によるノート作成と整理。あなたのノートはプレーンなフォルダとファイルです。
+@id	ui.notebook	ノートブック
+@id	ui.notebook_closed_its_files_are_still_on_disk	ノートブックが閉じられました; ファイルはディスク上に残っています
+@id	ui.notebook_created	ノートブックが作成されました
+@id	ui.notebook_information	ノートブック情報
+@id	ui.notebook_recycle_bin_2	ノートブックのゴミ箱
+@id	ui.notebook_recycle_bin_3	ノートブック\nゴミ箱
+@id	ui.notebooks_2	ノートブック
+@id	ui.notebooks_and_pages_in_their_own_columns	ノートブックとページを別々の列に表示
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	ノートブックとセクションを1つの列に、ページを次の列に表示
+@id	ui.notebooks_folder_folder	ノートブックフォルダ: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	開いたノートブックがここに表示されます。
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft はこのページで参照されていない添付ファイルを見つけました:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft は生成されたアイコンのない添付ファイルを見つけました:
+@id	ui.notecraft_ruled	NoteCraft 罫線
+@id	ui.notecraft_squares	NoteCraft 四角形
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	ノートをプレーンなフォルダとして保存します。ページを開くか、ノートブックを作成して開始してください。
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	{path} に何もありません: リンクは存在しないページまたはファイルを指しています
+@id	ui.nothing_here_can_show_this_kind_of_file	ここではこの種類のファイルを表示できません。
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	コピーされていません。ファイルが移動するとリンクが切断されます。
+@id	ui.nothing_to_redo	やり直しする操作はありません
+@id	ui.nothing_to_undo	元に戻す操作はありません
+@id	ui.numbering	番号付け
+@id	ui.off	オフ
+@id	ui.off_2	オフ
+@id	ui.office_document	オフィス文書
+@id	ui.office_text_inspection	オフィステキストの検査
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO インポートワーカーが予期せず停止しました
+@id	ui.ok	OK
+@id	ui.one_tree_of_notebooks	ノートブックの単一ツリー
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive および SharePoint: 構築されていません。NoteCraft をすでに同期ツールが監視しているフォルダを指すように設定すると、同じようになります。
+@id	ui.onenote_import	OneNote インポート
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	オンラインノートブック（OneDrive、SharePoint）は構築されていません。同期ツールが監視しているフォルダ内のノートブックはそれによって同期されます。
+@id	ui.only_a_list_item_can_be_indented	リスト項目のみがインデントできます
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	ファイルと作成者を信頼できる場合のみ開いてください。
+@id	ui.open	開く
+@id	ui.open_a_folder	フォルダを開く...
+@id	ui.open_a_notebook	ノートブックを開く
+@id	ui.open_a_page_first	まずページを開いてください
+@id	ui.open_a_page_first_then_drop_files_onto_it	まずページを開き、その後ファイルをドロップしてください。
+@id	ui.open_attachment	添付ファイルを開く
+@id	ui.open_every_level	すべてのレベルを開く
+@id	ui.open_folder	フォルダを開く
+@id	ui.open_in_folder	フォルダで開く
+@id	ui.open_name	{name} を開く
+@id	ui.open_telemetry_folder	テレメトリフォルダを開く
+@id	ui.open_the_artcraft_discord	ArtCraft Discord を開く
+@id	ui.open_this_notebook	このノートブックを開く
+@id	ui.open_using_shell	シェルで開く
+@id	ui.open_with_associated_app	関連付けられたアプリで開く
+@id	ui.opened	開かれました
+@id	ui.opened_path	{path} を開きました
+@id	ui.opened_path_it_has_no_pages_yet	{path} を開きましたが、まだページがありません
+@id	ui.opened_the_containing_folder	親フォルダを開きました
+@id	ui.opened_url_in_the_browser	ブラウザで {url} を開きました
+@id	ui.opened_using_the_associated_application	関連付けられたアプリケーションを使用して開きました
+@id	ui.opening_path	{path} を開いています
+@id	ui.options	オプション
+@id	ui.orange	オレンジ
+@id	ui.page	ページ
+@id	ui.page_colour	ページの背景色
+@id	ui.page_direction_from_the_words	文字列からのページ方向
+@id	ui.page_format	ページ形式
+@id	ui.page_left_to_right	左から右へのページ
+@id	ui.page_right_to_left	右から左へのページ
+@id	ui.page_setup	ページ設定
+@id	ui.page_source	ページのソース
+@id	ui.page_versions_2	ページのバージョン
+@id	ui.page_versions_4	\nのバージョン
+@id	ui.page_width	ページ幅
+@id	ui.pages	ページ
+@id	ui.paper_behind_the_page	ページの背後にある{paper}
+@id	ui.paper_size	用紙サイズ
+@id	ui.para	段落
+@id	ui.paragraph_direction_from_the_words	文字に基づく段落の方向
+@id	ui.paragraph_left_to_right	左から右への段落
+@id	ui.paragraph_right_to_left	右から左への段落
+@id	ui.paragraph_selected	選択された段落
+@id	ui.paste	貼り付け
+@id	ui.pasted	貼り付け済み
+@id	ui.pasted_a_picture_width_by_height	画像を貼り付け、{width}が{height}によって処理されました
+@id	ui.pasted_formatted_content	書式付きコンテンツを貼り付けました
+@id	ui.path_opened_as_an_empty_notebook	空のノートブックとして{path}が開かれました
+@id	ui.pdf_and_office_documents	PDFおよびOffice文書
+@id	ui.pdf_document	PDF文書
+@id	ui.pdf_text_inspection	PDFテキスト検査
+@id	ui.pen	ペン
+@id	ui.pencil	鉛筆
+@id	ui.permanently_delete	完全に削除しますか？
+@id	ui.permanently_delete_title_and_everything_inside_it	"{title}"とその中のすべての内容を完全に削除しますか？
+@id	ui.permanently_deleted	完全に削除されました
+@id	ui.phone_number	電話番号
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	PDFまたはOffice文書を選択し、そのページを画像として挿入します
+@id	ui.pick_the_caret_s_column	キャレットの列を選択
+@id	ui.pick_the_caret_s_row	キャレットの行を選択
+@id	ui.pick_the_whole_table	テーブル全体を選択
+@id	ui.picture_from_a_file	ファイルから画像
+@id	ui.pictures	画像
+@id	ui.plain	プレーン
+@id	ui.plain_text	プレーンテキスト
+@id	ui.powered_by	提供元
+@id	ui.pressure_sensitivity_now_of_100	100の圧力感度{now}
+@id	ui.pressure_sensitivity_unavailable	圧力感度が利用できません
+@id	ui.previous	前へ
+@id	ui.previous_match_shift_enter	前の一致 (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	PDFおよびOffice文書に対して印刷出力が可能です。
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	プライバシーは最優先事項です。すべてのログとテレメトリはこのデバイス上に留まります。NoteCraftはそれらを自動的に送信しません。
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	プライバシーは最優先事項です。ログとテレメトリはこのデバイス上に留まります。NoteCraftはそれらを送信しません。
+@id	ui.purple	紫
+@id	ui.put_a_sheet_to_draw_on_into_the_page	描画用のシートをページに配置します
+@id	ui.put_another_tool_on_the_rack	ラックにもう一つのツールを置きます
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	ポインターを文字とキャレットに戻します
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	スプレッドシートの内容をこのテーブルに戻します
+@id	ui.question	質問
+@id	ui.quote_2	引用符
+@id	ui.quote_this_paragraph	この段落を引用符で囲む
+@id	ui.read_back_from_it_2	\nから読み戻す
+@id	ui.read_back_rows_rows_and_columns_columns	{rows}行と{columns}列を読み戻す
+@id	ui.read_only	読み取り専用
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	読み取り専用テキスト抽出。完全な文書レンダリングは近日公開予定です。
+@id	ui.ready_2	準備完了
+@id	ui.recently_opened	最近開いたファイル
+@id	ui.recording	録画中
+@id	ui.rectangle	矩形
+@id	ui.red	赤
+@id	ui.red_2	赤
+@id	ui.redo	やり直し
+@id	ui.redo_ctrl_y	やり直し (Ctrl+Y)
+@id	ui.remember_for_later	後で記憶する
+@id	ui.remove_from_list	リストから削除
+@id	ui.remove_this_tool_from_the_rack	このツールをラックから削除します
+@id	ui.removed_notebook_from_the_known_notebooks_list	既知のノートブックリストからノートブックを削除しました
+@id	ui.rename	名前を変更
+@id	ui.rename_ellipsis	名前の変更...
+@id	ui.renamed	名前が変更されました
+@id	ui.rendered_svg_preview	レンダリングされたSVGプレビュー
+@id	ui.repair_icon	アイコンを修復
+@id	ui.repaired_the_attachment_icon_for_name	{name}の添付ファイルアイコンを修復しました
+@id	ui.replay	再生
+@id	ui.reset_app_preferences	アプリ設定をリセット
+@id	ui.reset_app_preferences_2	アプリ設定をリセット...
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	NoteCraftの保存された設定を既定値に戻しますか？
+@id	ui.reset_preferences	設定をリセット
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	テーマ、レイアウト、リボンの選択、およびその他の保存されたNoteCraftの設定を既定値にリセットします。
+@id	ui.restore	復元
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	このノートブックから削除されたページ、セクション、グループを復元します
+@id	ui.restored_the_saved_page_version	保存されたページバージョンを復元しました
+@id	ui.restored_to_the_original_location	元の場所に復元されました
+@id	ui.right_to_left	右から左へ
+@id	ui.rounded	角丸
+@id	ui.rub_out_whatever_the_pointer_passes_over	ポインターが通過したものを消去します
+@id	ui.rule_line_colour_not_built	罫線の色（未構築）
+@id	ui.ruled	罫線あり
+@id	ui.save_picture_2	\nの画像を保存
+@id	ui.saved	保存済み
+@id	ui.saved_copies_of_this_page	このページの保存されたコピー
+@id	ui.saved_the_drawing_as_a_picture_path	描画を画像として保存しました: {path}
+@id	ui.saved_time	{time}を保存しました
+@id	ui.search	検索
+@id	ui.search_all_pages	すべてのページを検索
+@id	ui.section	セクション
+@id	ui.section_group	セクショングループ
+@id	ui.see_and_restore_saved_copies_of_this_page	このページの保存されたコピーを表示および復元します
+@id	ui.select	選択
+@id	ui.select_columns_2	\n列を選択
+@id	ui.select_rows_2	\n行を選択
+@id	ui.select_some_words_first	まずいくつかの単語を選択してください
+@id	ui.select_table_2	\nテーブルを選択
+@id	ui.selected_text_next_typing	選択されたテキスト / 次の入力
+@id	ui.selection	選択範囲
+@id	ui.send_page	ページを送信
+@id	ui.send_page_3	\nページを送信
+@id	ui.separate_pages	ページを分離
+@id	ui.session_id_id	セッションID: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	選択されたテキスト、または次にタイプするテキストの方向を設定します
+@id	ui.shape	形状
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: ページ上でドラッグして描画します
+@id	ui.shapes	図形
+@id	ui.show	表示
+@id	ui.show_notebooks_folder	ノートブックフォルダを表示
+@id	ui.show_or_hide_the_notebooks_column	ノートブック列を表示または非表示にします
+@id	ui.show_the_code	コードを表示する
+@id	ui.show_the_notebooks_again	ノートブックを再度表示する
+@id	ui.show_the_notebooks_folder	ノートブックフォルダを表示する
+@id	ui.show_the_page_at_100	ページを100%で表示する
+@id	ui.show_the_page_source	ページソースを表示
+@id	ui.show_the_strokes	ストロークを表示
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	小
+@id	ui.small_squares	小さな四角
+@id	ui.somewhere_else	その他
+@id	ui.source	ソース
+@id	ui.split	分割
+@id	ui.spreadsheet	スプレッドシート
+@id	ui.square	四角
+@id	ui.squares	四角
+@id	ui.standard	標準
+@id	ui.standard_ruled	罫線付き標準
+@id	ui.star	星
+@id	ui.starting_officeimo	OfficeIMOを起動中…
+@id	ui.stencils	ステンシル
+@id	ui.strike_through	取り消し線
+@id	ui.strikethrough	取り消し線
+@id	ui.styles	スタイル
+@id	ui.styles_2	スタイル
+@id	ui.svg_source	SVGソース
+@id	ui.symbol	記号
+@id	ui.symbols	記号
+@id	ui.table_3	表
+@id	ui.tables	表
+@id	ui.tabs_layout	タブレイアウト
+@id	ui.tag_tag	{tag} タグ
+@id	ui.tags	タグ
+@id	ui.take_the_caret_s_column_out	カーソルの列を除外
+@id	ui.take_the_caret_s_row_out	カーソルの行を除外
+@id	ui.take_the_last_stroke_back	最後のストロークを取り消し
+@id	ui.take_the_marks_off	マークを削除
+@id	ui.teal_2	ティール
+@id	ui.text	テキスト
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	テキスト検査は以下に表示されます。
+@id	ui.text_run_direction	テキストの読み方向
+@id	ui.thank_you_for_trying_notecraft	NoteCraftをお試しいただきありがとうございます！
+@id	ui.that_file_has_nothing_in_it_to_put_back	このファイルには復元する内容がありません
+@id	ui.that_file_is_not_in_this_page_s_folder	このファイルは現在のページフォルダ内にありません
+@id	ui.that_is_not_something_a_page_can_hold	これはページが保持できない形式です
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	このリンクはノートブックフォルダ外を指しているため、フォローされませんでした
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	このページは開いているノートブック内にありません
+@id	ui.the_attachment_returned_an_invalid_page_link	添付ファイルが無効なページリンクを返しました
+@id	ui.the_built_in_default	組み込みデフォルト
+@id	ui.the_code	コード
+@id	ui.the_diagnostics_folder_could_not_be_created_error	診断フォルダを作成できません: {error}
+@id	ui.the_file_could_not_be_opened_error	ファイルを開けません: {error}
+@id	ui.the_file_is_gone	ファイルが存在しません
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	ファイルはディスクから削除されました。元に戻してもファイルは復元されません。
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	ファイルは安全です。NoteCraftはページの末尾にリンクを追加できます。
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	ファイルを添付できませんでした: 添付コマンドが予期しない結果を返しました。
+@id	ui.the_folder_could_not_be_opened_error	フォルダを開けません: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	フォーマットはページ作成時に設定されます
+@id	ui.the_global_setting	グローバル設定
+@id	ui.the_last_tool_stays_on_the_rack	最後のツールはラックに残ります
+@id	ui.the_notebook_could_not_be_deleted_error	ノートブックを削除できません: {error}
+@id	ui.the_notebook_or_section_setting	ノートブックまたはセクションの設定
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	元のファイルはまだ安全です。NoteCraftは隣にアイコンを再生成できます。
+@id	ui.the_page_beside_the_notebooks	ノートブックの隣にあるページ
+@id	ui.the_page_is_colour	このページは {colour} です
+@id	ui.the_page_is_the_theme_s_own_colour	このページはテーマの色です
+@id	ui.the_page_source_beside_the_page	ページの隣にあるページソース
+@id	ui.the_paper_and_colour_apply_to_this_page_only	用紙と色はこのページにのみ適用されます。
+@id	ui.the_theme_could_not_be_saved_error	テーマを保存できません: {error}
+@id	ui.the_time_now	現在の時刻
+@id	ui.the_welcome_notebook	ウェルカムノートブック
+@id	ui.the_whole_page_reads_left_to_right	ページ全体は左から右へ読みます
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	ページ全体は右から左へ読みます（アラビア語、ヘブライ語）
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	ウィンドウはGPUで描画されます。アイコンはコードで描画され、ロゴのみが画像です。
+@id	ui.theme	テーマ
+@id	ui.theme_theme	テーマ {theme}
+@id	ui.theme_theme_2	テーマ: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme} テーマ。クリックして変更します。
+@id	ui.there_are_no_notebooks_yet_new_starts_one	まだノートブックがありません。「新規」で開始します。
+@id	ui.there_is_no_drawing_on_this_page	このページには描画がありません
+@id	ui.there_is_no_earlier_page	以前のページはありません
+@id	ui.there_is_no_later_page	以降のページはありません
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	ラックに別のツールを置く場所がありません
+@id	ui.there_is_no_stroke_to_take_back	取り消し可能なストロークがありません
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	クリップボードに貼り付ける内容がありません
+@id	ui.thickness	太さ
+@id	ui.this_cannot_be_undone	これは元に戻せません。
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	ごみ箱に移動できませんでした。何も削除されませんでした。
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	ノートブックやページは削除されません。元に戻せません。
+@id	ui.this_file_will_be_opened_by_its_associated_application	このファイルは関連付けられたアプリケーションで開かれます。
+@id	ui.this_notebook_s_recycle_bin_is_empty	このノートブックのごみ箱は空です。
+@id	ui.this_page	このページ
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	このページにはNoteCraftがまだ編集できないマークアップが含まれているため、そのまま表示されます。
+@id	ui.this_page_reads_left_to_right	このページは左から右へ読みます
+@id	ui.this_page_reads_right_to_left	このページは右から左へ読みます
+@id	ui.this_paragraph_decides_from_its_own_first_letter	この段落は最初の文字から判断します
+@id	ui.this_paragraph_fills_the_column	この段落は列を埋めます
+@id	ui.this_paragraph_fills_the_column_stretched_hard	この段落は列を強く引き伸ばして埋めます
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	この段落は列を軽く引き伸ばして埋めます
+@id	ui.this_paragraph_is_ragged_again	この段落は再び不ぞろいになります
+@id	ui.this_paragraph_reads_left_to_right	この段落は左から右へ読みます
+@id	ui.this_paragraph_reads_right_to_left	この段落は右から左へ読みます
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	この段落は右から左へ読みます（アラビア語、ヘブライ語）
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	この段落は単語の方向に従います
+@id	ui.this_picture_cannot_be_shown_here	この画像はここに表示できません。
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	これによりノートブックフォルダがディスクから削除され、元に戻せません。
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	このランは左から右へ読みます。混在する行は依然として一方向に描画されます；ロードマップを参照してください
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	このランは右から左へ読みます。混在する行は依然として一方向に描画されます；ロードマップを参照してください
+@id	ui.this_svg_cannot_be_rendered_here	このSVGはここではレンダリングできません。
+@id	ui.this_window_behaves_like_the_others	このウィンドウは他のウィンドウと同様に動作します
+@id	ui.this_window_stays_on_top	このウィンドウは常に最前面に表示されます
+@id	ui.time	時刻
+@id	ui.time_stamp	タイムスタンプ
+@id	ui.title_2	タイトル
+@id	ui.title_saved	タイトル保存済み
+@id	ui.title_the_folder_name_does_not_change	タイトル（フォルダ名は変更されません）
+@id	ui.to_do_2	ToDo
+@id	ui.to_do_tag_2	ToDo\nタグ
+@id	ui.today_s_date	本日の日付
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	ラックから外しました
+@id	ui.took_the_last_stroke_back_count_left	最後のストロークを取り消し；残り {count}
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	ツール
+@id	ui.top	トップ
+@id	ui.triangle	三角形
+@id	ui.type	タイプ
+@id	ui.under_the	下にある
+@id	ui.undo	元に戻す
+@id	ui.undo_ctrl_z	元に戻す (Ctrl+Z)
+@id	ui.undo_stroke	Undo\nstroke
+@id	ui.unread	未読
+@id	ui.updated_the_welcome_notebook	ウェルカムノートブックを更新しました
+@id	ui.use_notecraft_s_own_title_bar	NoteCraft独自のタイトルバーを使用する
+@id	ui.use_the_system_title_bar	システムのタイトルバーを使用する
+@id	ui.version_version_alpha	バージョン {version} (アルファ)
+@id	ui.very_large	非常に大きい
+@id	ui.very_large_squares	非常に大きな四角形
+@id	ui.view	表示
+@id	ui.views	ビュー
+@id	ui.warn	警告
+@id	ui.web_site_to_visit	訪問するウェブサイト
+@id	ui.welcome_to_notecraft	NoteCraftへようこそ
+@id	ui.what_should_happen_to_this_file	このファイルに何を行うべきですか？
+@id	ui.what_to_add	追加する内容
+@id	ui.wide	広い
+@id	ui.wide_ruled	広 ruling
+@id	ui.window	ウィンドウ
+@id	ui.write_anywhere_on_the_page	ページ上のどこにでも書き込む
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	ペン読み取りなしで描画を再作成し、送信する
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	表を書き出してGridCraftで開く
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	黄色
+@id	ui.yellow_2	黄色
+@id	ui.you_can_continue_working_while_the_import_runs	インポートが実行中でも作業を続けることができます。
+@id	ui.you_can_restore_it_from_history	履歴から復元できます。
+@id	ui.zoom	ズーム
+@id	ui.zoom_in	ズームイン
+@id	ui.zoom_out	ズームアウト
+@id	ui.zoom_to_100	100%にズーム

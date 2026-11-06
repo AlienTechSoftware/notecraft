@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	آیا «{title}» و همه محتویات آن ({n} مورد) را به سطل بازیافت این دفترچه منتقل کنیم؟|آیا «{title}» و همه محتویات آن ({n} مورد) را به سطل بازیافت این دفترچه منتقل کنیم؟
+@plural	{n} item|{n} items	{n} مورد|{n} مورد
+@plural	{n} notebook opened|{n} notebooks opened	{n} دفترچه باز شد|{n} دفترچه باز شد
+@plural	{n} notebook|{n} notebooks	{n} دفترچه|{n} دفترچه
+@plural	{n} stroke|{n} strokes	{n} خط|{n} خط
+@id	language.name	فارسی
+@id	ui.a_bullet_list	یک فهرست گلوله‌ای
+@id	ui.a_column_left_of_the_caret_s	یک ستون در سمت چپ نشانگر
+@id	ui.a_column_right_of_the_caret_s	یک ستون در سمت راست نشانگر
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	یک کپی به پوشه این صفحه اضافه می‌شود، بنابراین دفترچه آن را با خود حمل می‌کند.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	یک جهت روی یک پاراگراف متنی اعمال می‌شود
+@id	ui.a_file_copied_in_or_linked_where_it_is	یک فایل: کپی شده درون، یا پیوند داده شده به محل فعلی
+@id	ui.a_link	یک پیوند
+@id	ui.a_link_to_a_page_or_an_address	یک پیوند به یک صفحه یا آدرس
+@id	ui.a_link_to_paste_into_another_page	یک پیوند برای چسباندن در صفحه دیگر
+@id	ui.a_mermaid_diagram_kept_as_its_source	یک نمودار Mermaid، که به عنوان منبع آن حفظ می‌شود
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	یک دفترچه جدید یک پوشه در {folder} است که شامل یک بخش و یک صفحه درون آن می‌باشد.
+@id	ui.a_new_page_in_this_section	یک صفحه جدید در این بخش
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	یک جدول گسترده جدید در کنار صفحه، که در GridCraft باز می‌شود
+@id	ui.a_numbered_list	یک فهرست شماره‌دار
+@id	ui.a_page_here	یک صفحه در اینجا
+@id	ui.a_row_above_the_caret_s	یک ردیف بالای نشانگر
+@id	ui.a_row_below_the_caret_s	یک ردیف پایین نشانگر
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	یک جدول، سطر عنوان و حداقل یک ستون خود را حفظ می‌کند
+@id	ui.a_table_pick_its_size	یک جدول: اندازه آن را انتخاب کنید
+@id	ui.a_tag_goes_on_a_line_of_text	یک برچسب روی یک خط متنی اعمال می‌شود
+@id	ui.a_to_do_box_on_this_line_ctrl_1	یک جعبه انجام کار در این خط (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	یک تور از NoteCraft که در صفحات مستقل نمایش داده می‌شود. در اولین راه‌اندازی به یک پوشه دفترچه خالی اضافه می‌شود؛ این گزینه آن را دوباره اضافه می‌کند یا اگر هنوز موجود باشد، آن را باز می‌کند.
+@id	ui.about_notecraft	درباره NoteCraft
+@id	ui.accent_accent	تأکید: {accent}
+@id	ui.accept	پذیرش
+@id	ui.add	افزودن
+@id	ui.add_a_blank_paragraph_at_the_caret	افزودن یک پاراگراف خالی در نشانگر
+@id	ui.add_a_page_here	افزودن یک صفحه در اینجا
+@id	ui.add_a_sub_page	افزودن یک زیرصفحه
+@id	ui.add_another_tool	افزودن {tool} دیگر
+@id	ui.add_file	افزودن فایل
+@id	ui.add_file_to_this_page	افزودن فایل به این صفحه
+@id	ui.add_inside_this_kind	افزودن درون این {kind}
+@id	ui.add_name	افزودن {name}
+@id	ui.add_name_left_more	افزودن {name} ({left} بیشتر)
+@id	ui.add_page	افزودن صفحه
+@id	ui.add_the_welcome_notebook	افزودن دفترچه خوش‌آمدگویی
+@id	ui.add_tool	افزودن {tool}
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	یک پیوند به انتهای صفحه برای {name} اضافه شد
+@id	ui.added_a_tool	یک {tool} اضافه شد
+@id	ui.address	آدرس
+@id	ui.alignment	ترازبندی
+@id	ui.alignment_and_direction	ترازبندی و جهت
+@id	ui.alignment_and_which_way_this_paragraph_reads	ترازبندی، و اینکه این پاراگراف به کدام سمت خوانده می‌شود
+@id	ui.all_of_them_live_in_folder	همه آن‌ها در {folder} زندگی می‌کنند
+@id	ui.always_on_top	همیشه رو به بالا
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	یک معادله، نوشته شده با TeX: یکی را برای شروع انتخاب کنید
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	ترجیحات برنامه بازنشانی شد. برای اعمال تمام پیش‌فرض‌ها NoteCraft را مجدداً راه‌اندازی کنید.
+@id	ui.appearance	ظاهر
+@id	ui.append_link	پیوند به انتها اضافه شود
+@id	ui.application_preferences	ترجیحات برنامه
+@id	ui.arrow	پیکان
+@id	ui.attach_the_file	فایل را پیوست کنید
+@id	ui.attachment_icon_missing	آیکون پیوست موجود نیست
+@id	ui.attachment_not_linked	پیوست پیوند داده نشده است
+@id	ui.attachment_recovery	بازیابی پیوست‌ها
+@id	ui.authors	نویسندگان
+@id	ui.auto	خودکار
+@id	ui.automatic_system_language	خودکار (زبان سیستم)
+@id	ui.back	بازگشت
+@id	ui.back_to_the_notebook	بازگشت به دفترچه یادداشت
+@id	ui.back_to_the_page_before_alt_left	بازگشت به صفحه قبل (Alt+Left)
+@id	ui.basic_text	متن ساده
+@id	ui.black	سیاه
+@id	ui.blue	آبی تیره
+@id	ui.blue_2	آبی
+@id	ui.bold	درشت
+@id	ui.bold_ctrl_b	درشت (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	هر دو، به‌عنوان مهر اختصاصی صفحه نوشته می‌شود
+@id	ui.browse_for_a_notebook	جستجو برای یک دفترچه یادداشت…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	دفترچه‌های یادداشت را در {folder} مرور کنید یا پوشه دیگری را انتخاب کنید.
+@id	ui.brush_pen	قلم براش
+@id	ui.built_with	ساخته شده با
+@id	ui.bullets	لیست‌های نشانه‌دار
+@id	ui.cancel	لغو
+@id	ui.cancel_import	لغو وارد کردن
+@id	ui.cannot_open_gridcraft_error	نمی‌توان GridCraft را باز کرد: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	نمی‌توان جدول را در GridCraft باز کرد: {error}
+@id	ui.cannot_save_the_pasted_picture_error	نمی‌توان تصویر چسبانده شده را ذخیره کرد: {error}
+@id	ui.cannot_write_name_error	نمی‌توان {name} را نوشت: {error}
+@id	ui.cannot_write_the_drawing_error	نمی‌توان نقاشی را نوشت: {error}
+@id	ui.cannot_write_the_picture_error	نمی‌توان تصویر را نوشت: {error}
+@id	ui.cannot_write_this_page_s_ink	نمی‌توان جوهر این صفحه را نوشت
+@id	ui.choose_a_custom_ink_colour	یک رنگ جوهر سفارشی انتخاب کنید
+@id	ui.choose_a_file_to_attach	یک فایل برای پیوست انتخاب کنید
+@id	ui.choose_a_file_to_import	یک فایل برای وارد کردن انتخاب کنید
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	سطح ثبت محلی را انتخاب کنید. در نسخه‌های منتشر شده، ثبت به‌طور پیش‌فرض خاموش است.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	یک دفترچه یادداشت، یک پوشه از دفترچه‌های یادداشت یا یک پوشه خالی برای یک دفترچه جدید انتخاب کنید
+@id	ui.choose_a_onenote_notebook_folder	پوشه دفترچه یادداشت OneNote را انتخاب کنید
+@id	ui.choose_a_pdf_or_office_document_to_print_out	یک سند PDF یا Office را برای چاپ انتخاب کنید
+@id	ui.choose_a_picture	یک تصویر انتخاب کنید
+@id	ui.choose_a_section_to_see_its_pages	یک بخش را انتخاب کنید تا صفحات آن را ببینید.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	یک نماد برای درج در مکان‌نما انتخاب کنید
+@id	ui.choose_how_to_insert_a_picture	انتخاب کنید که چگونه یک تصویر را درج کنید
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	انتخاب کنید NoteCraft چه چیزی را به‌صورت محلی ثبت کند. هیچ داده‌ای به‌طور خودکار آپلود نمی‌شود.
+@id	ui.chosen_for_this_page	برای این صفحه انتخاب شده است
+@id	ui.circle	دایره
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	تمام جلسات تله‌متری محلی و فایل‌های ZIP تله‌متری صادرشده پاک شوند؟
+@id	ui.clear_formatting	پاک کردن قالب‌بندی
+@id	ui.clear_formatting_2	پاک کردن قالب‌بندی
+@id	ui.clear_telemetry	پاک کردن تله‌متری
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	روی یک ضربه کلیک کنید تا آن را انتخاب کنید، سپس جابه‌جا، کشیدن یا حذف کنید
+@id	ui.click_in_a_table_first	ابتدا در جدول کلیک کنید
+@id	ui.click_in_the_page_first	ابتدا در صفحه کلیک کنید
+@id	ui.click_in_the_page_first_then_use_the_ribbon	ابتدا در صفحه کلیک کنید، سپس از نوار ابزار استفاده کنید
+@id	ui.click_in_the_table_first	ابتدا در جدول کلیک کنید
+@id	ui.clipboard	کلیپ‌بورد
+@id	ui.close	بستن
+@id	ui.close_notebook	بستن دفترچه یادداشت
+@id	ui.close_the_find_bar_escape	نوار جستجو را ببندید (Escape)
+@id	ui.close_the_source_pane	پنجره منبع را ببندید
+@id	ui.cloud_import_is_not_implemented_yet	وارد کردن ابری هنوز پیاده‌سازی نشده است.
+@id	ui.code_2	کد
+@id	ui.code_in_one_line	کد، در یک خط
+@id	ui.collapse	جمع کردن
+@id	ui.collapse_all	جمع همه
+@id	ui.college	کالج
+@id	ui.college_ruled	قانون کالج
+@id	ui.colour	رنگ
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	رنگ حذف شد
+@id	ui.colour_set_to_colour	رنگ به {colour} تنظیم شد
+@id	ui.colours	رنگ‌ها
+@id	ui.columns_x_rows_table	جدول {columns} در برابر {rows}
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	تماس
+@id	ui.convert	تبدیل
+@id	ui.convert_to_gridcraft_2	تبدیل به \n GridCraft
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	تبدیل به GridCraft: GridCraft نصب نیست
+@id	ui.copied	کپی شد
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	فایل را کپی کرده و برای هر صفحه چاپ‌شده یک تصویر درج می‌کند.
+@id	ui.copy	کپی
+@id	ui.copy_full_path	کپی مسیر کامل
+@id	ui.copy_link_to_page	کپی لینک به صفحه
+@id	ui.copy_the_selection	کپی انتخاب
+@id	ui.could_not_attach_name_before_rendering_its_pages	نمی‌توان {name} را قبل از رندر صفحات پیوست کرد
+@id	ui.could_not_attach_name_to_this_page	نمی‌توان {name} را به این صفحه پیوست کرد.
+@id	ui.could_not_complete_the_action_error	نمی‌توان عملیات را کامل کرد: {error}
+@id	ui.could_not_import_the_notebook_error	نمی‌توان دفترچه یادداشت را وارد کرد: {error}
+@id	ui.could_not_open_the_containing_folder_error	نمی‌توان پوشه حاوی را باز کرد: {error}
+@id	ui.could_not_open_the_file_error	نمی‌توان فایل را باز کرد: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	نمی‌توان آیکون برای {name} را تعمیر کرد: {error}
+@id	ui.could_not_reset_app_preferences_error	نمی‌توان تنظیمات برنامه را ریست کرد: {error}
+@id	ui.could_not_restore_the_link_for_name_error	نمی‌توان لینک برای {name} را بازیابی کرد: {error}
+@id	ui.could_not_save_the_interface_language_error	نمی‌توان زبان رابط کاربری را ذخیره کرد: {error}
+@id	ui.could_not_store_printout_page_page_error	نمی‌توان صفحه چاپی {page} را ذخیره کرد: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{{count}} آیتم، {{colour}} رنگ
+@id	ui.create	ایجاد
+@id	ui.created	ایجاد شده
+@id	ui.critical	بحرانی
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V در صفحه پیست می‌کند
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y آن را برمی‌گرداند
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z آخرین تغییر را پس می‌گیرد
+@id	ui.current_session_id	جلسه فعلی: {id}
+@id	ui.custom	سفارشی
+@id	ui.customize_quick_access_toolbar	نوار دسترسی سریع را سفارشی کنید
+@id	ui.customize_tags_not_built	برچسب‌ها را سفارشی کنید... (ساخته نشده)
+@id	ui.cut	برش
+@id	ui.cut_2	برش
+@id	ui.cut_the_selection	برش انتخاب
+@id	ui.dark	تیره
+@id	ui.data	داده
+@id	ui.date	تاریخ
+@id	ui.date_time_2	تاریخ و {\n} زمان
+@id	ui.debug	دیباگ
+@id	ui.decrease_indentation	کاهش تورفتگی
+@id	ui.decrease_indentation_shift_tab	کاهش تورفتگی (Shift+Tab)
+@id	ui.default	پیش‌فرض
+@id	ui.default_format	فرمت پیش‌فرض
+@id	ui.default_format_for_pages_below	فرمت پیش‌فرض برای صفحات زیر
+@id	ui.definition	تعریف
+@id	ui.delete	حذف
+@id	ui.delete_assets_name_from_this_page_s_folder	آیا "assets/{name}" از پوشه این صفحه حذف شود؟
+@id	ui.delete_columns_2	حذف ستون‌های \n
+@id	ui.delete_ellipsis	حذف...
+@id	ui.delete_file	حذف فایل
+@id	ui.delete_notebook	حذف دفترچه یادداشت
+@id	ui.delete_notebook_2	حذف دفترچه یادداشت...
+@id	ui.delete_notebook_title_and_everything_inside_it	آیا دفترچه یادداشت "{title}" و همه محتویات آن حذف شود؟
+@id	ui.delete_permanently	حذف دائمی
+@id	ui.delete_rows_2	حذف سطرها \n
+@id	ui.delete_tool	ابزار حذف
+@id	ui.delete_tool_2	حذف {tool}
+@id	ui.deleted_notebook	دفترچه یادداشت حذف شده
+@id	ui.deleted_notebook_path	دفترچه یادداشت {path} حذف شد
+@id	ui.deny	رد کردن
+@id	ui.diagram	نمودار
+@id	ui.diamond	الماس
+@id	ui.direction_from_the_words	جهت از کلمات
+@id	ui.discovering_sections	جستجوی بخش‌ها…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	هشدار مشابه برای پیوست‌ها در این جلسه نشان داده نشود
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	هشدار مشابه برای آیکون‌های گم‌شده در این جلسه نشان داده نشود
+@id	ui.do_not_warn_again_for_this_file_type_this_session	هشدار مشابه برای این نوع فایل در این جلسه نشان داده نشود
+@id	ui.dock_to_desktop	چسباندن به دسکتاپ
+@id	ui.document_renderer_coming_soon	رندرکننده سند به زودی
+@id	ui.don_t_show_this_again_in_this_session	این پیام را دیگر در این جلسه نشان نده
+@id	ui.don_t_show_this_ever	این پیام را هرگز نشان نده
+@id	ui.draw	نقاشی
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	یک حلقه دور جوهر بکشید تا آن را انتخاب کنید
+@id	ui.draw_here_2	در اینجا نقاشی کنید \n
+@id	ui.drawing	در حال نقاشی...
+@id	ui.drawing_saved_count_strokes	نقاشی ذخیره شد، {{count}} ضربه
+@id	ui.drawing_tools	ابزارهای نقاشی
+@id	ui.drop_a_file_onto_the_page_to_add_it	یک فایل را روی صفحه رها کنید تا اضافه شود
+@id	ui.edit	ویرایش
+@id	ui.editing	در حال ویرایش...
+@id	ui.egui_and_eframe	egui و eframe
+@id	ui.ellipse	بیضی
+@id	ui.email	ایمیل
+@id	ui.english	انگلیسی
+@id	ui.equation	معادله
+@id	ui.equation_name	معادله: {name}
+@id	ui.eraser	پاک‌کن
+@id	ui.error	خطا
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	هر خط پنجم کمی ضخیم‌تر است برای شمارش آسان‌تر.
+@id	ui.every_line_of_this_page_decides_for_itself	هر خط این صفحه خودش تصمیم می‌گیرد
+@id	ui.every_paragraph_decides_for_itself	هر پاراگراف خودش تصمیم می‌گیرد
+@id	ui.expand	باز کردن
+@id	ui.expand_all	باز کردن همه
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	خروجی یک ZIP انتخاب‌شده توسط کاربر ایجاد می‌کند، سپس پوشه جلسه صادر شده را حذف می‌کند.
+@id	ui.export_current_session_zip	خروجی ZIP جلسه فعلی
+@id	ui.export_telemetry_zip	خروجی ZIP تلومیتری
+@id	ui.eyedropper	قطره‌چکان
+@id	ui.eyedropper_not_built	قطره‌چکان هنوز ساخته نشده است
+@id	ui.file	فایل
+@id	ui.file_attachment_2	پیوست فایل \n
+@id	ui.file_options	گزینه‌های فایل
+@id	ui.file_printout_2	خروجی چاپی فایل \n
+@id	ui.files	فایل‌ها
+@id	ui.files_in_this_page	فایل‌های این صفحه
+@id	ui.find	جستجو
+@id	ui.find_in_this_file	جستجو در این فایل
+@id	ui.find_tags	جستجوی برچسب‌ها
+@id	ui.find_tags_3	جستجوی برچسب‌های \n
+@id	ui.fit_the_page_to_the_available_width	تنظیم صفحه به عرض موجود
+@id	ui.folder_folder	پوشه: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	پیروی از تنظیمات روشن یا تاریک سیستم
+@id	ui.format	قالب
+@id	ui.format_background_2	پس‌زمینه قالب\n
+@id	ui.format_for_this_page	قالب این صفحه
+@id	ui.format_painter	قلم‌گیر قالب
+@id	ui.forward	جلو
+@id	ui.forward_to_the_page_after_alt_right	رفتن به صفحه بعدی (Alt+Right)
+@id	ui.fountain_pen	خودنویس
+@id	ui.from_camera	از دوربین
+@id	ui.from_online	از آنلاین
+@id	ui.full_page	تمام صفحه
+@id	ui.full_page_view_2	نمای\n تمام صفحه
+@id	ui.full_path_copied	مسیر کامل کپی شد
+@id	ui.give_the_page_the_whole_window	صفحه را کل پنجره کنید
+@id	ui.gray	خاکستری
+@id	ui.green	سبز
+@id	ui.green_2	سبز
+@id	ui.grey	خاکستری
+@id	ui.gridcraft_is_not_installed	GridCraft نصب نشده است
+@id	ui.help	راهنما
+@id	ui.hide	مخفی کردن
+@id	ui.hide_everything_but_the_page	همه چیز به جز صفحه را مخفی کنید
+@id	ui.hide_page_title	مخفی کردن عنوان صفحه
+@id	ui.hide_the_page_source	مخفی کردن منبع صفحه
+@id	ui.hide_the_page_title	مخفی کردن عنوان صفحه
+@id	ui.highlight	برجسته‌سازی
+@id	ui.highlighter	ماژیک متنی
+@id	ui.history	تاریخچه
+@id	ui.home	خانه
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	ایده
+@id	ui.images	تصاویر
+@id	ui.immersive_reader	خواننده غوطه‌ور
+@id	ui.import_file	وارد کردن فایل
+@id	ui.import_from_the_cloud	وارد کردن از فضای ابری
+@id	ui.import_notebook_folder	وارد کردن پوشه دفترچه یادداشت
+@id	ui.important	مهم
+@id	ui.importing	در حال وارد کردن…
+@id	ui.importing_onenote	وارد کردن OneNote
+@id	ui.increase_indentation	افزایش تورفتگی
+@id	ui.increase_indentation_tab	افزایش تورفتگی (Tab)
+@id	ui.index_of_total_sections	{index} از بخش‌های {total}
+@id	ui.info	اطلاعات
+@id	ui.inherit_notebook_section_or_global_setting	ارث‌بری (تنظیمات دفترچه، بخش یا سراسری)
+@id	ui.input_mode	حالت ورودی
+@id	ui.insert	درج
+@id	ui.insert_a_common_symbol	درج یک نماد رایج
+@id	ui.insert_column_left_2	درج ستون\n به چپ
+@id	ui.insert_column_right_2	درج ستون\n به راست
+@id	ui.insert_printout	درج چاپ‌شده
+@id	ui.insert_row_above_2	درج ردیف\n بالا
+@id	ui.insert_row_below_2	درج ردیف\n پایین
+@id	ui.insert_space_2	درج\n فاصله
+@id	ui.insert_symbol	درج نماد
+@id	ui.insert_table_not_built	درج جدول... (ساخته نشده)
+@id	ui.insert_the_picture	درج تصویر
+@id	ui.insert_the_recording	درج ضبط صوت
+@id	ui.insert_the_video	درج ویدیو
+@id	ui.inserted_name_and_count_printout_pages	صفحات چاپ‌شده {name} و {count} درج شد
+@id	ui.interface_language	زبان رابط کاربری
+@id	ui.interface_language_language	زبان رابط کاربری: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	مشکلات، نقشه راه و مستندات همه آنجا هستند. NoteCraft به خودی خود با هیچ سرویس دیگری ارتباط برقرار نمی‌کند.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	این مورد فهرست شده است تا پوشه صفحه مخفی نماند.
+@id	ui.italic	ایتالیک
+@id	ui.italic_ctrl_i	ایتالیک (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	تراز متن در یک بند اعمال می‌شود
+@id	ui.keep_this_window_above_the_others	این پنجره را بالای سایر پنجره‌ها نگه دارید
+@id	ui.label	برچسب
+@id	ui.label_not_built	{label} (ساخته نشده)
+@id	ui.label_not_built_yet	{label}: هنوز ساخته نشده
+@id	ui.label_nothing_to_action	{label}: چیزی برای {action} وجود ندارد
+@id	ui.language_click_to_change_it	{language}. برای تغییر کلیک کنید.
+@id	ui.large	بزرگ
+@id	ui.large_squares	مربع‌های بزرگ
+@id	ui.laser_pointer	نشانگر لیزری
+@id	ui.lasso_select	\n انتخاب باسنک
+@id	ui.layout	چیدمان
+@id	ui.leave_it	رها کنید
+@id	ui.left_to_right	چپ‌به‌راست
+@id	ui.level	سطح:
+@id	ui.licence	مجوز
+@id	ui.light	روشن
+@id	ui.light_or_dark_and_the_accent_colour	روشن یا تاریک، و رنگ تأکیدی
+@id	ui.line	خط
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	خطوط یا مربع‌های پشت صفحه، مانند کاغذ
+@id	ui.link	پیوند
+@id	ui.link_to_the_file_where_it_is	پیوند به فایل در محل آن
+@id	ui.link_to_title_copied	پیوند به "{title}" کپی شد
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	{name} پیوند داده شد؛ فایل کپی نشد
+@id	ui.links	پیوندها
+@id	ui.live_captions	زیرنویس زنده
+@id	ui.local_collection_level	سطح جمع‌آوری محلی
+@id	ui.local_diagnostics	عیب‌یابی محلی
+@id	ui.local_diagnostics_and_usage	عیب‌یابی و استفاده محلی
+@id	ui.logging_folder_folder	پوشه ثبت: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	گزارش‌ها و داده‌های تشخیص از این دستگاه باقی می‌مانند. NoteCraft آن‌ها را به صورت خودکار ارسال نمی‌کند.
+@id	ui.magenta	سرخابی
+@id	ui.make_the_page_larger	بزرگ‌تر کردن صفحه
+@id	ui.make_the_page_smaller	کوچک‌تر کردن صفحه
+@id	ui.many_thanks_to_its_authors_and_contributors	— تشکر فراوان از نویسندگان و مشارکت‌کنندگان.
+@id	ui.markdown	Markdown
+@id	ui.match_case	تطبیق با حالت بزرگ/کوچک
+@id	ui.math	ریاضی
+@id	ui.maximize	بیشینه‌سازی
+@id	ui.md_2	md
+@id	ui.media	رسانه
+@id	ui.medium	متوسط
+@id	ui.medium_squares	مربع‌های متوسط
+@id	ui.meeting_details	جزئیات جلسه
+@id	ui.meeting_details_3	\n جزئیات جلسه
+@id	ui.meetings	جلسات
+@id	ui.merge	ادغام
+@id	ui.mermaid	Mermaid
+@id	ui.mint	سبز نعنایی
+@id	ui.mit_license	مجوز MIT
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT یا Apache-2.0، به انتخاب شما. هنر تصویر کوالا تحت پوشش آن نیست؛ به ATTRIBUTION.md مراجعه کنید.
+@id	ui.mode	حالت
+@id	ui.modify_tool	ابزار تغییر
+@id	ui.more	بیشتر...
+@id	ui.more_2	بیشتر
+@id	ui.more_colours	رنگ‌های بیشتر
+@id	ui.more_styles	سبک‌های بیشتر
+@id	ui.more_tags	برچسب‌های بیشتر
+@id	ui.move_left	حرکت به چپ
+@id	ui.move_right	حرکت به راست
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	آیا می‌خواهید «{title}» و تمام محتویات آن (مورد {n}) را به سطل بازیافت این دفترچه منتقل کنید؟|آیا می‌خواهید «{title}» و تمام محتویات آن (موارد {n}) را به سطل بازیافت این دفترچه منتقل کنید؟
+@id	ui.move_to_recycle_bin	انتقال به سطل بازیافت
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	لایه‌های {moved} از نقاشی قدیمی این صفحه به خود صفحه منتقل شدند
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	لایه‌های {moved} به صفحه منتقل شدند؛ فایل‌های نقاشی قدیمی {left} قابل حذف نبودند
+@id	ui.moved_to_the_notebook_recycle_bin	منتقل شده به سطل بازیافت دفترچه
+@id	ui.n_item_n_items	مورد {n}|موارد {n}
+@id	ui.n_notebook_n_notebooks	دفترچه {n}|دفترچه‌های {n}
+@id	ui.n_notebook_opened_n_notebooks_opened	دفترچه {n} باز شد|دفترچه‌های {n} باز شدند
+@id	ui.n_stroke_n_strokes	لایه {n}|لایه‌های {n}
+@id	ui.name_2	نام
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} هنوز ساخته نشده است. برای اطلاع از برنامه‌ها به نقشه راه مراجعه کنید.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} اکنون یک فایل در پوشه این صفحه است
+@id	ui.name_is_open_in_gridcraft	{name} در GridCraft باز است
+@id	ui.name_not_used_by_the_page	{name}: توسط صفحه استفاده نمی‌شود
+@id	ui.narrow	باریک
+@id	ui.narrow_ruled	خط‌دار باریک
+@id	ui.new_gridcraft_spreadsheet	جدول جدید GridCraft
+@id	ui.new_gridcraft_spreadsheet_not_installed	جدول جدید GridCraft (نصب نشده)
+@id	ui.new_notebook	دفترچه جدید
+@id	ui.new_notebook_2	دفترچه جدید...
+@id	ui.new_page	صفحه جدید
+@id	ui.new_page_2	صفحه جدید...
+@id	ui.new_pages	صفحات جدید:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	صفحات جدید از {format} استفاده می‌کنند مگر اینکه دفترچه یا بخش دیگری تعیین کرده باشد
+@id	ui.new_quick_note	یادداشت سریع جدید
+@id	ui.new_window	پنجره جدید
+@id	ui.next	بعدی
+@id	ui.next_match_enter_f3	مطابقت بعدی (Enter, F3)
+@id	ui.no	خیر
+@id	ui.no_colour	بدون رنگ
+@id	ui.no_generated_preview_icon_is_available	هیچ پیش‌نمایش آیکون تولید شده‌ای در دسترس نیست.
+@id	ui.no_lines_behind_the_page	خطی پشت صفحه وجود ندارد
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	{name} کنار این صفحه نیست: ابتدا جدول را منتقل کنید
+@id	ui.no_notebooks_yet_use_new_notebook	هنوز دفترچه‌ای وجود ندارد. از «دفترچه جدید» استفاده کنید.
+@id	ui.no_pages_in_this_section_yet	هنوز صفحه‌ای در این بخش وجود ندارد.
+@id	ui.no_pages_match	هیچ صفحه‌ای مطابقت ندارد.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	هنوز نسخه ذخیره‌شده‌ای وجود ندارد. NoteCraft هنگام تغییر صفحه یک کپی نگه می‌دارد.
+@id	ui.none	هیچ‌کدام
+@id	ui.normal_view	نمای عادی\n
+@id	ui.not_built	ساخته نشده
+@id	ui.not_built_2	ساخته نشده
+@id	ui.not_built_yet	هنوز ساخته نشده
+@id	ui.not_drawn_why	نقاشی نشده: {why}
+@id	ui.not_used_by_the_page	توسط صفحه استفاده نمی‌شود
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	یادداشت‌برداری و سازماندهی در Rust خالص. یادداشت‌های شما پوشه‌ها و فایل‌های ساده هستند.
+@id	ui.notebook	دفترچه
+@id	ui.notebook_closed_its_files_are_still_on_disk	دفترچه بسته شد؛ فایل‌های آن همچنان روی دیسک هستند
+@id	ui.notebook_created	دفترچه ایجاد شد
+@id	ui.notebook_information	اطلاعات دفترچه
+@id	ui.notebook_recycle_bin_2	سطل بازیافت دفترچه
+@id	ui.notebook_recycle_bin_3	سطل بازیافت دفترچه\n
+@id	ui.notebooks_2	دفترچه‌ها
+@id	ui.notebooks_and_pages_in_their_own_columns	دفترچه‌ها و صفحات در ستون‌های جداگانه
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	دفترچه‌ها و بخش‌ها در یک ستون، صفحات در ستون بعدی
+@id	ui.notebooks_folder_folder	پوشه دفترچه‌ها: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	دفترچه‌هایی که باز می‌کنید اینجا ظاهر خواهند شد.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft پیوستی را یافت که توسط این صفحه ارجاع داده نشده است:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft پیوستی را یافت که آیکون تولید‌شده آن وجود ندارد:
+@id	ui.notecraft_ruled	خط‌دار NoteCraft
+@id	ui.notecraft_squares	مربع‌های NoteCraft
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	یادداشت‌ها به عنوان پوشه‌های ساده. یک صفحه را باز کنید یا برای شروع دفترچه‌ای ایجاد کنید.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	هیچ چیز در {path}: پیوند به صفحه یا فایلی اشاره دارد که وجود ندارد
+@id	ui.nothing_here_can_show_this_kind_of_file	هیچ چیزی در اینجا نمی‌تواند این نوع فایل را نمایش دهد.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	هیچ چیز کپی نشده است. اگر فایل جابجا شود، پیوند شکسته می‌شود.
+@id	ui.nothing_to_redo	کاری برای انجام مجدد وجود ندارد
+@id	ui.nothing_to_undo	کاری برای بازگردانی وجود ندارد
+@id	ui.numbering	شماره‌گذاری
+@id	ui.off	خاموش
+@id	ui.off_2	خاموش
+@id	ui.office_document	سند اداری
+@id	ui.office_text_inspection	بازرسی متن اداری
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	کارگر وارد کردن OfficeIMO به طور غیرمنتظره متوقف شد
+@id	ui.ok	تأیید
+@id	ui.one_tree_of_notebooks	یک درخت از دفترچه‌ها
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive و SharePoint: ساخته نشده است. NoteCraft را به پوشه‌ای که ابزار همگام‌سازی شما نظارت می‌کند هدایت کنید؛ همان کار را انجام می‌دهد.
+@id	ui.onenote_import	وارد کردن OneNote
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	دفترچه‌های آنلاین (OneDrive، SharePoint) ساخته نشده‌اند. دفترچه‌ای در پوشه‌ای که ابزار همگام‌سازی شما نظارت می‌کند توسط آن همگام می‌شود.
+@id	ui.only_a_list_item_can_be_indented	فقط یک مورد فهرست می‌تواند تورفتگی داشته باشد
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	تنها در صورتی آن را باز کنید که به فایل و شخصی که آن را ایجاد کرده اعتماد دارید.
+@id	ui.open	باز کردن
+@id	ui.open_a_folder	باز کردن یک پوشه...
+@id	ui.open_a_notebook	باز کردن یک دفترچه
+@id	ui.open_a_page_first	ابتدا یک صفحه را باز کنید
+@id	ui.open_a_page_first_then_drop_files_onto_it	ابتدا یک صفحه را باز کنید، سپس فایل‌ها را روی آن رها کنید.
+@id	ui.open_attachment	باز کردن پیوست
+@id	ui.open_every_level	باز کردن همه سطوح
+@id	ui.open_folder	باز کردن پوشه
+@id	ui.open_in_folder	باز کردن در پوشه
+@id	ui.open_name	باز کردن {name}
+@id	ui.open_telemetry_folder	باز کردن پوشه تلومیتری
+@id	ui.open_the_artcraft_discord	باز کردن دیسکورد ArtCraft
+@id	ui.open_this_notebook	باز کردن این دفترچه
+@id	ui.open_using_shell	باز کردن با استفاده از shell
+@id	ui.open_with_associated_app	باز کردن با برنامه مرتبط
+@id	ui.opened	باز شده
+@id	ui.opened_path	{path} باز شد
+@id	ui.opened_path_it_has_no_pages_yet	{path} باز شد؛ هنوز صفحه‌ای ندارد
+@id	ui.opened_the_containing_folder	پوشه حاوی باز شد
+@id	ui.opened_url_in_the_browser	{url} در مرورگر باز شد
+@id	ui.opened_using_the_associated_application	با استفاده از برنامه مرتبط باز شد
+@id	ui.opening_path	در حال باز کردن {path}
+@id	ui.options	گزینه‌ها
+@id	ui.orange	نارنجی
+@id	ui.page	صفحه
+@id	ui.page_colour	رنگ صفحه
+@id	ui.page_direction_from_the_words	جهت صفحه از کلمات
+@id	ui.page_format	قالب صفحه
+@id	ui.page_left_to_right	صفحه چپ به راست
+@id	ui.page_right_to_left	صفحه راست به چپ
+@id	ui.page_setup	تنظیمات صفحه
+@id	ui.page_source	منبع صفحه
+@id	ui.page_versions_2	نسخه‌های صفحه
+@id	ui.page_versions_4	نسخه‌های \n صفحه
+@id	ui.page_width	عرض صفحه
+@id	ui.pages	صفحات
+@id	ui.paper_behind_the_page	{paper} پشت صفحه
+@id	ui.paper_size	اندازه کاغذ
+@id	ui.para	پاراگراف
+@id	ui.paragraph_direction_from_the_words	جهت پاراگراف از کلمات
+@id	ui.paragraph_left_to_right	پاراگراف چپ به راست
+@id	ui.paragraph_right_to_left	پاراگراف راست به چپ
+@id	ui.paragraph_selected	پاراگراف انتخاب شده
+@id	ui.paste	چسباندن
+@id	ui.pasted	چسبانده شد
+@id	ui.pasted_a_picture_width_by_height	تصویر {width} توسط {height} چسبانده شد
+@id	ui.pasted_formatted_content	محتوای قالب‌بندی شده چسبانده شد
+@id	ui.path_opened_as_an_empty_notebook	{path} به عنوان دفترچه خالی باز شد
+@id	ui.pdf_and_office_documents	اسناد PDF و آفیس
+@id	ui.pdf_document	سند PDF
+@id	ui.pdf_text_inspection	بازرسی متن PDF
+@id	ui.pen	قلم
+@id	ui.pencil	مداد
+@id	ui.permanently_delete	حذف دائمی؟
+@id	ui.permanently_delete_title_and_everything_inside_it	{title} و همه محتویات آن به طور دائمی حذف شود؟
+@id	ui.permanently_deleted	به طور دائمی حذف شد
+@id	ui.phone_number	شماره تلفن
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	یک سند PDF یا آفیس را انتخاب کنید و صفحات آن را به عنوان تصویر وارد کنید
+@id	ui.pick_the_caret_s_column	انتخاب ستون نشانگر
+@id	ui.pick_the_caret_s_row	انتخاب سطر نشانگر
+@id	ui.pick_the_whole_table	انتخاب کل جدول
+@id	ui.picture_from_a_file	تصویر از فایل
+@id	ui.pictures	تصاویر
+@id	ui.plain	ساده
+@id	ui.plain_text	متن ساده
+@id	ui.powered_by	قدرت گرفته از
+@id	ui.pressure_sensitivity_now_of_100	حساسیت فشار {now} از 100
+@id	ui.pressure_sensitivity_unavailable	حساسیت فشار در دسترس نیست
+@id	ui.previous	قبلی
+@id	ui.previous_match_shift_enter	مطابقت قبلی (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	چاپ برای اسناد PDF و آفیس موجود است.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	حریم خصوصی اولویت ماست. تمام لاگ‌ها و داده‌های تشخیصی روی این دستگاه باقی می‌مانند. NoteCraft هرگز آن‌ها را به طور خودکار ارسال نمی‌کند.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	حریم خصوصی اولویت ماست. لاگ‌ها و داده‌های تشخیصی روی این دستگاه باقی می‌مانند. NoteCraft آن‌ها را برای ما ارسال نمی‌کند.
+@id	ui.purple	بنفش
+@id	ui.put_a_sheet_to_draw_on_into_the_page	یک صفحه برای نقاشی کردن در صفحه قرار دهید
+@id	ui.put_another_tool_on_the_rack	ابزار دیگری به قفسه اضافه کنید
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	نشانگر را به کلمات و نشانگر برگردانید
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	محتوای جدول را به این جدول بازگردانید
+@id	ui.question	سوال
+@id	ui.quote_2	نقل قول
+@id	ui.quote_this_paragraph	این پاراگراف را نقل قول کنید
+@id	ui.read_back_from_it_2	بازخوانی \n از آن
+@id	ui.read_back_rows_rows_and_columns_columns	بازخوانی {rows} سطر و {columns} ستون
+@id	ui.read_only	فقط خواندنی
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	استخراج متن فقط خواندنی. رندر کامل سند به زودی.
+@id	ui.ready_2	آماده
+@id	ui.recently_opened	اخیراً باز شده
+@id	ui.recording	ضبط
+@id	ui.rectangle	مستطیل
+@id	ui.red	قرمز
+@id	ui.red_2	قرمز
+@id	ui.redo	بازگشت به جلو
+@id	ui.redo_ctrl_y	بازگشت به جلو (Ctrl+Y)
+@id	ui.remember_for_later	برای بعداً یادآوری کن
+@id	ui.remove_from_list	حذف از لیست
+@id	ui.remove_this_tool_from_the_rack	این ابزار را از قفسه حذف کنید
+@id	ui.removed_notebook_from_the_known_notebooks_list	دفترچه از لیست دفترچه‌های شناخته شده حذف شد
+@id	ui.rename	تغییر نام
+@id	ui.rename_ellipsis	تغییر نام...
+@id	ui.renamed	تغییر نام داده شد
+@id	ui.rendered_svg_preview	پیش‌نمایش SVG رندر شده
+@id	ui.repair_icon	تعمیر آیکون
+@id	ui.repaired_the_attachment_icon_for_name	آیکون پیوست برای {name} تعمیر شد
+@id	ui.replay	پخش مجدد
+@id	ui.reset_app_preferences	بازنشانی تنظیمات برنامه
+@id	ui.reset_app_preferences_2	بازنشانی تنظیمات برنامه…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	تنظیمات ذخیره شده NoteCraft به پیش‌فرض‌های داخلی بازنشانی شود؟
+@id	ui.reset_preferences	بازنشانی تنظیمات
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	تم‌ها، چیدمان، انتخاب‌های نوار ابزار و سایر تنظیمات ذخیره شده NoteCraft را به پیش‌فرض‌ها بازنشانی کنید.
+@id	ui.restore	بازیابی
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	صفحات، بخش‌ها و گروه‌های حذف شده از این دفترچه را بازیابی کنید
+@id	ui.restored_the_saved_page_version	نسخه ذخیره شده صفحه بازیابی شد
+@id	ui.restored_to_the_original_location	به مکان اصلی بازگردانده شد
+@id	ui.right_to_left	راست به چپ
+@id	ui.rounded	گرد
+@id	ui.rub_out_whatever_the_pointer_passes_over	هر چیزی که نشانگر از روی آن می‌گذرد را پاک کنید
+@id	ui.rule_line_colour_not_built	رنگ خط راهنما (ساخته نشده)
+@id	ui.ruled	خط‌دار
+@id	ui.save_picture_2	ذخیره تصویر \n
+@id	ui.saved	ذخیره شد
+@id	ui.saved_copies_of_this_page	کپی‌های ذخیره شده این صفحه
+@id	ui.saved_the_drawing_as_a_picture_path	نقاشی به عنوان تصویر ذخیره شد: {path}
+@id	ui.saved_time	{time} ذخیره شد
+@id	ui.search	جستجو
+@id	ui.search_all_pages	جستجو در همه صفحات
+@id	ui.section	بخش
+@id	ui.section_group	گروه بخش
+@id	ui.see_and_restore_saved_copies_of_this_page	مشاهده و بازیابی کپی‌های ذخیره شده این صفحه
+@id	ui.select	انتخاب
+@id	ui.select_columns_2	انتخاب \n ستون‌ها
+@id	ui.select_rows_2	انتخاب \n سطرها
+@id	ui.select_some_words_first	ابتدا برخی کلمات را انتخاب کنید
+@id	ui.select_table_2	انتخاب \n جدول
+@id	ui.selected_text_next_typing	متن انتخاب شده / تایپ بعدی
+@id	ui.selection	انتخاب
+@id	ui.send_page	ارسال صفحه
+@id	ui.send_page_3	ارسال \n صفحه
+@id	ui.separate_pages	صفحات جداگانه
+@id	ui.session_id_id	شناسه جلسه: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	جهت متن انتخاب شده یا متن تایپ شده بعدی را تنظیم کنید
+@id	ui.shape	شکل
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: برای کشیدن یکی روی صفحه بکشید
+@id	ui.shapes	اشکال
+@id	ui.show	نمایش
+@id	ui.show_notebooks_folder	نمایش پوشه دفترچه‌ها
+@id	ui.show_or_hide_the_notebooks_column	نمایش یا پنهان کردن ستون دفترچه‌ها
+@id	ui.show_the_code	نمایش کد
+@id	ui.show_the_notebooks_again	نمایش دوباره دفترچه‌ها
+@id	ui.show_the_notebooks_folder	نمایش پوشه دفترچه‌ها
+@id	ui.show_the_page_at_100	نمایش صفحه در 100%
+@id	ui.show_the_page_source	نمایش منبع صفحه
+@id	ui.show_the_strokes	نمایش خطوط قلم
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	کوچک
+@id	ui.small_squares	مربع‌های کوچک
+@id	ui.somewhere_else	جای دیگر
+@id	ui.source	منبع
+@id	ui.split	تقسیم
+@id	ui.spreadsheet	صفحه‌گسترده
+@id	ui.square	مربع
+@id	ui.squares	مربع‌ها
+@id	ui.standard	استاندارد
+@id	ui.standard_ruled	خط‌کشی استاندارد
+@id	ui.star	ستاره
+@id	ui.starting_officeimo	در حال شروع OfficeIMO…
+@id	ui.stencils	الگوها
+@id	ui.strike_through	خط خوردگی
+@id	ui.strikethrough	خط‌خورده
+@id	ui.styles	سبک‌ها
+@id	ui.styles_2	سبک‌ها
+@id	ui.svg_source	منبع SVG
+@id	ui.symbol	نماد
+@id	ui.symbols	نمادها
+@id	ui.table_3	جدول
+@id	ui.tables	جداول
+@id	ui.tabs_layout	چیدمان تب‌ها
+@id	ui.tag_tag	{tag} tag
+@id	ui.tags	برچسب‌ها
+@id	ui.take_the_caret_s_column_out	حذف ستون نشانگر
+@id	ui.take_the_caret_s_row_out	حذف سطر نشانگر
+@id	ui.take_the_last_stroke_back	بازگرداندن آخرین خط قلم
+@id	ui.take_the_marks_off	برداشتن علامت‌ها
+@id	ui.teal_2	فیروزه‌ای
+@id	ui.text	متن
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	بازرسی متن در زیر نمایش داده می‌شود.
+@id	ui.text_run_direction	جهت اجرای متن
+@id	ui.thank_you_for_trying_notecraft	ممنون که NoteCraft را امتحان کردید!
+@id	ui.that_file_has_nothing_in_it_to_put_back	این فایل چیزی برای بازگرداندن ندارد
+@id	ui.that_file_is_not_in_this_page_s_folder	این فایل در پوشه این صفحه نیست
+@id	ui.that_is_not_something_a_page_can_hold	این چیزی است که یک صفحه نمی‌تواند نگه دارد
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	این پیوند به خارج از پوشه دفترچه‌ها اشاره می‌کند، بنابراین دنبال نشد
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	این صفحه در دفترچه‌ای باز نیست
+@id	ui.the_attachment_returned_an_invalid_page_link	پیوست یک پیوند صفحه نامعتبر برگرداند
+@id	ui.the_built_in_default	پیش‌فرض داخلی
+@id	ui.the_code	کد
+@id	ui.the_diagnostics_folder_could_not_be_created_error	پوشه تشخیص خطا ایجاد نشد: {error}
+@id	ui.the_file_could_not_be_opened_error	فایل باز نشد: {error}
+@id	ui.the_file_is_gone	فایل از دست رفته است
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	فایل از دیسک حذف شده است. برگشت‌پذیر (Undo) فایل را بازنمی‌گرداند.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	فایل امن است. NoteCraft می‌تواند در انتهای صفحه به آن پیوند دهد.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	فایل ضمیمه نشد: دستور ضمیمه‌سازی نتیجه غیرمنتظره‌ای برگرداند.
+@id	ui.the_folder_could_not_be_opened_error	پوشه باز نشد: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	فرمت هنگام ایجاد صفحه تنظیم می‌شود
+@id	ui.the_global_setting	تنظیم سراسری
+@id	ui.the_last_tool_stays_on_the_rack	ابزار آخر روی قفسه باقی می‌ماند
+@id	ui.the_notebook_could_not_be_deleted_error	دفترچه حذف نشد: {error}
+@id	ui.the_notebook_or_section_setting	تنظیم دفترچه یا بخش
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	فایل اصلی هنوز امن است. NoteCraft می‌تواند آیکون کنار آن را بازسازی کند.
+@id	ui.the_page_beside_the_notebooks	صفحه کناری دفترچه‌ها
+@id	ui.the_page_is_colour	صفحه {colour} است
+@id	ui.the_page_is_the_theme_s_own_colour	صفحه به رنگ خود تم است
+@id	ui.the_page_source_beside_the_page	منبع صفحه، کنار صفحه
+@id	ui.the_paper_and_colour_apply_to_this_page_only	کاغذ و رنگ فقط برای این صفحه اعمال می‌شوند.
+@id	ui.the_theme_could_not_be_saved_error	تم ذخیره نشد: {error}
+@id	ui.the_time_now	زمان اکنون
+@id	ui.the_welcome_notebook	دفترچه خوش‌آمدگویی
+@id	ui.the_whole_page_reads_left_to_right	کل صفحه از چپ به راست خوانده می‌شود
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	کل صفحه از راست به چپ خوانده می‌شود (عربی، عبری)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	پنجره، با استفاده از GPU ترسیم شده است. آیکون‌ها با کد ترسیم می‌شوند. لوگو تنها تصویر است.
+@id	ui.theme	تم
+@id	ui.theme_theme	تم {theme}
+@id	ui.theme_theme_2	تم: {theme}
+@id	ui.theme_theme_click_to_change_it	تم {theme}. برای تغییر کلیک کنید.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	هنوز دفترچه‌ای وجود ندارد. "جدید" یکی را شروع می‌کند.
+@id	ui.there_is_no_drawing_on_this_page	هیچ نقاشی در این صفحه نیست
+@id	ui.there_is_no_earlier_page	صفحه قبلی وجود ندارد
+@id	ui.there_is_no_later_page	صفحه بعدی وجود ندارد
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	جایی روی قفسه برای ابزار دیگری نیست
+@id	ui.there_is_no_stroke_to_take_back	خطی برای بازگرداندن وجود ندارد
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	چیزی در کلیپ‌بورد برای چسباندن وجود ندارد
+@id	ui.thickness	ضخامت
+@id	ui.this_cannot_be_undone	این قابل برگشت نیست.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	این به سطل بازیافت منتقل نشد. چیزی حذف نشد.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	این دفترچه‌ها یا صفحات را حذف نمی‌کند. قابل برگشت نیست.
+@id	ui.this_file_will_be_opened_by_its_associated_application	این فایل توسط برنامه مرتبط با آن باز خواهد شد.
+@id	ui.this_notebook_s_recycle_bin_is_empty	سطل بازیافت این دفترچه خالی است.
+@id	ui.this_page	این صفحه
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	این صفحه نشانه‌گذاری NoteCraft که هنوز ویرایش نمی‌کند را نگه می‌دارد، بنابراین همان‌طور که خوانده می‌شود نمایش داده می‌شود.
+@id	ui.this_page_reads_left_to_right	این صفحه از چپ به راست خوانده می‌شود
+@id	ui.this_page_reads_right_to_left	این صفحه از راست به چپ خوانده می‌شود
+@id	ui.this_paragraph_decides_from_its_own_first_letter	این پاراگراف از حرف اول خودش تصمیم می‌گیرد
+@id	ui.this_paragraph_fills_the_column	این پاراگراف ستون را پر می‌کند
+@id	ui.this_paragraph_fills_the_column_stretched_hard	این پاراگراف ستون را پر می‌کند، کشیده شده به شدت
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	این پاراگراف ستون را پر می‌کند، کشیده شده به آرامی
+@id	ui.this_paragraph_is_ragged_again	این پاراگراف دوباره نامنظم است
+@id	ui.this_paragraph_reads_left_to_right	این پاراگراف از چپ به راست خوانده می‌شود
+@id	ui.this_paragraph_reads_right_to_left	این پاراگراف از راست به چپ خوانده می‌شود
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	این پاراگراف از راست به چپ خوانده می‌شود (عربی، عبری)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	این پاراگراف هر طوری که کلماتش هستند خوانده می‌شود
+@id	ui.this_picture_cannot_be_shown_here	این تصویر نمی‌تواند اینجا نمایش داده شود.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	این پوشه دفترچه را از دیسک حذف می‌کند و قابل برگشت نیست.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	این اجرا از چپ به راست خوانده می‌شود. یک خط مخلوط هنوز به یک ترتیب ترسیم می‌شود؛ به نقشه راه مراجعه کنید
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	این اجرا از راست به چپ خوانده می‌شود. یک خط مخلوط هنوز به یک ترتیب ترسیم می‌شود؛ به نقشه راه مراجعه کنید
+@id	ui.this_svg_cannot_be_rendered_here	این SVG نمی‌تواند اینجا رندر شود.
+@id	ui.this_window_behaves_like_the_others	این پنجره مانند بقیه رفتار می‌کند
+@id	ui.this_window_stays_on_top	این پنجره همیشه در بالا می‌ماند
+@id	ui.time	زمان
+@id	ui.time_stamp	مهر زمانی
+@id	ui.title_2	عنوان
+@id	ui.title_saved	عنوان ذخیره شد
+@id	ui.title_the_folder_name_does_not_change	عنوان (نام پوشه تغییر نمی‌کند)
+@id	ui.to_do_2	برای انجام
+@id	ui.to_do_tag_2	برای انجام\nTag
+@id	ui.today_s_date	تاریخ امروز
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	از قفسه برداشته شد
+@id	ui.took_the_last_stroke_back_count_left	آخرین خط بازگردانده شد؛ {count} باقی ماند
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	ابزارها
+@id	ui.top	بالا
+@id	ui.triangle	مثلث
+@id	ui.type	نوع
+@id	ui.under_the	زیرِ
+@id	ui.undo	واگردانی
+@id	ui.undo_ctrl_z	واگردانی (Ctrl+Z)
+@id	ui.undo_stroke	واگردان\nخط
+@id	ui.unread	خوانده‌نشده
+@id	ui.updated_the_welcome_notebook	دفترچه خوشامدگویی به‌روز شد
+@id	ui.use_notecraft_s_own_title_bar	استفاده از نوار عنوان اختصاصی NoteCraft
+@id	ui.use_the_system_title_bar	استفاده از نوار عنوان سیستم
+@id	ui.version_version_alpha	نسخه {version} (آلفا)
+@id	ui.very_large	بسیار بزرگ
+@id	ui.very_large_squares	مربع‌های بسیار بزرگ
+@id	ui.view	نمایش
+@id	ui.views	نماها
+@id	ui.warn	هشدار
+@id	ui.web_site_to_visit	وب‌سایت برای بازدید
+@id	ui.welcome_to_notecraft	به NoteCraft خوش آمدید
+@id	ui.what_should_happen_to_this_file	با این فایل چه باید کرد؟
+@id	ui.what_to_add	چه چیزی اضافه شود
+@id	ui.wide	پهن
+@id	ui.wide_ruled	خط‌دار پهن
+@id	ui.window	پنجره
+@id	ui.write_anywhere_on_the_page	در هر نقطه از صفحه بنویسید
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	دوباره نقاشی را بدون خوانش قلم بنویسید تا ارسال شود
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	جدول را استخراج کنید و در GridCraft باز کنید
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	زرد
+@id	ui.yellow_2	زرد
+@id	ui.you_can_continue_working_while_the_import_runs	می‌توانید در حین اجرای واردات به کار خود ادامه دهید.
+@id	ui.you_can_restore_it_from_history	می‌توانید آن را از تاریخچه بازیابی کنید.
+@id	ui.zoom	بزرگنمایی
+@id	ui.zoom_in	بزرگنمایی به داخل
+@id	ui.zoom_out	بزرگنمایی به خارج
+@id	ui.zoom_to_100	بزرگنمایی تا ۱۰۰٪

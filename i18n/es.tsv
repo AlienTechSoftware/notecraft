@@ -1,7 +1,7 @@
-@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	Mover "{title}" y todo lo que contiene ({n} elemento) a la papelera de reciclaje de este bloc de notas?|Mover "{title}" y todo lo que contiene ({n} elementos) a la papelera de reciclaje de este bloc de notas?
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	¿Mover "{title}" y todo su contenido ({n} elemento) a la papelera de reciclaje de este cuaderno?|¿Mover "{title}" y todo su contenido ({n} elementos) a la papelera de reciclaje de este cuaderno?
 @plural	{n} item|{n} items	{n} elemento|{n} elementos
-@plural	{n} notebook opened|{n} notebooks opened	{n} bloc de notas abierto|{n} blocs de notas abiertos
-@plural	{n} notebook|{n} notebooks	{n} bloc de notas|{n} blocs de notas
+@plural	{n} notebook opened|{n} notebooks opened	{n} cuaderno abierto|{n} cuadernos abiertos
+@plural	{n} notebook|{n} notebooks	{n} cuaderno|{n} cuadernos
 @plural	{n} stroke|{n} strokes	{n} trazo|{n} trazos
 @id	language.name	Español
 @id	ui.a_bullet_list	Una lista con viñetas
@@ -28,6 +28,7 @@
 @id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	Un recorrido por NoteCraft, mostrado en sus propias páginas. Se añade a la carpeta de cuadernos vacíos al primer inicio; esto lo añade de nuevo o lo abre si aún está aquí.
 @id	ui.about_notecraft	Acerca de NoteCraft
 @id	ui.accent_accent	Acento: {accent}
+@id	ui.accept	Aceptar
 @id	ui.add	Añadir
 @id	ui.add_a_blank_paragraph_at_the_caret	Insertar un párrafo vacío en el cursor
 @id	ui.add_a_page_here	Añadir una página aquí
@@ -52,8 +53,10 @@
 @id	ui.an_equation_written_in_tex_pick_one_to_start_from	Una ecuación escrita en TeX: elige una para empezar
 @id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	Preferencias de la aplicación restablecidas. Reinicia NoteCraft para aplicar los valores predeterminados.
 @id	ui.appearance	Apariencia
+@id	ui.append_link	Añadir enlace
 @id	ui.application_preferences	Preferencias de la aplicación
 @id	ui.arrow	Arrow
+@id	ui.attach_the_file	Adjuntar el archivo
 @id	ui.attachment_icon_missing	Icono del archivo adjunto no encontrado
 @id	ui.attachment_not_linked	Archivo adjunto sin vincular
 @id	ui.attachment_recovery	Recuperación de archivos adjuntos
@@ -75,6 +78,8 @@
 @id	ui.brush_pen	Brush Pen
 @id	ui.built_with	Creado con
 @id	ui.bullets	Viñetas
+@id	ui.cancel	Cancelar
+@id	ui.cancel_import	Cancelar importación
 @id	ui.cannot_open_gridcraft_error	No se puede abrir GridCraft: {error}
 @id	ui.cannot_open_the_table_in_gridcraft_error	No se puede abrir la tabla en GridCraft: {error}
 @id	ui.cannot_save_the_pasted_picture_error	No se puede guardar la imagen pegada: {error}
@@ -92,6 +97,7 @@
 @id	ui.choose_a_picture	Elige una imagen
 @id	ui.choose_a_section_to_see_its_pages	Elige una sección para ver sus páginas.
 @id	ui.choose_a_symbol_to_insert_at_the_caret	Elige un símbolo para insertar en el cursor
+@id	ui.choose_how_to_insert_a_picture	Elegir cómo insertar una imagen
 @id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	Elige qué registra NoteCraft localmente. Nada se sube automáticamente.
 @id	ui.chosen_for_this_page	chosen for this page
 @id	ui.circle	Circle
@@ -114,6 +120,8 @@
 @id	ui.code_in_one_line	Código, en una línea
 @id	ui.collapse	Contraer
 @id	ui.collapse_all	Contraer todo
+@id	ui.college	Colegio
+@id	ui.college_ruled	Cuadriculado de colegio
 @id	ui.colour	Color
 @id	ui.colour_hex	{colour} {hex}
 @id	ui.colour_removed	Color eliminado
@@ -123,7 +131,9 @@
 @id	ui.commonmark_gfm	CommonMark + GFM
 @id	ui.contact	Contacto
 @id	ui.convert	Convertir
+@id	ui.convert_to_gridcraft_2	Convertir a \nGridCraft
 @id	ui.convert_to_gridcraft_gridcraft_is_not_installed	Convertir a GridCraft: GridCraft no está instalado
+@id	ui.copied	Copiado
 @id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	Copia el archivo e inserta una imagen por cada página impresa.
 @id	ui.copy	Copiar
 @id	ui.copy_full_path	Copiar la ruta completa
@@ -142,6 +152,7 @@
 @id	ui.could_not_store_printout_page_page_error	No se ha podido almacenar la página de impresión {page}: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} elementos, color {colour}
+@id	ui.create	Crear
 @id	ui.created	Creado
 @id	ui.critical	Crítico
 @id	ui.ctrl_v_pastes_into_the_page	Ctrl+V pega en la p?gina
@@ -152,25 +163,34 @@
 @id	ui.customize_quick_access_toolbar	Personalizar barra de acceso rápido
 @id	ui.customize_tags_not_built	Personalizar etiquetas... (no implementado)
 @id	ui.cut	Cortar
+@id	ui.cut_2	cortar
 @id	ui.cut_the_selection	Cortar la selección
 @id	ui.dark	Oscuro
 @id	ui.data	Datos
 @id	ui.date	Fecha
+@id	ui.date_time_2	Fecha y \nhora
 @id	ui.debug	debug
 @id	ui.decrease_indentation	Reducir sangría
 @id	ui.decrease_indentation_shift_tab	Reducir sangría (Mayús+Tab)
 @id	ui.default	Predeterminado
 @id	ui.default_format	Formato predeterminado
+@id	ui.default_format_for_pages_below	Formato predeterminado para las páginas siguientes
 @id	ui.definition	Definición
 @id	ui.delete	Eliminar
+@id	ui.delete_assets_name_from_this_page_s_folder	¿Eliminar "assets/{name}" de la carpeta de esta página?
+@id	ui.delete_columns_2	Eliminar \ncolumnas
 @id	ui.delete_ellipsis	Eliminar...
 @id	ui.delete_file	Eliminar archivo
 @id	ui.delete_notebook	Eliminar cuaderno
 @id	ui.delete_notebook_2	Eliminar cuaderno...
+@id	ui.delete_notebook_title_and_everything_inside_it	¿Eliminar el cuaderno "{title}" y todo su contenido?
+@id	ui.delete_permanently	Eliminar permanentemente
+@id	ui.delete_rows_2	Eliminar \nfilas
 @id	ui.delete_tool	Eliminar herramienta
 @id	ui.delete_tool_2	Eliminar {tool}
 @id	ui.deleted_notebook	Cuaderno eliminado
 @id	ui.deleted_notebook_path	Cuaderno eliminado {path}
+@id	ui.deny	Denegar
 @id	ui.diagram	Diagrama
 @id	ui.diamond	Diamond
 @id	ui.direction_from_the_words	Direction from the words
@@ -184,6 +204,7 @@
 @id	ui.don_t_show_this_ever	No mostrarlo nunca
 @id	ui.draw	Dibujar
 @id	ui.draw_a_loop_round_ink_to_pick_it_up	Dibuja un lazo alrededor de la tinta para seleccionarla
+@id	ui.draw_here_2	Dibujar \naquí
 @id	ui.drawing	Dibujando...
 @id	ui.drawing_saved_count_strokes	Dibujo guardado, {count} trazos
 @id	ui.drawing_tools	Herramientas de dibujo
@@ -196,8 +217,10 @@
 @id	ui.english	Inglés
 @id	ui.equation	Ecuación
 @id	ui.equation_name	Ecuación: {name}
+@id	ui.eraser	Borrador
 @id	ui.error	error
 @id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	Cada quinta línea es ligeramente más gruesa para facilitar el conteo.
+@id	ui.every_line_of_this_page_decides_for_itself	Cada línea de esta página decide por sí misma
 @id	ui.every_paragraph_decides_for_itself	Cada párrafo decide por sí mismo
 @id	ui.expand	Expandir
 @id	ui.expand_all	Expandir todo
@@ -207,15 +230,21 @@
 @id	ui.eyedropper	Cuentagotas
 @id	ui.eyedropper_not_built	El cuentagotas a?n no est? disponible
 @id	ui.file	Archivo
+@id	ui.file_attachment_2	Adjunto \nde archivo
 @id	ui.file_options	Opciones del archivo
+@id	ui.file_printout_2	Impresión \nde archivo
 @id	ui.files	Archivos
 @id	ui.files_in_this_page	ARCHIVOS EN ESTA PÁGINA
 @id	ui.find	Buscar
+@id	ui.find_in_this_file	Buscar en este archivo
 @id	ui.find_tags	Find Tags
+@id	ui.find_tags_3	Buscar \netiquetas
 @id	ui.fit_the_page_to_the_available_width	Ajustar la página al ancho disponible
 @id	ui.folder_folder	Carpeta: {folder}
 @id	ui.follow_the_system_light_or_dark_setting	Seguir el ajuste claro u oscuro del sistema
 @id	ui.format	Format
+@id	ui.format_background_2	Formato \ndel fondo
+@id	ui.format_for_this_page	Formato para esta página
 @id	ui.format_painter	Copiar formato
 @id	ui.forward	Adelante
 @id	ui.forward_to_the_page_after_alt_right	Forward to the page after (Alt+Right)
@@ -223,6 +252,7 @@
 @id	ui.from_camera	Desde cámara
 @id	ui.from_online	Desde Internet
 @id	ui.full_page	Página completa
+@id	ui.full_page_view_2	Vista \nde página completa
 @id	ui.full_path_copied	Ruta completa copiada
 @id	ui.give_the_page_the_whole_window	Ocupar toda la ventana con la página
 @id	ui.gray	Gris
@@ -234,6 +264,7 @@
 @id	ui.hide	Ocultar
 @id	ui.hide_everything_but_the_page	Ocultar todo excepto la página
 @id	ui.hide_page_title	Ocultar título de la página
+@id	ui.hide_the_page_source	Ocultar el código fuente de la página
 @id	ui.hide_the_page_title	Ocultar el título de la página
 @id	ui.highlight	Resaltar
 @id	ui.highlighter	Highlighter
@@ -258,8 +289,17 @@
 @id	ui.input_mode	Modo de entrada
 @id	ui.insert	Insertar
 @id	ui.insert_a_common_symbol	Insertar un símbolo común
+@id	ui.insert_column_left_2	Insertar columna \na la izquierda
+@id	ui.insert_column_right_2	Insertar columna \na la derecha
+@id	ui.insert_printout	Insertar impresión
+@id	ui.insert_row_above_2	Insertar fila \nencima
+@id	ui.insert_row_below_2	Insertar fila \ndebajo
+@id	ui.insert_space_2	Insertar espacio \n
 @id	ui.insert_symbol	Insertar símbolo
 @id	ui.insert_table_not_built	Insertar tabla... (no implementado)
+@id	ui.insert_the_picture	Insertar la imagen
+@id	ui.insert_the_recording	Insertar la grabación
+@id	ui.insert_the_video	Insertar el vídeo
 @id	ui.inserted_name_and_count_printout_pages	Se han insertado {name} y {count} páginas de impresión
 @id	ui.interface_language	Idioma de la interfaz
 @id	ui.interface_language_language	Idioma de la interfaz: {language}
@@ -275,15 +315,22 @@
 @id	ui.label_not_built_yet	{label}: aún no compilado
 @id	ui.label_nothing_to_action	{label}: nada que {action}
 @id	ui.language_click_to_change_it	{language}. Haz clic para cambiarlo.
+@id	ui.large	Grande
+@id	ui.large_squares	Cuadrícula grande
 @id	ui.laser_pointer	Puntero l?ser
+@id	ui.lasso_select	Selección \ncon lazo
 @id	ui.layout	Dise?o
+@id	ui.leave_it	Dejarlo así
 @id	ui.left_to_right	Left-to-Right
 @id	ui.level	Nivel:
 @id	ui.licence	Licencia
 @id	ui.light	Claro
 @id	ui.light_or_dark_and_the_accent_colour	Claro u oscuro, y el color de acento
 @id	ui.line	Line
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	Líneas o cuadrícula detrás de la página, como en el papel
 @id	ui.link	Enlace
+@id	ui.link_to_the_file_where_it_is	Enlace al archivo donde está
+@id	ui.link_to_title_copied	Enlace a "{title}" copiado
 @id	ui.linked_name_where_it_is_the_file_was_not_copied	Vinculado {name} en su ubicación original; el archivo no se ha copiado
 @id	ui.links	Enlaces
 @id	ui.live_captions	Subt?tulos en directo
@@ -299,9 +346,13 @@
 @id	ui.markdown	Markdown
 @id	ui.match_case	Coincidir mayúsculas y minúsculas
 @id	ui.math	Matem?ticas
+@id	ui.maximize	Maximizar
 @id	ui.md_2	md
 @id	ui.media	Medios
+@id	ui.medium	Mediano
+@id	ui.medium_squares	Cuadrícula mediana
 @id	ui.meeting_details	Meeting Details
+@id	ui.meeting_details_3	Detalles \nde la reunión
 @id	ui.meetings	Reuniones
 @id	ui.merge	Combinar
 @id	ui.mermaid	Mermaid
@@ -317,15 +368,22 @@
 @id	ui.more_tags	Más etiquetas
 @id	ui.move_left	Mover a la izquierda
 @id	ui.move_right	Mover a la derecha
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	¿Mover "{title}" y todo su contenido ({n} elementos) a la papelera de este cuaderno?|¿Mover "{n}" y todo su contenido ({title} elemento) a la papelera de este cuaderno?
 @id	ui.move_to_recycle_bin	Move to recycle bin
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Se han movido {moved} trazos del dibujo antiguo de esta página a la propia página
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	Se han movido {moved} trazos a la página; no se pudieron eliminar {left} archivos de dibujo antiguos
 @id	ui.moved_to_the_notebook_recycle_bin	Movido a la papelera de reciclaje del cuaderno
+@id	ui.n_item_n_items	{n} elementos|{n} elemento
+@id	ui.n_notebook_n_notebooks	{n} cuadernos|{n} cuaderno
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} cuadernos abiertos|{n} cuaderno abierto
+@id	ui.n_stroke_n_strokes	{n} trazos|{n} trazo
 @id	ui.name_2	Nombre
 @id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} aún no está compilado. Consulta la hoja de ruta para ver lo que viene.
 @id	ui.name_is_now_a_file_in_this_page_s_folder	{name} es ahora un archivo en la carpeta de esta página
 @id	ui.name_is_open_in_gridcraft	{name} está abierto en GridCraft
 @id	ui.name_not_used_by_the_page	{name}: no utilizado por la página
+@id	ui.narrow	Estrecho
+@id	ui.narrow_ruled	Cuadriculado estrecho
 @id	ui.new_gridcraft_spreadsheet	Nueva hoja de c?lculo de GridCraft
 @id	ui.new_gridcraft_spreadsheet_not_installed	Nueva hoja de cálculo GridCraft (no instalada)
 @id	ui.new_notebook	Nuevo cuaderno
@@ -338,13 +396,17 @@
 @id	ui.new_window	Nueva ventana
 @id	ui.next	Siguiente
 @id	ui.next_match_enter_f3	Siguiente coincidencia (Enter, F3)
+@id	ui.no	no
 @id	ui.no_colour	Sin color
 @id	ui.no_generated_preview_icon_is_available	No hay ningún icono de vista previa generado disponible.
 @id	ui.no_lines_behind_the_page	Sin líneas detrás de la página
 @id	ui.no_name_beside_this_page_hand_the_table_over_first	No hay {name} junto a esta página: pasa primero la tabla
+@id	ui.no_notebooks_yet_use_new_notebook	Aún no hay cuadernos. Usa "Nuevo cuaderno".
 @id	ui.no_pages_in_this_section_yet	Aún no hay páginas en esta sección.
 @id	ui.no_pages_match	Ninguna página coincide.
 @id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	Aún no hay versiones guardadas. NoteCraft guarda una copia cuando cambia la página.
+@id	ui.none	Ninguno
+@id	ui.normal_view	Vista \nnormal
 @id	ui.not_built	No disponible
 @id	ui.not_built_2	no compilado
 @id	ui.not_built_yet	Aún no disponible
@@ -356,7 +418,9 @@
 @id	ui.notebook_created	Cuaderno creado
 @id	ui.notebook_information	Información del cuaderno
 @id	ui.notebook_recycle_bin_2	Papelera de cuernos
+@id	ui.notebook_recycle_bin_3	Papelera \ndel cuaderno
 @id	ui.notebooks_2	CUADERNOS
+@id	ui.notebooks_and_pages_in_their_own_columns	Cuadernos y páginas en sus propias columnas
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Cuadernos y secciones en una columna, páginas en la siguiente
 @id	ui.notebooks_folder_folder	Carpeta de cuadernos: {folder}
 @id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
@@ -364,15 +428,23 @@
 @id	ui.notecraft	NoteCraft
 @id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft ha encontrado un archivo adjunto que no está referenciado por esta página:
 @id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft ha encontrado un archivo adjunto sin su icono generado:
+@id	ui.notecraft_ruled	Cuadriculado NoteCraft
+@id	ui.notecraft_squares	Cuadrícula NoteCraft
 @id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	Notas como carpetas planas. Abre una página o crea un cuaderno para empezar.
 @id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	Nada en {path}: el enlace apunta a una página o archivo que no existe
 @id	ui.nothing_here_can_show_this_kind_of_file	Nada aquí puede mostrar este tipo de archivo.
 @id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	Nada copiado. El enlace se rompe si el archivo se mueve.
+@id	ui.nothing_to_redo	Nada que rehacer
+@id	ui.nothing_to_undo	Nada que deshacer
 @id	ui.numbering	Numeración
 @id	ui.off	OFF
 @id	ui.off_2	off
+@id	ui.office_document	Documento de oficina
+@id	ui.office_text_inspection	Inspección de texto de oficina
 @id	ui.officeimo	OfficeIMO
 @id	ui.officeimo_import_worker_stopped_unexpectedly	El trabajador de importación de OfficeIMO se detuvo inesperadamente
+@id	ui.ok	Aceptar
+@id	ui.one_tree_of_notebooks	Un árbol de cuadernos
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive y SharePoint: no compilados. Señala NoteCraft a una carpeta que tu herramienta de sincronización ya vigila y es lo mismo.
 @id	ui.onenote_import	Importación de OneNote
 @id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Los cuadernos en línea (OneDrive, SharePoint) no están compilados. Un cuaderno en una carpeta que tu herramienta de sincronización vigila se sincroniza por ella.
@@ -411,6 +483,7 @@
 @id	ui.page_setup	Configuración de página
 @id	ui.page_source	Origen de la página
 @id	ui.page_versions_2	Versiones de página
+@id	ui.page_versions_4	Versiones \nde la página
 @id	ui.page_width	Ancho de página
 @id	ui.pages	P?ginas
 @id	ui.paper_behind_the_page	{paper} detrás de la página
@@ -426,9 +499,12 @@
 @id	ui.pasted_formatted_content	Contenido con formato pegado
 @id	ui.path_opened_as_an_empty_notebook	{path} abierto como un cuaderno vacío
 @id	ui.pdf_and_office_documents	Documentos PDF y Office
+@id	ui.pdf_document	Documento PDF
+@id	ui.pdf_text_inspection	Inspección de texto PDF
 @id	ui.pen	Pen
 @id	ui.pencil	Pencil
 @id	ui.permanently_delete	¿Eliminar permanentemente?
+@id	ui.permanently_delete_title_and_everything_inside_it	¿Eliminar permanentemente "{title}" y todo su contenido?
 @id	ui.permanently_deleted	Eliminado permanentemente
 @id	ui.phone_number	Número de teléfono
 @id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	Selecciona un documento PDF o de Office e inserta sus páginas como imágenes
@@ -455,6 +531,7 @@
 @id	ui.question	Pregunta
 @id	ui.quote_2	Cita
 @id	ui.quote_this_paragraph	Citar este párrafo
+@id	ui.read_back_from_it_2	Leer \ndesde él
 @id	ui.read_back_rows_rows_and_columns_columns	Leer {rows} filas y {columns} columnas
 @id	ui.read_only	solo lectura
 @id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	Extracción de texto en solo lectura. La renderización completa del documento estará disponible pronto.
@@ -474,12 +551,15 @@
 @id	ui.rename_ellipsis	Renombrar...
 @id	ui.renamed	Renombrado
 @id	ui.rendered_svg_preview	Vista previa SVG renderizada
+@id	ui.repair_icon	Reparar icono
 @id	ui.repaired_the_attachment_icon_for_name	Reparado el icono del archivo adjunto para {name}
 @id	ui.replay	Reproducir
 @id	ui.reset_app_preferences	Restablecer preferencias de la aplicación
 @id	ui.reset_app_preferences_2	Restablecer preferencias de la aplicación…
 @id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	¿Restablecer las preferencias guardadas de NoteCraft a sus valores predeterminados?
+@id	ui.reset_preferences	Restablecer preferencias
 @id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Restablecer temas, diseño, opciones de cinta y otras preferencias guardadas de NoteCraft a sus valores predeterminados.
+@id	ui.restore	Restaurar
 @id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	Restaurar páginas, secciones y grupos eliminados de este cuaderno
 @id	ui.restored_the_saved_page_version	Versión de página guardada restaurada
 @id	ui.restored_to_the_original_location	Restaurado en la ubicación original
@@ -487,6 +567,8 @@
 @id	ui.rounded	Rounded
 @id	ui.rub_out_whatever_the_pointer_passes_over	Borrar lo que el puntero recorra
 @id	ui.rule_line_colour_not_built	Color de línea de regla (no integrado)
+@id	ui.ruled	Cuadriculado
+@id	ui.save_picture_2	Guardar \nimagen
 @id	ui.saved	Guardado
 @id	ui.saved_copies_of_this_page	Copias guardadas de esta página
 @id	ui.saved_the_drawing_as_a_picture_path	Dibujo guardado como imagen: {path}
@@ -497,10 +579,14 @@
 @id	ui.section_group	Grupo de secciones
 @id	ui.see_and_restore_saved_copies_of_this_page	Ver y restaurar copias guardadas de esta página
 @id	ui.select	Seleccionar
+@id	ui.select_columns_2	Seleccionar \ncolumnas
+@id	ui.select_rows_2	Seleccionar \nfilas
 @id	ui.select_some_words_first	Selecciona primero algunas palabras
+@id	ui.select_table_2	Seleccionar \ntabla
 @id	ui.selected_text_next_typing	Texto seleccionado / próxima escritura
 @id	ui.selection	Selección
 @id	ui.send_page	Send Page
+@id	ui.send_page_3	Enviar \npágina
 @id	ui.separate_pages	Páginas separadas
 @id	ui.session_id_id	ID de sesión: {id}
 @id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	Establece la dirección del texto seleccionado o del texto que se escribirá a continuación
@@ -511,22 +597,30 @@
 @id	ui.show_notebooks_folder	Mostrar carpeta de cuadernos
 @id	ui.show_or_hide_the_notebooks_column	Mostrar u ocultar la columna de cuadernos
 @id	ui.show_the_code	Mostrar el código
+@id	ui.show_the_notebooks_again	Mostrar de nuevo los cuadernos
 @id	ui.show_the_notebooks_folder	Mostrar la carpeta de cuadernos
 @id	ui.show_the_page_at_100	Mostrar la página al 100 %
+@id	ui.show_the_page_source	Mostrar el código fuente de la página
 @id	ui.show_the_strokes	Mostrar los trazos
 @id	ui.size_kb	{size} KB
 @id	ui.size_pt	{size} pt
+@id	ui.small	Pequeño
+@id	ui.small_squares	Cuadrícula pequeña
 @id	ui.somewhere_else	En otro lugar
 @id	ui.source	Fuente
 @id	ui.split	Split
 @id	ui.spreadsheet	Hoja de cálculo
 @id	ui.square	Square
+@id	ui.squares	Cuadrícula
+@id	ui.standard	Estándar
+@id	ui.standard_ruled	Cuadriculado estándar
 @id	ui.star	Star
 @id	ui.starting_officeimo	Iniciando OfficeIMO…
 @id	ui.stencils	Plantillas
 @id	ui.strike_through	Tachar
 @id	ui.strikethrough	Tachado
 @id	ui.styles	Estilos
+@id	ui.styles_2	estilos
 @id	ui.svg_source	Código fuente SVG
 @id	ui.symbol	Símbolo
 @id	ui.symbols	S?mbolos
@@ -541,6 +635,7 @@
 @id	ui.take_the_marks_off	Quitar el formato
 @id	ui.teal_2	Verde azulado
 @id	ui.text	Texto
+@id	ui.text_122	█
 @id	ui.text_74	{} {}
 @id	ui.text_inspection_is_shown_below	La inspección de texto se muestra a continuación.
 @id	ui.text_run_direction	Dirección de lectura del texto
@@ -596,18 +691,31 @@
 @id	ui.this_notebook_s_recycle_bin_is_empty	La papelera de este cuaderno está vacía.
 @id	ui.this_page	Esta p?gina
 @id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	Esta página contiene anotaciones que NoteCraft aún no edita, por lo que se muestra tal como las lee.
+@id	ui.this_page_reads_left_to_right	Esta página se lee de izquierda a derecha
+@id	ui.this_page_reads_right_to_left	Esta página se lee de derecha a izquierda
 @id	ui.this_paragraph_decides_from_its_own_first_letter	Este párrafo decide su dirección a partir de su primera letra
+@id	ui.this_paragraph_fills_the_column	Este párrafo llena la columna
+@id	ui.this_paragraph_fills_the_column_stretched_hard	Este párrafo llena la columna, estirado intensamente
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	Este párrafo llena la columna, estirado ligeramente
+@id	ui.this_paragraph_is_ragged_again	Este párrafo es irregular de nuevo
 @id	ui.this_paragraph_reads_left_to_right	Este párrafo se lee de izquierda a derecha
+@id	ui.this_paragraph_reads_right_to_left	Este párrafo se lee de derecha a izquierda
 @id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	Este párrafo se lee de derecha a izquierda (árabe, hebreo)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	Este párrafo se lee en la dirección que lo hacen sus palabras
 @id	ui.this_picture_cannot_be_shown_here	Esta imagen no se puede mostrar aquí.
 @id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	Esto elimina la carpeta del cuaderno del disco y no se puede deshacer.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	Este bloque se lee de izquierda a derecha. Una línea mixta sigue dibujándose en un orden; consulta la hoja de ruta
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	Este bloque se lee de derecha a izquierda. Una línea mixta sigue dibujándose en un orden; consulta la hoja de ruta
 @id	ui.this_svg_cannot_be_rendered_here	Este SVG no se puede representar aquí.
+@id	ui.this_window_behaves_like_the_others	Esta ventana se comporta como las demás
+@id	ui.this_window_stays_on_top	Esta ventana permanece siempre visible
 @id	ui.time	Hora
 @id	ui.time_stamp	Marca de tiempo
 @id	ui.title_2	Título
 @id	ui.title_saved	Título guardado
 @id	ui.title_the_folder_name_does_not_change	Título (el nombre de la carpeta no cambia)
 @id	ui.to_do_2	Por hacer
+@id	ui.to_do_tag_2	Etiqueta \nde tareas pendientes
 @id	ui.today_s_date	Fecha de hoy
 @id	ui.toml	TOML
 @id	ui.took_it_off_the_rack	Se ha retirado del estante
@@ -620,9 +728,14 @@
 @id	ui.under_the	debajo de
 @id	ui.undo	Deshacer
 @id	ui.undo_ctrl_z	Undo (Ctrl+Z)
+@id	ui.undo_stroke	Deshacer \ntrazo
 @id	ui.unread	No le?dos
 @id	ui.updated_the_welcome_notebook	Se ha actualizado el cuaderno de bienvenida
+@id	ui.use_notecraft_s_own_title_bar	Usar la barra de título propia de NoteCraft
+@id	ui.use_the_system_title_bar	Usar la barra de título del sistema
 @id	ui.version_version_alpha	Versión {version} (alfa)
+@id	ui.very_large	Muy grande
+@id	ui.very_large_squares	Cuadrícula muy grande
 @id	ui.view	Vista
 @id	ui.views	Vistas
 @id	ui.warn	warn
@@ -630,6 +743,8 @@
 @id	ui.welcome_to_notecraft	Bienvenido a NoteCraft
 @id	ui.what_should_happen_to_this_file	¿Qué debe ocurrir con este archivo?
 @id	ui.what_to_add	Qué añadir
+@id	ui.wide	Ancho
+@id	ui.wide_ruled	Cuadriculado ancho
 @id	ui.window	Ventana
 @id	ui.write_anywhere_on_the_page	Escribe en cualquier lugar de la página
 @id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	Vuelve a escribir el dibujo sin lecturas del bolígrafo, para enviarlo

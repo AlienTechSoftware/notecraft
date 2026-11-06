@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	"{title}" और इसमें शामिल सभी सामग्री ({n} आइटम) को इस नोटबुक के रीसाइकिल बिन में ले जाएं?|"{title}" और इसमें शामिल सभी सामग्री ({n} आइटम) को इस नोटबुक के रीसाइकिल बिन में ले जाएं?
+@plural	{n} item|{n} items	{n} आइटम|{n} आइटम
+@plural	{n} notebook opened|{n} notebooks opened	{n} नोटबुक खोली गई|{n} नोटबुक खोली गईं
+@plural	{n} notebook|{n} notebooks	{n} नोटबुक|{n} नोटबुक
+@plural	{n} stroke|{n} strokes	{n} स्ट्रोक|{n} स्ट्रोक
+@id	language.name	हिन्दी
+@id	ui.a_bullet_list	एक बुलेट सूची
+@id	ui.a_column_left_of_the_caret_s	केरेट के बाईं ओर एक कॉलम
+@id	ui.a_column_right_of_the_caret_s	केरेट के दाईं ओर एक कॉलम
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	एक प्रतिलिपि इस पृष्ठ के फ़ोल्डर में जाती है, इसलिए नोटबुक इसे हर जगह ले जाता है।
+@id	ui.a_direction_goes_on_a_paragraph_of_text	एक दिशा पाठ के पैराग्राफ पर होती है
+@id	ui.a_file_copied_in_or_linked_where_it_is	एक फ़ाइल: कॉपी की गई या जहाँ है वहाँ लिंक किया गया
+@id	ui.a_link	एक लिंक
+@id	ui.a_link_to_a_page_or_an_address	एक पृष्ठ या पते का लिंक
+@id	ui.a_link_to_paste_into_another_page	दूसरे पृष्ठ में पेस्ट करने के लिए एक लिंक
+@id	ui.a_mermaid_diagram_kept_as_its_source	एक Mermaid आरेख, अपने स्रोत के रूप में संरक्षित
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	एक नई नोटबुक {folder} में एक फ़ोल्डर है, जिसके अंदर एक खंड और एक पृष्ठ है।
+@id	ui.a_new_page_in_this_section	इस खंड में एक नया पृष्ठ
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	पृष्ठ के बगल में एक नई स्प्रैडशीट, GridCraft में खोली गई
+@id	ui.a_numbered_list	एक क्रमांकित सूची
+@id	ui.a_page_here	यहाँ एक पृष्ठ
+@id	ui.a_row_above_the_caret_s	केरेट के ऊपर एक पंक्ति
+@id	ui.a_row_below_the_caret_s	केरेट के नीचे एक पंक्ति
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	एक तालिका अपने शीर्षक पंक्ति और कम से कम एक कॉलम को बनाए रखती है
+@id	ui.a_table_pick_its_size	एक तालिका: इसका आकार चुनें
+@id	ui.a_tag_goes_on_a_line_of_text	एक टैग पाठ की पंक्ति पर लगाया जाता है
+@id	ui.a_to_do_box_on_this_line_ctrl_1	इस पंक्ति पर एक टू-डू बॉक्स (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	NoteCraft का एक दौर, इसे अपने स्वयं के पृष्ठों पर दिखाया गया है। यह पहले स्टार्टअप पर खाली नोटबुक फ़ोल्डर में जोड़ा जाता है; यह इसे फिर से जोड़ता है, या यदि यह अभी भी यहाँ है तो इसे खोलता है।
+@id	ui.about_notecraft	NoteCraft के बारे में
+@id	ui.accent_accent	एक्सेंट: {accent}
+@id	ui.accept	स्वीकार करें
+@id	ui.add	जोड़ें
+@id	ui.add_a_blank_paragraph_at_the_caret	केरेट पर एक खाली पैराग्राफ जोड़ें
+@id	ui.add_a_page_here	यहाँ एक पृष्ठ जोड़ें
+@id	ui.add_a_sub_page	एक उप-पृष्ठ जोड़ें
+@id	ui.add_another_tool	और {tool} जोड़ें
+@id	ui.add_file	फ़ाइल जोड़ें
+@id	ui.add_file_to_this_page	इस पृष्ठ में फ़ाइल जोड़ें
+@id	ui.add_inside_this_kind	इस {kind} के अंदर जोड़ें
+@id	ui.add_name	{name} जोड़ें
+@id	ui.add_name_left_more	{name} जोड़ें ({left} अधिक)
+@id	ui.add_page	पृष्ठ जोड़ें
+@id	ui.add_the_welcome_notebook	स्वागत नोटबुक जोड़ें
+@id	ui.add_tool	{tool} जोड़ें
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	पृष्ठ के अंत में {name} का लिंक जोड़ा गया
+@id	ui.added_a_tool	एक {tool} जोड़ा गया
+@id	ui.address	पता
+@id	ui.alignment	संरेखण
+@id	ui.alignment_and_direction	संरेखण और दिशा
+@id	ui.alignment_and_which_way_this_paragraph_reads	संरेखण, और यह पैराग्राफ किस दिशा में पढ़ा जाता है
+@id	ui.all_of_them_live_in_folder	वे सभी {folder} में रहते हैं
+@id	ui.always_on_top	हमेशा शीर्ष पर
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	एक समीकरण, TeX में लिखा: शुरू करने के लिए एक चुनें
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	ऐप प्राथमिकताएं रीसेट हो गईं। प्रत्येक डिफ़ॉल्ट लागू करने के लिए NoteCraft को पुनः आरंभ करें।
+@id	ui.appearance	दिखावट
+@id	ui.append_link	लिंक संलग्न करें
+@id	ui.application_preferences	ऐप प्राथमिकताएं
+@id	ui.arrow	बाण
+@id	ui.attach_the_file	फ़ाइल संलग्न करें
+@id	ui.attachment_icon_missing	संलग्नक आइकन गायब
+@id	ui.attachment_not_linked	संलग्नक लिंक नहीं है
+@id	ui.attachment_recovery	संलग्नक पुनर्प्राप्ति
+@id	ui.authors	लेखक
+@id	ui.auto	स्वचालित
+@id	ui.automatic_system_language	स्वचालित (सिस्टम भाषा)
+@id	ui.back	वापस
+@id	ui.back_to_the_notebook	नोटबुक पर वापस जाएं
+@id	ui.back_to_the_page_before_alt_left	पिछले पृष्ठ पर वापस (Alt+Left)
+@id	ui.basic_text	मूल पाठ
+@id	ui.black	काला
+@id	ui.blue	नीला
+@id	ui.blue_2	नीला
+@id	ui.bold	बोल्ड
+@id	ui.bold_ctrl_b	बोल्ड (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	दोनों, जैसे कि पृष्ठ का अपना स्टैम्प लिखा गया है
+@id	ui.browse_for_a_notebook	एक नोटबुक ब्राउज़ करें…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	{folder} में नोटबुक्स ब्राउज़ करें या कोई अन्य फ़ोल्डर चुनें।
+@id	ui.brush_pen	ब्रश पेन
+@id	ui.built_with	निर्मित
+@id	ui.bullets	बुलेट्स
+@id	ui.cancel	रद्द करें
+@id	ui.cancel_import	आयात रद्द करें
+@id	ui.cannot_open_gridcraft_error	GridCraft खोलने में असमर्थ: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	GridCraft में तालिका खोलने में असमर्थ: {error}
+@id	ui.cannot_save_the_pasted_picture_error	पेस्ट की गई छवि सहेजने में असमर्थ: {error}
+@id	ui.cannot_write_name_error	{name} लिखने में असमर्थ: {error}
+@id	ui.cannot_write_the_drawing_error	ड्राइंग लिखने में असमर्थ: {error}
+@id	ui.cannot_write_the_picture_error	छवि लिखने में असमर्थ: {error}
+@id	ui.cannot_write_this_page_s_ink	इस पृष्ठ की इंक लिखने में असमर्थ
+@id	ui.choose_a_custom_ink_colour	एक कस्टम इंक रंग चुनें
+@id	ui.choose_a_file_to_attach	संलग्न करने के लिए एक फ़ाइल चुनें
+@id	ui.choose_a_file_to_import	आयात करने के लिए एक फ़ाइल चुनें
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	एक स्थानीय संग्रह स्तर चुनें। रिलीज बिल्ड में लॉगिंग डिफ़ॉल्ट रूप से बंद होती है।
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	एक नोटबुक, नोटबुक्स का एक फ़ोल्डर, या एक नई नोटबुक के लिए एक खाली फ़ोल्डर चुनें
+@id	ui.choose_a_onenote_notebook_folder	एक OneNote नोटबुक फ़ोल्डर चुनें
+@id	ui.choose_a_pdf_or_office_document_to_print_out	प्रिंट करने के लिए एक PDF या Office दस्तावेज़ चुनें
+@id	ui.choose_a_picture	एक छवि चुनें
+@id	ui.choose_a_section_to_see_its_pages	इसके पृष्ठ देखने के लिए एक खंड चुनें।
+@id	ui.choose_a_symbol_to_insert_at_the_caret	केरेट पर डालने के लिए एक प्रतीक चुनें
+@id	ui.choose_how_to_insert_a_picture	एक छवि डालने का तरीका चुनें
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	चुनें कि NoteCraft स्थानीय रूप से क्या रिकॉर्ड करता है। कुछ भी स्वचालित रूप से अपलोड नहीं किया जाता है।
+@id	ui.chosen_for_this_page	इस पृष्ठ के लिए चुना गया
+@id	ui.circle	वृत्त
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	सभी स्थानीय टेलीमेट्री सत्र और निर्यात किए गए टेलीमेट्री ZIP फ़ाइलें साफ़ करें?
+@id	ui.clear_formatting	प्रारूपण साफ़ करें
+@id	ui.clear_formatting_2	प्रारूपण साफ़ करें
+@id	ui.clear_telemetry	टेलीमेट्री साफ़ करें
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	इसे चुनने के लिए एक स्ट्रोक पर क्लिक करें, फिर इसे खिसकाएं, खींचें या हटाएं
+@id	ui.click_in_a_table_first	पहले तालिका में क्लिक करें
+@id	ui.click_in_the_page_first	पहले पृष्ठ में क्लिक करें
+@id	ui.click_in_the_page_first_then_use_the_ribbon	पहले पृष्ठ में क्लिक करें, फिर रिबन का उपयोग करें
+@id	ui.click_in_the_table_first	पहले तालिका में क्लिक करें
+@id	ui.clipboard	क्लिपबोर्ड
+@id	ui.close	बंद करें
+@id	ui.close_notebook	नोटबुक बंद करें
+@id	ui.close_the_find_bar_escape	खोज बार बंद करें (Escape)
+@id	ui.close_the_source_pane	स्रोत पैनल बंद करें
+@id	ui.cloud_import_is_not_implemented_yet	क्लाउड आयात अभी लागू नहीं किया गया है।
+@id	ui.code_2	कोड
+@id	ui.code_in_one_line	कोड, एक पंक्ति में
+@id	ui.collapse	संकुचित करें
+@id	ui.collapse_all	सभी को संपादित करें
+@id	ui.college	कॉलेज
+@id	ui.college_ruled	कॉलेज नियम
+@id	ui.colour	रंग
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	रंग हटाया गया
+@id	ui.colour_set_to_colour	रंग {colour} पर सेट किया गया
+@id	ui.colours	रंग
+@id	ui.columns_x_rows_table	{columns} x {rows} तालिका
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	संपर्क करें
+@id	ui.convert	रूपांतरित करें
+@id	ui.convert_to_gridcraft_2	\nGridCraft में रूपांतरित करें
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	GridCraft में रूपांतरित करें: GridCraft स्थापित नहीं है
+@id	ui.copied	कॉपी किया गया
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	फ़ाइल की प्रतिलिपि बनाता है और प्रत्येक मुद्रित पृष्ठ के लिए एक चित्र सम्मिलित करता है।
+@id	ui.copy	प्रतिलिपि बनाएं
+@id	ui.copy_full_path	पूर्ण पथ कॉपी करें
+@id	ui.copy_link_to_page	पृष्ठ के लिए लिंक कॉपी करें
+@id	ui.copy_the_selection	चयन की प्रतिलिपि बनाएं
+@id	ui.could_not_attach_name_before_rendering_its_pages	पृष्ठों को रेंडर करने से पहले {name} संलग्न नहीं कर सका
+@id	ui.could_not_attach_name_to_this_page	{name} को इस पृष्ठ पर संलग्न नहीं कर सका।
+@id	ui.could_not_complete_the_action_error	कार्रवाई पूरी नहीं की जा सकी: {error}
+@id	ui.could_not_import_the_notebook_error	नोटबुक आयात नहीं कर सका: {error}
+@id	ui.could_not_open_the_containing_folder_error	समावेशक फ़ोल्डर खोलने में असमर्थ: {error}
+@id	ui.could_not_open_the_file_error	फ़ाइल खोलने में असमर्थ: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	{name} के लिए आइकन ठीक नहीं कर सका: {error}
+@id	ui.could_not_reset_app_preferences_error	ऐप प्राथमिकताएं रीसेट नहीं कर सका: {error}
+@id	ui.could_not_restore_the_link_for_name_error	{name} के लिए लिंक पुनर्स्थापित नहीं कर सका: {error}
+@id	ui.could_not_save_the_interface_language_error	इंटरफ़ेस भाषा सहेजने में असमर्थ: {error}
+@id	ui.could_not_store_printout_page_page_error	मुद्रण पृष्ठ {page} संग्रहीत नहीं कर सका: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} आइटम, {colour} रंग
+@id	ui.create	बनाएं
+@id	ui.created	बनाया गया
+@id	ui.critical	गंभीर
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V पृष्ठ में पेस्ट करता है
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y इसे वापस रखता है
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z अंतिम परिवर्तन को वापस लेता है
+@id	ui.current_session_id	वर्तमान सत्र: {id}
+@id	ui.custom	कस्टम
+@id	ui.customize_quick_access_toolbar	त्वरित एक्सेस टूलबार को अनुकूलित करें
+@id	ui.customize_tags_not_built	टैग अनुकूलित करें... (निर्मित नहीं)
+@id	ui.cut	काटें
+@id	ui.cut_2	काटा गया
+@id	ui.cut_the_selection	चयन काटें
+@id	ui.dark	डार्क
+@id	ui.data	डेटा
+@id	ui.date	तारीख
+@id	ui.date_time_2	तारीख &\nसमय
+@id	ui.debug	डिबग
+@id	ui.decrease_indentation	इंडेंटेशन कम करें
+@id	ui.decrease_indentation_shift_tab	इंडेंटेशन कम करें (Shift+Tab)
+@id	ui.default	डिफ़ॉल्ट
+@id	ui.default_format	डिफ़ॉल्ट प्रारूप
+@id	ui.default_format_for_pages_below	नीचे के पृष्ठों के लिए डिफ़ॉल्ट प्रारूप
+@id	ui.definition	परिभाषा
+@id	ui.delete	हटाएं
+@id	ui.delete_assets_name_from_this_page_s_folder	"assets/{name}" को इस पृष्ठ के फ़ोल्डर से हटाएं?
+@id	ui.delete_columns_2	\n स्तंभ हटाएं
+@id	ui.delete_ellipsis	हटाएं...
+@id	ui.delete_file	फ़ाइल हटाएं
+@id	ui.delete_notebook	नोटबुक हटाएं
+@id	ui.delete_notebook_2	नोटबुक हटाएं...
+@id	ui.delete_notebook_title_and_everything_inside_it	नोटबुक "{title}" और इसके अंदर सब कुछ हटाएं?
+@id	ui.delete_permanently	स्थायी रूप से हटाएं
+@id	ui.delete_rows_2	\n पंक्तियाँ हटाएं
+@id	ui.delete_tool	उपकरण हटाएं
+@id	ui.delete_tool_2	{tool} हटाएं
+@id	ui.deleted_notebook	नोटबुक हटाया गया
+@id	ui.deleted_notebook_path	नोटबुक {path} हटाया गया
+@id	ui.deny	अस्वीकार करें
+@id	ui.diagram	आरेख
+@id	ui.diamond	वज्र
+@id	ui.direction_from_the_words	शब्दों से दिशा
+@id	ui.discovering_sections	खंड खोज रहे हैं…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	इस सत्र में इसी तरह के संलग्नन मुद्दों के बारे में फिर से चेतावनी न दें
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	इस सत्र में इसी तरह के गायब आइकों के बारे में फिर से चेतावनी न दें
+@id	ui.do_not_warn_again_for_this_file_type_this_session	इस सत्र में इस फ़ाइल प्रकार के लिए फिर से चेतावनी न दें
+@id	ui.dock_to_desktop	डेस्कटॉप पर डॉक करें
+@id	ui.document_renderer_coming_soon	दस्तावेज़ रेंडरर्स जल्द आ रहा है
+@id	ui.don_t_show_this_again_in_this_session	इस सत्र में इसे फिर से न दिखाएं
+@id	ui.don_t_show_this_ever	कभी भी इसे न दिखाएं
+@id	ui.draw	खींचें
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	इसे उठाने के लिए इंक के चारों ओर एक लूप खींचें
+@id	ui.draw_here_2	यहाँ \n खींचें
+@id	ui.drawing	खींचा जा रहा है...
+@id	ui.drawing_saved_count_strokes	खींचा सहेजा गया, {count} स्ट्रोक
+@id	ui.drawing_tools	खींचने के उपकरण
+@id	ui.drop_a_file_onto_the_page_to_add_it	इसे जोड़ने के लिए पृष्ठ पर एक फ़ाइल ड्रॉप करें
+@id	ui.edit	संपादन
+@id	ui.editing	संपादित हो रहा है...
+@id	ui.egui_and_eframe	egui और eframe
+@id	ui.ellipse	अंडाकार
+@id	ui.email	ईमेल
+@id	ui.english	अंग्रेज़ी
+@id	ui.equation	समीकरण
+@id	ui.equation_name	समीकरण: {name}
+@id	ui.eraser	एरेसर
+@id	ui.error	त्रुटि
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	गिनती को आसान बनाने के लिए हर पाँचवीं पंक्ति थोड़ी मजबूत होती है।
+@id	ui.every_line_of_this_page_decides_for_itself	इस पृष्ठ की प्रत्येक पंक्ति स्वयं निर्णय लेती है
+@id	ui.every_paragraph_decides_for_itself	प्रत्येक पैराग्राफ स्वयं निर्णय लेता है
+@id	ui.expand	विस्तारित करें
+@id	ui.expand_all	सभी को विस्तारित करें
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	निर्यात एक उपयोगकर्ता-चयनित ZIP बनाता है, फिर निर्यात किए गए सत्र फ़ोल्डर को हटा देता है।
+@id	ui.export_current_session_zip	वर्तमान सत्र ZIP निर्यात करें
+@id	ui.export_telemetry_zip	टेलीमेट्री ZIP निर्यात करें
+@id	ui.eyedropper	आइड्रॉपर
+@id	ui.eyedropper_not_built	आइड्रॉपर अभी निर्मित नहीं है
+@id	ui.file	फ़ाइल
+@id	ui.file_attachment_2	\n संलग्नक
+@id	ui.file_options	फ़ाइल विकल्प
+@id	ui.file_printout_2	\n मुद्रण प्रतिलिपि
+@id	ui.files	फ़ाइलें
+@id	ui.files_in_this_page	इस पृष्ठ में फ़ाइलें
+@id	ui.find	खोजें
+@id	ui.find_in_this_file	इस फ़ाइल में खोजें
+@id	ui.find_tags	टैग खोजें
+@id	ui.find_tags_3	\n टैग खोजें
+@id	ui.fit_the_page_to_the_available_width	पृष्ठ को उपलब्ध चौड़ाई में फिट करें
+@id	ui.folder_folder	फ़ोल्डर: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	सिस्टम की लाइट या डार्क सेटिंग का पालन करें
+@id	ui.format	प्रारूप
+@id	ui.format_background_2	\n पृष्ठभूमि के लिए प्रारूप
+@id	ui.format_for_this_page	इस पृष्ठ के लिए प्रारूप
+@id	ui.format_painter	फॉर्मेट पेन्टर
+@id	ui.forward	आगे बढ़ें
+@id	ui.forward_to_the_page_after_alt_right	अगले पृष्ठ पर जाएं (Alt+Right)
+@id	ui.fountain_pen	फाउंटेन पेन
+@id	ui.from_camera	कैमरे से
+@id	ui.from_online	ऑनलाइन से
+@id	ui.full_page	पूर्ण पृष्ठ
+@id	ui.full_page_view_2	\n दृश्य: पूर्ण पृष्ठ
+@id	ui.full_path_copied	पूर्ण पथ कॉपी किया गया
+@id	ui.give_the_page_the_whole_window	पूरे विंडो में पृष्ठ दिखाएं
+@id	ui.gray	धूसर
+@id	ui.green	हरा
+@id	ui.green_2	हरा
+@id	ui.grey	ग्रे
+@id	ui.gridcraft_is_not_installed	GridCraft स्थापित नहीं है
+@id	ui.help	मदद
+@id	ui.hide	छुपाएं
+@id	ui.hide_everything_but_the_page	पृष्ठ को छोड़कर सब कुछ छुपाएं
+@id	ui.hide_page_title	पृष्ठ शीर्षक छुपाएं
+@id	ui.hide_the_page_source	पृष्ठ स्रोत छुपाएं
+@id	ui.hide_the_page_title	पृष्ठ शीर्षक छुपाएं
+@id	ui.highlight	हाइलाइट
+@id	ui.highlighter	हाइलाइटर
+@id	ui.history	इतिहास
+@id	ui.home	होम
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	विचार
+@id	ui.images	छवियां
+@id	ui.immersive_reader	इमर्सिव रीडर
+@id	ui.import_file	फ़ाइल आयात करें
+@id	ui.import_from_the_cloud	क्लाउड से आयात करें
+@id	ui.import_notebook_folder	नोटबुक फ़ोल्डर आयात करें
+@id	ui.important	महत्वपूर्ण
+@id	ui.importing	आयात हो रहा है…
+@id	ui.importing_onenote	OneNote आयात हो रहा है
+@id	ui.increase_indentation	इंडेंटेशन बढ़ाएं
+@id	ui.increase_indentation_tab	इंडेंटेशन बढ़ाएं (Tab)
+@id	ui.index_of_total_sections	{total} खंडों में से {index}
+@id	ui.info	जानकारी
+@id	ui.inherit_notebook_section_or_global_setting	उत्तराधिकारी (नोटबुक, खंड या वैश्विक सेटिंग)
+@id	ui.input_mode	इनपुट मोड
+@id	ui.insert	सम्मिलित करें
+@id	ui.insert_a_common_symbol	एक सामान्य प्रतीक सम्मिलित करें
+@id	ui.insert_column_left_2	\n कॉलम बाएं में डालें
+@id	ui.insert_column_right_2	\n कॉलम दाएं में डालें
+@id	ui.insert_printout	प्रिंटआउट सम्मिलित करें
+@id	ui.insert_row_above_2	\n पंक्ति ऊपर डालें
+@id	ui.insert_row_below_2	\n पंक्ति नीचे डालें
+@id	ui.insert_space_2	\n स्थान सम्मिलित करें
+@id	ui.insert_symbol	प्रतीक सम्मिलित करें
+@id	ui.insert_table_not_built	टेबल सम्मिलित करें... (निर्मित नहीं)
+@id	ui.insert_the_picture	छवि सम्मिलित करें
+@id	ui.insert_the_recording	रिकॉर्डिंग सम्मिलित करें
+@id	ui.insert_the_video	वीडियो सम्मिलित करें
+@id	ui.inserted_name_and_count_printout_pages	{name} और {count} प्रिंटआउट पृष्ठ सम्मिलित किए गए
+@id	ui.interface_language	इंटरफ़ेस भाषा
+@id	ui.interface_language_language	इंटरफ़ेस भाषा: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	समस्याएं, रोडमैप और दस्तावेज़ीकरण सब उपलब्ध हैं। NoteCraft स्वतः किसी भी सेवा से बात नहीं करता है।
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	इसे सूचीबद्ध किया गया है ताकि पृष्ठ का फ़ोल्डर गुप्त न रहे।
+@id	ui.italic	तिरछा
+@id	ui.italic_ctrl_i	तिरछा (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	पंक्तिबद्धता पाठ के पैराग्राफ पर लागू होती है
+@id	ui.keep_this_window_above_the_others	इस विंडो को अन्य विंडोओं से ऊपर रखें
+@id	ui.label	लेबल
+@id	ui.label_not_built	{label} (बिल्ड नहीं हुआ)
+@id	ui.label_not_built_yet	{label}: अभी तक बिल्ड नहीं हुआ
+@id	ui.label_nothing_to_action	{label}: {action} के लिए कुछ नहीं
+@id	ui.language_click_to_change_it	{language}. इसे बदलने के लिए क्लिक करें।
+@id	ui.large	बड़ा
+@id	ui.large_squares	बड़े वर्ग
+@id	ui.laser_pointer	लेज़र पॉइंटर
+@id	ui.lasso_select	लैसो\nचयन
+@id	ui.layout	लेआउट
+@id	ui.leave_it	वैसे ही छोड़ें
+@id	ui.left_to_right	बाएँ से दाएँ
+@id	ui.level	स्तर:
+@id	ui.licence	लाइसेंस
+@id	ui.light	हल्का
+@id	ui.light_or_dark_and_the_accent_colour	हल्का या गहरा, और एक्सेंट रंग
+@id	ui.line	रेखा
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	पृष्ठ के पीछे रेखाएं या वर्ग, कागज़ की तरह
+@id	ui.link	लिंक
+@id	ui.link_to_the_file_where_it_is	जहाँ है वहां फ़ाइल से लिंक करें
+@id	ui.link_to_title_copied	"{title}" के लिए लिंक कॉपी किया गया
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	जहाँ है वहां {name} से लिंक; फ़ाइल कॉपी नहीं की गई
+@id	ui.links	लिंक्स
+@id	ui.live_captions	लाइव कैप्शन
+@id	ui.local_collection_level	स्थानीय संग्रह स्तर
+@id	ui.local_diagnostics	स्थानीय निदान
+@id	ui.local_diagnostics_and_usage	स्थानीय निदान और उपयोग
+@id	ui.logging_folder_folder	लॉगिंग फ़ोल्डर: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	लॉग और टेलीमेट्री इस डिवाइस पर ही रहेंगे। NoteCraft उन्हें स्वतः नहीं भेजता है।
+@id	ui.magenta	मैजेंटा
+@id	ui.make_the_page_larger	पृष्ठ को बड़ा करें
+@id	ui.make_the_page_smaller	पृष्ठ को छोटा करें
+@id	ui.many_thanks_to_its_authors_and_contributors	— इसके लेखकों और योगदानकर्ताओं को अनेक-अनेक धन्यवाद।
+@id	ui.markdown	मार्कडाउन
+@id	ui.match_case	केस मिलाएं
+@id	ui.math	गणित
+@id	ui.maximize	अधिकतम करें
+@id	ui.md_2	md
+@id	ui.media	मीडिया
+@id	ui.medium	मध्यम
+@id	ui.medium_squares	मध्यम वर्ग
+@id	ui.meeting_details	मीटिंग विवरण
+@id	ui.meeting_details_3	मीटिंग\nविवरण
+@id	ui.meetings	मीटिंग्स
+@id	ui.merge	मर्ज करें
+@id	ui.mermaid	Mermaid
+@id	ui.mint	mint
+@id	ui.mit_license	MIT लाइसेंस
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT या Apache-2.0, आपकी पसंद के अनुसार। कोआला कलाकृति इसके अंतर्गत नहीं है; ATTRIBUTION.md देखें।
+@id	ui.mode	मोड
+@id	ui.modify_tool	टूल संशोधित करें
+@id	ui.more	अधिक...
+@id	ui.more_2	अधिक
+@id	ui.more_colours	अधिक रंग
+@id	ui.more_styles	अधिक शैलियाँ
+@id	ui.more_tags	अधिक टैग
+@id	ui.move_left	बाएँ ले जाएँ
+@id	ui.move_right	दाएँ ले जाएँ
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	"{title}" और इसमें सब कुछ ({n} आइटम) को इस नोटबुक के रिसाइकिल बिन में डालें?|"{title}" और इसमें सब कुछ ({n} आइटम) को इस नोटबुक के रिसाइकिल बिन में डालें?
+@id	ui.move_to_recycle_bin	रिसाइकिल बिन में ले जाएँ
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	इस पृष्ठ के पुराने चित्रण से {moved} स्ट्रोक को पृष्ठ पर स्थानांतरित किया गया
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} स्ट्रोक पृष्ठ पर स्थानांतरित किए गए; {left} पुराने चित्रण फ़ाइलें हटाई नहीं जा सकीं
+@id	ui.moved_to_the_notebook_recycle_bin	नोटबुक रिसाइकिल बिन में स्थानांतरित किया गया
+@id	ui.n_item_n_items	{n} आइटम|{n} आइटम
+@id	ui.n_notebook_n_notebooks	{n} नोटबुक|{n} नोटबुक्स
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} नोटबुक खोली गई|{n} नोटबुक्स खोले गए
+@id	ui.n_stroke_n_strokes	{n} स्ट्रोक|{n} स्ट्रोक
+@id	ui.name_2	नाम
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} अभी बनाया नहीं गया है। आने वाली सुविधाओं के लिए रोडमैप देखें।
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} अब इस पृष्ठ की फ़ोल्डर में एक फ़ाइल है
+@id	ui.name_is_open_in_gridcraft	{name} GridCraft में खुला है
+@id	ui.name_not_used_by_the_page	{name}: पृष्ठ द्वारा उपयोग नहीं किया गया
+@id	ui.narrow	संकीर्ण
+@id	ui.narrow_ruled	संकीर्ण रेखांकित
+@id	ui.new_gridcraft_spreadsheet	नया GridCraft स्प्रेडशीट
+@id	ui.new_gridcraft_spreadsheet_not_installed	नया GridCraft स्प्रेडशीट (स्थापित नहीं)
+@id	ui.new_notebook	नई नोटबुक
+@id	ui.new_notebook_2	नई नोटबुक...
+@id	ui.new_page	नया पृष्ठ
+@id	ui.new_page_2	नया पृष्ठ...
+@id	ui.new_pages	नए पृष्ठ:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	नोटबुक या खंड कुछ और न कहें, तो नए पृष्ठ {format} का उपयोग करेंगे
+@id	ui.new_quick_note	नई त्वरित नोट
+@id	ui.new_window	नई विंडो
+@id	ui.next	अगला
+@id	ui.next_match_enter_f3	अगला मिलान (Enter, F3)
+@id	ui.no	नहीं
+@id	ui.no_colour	कोई रंग नहीं
+@id	ui.no_generated_preview_icon_is_available	कोई उत्पन्न पूर्वावलोकन प्रतीक उपलब्ध नहीं है।
+@id	ui.no_lines_behind_the_page	पृष्ठ के पीछे कोई रेखा नहीं
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	इस पृष्ठ के बगल में {name} नहीं: पहले तालिका सौंपें
+@id	ui.no_notebooks_yet_use_new_notebook	अभी तक कोई नोटबुक नहीं। "नई नोटबुक" का उपयोग करें।
+@id	ui.no_pages_in_this_section_yet	इस खंड में अभी तक कोई पृष्ठ नहीं है।
+@id	ui.no_pages_match	कोई पृष्ठ मिलान नहीं करते।
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	अभी तक कोई सहेजे गए संस्करण नहीं। नोटबुक बदलने पर NoteCraft एक प्रतिलिपि रखता है।
+@id	ui.none	कोई नहीं
+@id	ui.normal_view	सामान्य\nदृश्य
+@id	ui.not_built	बनाया नहीं गया
+@id	ui.not_built_2	बनाया नहीं गया
+@id	ui.not_built_yet	अभी तक बनाया नहीं गया
+@id	ui.not_drawn_why	नहीं खींचा गया: {why}
+@id	ui.not_used_by_the_page	पृष्ठ द्वारा उपयोग नहीं किया गया
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	शुद्ध Rust में नोट लेना और संगठन। आपकी नोट्स सादे फ़ोल्डर और फ़ाइलें हैं।
+@id	ui.notebook	नोटबुक
+@id	ui.notebook_closed_its_files_are_still_on_disk	नोटबुक बंद; इसके फ़ाइल अभी भी डिस्क पर हैं
+@id	ui.notebook_created	नोटबुक बनाई गई
+@id	ui.notebook_information	नोटबुक जानकारी
+@id	ui.notebook_recycle_bin_2	नोटबुक रिसाइकिल बिन
+@id	ui.notebook_recycle_bin_3	नोटबुक\nरिसाइकिल बिन
+@id	ui.notebooks_2	नोटबुक्स
+@id	ui.notebooks_and_pages_in_their_own_columns	अपनी स्तंभों में नोटबुक्स और पृष्ठ
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	एक स्तंभ में नोटबुक्स और खंड, अगले में पृष्ठ
+@id	ui.notebooks_folder_folder	नोटबुक्स फ़ोल्डर: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	आप जो नोटबुक्स खोलेंगे, वे यहाँ दिखाई देंगी।
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft ने एक ऐसा संलग्नक पाया है जिसका इस पृष्ठ द्वारा उल्लेख नहीं किया गया:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft ने एक ऐसे संलग्नक को पाया जिसका उत्पन्न प्रतीक नहीं है:
+@id	ui.notecraft_ruled	NoteCraft रेखांकित
+@id	ui.notecraft_squares	NoteCraft वर्ग
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	सादे फ़ोल्डर के रूप में नोट्स। शुरू करने के लिए एक पृष्ठ खोलें या नोटबुक बनाएं।
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	{path} पर कुछ नहीं: लिंक किसी ऐसे पृष्ठ या फ़ाइल की ओर इशारा करता है जो मौजूद नहीं है
+@id	ui.nothing_here_can_show_this_kind_of_file	यहाँ यह प्रकार की फ़ाइल दिखाई नहीं दे सकती।
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	कुछ कॉपी नहीं किया गया। यदि फ़ाइल स्थानांतरित होती है, तो लिंक टूट जाएगा।
+@id	ui.nothing_to_redo	पुनः करने के लिए कुछ नहीं
+@id	ui.nothing_to_undo	वापस लेने के लिए कुछ नहीं
+@id	ui.numbering	अंकन
+@id	ui.off	बंद
+@id	ui.off_2	बंद
+@id	ui.office_document	ऑफिस दस्तावेज़
+@id	ui.office_text_inspection	ऑफिस पाठ निरीक्षण
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO आयात कार्यकर्ता अप्रत्याशित रूप से रुक गया
+@id	ui.ok	ठीक है
+@id	ui.one_tree_of_notebooks	नोटबुक्स का एक वृक्ष
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive और SharePoint: बनाया नहीं गया। NoteCraft को उस फ़ोल्डर की ओर इशारा करें जो आपका सिंक टूल पहले से देख रहा है, तो यह वही है।
+@id	ui.onenote_import	OneNote आयात
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	ऑनलाइन नोटबुक्स (OneDrive, SharePoint) बनाए नहीं गए हैं। आपके सिंक टूल द्वारा देखे जाने वाले फ़ोल्डर में एक नोटबुक उसी द्वारा सिंक होती है।
+@id	ui.only_a_list_item_can_be_indented	केवल सूची आइटम को इंडेंट किया जा सकता है
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	इसे केवल तभी खोलें यदि आप फ़ाइल और इसे बनाने वाले व्यक्ति पर भरोसा करते हैं।
+@id	ui.open	खोलें
+@id	ui.open_a_folder	एक फ़ोल्डर खोलें...
+@id	ui.open_a_notebook	एक नोटबुक खोलें
+@id	ui.open_a_page_first	पहले एक पृष्ठ खोलें
+@id	ui.open_a_page_first_then_drop_files_onto_it	पहले एक पृष्ठ खोलें, फिर उस पर फ़ाइलें ड्रैग करें।
+@id	ui.open_attachment	संलग्नक खोलें
+@id	ui.open_every_level	हर स्तर खोलें
+@id	ui.open_folder	फ़ोल्डर खोलें
+@id	ui.open_in_folder	फ़ोल्डर में खोलें
+@id	ui.open_name	{name} खोलें
+@id	ui.open_telemetry_folder	टेलीमेट्री फ़ोल्डर खोलें
+@id	ui.open_the_artcraft_discord	ArtCraft Discord खोलें
+@id	ui.open_this_notebook	इस नोटबुक को खोलें
+@id	ui.open_using_shell	शेल का उपयोग करके खोलें
+@id	ui.open_with_associated_app	संबंधित ऐप के साथ खोलें
+@id	ui.opened	खोला गया
+@id	ui.opened_path	{path} खोला गया
+@id	ui.opened_path_it_has_no_pages_yet	{path} खोला गया; इसके अभी तक कोई पृष्ठ नहीं हैं
+@id	ui.opened_the_containing_folder	धारक फ़ोल्डर खोला गया
+@id	ui.opened_url_in_the_browser	ब्राउज़र में {url} खोला गया
+@id	ui.opened_using_the_associated_application	संबंधित एप्लिकेशन का उपयोग करके खोला गया
+@id	ui.opening_path	{path} खोल रहे हैं
+@id	ui.options	विकल्प
+@id	ui.orange	नारंगी
+@id	ui.page	पृष्ठ
+@id	ui.page_colour	पृष्ठ रंग
+@id	ui.page_direction_from_the_words	शब्दों से पृष्ठ दिशा
+@id	ui.page_format	पृष्ठ प्रारूप
+@id	ui.page_left_to_right	पृष्ठ बाएँ से दाएँ
+@id	ui.page_right_to_left	पृष्ठ दाएँ से बाएँ
+@id	ui.page_setup	पृष्ठ सेटअप
+@id	ui.page_source	पृष्ठ स्रोत
+@id	ui.page_versions_2	पृष्ठ संस्करण
+@id	ui.page_versions_4	\nVersions पृष्ठ संस्करण
+@id	ui.page_width	पृष्ठ चौड़ाई
+@id	ui.pages	पृष्ठ
+@id	ui.paper_behind_the_page	{paper} पृष्ठ के पीछे
+@id	ui.paper_size	कागज़ का आकार
+@id	ui.para	पैरा
+@id	ui.paragraph_direction_from_the_words	शब्दों से पैराग्राफ दिशा
+@id	ui.paragraph_left_to_right	बाएँ से दाएँ पैराग्राफ
+@id	ui.paragraph_right_to_left	दाएँ से बाएँ पैराग्राफ
+@id	ui.paragraph_selected	चयनित पैराग्राफ
+@id	ui.paste	पेस्ट करें
+@id	ui.pasted	पेस्ट किया गया
+@id	ui.pasted_a_picture_width_by_height	{width} द्वारा {height} की एक तस्वीर पेस्ट की गई
+@id	ui.pasted_formatted_content	फॉर्मेट किए गए सामग्री को पेस्ट किया गया
+@id	ui.path_opened_as_an_empty_notebook	खाली नोटबुक के रूप में {path} खोला गया
+@id	ui.pdf_and_office_documents	PDF और Office दस्तावेज़
+@id	ui.pdf_document	PDF दस्तावेज़
+@id	ui.pdf_text_inspection	PDF पाठ निरीक्षण
+@id	ui.pen	पेन
+@id	ui.pencil	पेंसिल
+@id	ui.permanently_delete	स्थायी रूप से हटाएं?
+@id	ui.permanently_delete_title_and_everything_inside_it	"{title}" और इसके अंदर सब कुछ स्थायी रूप से हटाएं?
+@id	ui.permanently_deleted	स्थायी रूप से हटाया गया
+@id	ui.phone_number	फ़ोन नंबर
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	PDF या Office दस्तावेज़ चुनें और इसके पृष्ठों को तस्वीरों के रूप में सम्मिलित करें
+@id	ui.pick_the_caret_s_column	केयरत की स्तंभ चुनें
+@id	ui.pick_the_caret_s_row	केयरत की पंक्ति चुनें
+@id	ui.pick_the_whole_table	संपूर्ण तालिका चुनें
+@id	ui.picture_from_a_file	फ़ाइल से तस्वीर
+@id	ui.pictures	तस्वीरें
+@id	ui.plain	सादा
+@id	ui.plain_text	सादा पाठ
+@id	ui.powered_by	द्वारा संचालित
+@id	ui.pressure_sensitivity_now_of_100	100 की {now} दबाव संवेदनशीलता
+@id	ui.pressure_sensitivity_unavailable	दबाव संवेदनशीलता अनुपलब्ध
+@id	ui.previous	पिछला
+@id	ui.previous_match_shift_enter	पिछला मिलान (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	PDF और Office दस्तावेज़ों के लिए प्रिंटआउट उपलब्ध है।
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	गोपनीयता हमारी सर्वोच्च प्राथमिकता है। सभी लॉग और टेलीमेट्री इस डिवाइस पर ही रहते हैं। NoteCraft कभी भी उन्हें स्वचालित रूप से नहीं भेजता।
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	गोपनीयता हमारी सर्वोच्च प्राथमिकता है। लॉग और टेलीमेट्री इस डिवाइस पर ही रहते हैं। NoteCraft उन्हें हमें नहीं भेजता।
+@id	ui.purple	बैंगनी
+@id	ui.put_a_sheet_to_draw_on_into_the_page	पृष्ठ में खींचने के लिए एक शीट रखें
+@id	ui.put_another_tool_on_the_rack	राक पर एक और उपकरण रखें
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	सूचक को वापस शब्दों और केयरत पर रखें
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	स्प्रेडशीट में क्या है उसे इस तालिका में वापस रखें
+@id	ui.question	प्रश्न
+@id	ui.quote_2	उद्धरण
+@id	ui.quote_this_paragraph	इस पैराग्राफ को उद्धृत करें
+@id	ui.read_back_from_it_2	\n से वापस पढ़ें
+@id	ui.read_back_rows_rows_and_columns_columns	{rows} पंक्तियों और {columns} स्तंभों को वापस पढ़ें
+@id	ui.read_only	केवल-पठनीय
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	केवल-पठनीय पाठ निष्कर्षण। पूर्ण दस्तावेज़ रेंडरिंग जल्द आ रही है।
+@id	ui.ready_2	तैयार
+@id	ui.recently_opened	हाल ही में खोला गया
+@id	ui.recording	रिकॉर्डिंग
+@id	ui.rectangle	आयत
+@id	ui.red	लाल
+@id	ui.red_2	लाल
+@id	ui.redo	रीडो
+@id	ui.redo_ctrl_y	रीडो (Ctrl+Y)
+@id	ui.remember_for_later	बाद के लिए याद रखें
+@id	ui.remove_from_list	सूची से हटाएं
+@id	ui.remove_this_tool_from_the_rack	राक से इस उपकरण को हटाएं
+@id	ui.removed_notebook_from_the_known_notebooks_list	ज्ञात नोटबुक सूची से नोटबुक हटाया गया
+@id	ui.rename	पुनर्नामांकित करें
+@id	ui.rename_ellipsis	पुनर्नामांकित करें...
+@id	ui.renamed	पुनर्नामांकित
+@id	ui.rendered_svg_preview	रेंडर किया गया SVG पूर्वावलोकन
+@id	ui.repair_icon	आइकन मरम्मत
+@id	ui.repaired_the_attachment_icon_for_name	{name} के लिए संलग्नक आइकन की मरम्मत की गई
+@id	ui.replay	रीप्ले
+@id	ui.reset_app_preferences	ऐप प्राथमिकताओं को रीसेट करें
+@id	ui.reset_app_preferences_2	ऐप प्राथमिकताओं को रीसेट करें...
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	NoteCraft की सहेजी गई प्राथमिकताओं को उनके इनबिल्ट डिफ़ॉल्ट पर रीसेट करें?
+@id	ui.reset_preferences	प्राथमिकताएं रीसेट करें
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	थीम्स, लेआउट, रिबन चयनों और अन्य सहेजी गई NoteCraft प्राथमिकताओं को उनके डिफ़ॉल्ट पर रीसेट करें।
+@id	ui.restore	पुनर्स्थापित करें
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	इस नोटबुक से हटाए गए पृष्ठ, खंड और समूहों को पुनर्स्थापित करें
+@id	ui.restored_the_saved_page_version	सहेजे गए पृष्ठ संस्करण की पुनर्स्थापना की गई
+@id	ui.restored_to_the_original_location	मूल स्थान पर पुनर्स्थापित किया गया
+@id	ui.right_to_left	दाएँ से बाएँ
+@id	ui.rounded	गोल
+@id	ui.rub_out_whatever_the_pointer_passes_over	जो कुछ भी सूचक के पास से गुजरता है उसे मिटाएं
+@id	ui.rule_line_colour_not_built	रेखा रंग (बिल्ड नहीं)
+@id	ui.ruled	रेखित
+@id	ui.save_picture_2	\n तस्वीर सहेजें
+@id	ui.saved	सहेजा गया
+@id	ui.saved_copies_of_this_page	इस पृष्ठ की सहेजी गई प्रतियां
+@id	ui.saved_the_drawing_as_a_picture_path	चित्र को एक तस्वीर के रूप में सहेजा: {path}
+@id	ui.saved_time	{time} सहेजा गया
+@id	ui.search	खोजें
+@id	ui.search_all_pages	सभी पृष्ठों में खोजें
+@id	ui.section	खंड
+@id	ui.section_group	खंड समूह
+@id	ui.see_and_restore_saved_copies_of_this_page	इस पृष्ठ की सहेजी गई प्रतियों को देखें और पुनर्स्थापित करें
+@id	ui.select	चयन करें
+@id	ui.select_columns_2	\n स्तंभ चयन करें
+@id	ui.select_rows_2	\n पंक्तियाँ चयन करें
+@id	ui.select_some_words_first	पहले कुछ शब्द चुनें
+@id	ui.select_table_2	\n तालिका चयन करें
+@id	ui.selected_text_next_typing	चयनित पाठ / अगला टाइपिंग
+@id	ui.selection	चयन
+@id	ui.send_page	पृष्ठ भेजें
+@id	ui.send_page_3	\n पृष्ठ भेजें
+@id	ui.separate_pages	अलग पृष्ठ
+@id	ui.session_id_id	सत्र ID: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	चयनित पाठ या अगले टाइप किए गए पाठ की दिशा सेट करें
+@id	ui.shape	आकार
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: एक खींचने के लिए पृष्ठ पर खींचें
+@id	ui.shapes	आकृतियाँ
+@id	ui.show	दिखाएं
+@id	ui.show_notebooks_folder	नोटबुक फ़ोल्डर दिखाएं
+@id	ui.show_or_hide_the_notebooks_column	नोटबुक कॉलम को दिखाएं या छिपाएं
+@id	ui.show_the_code	कोड दिखाएं
+@id	ui.show_the_notebooks_again	नोटबुक्स फिर से दिखाएं
+@id	ui.show_the_notebooks_folder	नोटबुक फ़ोल्डर दिखाएं
+@id	ui.show_the_page_at_100	पृष्ठ को 100% पर दिखाएं
+@id	ui.show_the_page_source	पृष्ठ स्रोत दिखाएं
+@id	ui.show_the_strokes	स्ट्रोक दिखाएं
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	छोटा
+@id	ui.small_squares	छोटे वर्ग
+@id	ui.somewhere_else	कहीं और
+@id	ui.source	स्रोत
+@id	ui.split	विभाजित करें
+@id	ui.spreadsheet	स्प्रेडशीट
+@id	ui.square	वर्ग
+@id	ui.squares	वर्ग
+@id	ui.standard	मानक
+@id	ui.standard_ruled	मानक रेखांकित
+@id	ui.star	तारा
+@id	ui.starting_officeimo	OfficeIMO लोड हो रहा है…
+@id	ui.stencils	स्टेन्सिल
+@id	ui.strike_through	काटा हुआ पाठ
+@id	ui.strikethrough	काटा हुआ
+@id	ui.styles	शैलियाँ
+@id	ui.styles_2	शैलियाँ
+@id	ui.svg_source	SVG स्रोत
+@id	ui.symbol	प्रतीक
+@id	ui.symbols	प्रतीक
+@id	ui.table_3	तालिका
+@id	ui.tables	तालिकाएँ
+@id	ui.tabs_layout	टैब लेआउट
+@id	ui.tag_tag	{tag} टैग
+@id	ui.tags	टैग
+@id	ui.take_the_caret_s_column_out	केयरत की स्तंभ को हटाएं
+@id	ui.take_the_caret_s_row_out	केयरत की पंक्ति को हटाएं
+@id	ui.take_the_last_stroke_back	अंतिम स्ट्रोक वापस लें
+@id	ui.take_the_marks_off	चिह्न हटाएं
+@id	ui.teal_2	नीला-हरा
+@id	ui.text	पाठ
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	पाठ निरीक्षण नीचे दिखाया गया है।
+@id	ui.text_run_direction	पाठ चला की दिशा
+@id	ui.thank_you_for_trying_notecraft	NoteCraft का उपयोग करने के लिए धन्यवाद!
+@id	ui.that_file_has_nothing_in_it_to_put_back	इस फ़ाइल में वापस रखने के लिए कुछ नहीं है
+@id	ui.that_file_is_not_in_this_page_s_folder	यह फ़ाइल इस पृष्ठ के फ़ोल्डर में नहीं है
+@id	ui.that_is_not_something_a_page_can_hold	यह वह चीज़ नहीं है जो एक पृष्ठ रख सकता है
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	यह लिंक नोटबुक फ़ोल्डर के बाहर की ओर इशारा करता है, इसलिए इसे अनुसरण नहीं किया गया
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	यह पृष्ठ किसी खुली नोटबुक में नहीं है
+@id	ui.the_attachment_returned_an_invalid_page_link	संलग्नक ने एक अमान्य पृष्ठ लिंक लौटाया
+@id	ui.the_built_in_default	इनबिल्ट डिफ़ॉल्ट
+@id	ui.the_code	कोड
+@id	ui.the_diagnostics_folder_could_not_be_created_error	निदान फ़ोल्डर नहीं बनाया जा सका: {error}
+@id	ui.the_file_could_not_be_opened_error	फ़ाइल नहीं खोली जा सकी: {error}
+@id	ui.the_file_is_gone	फ़ाइल गायब है
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	फ़ाइल डिस्क से हटा दी गई है। पूर्ववत करने से फ़ाइल वापस नहीं आएगी।
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	फ़ाइल सुरक्षित है। NoteCraft पृष्ठ के अंत में इसमें एक लिंक जोड़ सकता है।
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	फ़ाइल संलग्न नहीं की गई: संलग्न कमांड ने अप्रत्याशित परिणाम दिया।
+@id	ui.the_folder_could_not_be_opened_error	फ़ोल्डर नहीं खोला जा सका: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	पृष्ठ बनाए जाने पर प्रारूप सेट होता है
+@id	ui.the_global_setting	वैश्विक सेटिंग
+@id	ui.the_last_tool_stays_on_the_rack	अंतिम उपकरण रैक पर बना रहता है
+@id	ui.the_notebook_could_not_be_deleted_error	नोटबुक हटाया नहीं जा सका: {error}
+@id	ui.the_notebook_or_section_setting	नोटबुक या खंड सेटिंग
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	मूल फ़ाइल अभी भी सुरक्षित है। NoteCraft इसके बगल में प्रतीक पुनः उत्पन्न कर सकता है।
+@id	ui.the_page_beside_the_notebooks	नोटबुक्स के बगल वाला पृष्ठ
+@id	ui.the_page_is_colour	पृष्ठ {colour} है
+@id	ui.the_page_is_the_theme_s_own_colour	पृष्ठ थीम का अपना रंग है
+@id	ui.the_page_source_beside_the_page	पृष्ठ के बगल में पृष्ठ स्रोत
+@id	ui.the_paper_and_colour_apply_to_this_page_only	कागज़ और रंग केवल इसी पृष्ठ पर लागू होते हैं।
+@id	ui.the_theme_could_not_be_saved_error	थीम सेव नहीं की जा सकी: {error}
+@id	ui.the_time_now	वर्तमान समय
+@id	ui.the_welcome_notebook	स्वागत नोटबुक
+@id	ui.the_whole_page_reads_left_to_right	संपूर्ण पृष्ठ बाएं से दाएं पढ़ा जाता है
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	संपूर्ण पृष्ठ दाएं से बाएं पढ़ा जाता है (अरबी, हिब्रू)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	विंडो GPU पर खींची गई है। आइकन कोड में खींचे गए हैं। लोगो एकमात्र छवि है।
+@id	ui.theme	थीम
+@id	ui.theme_theme	थीम {theme}
+@id	ui.theme_theme_2	थीम: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme} थीम। इसे बदलने के लिए क्लिक करें।
+@id	ui.there_are_no_notebooks_yet_new_starts_one	अभी तक कोई नोटबुक नहीं है। "नया" एक शुरू करता है।
+@id	ui.there_is_no_drawing_on_this_page	इस पृष्ठ पर कोई चित्रण नहीं है
+@id	ui.there_is_no_earlier_page	कोई पूर्व पृष्ठ नहीं है
+@id	ui.there_is_no_later_page	कोई उत्तर पृष्ठ नहीं है
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	रैक पर एक और उपकरण के लिए जगह नहीं है
+@id	ui.there_is_no_stroke_to_take_back	वापस लेने के लिए कोई स्ट्रोक नहीं है
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	चिपकाए जाने के लिए क्लिपबोर्ड में कुछ नहीं है
+@id	ui.thickness	मोटाई
+@id	ui.this_cannot_be_undone	इसे पूर्ववत नहीं किया जा सकता।
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	इसे रिसाइकिल बिन में नहीं हटाया जा सका। कुछ भी हटाया नहीं गया।
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	यह नोटबुक्स या पृष्ठों को हटाता नहीं है। इसे पूर्ववत नहीं किया जा सकता।
+@id	ui.this_file_will_be_opened_by_its_associated_application	यह फ़ाइल इसके संबंधित अनुप्रयोग द्वारा खोली जाएगी।
+@id	ui.this_notebook_s_recycle_bin_is_empty	इस नोटबुक का रिसाइकिल बिन खाली है।
+@id	ui.this_page	यह पृष्ठ
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	यह पृष्ठ ऐसा मार्कअप धारण करता है जिसे NoteCraft अभी संपादित नहीं करता, इसलिए इसे जैसे पढ़ा जाता है वैसा ही दिखाया गया है।
+@id	ui.this_page_reads_left_to_right	यह पृष्ठ बाएं से दाएं पढ़ा जाता है
+@id	ui.this_page_reads_right_to_left	यह पृष्ठ दाएं से बाएं पढ़ा जाता है
+@id	ui.this_paragraph_decides_from_its_own_first_letter	यह पैराग्राफ अपने पहले अक्षर से निर्धारित करता है
+@id	ui.this_paragraph_fills_the_column	यह पैराग्राफ स्तंभ को भरता है
+@id	ui.this_paragraph_fills_the_column_stretched_hard	यह पैराग्राफ स्तंभ को कसकर खींचकर भरता है
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	यह पैराग्राफ स्तंभ को हल्का खींचकर भरता है
+@id	ui.this_paragraph_is_ragged_again	यह पैराग्राफ फिर से असमान किनारे वाला है
+@id	ui.this_paragraph_reads_left_to_right	यह पैराग्राफ बाएं से दाएं पढ़ा जाता है
+@id	ui.this_paragraph_reads_right_to_left	यह पैराग्राफ दाएं से बाएं पढ़ा जाता है
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	यह पैराग्राफ दाएं से बाएं पढ़ा जाता है (अरबी, हिब्रू)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	यह पैराग्राफ अपने शब्दों की दिशा में पढ़ा जाता है
+@id	ui.this_picture_cannot_be_shown_here	यह छवि यहाँ दिखाई नहीं जा सकती।
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	यह नोटबुक फ़ोल्डर को डिस्क से हटा देता है और इसे पूर्ववत नहीं किया जा सकता।
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	यह चाल बाएं से दाएं पढ़ा जाता है। मिश्रित रेखा अभी भी एक क्रम में खींची जाती है; रोडमैप देखें
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	यह चाल दाएं से बाएं पढ़ा जाता है। मिश्रित रेखा अभी भी एक क्रम में खींची जाती है; रोडमैप देखें
+@id	ui.this_svg_cannot_be_rendered_here	यह SVG यहाँ रेंडर नहीं किया जा सकता।
+@id	ui.this_window_behaves_like_the_others	यह विंडो अन्य की तरह व्यवहार करती है
+@id	ui.this_window_stays_on_top	यह विंडो शीर्ष पर बनी रहती है
+@id	ui.time	समय
+@id	ui.time_stamp	टाइम स्टैम्प
+@id	ui.title_2	शीर्षक
+@id	ui.title_saved	शीर्षक सेव किया गया
+@id	ui.title_the_folder_name_does_not_change	शीर्षक (फ़ोल्डर का नाम नहीं बदलता)
+@id	ui.to_do_2	करने के लिए
+@id	ui.to_do_tag_2	करने के लिए\nटैग
+@id	ui.today_s_date	आज की तारीख
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	रैक से उतारा गया
+@id	ui.took_the_last_stroke_back_count_left	अंतिम स्ट्रोक वापस लिया गया; {count} बचे
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	उपकरण
+@id	ui.top	शीर्ष
+@id	ui.triangle	त्रिभुज
+@id	ui.type	प्रकार
+@id	ui.under_the	के नीचे
+@id	ui.undo	पूर्ववत करें
+@id	ui.undo_ctrl_z	पूर्ववत करें (Ctrl+Z)
+@id	ui.undo_stroke	Stroke पूर्ववत \n
+@id	ui.unread	अपठित
+@id	ui.updated_the_welcome_notebook	स्वागत नोटबुक को अपडेट किया गया
+@id	ui.use_notecraft_s_own_title_bar	NoteCraft का अपना शीर्ष पट्टी उपयोग करें
+@id	ui.use_the_system_title_bar	सिस्टम की शीर्ष पट्टी उपयोग करें
+@id	ui.version_version_alpha	संस्करण {version} (एल्फा)
+@id	ui.very_large	बहुत बड़ा
+@id	ui.very_large_squares	बहुत बड़े वर्ग
+@id	ui.view	दृश्य
+@id	ui.views	दृश्य
+@id	ui.warn	चेतावनी
+@id	ui.web_site_to_visit	वेबसाइट जो देखनी है
+@id	ui.welcome_to_notecraft	NoteCraft में आपका स्वागत है
+@id	ui.what_should_happen_to_this_file	इस फ़ाइल के साथ क्या होना चाहिए?
+@id	ui.what_to_add	क्या जोड़ना है
+@id	ui.wide	चौड़ा
+@id	ui.wide_ruled	चौड़ी रेखांकित
+@id	ui.window	विंडो
+@id	ui.write_anywhere_on_the_page	पृष्ठ पर कहीं भी लिखें
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	भेजने के लिए बिना पेन रीडिंग के फिर से चित्रण लिखें
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	तालिका को बाहर लिखें और GridCraft में खोलें
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	पीला
+@id	ui.yellow_2	पीला
+@id	ui.you_can_continue_working_while_the_import_runs	आप आयात चलते समय काम जारी रख सकते हैं।
+@id	ui.you_can_restore_it_from_history	आप इसे इतिहास से पुनर्स्थापित कर सकते हैं।
+@id	ui.zoom	ज़ूम
+@id	ui.zoom_in	ज़ूम इन
+@id	ui.zoom_out	ज़ूम आउट
+@id	ui.zoom_to_100	100% पर ज़ूम करें

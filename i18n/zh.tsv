@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	将“{title}”及其内部所有内容（{n} 个项目）移至此笔记本的回收站？
+@plural	{n} item|{n} items	{n} 个项目
+@plural	{n} notebook opened|{n} notebooks opened	已打开 {n} 个笔记本
+@plural	{n} notebook|{n} notebooks	{n} 个笔记本
+@plural	{n} stroke|{n} strokes	{n} 笔
+@id	language.name	中文（简体）
+@id	ui.a_bullet_list	项目符号列表
+@id	ui.a_column_left_of_the_caret_s	光标左侧的一列
+@id	ui.a_column_right_of_the_caret_s	光标右侧的一列
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	副本将存入此页面的文件夹，因此笔记本会将其携带到任何地方。
+@id	ui.a_direction_goes_on_a_paragraph_of_text	为一段文本设置方向
+@id	ui.a_file_copied_in_or_linked_where_it_is	文件：复制进来，或链接到原位置
+@id	ui.a_link	链接
+@id	ui.a_link_to_a_page_or_an_address	指向页面或地址的链接
+@id	ui.a_link_to_paste_into_another_page	可粘贴到其他页面的链接
+@id	ui.a_mermaid_diagram_kept_as_its_source	Mermaid 图表，保留其源代码
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	新笔记本是 {folder} 中的一个文件夹，内含一个章节和一个页面。
+@id	ui.a_new_page_in_this_section	在此章节中新建页面
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	在页面旁新建电子表格，在 GridCraft 中打开
+@id	ui.a_numbered_list	编号列表
+@id	ui.a_page_here	在此处新建页面
+@id	ui.a_row_above_the_caret_s	光标上方的一行
+@id	ui.a_row_below_the_caret_s	光标下方的一行
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	表格保留标题行且至少包含一列
+@id	ui.a_table_pick_its_size	表格：选择其大小
+@id	ui.a_tag_goes_on_a_line_of_text	为一行文本添加标签
+@id	ui.a_to_do_box_on_this_line_ctrl_1	在此行添加待办框 (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	NoteCraft 导览，显示在独立页面上。首次启动时会添加到空的笔记本文件夹中；此操作会重新添加它，或如果它仍存在则打开它。
+@id	ui.about_notecraft	关于 NoteCraft
+@id	ui.accent_accent	强调色：{accent}
+@id	ui.accept	接受
+@id	ui.add	添加
+@id	ui.add_a_blank_paragraph_at_the_caret	在光标处添加空白段落
+@id	ui.add_a_page_here	在此处添加页面
+@id	ui.add_a_sub_page	添加子页面
+@id	ui.add_another_tool	添加另一个 {tool}
+@id	ui.add_file	添加文件
+@id	ui.add_file_to_this_page	将文件添加到此页面
+@id	ui.add_inside_this_kind	在此 {kind} 内部添加
+@id	ui.add_name	添加 {name}
+@id	ui.add_name_left_more	添加 {name}（还有 {left} 个）
+@id	ui.add_page	添加页面
+@id	ui.add_the_welcome_notebook	添加欢迎笔记本
+@id	ui.add_tool	添加 {tool}
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	已在页面末尾添加指向 {name} 的链接
+@id	ui.added_a_tool	已添加一个 {tool}
+@id	ui.address	地址
+@id	ui.alignment	对齐方式
+@id	ui.alignment_and_direction	对齐方式与方向
+@id	ui.alignment_and_which_way_this_paragraph_reads	对齐方式，以及此段落的阅读方向
+@id	ui.all_of_them_live_in_folder	它们都位于 {folder} 中
+@id	ui.always_on_top	始终置顶
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	用 TeX 编写的公式：选择一个作为起点
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	应用偏好设置已重置。重启 NoteCraft 以应用所有默认设置。
+@id	ui.appearance	外观
+@id	ui.append_link	追加链接
+@id	ui.application_preferences	应用偏好设置
+@id	ui.arrow	箭头
+@id	ui.attach_the_file	附加文件
+@id	ui.attachment_icon_missing	缺少附件图标
+@id	ui.attachment_not_linked	附件未链接
+@id	ui.attachment_recovery	附件恢复
+@id	ui.authors	作者
+@id	ui.auto	自动
+@id	ui.automatic_system_language	自动（系统语言）
+@id	ui.back	返回
+@id	ui.back_to_the_notebook	返回笔记本
+@id	ui.back_to_the_page_before_alt_left	返回上一页（Alt+左箭头）
+@id	ui.basic_text	基本文本
+@id	ui.black	黑色
+@id	ui.blue	蓝色
+@id	ui.blue_2	蓝色
+@id	ui.bold	加粗
+@id	ui.bold_ctrl_b	加粗（Ctrl+B）
+@id	ui.both_as_the_page_s_own_stamp_is_written	两者，按页面自身的印章书写
+@id	ui.browse_for_a_notebook	浏览笔记本…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	在 {folder} 中浏览笔记本或选择其他文件夹。
+@id	ui.brush_pen	画笔
+@id	ui.built_with	使用
+@id	ui.bullets	项目符号
+@id	ui.cancel	取消
+@id	ui.cancel_import	取消导入
+@id	ui.cannot_open_gridcraft_error	无法打开 GridCraft：{error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	无法在 GridCraft 中打开表格：{error}
+@id	ui.cannot_save_the_pasted_picture_error	无法保存粘贴的图片：{error}
+@id	ui.cannot_write_name_error	无法写入 {name}：{error}
+@id	ui.cannot_write_the_drawing_error	无法写入绘图：{error}
+@id	ui.cannot_write_the_picture_error	无法写入图片：{error}
+@id	ui.cannot_write_this_page_s_ink	无法写入此页面的墨迹
+@id	ui.choose_a_custom_ink_colour	选择自定义墨迹颜色
+@id	ui.choose_a_file_to_attach	选择要附加的文件
+@id	ui.choose_a_file_to_import	选择要导入的文件
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	选择本地集合级别。在发布版本中，日志默认关闭。
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	选择一个笔记本、一个笔记本文件夹，或一个空文件夹以创建新笔记本
+@id	ui.choose_a_onenote_notebook_folder	选择 OneNote 笔记本文件夹
+@id	ui.choose_a_pdf_or_office_document_to_print_out	选择要打印的 PDF 或 Office 文档
+@id	ui.choose_a_picture	选择图片
+@id	ui.choose_a_section_to_see_its_pages	选择一个章节以查看其页面。
+@id	ui.choose_a_symbol_to_insert_at_the_caret	选择要在光标处插入的符号
+@id	ui.choose_how_to_insert_a_picture	选择插入图片的方式
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	选择 NoteCraft 在本地记录的内容。不会自动上传任何数据。
+@id	ui.chosen_for_this_page	为此页面选择
+@id	ui.circle	圆形
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	清除所有本地遥测会话和导出的遥测 ZIP 文件？
+@id	ui.clear_formatting	清除格式
+@id	ui.clear_formatting_2	清除格式
+@id	ui.clear_telemetry	清除遥测数据
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	点击笔画以选中，然后移动、拉伸或删除它
+@id	ui.click_in_a_table_first	请先点击表格
+@id	ui.click_in_the_page_first	请先点击页面
+@id	ui.click_in_the_page_first_then_use_the_ribbon	请先点击页面，然后使用功能区
+@id	ui.click_in_the_table_first	请先点击表格
+@id	ui.clipboard	剪贴板
+@id	ui.close	关闭
+@id	ui.close_notebook	关闭笔记本
+@id	ui.close_the_find_bar_escape	关闭查找栏（Escape）
+@id	ui.close_the_source_pane	关闭源窗格
+@id	ui.cloud_import_is_not_implemented_yet	云导入尚未实现。
+@id	ui.code_2	代码
+@id	ui.code_in_one_line	代码，单行
+@id	ui.collapse	折叠
+@id	ui.collapse_all	全部折叠
+@id	ui.college	大学
+@id	ui.college_ruled	大学横格
+@id	ui.colour	颜色
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	已移除颜色
+@id	ui.colour_set_to_colour	颜色已设置为 {colour}
+@id	ui.colours	颜色
+@id	ui.columns_x_rows_table	{columns} x {rows} 表格
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	联系人
+@id	ui.convert	转换
+@id	ui.convert_to_gridcraft_2	转换为\nGridCraft
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	转换为 GridCraft：未安装 GridCraft
+@id	ui.copied	已复制
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	复制文件并为每个打印页面插入一张图片。
+@id	ui.copy	复制
+@id	ui.copy_full_path	复制完整路径
+@id	ui.copy_link_to_page	复制页面链接
+@id	ui.copy_the_selection	复制所选内容
+@id	ui.could_not_attach_name_before_rendering_its_pages	无法在渲染页面之前附加 {name}
+@id	ui.could_not_attach_name_to_this_page	无法将 {name} 附加到此页面。
+@id	ui.could_not_complete_the_action_error	无法完成操作：{error}
+@id	ui.could_not_import_the_notebook_error	无法导入笔记本：{error}
+@id	ui.could_not_open_the_containing_folder_error	无法打开所在文件夹：{error}
+@id	ui.could_not_open_the_file_error	无法打开文件：{error}
+@id	ui.could_not_repair_the_icon_for_name_error	无法修复 {name} 的图标：{error}
+@id	ui.could_not_reset_app_preferences_error	无法重置应用偏好设置：{error}
+@id	ui.could_not_restore_the_link_for_name_error	无法恢复 {name} 的链接：{error}
+@id	ui.could_not_save_the_interface_language_error	无法保存界面语言：{error}
+@id	ui.could_not_store_printout_page_page_error	无法存储打印页面 {page}：{error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} 个项目，{colour} 种颜色
+@id	ui.create	创建
+@id	ui.created	已创建
+@id	ui.critical	严重
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V 粘贴到页面
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y 撤销上一步操作
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z 撤销最后一次更改
+@id	ui.current_session_id	当前会话：{id}
+@id	ui.custom	自定义
+@id	ui.customize_quick_access_toolbar	自定义快速访问工具栏
+@id	ui.customize_tags_not_built	自定义标签...（未构建）
+@id	ui.cut	剪切
+@id	ui.cut_2	剪切
+@id	ui.cut_the_selection	剪切所选内容
+@id	ui.dark	深色
+@id	ui.data	数据
+@id	ui.date	日期
+@id	ui.date_time_2	日期 &\n时间
+@id	ui.debug	调试
+@id	ui.decrease_indentation	减少缩进
+@id	ui.decrease_indentation_shift_tab	减少缩进 (Shift+Tab)
+@id	ui.default	默认
+@id	ui.default_format	默认格式
+@id	ui.default_format_for_pages_below	下方页面的默认格式
+@id	ui.definition	定义
+@id	ui.delete	删除
+@id	ui.delete_assets_name_from_this_page_s_folder	要从此页面的文件夹中删除 "assets/{name}" 吗？
+@id	ui.delete_columns_2	删除\n列
+@id	ui.delete_ellipsis	删除...
+@id	ui.delete_file	删除文件
+@id	ui.delete_notebook	删除笔记本
+@id	ui.delete_notebook_2	删除笔记本...
+@id	ui.delete_notebook_title_and_everything_inside_it	删除笔记本“{title}”及其所有内容？
+@id	ui.delete_permanently	永久删除
+@id	ui.delete_rows_2	删除 \n 行
+@id	ui.delete_tool	删除工具
+@id	ui.delete_tool_2	删除 {tool}
+@id	ui.deleted_notebook	已删除笔记本
+@id	ui.deleted_notebook_path	已删除笔记本 {path}
+@id	ui.deny	拒绝
+@id	ui.diagram	图表
+@id	ui.diamond	菱形
+@id	ui.direction_from_the_words	根据文字方向
+@id	ui.discovering_sections	正在发现章节…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	本次会话不再警告类似的附件问题
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	本次会话不再警告类似的图标缺失问题
+@id	ui.do_not_warn_again_for_this_file_type_this_session	本次会话不再针对此文件类型发出警告
+@id	ui.dock_to_desktop	停靠到桌面
+@id	ui.document_renderer_coming_soon	文档渲染器即将推出
+@id	ui.don_t_show_this_again_in_this_session	本次会话不再显示此提示
+@id	ui.don_t_show_this_ever	永远不再显示
+@id	ui.draw	绘制
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	围绕墨水画圈以拾取
+@id	ui.draw_here_2	在此处绘制 \n
+@id	ui.drawing	正在绘制...
+@id	ui.drawing_saved_count_strokes	绘图已保存，共 {count} 笔触
+@id	ui.drawing_tools	绘图工具
+@id	ui.drop_a_file_onto_the_page_to_add_it	将文件拖放到页面以添加
+@id	ui.edit	编辑
+@id	ui.editing	正在编辑...
+@id	ui.egui_and_eframe	egui 和 eframe
+@id	ui.ellipse	椭圆
+@id	ui.email	电子邮件
+@id	ui.english	英语
+@id	ui.equation	公式
+@id	ui.equation_name	公式：{name}
+@id	ui.eraser	橡皮擦
+@id	ui.error	错误
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	每第五行稍粗，便于计数。
+@id	ui.every_line_of_this_page_decides_for_itself	此页的每一行自行决定
+@id	ui.every_paragraph_decides_for_itself	每个段落自行决定
+@id	ui.expand	展开
+@id	ui.expand_all	全部展开
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	导出将创建用户选择的 ZIP 文件，然后删除导出的会话文件夹。
+@id	ui.export_current_session_zip	导出当前会话 ZIP
+@id	ui.export_telemetry_zip	导出遥测 ZIP
+@id	ui.eyedropper	吸管
+@id	ui.eyedropper_not_built	吸管功能尚未构建
+@id	ui.file	文件
+@id	ui.file_attachment_2	文件 \n 附件
+@id	ui.file_options	文件选项
+@id	ui.file_printout_2	文件 \n 打印输出
+@id	ui.files	文件
+@id	ui.files_in_this_page	本页中的文件
+@id	ui.find	查找
+@id	ui.find_in_this_file	在此文件中查找
+@id	ui.find_tags	查找标签
+@id	ui.find_tags_3	查找 \n 标签
+@id	ui.fit_the_page_to_the_available_width	将页面适配到可用宽度
+@id	ui.folder_folder	文件夹：{folder}
+@id	ui.follow_the_system_light_or_dark_setting	跟随系统浅色或深色设置
+@id	ui.format	格式
+@id	ui.format_background_2	格式\n背景
+@id	ui.format_for_this_page	此页面的格式
+@id	ui.format_painter	格式刷
+@id	ui.forward	前进
+@id	ui.forward_to_the_page_after_alt_right	前进到下一页 (Alt+Right)
+@id	ui.fountain_pen	钢笔
+@id	ui.from_camera	来自相机
+@id	ui.from_online	来自在线
+@id	ui.full_page	整页
+@id	ui.full_page_view_2	整页\n视图
+@id	ui.full_path_copied	已复制完整路径
+@id	ui.give_the_page_the_whole_window	让页面占据整个窗口
+@id	ui.gray	灰色
+@id	ui.green	绿色
+@id	ui.green_2	绿色
+@id	ui.grey	灰色
+@id	ui.gridcraft_is_not_installed	未安装 GridCraft
+@id	ui.help	帮助
+@id	ui.hide	隐藏
+@id	ui.hide_everything_but_the_page	隐藏除页面外的所有内容
+@id	ui.hide_page_title	隐藏页面标题
+@id	ui.hide_the_page_source	隐藏页面源码
+@id	ui.hide_the_page_title	隐藏页面标题
+@id	ui.highlight	高亮
+@id	ui.highlighter	荧光笔
+@id	ui.history	历史记录
+@id	ui.home	主页
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	想法
+@id	ui.images	图片
+@id	ui.immersive_reader	沉浸式阅读
+@id	ui.import_file	导入文件
+@id	ui.import_from_the_cloud	从云端导入
+@id	ui.import_notebook_folder	导入笔记本文件夹
+@id	ui.important	重要
+@id	ui.importing	正在导入…
+@id	ui.importing_onenote	正在导入 OneNote
+@id	ui.increase_indentation	增加缩进
+@id	ui.increase_indentation_tab	增加缩进 (Tab)
+@id	ui.index_of_total_sections	{index} / {total} 个章节
+@id	ui.info	信息
+@id	ui.inherit_notebook_section_or_global_setting	继承（笔记本、章节或全局设置）
+@id	ui.input_mode	输入模式
+@id	ui.insert	插入
+@id	ui.insert_a_common_symbol	插入常用符号
+@id	ui.insert_column_left_2	在左侧插入列\n
+@id	ui.insert_column_right_2	在右侧插入列\n
+@id	ui.insert_printout	插入打印输出
+@id	ui.insert_row_above_2	在上方插入行\n
+@id	ui.insert_row_below_2	在下方插入行\n
+@id	ui.insert_space_2	插入\n空格
+@id	ui.insert_symbol	插入符号
+@id	ui.insert_table_not_built	插入表格...（未构建）
+@id	ui.insert_the_picture	插入图片
+@id	ui.insert_the_recording	插入录音
+@id	ui.insert_the_video	插入视频
+@id	ui.inserted_name_and_count_printout_pages	已插入 {name} 和 {count} 打印页
+@id	ui.interface_language	界面语言
+@id	ui.interface_language_language	界面语言：{language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	问题、路线图和文档都在那里。NoteCraft 不会主动与其或任何其他服务通信。
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	列出此项是为了让页面文件夹不成为秘密。
+@id	ui.italic	斜体
+@id	ui.italic_ctrl_i	斜体 (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	对齐方式应用于一段文本
+@id	ui.keep_this_window_above_the_others	保持此窗口位于其他窗口之上
+@id	ui.label	标签
+@id	ui.label_not_built	{label}（未构建）
+@id	ui.label_not_built_yet	{label}：尚未构建
+@id	ui.label_nothing_to_action	{label}：无 {action}
+@id	ui.language_click_to_change_it	{language}。点击以更改。
+@id	ui.large	大
+@id	ui.large_squares	大方格
+@id	ui.laser_pointer	激光笔
+@id	ui.lasso_select	套索\n选择
+@id	ui.layout	布局
+@id	ui.leave_it	保留
+@id	ui.left_to_right	从左到右
+@id	ui.level	级别：
+@id	ui.licence	许可证
+@id	ui.light	浅色
+@id	ui.light_or_dark_and_the_accent_colour	浅色或深色，以及强调色
+@id	ui.line	线条
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	页面背后的线条或方格，如同纸张一般
+@id	ui.link	链接
+@id	ui.link_to_the_file_where_it_is	链接到其所在文件
+@id	ui.link_to_title_copied	已复制指向“{title}”的链接
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	已链接 {name} 至其所在位置；文件未被复制
+@id	ui.links	链接
+@id	ui.live_captions	实时字幕
+@id	ui.local_collection_level	本地集合级别
+@id	ui.local_diagnostics	本地诊断
+@id	ui.local_diagnostics_and_usage	本地诊断和使用情况
+@id	ui.logging_folder_folder	日志文件夹：{folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	日志和遥测数据保留在此设备上。NoteCraft 不会自动发送它们。
+@id	ui.magenta	洋红色
+@id	ui.make_the_page_larger	放大页面
+@id	ui.make_the_page_smaller	缩小页面
+@id	ui.many_thanks_to_its_authors_and_contributors	—— 衷心感谢其作者和贡献者。
+@id	ui.markdown	Markdown
+@id	ui.match_case	区分大小写
+@id	ui.math	数学
+@id	ui.maximize	最大化
+@id	ui.md_2	md
+@id	ui.media	媒体
+@id	ui.medium	中
+@id	ui.medium_squares	中方格
+@id	ui.meeting_details	会议详情
+@id	ui.meeting_details_3	会议\n详情
+@id	ui.meetings	会议
+@id	ui.merge	合并
+@id	ui.mermaid	Mermaid
+@id	ui.mint	薄荷色
+@id	ui.mit_license	MIT 许可证
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT 或 Apache-2.0，由您选择。考拉图案不受其覆盖；请参阅 ATTRIBUTION.md。
+@id	ui.mode	模式
+@id	ui.modify_tool	修改工具
+@id	ui.more	更多...
+@id	ui.more_2	更多
+@id	ui.more_colours	更多颜色
+@id	ui.more_styles	更多样式
+@id	ui.more_tags	更多标签
+@id	ui.move_left	向左移动
+@id	ui.move_right	向右移动
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	将“{title}”及其内部所有内容（{n} 个项目）移至此笔记本的回收站？|将“{title}”及其内部所有内容（{n} 个项目）移至此笔记本的回收站？
+@id	ui.move_to_recycle_bin	移至回收站
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	已将 {moved} 笔迹从本页的旧绘图移至页面本身
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	已将 {moved} 笔迹移至页面；无法删除 {left} 个旧绘图文件
+@id	ui.moved_to_the_notebook_recycle_bin	已移至笔记本回收站
+@id	ui.n_item_n_items	{n} 个项目|{n} 个项目
+@id	ui.n_notebook_n_notebooks	{n} 个笔记本|{n} 个笔记本
+@id	ui.n_notebook_opened_n_notebooks_opened	已打开 {n} 个笔记本|已打开 {n} 个笔记本
+@id	ui.n_stroke_n_strokes	{n} 笔迹|{n} 笔迹
+@id	ui.name_2	名称
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} 尚未构建。请参阅路线图了解即将推出的功能。
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} 现在是此页面文件夹中的一个文件
+@id	ui.name_is_open_in_gridcraft	{name} 已在 GridCraft 中打开
+@id	ui.name_not_used_by_the_page	{name}：未被页面使用
+@id	ui.narrow	窄
+@id	ui.narrow_ruled	窄行距
+@id	ui.new_gridcraft_spreadsheet	新建 GridCraft 电子表格
+@id	ui.new_gridcraft_spreadsheet_not_installed	新建 GridCraft 电子表格（未安装）
+@id	ui.new_notebook	新建笔记本
+@id	ui.new_notebook_2	新建笔记本...
+@id	ui.new_page	新建页面
+@id	ui.new_page_2	新建页面...
+@id	ui.new_pages	新建页面：
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	除非笔记本或章节另有说明，否则新页面使用 {format}
+@id	ui.new_quick_note	新建快速笔记
+@id	ui.new_window	新建窗口
+@id	ui.next	下一个
+@id	ui.next_match_enter_f3	下一个匹配项 (Enter, F3)
+@id	ui.no	否
+@id	ui.no_colour	无颜色
+@id	ui.no_generated_preview_icon_is_available	没有可用的生成预览图标。
+@id	ui.no_lines_behind_the_page	页面后方无线条
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	此页面旁边没有 {name}：请先移交表格
+@id	ui.no_notebooks_yet_use_new_notebook	暂无笔记本。请使用“新建笔记本”。
+@id	ui.no_pages_in_this_section_yet	此章节中暂无页面。
+@id	ui.no_pages_match	没有匹配的页面。
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	暂无保存的版本。NoteCraft 会在页面更改时保留副本。
+@id	ui.none	无
+@id	ui.normal_view	Normal\nview
+@id	ui.not_built	未构建
+@id	ui.not_built_2	未构建
+@id	ui.not_built_yet	尚未构建
+@id	ui.not_drawn_why	未绘制：{why}
+@id	ui.not_used_by_the_page	未被页面使用
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	纯 Rust 打造的笔记与组织工具。您的笔记是普通的文件夹和文件。
+@id	ui.notebook	笔记本
+@id	ui.notebook_closed_its_files_are_still_on_disk	笔记本已关闭；其文件仍在磁盘上
+@id	ui.notebook_created	笔记本已创建
+@id	ui.notebook_information	笔记本信息
+@id	ui.notebook_recycle_bin_2	笔记本回收站
+@id	ui.notebook_recycle_bin_3	Notebook\nRecycle Bin
+@id	ui.notebooks_2	笔记本
+@id	ui.notebooks_and_pages_in_their_own_columns	笔记本和页面各自独立成列
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	笔记本和章节在同一列，页面在下一列
+@id	ui.notebooks_folder_folder	笔记本文件夹：{folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	您打开的笔记本将显示在此处。
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft 发现了一个未被此页面引用的附件：
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft 发现了一个缺少生成图标的附件：
+@id	ui.notecraft_ruled	NoteCraft 横线
+@id	ui.notecraft_squares	NoteCraft 方格
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	笔记作为普通文件夹。打开一个页面，或创建一个笔记本以开始。
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	{path} 处没有内容：链接指向的页面或文件不存在
+@id	ui.nothing_here_can_show_this_kind_of_file	此处没有任何内容可以显示此类型的文件。
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	未复制任何内容。如果文件移动，链接将失效。
+@id	ui.nothing_to_redo	没有可重做的操作
+@id	ui.nothing_to_undo	没有可撤销的操作
+@id	ui.numbering	编号
+@id	ui.off	关闭
+@id	ui.off_2	关闭
+@id	ui.office_document	Office 文档
+@id	ui.office_text_inspection	Office 文本检查
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO 导入进程意外停止
+@id	ui.ok	确定
+@id	ui.one_tree_of_notebooks	一个笔记本树
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive 和 SharePoint：未内置。将 NoteCraft 指向同步工具已监控的文件夹即可实现相同效果。
+@id	ui.onenote_import	OneNote 导入
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	在线笔记本（OneDrive、SharePoint）未内置。位于同步工具监控文件夹中的笔记本将由该工具同步。
+@id	ui.only_a_list_item_can_be_indented	只有列表项可以缩进
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	仅当您信任该文件及其创建者时才打开。
+@id	ui.open	打开
+@id	ui.open_a_folder	打开文件夹...
+@id	ui.open_a_notebook	打开笔记本
+@id	ui.open_a_page_first	请先打开一个页面
+@id	ui.open_a_page_first_then_drop_files_onto_it	请先打开一个页面，然后将文件拖放到该页面上。
+@id	ui.open_attachment	打开附件
+@id	ui.open_every_level	展开所有层级
+@id	ui.open_folder	打开文件夹
+@id	ui.open_in_folder	在文件夹中打开
+@id	ui.open_name	打开 {name}
+@id	ui.open_telemetry_folder	打开遥测文件夹
+@id	ui.open_the_artcraft_discord	打开 ArtCraft Discord
+@id	ui.open_this_notebook	打开此笔记本
+@id	ui.open_using_shell	使用 Shell 打开
+@id	ui.open_with_associated_app	使用关联应用打开
+@id	ui.opened	已打开
+@id	ui.opened_path	已打开 {path}
+@id	ui.opened_path_it_has_no_pages_yet	已打开 {path}；目前尚无页面
+@id	ui.opened_the_containing_folder	已打开包含该文件的文件夹
+@id	ui.opened_url_in_the_browser	已在浏览器中打开 {url}
+@id	ui.opened_using_the_associated_application	已使用关联应用程序打开
+@id	ui.opening_path	正在打开 {path}
+@id	ui.options	选项
+@id	ui.orange	橙色
+@id	ui.page	页面
+@id	ui.page_colour	页面颜色
+@id	ui.page_direction_from_the_words	根据文字确定页面方向
+@id	ui.page_format	页面格式
+@id	ui.page_left_to_right	页面从左到右
+@id	ui.page_right_to_left	页面从右到左
+@id	ui.page_setup	页面设置
+@id	ui.page_source	页面源码
+@id	ui.page_versions_2	页面版本
+@id	ui.page_versions_4	Page\nVersions
+@id	ui.page_width	页面宽度
+@id	ui.pages	页面
+@id	ui.paper_behind_the_page	{paper} 在页面后方
+@id	ui.paper_size	纸张大小
+@id	ui.para	段落
+@id	ui.paragraph_direction_from_the_words	根据文字方向设置段落方向
+@id	ui.paragraph_left_to_right	段落从左到右
+@id	ui.paragraph_right_to_left	段落从右到左
+@id	ui.paragraph_selected	已选中段落
+@id	ui.paste	粘贴
+@id	ui.pasted	已粘贴
+@id	ui.pasted_a_picture_width_by_height	已粘贴图片，{width} 由 {height} 提供
+@id	ui.pasted_formatted_content	已粘贴格式化内容
+@id	ui.path_opened_as_an_empty_notebook	{path} 已作为空笔记本打开
+@id	ui.pdf_and_office_documents	PDF 和 Office 文档
+@id	ui.pdf_document	PDF 文档
+@id	ui.pdf_text_inspection	PDF 文本检查
+@id	ui.pen	钢笔
+@id	ui.pencil	铅笔
+@id	ui.permanently_delete	永久删除？
+@id	ui.permanently_delete_title_and_everything_inside_it	永久删除“{title}”及其所有内容？
+@id	ui.permanently_deleted	已永久删除
+@id	ui.phone_number	电话号码
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	选择 PDF 或 Office 文档，并将其页面作为图片插入
+@id	ui.pick_the_caret_s_column	选择光标所在列
+@id	ui.pick_the_caret_s_row	选择光标所在行
+@id	ui.pick_the_whole_table	选择整个表格
+@id	ui.picture_from_a_file	从文件插入图片
+@id	ui.pictures	图片
+@id	ui.plain	纯文本
+@id	ui.plain_text	纯文本
+@id	ui.powered_by	技术支持
+@id	ui.pressure_sensitivity_now_of_100	压感 {now} 为 100
+@id	ui.pressure_sensitivity_unavailable	压感不可用
+@id	ui.previous	上一个
+@id	ui.previous_match_shift_enter	上一个匹配项 (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	PDF 和 Office 文档支持打印。
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	隐私是我们的首要任务。所有日志和遥测数据均保留在此设备上。NoteCraft 绝不会自动发送这些数据。
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	隐私是我们的首要任务。日志和遥测数据保留在此设备上。NoteCraft 不会将这些数据发送给我们。
+@id	ui.purple	紫色
+@id	ui.put_a_sheet_to_draw_on_into_the_page	将绘图画布放入页面
+@id	ui.put_another_tool_on_the_rack	在工具架上添加另一个工具
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	将指针恢复到文字和光标
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	将电子表格中的内容写回此表格
+@id	ui.question	问题
+@id	ui.quote_2	引用
+@id	ui.quote_this_paragraph	引用此段落
+@id	ui.read_back_from_it_2	从\n中读回
+@id	ui.read_back_rows_rows_and_columns_columns	读回 {rows} 行和 {columns} 列
+@id	ui.read_only	只读
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	只读文本提取。完整的文档渲染功能即将推出。
+@id	ui.ready_2	就绪
+@id	ui.recently_opened	最近打开
+@id	ui.recording	正在录制
+@id	ui.rectangle	矩形
+@id	ui.red	红色
+@id	ui.red_2	红色
+@id	ui.redo	重做
+@id	ui.redo_ctrl_y	重做 (Ctrl+Y)
+@id	ui.remember_for_later	稍后提醒
+@id	ui.remove_from_list	从列表中移除
+@id	ui.remove_this_tool_from_the_rack	从工具架中移除此工具
+@id	ui.removed_notebook_from_the_known_notebooks_list	已从已知笔记本列表中移除该笔记本
+@id	ui.rename	重命名
+@id	ui.rename_ellipsis	重命名...
+@id	ui.renamed	已重命名
+@id	ui.rendered_svg_preview	已渲染 SVG 预览
+@id	ui.repair_icon	修复图标
+@id	ui.repaired_the_attachment_icon_for_name	已修复 {name} 的附件图标
+@id	ui.replay	重播
+@id	ui.reset_app_preferences	重置应用偏好设置
+@id	ui.reset_app_preferences_2	重置应用偏好设置…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	是否将 NoteCraft 的已保存偏好设置重置为内置默认值？
+@id	ui.reset_preferences	重置偏好设置
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	将主题、布局、功能区选项及其他已保存的 NoteCraft 偏好设置重置为默认值。
+@id	ui.restore	恢复
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	恢复从此笔记本中移除的页面、章节和分组
+@id	ui.restored_the_saved_page_version	已恢复保存的页面版本
+@id	ui.restored_to_the_original_location	已恢复到原始位置
+@id	ui.right_to_left	从右到左
+@id	ui.rounded	圆角
+@id	ui.rub_out_whatever_the_pointer_passes_over	擦除指针经过的内容
+@id	ui.rule_line_colour_not_built	规则线颜色（未构建）
+@id	ui.ruled	横线
+@id	ui.save_picture_2	保存 \n 图片
+@id	ui.saved	已保存
+@id	ui.saved_copies_of_this_page	此页面的已保存副本
+@id	ui.saved_the_drawing_as_a_picture_path	已将绘图保存为图片：{path}
+@id	ui.saved_time	已保存 {time}
+@id	ui.search	搜索
+@id	ui.search_all_pages	搜索所有页面
+@id	ui.section	章节
+@id	ui.section_group	章节分组
+@id	ui.see_and_restore_saved_copies_of_this_page	查看并恢复此页面的已保存副本
+@id	ui.select	选择
+@id	ui.select_columns_2	选择 \n 列
+@id	ui.select_rows_2	选择 \n 行
+@id	ui.select_some_words_first	请先选择一些文字
+@id	ui.select_table_2	选择 \n 表格
+@id	ui.selected_text_next_typing	选中文本 / 下次输入
+@id	ui.selection	选区
+@id	ui.send_page	发送页面
+@id	ui.send_page_3	发送 \n 页面
+@id	ui.separate_pages	分离页面
+@id	ui.session_id_id	会话 ID：{id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	设置选中文本或下次输入文本的方向
+@id	ui.shape	形状
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}：在页面上拖动以绘制一个
+@id	ui.shapes	形状
+@id	ui.show	显示
+@id	ui.show_notebooks_folder	显示笔记本文件夹
+@id	ui.show_or_hide_the_notebooks_column	显示或隐藏笔记本列
+@id	ui.show_the_code	显示代码
+@id	ui.show_the_notebooks_again	再次显示笔记本
+@id	ui.show_the_notebooks_folder	显示笔记本文件夹
+@id	ui.show_the_page_at_100	以 100% 显示页面
+@id	ui.show_the_page_source	显示页面源码
+@id	ui.show_the_strokes	显示笔画
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	小
+@id	ui.small_squares	小方格
+@id	ui.somewhere_else	其他位置
+@id	ui.source	来源
+@id	ui.split	拆分
+@id	ui.spreadsheet	电子表格
+@id	ui.square	方形
+@id	ui.squares	方形
+@id	ui.standard	标准
+@id	ui.standard_ruled	标准横线
+@id	ui.star	星形
+@id	ui.starting_officeimo	正在启动 OfficeIMO…
+@id	ui.stencils	模板
+@id	ui.strike_through	删除线
+@id	ui.strikethrough	删除线
+@id	ui.styles	样式
+@id	ui.styles_2	样式
+@id	ui.svg_source	SVG 源码
+@id	ui.symbol	符号
+@id	ui.symbols	符号
+@id	ui.table_3	表格
+@id	ui.tables	表格
+@id	ui.tabs_layout	选项卡布局
+@id	ui.tag_tag	{tag} 标签
+@id	ui.tags	标签
+@id	ui.take_the_caret_s_column_out	移除光标所在列
+@id	ui.take_the_caret_s_row_out	移除光标所在行
+@id	ui.take_the_last_stroke_back	撤销最后一笔
+@id	ui.take_the_marks_off	移除标记
+@id	ui.teal_2	青色
+@id	ui.text	文本
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	文本检查结果显示在下方。
+@id	ui.text_run_direction	文本运行方向
+@id	ui.thank_you_for_trying_notecraft	感谢您试用 NoteCraft！
+@id	ui.that_file_has_nothing_in_it_to_put_back	该文件没有内容可以恢复
+@id	ui.that_file_is_not_in_this_page_s_folder	该文件不在当前页面的文件夹中
+@id	ui.that_is_not_something_a_page_can_hold	这不是页面可以容纳的内容
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	该链接指向笔记本文件夹外部，因此未被跟随
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	该页面不在已打开的笔记本中
+@id	ui.the_attachment_returned_an_invalid_page_link	附件返回了无效的页面链接
+@id	ui.the_built_in_default	内置默认值
+@id	ui.the_code	代码
+@id	ui.the_diagnostics_folder_could_not_be_created_error	无法创建诊断文件夹：{error}
+@id	ui.the_file_could_not_be_opened_error	无法打开文件：{error}
+@id	ui.the_file_is_gone	文件已丢失
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	文件已从磁盘删除。撤销操作无法恢复文件。
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	文件是安全的。NoteCraft 可以在页面末尾添加指向该文件的链接。
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	文件未附加：附加命令返回了意外结果。
+@id	ui.the_folder_could_not_be_opened_error	无法打开文件夹：{error}
+@id	ui.the_format_is_set_when_the_page_is_created	格式在创建页面时设置
+@id	ui.the_global_setting	全局设置
+@id	ui.the_last_tool_stays_on_the_rack	最后一个工具保留在工具架上
+@id	ui.the_notebook_could_not_be_deleted_error	无法删除笔记本：{error}
+@id	ui.the_notebook_or_section_setting	笔记本或章节设置
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	原始文件仍然安全。NoteCraft 可以重新生成其旁边的图标。
+@id	ui.the_page_beside_the_notebooks	笔记本旁边的页面
+@id	ui.the_page_is_colour	页面为 {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	页面使用主题自身的颜色
+@id	ui.the_page_source_beside_the_page	页面源码，位于页面旁边
+@id	ui.the_paper_and_colour_apply_to_this_page_only	纸张和颜色仅应用于此页面。
+@id	ui.the_theme_could_not_be_saved_error	无法保存主题：{error}
+@id	ui.the_time_now	当前时间
+@id	ui.the_welcome_notebook	欢迎笔记本
+@id	ui.the_whole_page_reads_left_to_right	整页从左到右阅读
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	整页从右到左阅读（阿拉伯语、希伯来语）
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	窗口由 GPU 绘制。图标由代码绘制。Logo 是唯一的图片。
+@id	ui.theme	主题
+@id	ui.theme_theme	主题 {theme}
+@id	ui.theme_theme_2	主题：{theme}
+@id	ui.theme_theme_click_to_change_it	{theme} 主题。点击以更改。
+@id	ui.there_are_no_notebooks_yet_new_starts_one	尚无笔记本。“新建”可创建一个。
+@id	ui.there_is_no_drawing_on_this_page	此页面上没有绘图
+@id	ui.there_is_no_earlier_page	没有更早的页面
+@id	ui.there_is_no_later_page	没有更晚的页面
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	工具架上没有空间放置另一个工具
+@id	ui.there_is_no_stroke_to_take_back	没有可撤销的笔画
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	剪贴板中没有可粘贴的内容
+@id	ui.thickness	粗细
+@id	ui.this_cannot_be_undone	此操作无法撤销。
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	无法移至回收站。未删除任何内容。
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	此操作不会删除笔记本或页面。无法撤销。
+@id	ui.this_file_will_be_opened_by_its_associated_application	此文件将由关联应用程序打开。
+@id	ui.this_notebook_s_recycle_bin_is_empty	此笔记本的回收站为空。
+@id	ui.this_page	此页面
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	此页面包含 NoteCraft 尚不支持编辑的标记，因此按原样显示。
+@id	ui.this_page_reads_left_to_right	此页面从左到右阅读
+@id	ui.this_page_reads_right_to_left	此页面从右到左阅读
+@id	ui.this_paragraph_decides_from_its_own_first_letter	此段落根据其首字母决定方向
+@id	ui.this_paragraph_fills_the_column	此段落填满列宽
+@id	ui.this_paragraph_fills_the_column_stretched_hard	此段落填满列宽，强力拉伸
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	此段落填满列宽，轻微拉伸
+@id	ui.this_paragraph_is_ragged_again	此段落恢复为两端对齐
+@id	ui.this_paragraph_reads_left_to_right	此段落从左到右阅读
+@id	ui.this_paragraph_reads_right_to_left	此段落从右到左阅读
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	此段落从右到左阅读（阿拉伯语、希伯来语）
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	此段落按其单词方向阅读
+@id	ui.this_picture_cannot_be_shown_here	无法在此处显示此图片。
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	此操作将从磁盘删除笔记本文件夹，且无法撤销。
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	此文本段从左到右阅读。混合行仍按单一顺序绘制；请参阅路线图
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	此文本段从右到左阅读。混合行仍按单一顺序绘制；请参阅路线图
+@id	ui.this_svg_cannot_be_rendered_here	无法在此处渲染此 SVG。
+@id	ui.this_window_behaves_like_the_others	此窗口行为与其他窗口相同
+@id	ui.this_window_stays_on_top	此窗口保持置顶
+@id	ui.time	时间
+@id	ui.time_stamp	时间戳
+@id	ui.title_2	标题
+@id	ui.title_saved	标题已保存
+@id	ui.title_the_folder_name_does_not_change	标题（文件夹名称不变）
+@id	ui.to_do_2	待办事项
+@id	ui.to_do_tag_2	待办事项\n标签
+@id	ui.today_s_date	今天的日期
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	已从工具架移除
+@id	ui.took_the_last_stroke_back_count_left	已撤销最后一笔；剩余 {count}
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	工具
+@id	ui.top	顶部
+@id	ui.triangle	三角形
+@id	ui.type	类型
+@id	ui.under_the	在……下方
+@id	ui.undo	撤销
+@id	ui.undo_ctrl_z	撤销 (Ctrl+Z)
+@id	ui.undo_stroke	撤销\n笔画
+@id	ui.unread	未读
+@id	ui.updated_the_welcome_notebook	已更新欢迎笔记本
+@id	ui.use_notecraft_s_own_title_bar	使用 NoteCraft 自带的标题栏
+@id	ui.use_the_system_title_bar	使用系统标题栏
+@id	ui.version_version_alpha	版本 {version} (alpha)
+@id	ui.very_large	非常大
+@id	ui.very_large_squares	非常大的方格
+@id	ui.view	视图
+@id	ui.views	视图
+@id	ui.warn	警告
+@id	ui.web_site_to_visit	要访问的网站
+@id	ui.welcome_to_notecraft	欢迎使用 NoteCraft
+@id	ui.what_should_happen_to_this_file	此文件应如何处理？
+@id	ui.what_to_add	要添加的内容
+@id	ui.wide	宽
+@id	ui.wide_ruled	宽行距
+@id	ui.window	窗口
+@id	ui.write_anywhere_on_the_page	在页面任意位置书写
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	重新绘制图形，不包含任何笔迹数据，以便发送
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	导出表格并在 GridCraft 中打开
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	黄色
+@id	ui.yellow_2	黄色
+@id	ui.you_can_continue_working_while_the_import_runs	导入运行时，您可以继续工作。
+@id	ui.you_can_restore_it_from_history	您可以从历史记录中恢复它。
+@id	ui.zoom	缩放
+@id	ui.zoom_in	放大
+@id	ui.zoom_out	缩小
+@id	ui.zoom_to_100	缩放至 100%

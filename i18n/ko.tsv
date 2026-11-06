@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	"{title}"와 그 안의 모든 것({n}개 항목)을 이 노트의 휴지통으로 이동하시겠습니까?
+@plural	{n} item|{n} items	{n}개 항목
+@plural	{n} notebook opened|{n} notebooks opened	{n}개 노트가 열림
+@plural	{n} notebook|{n} notebooks	{n}개 노트
+@plural	{n} stroke|{n} strokes	{n}개 스트로크
+@id	language.name	한국어
+@id	ui.a_bullet_list	글머리 기호 목록
+@id	ui.a_column_left_of_the_caret_s	캐럿의 왼쪽 열
+@id	ui.a_column_right_of_the_caret_s	캐럿의 오른쪽 열
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	사본이 이 페이지 폴더에 저장되므로 노트북이 어디든 함께 가져갑니다.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	텍스트 단락에 방향을 지정합니다
+@id	ui.a_file_copied_in_or_linked_where_it_is	파일: 복사되어 붙여넣거나 현재 위치에 링크 연결
+@id	ui.a_link	링크
+@id	ui.a_link_to_a_page_or_an_address	페이지 또는 주소로의 링크
+@id	ui.a_link_to_paste_into_another_page	다른 페이지에 붙여넣을 링크
+@id	ui.a_mermaid_diagram_kept_as_its_source	소스 그대로 유지되는 Mermaid 다이어그램
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	새 노트북은 {folder}의 폴더이며, 그 안에 섹션과 페이지가 하나씩 포함됩니다.
+@id	ui.a_new_page_in_this_section	이 섹션에 새 페이지
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	페이지 옆에 GridCraft에서 열리는 새 스프레드시트
+@id	ui.a_numbered_list	번호 매기기 목록
+@id	ui.a_page_here	여기에 페이지 추가
+@id	ui.a_row_above_the_caret_s	캐럿의 위쪽 행
+@id	ui.a_row_below_the_caret_s	캐럿의 아래쪽 행
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	테이블은 제목 행과 최소한 하나의 열을 유지합니다
+@id	ui.a_table_pick_its_size	테이블: 크기 선택
+@id	ui.a_tag_goes_on_a_line_of_text	텍스트 줄에 태그를 지정합니다
+@id	ui.a_to_do_box_on_this_line_ctrl_1	이 줄의 할 일 상자 (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	NoteCraft의 투어는 전용 페이지에 표시됩니다. 첫 시작 시 빈 노트북 폴더에 추가되며, 여기에서 다시 추가하거나 아직 여기에 있으면 엽니다.
+@id	ui.about_notecraft	NoteCraft 정보
+@id	ui.accent_accent	강조 색상: {accent}
+@id	ui.accept	수락
+@id	ui.add	추가
+@id	ui.add_a_blank_paragraph_at_the_caret	캐럿에 빈 단락 추가
+@id	ui.add_a_page_here	여기에 페이지 추가
+@id	ui.add_a_sub_page	하위 페이지 추가
+@id	ui.add_another_tool	다른 {tool} 추가
+@id	ui.add_file	파일 추가
+@id	ui.add_file_to_this_page	이 페이지에 파일 첨부
+@id	ui.add_inside_this_kind	이 {kind} 내부에 추가
+@id	ui.add_name	{name} 추가
+@id	ui.add_name_left_more	{name} 추가 ({left} 더 보기)
+@id	ui.add_page	페이지 추가
+@id	ui.add_the_welcome_notebook	환영 노트북 추가
+@id	ui.add_tool	{tool} 추가
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	페이지 끝에 {name}에 대한 링크 추가됨
+@id	ui.added_a_tool	{tool} 추가됨
+@id	ui.address	주소
+@id	ui.alignment	정렬
+@id	ui.alignment_and_direction	정렬 및 방향
+@id	ui.alignment_and_which_way_this_paragraph_reads	정렬과 이 단락의 읽는 방향
+@id	ui.all_of_them_live_in_folder	모두 {folder}에 저장됩니다
+@id	ui.always_on_top	항상 최상위
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	TeX로 작성된 수식: 시작할 항목 선택
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	앱 환경설정이 초기화되었습니다. 모든 기본값을 적용하려면 NoteCraft를 다시 시작하세요.
+@id	ui.appearance	외관
+@id	ui.append_link	링크 추가
+@id	ui.application_preferences	애플리케이션 환경설정
+@id	ui.arrow	화살표
+@id	ui.attach_the_file	파일 첨부
+@id	ui.attachment_icon_missing	첨부 아이콘 누락
+@id	ui.attachment_not_linked	첨부 파일이 연결되지 않음
+@id	ui.attachment_recovery	첨부 파일 복구
+@id	ui.authors	저자
+@id	ui.auto	자동
+@id	ui.automatic_system_language	자동 (시스템 언어)
+@id	ui.back	뒤로
+@id	ui.back_to_the_notebook	노트북으로 돌아가기
+@id	ui.back_to_the_page_before_alt_left	이전 페이지로 돌아가기 (Alt+Left)
+@id	ui.basic_text	기본 텍스트
+@id	ui.black	검정
+@id	ui.blue	파랑
+@id	ui.blue_2	파란색
+@id	ui.bold	굵게
+@id	ui.bold_ctrl_b	굵게 (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	페이지의 고유한 스탬프가 기록되는 대로 둘 다
+@id	ui.browse_for_a_notebook	노트북 찾아보기…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	{folder}에서 노트북을 찾거나 다른 폴더를 선택하세요.
+@id	ui.brush_pen	브러시 펜
+@id	ui.built_with	제작 기술
+@id	ui.bullets	글머리 기호
+@id	ui.cancel	취소
+@id	ui.cancel_import	가져오기 취소
+@id	ui.cannot_open_gridcraft_error	GridCraft를 열 수 없음: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	GridCraft에서 테이블을 열 수 없음: {error}
+@id	ui.cannot_save_the_pasted_picture_error	붙여넣은 그림을 저장할 수 없음: {error}
+@id	ui.cannot_write_name_error	{name}를 쓸 수 없음: {error}
+@id	ui.cannot_write_the_drawing_error	그림을 쓸 수 없음: {error}
+@id	ui.cannot_write_the_picture_error	그림을 쓸 수 없음: {error}
+@id	ui.cannot_write_this_page_s_ink	이 페이지의 잉크를 쓸 수 없음
+@id	ui.choose_a_custom_ink_colour	사용자 정의 잉크 색상 선택
+@id	ui.choose_a_file_to_attach	첨부할 파일 선택
+@id	ui.choose_a_file_to_import	가져올 파일 선택
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	로컬 수집 수준을 선택하세요. 릴리스 빌드에서는 기본적으로 로깅이 꺼져 있습니다.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	노트북, 노트북 폴더 또는 새 노트북용 빈 폴더를 선택하세요
+@id	ui.choose_a_onenote_notebook_folder	OneNote 노트북 폴더 선택
+@id	ui.choose_a_pdf_or_office_document_to_print_out	인쇄할 PDF 또는 Office 문서 선택
+@id	ui.choose_a_picture	그림 선택
+@id	ui.choose_a_section_to_see_its_pages	페이지를 보려면 섹션을 선택하세요.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	캐럿에 삽입할 기호 선택
+@id	ui.choose_how_to_insert_a_picture	그림 삽입 방법 선택
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	NoteCraft가 로컬로 기록할 내용을 선택하세요. 자동으로 업로드되는 데이터는 없습니다.
+@id	ui.chosen_for_this_page	이 페이지에 선택됨
+@id	ui.circle	원
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	모든 로컬 원격 측정 세션과 내보낸 원격 측정 ZIP 파일을 지우시겠습니까?
+@id	ui.clear_formatting	서식 지우기
+@id	ui.clear_formatting_2	서식 지우기
+@id	ui.clear_telemetry	원격 측정 데이터 지우기
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	획을 클릭하여 선택한 후 이동, 늘이거나 삭제하세요
+@id	ui.click_in_a_table_first	먼저 테이블 안을 클릭하세요
+@id	ui.click_in_the_page_first	먼저 페이지 안을 클릭하세요
+@id	ui.click_in_the_page_first_then_use_the_ribbon	먼저 페이지 안을 클릭한 후 리본을 사용하세요
+@id	ui.click_in_the_table_first	먼저 테이블 안을 클릭하세요
+@id	ui.clipboard	클립보드
+@id	ui.close	닫기
+@id	ui.close_notebook	노트북 닫기
+@id	ui.close_the_find_bar_escape	찾기 창 닫기 (Escape)
+@id	ui.close_the_source_pane	소스 창 닫기
+@id	ui.cloud_import_is_not_implemented_yet	클라우드 가져오기는 아직 구현되지 않았습니다.
+@id	ui.code_2	코드
+@id	ui.code_in_one_line	한 줄의 코드
+@id	ui.collapse	접기
+@id	ui.collapse_all	모두 접기
+@id	ui.college	대학
+@id	ui.college_ruled	대학 규정 적용됨
+@id	ui.colour	색상
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	색상 제거됨
+@id	ui.colour_set_to_colour	색상을 {colour}(으)로 설정함
+@id	ui.colours	색상
+@id	ui.columns_x_rows_table	{columns} x {rows} 표
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	연락처
+@id	ui.convert	변환
+@id	ui.convert_to_gridcraft_2	\nGridCraft로 변환
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	GridCraft로 변환: GridCraft가 설치되지 않음
+@id	ui.copied	복사됨
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	파일을 복사하고 인쇄된 페이지마다 하나의 이미지를 삽입합니다.
+@id	ui.copy	복사
+@id	ui.copy_full_path	전체 경로 복사
+@id	ui.copy_link_to_page	페이지 링크 복사
+@id	ui.copy_the_selection	선택 항목 복사
+@id	ui.could_not_attach_name_before_rendering_its_pages	페이지 렌더링 전에 {name}를 첨부할 수 없음
+@id	ui.could_not_attach_name_to_this_page	이 페이지에 {name}를 첨부할 수 없습니다.
+@id	ui.could_not_complete_the_action_error	작업을 완료할 수 없음: {error}
+@id	ui.could_not_import_the_notebook_error	노트북을 가져올 수 없음: {error}
+@id	ui.could_not_open_the_containing_folder_error	포함된 폴더를 열 수 없음: {error}
+@id	ui.could_not_open_the_file_error	파일을 열 수 없음: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	{name}의 아이콘을 복구할 수 없음: {error}
+@id	ui.could_not_reset_app_preferences_error	앱 기본 설정을 초기화할 수 없음: {error}
+@id	ui.could_not_restore_the_link_for_name_error	{name}의 링크를 복원할 수 없음: {error}
+@id	ui.could_not_save_the_interface_language_error	인터페이스 언어를 저장할 수 없음: {error}
+@id	ui.could_not_store_printout_page_page_error	인쇄 페이지 {page}를 저장할 수 없음: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count}개 항목, {colour}색상
+@id	ui.create	생성
+@id	ui.created	생성됨
+@id	ui.critical	치명적
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V로 페이지에 붙여넣기
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y로 되돌리기
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z로 마지막 변경 취소
+@id	ui.current_session_id	현재 세션: {id}
+@id	ui.custom	사용자 지정
+@id	ui.customize_quick_access_toolbar	빠른 실행 도구 모음 사용자 지정
+@id	ui.customize_tags_not_built	태그 사용자 지정... (미구현)
+@id	ui.cut	잘라내기
+@id	ui.cut_2	잘라내기
+@id	ui.cut_the_selection	선택 항목 잘라내기
+@id	ui.dark	어두운 테마
+@id	ui.data	데이터
+@id	ui.date	날짜
+@id	ui.date_time_2	날짜 및 \n시간
+@id	ui.debug	디버그
+@id	ui.decrease_indentation	들여쓰기 줄이기
+@id	ui.decrease_indentation_shift_tab	들여쓰기 줄이기 (Shift+Tab)
+@id	ui.default	기본값
+@id	ui.default_format	기본 형식
+@id	ui.default_format_for_pages_below	하위 페이지의 기본 형식
+@id	ui.definition	정의
+@id	ui.delete	삭제
+@id	ui.delete_assets_name_from_this_page_s_folder	이 페이지 폴더에서 "assets/{name}"를 삭제하시겠습니까?
+@id	ui.delete_columns_2	\n열 삭제
+@id	ui.delete_ellipsis	삭제...
+@id	ui.delete_file	파일 삭제
+@id	ui.delete_notebook	노트북 삭제
+@id	ui.delete_notebook_2	노트북 삭제...
+@id	ui.delete_notebook_title_and_everything_inside_it	노트북 "{title}"와 그 안의 모든 항목을 삭제하시겠습니까?
+@id	ui.delete_permanently	영구 삭제
+@id	ui.delete_rows_2	\n행 삭제
+@id	ui.delete_tool	삭제 도구
+@id	ui.delete_tool_2	{tool} 삭제
+@id	ui.deleted_notebook	노트북 삭제됨
+@id	ui.deleted_notebook_path	노트북 {path} 삭제됨
+@id	ui.deny	거부
+@id	ui.diagram	다이어그램
+@id	ui.diamond	마름모
+@id	ui.direction_from_the_words	단어에서 방향
+@id	ui.discovering_sections	섹션 검색 중…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	이번 세션 동안 유사한 첨부 파일 경고 다시 표시 안 함
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	이번 세션 동안 유사한 누락된 아이콘 경고 다시 표시 안 함
+@id	ui.do_not_warn_again_for_this_file_type_this_session	이번 세션 동안 이 파일 형식에 대한 경고 다시 표시 안 함
+@id	ui.dock_to_desktop	바탕 화면에 고정
+@id	ui.document_renderer_coming_soon	문서 렌더러 곧 출시 예정
+@id	ui.don_t_show_this_again_in_this_session	이번 세션 동안 이 메시지 다시 표시 안 함
+@id	ui.don_t_show_this_ever	항상 다시 표시 안 함
+@id	ui.draw	그리기
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	잉크를 선택하려면 잉크 주위를 그립니다.
+@id	ui.draw_here_2	\n여기에 그리기
+@id	ui.drawing	그리는 중...
+@id	ui.drawing_saved_count_strokes	그림 저장됨, {count}스트로크
+@id	ui.drawing_tools	그리기 도구
+@id	ui.drop_a_file_onto_the_page_to_add_it	파일을 페이지에 드롭하여 추가합니다.
+@id	ui.edit	편집
+@id	ui.editing	편집 중...
+@id	ui.egui_and_eframe	egui 및 eframe
+@id	ui.ellipse	타원
+@id	ui.email	이메일
+@id	ui.english	영어
+@id	ui.equation	수식
+@id	ui.equation_name	수식: {name}
+@id	ui.eraser	지우개
+@id	ui.error	오류
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	세 번째 줄마다 약간 더 두꺼워져 쉽게 세울 수 있습니다.
+@id	ui.every_line_of_this_page_decides_for_itself	이 페이지의 각 줄이 자체적으로 결정합니다.
+@id	ui.every_paragraph_decides_for_itself	각 단락이 자체적으로 결정합니다.
+@id	ui.expand	펼치기
+@id	ui.expand_all	모두 펼치기
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	내보내기는 사용자가 선택한 ZIP을 생성한 후 내보낸 세션 폴더를 제거합니다.
+@id	ui.export_current_session_zip	현재 세션 ZIP 내보내기
+@id	ui.export_telemetry_zip	텔레메트리 ZIP 내보내기
+@id	ui.eyedropper	 eyedropper (색상 추출기)
+@id	ui.eyedropper_not_built	eyedropper가 아직 구현되지 않았습니다.
+@id	ui.file	파일
+@id	ui.file_attachment_2	파일 \n첨부 파일
+@id	ui.file_options	파일 옵션
+@id	ui.file_printout_2	파일 \n인쇄물
+@id	ui.files	파일
+@id	ui.files_in_this_page	이 페이지의 파일
+@id	ui.find	찾기
+@id	ui.find_in_this_file	이 파일에서 찾기
+@id	ui.find_tags	태그 찾기
+@id	ui.find_tags_3	\n태그 찾기
+@id	ui.fit_the_page_to_the_available_width	페이지를 사용 가능한 너비에 맞게 조정
+@id	ui.folder_folder	폴더: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	시스템의 밝거나 어두운 설정을 따름
+@id	ui.format	서식
+@id	ui.format_background_2	\n 배경 서식
+@id	ui.format_for_this_page	이 페이지의 서식
+@id	ui.format_painter	서식 복사기
+@id	ui.forward	다음으로 이동
+@id	ui.forward_to_the_page_after_alt_right	다음 페이지로 이동 (Alt+Right)
+@id	ui.fountain_pen	펜촉
+@id	ui.from_camera	카메라에서 가져오기
+@id	ui.from_online	온라인에서 가져오기
+@id	ui.full_page	전체 페이지
+@id	ui.full_page_view_2	전체 \n 보기
+@id	ui.full_path_copied	전체 경로 복사됨
+@id	ui.give_the_page_the_whole_window	페이지를 전체 창에 맞춤
+@id	ui.gray	회색
+@id	ui.green	초록
+@id	ui.green_2	초록색
+@id	ui.grey	회색
+@id	ui.gridcraft_is_not_installed	GridCraft가 설치되지 않음
+@id	ui.help	도움말
+@id	ui.hide	숨기기
+@id	ui.hide_everything_but_the_page	페이지만 남기고 모두 숨기기
+@id	ui.hide_page_title	페이지 제목 숨기기
+@id	ui.hide_the_page_source	페이지 소스 숨기기
+@id	ui.hide_the_page_title	페이지 제목 숨기기
+@id	ui.highlight	강조 표시
+@id	ui.highlighter	하이라이터
+@id	ui.history	기록
+@id	ui.home	홈
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	아이디어
+@id	ui.images	이미지
+@id	ui.immersive_reader	몰입형 리더기
+@id	ui.import_file	파일 가져오기
+@id	ui.import_from_the_cloud	클라우드에서 가져오기
+@id	ui.import_notebook_folder	노트북 폴더 가져오기
+@id	ui.important	중요
+@id	ui.importing	가져오는 중…
+@id	ui.importing_onenote	OneNote 가져오기
+@id	ui.increase_indentation	들여쓰기 증가
+@id	ui.increase_indentation_tab	들여쓰기 증가 (Tab)
+@id	ui.index_of_total_sections	{total} 섹션 중 {index}
+@id	ui.info	정보
+@id	ui.inherit_notebook_section_or_global_setting	상속 (노트북, 섹션 또는 전역 설정)
+@id	ui.input_mode	입력 모드
+@id	ui.insert	삽입
+@id	ui.insert_a_common_symbol	일반 기호 삽입
+@id	ui.insert_column_left_2	왼쪽에 \n 열 삽입
+@id	ui.insert_column_right_2	오른쪽에 \n 열 삽입
+@id	ui.insert_printout	인쇄물 삽입
+@id	ui.insert_row_above_2	위에 \n 행 삽입
+@id	ui.insert_row_below_2	아래에 \n 행 삽입
+@id	ui.insert_space_2	\n 공간 삽입
+@id	ui.insert_symbol	기호 삽입
+@id	ui.insert_table_not_built	표 삽입... (미구현)
+@id	ui.insert_the_picture	그림 삽입
+@id	ui.insert_the_recording	녹음 파일 삽입
+@id	ui.insert_the_video	비디오 삽입
+@id	ui.inserted_name_and_count_printout_pages	{count} 및 {name} 인쇄물 페이지 삽됨
+@id	ui.interface_language	인터페이스 언어
+@id	ui.interface_language_language	인터페이스 언어: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	이슈, 로드맵 및 문서가 모두 여기에 있습니다. NoteCraft는 자체적으로 이 서비스나 다른 어떤 서비스와도 통신하지 않습니다.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	페이지 폴더가 비밀이 아니도록 목록에 표시됩니다.
+@id	ui.italic	기울임
+@id	ui.italic_ctrl_i	기울임 (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	정렬은 텍스트 단락에 적용됩니다
+@id	ui.keep_this_window_above_the_others	이 창을 다른 창 위에 고정
+@id	ui.label	레이블
+@id	ui.label_not_built	{label} (미구현)
+@id	ui.label_not_built_yet	{label}: 아직 구현되지 않음
+@id	ui.label_nothing_to_action	{label}: {action}할 항목 없음
+@id	ui.language_click_to_change_it	{language}. 클릭하여 변경하세요.
+@id	ui.large	대형
+@id	ui.large_squares	큰 사각형
+@id	ui.laser_pointer	레이저 포인터
+@id	ui.lasso_select	\n 선택 (올가미)
+@id	ui.layout	레이아웃
+@id	ui.leave_it	변경 안 함
+@id	ui.left_to_right	왼쪽에서 오른쪽으로
+@id	ui.level	수준:
+@id	ui.licence	라이선스
+@id	ui.light	밝게
+@id	ui.light_or_dark_and_the_accent_colour	밝기 또는 어두움 및 강조 색상
+@id	ui.line	줄무늬
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	종이처럼 페이지 뒤의 줄무늬 또는 사각형
+@id	ui.link	링크
+@id	ui.link_to_the_file_where_it_is	파일 위치로 링크
+@id	ui.link_to_title_copied	"{title}"에 대한 링크 복사됨
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	파일 위치로 {name} 연결; 파일은 복사되지 않음
+@id	ui.links	링크
+@id	ui.live_captions	실시간 자막
+@id	ui.local_collection_level	로컬 수집 수준
+@id	ui.local_diagnostics	로컬 진단
+@id	ui.local_diagnostics_and_usage	로컬 진단 및 사용량
+@id	ui.logging_folder_folder	로그 폴더: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	로그 및 원격 분석 데이터는 이 장치에만 유지됩니다. NoteCraft는 자동으로 전송하지 않습니다.
+@id	ui.magenta	자홍색
+@id	ui.make_the_page_larger	페이지 크기 키우기
+@id	ui.make_the_page_smaller	페이지 크기 줄이기
+@id	ui.many_thanks_to_its_authors_and_contributors	— 저자와 기여자들에게 깊은 감사를 드립니다.
+@id	ui.markdown	마크다운
+@id	ui.match_case	대소문자 구분
+@id	ui.math	수학
+@id	ui.maximize	최대화
+@id	ui.md_2	md
+@id	ui.media	미디어
+@id	ui.medium	중형
+@id	ui.medium_squares	중간 크기 사각형
+@id	ui.meeting_details	회의 세부 정보
+@id	ui.meeting_details_3	\n 세부 정보
+@id	ui.meetings	회의록
+@id	ui.merge	병합
+@id	ui.mermaid	Mermaid
+@id	ui.mint	민트
+@id	ui.mit_license	MIT 라이선스
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	선택에 따라 MIT 또는 Apache-2.0. 코알라 일러스트레이션은 해당 라이선스로 커버되지 않습니다. ATTRIBUTION.md를 참조하세요.
+@id	ui.mode	모드
+@id	ui.modify_tool	도구 수정
+@id	ui.more	더 보기...
+@id	ui.more_2	더 보기
+@id	ui.more_colours	추가 색상
+@id	ui.more_styles	추가 스타일
+@id	ui.more_tags	추가 태그
+@id	ui.move_left	왼쪽으로 이동
+@id	ui.move_right	오른쪽으로 이동
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	"{title}"와 그 안의 모든 항목({n} 개)을 이 노트북 휴지통으로 이동하시겠습니까?|"{title}"와 그 안의 모든 항목({n} 개)을 이 노트북 휴지통으로 이동하시겠습니까?
+@id	ui.move_to_recycle_bin	휴지통으로 이동
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	이 페이지의 이전 그림에서 {moved} 스트로크를 페이지 자체로 이동했습니다
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} 스트로크가 페이지로 이동되었습니다; {left} 이전 그림 파일을 제거할 수 없습니다
+@id	ui.moved_to_the_notebook_recycle_bin	노트북 휴지통으로 이동됨
+@id	ui.n_item_n_items	{n} 개|{n} 개
+@id	ui.n_notebook_n_notebooks	{n} 노트북|{n} 노트북
+@id	ui.n_notebook_opened_n_notebooks_opened	{n}개 노트북 열림|{n}개 노트북 열림
+@id	ui.n_stroke_n_strokes	{n}스트로크|{n}스트로크
+@id	ui.name_2	이름
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} 아직 빌드되지 않았습니다. 로드맵에서 예정된 기능을 확인하세요.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name}가 이 페이지 폴더의 파일로 저장되었습니다
+@id	ui.name_is_open_in_gridcraft	{name}가 GridCraft에서 열려 있습니다
+@id	ui.name_not_used_by_the_page	{name}: 페이지에서 사용되지 않음
+@id	ui.narrow	좁게
+@id	ui.narrow_ruled	좁게 줄 있음
+@id	ui.new_gridcraft_spreadsheet	새 GridCraft 스프레드시트
+@id	ui.new_gridcraft_spreadsheet_not_installed	새 GridCraft 스프레드시트 (설치되지 않음)
+@id	ui.new_notebook	새 노트북
+@id	ui.new_notebook_2	새 노트북...
+@id	ui.new_page	새 페이지
+@id	ui.new_page_2	새 페이지...
+@id	ui.new_pages	새 페이지:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	노트북이나 섹션에서 달리 명시하지 않는 한 새 페이지는 {format}를 사용합니다
+@id	ui.new_quick_note	새 빠른 메모
+@id	ui.new_window	새 창
+@id	ui.next	다음
+@id	ui.next_match_enter_f3	다음 일치 (Enter, F3)
+@id	ui.no	아니요
+@id	ui.no_colour	색상 없음
+@id	ui.no_generated_preview_icon_is_available	생성된 미리보기 아이콘이 없습니다.
+@id	ui.no_lines_behind_the_page	페이지 뒤에 줄 없음
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	이 페이지 옆에 {name}가 없습니다: 먼저 테이블을 넘겨주세요
+@id	ui.no_notebooks_yet_use_new_notebook	아직 노트북이 없습니다. "새 노트북"을 사용하세요.
+@id	ui.no_pages_in_this_section_yet	이 섹션에 아직 페이지가 없습니다.
+@id	ui.no_pages_match	일치하는 페이지가 없습니다.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	저장된 버전이 아직 없습니다. NoteCraft는 페이지가 변경될 때마다 사본을 보관합니다.
+@id	ui.none	없음
+@id	ui.normal_view	일반 \n 보기
+@id	ui.not_built	빌드되지 않음
+@id	ui.not_built_2	빌드되지 않음
+@id	ui.not_built_yet	아직 빌드되지 않음
+@id	ui.not_drawn_why	그려지지 않음: {why}
+@id	ui.not_used_by_the_page	페이지에서 사용하지 않음
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	순수 Rust로 작성된 메모 작성 및 조직화. 귀하의 노트는 일반 폴더와 파일입니다.
+@id	ui.notebook	노트북
+@id	ui.notebook_closed_its_files_are_still_on_disk	노트북이 닫혔습니다; 파일은 여전히 디스크에 있습니다
+@id	ui.notebook_created	노트북 생성됨
+@id	ui.notebook_information	노트북 정보
+@id	ui.notebook_recycle_bin_2	노트북 휴지통
+@id	ui.notebook_recycle_bin_3	노트북 \n 휴지통
+@id	ui.notebooks_2	노트북
+@id	ui.notebooks_and_pages_in_their_own_columns	노트북과 페이지를 각각의 열에 표시
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	노트북과 섹션을 하나의 열에, 페이지를 다음 열에 표시
+@id	ui.notebooks_folder_folder	노트북 폴더: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	여기에 연 노트북이 표시됩니다.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft에서 이 페이지에서 참조되지 않는 첨부 파일을 발견했습니다:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft에서 생성된 아이콘이 없는 첨부 파일을 발견했습니다:
+@id	ui.notecraft_ruled	NoteCraft 판정
+@id	ui.notecraft_squares	NoteCraft 사각형
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	페이지를 열거나 노트북을 만들어 시작하세요. 노트는 일반 폴더로 저장됩니다.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	{path}에 없음: 링크가 존재하지 않는 페이지나 파일을 가리킵니다
+@id	ui.nothing_here_can_show_this_kind_of_file	이곳에서는 이 유형의 파일을 표시할 수 없습니다.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	복사된 항목이 없습니다. 파일이 이동하면 링크가 끊어집니다.
+@id	ui.nothing_to_redo	다시 실행할 작업 없음
+@id	ui.nothing_to_undo	실행 취소할 작업 없음
+@id	ui.numbering	번호 매기기
+@id	ui.off	꺼짐
+@id	ui.off_2	꺼짐
+@id	ui.office_document	오피스 문서
+@id	ui.office_text_inspection	오피스 텍스트 검사
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO 가져오기 작업자가 예기치 않게 중지되었습니다
+@id	ui.ok	확인
+@id	ui.one_tree_of_notebooks	노트북의 단일 트리
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive 및 SharePoint: 구축되지 않았습니다. 동기화 도구가 이미 감시하는 폴더를 NoteCraft에 지정하면 동일한 효과를 얻습니다.
+@id	ui.onenote_import	OneNote 가져오기
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	온라인 노트북(OneDrive, SharePoint)은 구축되지 않았습니다. 동기화 도구가 감시하는 폴더의 노트북은 해당 도구로 동기화됩니다.
+@id	ui.only_a_list_item_can_be_indented	목록 항목만 들여쓰기할 수 있습니다
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	파일과 작성자를 신뢰할 때만 여십시오.
+@id	ui.open	열기
+@id	ui.open_a_folder	폴더 열기...
+@id	ui.open_a_notebook	노트북 열기
+@id	ui.open_a_page_first	먼저 페이지를 여십시오
+@id	ui.open_a_page_first_then_drop_files_onto_it	먼저 페이지를 연 후 파일을 드롭하십시오.
+@id	ui.open_attachment	첨부 파일 열기
+@id	ui.open_every_level	모든 수준 열기
+@id	ui.open_folder	폴더 열기
+@id	ui.open_in_folder	폴더에서 열기
+@id	ui.open_name	{name} 열기
+@id	ui.open_telemetry_folder	텔레메트리 폴더 열기
+@id	ui.open_the_artcraft_discord	ArtCraft 디스코드 열기
+@id	ui.open_this_notebook	이 노트북 열기
+@id	ui.open_using_shell	셸로 열기
+@id	ui.open_with_associated_app	연결된 앱으로 열기
+@id	ui.opened	열림
+@id	ui.opened_path	{path} 열림
+@id	ui.opened_path_it_has_no_pages_yet	{path} 열림; 아직 페이지가 없습니다
+@id	ui.opened_the_containing_folder	포함 폴더 열림
+@id	ui.opened_url_in_the_browser	브라우저에서 {url} 열림
+@id	ui.opened_using_the_associated_application	연결된 응용 프로그램으로 열림
+@id	ui.opening_path	{path} 여는 중
+@id	ui.options	옵션
+@id	ui.orange	주황색
+@id	ui.page	페이지
+@id	ui.page_colour	페이지 색상
+@id	ui.page_direction_from_the_words	단어 기반 페이지 방향
+@id	ui.page_format	페이지 형식
+@id	ui.page_left_to_right	왼쪽에서 오른쪽으로 페이지
+@id	ui.page_right_to_left	오른쪽에서 왼쪽으로 페이지
+@id	ui.page_setup	페이지 설정
+@id	ui.page_source	페이지 소스
+@id	ui.page_versions_2	페이지 버전
+@id	ui.page_versions_4	페이지 \n 버전
+@id	ui.page_width	페이지 너비
+@id	ui.pages	페이지
+@id	ui.paper_behind_the_page	페이지 뒤의 {paper}
+@id	ui.paper_size	용지 크기
+@id	ui.para	문단
+@id	ui.paragraph_direction_from_the_words	글자에 따른 문단 방향
+@id	ui.paragraph_left_to_right	왼쪽에서 오른쪽으로 문단
+@id	ui.paragraph_right_to_left	오른쪽에서 왼쪽으로 문단
+@id	ui.paragraph_selected	선택된 문단
+@id	ui.paste	붙여넣기
+@id	ui.pasted	붙여넣음
+@id	ui.pasted_a_picture_width_by_height	{width}를 {height}에서 붙여넣음
+@id	ui.pasted_formatted_content	서식 있는 내용 붙여넣기
+@id	ui.path_opened_as_an_empty_notebook	빈 노트북으로 {path} 열기
+@id	ui.pdf_and_office_documents	PDF 및 Office 문서
+@id	ui.pdf_document	PDF 문서
+@id	ui.pdf_text_inspection	PDF 텍스트 검사
+@id	ui.pen	펜
+@id	ui.pencil	연필
+@id	ui.permanently_delete	영구 삭제하시겠습니까?
+@id	ui.permanently_delete_title_and_everything_inside_it	"{title}"와 그 안의 모든 항목을 영구 삭제하시겠습니까?
+@id	ui.permanently_deleted	영구 삭제됨
+@id	ui.phone_number	전화번호
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	PDF 또는 Office 문서를 선택하여 페이지를 이미지로 삽입하세요
+@id	ui.pick_the_caret_s_column	캐럿의 열 선택
+@id	ui.pick_the_caret_s_row	캐럿의 행 선택
+@id	ui.pick_the_whole_table	전체 표 선택
+@id	ui.picture_from_a_file	파일에서 이미지 가져오기
+@id	ui.pictures	이미지
+@id	ui.plain	일반
+@id	ui.plain_text	일반 텍스트
+@id	ui.powered_by	제공:
+@id	ui.pressure_sensitivity_now_of_100	100의 압력 감도 {now}
+@id	ui.pressure_sensitivity_unavailable	압력 감도 사용 불가
+@id	ui.previous	이전
+@id	ui.previous_match_shift_enter	이전 일치 항목 (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	PDF 및 Office 문서에 대해 인쇄가 가능합니다.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	프라이버시는 최우선입니다. 모든 로그와 원격 데이터는 이 장치에 저장됩니다. NoteCraft는 자동으로 전송하지 않습니다.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	프라이버시는 최우선입니다. 로그와 원격 데이터는 이 장치에 저장됩니다. NoteCraft는 이를 저희에게 전송하지 않습니다.
+@id	ui.purple	보라색
+@id	ui.put_a_sheet_to_draw_on_into_the_page	페이지에 그릴 수 있는 시트 추가
+@id	ui.put_another_tool_on_the_rack	랙에 다른 도구 추가
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	포인터를 글자와 캐럿으로 되돌리기
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	스프레드시트의 내용을 이 표로 다시 가져오기
+@id	ui.question	질문
+@id	ui.quote_2	인용
+@id	ui.quote_this_paragraph	이 문단을 인용하세요
+@id	ui.read_back_from_it_2	\n에서 다시 읽기
+@id	ui.read_back_rows_rows_and_columns_columns	{rows} 행과 {columns} 열 다시 읽기
+@id	ui.read_only	읽기 전용
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	읽기 전용 텍스트 추출. 전체 문서 렌더링은 곧 제공됩니다.
+@id	ui.ready_2	준비됨
+@id	ui.recently_opened	최근 열린 파일
+@id	ui.recording	녹화 중
+@id	ui.rectangle	사각형
+@id	ui.red	빨간색
+@id	ui.red_2	빨강
+@id	ui.redo	다시 실행
+@id	ui.redo_ctrl_y	다시 실행 (Ctrl+Y)
+@id	ui.remember_for_later	나중에 기억하기
+@id	ui.remove_from_list	목록에서 제거
+@id	ui.remove_this_tool_from_the_rack	랙에서 이 도구 제거
+@id	ui.removed_notebook_from_the_known_notebooks_list	알려진 노트북 목록에서 노트북 제거됨
+@id	ui.rename	이름 바꾸기
+@id	ui.rename_ellipsis	이름 바꾸기...
+@id	ui.renamed	이름 변경됨
+@id	ui.rendered_svg_preview	렌더링된 SVG 미리보기
+@id	ui.repair_icon	아이콘 복구
+@id	ui.repaired_the_attachment_icon_for_name	{name}의 첨부 파일 아이콘 복구됨
+@id	ui.replay	재생
+@id	ui.reset_app_preferences	앱 환경설정 초기화
+@id	ui.reset_app_preferences_2	앱 환경설정 초기화...
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	NoteCraft의 저장된 환경설정을 기본값으로 재설정하시겠습니까?
+@id	ui.reset_preferences	환경설정 초기화
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	테마, 레이아웃, 리본 선택 및 기타 저장된 NoteCraft 환경설정을 기본값으로 재설정합니다.
+@id	ui.restore	복원
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	이 노트북에서 제거된 페이지, 섹션 및 그룹 복원
+@id	ui.restored_the_saved_page_version	저장된 페이지 버전 복원됨
+@id	ui.restored_to_the_original_location	원래 위치로 복원됨
+@id	ui.right_to_left	오른쪽에서 왼쪽으로
+@id	ui.rounded	둥근 모서리
+@id	ui.rub_out_whatever_the_pointer_passes_over	포인터가 지나가는 모든 항목 지우기
+@id	ui.rule_line_colour_not_built	줄 색상 (미구현)
+@id	ui.ruled	줄 있음
+@id	ui.save_picture_2	\n 이미지 저장
+@id	ui.saved	저장됨
+@id	ui.saved_copies_of_this_page	이 페이지의 저장된 복사본
+@id	ui.saved_the_drawing_as_a_picture_path	그림을 이미지로 저장함: {path}
+@id	ui.saved_time	{time} 저장됨
+@id	ui.search	검색
+@id	ui.search_all_pages	모든 페이지 검색
+@id	ui.section	섹션
+@id	ui.section_group	섹션 그룹
+@id	ui.see_and_restore_saved_copies_of_this_page	이 페이지의 저장된 복사본 확인 및 복원
+@id	ui.select	선택
+@id	ui.select_columns_2	\n 열 선택
+@id	ui.select_rows_2	\n 행 선택
+@id	ui.select_some_words_first	먼저 일부 단어를 선택하세요
+@id	ui.select_table_2	\n 표 선택
+@id	ui.selected_text_next_typing	선택된 텍스트 / 다음 입력
+@id	ui.selection	선택 영역
+@id	ui.send_page	페이지 보내기
+@id	ui.send_page_3	\n 페이지 보내기
+@id	ui.separate_pages	페이지 분리
+@id	ui.session_id_id	세션 ID: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	선택된 텍스트 또는 다음 입력 텍스트의 방향 설정
+@id	ui.shape	모양
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: 페이지에서 드래그하여 그리기
+@id	ui.shapes	도형
+@id	ui.show	표시
+@id	ui.show_notebooks_folder	노트북 폴더 표시
+@id	ui.show_or_hide_the_notebooks_column	노트북 열 표시 또는 숨기기
+@id	ui.show_the_code	코드 표시
+@id	ui.show_the_notebooks_again	노트북 다시 표시
+@id	ui.show_the_notebooks_folder	노트북 폴더 표시
+@id	ui.show_the_page_at_100	페이지를 100%로 표시
+@id	ui.show_the_page_source	페이지 소스 보기
+@id	ui.show_the_strokes	스트로크 표시
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	작게
+@id	ui.small_squares	작은 사각형
+@id	ui.somewhere_else	다른 곳
+@id	ui.source	소스
+@id	ui.split	분할
+@id	ui.spreadsheet	스프레드시트
+@id	ui.square	사각형
+@id	ui.squares	사각형들
+@id	ui.standard	표준
+@id	ui.standard_ruled	표준 선
+@id	ui.star	별
+@id	ui.starting_officeimo	OfficeIMO 시작 중…
+@id	ui.stencils	스텐실
+@id	ui.strike_through	취소선
+@id	ui.strikethrough	취소선
+@id	ui.styles	스타일
+@id	ui.styles_2	스타일들
+@id	ui.svg_source	SVG 소스
+@id	ui.symbol	기호
+@id	ui.symbols	기호들
+@id	ui.table_3	표
+@id	ui.tables	표들
+@id	ui.tabs_layout	탭 레이아웃
+@id	ui.tag_tag	{tag} 태그
+@id	ui.tags	태그
+@id	ui.take_the_caret_s_column_out	캐럿의 열 제거
+@id	ui.take_the_caret_s_row_out	캐럿의 행 제거
+@id	ui.take_the_last_stroke_back	마지막 스트로크 되돌리기
+@id	ui.take_the_marks_off	표시 제거
+@id	ui.teal_2	청록색
+@id	ui.text	텍스트
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	텍스트 검사가 아래에 표시됩니다.
+@id	ui.text_run_direction	텍스트 실행 방향
+@id	ui.thank_you_for_trying_notecraft	NoteCraft를 사용해 주셔서 감사합니다!
+@id	ui.that_file_has_nothing_in_it_to_put_back	이 파일에는 되돌릴 내용이 없습니다
+@id	ui.that_file_is_not_in_this_page_s_folder	이 파일은 현재 페이지 폴더에 없습니다
+@id	ui.that_is_not_something_a_page_can_hold	페이지가 담을 수 없는 형식입니다
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	링크가 노트북 폴더 외부를 가리키므로 따라가지 않았습니다
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	이 페이지는 열린 노트북에 속해 있지 않습니다
+@id	ui.the_attachment_returned_an_invalid_page_link	첨부 파일에서 유효하지 않은 페이지 링크가 반환되었습니다
+@id	ui.the_built_in_default	내장 기본값
+@id	ui.the_code	코드
+@id	ui.the_diagnostics_folder_could_not_be_created_error	진단 폴더를 생성할 수 없습니다: {error}
+@id	ui.the_file_could_not_be_opened_error	파일을 열 수 없습니다: {error}
+@id	ui.the_file_is_gone	파일이 사라졌습니다
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	파일이 디스크에서 제거되었습니다. 실행 취소로 파일을 복구할 수 없습니다.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	파일은 안전합니다. NoteCraft가 페이지 끝에 링크를 추가할 수 있습니다.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	파일을 첨부하지 못했습니다: 첨부 명령이 예기치 않은 결과를 반환했습니다.
+@id	ui.the_folder_could_not_be_opened_error	폴더를 열 수 없습니다: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	형식은 페이지 생성 시 설정됩니다
+@id	ui.the_global_setting	전역 설정
+@id	ui.the_last_tool_stays_on_the_rack	마지막 도구는 랙에 남아 있습니다
+@id	ui.the_notebook_could_not_be_deleted_error	노트북을 삭제할 수 없습니다: {error}
+@id	ui.the_notebook_or_section_setting	노트북 또는 섹션 설정
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	원본 파일은 여전히 안전합니다. NoteCraft가 그 옆에 아이콘을 재생성할 수 있습니다.
+@id	ui.the_page_beside_the_notebooks	노트북 옆의 페이지
+@id	ui.the_page_is_colour	페이지는 {colour}입니다
+@id	ui.the_page_is_the_theme_s_own_colour	페이지는 테마의 고유 색상입니다
+@id	ui.the_page_source_beside_the_page	페이지 옆의 페이지 소스
+@id	ui.the_paper_and_colour_apply_to_this_page_only	종이와 색상은 이 페이지에만 적용됩니다.
+@id	ui.the_theme_could_not_be_saved_error	테마를 저장할 수 없습니다: {error}
+@id	ui.the_time_now	현재 시간
+@id	ui.the_welcome_notebook	환영 노트북
+@id	ui.the_whole_page_reads_left_to_right	전체 페이지가 왼쪽에서 오른쪽으로 읽힙니다
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	전체 페이지가 오른쪽에서 왼쪽으로 읽힙니다 (아랍어, 히브리어)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	GPU로 렌더링된 창. 아이콘은 코드로 그려집니다. 로고만 이미지입니다.
+@id	ui.theme	테마
+@id	ui.theme_theme	테마 {theme}
+@id	ui.theme_theme_2	테마: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme} 테마. 클릭하여 변경하세요.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	아직 노트북이 없습니다. '새로 만들기'로 시작하세요.
+@id	ui.there_is_no_drawing_on_this_page	이 페이지에는 그림이 없습니다
+@id	ui.there_is_no_earlier_page	이전 페이지가 없습니다
+@id	ui.there_is_no_later_page	다음 페이지가 없습니다
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	랙에 다른 도구를 둘 공간이 없습니다
+@id	ui.there_is_no_stroke_to_take_back	되돌릴 스트로크가 없습니다
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	붙여넣을 클립보드 내용이 없습니다
+@id	ui.thickness	두께
+@id	ui.this_cannot_be_undone	이 작업은 실행 취소할 수 없습니다.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	휴지통으로 이동할 수 없습니다. 삭제된 항목이 없습니다.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	노트북이나 페이지를 삭제하지 않습니다. 실행 취소할 수 없습니다.
+@id	ui.this_file_will_be_opened_by_its_associated_application	이 파일은 연결된 응용 프로그램에서 열립니다.
+@id	ui.this_notebook_s_recycle_bin_is_empty	이 노트북의 휴지통이 비어 있습니다.
+@id	ui.this_page	이 페이지
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	이 페이지는 NoteCraft가 아직 편집하지 않는 마크업을 포함하고 있으므로 읽는 대로 표시됩니다.
+@id	ui.this_page_reads_left_to_right	이 페이지는 왼쪽에서 오른쪽으로 읽힙니다
+@id	ui.this_page_reads_right_to_left	이 페이지는 오른쪽에서 왼쪽으로 읽힙니다
+@id	ui.this_paragraph_decides_from_its_own_first_letter	이 단락은 첫 글자를 기준으로 결정합니다
+@id	ui.this_paragraph_fills_the_column	이 단락은 열을 채웁니다
+@id	ui.this_paragraph_fills_the_column_stretched_hard	이 단락은 열을 강하게 채웁니다
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	이 단락은 열을 부드럽게 채웁니다
+@id	ui.this_paragraph_is_ragged_again	이 단락은 다시 불규칙합니다
+@id	ui.this_paragraph_reads_left_to_right	이 단락은 왼쪽에서 오른쪽으로 읽힙니다
+@id	ui.this_paragraph_reads_right_to_left	이 단락은 오른쪽에서 왼쪽으로 읽힙니다
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	이 단락은 오른쪽에서 왼쪽으로 읽힙니다 (아랍어, 히브리어)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	이 단락은 단어의 방향에 따라 읽힙니다
+@id	ui.this_picture_cannot_be_shown_here	이 그림을 여기에 표시할 수 없습니다.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	노트북 폴더가 디스크에서 제거되며 실행 취소할 수 없습니다.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	이 텍스트 실행은 왼쪽에서 오른쪽으로 읽힙니다. 혼합된 줄은 여전히 한 순서로 그려집니다; 로드맵 참조
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	이 텍스트 실행은 오른쪽에서 왼쪽으로 읽힙니다. 혼합된 줄은 여전히 한 순서로 그려집니다; 로드맵 참조
+@id	ui.this_svg_cannot_be_rendered_here	이 SVG를 여기에 렌더링할 수 없습니다.
+@id	ui.this_window_behaves_like_the_others	이 창은 다른 창처럼 동작합니다
+@id	ui.this_window_stays_on_top	이 창은 항상 최상단에 유지됩니다
+@id	ui.time	시간
+@id	ui.time_stamp	타임스탬프
+@id	ui.title_2	제목
+@id	ui.title_saved	제목 저장됨
+@id	ui.title_the_folder_name_does_not_change	제목 (폴더 이름은 변경되지 않음)
+@id	ui.to_do_2	할 일
+@id	ui.to_do_tag_2	할 일\n태그
+@id	ui.today_s_date	오늘 날짜
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	랙에서 제거함
+@id	ui.took_the_last_stroke_back_count_left	마지막 스트로크를 되돌렸습니다; {count} 남음
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	도구
+@id	ui.top	상단
+@id	ui.triangle	삼각형
+@id	ui.type	유형
+@id	ui.under_the	아래의
+@id	ui.undo	실행 취소
+@id	ui.undo_ctrl_z	실행 취소 (Ctrl+Z)
+@id	ui.undo_stroke	실행 취소 \n 스트로크
+@id	ui.unread	미독
+@id	ui.updated_the_welcome_notebook	환영 노트북 업데이트됨
+@id	ui.use_notecraft_s_own_title_bar	NoteCraft 자체 제목 표시줄 사용
+@id	ui.use_the_system_title_bar	시스템 제목 표시줄 사용
+@id	ui.version_version_alpha	버전 {version} (알파)
+@id	ui.very_large	매우 큼
+@id	ui.very_large_squares	매우 큰 사각형
+@id	ui.view	보기
+@id	ui.views	보기
+@id	ui.warn	경고
+@id	ui.web_site_to_visit	방문할 웹사이트
+@id	ui.welcome_to_notecraft	NoteCraft에 오신 것을 환영합니다
+@id	ui.what_should_happen_to_this_file	이 파일에 어떤 작업을 수행해야 하나요?
+@id	ui.what_to_add	추가할 항목
+@id	ui.wide	넓음
+@id	ui.wide_ruled	넓은 줄
+@id	ui.window	창
+@id	ui.write_anywhere_on_the_page	페이지 어디에나 작성 가능
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	펜 읽기 없이 다시 그리기를 작성하여 전송
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	표를 내보내고 GridCraft에서 열기
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	노란색
+@id	ui.yellow_2	노란색
+@id	ui.you_can_continue_working_while_the_import_runs	가져오기가 실행되는 동안 작업을 계속할 수 있습니다.
+@id	ui.you_can_restore_it_from_history	기록에서 복원할 수 있습니다.
+@id	ui.zoom	확대/축소
+@id	ui.zoom_in	확대
+@id	ui.zoom_out	축소
+@id	ui.zoom_to_100	100%로 확대

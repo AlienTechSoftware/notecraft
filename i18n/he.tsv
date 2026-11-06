@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	להעביר את "{title}" ואת כל מה שבתוכו ({n} פריט) לסל המיחזור של המחברת הזו?|להעביר את "{title}" ואת כל מה שבתוכו ({n} פריטים) לסל המיחזור של המחברת הזו?|להעביר את "{title}" ואת כל מה שבתוכו ({n} פריטים) לסל המיחזור של המחברת הזו?
+@plural	{n} item|{n} items	{n} פריט|{n} פריטים|{n} פריטים
+@plural	{n} notebook opened|{n} notebooks opened	נפתחה {n} מחברת|נפתחו {n} מחברות|נפתחו {n} מחברות
+@plural	{n} notebook|{n} notebooks	{n} מחברת|{n} מחברות|{n} מחברות
+@plural	{n} stroke|{n} strokes	{n} קו|{n} קווים|{n} קווים
+@id	language.name	עברית
+@id	ui.a_bullet_list	רשימה עם נקודות
+@id	ui.a_column_left_of_the_caret_s	עמודה משמאל למיקום העכבר
+@id	ui.a_column_right_of_the_caret_s	עמודה מימין למיקום העכבר
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	העתקה תישמר בתיקיית הדף, כך שהמחברת תוכל לשאת אותה לכל מקום.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	כיוון מופיע על פסקה של טקסט
+@id	ui.a_file_copied_in_or_linked_where_it_is	קובץ: הועתק פנימה או מקושר למיקומו
+@id	ui.a_link	קישור
+@id	ui.a_link_to_a_page_or_an_address	קישור לדף או לכתובת
+@id	ui.a_link_to_paste_into_another_page	קישור להדבקה בדף אחר
+@id	ui.a_mermaid_diagram_kept_as_its_source	תרשים Mermaid, שמור כמקור שלו
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	מחברת חדשה היא תיקייה ב-{folder}, עם חלק אחד ודף אחד בתוכה.
+@id	ui.a_new_page_in_this_section	דף חדש בחלק זה
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	גיליון אלקטרוני חדש ליד הדף, נפתח ב-GridCraft
+@id	ui.a_numbered_list	רשימה ממוספרת
+@id	ui.a_page_here	דף כאן
+@id	ui.a_row_above_the_caret_s	שורה מעל למיקום העכבר
+@id	ui.a_row_below_the_caret_s	שורה מתחת למיקום העכבר
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	טבלה שומרת על שורת הכותרת ועל עמודה אחת לפחות
+@id	ui.a_table_pick_its_size	טבלה: בחר את גודלה
+@id	ui.a_tag_goes_on_a_line_of_text	תגית מופיעה על שורה של טקסט
+@id	ui.a_to_do_box_on_this_line_ctrl_1	תיבת מטלה בשורה זו (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	סיור ב-NoteCraft, המוצג בדפים עצמאיים. הוא נוסף לתיקיית מחברות ריקה בהפעלה הראשונה; פעולה זו תוסיף אותו שוב או תפתח אותו אם הוא עדיין כאן.
+@id	ui.about_notecraft	אודות NoteCraft
+@id	ui.accent_accent	גוון: {accent}
+@id	ui.accept	קבל
+@id	ui.add	הוסף
+@id	ui.add_a_blank_paragraph_at_the_caret	הוסף פסקה ריקה במיקום העכבר
+@id	ui.add_a_page_here	הוסף דף כאן
+@id	ui.add_a_sub_page	הוסף תת-דף
+@id	ui.add_another_tool	הוסף עוד {tool}
+@id	ui.add_file	הוסף קובץ
+@id	ui.add_file_to_this_page	הוסף קובץ לדף זה
+@id	ui.add_inside_this_kind	הוסף בתוך {kind} זה
+@id	ui.add_name	הוסף {name}
+@id	ui.add_name_left_more	הוסף {name} (עוד {left})
+@id	ui.add_page	הוסף דף
+@id	ui.add_the_welcome_notebook	הוסף את מחברת הברכה
+@id	ui.add_tool	הוסף {tool}
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	נוסף קישור ל-{name} בסוף הדף
+@id	ui.added_a_tool	נוסף {tool}
+@id	ui.address	כתובת
+@id	ui.alignment	יישור
+@id	ui.alignment_and_direction	יישור וכיוון
+@id	ui.alignment_and_which_way_this_paragraph_reads	יישור, והכיוון שבו נקראת הפסקה הזו
+@id	ui.all_of_them_live_in_folder	כולם חיים ב-{folder}
+@id	ui.always_on_top	תמיד בחזית
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	משוואה, כתובה ב-TeX: בחר אחת להתחיל ממנה
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	הגדרות האפליקציה אופסו. הפעל מחדש את NoteCraft כדי להחיל את כל ברירת המחדל.
+@id	ui.appearance	מראה
+@id	ui.append_link	צרף קישור
+@id	ui.application_preferences	הגדרות אפליקציה
+@id	ui.arrow	חץ
+@id	ui.attach_the_file	צרף את הקובץ
+@id	ui.attachment_icon_missing	אייקון הצרופים חסר
+@id	ui.attachment_not_linked	הצרוף לא מקושר
+@id	ui.attachment_recovery	החזרת קבצים מצורפים
+@id	ui.authors	מחברים
+@id	ui.auto	אוטומטי
+@id	ui.automatic_system_language	אוטומטי (שפת המערכת)
+@id	ui.back	חזרה
+@id	ui.back_to_the_notebook	חזרה למחברת
+@id	ui.back_to_the_page_before_alt_left	חזרה לדף הקודם (Alt+Left)
+@id	ui.basic_text	טקסט בסיסי
+@id	ui.black	שחור
+@id	ui.blue	כחול
+@id	ui.blue_2	כחול
+@id	ui.bold	מודגש
+@id	ui.bold_ctrl_b	מודגש (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	שניהם, כשהחותמת של הדף עצמו כתובה
+@id	ui.browse_for_a_notebook	חיפוש מחברת…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	עיון במחברות ב-{folder} או בחירת תיקייה אחרת.
+@id	ui.brush_pen	מכחול
+@id	ui.built_with	נוצר באמצעות
+@id	ui.bullets	רשימות מסומנות
+@id	ui.cancel	ביטול
+@id	ui.cancel_import	ביטול ייבוא
+@id	ui.cannot_open_gridcraft_error	לא ניתן לפתוח את GridCraft: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	לא ניתן לפתוח את הטבלה ב-GridCraft: {error}
+@id	ui.cannot_save_the_pasted_picture_error	לא ניתן לשמור את התמונה שהודבקה: {error}
+@id	ui.cannot_write_name_error	לא ניתן לכתוב {name}: {error}
+@id	ui.cannot_write_the_drawing_error	לא ניתן לכתוב את הציור: {error}
+@id	ui.cannot_write_the_picture_error	לא ניתן לכתוב את התמונה: {error}
+@id	ui.cannot_write_this_page_s_ink	לא ניתן לכתוב את הדיו של דף זה
+@id	ui.choose_a_custom_ink_colour	בחירת צבע דיו מותאם אישית
+@id	ui.choose_a_file_to_attach	בחירת קובץ לצירוף
+@id	ui.choose_a_file_to_import	בחירת קובץ לייבוא
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	בחירת רמת רישום מקומית. הרישום כבוי כברירת מחדל בגרסאות שחרור.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	בחירת מחברת, תיקיית מחברות או תיקייה ריקה למחברת חדשה
+@id	ui.choose_a_onenote_notebook_folder	בחירת תיקיית מחברת של OneNote
+@id	ui.choose_a_pdf_or_office_document_to_print_out	בחירת מסמך PDF או Office להדפסה
+@id	ui.choose_a_picture	בחירת תמונה
+@id	ui.choose_a_section_to_see_its_pages	בחירת קטע כדי לראות את הדפים שלו.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	בחירת סמל להכנסה בנקודת ההזנה
+@id	ui.choose_how_to_insert_a_picture	בחירת אופן הכנסת תמונה
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	בחירת מה NoteCraft מקליט מקומית. אין העלאה אוטומטית.
+@id	ui.chosen_for_this_page	נבחר עבור דף זה
+@id	ui.circle	עיגול
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	לנקות את כל סשני הטלמטריה המקומיים ואת קובצי ה-ZIP של טלמטריה מיובאים?
+@id	ui.clear_formatting	ניקוי עיצוב
+@id	ui.clear_formatting_2	ניקוי עיצוב
+@id	ui.clear_telemetry	ניקוי טלמטריה
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	לחץ על קו כדי לבחור אותו, ואז הזז, מתיח או מחק אותו
+@id	ui.click_in_a_table_first	לחץ בתוך טבלה תחילה
+@id	ui.click_in_the_page_first	לחץ בתוך הדף תחילה
+@id	ui.click_in_the_page_first_then_use_the_ribbon	לחץ בתוך הדף תחילה, ואז השתמש בסרט
+@id	ui.click_in_the_table_first	לחץ בתוך הטבלה תחילה
+@id	ui.clipboard	לוח גזירים
+@id	ui.close	סגירה
+@id	ui.close_notebook	סגירת מחברת
+@id	ui.close_the_find_bar_escape	סגירת סרגל החיפוש (Escape)
+@id	ui.close_the_source_pane	סגירת פאנל המקור
+@id	ui.cloud_import_is_not_implemented_yet	ייבוא ענן טרם יושם.
+@id	ui.code_2	קוד
+@id	ui.code_in_one_line	קוד, בשורה אחת
+@id	ui.collapse	כיווץ
+@id	ui.collapse_all	צמצם הכל
+@id	ui.college	מכללה
+@id	ui.college_ruled	החלטת מכללה
+@id	ui.colour	צבע
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	צבע הוסר
+@id	ui.colour_set_to_colour	הצבע הוגדר ל-{colour}
+@id	ui.colours	צבעים
+@id	ui.columns_x_rows_table	טבלת {columns} x {rows}
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	יצירת קשר
+@id	ui.convert	המרה
+@id	ui.convert_to_gridcraft_2	המר ל-\nGridCraft
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	המרה ל-GridCraft: GridCraft אינו מותקן
+@id	ui.copied	הועתק
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	מעתיק את הקובץ ומכניס תמונה אחת עבור כל עמוד מודפס.
+@id	ui.copy	העתק
+@id	ui.copy_full_path	העתק נתיב מלא
+@id	ui.copy_link_to_page	העתק קישור לדף
+@id	ui.copy_the_selection	העתק את הבחירה
+@id	ui.could_not_attach_name_before_rendering_its_pages	לא ניתן לצרף את {name} לפני עיבוד העמודים שלו
+@id	ui.could_not_attach_name_to_this_page	לא ניתן לצרף את {name} לדף זה.
+@id	ui.could_not_complete_the_action_error	לא ניתן להשלים את הפעולה: {error}
+@id	ui.could_not_import_the_notebook_error	לא ניתן לייבא את המחברת: {error}
+@id	ui.could_not_open_the_containing_folder_error	לא ניתן לפתוח את התיקייה המכילה: {error}
+@id	ui.could_not_open_the_file_error	לא ניתן לפתוח את הקובץ: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	לא ניתן לתקן את האייקון עבור {name}: {error}
+@id	ui.could_not_reset_app_preferences_error	לא ניתן לאפס את הגדרות האפליקציה: {error}
+@id	ui.could_not_restore_the_link_for_name_error	לא ניתן לשחזר את הקישור עבור {name}: {error}
+@id	ui.could_not_save_the_interface_language_error	לא ניתן לשמור את שפת הממשק: {error}
+@id	ui.could_not_store_printout_page_page_error	לא ניתן לאחסן עמוד הדפסה {page}: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	פריטים {count}, צבע {colour}
+@id	ui.create	צור
+@id	ui.created	נוצר
+@id	ui.critical	קריטי
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V מדביק לתוך הדף
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y מחזיר את זה
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z מבטל את השינוי האחרון
+@id	ui.current_session_id	הפעלה נוכחית: {id}
+@id	ui.custom	מותאם אישית
+@id	ui.customize_quick_access_toolbar	התאמה אישית של סרגל הגישה המהירה
+@id	ui.customize_tags_not_built	התאמה אישית של תגיות... (לא בנוי)
+@id	ui.cut	גזור
+@id	ui.cut_2	גזור
+@id	ui.cut_the_selection	גזור את הבחירה
+@id	ui.dark	כהה
+@id	ui.data	נתונים
+@id	ui.date	תאריך
+@id	ui.date_time_2	תאריך &\nזמן
+@id	ui.debug	ניפוי באגים
+@id	ui.decrease_indentation	הקטן הזחה
+@id	ui.decrease_indentation_shift_tab	הקטן הזחה (Shift+Tab)
+@id	ui.default	ברירת מחדל
+@id	ui.default_format	פורמט ברירת מחדל
+@id	ui.default_format_for_pages_below	פורמט ברירת מחדל לדפים מתחת
+@id	ui.definition	הגדרה
+@id	ui.delete	מחק
+@id	ui.delete_assets_name_from_this_page_s_folder	למחוק את "assets/{name}" מתיקיית הדף?
+@id	ui.delete_columns_2	מחק עמודות \n
+@id	ui.delete_ellipsis	מחק...
+@id	ui.delete_file	מחק קובץ
+@id	ui.delete_notebook	מחק מחברת
+@id	ui.delete_notebook_2	מחק מחברת...
+@id	ui.delete_notebook_title_and_everything_inside_it	למחוק את המחברת "{title}" ואת כל מה שבתוכה?
+@id	ui.delete_permanently	מחק לצמיתות
+@id	ui.delete_rows_2	מחק שורות \n
+@id	ui.delete_tool	כלי מחיקה
+@id	ui.delete_tool_2	מחק את {tool}
+@id	ui.deleted_notebook	מחברת שנמחקה
+@id	ui.deleted_notebook_path	מחברת שנמחקה {path}
+@id	ui.deny	דחה
+@id	ui.diagram	דיאגרמה
+@id	ui.diamond	יהלום
+@id	ui.direction_from_the_words	כיוון מהמילים
+@id	ui.discovering_sections	מגלה מקטעים…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	אל תתריע שוב על בעיות צירוף דומות בהפעלה זו
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	אל תתריע שוב על אייקונים חסרים דומים בהפעלה זו
+@id	ui.do_not_warn_again_for_this_file_type_this_session	אל תתריע שוב עבור סוג קובץ זה בהפעלה זו
+@id	ui.dock_to_desktop	עגן לשולחן העבודה
+@id	ui.document_renderer_coming_soon	מציג מסמכים בקרוב
+@id	ui.don_t_show_this_again_in_this_session	אל תציג שוב בהפעלה זו
+@id	ui.don_t_show_this_ever	אל תציג לעולם
+@id	ui.draw	צייר
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	שרטט לולאה סביב הדיו כדי לאסוף אותו
+@id	ui.draw_here_2	שרטת \nכאן
+@id	ui.drawing	מצייר...
+@id	ui.drawing_saved_count_strokes	הציור נשמר, {count} קווי מתאר
+@id	ui.drawing_tools	כלי ציור
+@id	ui.drop_a_file_onto_the_page_to_add_it	גרור קובץ לדף כדי להוסיף אותו
+@id	ui.edit	עריכה
+@id	ui.editing	מעבד...
+@id	ui.egui_and_eframe	egui ו-eframe
+@id	ui.ellipse	אליפסה
+@id	ui.email	דוא"ל
+@id	ui.english	אנגלית
+@id	ui.equation	משוואה
+@id	ui.equation_name	משוואה: {name}
+@id	ui.eraser	מחקן
+@id	ui.error	שגיאה
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	כל חמישייה שורות חזקה מעט יותר לספירה קלה יותר.
+@id	ui.every_line_of_this_page_decides_for_itself	כל שורה בדף מחליטה בעצמה
+@id	ui.every_paragraph_decides_for_itself	כל פסקה מחליטה בעצמה
+@id	ui.expand	הרחב
+@id	ui.expand_all	הרחב הכל
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	ייצור יוצר ZIP שנבחר על ידי המשתמש, ואז מסיר את תיקיית ההפעלה שיוצאה.
+@id	ui.export_current_session_zip	ייצא ZIP של הפעלה נוכחית
+@id	ui.export_telemetry_zip	ייצא ZIP של טלמטריה
+@id	ui.eyedropper	מכשיר מציצת צבע
+@id	ui.eyedropper_not_built	מכשיר מציצת הצבע עדיין לא בנוי
+@id	ui.file	קובץ
+@id	ui.file_attachment_2	קובץ \nצרופה
+@id	ui.file_options	אפשרויות קובץ
+@id	ui.file_printout_2	קובץ \nהדפסה
+@id	ui.files	קבצים
+@id	ui.files_in_this_page	קבצים בדף זה
+@id	ui.find	חפש
+@id	ui.find_in_this_file	חפש בקובץ זה
+@id	ui.find_tags	חפש תגיות
+@id	ui.find_tags_3	חפש \nתגיות
+@id	ui.fit_the_page_to_the_available_width	התאם את הדף לרוחב הזמין
+@id	ui.folder_folder	תיקייה: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	התאם להגדרת המערכת (בהיר/כהה)
+@id	ui.format	פורמט
+@id	ui.format_background_2	רקע של פורמט \n
+@id	ui.format_for_this_page	פורמט לדף זה
+@id	ui.format_painter	מברשת עיצוב
+@id	ui.forward	קדימה
+@id	ui.forward_to_the_page_after_alt_right	מעבר לדף הבא (Alt+Right)
+@id	ui.fountain_pen	עט נובע
+@id	ui.from_camera	ממצלמה
+@id	ui.from_online	מאינטרנט
+@id	ui.full_page	דף מלא
+@id	ui.full_page_view_2	תצוגת דף מלא \n
+@id	ui.full_path_copied	הנתיב המלא הועתק
+@id	ui.give_the_page_the_whole_window	מילוי החלון בדף
+@id	ui.gray	אפור
+@id	ui.green	ירוק
+@id	ui.green_2	ירוק
+@id	ui.grey	אפור
+@id	ui.gridcraft_is_not_installed	GridCraft אינו מותקן
+@id	ui.help	עזרה
+@id	ui.hide	הסתר
+@id	ui.hide_everything_but_the_page	הסתרת הכל למעט הדף
+@id	ui.hide_page_title	הסתר כותרת דף
+@id	ui.hide_the_page_source	הסתר את מקור הדף
+@id	ui.hide_the_page_title	הסתר כותרת דף
+@id	ui.highlight	סימון
+@id	ui.highlighter	מסמן טקסט
+@id	ui.history	היסטוריה
+@id	ui.home	בית
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	רעיון
+@id	ui.images	תמונות
+@id	ui.immersive_reader	קורא אימרגסיבי
+@id	ui.import_file	ייבוא קובץ
+@id	ui.import_from_the_cloud	ייבוא מהענן
+@id	ui.import_notebook_folder	ייבוא תיקיית מחברת
+@id	ui.important	חשוב
+@id	ui.importing	מייבא…
+@id	ui.importing_onenote	ייבוא OneNote
+@id	ui.increase_indentation	הגדלת הזחה
+@id	ui.increase_indentation_tab	הגדלת הזחה (Tab)
+@id	ui.index_of_total_sections	{index} מתוך {total} סעיפים
+@id	ui.info	מידע
+@id	ui.inherit_notebook_section_or_global_setting	תורשתי (הגדרת מחברת, סעיף או גלובלית)
+@id	ui.input_mode	מצב קלט
+@id	ui.insert	הוספה
+@id	ui.insert_a_common_symbol	הוספת סמל נפוץ
+@id	ui.insert_column_left_2	הוסף עמודה \nשמאלה
+@id	ui.insert_column_right_2	הוסף עמודה \nימינה
+@id	ui.insert_printout	הוספת הדפסה
+@id	ui.insert_row_above_2	הוסף שורה \nמעל
+@id	ui.insert_row_below_2	הוסף שורה \nמתחת
+@id	ui.insert_space_2	הוספת מרווח \n
+@id	ui.insert_symbol	הוספת סמל
+@id	ui.insert_table_not_built	הוספת טבלה... (לא בנוי)
+@id	ui.insert_the_picture	הוספת תמונה
+@id	ui.insert_the_recording	הוספת הקלטה
+@id	ui.insert_the_video	הוספת וידאו
+@id	ui.inserted_name_and_count_printout_pages	הודבקו {name} ו-{count} דפי הדפסה
+@id	ui.interface_language	שפת ממשק
+@id	ui.interface_language_language	שפת ממשק: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	בעיות, מסלול העבודה והתיעוד נמצאים שם. NoteCraft אינו מתקשר איתו או עם כל שירות אחר באופן עצמאי.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	הוא מופיע כדי שלתיקיית הדף לא תהיה סודיות.
+@id	ui.italic	נטוי
+@id	ui.italic_ctrl_i	נטוי (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	יישור מתייחס לפסקת טקסט
+@id	ui.keep_this_window_above_the_others	החזק חלון זה מעל האחרים
+@id	ui.label	תווית
+@id	ui.label_not_built	{label} (לא בנוי)
+@id	ui.label_not_built_yet	{label}: טרם נבנה
+@id	ui.label_nothing_to_action	{label}: אין מה ל-{action}
+@id	ui.language_click_to_change_it	{language}. לחץ לשינוי.
+@id	ui.large	גדול
+@id	ui.large_squares	ריבועים גדולים
+@id	ui.laser_pointer	מצביע לייזר
+@id	ui.lasso_select	לולאה \nבחירה
+@id	ui.layout	פריסה
+@id	ui.leave_it	השאר כמות שהוא
+@id	ui.left_to_right	משמאל לימין
+@id	ui.level	רמה:
+@id	ui.licence	רישיון
+@id	ui.light	בהיר
+@id	ui.light_or_dark_and_the_accent_colour	בהיר או כהה, וצבע הדגשה
+@id	ui.line	קו
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	קווים או ריבועים מאחורי הדף, כמו על נייר
+@id	ui.link	קישור
+@id	ui.link_to_the_file_where_it_is	קישור לקובץ שבו הוא נמצא
+@id	ui.link_to_title_copied	הקישור ל-"{title}" הועתק
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	הוקשר {name} במקו; הקובץ לא הועתק
+@id	ui.links	קישורים
+@id	ui.live_captions	כתוביות חיות
+@id	ui.local_collection_level	רמת אוסף מקומי
+@id	ui.local_diagnostics	אבחון מקומי
+@id	ui.local_diagnostics_and_usage	אבחון מקומי ושימוש
+@id	ui.logging_folder_folder	תיקיית יומן: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	יומנים וטלמטריה נשארים במכשיר זה. NoteCraft אינו שולח אותם אוטומטית.
+@id	ui.magenta	מג'נטה
+@id	ui.make_the_page_larger	הגדלת הדף
+@id	ui.make_the_page_smaller	הקטנת הדף
+@id	ui.many_thanks_to_its_authors_and_contributors	— תודה רבה למחבריו ותורמיו.
+@id	ui.markdown	Markdown
+@id	ui.match_case	התאמת אותיות גדולות/קטנות
+@id	ui.math	מתמטיקה
+@id	ui.maximize	הגדלה למקסימום
+@id	ui.md_2	md
+@id	ui.media	מדיה
+@id	ui.medium	בינוני
+@id	ui.medium_squares	ריבועים בינוניים
+@id	ui.meeting_details	פרטי פגישה
+@id	ui.meeting_details_3	פרטי \nפגישה
+@id	ui.meetings	פגישות
+@id	ui.merge	מיזוג
+@id	ui.mermaid	Mermaid
+@id	ui.mint	מנטה
+@id	ui.mit_license	רישיון MIT
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT או Apache-2.0, לפי בחירתך. אמנות הקואלה אינה מכוסה בכך; ראה ATTRIBUTION.md.
+@id	ui.mode	מצב
+@id	ui.modify_tool	כלי עריכה
+@id	ui.more	עוד...
+@id	ui.more_2	עוד
+@id	ui.more_colours	צבעים נוספים
+@id	ui.more_styles	סגנונות נוספים
+@id	ui.more_tags	תגיות נוספות
+@id	ui.move_left	הזז שמאלה
+@id	ui.move_right	הזז ימינה
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	להעביר את "{title}" ואת כל מה שבתוכו (פריט {n}) לסל המיחזור של המחברת הזו?|להעביר את "{title}" ואת כל מה שבתוכו (פריטים {n}) לסל המיחזור של המחברת הזו?
+@id	ui.move_to_recycle_bin	הזז לסל המיחזור
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	מכחולי {moved} הועברו מהציור הישן של הדף לדף עצמו
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	מכחולי {moved} הועברו לדף; לא ניתן היה להסיר את קבצי הציור הישנים {left}
+@id	ui.moved_to_the_notebook_recycle_bin	הועבר לסל המיחזור של המחברת
+@id	ui.n_item_n_items	פריט {n}|פריטים {n}
+@id	ui.n_notebook_n_notebooks	מחברת {n}|מחברות {n}
+@id	ui.n_notebook_opened_n_notebooks_opened	מחברת {n} נפתחה|מחברות {n} נפתחו
+@id	ui.n_stroke_n_strokes	מכחול {n}|מכחולים {n}
+@id	ui.name_2	שם
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} טרם נבנה. ראה את מסלול המוצר לפרטים על מה שעתיד לבוא.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} הוא כעת קובץ בתיקייה של הדף הזה
+@id	ui.name_is_open_in_gridcraft	{name} פתוח ב-GridCraft
+@id	ui.name_not_used_by_the_page	{name}: לא בשימוש על ידי הדף
+@id	ui.narrow	צר
+@id	ui.narrow_ruled	משובץ צר
+@id	ui.new_gridcraft_spreadsheet	גיליון GridCraft חדש
+@id	ui.new_gridcraft_spreadsheet_not_installed	גיליון GridCraft חדש (לא מותקן)
+@id	ui.new_notebook	מחברת חדשה
+@id	ui.new_notebook_2	מחברת חדשה...
+@id	ui.new_page	דף חדש
+@id	ui.new_page_2	דף חדש...
+@id	ui.new_pages	דפים חדשים:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	דפים חדשים משתמשים ב-{format} אלא אם המחברת או הסעיף מציינים אחרת
+@id	ui.new_quick_note	הערה מהירה חדשה
+@id	ui.new_window	חלון חדש
+@id	ui.next	הבא
+@id	ui.next_match_enter_f3	התאמה הבאה (Enter, F3)
+@id	ui.no	לא
+@id	ui.no_colour	ללא צבע
+@id	ui.no_generated_preview_icon_is_available	אין תמונת תצוגה מקדימה שנוצרה זמינה.
+@id	ui.no_lines_behind_the_page	אין קווים מאחורי הדף
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	אין {name} לצד דף זה: יש להעביר את הטבלה תחילה
+@id	ui.no_notebooks_yet_use_new_notebook	טרם נוצרו מחברות. השתמש ב-"מחברת חדשה".
+@id	ui.no_pages_in_this_section_yet	טרם נוצרו דפים בסעיף זה.
+@id	ui.no_pages_match	אין התאמות לדפים.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	טרם נשמרו גרסאות. NoteCraft שומר עותק כאשר הדף משתנה.
+@id	ui.none	ללא
+@id	ui.normal_view	תצוגה רגילה\n
+@id	ui.not_built	טרם נבנה
+@id	ui.not_built_2	טרם נבנה
+@id	ui.not_built_yet	טרם נבנה
+@id	ui.not_drawn_why	לא צויר: {why}
+@id	ui.not_used_by_the_page	לא בשימוש על ידי הדף
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	כתיבת הערות וארגון ב-Rust טהור. ההערות שלך הם תיקיות וקבצים רגילים.
+@id	ui.notebook	מחברת
+@id	ui.notebook_closed_its_files_are_still_on_disk	המחברת נסגרה; הקבצים שלה עדיין על הכונן
+@id	ui.notebook_created	המחברת נוצרה
+@id	ui.notebook_information	מידע על המחברת
+@id	ui.notebook_recycle_bin_2	סל המיחזור של המחברת
+@id	ui.notebook_recycle_bin_3	סל מיחזור מחברות\n
+@id	ui.notebooks_2	מחברות
+@id	ui.notebooks_and_pages_in_their_own_columns	מחברות ודפים בעמודות נפרדות
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	מחברות וסעיפים בעמודה אחת, דפים בעמודה הבאה
+@id	ui.notebooks_folder_folder	תיקיית מחברות: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	המחברות שתפתח תופענה כאן.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft מצא קובץ מצורף שאינו מופיע בהפניה של הדף הזה:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft מצא קובץ מצורף ללא התמונה שנוצרה עבורו:
+@id	ui.notecraft_ruled	משובץ NoteCraft
+@id	ui.notecraft_squares	ריבועי NoteCraft
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	הערות כתיקיות רגילות. פתח דף, או צור מחברת כדי להתחיל.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	אין כלל ב-{path}: הקישור מפנה לדף או קובץ שאינם קיימים
+@id	ui.nothing_here_can_show_this_kind_of_file	שום דבר כאן לא יכול להציג סוג קובע זה.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	לא הועתק כלל. הקישר ייקרע אם הקובץ יזוז.
+@id	ui.nothing_to_redo	אין מה לבצע מחדש
+@id	ui.nothing_to_undo	אין מה לבטל
+@id	ui.numbering	מספור
+@id	ui.off	כבוי
+@id	ui.off_2	כבוי
+@id	ui.office_document	מסמך אופיס
+@id	ui.office_text_inspection	בדיקת טקסט אופיס
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	עובד הייבוא OfficeIMO הופסק באופן בלתי צפוי
+@id	ui.ok	אישור
+@id	ui.one_tree_of_notebooks	עץ מחברות אחד
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive ו-SharePoint: טרם נבנו. הפנה את NoteCraft לתיקייה שכבר מופקחת על ידי כלי הסינכרון שלך והיא תהיה אותו הדבר.
+@id	ui.onenote_import	ייבוא OneNote
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	מחברות מקוונות (OneDrive, SharePoint) טרם נבנו. מחברת בתיקייה שכבר מופקחת על ידי כלי הסינכרון שלך מסונכרנת על ידו.
+@id	ui.only_a_list_item_can_be_indented	רק פריט רשימה ניתן להזחה
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	פתח אותו רק אם אתה סומך על הקובץ ועל מי שיצר אותו.
+@id	ui.open	פתח
+@id	ui.open_a_folder	פתח תיקיה...
+@id	ui.open_a_notebook	פתח מחברת
+@id	ui.open_a_page_first	פתח דף תחילה
+@id	ui.open_a_page_first_then_drop_files_onto_it	פתח דף תחילה, ואז גרור קבצים אליו.
+@id	ui.open_attachment	פתח קובץ מצורף
+@id	ui.open_every_level	פתח כל רמה
+@id	ui.open_folder	פתח תיקיה
+@id	ui.open_in_folder	פתח בתיקייה
+@id	ui.open_name	פתח {name}
+@id	ui.open_telemetry_folder	פתח תיקיית טלמטריה
+@id	ui.open_the_artcraft_discord	פתח את דיסקורד ArtCraft
+@id	ui.open_this_notebook	פתח מחברת זו
+@id	ui.open_using_shell	פתח באמצעות מערכת ההפעלה
+@id	ui.open_with_associated_app	פתח עם האפליקציה המקושרת
+@id	ui.opened	נפתח
+@id	ui.opened_path	נפתח {path}
+@id	ui.opened_path_it_has_no_pages_yet	נפתח {path}; אין בו דפים עדיין
+@id	ui.opened_the_containing_folder	התיקייה המכילה נפתחה
+@id	ui.opened_url_in_the_browser	נפתח {url} בדפדפן
+@id	ui.opened_using_the_associated_application	נפתח באמצעות האפליקציה המקושרת
+@id	ui.opening_path	פותח {path}
+@id	ui.options	אפשרויות
+@id	ui.orange	כתום
+@id	ui.page	דף
+@id	ui.page_colour	צבע הדף
+@id	ui.page_direction_from_the_words	כיוון הדף מהמילים
+@id	ui.page_format	פורמט הדף
+@id	ui.page_left_to_right	הדף משמאל לימין
+@id	ui.page_right_to_left	הדף מימין לשמאל
+@id	ui.page_setup	הגדרות דף
+@id	ui.page_source	מקור הדף
+@id	ui.page_versions_2	גרסאות הדף
+@id	ui.page_versions_4	גרסאות \n של הדף
+@id	ui.page_width	רוחב דף
+@id	ui.pages	דפים
+@id	ui.paper_behind_the_page	{paper} מאחורי הדף
+@id	ui.paper_size	גודל נייר
+@id	ui.para	פסקה
+@id	ui.paragraph_direction_from_the_words	כיוון פסקה לפי המילים
+@id	ui.paragraph_left_to_right	פסקה משמאל לימין
+@id	ui.paragraph_right_to_left	פסקה מימין לשמאל
+@id	ui.paragraph_selected	פסקה נבחרת
+@id	ui.paste	הדבק
+@id	ui.pasted	הודבק
+@id	ui.pasted_a_picture_width_by_height	הודבקה תמונה, {width} על ידי {height}
+@id	ui.pasted_formatted_content	תוכן מעוצב הודבק
+@id	ui.path_opened_as_an_empty_notebook	{path} נפתח כמחברת ריקה
+@id	ui.pdf_and_office_documents	מסמכי PDF ו-Office
+@id	ui.pdf_document	מסמך PDF
+@id	ui.pdf_text_inspection	בדיקת טקסט ב-PDF
+@id	ui.pen	עט
+@id	ui.pencil	עיפרון
+@id	ui.permanently_delete	למחוק לצמיתות?
+@id	ui.permanently_delete_title_and_everything_inside_it	למחוק לצמיתות את "{title}" ואת כל מה שבתוכו?
+@id	ui.permanently_deleted	נמחק לצמיתות
+@id	ui.phone_number	מספר טלפון
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	בחר מסמך PDF או Office והכנס את עמודיו כתמונות
+@id	ui.pick_the_caret_s_column	בחר את עמודת המיקום של הסמן
+@id	ui.pick_the_caret_s_row	בחר את שורת המיקום של הסמן
+@id	ui.pick_the_whole_table	בחר את כל הטבלה
+@id	ui.picture_from_a_file	תמונה מקובץ
+@id	ui.pictures	תמונות
+@id	ui.plain	רגיל
+@id	ui.plain_text	טקסט רגיל
+@id	ui.powered_by	באמצעות
+@id	ui.pressure_sensitivity_now_of_100	רגישות ללחץ {now} מתוך 100
+@id	ui.pressure_sensitivity_unavailable	רגישות ללחץ אינה זמינה
+@id	ui.previous	הקודם
+@id	ui.previous_match_shift_enter	התאמה קודמת (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	הדפסה זמינה למסמכי PDF ו-Office.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	פרטיות היא בראש סדר העדיפויות שלנו. כל היומן והטלמטריה נשארים במכשיר זה. NoteCraft לעולם לא שולח אותם באופן אוטומטי.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	פרטיות היא בראש סדר העדיפויות שלנו. היומן והטלמטריה נשארים במכשיר זה. NoteCraft אינו שולח אותם אלינו.
+@id	ui.purple	סגול
+@id	ui.put_a_sheet_to_draw_on_into_the_page	הוסף דף ציור לדף
+@id	ui.put_another_tool_on_the_rack	הוסף כלי נוסף למדף
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	החזר את הסמן למילים ולסמן הכתיבה
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	החזר את תוכן גיליון העבודה לטבלה זו
+@id	ui.question	שאלה
+@id	ui.quote_2	ציטוט
+@id	ui.quote_this_paragraph	ציטט את הפסקה הזו
+@id	ui.read_back_from_it_2	קרא בחזרה \n ממנו
+@id	ui.read_back_rows_rows_and_columns_columns	קרא בחזרה {rows} שורות ו-{columns} עמודות
+@id	ui.read_only	לקריאה בלבד
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	חילוץ טקסט לקריאה בלבד. הדמיה מלאה של המסמך תגיע בקרוב.
+@id	ui.ready_2	מוכן
+@id	ui.recently_opened	נפתחו לאחרונה
+@id	ui.recording	הקלטה
+@id	ui.rectangle	מרובע
+@id	ui.red	אדום
+@id	ui.red_2	אדום
+@id	ui.redo	בצע מחדש
+@id	ui.redo_ctrl_y	בצע מחדש (Ctrl+Y)
+@id	ui.remember_for_later	זכור למועד מאוחר יותר
+@id	ui.remove_from_list	הסר מהרשימה
+@id	ui.remove_this_tool_from_the_rack	הסר כלי זה מהמדף
+@id	ui.removed_notebook_from_the_known_notebooks_list	הסר מחברת מרשימת המחברות המוכרות
+@id	ui.rename	שנה שם
+@id	ui.rename_ellipsis	שנה שם...
+@id	ui.renamed	שם שונה
+@id	ui.rendered_svg_preview	תצוגה מקדימה של SVG שהודמה
+@id	ui.repair_icon	תקן סמל
+@id	ui.repaired_the_attachment_icon_for_name	תוקן סמל הקובץ הצמוד עבור {name}
+@id	ui.replay	הפעל מחדש
+@id	ui.reset_app_preferences	אפס הגדרות אפליקציה
+@id	ui.reset_app_preferences_2	אפס הגדרות אפליקציה…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	לאפס את ההגדרות השמורות של NoteCraft לברירות המחדל המובנות?
+@id	ui.reset_preferences	אפס הגדרות
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	אפס ערכות נושא, פריסה, בחירות סרטון והגדרות אחרות שמורות של NoteCraft לברירות המחדל.
+@id	ui.restore	שחזר
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	שחזר דפים, מקטעים וקבוצות שהוסרו ממחברת זו
+@id	ui.restored_the_saved_page_version	גרסת הדף השמורה שוחזרה
+@id	ui.restored_to_the_original_location	שוחזר למיקום המקורי
+@id	ui.right_to_left	מימין לשמאל
+@id	ui.rounded	מעוגל
+@id	ui.rub_out_whatever_the_pointer_passes_over	מחק את כל מה שהסמן עובר עליו
+@id	ui.rule_line_colour_not_built	צבע קווי רשת (לא בנוי)
+@id	ui.ruled	משורטט
+@id	ui.save_picture_2	שמור תמונת \n
+@id	ui.saved	נשמר
+@id	ui.saved_copies_of_this_page	עותקים שמורים של דף זה
+@id	ui.saved_the_drawing_as_a_picture_path	הציור נשמר כתמונה: {path}
+@id	ui.saved_time	{time} נשמר
+@id	ui.search	חפש
+@id	ui.search_all_pages	חפש בכל הדפים
+@id	ui.section	מקטע
+@id	ui.section_group	קבוצת מקטעים
+@id	ui.see_and_restore_saved_copies_of_this_page	ראה ושחזר עותקים שמורים של דף זה
+@id	ui.select	בחר
+@id	ui.select_columns_2	בחר \n עמודות
+@id	ui.select_rows_2	בחר \n שורות
+@id	ui.select_some_words_first	בחר קודם מילים כלשהן
+@id	ui.select_table_2	בחר \n טבלה
+@id	ui.selected_text_next_typing	טקסט נבחר / הקלדה הבאה
+@id	ui.selection	בחירה
+@id	ui.send_page	שלח דף
+@id	ui.send_page_3	שלח \n דף
+@id	ui.separate_pages	דפים נפרדים
+@id	ui.session_id_id	מזהה מפגש: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	קבע את כיוון הטקסט הנבחר, או הטקסט שיכתב בהמשך
+@id	ui.shape	צורה
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: גרור על הדף כדי לצייר אחת
+@id	ui.shapes	צורות
+@id	ui.show	הצג
+@id	ui.show_notebooks_folder	הצג תיקיית מחברות
+@id	ui.show_or_hide_the_notebooks_column	הצג או הסתר את עמודת המחברות
+@id	ui.show_the_code	הצג את הקוד
+@id	ui.show_the_notebooks_again	הצג שוב את המחברות
+@id	ui.show_the_notebooks_folder	הצג תיקיית מחברות
+@id	ui.show_the_page_at_100	הצג את הדף ב-100%
+@id	ui.show_the_page_source	הצג את מקור הדף
+@id	ui.show_the_strokes	הצג את הקווים
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	קטן
+@id	ui.small_squares	ריבועים קטנים
+@id	ui.somewhere_else	מקום אחר
+@id	ui.source	מקור
+@id	ui.split	פצל
+@id	ui.spreadsheet	גיליון נתונים
+@id	ui.square	ריבוע
+@id	ui.squares	@plural:ריבוע|ריבועים
+@id	ui.standard	סטנדרטי
+@id	ui.standard_ruled	סטנדרטי עם שורות
+@id	ui.star	כוכב
+@id	ui.starting_officeimo	טוען את OfficeIMO…
+@id	ui.stencils	סטנסילים
+@id	ui.strike_through	קו חוצה
+@id	ui.strikethrough	קו חוצה
+@id	ui.styles	סגנונות
+@id	ui.styles_2	סגנונות
+@id	ui.svg_source	מקור SVG
+@id	ui.symbol	סמל
+@id	ui.symbols	@plural:סמל|סמלים
+@id	ui.table_3	טבלה
+@id	ui.tables	@plural:טבלה|טבלאות
+@id	ui.tabs_layout	פריסת לשוניות
+@id	ui.tag_tag	תג {tag}
+@id	ui.tags	תגים
+@id	ui.take_the_caret_s_column_out	הסר את עמודת המיקוד
+@id	ui.take_the_caret_s_row_out	הסר את שורת המיקוד
+@id	ui.take_the_last_stroke_back	בטל את הקו האחרון
+@id	ui.take_the_marks_off	הסר את הסימנים
+@id	ui.teal_2	טורקיז
+@id	ui.text	טקסט
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	בדיקת הטקסט מוצגת להלן.
+@id	ui.text_run_direction	כיוון ריצת טקסט
+@id	ui.thank_you_for_trying_notecraft	תודה שניסית את NoteCraft!
+@id	ui.that_file_has_nothing_in_it_to_put_back	לקובץ זה אין תוכן לשחזור
+@id	ui.that_file_is_not_in_this_page_s_folder	הקובץ אינו נמצא בתיקייה של הדף הזה
+@id	ui.that_is_not_something_a_page_can_hold	זהו דבר שאינו יכול להיכלל בדף
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	הקישור מצביע מחוץ לתיקיית המחברות, ולכן לא נעקב אחריו
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	דף זה אינו נמצא במחברת פתוחה
+@id	ui.the_attachment_returned_an_invalid_page_link	הקובץ המצורף החזיר קישור דף לא תקין
+@id	ui.the_built_in_default	הברירת מחדל המובנית
+@id	ui.the_code	הקוד
+@id	ui.the_diagnostics_folder_could_not_be_created_error	לא ניתן ליצור את תיקיית האבחון: {error}
+@id	ui.the_file_could_not_be_opened_error	לא ניתן לפתוח את הקובץ: {error}
+@id	ui.the_file_is_gone	הקובץ אינו קיים עוד
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	הקובץ הוסר מהדיסק. פעולת ביטול לא תחזיר את הקובץ.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	הקובץ בטוח. NoteCraft יכול להוסיף קישור אליו בסוף הדף.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	הקובץ לא צורף: פקודת ההצמדה החזירה תוצאה בלתי צפויה.
+@id	ui.the_folder_could_not_be_opened_error	לא ניתן לפתוח את התיקייה: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	הפורמט נקבע בעת יצירת הדף
+@id	ui.the_global_setting	ההגדרה הגלובלית
+@id	ui.the_last_tool_stays_on_the_rack	הכלי האחרון נשאר על הסרגל
+@id	ui.the_notebook_could_not_be_deleted_error	לא ניתן למחוק את המחברת: {error}
+@id	ui.the_notebook_or_section_setting	ההגדרה של המחברת או החלק
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	הקובץ המקורי עדיין בטוח. NoteCraft יכול לייצר מחדש את האייקון לצדו.
+@id	ui.the_page_beside_the_notebooks	הדף הסמוך למחברות
+@id	ui.the_page_is_colour	הדף הוא {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	צבע הדף תואם את צבע הערכת הנושא
+@id	ui.the_page_source_beside_the_page	מקור הדף, לצד הדף
+@id	ui.the_paper_and_colour_apply_to_this_page_only	הנייר והצבע חלים רק על דף זה.
+@id	ui.the_theme_could_not_be_saved_error	לא ניתן לשמור את ערכת הנושא: {error}
+@id	ui.the_time_now	השעה הנוכחית
+@id	ui.the_welcome_notebook	מחברת הברכה
+@id	ui.the_whole_page_reads_left_to_right	קריאת הדף כולה משמאל לימין
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	קריאת הדף כולה מימין לשמאל (ערבית, עברית)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	החלון מצויר על ידי GPU. האייקים מצוירים בקוד. הלוגו הוא התמונה היחידה.
+@id	ui.theme	ערכת נושא
+@id	ui.theme_theme	ערכת נושא {theme}
+@id	ui.theme_theme_2	ערכת נושא: {theme}
+@id	ui.theme_theme_click_to_change_it	ערכת נושא {theme}. לחץ לשינוי.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	טרם נוצרו מחברות. "חדש" יתחיל אחת.
+@id	ui.there_is_no_drawing_on_this_page	אין ציור בדף זה
+@id	ui.there_is_no_earlier_page	אין דף קודם
+@id	ui.there_is_no_later_page	אין דף הבא
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	אין מקום על הסרגל לכלי נוסף
+@id	ui.there_is_no_stroke_to_take_back	אין קו לבטל
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	אין תוכן בגזיר להדבקה
+@id	ui.thickness	עובי
+@id	ui.this_cannot_be_undone	פעולה זו אינה ניתנת לביטול.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	לא ניתן להעביר את זה לסל המחסלים. לא נמחק דבר.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	פעולה זו אינה מוחקת מחברות או דפים. היא אינה ניתנת לביטול.
+@id	ui.this_file_will_be_opened_by_its_associated_application	הקובץ ייפתח באמצעות היישום המשויך אליו.
+@id	ui.this_notebook_s_recycle_bin_is_empty	סל המחסלים של המחברת הזו ריק.
+@id	ui.this_page	דף זה
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	דף זה מכיל סימון ש-NoteCraft עדיין לא עורך, ולכן הוא מוצג כפי שהוא נקרא.
+@id	ui.this_page_reads_left_to_right	קריאת הדף משמאל לימין
+@id	ui.this_page_reads_right_to_left	קריאת הדף מימין לשמאל
+@id	ui.this_paragraph_decides_from_its_own_first_letter	הפסקה הזו קובעת כיוון לפי האות הראשונה שלה
+@id	ui.this_paragraph_fills_the_column	הפסקה ממלאת את העמודה
+@id	ui.this_paragraph_fills_the_column_stretched_hard	הפסקה ממלאת את העמודה, במתיחה חזקה
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	הפסקה ממלאת את העמודה, במתיחה קלה
+@id	ui.this_paragraph_is_ragged_again	הפסקה הזו שוב עם שוליים לא ישרים
+@id	ui.this_paragraph_reads_left_to_right	קריאת הפסקה משמאל לימין
+@id	ui.this_paragraph_reads_right_to_left	קריאת הפסקה מימין לשמאל
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	קריאת הפסקה מימין לשמאל (ערבית, עברית)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	קריאת הפסקה לפי כיוון המילים בה
+@id	ui.this_picture_cannot_be_shown_here	תמונה זו לא יכולה להיות מוצגת כאן.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	פעולה זו מסירה את תיקיית המחברת מהדיסק ואינה ניתנת לביטול.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	ריצת טקסט זו קוראת משמאל לימין. שורה מעורבת עדיין מצויה בסדר אחד; ראה את מסלול העבודה
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	ריצת טקסט זו קוראת מימין לשמאל. שורה מעורבת עדיין מצויה בסדר אחד; ראה את מסלול העבודה
+@id	ui.this_svg_cannot_be_rendered_here	SVG זה לא יכול להיות מוצג כאן.
+@id	ui.this_window_behaves_like_the_others	חלון זה מתנהג כמו האחרים
+@id	ui.this_window_stays_on_top	חלון זה נשאר בחזית
+@id	ui.time	זמן
+@id	ui.time_stamp	חותמת זמן
+@id	ui.title_2	כותרת
+@id	ui.title_saved	הכותרת נשמרה
+@id	ui.title_the_folder_name_does_not_change	כותרת (שם התיקייה אינו משתנה)
+@id	ui.to_do_2	לעשות
+@id	ui.to_do_tag_2	לעשות\nTag
+@id	ui.today_s_date	תאריך היום
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	הוסר מהסרגל
+@id	ui.took_the_last_stroke_back_count_left	בטל את הקו האחרון; נותרו {count}
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	כלים
+@id	ui.top	למעלה
+@id	ui.triangle	משולש
+@id	ui.type	סוג
+@id	ui.under_the	מתחת ל-
+@id	ui.undo	ביטול פעולה
+@id	ui.undo_ctrl_z	ביטול פעולה (Ctrl+Z)
+@id	ui.undo_stroke	קו \n
+@id	ui.unread	לא נקרא
+@id	ui.updated_the_welcome_notebook	עודכן מחברת הברכה
+@id	ui.use_notecraft_s_own_title_bar	השתמש בשורת הכותרת של NoteCraft
+@id	ui.use_the_system_title_bar	השתמש בשורת הכותרת של המערכת
+@id	ui.version_version_alpha	גרסה {version} (אלפא)
+@id	ui.very_large	גדול מאוד
+@id	ui.very_large_squares	ריבועים גדולים מאוד
+@id	ui.view	תצוגה
+@id	ui.views	תצוגות
+@id	ui.warn	אזהרה
+@id	ui.web_site_to_visit	אתר לבקר בו
+@id	ui.welcome_to_notecraft	ברוכים הבאים ל-NoteCraft
+@id	ui.what_should_happen_to_this_file	מה צריך לקרות עם הקובץ הזה?
+@id	ui.what_to_add	מה להוסיף
+@id	ui.wide	רחב
+@id	ui.wide_ruled	משובץ רחב
+@id	ui.window	חלון
+@id	ui.write_anywhere_on_the_page	כתוב בכל מקום בדף
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	כתוב מחדש את הציור ללא קריאות עט, לשליחה
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	הצג את הטבלה ופתח אותה ב-GridCraft
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	צהוב
+@id	ui.yellow_2	צהוב
+@id	ui.you_can_continue_working_while_the_import_runs	ניתן להמשיך לעבוד בזמן שהייבוא פועל.
+@id	ui.you_can_restore_it_from_history	ניתן לשחזר אותו מההיסטוריה.
+@id	ui.zoom	תקריב
+@id	ui.zoom_in	הגדל תקריב
+@id	ui.zoom_out	הקטן תקריב
+@id	ui.zoom_to_100	תקריב ל-100%

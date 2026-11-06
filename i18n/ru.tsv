@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	Переместить «{title}» и всё внутри него ({n} элемент) в корзину этого блокнота?|Переместить «{title}» и всё внутри него ({n} элемента) в корзину этого блокнота?|Переместить «{title}» и всё внутри него ({n} элементов) в корзину этого блокнота?
+@plural	{n} item|{n} items	{n} элемент|{n} элемента|{n} элементов
+@plural	{n} notebook opened|{n} notebooks opened	открыт {n} блокнот|открыто {n} блокнота|открыто {n} блокнотов
+@plural	{n} notebook|{n} notebooks	{n} блокнот|{n} блокнота|{n} блокнотов
+@plural	{n} stroke|{n} strokes	{n} штрих|{n} штриха|{n} штрихов
+@id	language.name	Русский
+@id	ui.a_bullet_list	Маркированный список
+@id	ui.a_column_left_of_the_caret_s	Столбец слева от курсора
+@id	ui.a_column_right_of_the_caret_s	Столбец справа от курсора
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	Копия сохраняется в папку этой страницы, поэтому блокнот переносит её повсюду.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	Направление применяется к абзацу текста
+@id	ui.a_file_copied_in_or_linked_where_it_is	Файл: скопирован или связан по текущему пути
+@id	ui.a_link	Ссылка
+@id	ui.a_link_to_a_page_or_an_address	Ссылка на страницу или адрес
+@id	ui.a_link_to_paste_into_another_page	Ссылка для вставки в другую страницу
+@id	ui.a_mermaid_diagram_kept_as_its_source	Диаграмма Mermaid, сохранённая как исходный код
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	Новый блокнот — это папка в {folder} с одним разделом и одной страницей внутри.
+@id	ui.a_new_page_in_this_section	Новая страница в этом разделе
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	Новая электронная таблица рядом со страницей, открытая в GridCraft
+@id	ui.a_numbered_list	Нумерованный список
+@id	ui.a_page_here	Страница здесь
+@id	ui.a_row_above_the_caret_s	Строка выше курсора
+@id	ui.a_row_below_the_caret_s	Строка ниже курсора
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	Таблица сохраняет строку заголовка и как минимум один столбец
+@id	ui.a_table_pick_its_size	Таблица: выберите её размер
+@id	ui.a_tag_goes_on_a_line_of_text	Метка применяется к строке текста
+@id	ui.a_to_do_box_on_this_line_ctrl_1	Чекбокс на этой строке (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	Экскурсия по NoteCraft, отображаемая на отдельных страницах. Добавляется в пустую папку блокнотов при первом запуске; это действие добавит его снова или откроет, если он всё ещё здесь.
+@id	ui.about_notecraft	О NoteCraft
+@id	ui.accent_accent	Акцент: {accent}
+@id	ui.accept	Принять
+@id	ui.add	Добавить
+@id	ui.add_a_blank_paragraph_at_the_caret	Добавить пустой абзац в позицию курсора
+@id	ui.add_a_page_here	Добавить страницу здесь
+@id	ui.add_a_sub_page	Добавить подстраницу
+@id	ui.add_another_tool	Добавить ещё {tool}
+@id	ui.add_file	Добавить файл
+@id	ui.add_file_to_this_page	Добавить файл на эту страницу
+@id	ui.add_inside_this_kind	Добавить внутрь этого {kind}
+@id	ui.add_name	Добавить {name}
+@id	ui.add_name_left_more	Добавить {name} ({left} больше)
+@id	ui.add_page	Добавить страницу
+@id	ui.add_the_welcome_notebook	Добавить приветственный блокнот
+@id	ui.add_tool	Добавить {tool}
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	В конец страницы добавлена ссылка на {name}
+@id	ui.added_a_tool	Добавлен {tool}
+@id	ui.address	Адрес
+@id	ui.alignment	Выравнивание
+@id	ui.alignment_and_direction	Выравнивание и направление
+@id	ui.alignment_and_which_way_this_paragraph_reads	Выравнивание и направление чтения этого абзаца
+@id	ui.all_of_them_live_in_folder	Все они находятся в {folder}
+@id	ui.always_on_top	Поверх всех окон
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	Уравнение, записанное в TeX: выберите шаблон для начала
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	Настройки приложения сброшены. Перезапустите NoteCraft, чтобы применить все значения по умолчанию.
+@id	ui.appearance	Внешний вид
+@id	ui.append_link	Добавить ссылку
+@id	ui.application_preferences	Настройки приложения
+@id	ui.arrow	Стрелка
+@id	ui.attach_the_file	Прикрепить файл
+@id	ui.attachment_icon_missing	Иконка вложения отсутствует
+@id	ui.attachment_not_linked	Вложение не связано
+@id	ui.attachment_recovery	Восстановление вложений
+@id	ui.authors	Авторы
+@id	ui.auto	Авто
+@id	ui.automatic_system_language	Автоматически (язык системы)
+@id	ui.back	Назад
+@id	ui.back_to_the_notebook	Вернуться к блокноту
+@id	ui.back_to_the_page_before_alt_left	Вернуться к предыдущей странице (Alt+Left)
+@id	ui.basic_text	Базовый текст
+@id	ui.black	чёрный
+@id	ui.blue	синий
+@id	ui.blue_2	Синий
+@id	ui.bold	Жирный
+@id	ui.bold_ctrl_b	Жирный (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	Оба, так как штамп страницы записывается собственным стилем
+@id	ui.browse_for_a_notebook	Выбрать блокнот…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	Просматривайте блокноты в {folder} или выберите другую папку.
+@id	ui.brush_pen	Кисть
+@id	ui.built_with	Создано с помощью
+@id	ui.bullets	Маркеры
+@id	ui.cancel	Отмена
+@id	ui.cancel_import	Отменить импорт
+@id	ui.cannot_open_gridcraft_error	Не удалось открыть GridCraft: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	Не удалось открыть таблицу в GridCraft: {error}
+@id	ui.cannot_save_the_pasted_picture_error	Не удалось сохранить вставленное изображение: {error}
+@id	ui.cannot_write_name_error	Не удалось записать {name}: {error}
+@id	ui.cannot_write_the_drawing_error	Не удалось сохранить рисунок: {error}
+@id	ui.cannot_write_the_picture_error	Не удалось сохранить изображение: {error}
+@id	ui.cannot_write_this_page_s_ink	Не удалось сохранить чернила этой страницы
+@id	ui.choose_a_custom_ink_colour	Выберите пользовательский цвет чернил
+@id	ui.choose_a_file_to_attach	Выберите файл для прикрепления
+@id	ui.choose_a_file_to_import	Выберите файл для импорта
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	Выберите уровень локального сбора данных. По умолчанию в релизных сборках логирование отключено.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	Выберите блокнот, папку с блокнотами или пустую папку для нового блокнота
+@id	ui.choose_a_onenote_notebook_folder	Выберите папку блокнота OneNote
+@id	ui.choose_a_pdf_or_office_document_to_print_out	Выберите PDF-документ или документ Office для печати
+@id	ui.choose_a_picture	Выберите изображение
+@id	ui.choose_a_section_to_see_its_pages	Выберите раздел, чтобы увидеть его страницы.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	Выберите символ для вставки в позицию курсора
+@id	ui.choose_how_to_insert_a_picture	Выберите способ вставки изображения
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	Выберите, что NoteCraft записывает локально. Ничего не загружается автоматически.
+@id	ui.chosen_for_this_page	выбрано для этой страницы
+@id	ui.circle	Круг
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	Очистить все локальные сессии телеметрии и экспортированные ZIP-файлы телеметрии?
+@id	ui.clear_formatting	Очистить форматирование
+@id	ui.clear_formatting_2	Очистить форматирование
+@id	ui.clear_telemetry	Очистить телеметрию
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	Нажмите на штрих, чтобы выделить его, затем переместите, растяните или удалите
+@id	ui.click_in_a_table_first	Сначала нажмите в таблице
+@id	ui.click_in_the_page_first	Сначала нажмите на странице
+@id	ui.click_in_the_page_first_then_use_the_ribbon	Сначала нажмите на странице, затем используйте ленту
+@id	ui.click_in_the_table_first	Сначала нажмите в таблице
+@id	ui.clipboard	Буфер обмена
+@id	ui.close	Закрыть
+@id	ui.close_notebook	Закрыть блокнот
+@id	ui.close_the_find_bar_escape	Закрыть панель поиска (Escape)
+@id	ui.close_the_source_pane	Закрыть панель исходного кода
+@id	ui.cloud_import_is_not_implemented_yet	Импорт из облака ещё не реализован.
+@id	ui.code_2	Код
+@id	ui.code_in_one_line	Код, в одну строку
+@id	ui.collapse	Свернуть
+@id	ui.collapse_all	Свернуть все
+@id	ui.college	Колледж
+@id	ui.college_ruled	Правила колледжа
+@id	ui.colour	Цвет
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	Цвет удалён
+@id	ui.colour_set_to_colour	Цвет установлен в {colour}
+@id	ui.colours	Цвета
+@id	ui.columns_x_rows_table	Таблица {columns} x {rows}
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	Контакт
+@id	ui.convert	Преобразовать
+@id	ui.convert_to_gridcraft_2	Преобразовать в \n GridCraft
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	Преобразовать в GridCraft: GridCraft не установлен
+@id	ui.copied	Скопировано
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	Копирует файл и вставляет по одному изображению для каждой напечатанной страницы.
+@id	ui.copy	Копировать
+@id	ui.copy_full_path	Копировать полный путь
+@id	ui.copy_link_to_page	Копировать ссылку на страницу
+@id	ui.copy_the_selection	Копировать выделение
+@id	ui.could_not_attach_name_before_rendering_its_pages	Не удалось прикрепить {name} до рендеринга его страниц
+@id	ui.could_not_attach_name_to_this_page	Не удалось прикрепить {name} к этой странице.
+@id	ui.could_not_complete_the_action_error	Не удалось выполнить действие: {error}
+@id	ui.could_not_import_the_notebook_error	Не удалось импортировать блокнот: {error}
+@id	ui.could_not_open_the_containing_folder_error	Не удалось открыть папку с содержимым: {error}
+@id	ui.could_not_open_the_file_error	Не удалось открыть файл: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	Не удалось восстановить иконку для {name}: {error}
+@id	ui.could_not_reset_app_preferences_error	Не удалось сбросить настройки приложения: {error}
+@id	ui.could_not_restore_the_link_for_name_error	Не удалось восстановить ссылку для {name}: {error}
+@id	ui.could_not_save_the_interface_language_error	Не удалось сохранить язык интерфейса: {error}
+@id	ui.could_not_store_printout_page_page_error	Не удалось сохранить страницу печати {page}: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} элементов, {colour} цвет
+@id	ui.create	Создать
+@id	ui.created	Создано
+@id	ui.critical	Критический
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V вставляет содержимое на страницу
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y возвращает обратно
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z отменяет последнее изменение
+@id	ui.current_session_id	Текущая сессия: {id}
+@id	ui.custom	пользовательский
+@id	ui.customize_quick_access_toolbar	Настроить панель быстрого доступа
+@id	ui.customize_tags_not_built	Настроить теги... (не реализовано)
+@id	ui.cut	Вырезать
+@id	ui.cut_2	вырезать
+@id	ui.cut_the_selection	Вырезать выделение
+@id	ui.dark	Тёмная
+@id	ui.data	Данные
+@id	ui.date	Дата
+@id	ui.date_time_2	Дата и \n время
+@id	ui.debug	отладка
+@id	ui.decrease_indentation	Уменьшить отступ
+@id	ui.decrease_indentation_shift_tab	Уменьшить отступ (Shift+Tab)
+@id	ui.default	По умолчанию
+@id	ui.default_format	Формат по умолчанию
+@id	ui.default_format_for_pages_below	Формат по умолчанию для страниц ниже
+@id	ui.definition	Определение
+@id	ui.delete	Удалить
+@id	ui.delete_assets_name_from_this_page_s_folder	Удалить "assets/{name}" из папки этой страницы?
+@id	ui.delete_columns_2	Удалить столбцы \n
+@id	ui.delete_ellipsis	Удалить...
+@id	ui.delete_file	Удалить файл
+@id	ui.delete_notebook	Удалить блокнот
+@id	ui.delete_notebook_2	Удалить блокнот...
+@id	ui.delete_notebook_title_and_everything_inside_it	Удалить блокнот "{title}" и всё его содержимое?
+@id	ui.delete_permanently	Удалить навсегда
+@id	ui.delete_rows_2	Удалить строки \n
+@id	ui.delete_tool	Инструмент удаления
+@id	ui.delete_tool_2	Удалить {tool}
+@id	ui.deleted_notebook	Блокнот удалён
+@id	ui.deleted_notebook_path	Блокнот {path} удалён
+@id	ui.deny	Отказать
+@id	ui.diagram	Диаграмма
+@id	ui.diamond	Ромб
+@id	ui.direction_from_the_words	Направление от слов
+@id	ui.discovering_sections	Поиск разделов…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	Больше не предупреждать об аналогичных проблемах с вложениями в этой сессии
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	Больше не предупреждать об аналогичных отсутствующих иконках в этой сессии
+@id	ui.do_not_warn_again_for_this_file_type_this_session	Больше не предупреждать для этого типа файлов в этой сессии
+@id	ui.dock_to_desktop	Закрепить на рабочем столе
+@id	ui.document_renderer_coming_soon	Рендерер документов скоро появится
+@id	ui.don_t_show_this_again_in_this_session	Больше не показывать это в этой сессии
+@id	ui.don_t_show_this_ever	Больше никогда не показывать
+@id	ui.draw	Рисовать
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	Обведите контуром чернильный элемент, чтобы выделить его
+@id	ui.draw_here_2	Рисуйте \n здесь
+@id	ui.drawing	Рисование...
+@id	ui.drawing_saved_count_strokes	Рисунок сохранён, {count} штрихов
+@id	ui.drawing_tools	Инструменты рисования
+@id	ui.drop_a_file_onto_the_page_to_add_it	Перетащите файл на страницу, чтобы добавить его
+@id	ui.edit	Правка
+@id	ui.editing	Редактирование...
+@id	ui.egui_and_eframe	egui и eframe
+@id	ui.ellipse	Эллипс
+@id	ui.email	Электронная почта
+@id	ui.english	Английский
+@id	ui.equation	Уравнение
+@id	ui.equation_name	Уравнение: {name}
+@id	ui.eraser	Ластик
+@id	ui.error	ошибка
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	Каждая пятая линия немного жирнее для удобства подсчёта.
+@id	ui.every_line_of_this_page_decides_for_itself	Каждая строка этой страницы решает сама за себя
+@id	ui.every_paragraph_decides_for_itself	Каждый абзац решает сам за себя
+@id	ui.expand	Развернуть
+@id	ui.expand_all	Развернуть все
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Экспорт создаёт ZIP-архив по выбору пользователя, затем удаляет папку экспортированной сессии.
+@id	ui.export_current_session_zip	Экспортировать текущую сессию в ZIP
+@id	ui.export_telemetry_zip	Экспортировать телеметрию в ZIP
+@id	ui.eyedropper	Пипетка
+@id	ui.eyedropper_not_built	Пипетка ещё не реализована
+@id	ui.file	Файл
+@id	ui.file_attachment_2	Вложение файла \n
+@id	ui.file_options	Параметры файла
+@id	ui.file_printout_2	Печать файла \n
+@id	ui.files	Файлы
+@id	ui.files_in_this_page	ФАЙЛЫ НА ЭТОЙ СТРАНИЦЕ
+@id	ui.find	Найти
+@id	ui.find_in_this_file	Найти в этом файле
+@id	ui.find_tags	Найти теги
+@id	ui.find_tags_3	Найти теги \n
+@id	ui.fit_the_page_to_the_available_width	Подогнать страницу по доступной ширине
+@id	ui.folder_folder	Папка: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	Следовать системной теме (светлой или тёмной)
+@id	ui.format	Формат
+@id	ui.format_background_2	Фон\n
+@id	ui.format_for_this_page	Формат для этой страницы
+@id	ui.format_painter	Кисть форматирования
+@id	ui.forward	Вперёд
+@id	ui.forward_to_the_page_after_alt_right	Перейти к следующей странице (Alt+Стрелка вправо)
+@id	ui.fountain_pen	Перьевая ручка
+@id	ui.from_camera	Из камеры
+@id	ui.from_online	Из интернета
+@id	ui.full_page	На всю страницу
+@id	ui.full_page_view_2	Просмотр\n
+@id	ui.full_path_copied	Полный путь скопирован
+@id	ui.give_the_page_the_whole_window	Развернуть страницу на всё окно
+@id	ui.gray	Серый
+@id	ui.green	Зелёный
+@id	ui.green_2	зелёный
+@id	ui.grey	серый
+@id	ui.gridcraft_is_not_installed	GridCraft не установлен
+@id	ui.help	Помощь
+@id	ui.hide	Скрыть
+@id	ui.hide_everything_but_the_page	Скрыть всё, кроме страницы
+@id	ui.hide_page_title	Скрыть заголовок страницы
+@id	ui.hide_the_page_source	Скрыть исходный код страницы
+@id	ui.hide_the_page_title	Скрыть заголовок страницы
+@id	ui.highlight	Выделение
+@id	ui.highlighter	Маркер
+@id	ui.history	История
+@id	ui.home	Домой
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	Идея
+@id	ui.images	Изображения
+@id	ui.immersive_reader	Режим чтения
+@id	ui.import_file	Импорт файла
+@id	ui.import_from_the_cloud	Импорт из облака
+@id	ui.import_notebook_folder	Импорт папки блокнота
+@id	ui.important	Важно
+@id	ui.importing	Импорт…
+@id	ui.importing_onenote	Импорт OneNote
+@id	ui.increase_indentation	Увеличить отступ
+@id	ui.increase_indentation_tab	Увеличить отступ (Tab)
+@id	ui.index_of_total_sections	{index} из {total} разделов
+@id	ui.info	информация
+@id	ui.inherit_notebook_section_or_global_setting	Наследовать (настройки блокнота, раздела или глобальные)
+@id	ui.input_mode	Режим ввода
+@id	ui.insert	Вставка
+@id	ui.insert_a_common_symbol	Вставить общий символ
+@id	ui.insert_column_left_2	Вставить столбец\nСлева
+@id	ui.insert_column_right_2	Вставить столбец\nСправа
+@id	ui.insert_printout	Вставить распечатку
+@id	ui.insert_row_above_2	Вставить строку\nВыше
+@id	ui.insert_row_below_2	Вставить строку\nНиже
+@id	ui.insert_space_2	Вставить\nПробел
+@id	ui.insert_symbol	Вставить символ
+@id	ui.insert_table_not_built	Вставить таблицу... (не реализовано)
+@id	ui.insert_the_picture	Вставить изображение
+@id	ui.insert_the_recording	Вставить запись
+@id	ui.insert_the_video	Вставить видео
+@id	ui.inserted_name_and_count_printout_pages	Вставлены {name} и {count} страниц распечатки
+@id	ui.interface_language	Язык интерфейса
+@id	ui.interface_language_language	Язык интерфейса: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Здесь есть проблемы, дорожная карта и документация. NoteCraft не связывается с ней или другими сервисами самостоятельно.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Она указана, чтобы папка страницы не была секретом.
+@id	ui.italic	Курсив
+@id	ui.italic_ctrl_i	Курсив (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	Выравнивание применяется к абзацу текста
+@id	ui.keep_this_window_above_the_others	Держать это окно поверх остальных
+@id	ui.label	метка
+@id	ui.label_not_built	{label} (не реализовано)
+@id	ui.label_not_built_yet	{label}: ещё не реализовано
+@id	ui.label_nothing_to_action	{label}: нечего {action}
+@id	ui.language_click_to_change_it	{language}. Нажмите, чтобы изменить.
+@id	ui.large	Большой
+@id	ui.large_squares	Крупная клетка
+@id	ui.laser_pointer	Лазерная указка
+@id	ui.lasso_select	Петля\nВыбор
+@id	ui.layout	Макет
+@id	ui.leave_it	Оставить как есть
+@id	ui.left_to_right	Слева направо
+@id	ui.level	Уровень:
+@id	ui.licence	Лицензия
+@id	ui.light	Светлая
+@id	ui.light_or_dark_and_the_accent_colour	Светлая или тёмная, и акцентный цвет
+@id	ui.line	Линия
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	Линии или клетка под страницей, как на бумаге
+@id	ui.link	Ссылка
+@id	ui.link_to_the_file_where_it_is	Ссылка на файл, где он находится
+@id	ui.link_to_title_copied	Ссылка на «{title}» скопирована
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	Связан {name} по месту; файл не был скопирован
+@id	ui.links	Ссылки
+@id	ui.live_captions	Живые субтитры
+@id	ui.local_collection_level	Уровень локальной коллекции
+@id	ui.local_diagnostics	Локальная диагностика
+@id	ui.local_diagnostics_and_usage	Локальная диагностика и использование
+@id	ui.logging_folder_folder	Папка журналов: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Журналы и телеметрия остаются на этом устройстве. NoteCraft не отправляет их автоматически.
+@id	ui.magenta	Маджента
+@id	ui.make_the_page_larger	Увеличить страницу
+@id	ui.make_the_page_smaller	Уменьшить страницу
+@id	ui.many_thanks_to_its_authors_and_contributors	— большое спасибо авторам и участникам.
+@id	ui.markdown	Markdown
+@id	ui.match_case	С учётом регистра
+@id	ui.math	Математика
+@id	ui.maximize	Развернуть
+@id	ui.md_2	md
+@id	ui.media	Медиа
+@id	ui.medium	Средний
+@id	ui.medium_squares	Средняя клетка
+@id	ui.meeting_details	Детали встречи
+@id	ui.meeting_details_3	Детали\n
+@id	ui.meetings	Встречи
+@id	ui.merge	Объединить
+@id	ui.mermaid	Mermaid
+@id	ui.mint	мята
+@id	ui.mit_license	Лицензия MIT
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT или Apache-2.0, на ваш выбор. Искусство с коалой не подпадает под него; см. ATTRIBUTION.md.
+@id	ui.mode	Режим
+@id	ui.modify_tool	Изменить инструмент
+@id	ui.more	Ещё...
+@id	ui.more_2	Ещё
+@id	ui.more_colours	Больше цветов
+@id	ui.more_styles	Больше стилей
+@id	ui.more_tags	Больше тегов
+@id	ui.move_left	Сдвинуть влево
+@id	ui.move_right	Сдвинуть вправо
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	Переместить «{title}» и всё содержимое ({n} элемент) в корзину этого блокнота?|Переместить «{title}» и всё содержимое ({n} элементы) в корзину этого блокнота?
+@id	ui.move_to_recycle_bin	В корзину
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Штрихи {moved} со старого рисунка этой страницы перенесены на саму страницу
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	Штрихи {moved} перенесены на страницу; старые файлы рисунков {left} не удалось удалить
+@id	ui.moved_to_the_notebook_recycle_bin	Перемещено в корзину блокнота
+@id	ui.n_item_n_items	{n} элемент|{n} элементы
+@id	ui.n_notebook_n_notebooks	{n} блокнот|{n} блокноты
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} блокнот открыт|{n} блокноты открыты
+@id	ui.n_stroke_n_strokes	{n} штрих|{n} штрихи
+@id	ui.name_2	Имя
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} ещё не реализовано. См. дорожную карту, чтобы узнать о планах.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} теперь является файлом в папке этой страницы
+@id	ui.name_is_open_in_gridcraft	{name} открыт в GridCraft
+@id	ui.name_not_used_by_the_page	{name}: не используется страницей
+@id	ui.narrow	Узкий
+@id	ui.narrow_ruled	В узкую линейку
+@id	ui.new_gridcraft_spreadsheet	Новая таблица GridCraft
+@id	ui.new_gridcraft_spreadsheet_not_installed	Новая таблица GridCraft (не установлена)
+@id	ui.new_notebook	Новый блокнот
+@id	ui.new_notebook_2	Новый блокнот...
+@id	ui.new_page	Новая страница
+@id	ui.new_page_2	Новая страница...
+@id	ui.new_pages	Создано страниц:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	Новые страницы используют {format}, если блокнот или раздел не указывают иное
+@id	ui.new_quick_note	Новая быстрая заметка
+@id	ui.new_window	Новое окно
+@id	ui.next	Далее
+@id	ui.next_match_enter_f3	Следующее совпадение (Enter, F3)
+@id	ui.no	нет
+@id	ui.no_colour	Без цвета
+@id	ui.no_generated_preview_icon_is_available	Сгенерированная иконка-превью недоступна.
+@id	ui.no_lines_behind_the_page	Без линий на странице
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	Рядом со страницей нет {name}: сначала передайте таблицу
+@id	ui.no_notebooks_yet_use_new_notebook	Блокнотов пока нет. Используйте «Новый блокнот».
+@id	ui.no_pages_in_this_section_yet	В этом разделе пока нет страниц.
+@id	ui.no_pages_match	Нет совпадений.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	Сохранённых версий пока нет. NoteCraft сохраняет копию при изменении страницы.
+@id	ui.none	Нет
+@id	ui.normal_view	Обычный\nвид
+@id	ui.not_built	Не реализовано
+@id	ui.not_built_2	не реализовано
+@id	ui.not_built_yet	Ещё не реализовано
+@id	ui.not_drawn_why	Не нарисовано: {why}
+@id	ui.not_used_by_the_page	не используется страницей
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	Заметки и организация на чистом Rust. Ваши заметки — это обычные папки и файлы.
+@id	ui.notebook	Блокнот
+@id	ui.notebook_closed_its_files_are_still_on_disk	Блокнот закрыт; его файлы остаются на диске
+@id	ui.notebook_created	Блокнот создан
+@id	ui.notebook_information	Сведения о блокноте
+@id	ui.notebook_recycle_bin_2	Корзина блокнота
+@id	ui.notebook_recycle_bin_3	Корзина блокнота\n
+@id	ui.notebooks_2	БЛОКНОТЫ
+@id	ui.notebooks_and_pages_in_their_own_columns	Блокноты и страницы в отдельных колонках
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Блокноты и разделы в одной колонке, страницы — в следующей
+@id	ui.notebooks_folder_folder	Папка блокнотов: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	Открытые вами блокноты появятся здесь.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft обнаружила вложение, на которое не ссылается эта страница:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft обнаружила вложение без сгенерированной иконки:
+@id	ui.notecraft_ruled	Линейка NoteCraft
+@id	ui.notecraft_squares	Клетки NoteCraft
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	Заметки как обычные папки. Откройте страницу или создайте блокнот, чтобы начать.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	Ничего по адресу {path}: ссылка указывает на несуществующую страницу или файл
+@id	ui.nothing_here_can_show_this_kind_of_file	Здесь нельзя отобразить этот тип файла.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	Ничего не скопировано. Ссылка станет нерабочей, если файл переместят.
+@id	ui.nothing_to_redo	Невозможно повторить
+@id	ui.nothing_to_undo	Невозможно отменить
+@id	ui.numbering	Нумерация
+@id	ui.off	ВЫКЛ
+@id	ui.off_2	выкл
+@id	ui.office_document	Документ Office
+@id	ui.office_text_inspection	Анализ текста Office
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	Рабочий процесс импорта OfficeIMO неожиданно остановился
+@id	ui.ok	ОК
+@id	ui.one_tree_of_notebooks	Одно дерево блокнотов
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive и SharePoint: не реализовано. Укажите NoteCraft на папку, которую уже отслеживает ваш инструмент синхронизации, и всё будет работать.
+@id	ui.onenote_import	Импорт из OneNote
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Онлайн-блокноты (OneDrive, SharePoint) не реализованы. Блокнот в папке, отслеживаемой вашим инструментом синхронизации, будет синхронизироваться этим инструментом.
+@id	ui.only_a_list_item_can_be_indented	Отступить можно только элемент списка
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	Открывайте его только если вы доверяете файлу и человеку, который его создал.
+@id	ui.open	Открыть
+@id	ui.open_a_folder	Открыть папку...
+@id	ui.open_a_notebook	Открыть блокнот
+@id	ui.open_a_page_first	Сначала откройте страницу
+@id	ui.open_a_page_first_then_drop_files_onto_it	Сначала откройте страницу, затем перетащите на неё файлы.
+@id	ui.open_attachment	Открыть вложение
+@id	ui.open_every_level	Открыть все уровни
+@id	ui.open_folder	Открыть папку
+@id	ui.open_in_folder	Открыть в папке
+@id	ui.open_name	Открыть {name}
+@id	ui.open_telemetry_folder	Открыть папку телеметрии
+@id	ui.open_the_artcraft_discord	Открыть Discord ArtCraft
+@id	ui.open_this_notebook	Открыть этот блокнот
+@id	ui.open_using_shell	Открыть через оболочку
+@id	ui.open_with_associated_app	Открыть с помощью связанного приложения
+@id	ui.opened	Открыт
+@id	ui.opened_path	Открыт {path}
+@id	ui.opened_path_it_has_no_pages_yet	Открыт {path}; в нём пока нет страниц
+@id	ui.opened_the_containing_folder	Открыта содержащая папка
+@id	ui.opened_url_in_the_browser	Открыт {url} в браузере
+@id	ui.opened_using_the_associated_application	Открыто с помощью связанного приложения
+@id	ui.opening_path	Открытие {path}
+@id	ui.options	Параметры
+@id	ui.orange	Оранжевый
+@id	ui.page	Страница
+@id	ui.page_colour	Цвет страницы
+@id	ui.page_direction_from_the_words	Направление страницы от слов
+@id	ui.page_format	Формат страницы
+@id	ui.page_left_to_right	Страница слева направо
+@id	ui.page_right_to_left	Страница справа налево
+@id	ui.page_setup	Параметры страницы
+@id	ui.page_source	Источник страницы
+@id	ui.page_versions_2	Версии страницы
+@id	ui.page_versions_4	\nVersions
+@id	ui.page_width	Ширина страницы
+@id	ui.pages	Страницы
+@id	ui.paper_behind_the_page	{paper} за страницей
+@id	ui.paper_size	Размер бумаги
+@id	ui.para	Абзац
+@id	ui.paragraph_direction_from_the_words	Направление абзаца по словам
+@id	ui.paragraph_left_to_right	Абзац слева направо
+@id	ui.paragraph_right_to_left	Абзац справа налево
+@id	ui.paragraph_selected	Абзац выбран
+@id	ui.paste	Вставить
+@id	ui.pasted	Вставлено
+@id	ui.pasted_a_picture_width_by_height	Вставлена картинка, {width} от {height}
+@id	ui.pasted_formatted_content	Вставлен форматированный контент
+@id	ui.path_opened_as_an_empty_notebook	{path} открыт как пустой блокнот
+@id	ui.pdf_and_office_documents	PDF и документы Office
+@id	ui.pdf_document	Документ PDF
+@id	ui.pdf_text_inspection	Анализ текста PDF
+@id	ui.pen	Перо
+@id	ui.pencil	Карандаш
+@id	ui.permanently_delete	Удалить навсегда?
+@id	ui.permanently_delete_title_and_everything_inside_it	Удалить «{title}» и всё содержимое навсегда?
+@id	ui.permanently_deleted	Удалено навсегда
+@id	ui.phone_number	Номер телефона
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	Выберите PDF или документ Office, чтобы вставить его страницы как изображения
+@id	ui.pick_the_caret_s_column	Выбрать столбец курсора
+@id	ui.pick_the_caret_s_row	Выбрать строку курсора
+@id	ui.pick_the_whole_table	Выделить всю таблицу
+@id	ui.picture_from_a_file	Изображение из файла
+@id	ui.pictures	Изображения
+@id	ui.plain	Обычный
+@id	ui.plain_text	Простой текст
+@id	ui.powered_by	Работает на базе
+@id	ui.pressure_sensitivity_now_of_100	Чувствительность к давлению {now} из 100
+@id	ui.pressure_sensitivity_unavailable	Чувствительность к давлению недоступна
+@id	ui.previous	Предыдущий
+@id	ui.previous_match_shift_enter	Предыдущее совпадение (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	Печать доступна для PDF и документов Office.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Конфиденциальность — наш главный приоритет. Все журналы и телеметрия остаются на этом устройстве. NoteCraft никогда не отправляет их автоматически.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Конфиденциальность — наш главный приоритет. Журналы и телеметрия остаются на этом устройстве. NoteCraft не отправляет их нам.
+@id	ui.purple	Фиолетовый
+@id	ui.put_a_sheet_to_draw_on_into_the_page	Добавить лист для рисования на страницу
+@id	ui.put_another_tool_on_the_rack	Добавить ещё один инструмент в панель
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	Вернуть указатель к словам и курсору
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	Вставить содержимое электронной таблицы обратно в эту таблицу
+@id	ui.question	Вопрос
+@id	ui.quote_2	Цитата
+@id	ui.quote_this_paragraph	Цитировать этот абзац
+@id	ui.read_back_from_it_2	Прочитать \n обратно из него
+@id	ui.read_back_rows_rows_and_columns_columns	Прочитать {rows} строк и {columns} столбцов
+@id	ui.read_only	только для чтения
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	Извлечение текста только для чтения. Полное отображение документа скоро будет доступно.
+@id	ui.ready_2	Готово
+@id	ui.recently_opened	Недавно открытые
+@id	ui.recording	Запись
+@id	ui.rectangle	Прямоугольник
+@id	ui.red	красный
+@id	ui.red_2	Красный
+@id	ui.redo	Повторить действие
+@id	ui.redo_ctrl_y	Повторить действие (Ctrl+Y)
+@id	ui.remember_for_later	Запомнить на потом
+@id	ui.remove_from_list	Удалить из списка
+@id	ui.remove_this_tool_from_the_rack	Удалить этот инструмент с панели
+@id	ui.removed_notebook_from_the_known_notebooks_list	Блокнот удалён из списка известных блокнотов
+@id	ui.rename	Переименовать
+@id	ui.rename_ellipsis	Переименовать...
+@id	ui.renamed	Переименовано
+@id	ui.rendered_svg_preview	Предпросмотр отрендеренного SVG
+@id	ui.repair_icon	Восстановить значок
+@id	ui.repaired_the_attachment_icon_for_name	Значок вложения для {name} восстановлен
+@id	ui.replay	Повтор
+@id	ui.reset_app_preferences	Сбросить настройки приложения
+@id	ui.reset_app_preferences_2	Сбросить настройки приложения…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	Сбросить сохранённые настройки NoteCraft до встроенных по умолчанию?
+@id	ui.reset_preferences	Сбросить настройки
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Сбросить темы, макет, элементы ленты и другие сохранённые настройки NoteCraft до значений по умолчанию.
+@id	ui.restore	Восстановить
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	Восстановить страницы, разделы и группы, удалённые из этого блокнота
+@id	ui.restored_the_saved_page_version	Сохранённая версия страницы восстановлена
+@id	ui.restored_to_the_original_location	Восстановлено в исходное расположение
+@id	ui.right_to_left	Справа налево
+@id	ui.rounded	Закруглённый
+@id	ui.rub_out_whatever_the_pointer_passes_over	Стереть всё, что проходит указатель
+@id	ui.rule_line_colour_not_built	Цвет линий (не встроен)
+@id	ui.ruled	В линейку
+@id	ui.save_picture_2	Сохранить \n картинку
+@id	ui.saved	Сохранено
+@id	ui.saved_copies_of_this_page	Сохранённые копии этой страницы
+@id	ui.saved_the_drawing_as_a_picture_path	Рисунок сохранён как изображение: {path}
+@id	ui.saved_time	{time} сохранён
+@id	ui.search	Поиск
+@id	ui.search_all_pages	Искать на всех страницах
+@id	ui.section	Раздел
+@id	ui.section_group	Группа разделов
+@id	ui.see_and_restore_saved_copies_of_this_page	Просмотр и восстановление сохранённых копий этой страницы
+@id	ui.select	Выбрать
+@id	ui.select_columns_2	Выделить \n столбцы
+@id	ui.select_rows_2	Выделить \n строки
+@id	ui.select_some_words_first	Сначала выделите некоторые слова
+@id	ui.select_table_2	Выделить \n таблицу
+@id	ui.selected_text_next_typing	Выделенный текст / следующее нажатие клавиш
+@id	ui.selection	Выделение
+@id	ui.send_page	Отправить страницу
+@id	ui.send_page_3	Отправить \n страницу
+@id	ui.separate_pages	Раздельные страницы
+@id	ui.session_id_id	Идентификатор сеанса: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	Установить направление выделенного текста или следующего вводимого текста
+@id	ui.shape	фигура
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: перетащите на странице, чтобы нарисовать одну
+@id	ui.shapes	Фигуры
+@id	ui.show	Показать
+@id	ui.show_notebooks_folder	Показать папку блокнотов
+@id	ui.show_or_hide_the_notebooks_column	Показать или скрыть колонку блокнотов
+@id	ui.show_the_code	Показать код
+@id	ui.show_the_notebooks_again	Снова показать блокноты
+@id	ui.show_the_notebooks_folder	Показать папку блокнотов
+@id	ui.show_the_page_at_100	Показать страницу в масштабе 100%
+@id	ui.show_the_page_source	Показать исходный код страницы
+@id	ui.show_the_strokes	Показать штрихи
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	Малый
+@id	ui.small_squares	Малые квадраты
+@id	ui.somewhere_else	В другом месте
+@id	ui.source	Источник
+@id	ui.split	Разделить
+@id	ui.spreadsheet	Таблица
+@id	ui.square	Квадрат
+@id	ui.squares	Квадраты
+@id	ui.standard	Стандартный
+@id	ui.standard_ruled	Стандартная линейка
+@id	ui.star	Звезда
+@id	ui.starting_officeimo	Запуск OfficeIMO…
+@id	ui.stencils	Шаблоны
+@id	ui.strike_through	Зачеркнуть
+@id	ui.strikethrough	Зачеркнутый
+@id	ui.styles	Стили
+@id	ui.styles_2	стили
+@id	ui.svg_source	Исходный код SVG
+@id	ui.symbol	Символ
+@id	ui.symbols	Символы
+@id	ui.table_3	Таблица
+@id	ui.tables	Таблицы
+@id	ui.tabs_layout	Раскладка вкладок
+@id	ui.tag_tag	{tag} tag
+@id	ui.tags	Теги
+@id	ui.take_the_caret_s_column_out	Убрать столбец курсора
+@id	ui.take_the_caret_s_row_out	Убрать строку курсора
+@id	ui.take_the_last_stroke_back	Вернуть последний штрих
+@id	ui.take_the_marks_off	Убрать отметки
+@id	ui.teal_2	Бирюзовый
+@id	ui.text	Текст
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	Инспекция текста показана ниже.
+@id	ui.text_run_direction	Направление текста
+@id	ui.thank_you_for_trying_notecraft	Спасибо за использование NoteCraft!
+@id	ui.that_file_has_nothing_in_it_to_put_back	В этом файле нет данных для восстановления
+@id	ui.that_file_is_not_in_this_page_s_folder	Этот файл не находится в папке этой страницы
+@id	ui.that_is_not_something_a_page_can_hold	Страница не может содержать такой объект
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	Ссылка указывает за пределы папки блокнотов, поэтому она не была открыта
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	Эта страница не находится в открытом блокноте
+@id	ui.the_attachment_returned_an_invalid_page_link	Вложение вернуло недействительную ссылку на страницу
+@id	ui.the_built_in_default	встроенное значение по умолчанию
+@id	ui.the_code	Код
+@id	ui.the_diagnostics_folder_could_not_be_created_error	Не удалось создать папку диагностики: {error}
+@id	ui.the_file_could_not_be_opened_error	Не удалось открыть файл: {error}
+@id	ui.the_file_is_gone	Файл отсутствует
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	Файл удален с диска. Отмена не восстанавливает файл.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	Файл в безопасности. NoteCraft может добавить ссылку на него в конец страницы.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	Файл не был приложен: команда добавления вернула неожиданный результат.
+@id	ui.the_folder_could_not_be_opened_error	Не удалось открыть папку: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	Формат задается при создании страницы
+@id	ui.the_global_setting	глобальная настройка
+@id	ui.the_last_tool_stays_on_the_rack	Последний инструмент остается на панели
+@id	ui.the_notebook_could_not_be_deleted_error	Не удалось удалить блокнот: {error}
+@id	ui.the_notebook_or_section_setting	настройка блокнота или раздела
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	Оригинальный файл в безопасности. NoteCraft может пересоздать иконку рядом с ним.
+@id	ui.the_page_beside_the_notebooks	Страница рядом с блокнотами
+@id	ui.the_page_is_colour	Страница — {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	Страница в фирменном цвете темы
+@id	ui.the_page_source_beside_the_page	Исходный код страницы рядом с ней
+@id	ui.the_paper_and_colour_apply_to_this_page_only	Бумага и цвет применяются только к этой странице.
+@id	ui.the_theme_could_not_be_saved_error	Не удалось сохранить тему: {error}
+@id	ui.the_time_now	Текущее время
+@id	ui.the_welcome_notebook	Блокнот «Добро пожаловать»
+@id	ui.the_whole_page_reads_left_to_right	Вся страница читается слева направо
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	Вся страница читается справа налево (арабский, иврит)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	Окно отрисовывается на GPU. Иконки рисуются кодом. Логотип — единственная картинка.
+@id	ui.theme	Тема
+@id	ui.theme_theme	Тема {theme}
+@id	ui.theme_theme_2	Тема: {theme}
+@id	ui.theme_theme_click_to_change_it	Тема {theme}. Нажмите, чтобы изменить.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	Блокнотов пока нет. «Новый» создаст первый.
+@id	ui.there_is_no_drawing_on_this_page	На этой странице нет рисунка
+@id	ui.there_is_no_earlier_page	Нет предыдущей страницы
+@id	ui.there_is_no_later_page	Нет следующей страницы
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	Нет места на панели для ещё одного инструмента
+@id	ui.there_is_no_stroke_to_take_back	Нет штриха для отмены
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	В буфере обмена нет данных для вставки
+@id	ui.thickness	Толщина
+@id	ui.this_cannot_be_undone	Это действие нельзя отменить.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	Не удалось переместить в корзину. Ничего не было удалено.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	Это не удаляет блокноты или страницы. Действие необратимо.
+@id	ui.this_file_will_be_opened_by_its_associated_application	Этот файл будет открыт в связанном приложении.
+@id	ui.this_notebook_s_recycle_bin_is_empty	Корзина этого блокнота пуста.
+@id	ui.this_page	Эта страница
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	На этой странице разметка, которую NoteCraft ещё не редактирует, поэтому она отображается как есть.
+@id	ui.this_page_reads_left_to_right	Эта страница читается слева направо
+@id	ui.this_page_reads_right_to_left	Эта страница читается справа налево
+@id	ui.this_paragraph_decides_from_its_own_first_letter	Этот абзац определяется по первой букве
+@id	ui.this_paragraph_fills_the_column	Этот абзац заполняет колонку
+@id	ui.this_paragraph_fills_the_column_stretched_hard	Этот абзац заполняет колонку, сильно растянут
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	Этот абзац заполняет колонку, слегка растянут
+@id	ui.this_paragraph_is_ragged_again	Этот абзац снова неровный
+@id	ui.this_paragraph_reads_left_to_right	Этот абзац читается слева направо
+@id	ui.this_paragraph_reads_right_to_left	Этот абзац читается справа налево
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	Этот абзац читается справа налево (арабский, иврит)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	Этот абзац читается в направлении его слов
+@id	ui.this_picture_cannot_be_shown_here	Эту картинку нельзя отобразить здесь.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	Это удалит папку блокнота с диска. Действие необратимо.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	Этот фрагмент читается слева направо. Смешанная строка всё равно рисуется в одном порядке; см. дорожную карту
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	Этот фрагмент читается справа налево. Смешанная строка всё равно рисуется в одном порядке; см. дорожную карту
+@id	ui.this_svg_cannot_be_rendered_here	Этот SVG нельзя отобразить здесь.
+@id	ui.this_window_behaves_like_the_others	Это окно ведёт себя как другие
+@id	ui.this_window_stays_on_top	Это окно остаётся поверх остальных
+@id	ui.time	Время
+@id	ui.time_stamp	Отметка времени
+@id	ui.title_2	Заголовок
+@id	ui.title_saved	Заголовок сохранён
+@id	ui.title_the_folder_name_does_not_change	Заголовок (имя папки не меняется)
+@id	ui.to_do_2	Задачи
+@id	ui.to_do_tag_2	Задачи\nМетка
+@id	ui.today_s_date	Сегодняшняя дата
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	Убрано с панели
+@id	ui.took_the_last_stroke_back_count_left	Отменён последний штрих; осталось {count}
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	Инструменты
+@id	ui.top	Верх
+@id	ui.triangle	Треугольник
+@id	ui.type	Тип
+@id	ui.under_the	под
+@id	ui.undo	Отменить
+@id	ui.undo_ctrl_z	Отменить (Ctrl+Z)
+@id	ui.undo_stroke	Отменить\nstroke
+@id	ui.unread	Непрочитанные
+@id	ui.updated_the_welcome_notebook	Обновлена приветственная тетрадь
+@id	ui.use_notecraft_s_own_title_bar	Использовать собственную строку заголовка NoteCraft
+@id	ui.use_the_system_title_bar	Использовать системную строку заголовка
+@id	ui.version_version_alpha	Версия {version} (альфа)
+@id	ui.very_large	Очень большой
+@id	ui.very_large_squares	Очень большие квадраты
+@id	ui.view	Вид
+@id	ui.views	Виды
+@id	ui.warn	предупреждение
+@id	ui.web_site_to_visit	Сайт для перехода
+@id	ui.welcome_to_notecraft	Добро пожаловать в NoteCraft
+@id	ui.what_should_happen_to_this_file	Что сделать с этим файлом?
+@id	ui.what_to_add	Что добавить
+@id	ui.wide	Широкий
+@id	ui.wide_ruled	Широкая линейка
+@id	ui.window	Окно
+@id	ui.write_anywhere_on_the_page	Писать в любом месте страницы
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	Перезаписать рисунок без данных пера для отправки
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	Создать таблицу и открыть её в GridCraft
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	Жёлтый
+@id	ui.yellow_2	жёлтый
+@id	ui.you_can_continue_working_while_the_import_runs	Вы можете продолжать работу, пока выполняется импорт.
+@id	ui.you_can_restore_it_from_history	Вы можете восстановить его из истории.
+@id	ui.zoom	Масштаб
+@id	ui.zoom_in	Увеличить
+@id	ui.zoom_out	Уменьшить
+@id	ui.zoom_to_100	Масштаб 100%

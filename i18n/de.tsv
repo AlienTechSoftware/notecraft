@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	Soll "{title}" und alles darin ({n} Element) in den Papierkorb dieses Notebooks verschoben werden?|Soll "{title}" und alles darin ({n} Elemente) in den Papierkorb dieses Notebooks verschoben werden?
+@plural	{n} item|{n} items	{n} Element|{n} Elemente
+@plural	{n} notebook opened|{n} notebooks opened	{n} Notebook geöffnet|{n} Notebooks geöffnet
+@plural	{n} notebook|{n} notebooks	{n} Notebook|{n} Notebooks
+@plural	{n} stroke|{n} strokes	{n} Strich|{n} Striche
+@id	language.name	Deutsch
+@id	ui.a_bullet_list	Eine Aufzählungsliste
+@id	ui.a_column_left_of_the_caret_s	Eine Spalte links vom Einfügemarke
+@id	ui.a_column_right_of_the_caret_s	Eine Spalte rechts vom Einfügemarke
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	Eine Kopie wird in den Ordner dieser Seite gespeichert, sodass das Notizbuch sie überall mitnimmt.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	Eine Richtung gilt für einen Textabsatz
+@id	ui.a_file_copied_in_or_linked_where_it_is	Eine Datei: kopiert oder verlinkt an ihrem aktuellen Ort
+@id	ui.a_link	Ein Link
+@id	ui.a_link_to_a_page_or_an_address	Ein Link zu einer Seite oder Adresse
+@id	ui.a_link_to_paste_into_another_page	Ein Link zum Einfügen in eine andere Seite
+@id	ui.a_mermaid_diagram_kept_as_its_source	Ein Mermaid-Diagramm, gespeichert als Quellcode
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	Ein neues Notizbuch ist ein Ordner in {folder} mit einem Abschnitt und einer Seite darin.
+@id	ui.a_new_page_in_this_section	Eine neue Seite in diesem Abschnitt
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	Ein neues Tabellenkalkulationsdokument neben der Seite, geöffnet in GridCraft
+@id	ui.a_numbered_list	Eine nummerierte Liste
+@id	ui.a_page_here	Eine Seite hier
+@id	ui.a_row_above_the_caret_s	Eine Zeile über dem Einfügemarke
+@id	ui.a_row_below_the_caret_s	Eine Zeile unter dem Einfügemarke
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	Eine Tabelle behält ihre Überschriftenzeile und mindestens eine Spalte
+@id	ui.a_table_pick_its_size	Eine Tabelle: Größe auswählen
+@id	ui.a_tag_goes_on_a_line_of_text	Ein Tag gilt für eine Textzeile
+@id	ui.a_to_do_box_on_this_line_ctrl_1	Eine Checkbox auf dieser Zeile (Strg+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	Eine Tour durch NoteCraft, dargestellt auf eigenen Seiten. Sie wird beim ersten Start zu einem leeren Notizbuchordner hinzugefügt; dies fügt sie erneut hinzu oder öffnet sie, falls sie noch vorhanden ist.
+@id	ui.about_notecraft	Über NoteCraft
+@id	ui.accent_accent	Akzent: {accent}
+@id	ui.accept	Akzeptieren
+@id	ui.add	Hinzufügen
+@id	ui.add_a_blank_paragraph_at_the_caret	Einen leeren Absatz am Einfügemarke einfügen
+@id	ui.add_a_page_here	Eine Seite hier hinzufügen
+@id	ui.add_a_sub_page	Eine Unterseite hinzufügen
+@id	ui.add_another_tool	Ein weiteres {tool} hinzufügen
+@id	ui.add_file	Datei hinzufügen
+@id	ui.add_file_to_this_page	Datei zu dieser Seite hinzufügen
+@id	ui.add_inside_this_kind	Innerhalb dieses {kind} hinzufügen
+@id	ui.add_name	{name} hinzufügen
+@id	ui.add_name_left_more	{name} hinzufügen ({left} mehr)
+@id	ui.add_page	Seite hinzufügen
+@id	ui.add_the_welcome_notebook	Willkommens-Notizbuch hinzufügen
+@id	ui.add_tool	{tool} hinzufügen
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	Am Ende der Seite ein Link zu {name} hinzugefügt
+@id	ui.added_a_tool	Ein {tool} hinzugefügt
+@id	ui.address	Adresse
+@id	ui.alignment	Ausrichtung
+@id	ui.alignment_and_direction	Ausrichtung und Richtung
+@id	ui.alignment_and_which_way_this_paragraph_reads	Ausrichtung und Leserichtung dieses Absatzes
+@id	ui.all_of_them_live_in_folder	Alle leben in {folder}
+@id	ui.always_on_top	Immer im Vordergrund
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	Eine Gleichung, geschrieben in TeX: Wählen Sie eine Vorlage zum Starten
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	App-Einstellungen zurückgesetzt. Starten Sie NoteCraft neu, um alle Standardeinstellungen zu übernehmen.
+@id	ui.appearance	Darstellung
+@id	ui.append_link	Link anhängen
+@id	ui.application_preferences	Anwendungseinstellungen
+@id	ui.arrow	Pfeil
+@id	ui.attach_the_file	Datei anhängen
+@id	ui.attachment_icon_missing	Anhangssymbol fehlt
+@id	ui.attachment_not_linked	Anhang nicht verlinkt
+@id	ui.attachment_recovery	Anhangswiederherstellung
+@id	ui.authors	Autoren
+@id	ui.auto	Automatisch
+@id	ui.automatic_system_language	Automatisch (Systemsprache)
+@id	ui.back	Zurück
+@id	ui.back_to_the_notebook	Zurück zum Notizbuch
+@id	ui.back_to_the_page_before_alt_left	Zurück zur vorherigen Seite (Alt+Links)
+@id	ui.basic_text	Basis-Text
+@id	ui.black	Schwarz
+@id	ui.blue	Blau
+@id	ui.blue_2	Blau
+@id	ui.bold	Fett
+@id	ui.bold_ctrl_b	Fett (Strg+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	Beides, da der eigene Stempel der Seite geschrieben wird
+@id	ui.browse_for_a_notebook	Ein Notizbuch durchsuchen…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	Notizbücher in {folder} durchsuchen oder einen anderen Ordner wählen.
+@id	ui.brush_pen	Pinselstift
+@id	ui.built_with	Erstellt mit
+@id	ui.bullets	Aufzählungszeichen
+@id	ui.cancel	Abbrechen
+@id	ui.cancel_import	Import abbrechen
+@id	ui.cannot_open_gridcraft_error	GridCraft kann nicht geöffnet werden: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	Die Tabelle kann in GridCraft nicht geöffnet werden: {error}
+@id	ui.cannot_save_the_pasted_picture_error	Das eingefügte Bild kann nicht gespeichert werden: {error}
+@id	ui.cannot_write_name_error	{name} kann nicht geschrieben werden: {error}
+@id	ui.cannot_write_the_drawing_error	Die Zeichnung kann nicht geschrieben werden: {error}
+@id	ui.cannot_write_the_picture_error	Das Bild kann nicht geschrieben werden: {error}
+@id	ui.cannot_write_this_page_s_ink	Die Tinte dieser Seite kann nicht geschrieben werden
+@id	ui.choose_a_custom_ink_colour	Wählen Sie eine benutzerdefinierte Tintenfarbe
+@id	ui.choose_a_file_to_attach	Wählen Sie eine Datei zum Anhängen
+@id	ui.choose_a_file_to_import	Wählen Sie eine Datei zum Importieren
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	Wählen Sie ein lokales Sammel-Level. Das Logging ist in Release-Builds standardmäßig deaktiviert.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	Wählen Sie ein Notizbuch, einen Ordner mit Notizbüchern oder einen leeren Ordner für ein neues Notizbuch
+@id	ui.choose_a_onenote_notebook_folder	Wählen Sie einen OneNote-Notizbuchordner
+@id	ui.choose_a_pdf_or_office_document_to_print_out	Wählen Sie ein PDF- oder Office-Dokument zum Ausdrucken
+@id	ui.choose_a_picture	Wählen Sie ein Bild
+@id	ui.choose_a_section_to_see_its_pages	Wählen Sie einen Abschnitt, um dessen Seiten zu sehen.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	Wählen Sie ein Symbol zum Einfügen am Einfügemarke
+@id	ui.choose_how_to_insert_a_picture	Wählen Sie, wie ein Bild eingefügt werden soll
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	Wählen Sie, was NoteCraft lokal aufzeichnet. Es wird nichts automatisch hochgeladen.
+@id	ui.chosen_for_this_page	für diese Seite gewählt
+@id	ui.circle	Kreis
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	Alle lokalen Telemetrie-Sitzungen und exportierten Telemetrie-ZIP-Dateien löschen?
+@id	ui.clear_formatting	Formatierung löschen
+@id	ui.clear_formatting_2	Formatierung löschen
+@id	ui.clear_telemetry	Telemetrie löschen
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	Klicken Sie auf eine Zeichnung, um sie auszuwählen, dann verschieben, strecken oder löschen
+@id	ui.click_in_a_table_first	Zuerst in eine Tabelle klicken
+@id	ui.click_in_the_page_first	Zuerst in die Seite klicken
+@id	ui.click_in_the_page_first_then_use_the_ribbon	Zuerst in die Seite klicken, dann das Menüband verwenden
+@id	ui.click_in_the_table_first	Zuerst in die Tabelle klicken
+@id	ui.clipboard	Zwischenablage
+@id	ui.close	Schließen
+@id	ui.close_notebook	Notizbuch schließen
+@id	ui.close_the_find_bar_escape	Die Suchleiste schließen (Esc)
+@id	ui.close_the_source_pane	Den Quellbereich schließen
+@id	ui.cloud_import_is_not_implemented_yet	Cloud-Import ist noch nicht implementiert.
+@id	ui.code_2	Code
+@id	ui.code_in_one_line	Code, in einer Zeile
+@id	ui.collapse	Zusammenklappen
+@id	ui.collapse_all	Alle einklappen
+@id	ui.college	Hochschule
+@id	ui.college_ruled	Hochschulregelung
+@id	ui.colour	Farbe
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	Farbe entfernt
+@id	ui.colour_set_to_colour	Farbe auf {colour} gesetzt
+@id	ui.colours	Farben
+@id	ui.columns_x_rows_table	{columns} x {rows} Tabelle
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	Kontakt
+@id	ui.convert	Konvertieren
+@id	ui.convert_to_gridcraft_2	In \nGridCraft konvertieren
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	Konvertierung zu GridCraft: GridCraft ist nicht installiert
+@id	ui.copied	Kopiert
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	Kopiert die Datei und fügt für jede gedruckte Seite ein Bild ein.
+@id	ui.copy	Kopieren
+@id	ui.copy_full_path	Vollständigen Pfad kopieren
+@id	ui.copy_link_to_page	Link zur Seite kopieren
+@id	ui.copy_the_selection	Die Auswahl kopieren
+@id	ui.could_not_attach_name_before_rendering_its_pages	{name} konnte vor dem Rendern der Seiten nicht angehängt werden
+@id	ui.could_not_attach_name_to_this_page	{name} konnte an diese Seite nicht angehängt werden.
+@id	ui.could_not_complete_the_action_error	Die Aktion konnte nicht abgeschlossen werden: {error}
+@id	ui.could_not_import_the_notebook_error	Das Notizbuch konnte nicht importiert werden: {error}
+@id	ui.could_not_open_the_containing_folder_error	Der enthaltende Ordner konnte nicht geöffnet werden: {error}
+@id	ui.could_not_open_the_file_error	Die Datei konnte nicht geöffnet werden: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	Das Symbol für {name} konnte nicht repariert werden: {error}
+@id	ui.could_not_reset_app_preferences_error	Die App-Einstellungen konnten nicht zurückgesetzt werden: {error}
+@id	ui.could_not_restore_the_link_for_name_error	Der Link für {name} konnte nicht wiederhergestellt werden: {error}
+@id	ui.could_not_save_the_interface_language_error	Die Schnittstellensprache konnte nicht gespeichert werden: {error}
+@id	ui.could_not_store_printout_page_page_error	Die Druckausgabeseite {page} konnte nicht gespeichert werden: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} Elemente, {colour} Farbe
+@id	ui.create	Erstellen
+@id	ui.created	Erstellt
+@id	ui.critical	Kritisch
+@id	ui.ctrl_v_pastes_into_the_page	Strg+V fügt in die Seite ein
+@id	ui.ctrl_y_puts_it_back	Strg+Y stellt es wieder her
+@id	ui.ctrl_z_takes_back_the_last_change	Strg+Z nimmt die letzte Änderung zurück
+@id	ui.current_session_id	Aktuelle Sitzung: {id}
+@id	ui.custom	benutzerdefiniert
+@id	ui.customize_quick_access_toolbar	Schnellzugleiste anpassen
+@id	ui.customize_tags_not_built	Tags anpassen... (nicht eingebaut)
+@id	ui.cut	Ausschneiden
+@id	ui.cut_2	ausschneiden
+@id	ui.cut_the_selection	Die Auswahl ausschneiden
+@id	ui.dark	Dunkel
+@id	ui.data	Daten
+@id	ui.date	Datum
+@id	ui.date_time_2	Datum &\nUhrzeit
+@id	ui.debug	debuggen
+@id	ui.decrease_indentation	Einrückung verringern
+@id	ui.decrease_indentation_shift_tab	Einrückung verringern (Shift+Tab)
+@id	ui.default	Standard
+@id	ui.default_format	Standardformat
+@id	ui.default_format_for_pages_below	Standardformat für Seiten darunter
+@id	ui.definition	Definition
+@id	ui.delete	Löschen
+@id	ui.delete_assets_name_from_this_page_s_folder	"assets/{name}" aus dem Ordner dieser Seite löschen?
+@id	ui.delete_columns_2	\nSpalten löschen
+@id	ui.delete_ellipsis	Löschen...
+@id	ui.delete_file	Datei löschen
+@id	ui.delete_notebook	Notizbuch löschen
+@id	ui.delete_notebook_2	Notizbuch löschen...
+@id	ui.delete_notebook_title_and_everything_inside_it	Notizbuch "{title}" und alles darin löschen?
+@id	ui.delete_permanently	Endgültig löschen
+@id	ui.delete_rows_2	\nZeilen löschen
+@id	ui.delete_tool	Werkzeug löschen
+@id	ui.delete_tool_2	{tool} löschen
+@id	ui.deleted_notebook	Notizbuch gelöscht
+@id	ui.deleted_notebook_path	Notizbuch {path} gelöscht
+@id	ui.deny	Verweigern
+@id	ui.diagram	Diagramm
+@id	ui.diamond	Diamant
+@id	ui.direction_from_the_words	Richtung von den Wörtern
+@id	ui.discovering_sections	Abschnitte werden entdeckt…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	In dieser Sitzung nicht mehr vor ähnlichen Anhangsproblemen warnen
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	In dieser Sitzung nicht mehr vor ähnlichen fehlenden Symbolen warnen
+@id	ui.do_not_warn_again_for_this_file_type_this_session	Für diesen Dateityp in dieser Sitzung nicht mehr warnen
+@id	ui.dock_to_desktop	Am Desktop andocken
+@id	ui.document_renderer_coming_soon	Dokument-Renderer kommt bald
+@id	ui.don_t_show_this_again_in_this_session	Dies in dieser Sitzung nicht mehr anzeigen
+@id	ui.don_t_show_this_ever	Nie wieder anzeigen
+@id	ui.draw	Zeichnen
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	Zeichnen Sie eine Schleife um die Tinte, um sie auszuwählen
+@id	ui.draw_here_2	Hier \n zeichnen
+@id	ui.drawing	Zeichnung läuft...
+@id	ui.drawing_saved_count_strokes	Zeichnung gespeichert, {count} Striche
+@id	ui.drawing_tools	Zeichenwerkzeuge
+@id	ui.drop_a_file_onto_the_page_to_add_it	Legen Sie eine Datei auf die Seite, um sie hinzuzufügen
+@id	ui.edit	Bearbeiten
+@id	ui.editing	Bearbeitung läuft...
+@id	ui.egui_and_eframe	egui und eframe
+@id	ui.ellipse	Ellipse
+@id	ui.email	E-Mail
+@id	ui.english	Englisch
+@id	ui.equation	Gleichung
+@id	ui.equation_name	Gleichung: {name}
+@id	ui.eraser	Radierer
+@id	ui.error	Fehler
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	Jede fünfte Linie ist etwas stärker, um das Zählen zu erleichtern.
+@id	ui.every_line_of_this_page_decides_for_itself	Jede Zeile dieser Seite entscheidet selbst
+@id	ui.every_paragraph_decides_for_itself	Jeder Absatz entscheidet selbst
+@id	ui.expand	Erweitern
+@id	ui.expand_all	Alle erweitern
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Export erstellt einen benutzerdefinierten ZIP und entfernt dann den exportierten Sitzungsort.
+@id	ui.export_current_session_zip	Aktuelle Sitzung als ZIP exportieren
+@id	ui.export_telemetry_zip	Telemetrie als ZIP exportieren
+@id	ui.eyedropper	Pipette
+@id	ui.eyedropper_not_built	Die Pipette ist noch nicht eingebaut
+@id	ui.file	Datei
+@id	ui.file_attachment_2	Datei\nAnhang
+@id	ui.file_options	Dateioptionen
+@id	ui.file_printout_2	Datei\nDruckausgabe
+@id	ui.files	Dateien
+@id	ui.files_in_this_page	DATEIEN AUF DIESER SEITE
+@id	ui.find	Suchen
+@id	ui.find_in_this_file	In dieser Datei suchen
+@id	ui.find_tags	Tags suchen
+@id	ui.find_tags_3	\nTags suchen
+@id	ui.fit_the_page_to_the_available_width	Seite an die verfügbare Breite anpassen
+@id	ui.folder_folder	Ordner: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	Systemeinstellung für helles oder dunkles Design übernehmen
+@id	ui.format	Format
+@id	ui.format_background_2	Format\nHintergrund
+@id	ui.format_for_this_page	Format für diese Seite
+@id	ui.format_painter	Formatübernahme
+@id	ui.forward	Vorwärts
+@id	ui.forward_to_the_page_after_alt_right	Zum nächsten Blatt springen (Alt+Rechts)
+@id	ui.fountain_pen	Füllfederhalter
+@id	ui.from_camera	Von Kamera
+@id	ui.from_online	Aus Online-Quelle
+@id	ui.full_page	Gesamte Seite
+@id	ui.full_page_view_2	GesamteSeite\nAnsicht
+@id	ui.full_path_copied	Vollständiger Pfad kopiert
+@id	ui.give_the_page_the_whole_window	Seite im gesamten Fenster anzeigen
+@id	ui.gray	Grau
+@id	ui.green	Grün
+@id	ui.green_2	grün
+@id	ui.grey	grau
+@id	ui.gridcraft_is_not_installed	GridCraft ist nicht installiert
+@id	ui.help	Hilfe
+@id	ui.hide	Ausblenden
+@id	ui.hide_everything_but_the_page	Alles außer der Seite ausblenden
+@id	ui.hide_page_title	Seitentitel ausblenden
+@id	ui.hide_the_page_source	Quellcode der Seite ausblenden
+@id	ui.hide_the_page_title	Seitentitel ausblenden
+@id	ui.highlight	Markieren
+@id	ui.highlighter	Textmarker
+@id	ui.history	Verlauf
+@id	ui.home	Startseite
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	Idee
+@id	ui.images	Bilder
+@id	ui.immersive_reader	Immersive Reader
+@id	ui.import_file	Datei importieren
+@id	ui.import_from_the_cloud	Aus der Cloud importieren
+@id	ui.import_notebook_folder	Notizbuchordner importieren
+@id	ui.important	Wichtig
+@id	ui.importing	Importiere…
+@id	ui.importing_onenote	OneNote wird importiert
+@id	ui.increase_indentation	Einrückung erhöhen
+@id	ui.increase_indentation_tab	Einrückung erhöhen (Tab)
+@id	ui.index_of_total_sections	{index} von {total} Abschnitten
+@id	ui.info	Info
+@id	ui.inherit_notebook_section_or_global_setting	Übernehmen (Notizbuch-, Abschnitts- oder globale Einstellung)
+@id	ui.input_mode	Eingabemodus
+@id	ui.insert	Einfügen
+@id	ui.insert_a_common_symbol	Häufiges Symbol einfügen
+@id	ui.insert_column_left_2	Spalte\nLinks einfügen
+@id	ui.insert_column_right_2	Spalte\nRechts einfügen
+@id	ui.insert_printout	Druckausgabe einfügen
+@id	ui.insert_row_above_2	Zeile\nOben einfügen
+@id	ui.insert_row_below_2	Zeile\nUnten einfügen
+@id	ui.insert_space_2	\nLeerraum einfügen
+@id	ui.insert_symbol	Symbol einfügen
+@id	ui.insert_table_not_built	Tabelle einfügen… (nicht implementiert)
+@id	ui.insert_the_picture	Bild einfügen
+@id	ui.insert_the_recording	Aufnahme einfügen
+@id	ui.insert_the_video	Video einfügen
+@id	ui.inserted_name_and_count_printout_pages	{name} und {count} Druckausgabeseiten eingefügt
+@id	ui.interface_language	Oberflächensprache
+@id	ui.interface_language_language	Oberflächensprache: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Probleme, die Roadmap und die Dokumentation sind hier zu finden. NoteCraft kommuniziert nicht automatisch mit diesem oder anderen Diensten.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Es wird aufgeführt, damit der Ordner der Seite kein Geheimnis bleibt.
+@id	ui.italic	Kursiv
+@id	ui.italic_ctrl_i	Kursiv (Strg+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	Der Textausrichtung bezieht sich auf einen Absatz
+@id	ui.keep_this_window_above_the_others	Dieses Fenster immer im Vordergrund halten
+@id	ui.label	Beschriftung
+@id	ui.label_not_built	{label} (nicht implementiert)
+@id	ui.label_not_built_yet	{label}: noch nicht implementiert
+@id	ui.label_nothing_to_action	{label}: nichts zu {action}
+@id	ui.language_click_to_change_it	{language}. Klicken zum Ändern.
+@id	ui.large	Groß
+@id	ui.large_squares	Große Quadrate
+@id	ui.laser_pointer	Laserpointer
+@id	ui.lasso_select	Schlaufe\nAuswählen
+@id	ui.layout	Layout
+@id	ui.leave_it	Unverändert lassen
+@id	ui.left_to_right	Links-nach-rechts
+@id	ui.level	Ebene:
+@id	ui.licence	Lizenz
+@id	ui.light	Hell
+@id	ui.light_or_dark_and_the_accent_colour	Helles oder dunkles Design sowie die Akzentfarbe
+@id	ui.line	Linie
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	Linien oder Quadrate hinter der Seite, wie auf Papier
+@id	ui.link	Link
+@id	ui.link_to_the_file_where_it_is	Verknüpfung zur Datei erstellen
+@id	ui.link_to_title_copied	Link zu „{title}“ kopiert
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	{name} verknüpft; die Datei wurde nicht kopiert
+@id	ui.links	Links
+@id	ui.live_captions	Live-Untertitel
+@id	ui.local_collection_level	Lokaler Sammlungsgrad
+@id	ui.local_diagnostics	Lokale Diagnose
+@id	ui.local_diagnostics_and_usage	Lokale Diagnose und Nutzung
+@id	ui.logging_folder_folder	Protokollierungsordner: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Protokolle und Telemetrie bleiben auf diesem Gerät. NoteCraft sendet sie nicht automatisch.
+@id	ui.magenta	Magenta
+@id	ui.make_the_page_larger	Seite vergrößern
+@id	ui.make_the_page_smaller	Seite verkleinern
+@id	ui.many_thanks_to_its_authors_and_contributors	— vielen Dank an die Autoren und Mitwirkenden.
+@id	ui.markdown	Markdown
+@id	ui.match_case	Groß-/Kleinschreibung beachten
+@id	ui.math	Mathematik
+@id	ui.maximize	Maximieren
+@id	ui.md_2	md
+@id	ui.media	Medien
+@id	ui.medium	Mittel
+@id	ui.medium_squares	Mittlere Quadrate
+@id	ui.meeting_details	Meeting-Details
+@id	ui.meeting_details_3	Meeting\nDetails
+@id	ui.meetings	Besprechungen
+@id	ui.merge	Zusammenführen
+@id	ui.mermaid	Mermaid
+@id	ui.mint	mint
+@id	ui.mit_license	MIT-Lizenz
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT oder Apache-2.0, nach Ihrer Wahl. Die Koala-Grafik ist davon nicht abgedeckt; siehe ATTRIBUTION.md.
+@id	ui.mode	Modus
+@id	ui.modify_tool	Werkzeug ändern
+@id	ui.more	Mehr...
+@id	ui.more_2	Mehr
+@id	ui.more_colours	Weitere Farben
+@id	ui.more_styles	Weitere Stile
+@id	ui.more_tags	Weitere Tags
+@id	ui.move_left	Nach links verschieben
+@id	ui.move_right	Nach rechts verschieben
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	{title} und alles darin ({n}-Element) in den Papierkorb dieses Notizbuchs verschieben?|{title} und alles darin ({n}-Elemente) in den Papierkorb dieses Notizbuchs verschieben?
+@id	ui.move_to_recycle_bin	In den Papierkorb verschieben
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	{moved} Striche vom alten Zeichnungsbereich dieser Seite auf die Seite selbst verschoben
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} Striche auf die Seite verschoben; {left} alte Zeichnungsdateien konnten nicht entfernt werden
+@id	ui.moved_to_the_notebook_recycle_bin	In den Notizbuch-Papierkorb verschoben
+@id	ui.n_item_n_items	{n}-Element|{n}-Elemente
+@id	ui.n_notebook_n_notebooks	{n}-Notizbuch|{n}-Notizbücher
+@id	ui.n_notebook_opened_n_notebooks_opened	{n}-Notizbuch geöffnet|{n}-Notizbücher geöffnet
+@id	ui.n_stroke_n_strokes	{n} Strich|{n} Striche
+@id	ui.name_2	Name
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} ist noch nicht implementiert. Siehe Roadmap für kommende Funktionen.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} ist nun eine Datei im Ordner dieser Seite
+@id	ui.name_is_open_in_gridcraft	{name} ist in GridCraft geöffnet
+@id	ui.name_not_used_by_the_page	{name}: wird von der Seite nicht verwendet
+@id	ui.narrow	Schmal
+@id	ui.narrow_ruled	Schmalkariert
+@id	ui.new_gridcraft_spreadsheet	Neues GridCraft-Tabellenkalkül
+@id	ui.new_gridcraft_spreadsheet_not_installed	Neues GridCraft-Tabellenkalkül (nicht installiert)
+@id	ui.new_notebook	Neues Notizbuch
+@id	ui.new_notebook_2	Neues Notizbuch...
+@id	ui.new_page	Neue Seite
+@id	ui.new_page_2	Neue Seite...
+@id	ui.new_pages	Neue Seiten:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	Neue Seiten verwenden {format}, sofern das Notizbuch oder der Abschnitt nichts anderes angibt
+@id	ui.new_quick_note	Neuer Schnellnotiz
+@id	ui.new_window	Neues Fenster
+@id	ui.next	Weiter
+@id	ui.next_match_enter_f3	Nächstes Ergebnis (Enter, F3)
+@id	ui.no	nein
+@id	ui.no_colour	Keine Farbe
+@id	ui.no_generated_preview_icon_is_available	Es ist kein generiertes Vorschaubild verfügbar.
+@id	ui.no_lines_behind_the_page	Keine Linien hinter der Seite
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	Kein {name} neben dieser Seite: Zuerst die Tabelle übergeben
+@id	ui.no_notebooks_yet_use_new_notebook	Noch keine Notizbücher. Verwenden Sie „Neues Notizbuch“.
+@id	ui.no_pages_in_this_section_yet	Noch keine Seiten in diesem Abschnitt.
+@id	ui.no_pages_match	Keine passenden Seiten gefunden.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	Noch keine gespeicherten Versionen. NoteCraft speichert eine Kopie, wenn sich die Seite ändert.
+@id	ui.none	Keine
+@id	ui.normal_view	Normaler\nAnzeigemodus
+@id	ui.not_built	Nicht implementiert
+@id	ui.not_built_2	nicht implementiert
+@id	ui.not_built_yet	Noch nicht implementiert
+@id	ui.not_drawn_why	Nicht gezeichnet: {why}
+@id	ui.not_used_by_the_page	wird von der Seite nicht verwendet
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	Notizen erstellen und organisieren in reinem Rust. Ihre Notizen sind einfache Ordner und Dateien.
+@id	ui.notebook	Notizbuch
+@id	ui.notebook_closed_its_files_are_still_on_disk	Notizbuch geschlossen; seine Dateien befinden sich noch auf der Festplatte
+@id	ui.notebook_created	Notizbuch erstellt
+@id	ui.notebook_information	Notizbuchinformationen
+@id	ui.notebook_recycle_bin_2	Papierkorb des Notizbuchs
+@id	ui.notebook_recycle_bin_3	Papierkorb\ndesNotizbuchs
+@id	ui.notebooks_2	NOTIZBÜCHER
+@id	ui.notebooks_and_pages_in_their_own_columns	Notizbücher und Seiten in eigenen Spalten
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Notizbücher und Abschnitte in einer Spalte, Seiten in der nächsten
+@id	ui.notebooks_folder_folder	Notizbuch-Ordner: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	Hier erscheinen die Notizbücher, die Sie öffnen.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft hat einen Anhang gefunden, der von dieser Seite nicht referenziert wird:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft hat einen Anhang ohne sein generiertes Symbol gefunden:
+@id	ui.notecraft_ruled	NoteCraft-Liniert
+@id	ui.notecraft_squares	NoteCraft-Quadrate
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	Notizen als einfache Ordner. Öffnen Sie eine Seite oder erstellen Sie ein Notizbuch, um zu beginnen.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	Nichts unter {path}: Der Link verweist auf eine nicht vorhandene Seite oder Datei
+@id	ui.nothing_here_can_show_this_kind_of_file	Hier kann keine Datei dieses Typs angezeigt werden.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	Es wurde nichts kopiert. Der Link wird ungültig, wenn die Datei verschoben wird.
+@id	ui.nothing_to_redo	Nichts zum Wiederholen
+@id	ui.nothing_to_undo	Nichts zum Rückgängigmachen
+@id	ui.numbering	Nummerierung
+@id	ui.off	AUS
+@id	ui.off_2	aus
+@id	ui.office_document	Office-Dokument
+@id	ui.office_text_inspection	Inspektion von Office-Texten
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO-Importarbeiter wurde unerwartet gestoppt
+@id	ui.ok	OK
+@id	ui.one_tree_of_notebooks	Ein Baum von Notizbüchern
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive und SharePoint: nicht implementiert. Verweisen Sie NoteCraft auf einen Ordner, den Ihr Synchronisierungstool bereits überwacht, und es ist dasselbe.
+@id	ui.onenote_import	OneNote-Import
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Online-Notizbücher (OneDrive, SharePoint) sind nicht implementiert. Ein Notizbuch in einem Ordner, den Ihr Synchronisierungstool überwacht, wird von diesem synchronisiert.
+@id	ui.only_a_list_item_can_be_indented	Nur ein Listenelement kann eingerückt werden
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	Öffnen Sie es nur, wenn Sie der Datei und der Person, die sie erstellt hat, vertrauen.
+@id	ui.open	Öffnen
+@id	ui.open_a_folder	Ordner öffnen...
+@id	ui.open_a_notebook	Notizbuch öffnen
+@id	ui.open_a_page_first	Zuerst eine Seite öffnen
+@id	ui.open_a_page_first_then_drop_files_onto_it	Zuerst eine Seite öffnen, dann Dateien darauf ablegen.
+@id	ui.open_attachment	Anhang öffnen
+@id	ui.open_every_level	Alle Ebenen öffnen
+@id	ui.open_folder	Ordner öffnen
+@id	ui.open_in_folder	Im Ordner öffnen
+@id	ui.open_name	{name} öffnen
+@id	ui.open_telemetry_folder	Telemetrie-Ordner öffnen
+@id	ui.open_the_artcraft_discord	ArtCraft-Discord öffnen
+@id	ui.open_this_notebook	Dieses Notizbuch öffnen
+@id	ui.open_using_shell	Über Shell öffnen
+@id	ui.open_with_associated_app	Mit zugeordneter App öffnen
+@id	ui.opened	Geöffnet
+@id	ui.opened_path	{path} geöffnet
+@id	ui.opened_path_it_has_no_pages_yet	{path} geöffnet; es enthält noch keine Seiten
+@id	ui.opened_the_containing_folder	Übergeordneten Ordner geöffnet
+@id	ui.opened_url_in_the_browser	{url} im Browser geöffnet
+@id	ui.opened_using_the_associated_application	Mit der zugeordneten Anwendung geöffnet
+@id	ui.opening_path	{path} wird geöffnet
+@id	ui.options	Optionen
+@id	ui.orange	Orange
+@id	ui.page	Seite
+@id	ui.page_colour	Seitenfarbe
+@id	ui.page_direction_from_the_words	Seitenausrichtung basierend auf dem Text
+@id	ui.page_format	Seitenformat
+@id	ui.page_left_to_right	Seite von links nach rechts
+@id	ui.page_right_to_left	Seite von rechts nach links
+@id	ui.page_setup	Seiteneinstellungen
+@id	ui.page_source	Quellcode der Seite
+@id	ui.page_versions_2	Seitenversionen
+@id	ui.page_versions_4	\nVersions
+@id	ui.page_width	Seitenbreite
+@id	ui.pages	Seiten
+@id	ui.paper_behind_the_page	{paper} hinter der Seite
+@id	ui.paper_size	Papierformat
+@id	ui.para	Absatz
+@id	ui.paragraph_direction_from_the_words	Absatzrichtung aus den Wörtern
+@id	ui.paragraph_left_to_right	Absatz von links nach rechts
+@id	ui.paragraph_right_to_left	Absatz von rechts nach links
+@id	ui.paragraph_selected	Absatz ausgewählt
+@id	ui.paste	Einfügen
+@id	ui.pasted	Eingefügt
+@id	ui.pasted_a_picture_width_by_height	{width} als Bild eingefügt, {height}
+@id	ui.pasted_formatted_content	Formatierten Inhalt eingefügt
+@id	ui.path_opened_as_an_empty_notebook	{path} als leeres Notizbuch geöffnet
+@id	ui.pdf_and_office_documents	PDF- und Office-Dokumente
+@id	ui.pdf_document	PDF-Dokument
+@id	ui.pdf_text_inspection	PDF-Textprüfung
+@id	ui.pen	Stift
+@id	ui.pencil	Bleistift
+@id	ui.permanently_delete	Dauerhaft löschen?
+@id	ui.permanently_delete_title_and_everything_inside_it	"{title}" und alles darin dauerhaft löschen?
+@id	ui.permanently_deleted	Dauerhaft gelöscht
+@id	ui.phone_number	Telefonnummer
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	Wählen Sie ein PDF- oder Office-Dokument aus, um dessen Seiten als Bilder einzufügen
+@id	ui.pick_the_caret_s_column	Spalte des Cursors auswählen
+@id	ui.pick_the_caret_s_row	Zeile des Cursors auswählen
+@id	ui.pick_the_whole_table	Gesamte Tabelle auswählen
+@id	ui.picture_from_a_file	Bild aus Datei
+@id	ui.pictures	Bilder
+@id	ui.plain	Einfach
+@id	ui.plain_text	Klartext
+@id	ui.powered_by	Unterstützt von
+@id	ui.pressure_sensitivity_now_of_100	Druckempfindlichkeit {now} von 100
+@id	ui.pressure_sensitivity_unavailable	Druckempfindlichkeit nicht verfügbar
+@id	ui.previous	Vorherige
+@id	ui.previous_match_shift_enter	Vorheriges Ergebnis (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	Ausdruck ist für PDF- und Office-Dokumente verfügbar.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Datenschutz hat höchste Priorität. Alle Protokolle und Telemetriedaten verbleiben auf diesem Gerät. NoteCraft sendet sie niemals automatisch.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Datenschutz hat höchste Priorität. Protokolle und Telemetriedaten verbleiben auf diesem Gerät. NoteCraft sendet sie nicht an uns.
+@id	ui.purple	Lila
+@id	ui.put_a_sheet_to_draw_on_into_the_page	Eine Zeichenfläche in die Seite einfügen
+@id	ui.put_another_tool_on_the_rack	Ein weiteres Werkzeug in den Halter legen
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	Zeiger zurück zu den Wörtern und zum Cursor setzen
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	Die Tabelle mit dem Tabelleninhalt aktualisieren
+@id	ui.question	Frage
+@id	ui.quote_2	Zitat
+@id	ui.quote_this_paragraph	Diesen Absatz zitieren
+@id	ui.read_back_from_it_2	\n daraus zurücklesen
+@id	ui.read_back_rows_rows_and_columns_columns	{rows} Zeilen und {columns} Spalten zurücklesen
+@id	ui.read_only	Schreibgeschützt
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	Schreibgeschützte Textextraktion. Vollständige Dokumentanzeige folgt bald.
+@id	ui.ready_2	Bereit
+@id	ui.recently_opened	Zuletzt geöffnet
+@id	ui.recording	Aufnahme
+@id	ui.rectangle	Rechteck
+@id	ui.red	rot
+@id	ui.red_2	Rot
+@id	ui.redo	Wiederherstellen
+@id	ui.redo_ctrl_y	Wiederherstellen (Ctrl+Y)
+@id	ui.remember_for_later	Für später merken
+@id	ui.remove_from_list	Aus Liste entfernen
+@id	ui.remove_this_tool_from_the_rack	Dieses Werkzeug aus dem Halter entfernen
+@id	ui.removed_notebook_from_the_known_notebooks_list	Notizbuch aus der Liste der bekannten Notizbücher entfernt
+@id	ui.rename	Umbenennen
+@id	ui.rename_ellipsis	Umbenennen...
+@id	ui.renamed	Umbenannt
+@id	ui.rendered_svg_preview	Gerenderte SVG-Vorschau
+@id	ui.repair_icon	Symbol reparieren
+@id	ui.repaired_the_attachment_icon_for_name	Anhangssymbol für {name} repariert
+@id	ui.replay	Wiedergeben
+@id	ui.reset_app_preferences	App-Einstellungen zurücksetzen
+@id	ui.reset_app_preferences_2	App-Einstellungen zurücksetzen…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	Gespeicherte NoteCraft-Einstellungen auf die Standardwerte zurücksetzen?
+@id	ui.reset_preferences	Einstellungen zurücksetzen
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Themen, Layout, Bandauswahl und andere gespeicherte NoteCraft-Einstellungen auf die Standardwerte zurücksetzen.
+@id	ui.restore	Wiederherstellen
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	Seiten, Abschnitte und Gruppen wiederherstellen, die aus diesem Notizbuch entfernt wurden
+@id	ui.restored_the_saved_page_version	Gespeicherte Seitenversion wiederhergestellt
+@id	ui.restored_to_the_original_location	Zum ursprünglichen Standort zurückgekehrt
+@id	ui.right_to_left	Rechts-nach-links
+@id	ui.rounded	Abgerundet
+@id	ui.rub_out_whatever_the_pointer_passes_over	Alles löschen, worüber der Zeiger streicht
+@id	ui.rule_line_colour_not_built	Linienfarbe (nicht eingebaut)
+@id	ui.ruled	 liniert
+@id	ui.save_picture_2	\nBild speichern
+@id	ui.saved	Gespeichert
+@id	ui.saved_copies_of_this_page	Gespeicherte Kopien dieser Seite
+@id	ui.saved_the_drawing_as_a_picture_path	Zeichnung als Bild gespeichert: {path}
+@id	ui.saved_time	{time} gespeichert
+@id	ui.search	Suchen
+@id	ui.search_all_pages	Alle Seiten durchsuchen
+@id	ui.section	Abschnitt
+@id	ui.section_group	Abschnittsgruppe
+@id	ui.see_and_restore_saved_copies_of_this_page	Gespeicherte Kopien dieser Seite anzeigen und wiederherstellen
+@id	ui.select	Auswählen
+@id	ui.select_columns_2	\nSpalten auswählen
+@id	ui.select_rows_2	\nZeilen auswählen
+@id	ui.select_some_words_first	Zuerst einige Wörter auswählen
+@id	ui.select_table_2	\nTabelle auswählen
+@id	ui.selected_text_next_typing	Ausgewählter Text / nächste Eingabe
+@id	ui.selection	Auswahl
+@id	ui.send_page	Seite senden
+@id	ui.send_page_3	\nSeite senden
+@id	ui.separate_pages	Seiten trennen
+@id	ui.session_id_id	Sitzungs-ID: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	Richtung des ausgewählten Texts oder des nächsten eingegebenen Texts festlegen
+@id	ui.shape	Form
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: Auf der Seite ziehen, um eine zu zeichnen
+@id	ui.shapes	Formen
+@id	ui.show	Anzeigen
+@id	ui.show_notebooks_folder	Notizbuchordner anzeigen
+@id	ui.show_or_hide_the_notebooks_column	Notizbuchspalte ein- oder ausblenden
+@id	ui.show_the_code	Code anzeigen
+@id	ui.show_the_notebooks_again	Notizbücher wieder anzeigen
+@id	ui.show_the_notebooks_folder	Notizbuchordner anzeigen
+@id	ui.show_the_page_at_100	Seite mit 100 % anzeigen
+@id	ui.show_the_page_source	Quellcode der Seite anzeigen
+@id	ui.show_the_strokes	Striche anzeigen
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	Klein
+@id	ui.small_squares	Kleine Quadrate
+@id	ui.somewhere_else	Woanders
+@id	ui.source	Quelle
+@id	ui.split	Aufteilen
+@id	ui.spreadsheet	Tabelle
+@id	ui.square	Quadrat
+@id	ui.squares	Quadrate
+@id	ui.standard	Standard
+@id	ui.standard_ruled	Standard liniert
+@id	ui.star	Stern
+@id	ui.starting_officeimo	OfficeIMO wird gestartet…
+@id	ui.stencils	Schablonen
+@id	ui.strike_through	Durchgestrichen
+@id	ui.strikethrough	Durchstreichen
+@id	ui.styles	Stile
+@id	ui.styles_2	stile
+@id	ui.svg_source	SVG-Quellcode
+@id	ui.symbol	Symbol
+@id	ui.symbols	Symbole
+@id	ui.table_3	Tabelle
+@id	ui.tables	Tabellen
+@id	ui.tabs_layout	Registerkartenlayout
+@id	ui.tag_tag	{tag} tag
+@id	ui.tags	Tags
+@id	ui.take_the_caret_s_column_out	Spalte der Cursorposition entfernen
+@id	ui.take_the_caret_s_row_out	Zeile der Cursorposition entfernen
+@id	ui.take_the_last_stroke_back	Letzten Strich zurücknehmen
+@id	ui.take_the_marks_off	Markierungen entfernen
+@id	ui.teal_2	Türkis
+@id	ui.text	Text
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	Die Textinspektion wird unten angezeigt.
+@id	ui.text_run_direction	Laufrichtung des Textes
+@id	ui.thank_you_for_trying_notecraft	Danke, dass Sie NoteCraft ausprobieren!
+@id	ui.that_file_has_nothing_in_it_to_put_back	Diese Datei enthält nichts zum Wiederherstellen
+@id	ui.that_file_is_not_in_this_page_s_folder	Diese Datei befindet sich nicht im Ordner dieser Seite
+@id	ui.that_is_not_something_a_page_can_hold	Das ist etwas, das eine Seite nicht speichern kann
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	Dieser Link verweist außerhalb des Notizbuchordners und wurde daher nicht verfolgt
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	Diese Seite gehört zu einem nicht geöffneten Notizbuch
+@id	ui.the_attachment_returned_an_invalid_page_link	Der Anhang hat einen ungültigen Seitenlink zurückgegeben
+@id	ui.the_built_in_default	der integrierte Standardwert
+@id	ui.the_code	Der Code
+@id	ui.the_diagnostics_folder_could_not_be_created_error	Der Diagnoseordner konnte nicht erstellt werden: {error}
+@id	ui.the_file_could_not_be_opened_error	Die Datei konnte nicht geöffnet werden: {error}
+@id	ui.the_file_is_gone	Die Datei ist verschwunden
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	Die Datei wurde von der Festplatte entfernt. Rückgängig macht eine Datei nicht wiederherstellbar.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	Die Datei ist sicher. NoteCraft kann am Ende der Seite einen Link dazu anhängen.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	Die Datei wurde nicht angehängt: Der Anhangsbefehl hat ein unerwartetes Ergebnis zurückgegeben.
+@id	ui.the_folder_could_not_be_opened_error	Der Ordner konnte nicht geöffnet werden: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	Das Format wird bei der Seitenerstellung festgelegt
+@id	ui.the_global_setting	die globale Einstellung
+@id	ui.the_last_tool_stays_on_the_rack	Das letzte Werkzeug bleibt am Gestell
+@id	ui.the_notebook_could_not_be_deleted_error	Das Notizbuch konnte nicht gelöscht werden: {error}
+@id	ui.the_notebook_or_section_setting	die Notizbuch- oder Abschnittseinstellung
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	Die Originaldatei ist noch sicher. NoteCraft kann das danebenliegende Symbol neu generieren.
+@id	ui.the_page_beside_the_notebooks	Die Seite neben den Notizbüchern
+@id	ui.the_page_is_colour	Die Seite ist {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	Die Seite hat die eigene Farbe des Themas
+@id	ui.the_page_source_beside_the_page	Der Quellcode der Seite, neben der Seite
+@id	ui.the_paper_and_colour_apply_to_this_page_only	Das Papier und die Farbe gelten nur für diese Seite.
+@id	ui.the_theme_could_not_be_saved_error	Das Thema konnte nicht gespeichert werden: {error}
+@id	ui.the_time_now	Die aktuelle Zeit
+@id	ui.the_welcome_notebook	Das Willkommens-Notizbuch
+@id	ui.the_whole_page_reads_left_to_right	Die gesamte Seite wird von links nach rechts gelesen
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	Die gesamte Seite wird von rechts nach links gelesen (Arabisch, Hebräisch)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	Das Fenster wird auf der GPU gezeichnet. Die Symbole werden im Code gezeichnet. Das Logo ist das einzige Bild.
+@id	ui.theme	Thema
+@id	ui.theme_theme	Thema {theme}
+@id	ui.theme_theme_2	Thema: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme}-Thema. Klicken zum Ändern.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	Es gibt noch keine Notizbücher. „Neu“ erstellt eines.
+@id	ui.there_is_no_drawing_on_this_page	Auf dieser Seite befindet sich keine Zeichnung
+@id	ui.there_is_no_earlier_page	Es gibt keine vorherige Seite
+@id	ui.there_is_no_later_page	Es gibt keine nächste Seite
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	Am Gestell ist kein Platz für ein weiteres Werkzeug
+@id	ui.there_is_no_stroke_to_take_back	Es gibt keinen Strich zum Zurücknehmen
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	Es befindet sich nichts in der Zwischenablage zum Einfügen
+@id	ui.thickness	Dicke
+@id	ui.this_cannot_be_undone	Dies kann nicht rückgängig gemacht werden.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	Dies konnte nicht in den Papierkorb verschoben werden. Es wurde nichts gelöscht.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	Dadurch werden keine Notizbücher oder Seiten gelöscht. Dies kann nicht rückgängig gemacht werden.
+@id	ui.this_file_will_be_opened_by_its_associated_application	Diese Datei wird von der zugehörigen Anwendung geöffnet.
+@id	ui.this_notebook_s_recycle_bin_is_empty	Der Papierkorb dieses Notizbuchs ist leer.
+@id	ui.this_page	Diese Seite
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	Diese Seite enthält Markup, das NoteCraft noch nicht bearbeitet, daher wird es so angezeigt, wie es gelesen wird.
+@id	ui.this_page_reads_left_to_right	Diese Seite wird von links nach rechts gelesen
+@id	ui.this_page_reads_right_to_left	Diese Seite wird von rechts nach links gelesen
+@id	ui.this_paragraph_decides_from_its_own_first_letter	Dieser Absatz entscheidet anhand seines ersten Buchstabens
+@id	ui.this_paragraph_fills_the_column	Dieser Absatz füllt die Spalte
+@id	ui.this_paragraph_fills_the_column_stretched_hard	Dieser Absatz füllt die Spalte, stark gestreckt
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	Dieser Absatz füllt die Spalte, leicht gestreckt
+@id	ui.this_paragraph_is_ragged_again	Dieser Absatz ist wieder unregelmäßig
+@id	ui.this_paragraph_reads_left_to_right	Dieser Absatz wird von links nach rechts gelesen
+@id	ui.this_paragraph_reads_right_to_left	Dieser Absatz wird von rechts nach links gelesen
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	Dieser Absatz wird von rechts nach links gelesen (Arabisch, Hebräisch)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	Dieser Absatz liest in die Richtung seiner Wörter
+@id	ui.this_picture_cannot_be_shown_here	Dieses Bild kann hier nicht angezeigt werden.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	Dadurch wird der Notizbuchordner von der Festplatte entfernt und kann nicht rückgängig gemacht werden.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	Dieser Lauf wird von links nach rechts gelesen. Eine gemischte Zeile wird weiterhin in einer Reihenfolge gezeichnet; siehe Roadmap
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	Dieser Lauf wird von rechts nach links gelesen. Eine gemischte Zeile wird weiterhin in einer Reihenfolge gezeichnet; siehe Roadmap
+@id	ui.this_svg_cannot_be_rendered_here	Dieses SVG kann hier nicht gerendert werden.
+@id	ui.this_window_behaves_like_the_others	Dieses Fenster verhält sich wie die anderen
+@id	ui.this_window_stays_on_top	Dieses Fenster bleibt im Vordergrund
+@id	ui.time	Zeit
+@id	ui.time_stamp	Zeitstempel
+@id	ui.title_2	Titel
+@id	ui.title_saved	Titel gespeichert
+@id	ui.title_the_folder_name_does_not_change	Titel (der Ordnername ändert sich nicht)
+@id	ui.to_do_2	Zu erledigen
+@id	ui.to_do_tag_2	Zu erledigen\nTag
+@id	ui.today_s_date	Heutiges Datum
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	Vom Gestell genommen
+@id	ui.took_the_last_stroke_back_count_left	Letzten Strich zurückgenommen; {count} übrig
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	Werkzeuge
+@id	ui.top	Oben
+@id	ui.triangle	Dreieck
+@id	ui.type	Typ
+@id	ui.under_the	unter dem
+@id	ui.undo	Rückgängig
+@id	ui.undo_ctrl_z	Rückgängig (Strg+Z)
+@id	ui.undo_stroke	Rückgängig \nstrich
+@id	ui.unread	Ungelesen
+@id	ui.updated_the_welcome_notebook	Willkommens-Notizbuch aktualisiert
+@id	ui.use_notecraft_s_own_title_bar	NoteCraft-eigene Titelleiste verwenden
+@id	ui.use_the_system_title_bar	System-Titelleiste verwenden
+@id	ui.version_version_alpha	Version {version} (Alpha)
+@id	ui.very_large	Sehr groß
+@id	ui.very_large_squares	Sehr große Quadrate
+@id	ui.view	Ansicht
+@id	ui.views	Ansichten
+@id	ui.warn	Warnen
+@id	ui.web_site_to_visit	Zu besuchende Website
+@id	ui.welcome_to_notecraft	Willkommen bei NoteCraft
+@id	ui.what_should_happen_to_this_file	Was soll mit dieser Datei geschehen?
+@id	ui.what_to_add	Hinzuzufügendes
+@id	ui.wide	Breit
+@id	ui.wide_ruled	Breit liniert
+@id	ui.window	Fenster
+@id	ui.write_anywhere_on_the_page	Überall auf der Seite schreiben
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	Die Zeichnung erneut ohne Stifteingaben schreiben, zum Versenden
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	Tabelle ausgeben und in GridCraft öffnen
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	Gelb
+@id	ui.yellow_2	gelb
+@id	ui.you_can_continue_working_while_the_import_runs	Sie können weiterarbeiten, während der Import läuft.
+@id	ui.you_can_restore_it_from_history	Sie können es aus dem Verlauf wiederherstellen.
+@id	ui.zoom	Zoom
+@id	ui.zoom_in	Vergrößern
+@id	ui.zoom_out	Verkleinern
+@id	ui.zoom_to_100	Auf 100 % zoomen

@@ -17,10 +17,20 @@ pub const AUTO: &str = "auto";
 static EMBEDDED: &craft_i18n::Embedded = &[
     ("en-XA", "", include_str!("../../../i18n/en-XA.tsv")),
     ("ar-XB", "", include_str!("../../../i18n/ar-XB.tsv")),
+    ("ar", "", include_str!("../../../i18n/ar.tsv")),
+    ("de", "", include_str!("../../../i18n/de.tsv")),
     ("es", "", include_str!("../../../i18n/es.tsv")),
+    ("fa", "", include_str!("../../../i18n/fa.tsv")),
     ("fr", "", include_str!("../../../i18n/fr.tsv")),
+    ("he", "", include_str!("../../../i18n/he.tsv")),
+    ("hi", "", include_str!("../../../i18n/hi.tsv")),
+    ("ja", "", include_str!("../../../i18n/ja.tsv")),
+    ("ko", "", include_str!("../../../i18n/ko.tsv")),
+    ("ru", "", include_str!("../../../i18n/ru.tsv")),
+    ("ur", "", include_str!("../../../i18n/ur.tsv")),
+    ("zh", "", include_str!("../../../i18n/zh.tsv")),
 ];
-static OFFERED: &[&str] = &["en-XA", "ar-XB", "es", "fr"];
+static OFFERED: &[&str] = &["en-XA", "ar-XB", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh"];
 static PSEUDO_LOOKED_UP: LazyLock<Mutex<std::collections::BTreeSet<String>>> = LazyLock::new(|| Mutex::new(std::collections::BTreeSet::new()));
 static AR_XB_RENDERED: LazyLock<Mutex<BTreeMap<String, &'static str>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
@@ -247,11 +257,25 @@ mod tests {
     fn embedded_languages_and_ltr_pseudo_locale_are_offered() {
         let languages = available_languages();
         let codes: Vec<&str> = languages.iter().map(|language| language.code.as_str()).collect();
-        assert_eq!(codes, ["en", "en-XA", "ar-XB", "es", "fr"]);
+        assert_eq!(codes, ["en", "en-XA", "ar-XB", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh"]);
         assert_eq!(languages[1].name, "English (Pseudo, LTR)");
         assert_eq!(languages[2].name, "Arabic (Pseudo, RTL)");
-        assert_eq!(languages[3].name, "Español");
-        assert_eq!(languages[4].name, "Français");
+        for (code, name) in [
+            ("ar", "العربية"),
+            ("de", "Deutsch"),
+            ("es", "Español"),
+            ("fa", "فارسی"),
+            ("fr", "Français"),
+            ("he", "עברית"),
+            ("hi", "हिन्दी"),
+            ("ja", "日本語"),
+            ("ko", "한국어"),
+            ("ru", "Русский"),
+            ("ur", "اردو"),
+            ("zh", "中文（简体）"),
+        ] {
+            assert!(languages.iter().any(|language| language.code == code && language.name == name), "missing native locale name for {code}");
+        }
         assert!(I18N.check_all().is_empty(), "invalid embedded catalog rows: {:?}", I18N.check_all());
     }
 
@@ -385,7 +409,8 @@ mod tests {
     #[test]
     fn automatic_language_uses_the_first_supported_system_locale_or_english() {
         assert_eq!(resolve_preference(AUTO, &["fr-CA", "en-US"]), "fr");
-        assert_eq!(resolve_preference(AUTO, &["de-DE"]), "en");
+        assert_eq!(resolve_preference(AUTO, &["de-DE"]), "de");
+        assert_eq!(resolve_preference(AUTO, &["xx-YY"]), "en");
         assert_eq!(resolve_preference("en", &["fr-FR"]), "en");
     }
 }
