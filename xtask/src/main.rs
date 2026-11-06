@@ -569,14 +569,30 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_TREE_ID: AtomicU64 = AtomicU64::new(0);
+
+    fn create_test_tree(parent: &Path, mut next_name: impl FnMut() -> String) -> std::io::Result<PathBuf> {
+        loop {
+            let path = parent.join(next_name());
+            match fs::create_dir(&path) {
+                Ok(()) => return Ok(path),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    }
 
     struct TestTree(PathBuf);
 
     impl TestTree {
         fn new() -> Self {
-            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock").as_nanos();
-            let path = std::env::temp_dir().join(format!("notecraft-xtask-{}-{stamp}", std::process::id()));
-            fs::create_dir(&path).expect("create test tree");
+            let path = create_test_tree(&std::env::temp_dir(), || {
+                let id = NEXT_TEST_TREE_ID.fetch_add(1, Ordering::Relaxed);
+                format!("notecraft-xtask-{}-{id}", std::process::id())
+            })
+            .expect("create test tree");
             Self(path)
         }
     }
@@ -589,6 +605,17 @@ mod tests {
 
     const MODEL: &str = "[package]\nname = \"notecraft-model\"\n\n[dependencies]\n";
     const GOOD_STORE: &str = "[package]\nname = \"notecraft-store\"\n[dependencies]\nnotecraft-model = { workspace = true }\nnotecraft-formats = { workspace = true }\n[dev-dependencies]\negui_kittest = { workspace = true }\n";
+
+    #[test]
+    fn test_tree_creation_retries_a_name_collision() {
+        let parent = TestTree::new();
+        fs::create_dir(parent.0.join("occupied")).expect("reserve first test tree name");
+        let mut names = ["occupied", "available"].into_iter();
+
+        let created = create_test_tree(&parent.0, || names.next().expect("test name").to_owned()).expect("create a tree after collision");
+
+        assert_eq!(created, parent.0.join("available"));
+    }
 
     #[test]
     fn generated_exclusions_apply_only_at_repository_root() {
