@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Decision record and cost analysis for evaluating onenote.rs alongside the existing NoteCraft importers.">
+  <title>ADR 0.0.9: Evaluate onenote.rs as an import backend</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #59677d;
+      --line: #d8dfeb;
+      --paper: #f5f7fb;
+      --panel: #fff;
+      --blue: #3157c8;
+      --blue-soft: #e9efff;
+      --green: #167753;
+      --green-soft: #e5f6ef;
+      --amber: #8a5700;
+      --amber-soft: #fff3d7;
+      --red: #a73939;
+      --red-soft: #fff0ef;
+      --shadow: 0 12px 32px #17203312;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.62 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); }
+    .hero {
+      padding: 56px max(24px, calc((100vw - 1120px) / 2)) 42px;
+      color: #fff;
+      background: radial-gradient(circle at 82% 8%, #5879df 0, transparent 28%), linear-gradient(125deg, #16254e, #243e83 65%, #3157c8);
+    }
+    .eyebrow { margin: 0 0 12px; color: #d5dfff; font-size: .78rem; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { max-width: 900px; margin: 0; font-size: clamp(2.1rem, 5vw, 3.65rem); letter-spacing: -.045em; line-height: 1.06; }
+    .hero p { max-width: 790px; color: #e3eaff; font-size: 1.1rem; }
+    .pills { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+    .pill { border: 1px solid #ffffff4a; border-radius: 999px; padding: 5px 11px; color: #fff; font-size: .82rem; }
+    .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; max-width: 1160px; margin: 34px auto; padding: 0 22px; }
+    nav { align-self: start; position: sticky; top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); }
+    nav strong { display: block; margin-bottom: 9px; }
+    nav a { display: block; padding: 5px 0; color: var(--muted); font-size: .9rem; text-decoration: none; }
+    nav a:hover { color: var(--blue); }
+    main { min-width: 0; }
+    section, .decision {
+      margin: 0 0 22px;
+      padding: 26px clamp(18px, 3vw, 32px);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    h2 { margin: 0 0 15px; font-size: 1.55rem; letter-spacing: -.025em; }
+    h3 { margin: 22px 0 8px; font-size: 1.08rem; }
+    p { margin: 10px 0; }
+    .lede { color: var(--muted); font-size: 1.04rem; }
+    .decision { border-color: #b9c8ff; background: linear-gradient(120deg, #f5f7ff, #fff 70%); }
+    .decision-label { color: var(--blue); font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .callout { margin: 16px 0; padding: 14px 16px; border-left: 4px solid var(--blue); border-radius: 7px; background: var(--blue-soft); }
+    .callout.warn { border-color: #d29419; background: var(--amber-soft); }
+    .callout.good { border-color: var(--green); background: var(--green-soft); }
+    .grid-2, .grid-3 { display: grid; gap: 14px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .tile { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .tile h3 { margin: 0 0 7px; }
+    .tile p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .tag { display: inline-block; margin-bottom: 8px; border-radius: 999px; padding: 3px 9px; font-size: .76rem; font-weight: 750; }
+    .tag.pro { color: var(--green); background: var(--green-soft); }
+    .tag.con { color: var(--red); background: var(--red-soft); }
+    .tag.open { color: var(--amber); background: var(--amber-soft); }
+    .diagram { overflow-x: auto; margin: 16px 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcff; }
+    .mermaid { min-width: 680px; text-align: center; }
+    .diagram-note { margin: 10px 0 0; color: var(--muted); font-size: .86rem; }
+    figure { margin: 18px 0 8px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    figure svg { display: block; width: 100%; height: auto; }
+    figcaption { margin-top: 8px; color: var(--muted); font-size: .88rem; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: #33415b; background: #f5f7fc; }
+    td:first-child { min-width: 150px; font-weight: 650; }
+    .score { white-space: nowrap; color: var(--blue); font-weight: 750; }
+    .small { color: var(--muted); font-size: .88rem; }
+    .checklist { padding-left: 1.2rem; }
+    .checklist li { margin: 8px 0; }
+    code { border-radius: 4px; padding: 1px 5px; background: #edf0f6; font-size: .91em; }
+    .status { display: inline-block; border: 1px solid #d29419; border-radius: 999px; padding: 3px 9px; color: var(--amber); background: var(--amber-soft); font-size: .79rem; font-weight: 750; }
+    footer { max-width: 1160px; margin: 0 auto; padding: 0 22px 42px; color: var(--muted); font-size: .86rem; }
+    details { margin-top: 12px; }
+    summary { color: var(--blue); cursor: pointer; font-weight: 650; }
+    pre { overflow: auto; white-space: pre-wrap; font-size: .78rem; }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; gap: 16px; }
+      nav { position: static; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+      nav strong { flex-basis: 100%; }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .hero { padding: 38px 20px 30px; }
+      .grid-2 { grid-template-columns: 1fr; }
+      section, .decision { padding: 20px 17px; }
+    }
+    @media print {
+      body { background: #fff; font-size: 11pt; }
+      .hero { padding: 24px; print-color-adjust: exact; }
+      .layout { display: block; margin: 15px auto; }
+      nav { display: none; }
+      section, .decision { break-inside: avoid; box-shadow: none; }
+      a { color: inherit; text-decoration: none; }
+      footer { padding-bottom: 0; }
+    }
+  </style>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, securityLevel: "strict", theme: "neutral", flowchart: { curve: "basis" } });
+  </script>
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">NoteCraft / Release 0.0.9 / Architecture decision record</p>
+    <h1>Evaluate onenote.rs as the sole import backend</h1>
+    <p>Evaluate a migration from the current import implementations to one Rust import path. Compare behavior before cutover, but ship only one production importer. This record authorizes evaluation only; it does not approve a production migration.</p>
+    <div class="pills">
+      <span class="pill">ADR 0.0.9-01</span>
+      <span class="pill">Status: Proposed</span>
+      <span class="pill">Updated: 2026-11-06</span>
+      <span class="pill">Scope: Import and packaging</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Contents">
+      <strong>On this page</strong>
+      <a href="#decision">Decision</a>
+      <a href="#context">Context</a>
+      <a href="#options">Options</a>
+      <a href="#tradeoffs">Pros and cons</a>
+      <a href="#impact">Impact map</a>
+      <a href="#cost">Cost analysis</a>
+      <a href="#evaluation">Evaluation gates</a>
+      <a href="#testing">Testing strategy</a>
+      <a href="#risks">Risks and questions</a>
+      <a href="#acknowledgements">Acknowledgements</a>
+      <a href="#sources">Evidence and sources</a>
+    </nav>
+
+    <main>
+      <article class="decision" id="decision">
+        <span class="decision-label">Proposed decision</span>
+        <h2>Target one production importer</h2>
+        <p>Evaluate <code>onenote.rs</code> as a replacement for both current routes: the in-repository parser used by <code>import onenote</code> and the OfficeIMO bridge used by the UI and CLI. During development, compare all implementations against the same synthetic cases. If the candidate passes every acceptance gate, cut over to it as the sole production importer and remove both old routes from the shipped app and packages. If it fails, do not cut over; choose one existing implementation in a revised decision. Do not ship dual backends, add a user-facing selector, or silently retry with a second parser.</p>
+        <div class="callout warn"><strong>Decision gate:</strong> migration is conditional on full tests, required import fidelity, license and dependency review, and measured release packages. Until then, this ADR approves evaluation only.</div>
+        <p><span class="status">Conditional target; migration not yet approved</span></p>
+      </article>
+
+      <section id="context">
+        <h2>Context</h2>
+        <p class="lede">The current UI routes imports through OfficeIMO. The CLI also exposes the in-repository <code>notecraft-onenote</code> parser and an OfficeIMO command. The target state is one shared production importer for the UI and CLI.</p>
+        <ul>
+          <li><strong>In-repository parser:</strong> <code>import onenote</code> uses <code>notecraft-onenote</code> for a folder tree of <code>.one</code> sections.</li>
+          <li><strong><a href="https://github.com/EvotecIT/OfficeIMO">OfficeIMO project</a>:</strong> the UI and CLI can invoke its separately packaged bridge. The Windows packaging script stages its self-contained runtime beside NoteCraft.</li>
+          <li><strong><a href="https://github.com/msiemens/onenote.rs">onenote.rs project</a>:</strong> the local checkout exposes parsing for <code>.one</code> and <code>.onetoc2</code>; its <code>onepkg</code> Cargo feature enables <code>.onepkg</code> archive parsing.</li>
+        </ul>
+        <p>The candidate's public model includes section color and content types for rich text, tables, images, embedded files, and ink. That model still needs to be mapped to NoteCraft's page, asset, color, and report behavior. API support alone is not proof of end-to-end fidelity.</p>
+        <div class="diagram" role="img" aria-label="Mermaid diagram showing evaluation of onenote.rs as a replacement for both current routes">
+          <pre class="mermaid">flowchart LR
+    subgraph E[Evaluation builds only]
+      I[Current in-repo parser]
+      O[Current OfficeIMO bridge]
+      R[onenote.rs candidate]
+      I --> V[Compare fixtures and behavior]
+      O --> V
+      R --> V
+    end
+    V -->|passes all gates| C[Replace both old routes]
+    C --> N[onenote.rs serves UI and CLI]
+    V -->|fails a gate| K[Do not cut over]
+    K --> D[Reopen choice of one production backend]
+    classDef candidate fill:#e9efff,stroke:#3157c8,color:#172033
+    classDef current fill:#fff3d7,stroke:#8a5700,color:#172033
+    class R,C,N candidate
+    class I,O current</pre>
+          <p class="diagram-note">All three implementations may be compared in development builds. The candidate cutover replaces both current routes. A failed gate blocks cutover and requires a separate choice of one production backend.</p>
+          <details><summary>View Mermaid source</summary><pre>flowchart LR
+    subgraph E[Evaluation builds only]
+      I[Current in-repo parser]
+      O[Current OfficeIMO bridge]
+      R[onenote.rs candidate]
+      I --&gt; V[Compare fixtures and behavior]
+      O --&gt; V
+      R --&gt; V
+    end
+    V --&gt;|passes all gates| C[Replace both old routes]
+    C --&gt; N[onenote.rs serves UI and CLI]
+    V --&gt;|fails a gate| K[Do not cut over]
+    K --&gt; D[Reopen choice of one production backend]</pre></details>
+        </div>
+      </section>
+
+      <section id="options">
+        <h2>Options considered</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Disposition</th></tr></thead>
+            <tbody>
+              <tr><td>Adopt onenote.rs as the sole importer</td><td>Preferred target, conditional on all evaluation gates.</td></tr>
+              <tr><td>Consolidate on OfficeIMO</td><td>Alternative if onenote.rs does not pass its gates.</td></tr>
+              <tr><td>Build and maintain our own parser</td><td>Least favorable; pursue only if the other paths cannot meet product requirements.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>Pros and cons</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Pros</th><th>Cons</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>1. Adopt onenote.rs as the sole importer</td>
+                <td>One Rust path can serve the UI and CLI across supported platforms. Its API includes <code>.onetoc2</code>, optional <code>.onepkg</code>, section color, images, embedded files, and ink models. Removing the OfficeIMO bridge may reduce the Windows package payload.</td>
+                <td>Compatibility and content mapping are unverified. MPL-2.0 and transitive dependency obligations need review. The linked Rust code may increase executable size. After cutover, there is no parser fallback; regressions need a fix or deliberate rollback.</td>
+              </tr>
+              <tr>
+                <td>2. Consolidate on OfficeIMO</td>
+                <td>Already integrated into the UI and CLI bridge flow. Avoids adopting a new parser dependency and preserves its existing import behavior.</td>
+                <td>Keeps the separately packaged .NET runtime and its Windows payload. The CLI and other supported platforms would need one shared supported route. Its feature coverage still needs verification against NoteCraft requirements.</td>
+              </tr>
+              <tr>
+                <td>3. Build and maintain our own parser <span class="tag con">Least favorable</span></td>
+                <td>Maximum control over behavior and roadmap. Can follow NoteCraft's clean-room process and avoid taking a third-party parser dependency.</td>
+                <td>Largest engineering and long-term maintenance cost. We must implement and test more of the file formats ourselves, close current gaps such as notebook TOC/package parsing and content fidelity, and carry all compatibility fixes.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">The ranking is provisional. The first option is preferred only if it passes the evaluation gates; building our own parser is the least favorable path.</p>
+      </section>
+
+      <section id="impact">
+        <h2>Impact map</h2>
+        <p>Relative ratings below are planning judgments, not measured scores. Higher means the evaluation needs more attention.</p>
+        <figure>
+          <svg viewBox="0 0 760 300" role="img" aria-labelledby="impact-title impact-desc">
+            <title id="impact-title">Relative areas of migration impact</title>
+            <desc id="impact-desc">A qualitative one-to-five planning scale. Compatibility and testing are rated five, license and supply chain four, packaging size four, platform opportunity four, and runtime performance three.</desc>
+            <g font-family="system-ui, sans-serif" font-size="13" fill="#59677d">
+              <text x="190" y="25">Planning attention scale: 1 low, 5 high</text>
+              <text x="190" y="55">1</text><text x="294" y="55">2</text><text x="398" y="55">3</text><text x="502" y="55">4</text><text x="606" y="55">5</text>
+            </g>
+            <g stroke="#d8dfeb" stroke-width="1"><path d="M190 63V274M294 63V274M398 63V274M502 63V274M606 63V274"/></g>
+            <g font-family="system-ui, sans-serif" font-size="14" fill="#172033">
+              <text x="8" y="91">Compatibility / fidelity</text><text x="8" y="132">Testing surface</text><text x="8" y="173">License / supply chain</text><text x="8" y="214">Installation size</text><text x="8" y="255">Cross-platform reach</text>
+            </g>
+            <g fill="#3157c8">
+              <rect x="190" y="72" width="416" height="24" rx="6"/><rect x="190" y="113" width="416" height="24" rx="6"/><rect x="190" y="154" width="312" height="24" rx="6"/><rect x="190" y="195" width="312" height="24" rx="6"/><rect x="190" y="236" width="312" height="24" rx="6"/>
+            </g>
+            <g font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#fff">
+              <text x="585" y="89">5</text><text x="585" y="130">5</text><text x="481" y="171">4</text><text x="481" y="212">4</text><text x="481" y="253">4*</text>
+            </g>
+            <text x="190" y="291" font-family="system-ui, sans-serif" font-size="12" fill="#59677d">*Potential benefit if the dependency works on all shipped targets; not yet verified.</text>
+          </svg>
+          <figcaption>Use this map to prioritize evaluation, not to claim a measured product score.</figcaption>
+        </figure>
+        <div class="grid-3">
+          <div class="tile"><h3>Behavior</h3><p>Content mapping, page hierarchy, color, assets, ink, ordering, and warnings.</p></div>
+          <div class="tile"><h3>Operations</h3><p>Builds, packages, notices, cancellation, large-file memory, and platform support.</p></div>
+          <div class="tile"><h3>Ownership</h3><p>Upstream health, dependency updates, license compliance, and one parser's support path.</p></div>
+        </div>
+      </section>
+
+      <section id="cost">
+        <h2>Cost analysis</h2>
+        <p class="lede">Known package figures are local 0.0.8 artifacts. The candidate's binary-size delta has not been built or measured.</p>
+        <h3>Observed Windows package baseline</h3>
+        <figure>
+          <svg viewBox="0 0 760 240" role="img" aria-labelledby="size-title size-desc">
+            <title id="size-title">Current Windows package baseline and unknown single-backend migration delta</title>
+            <desc id="size-desc">The local 0.0.8 MSI is 68.6 mebibytes and portable ZIP is 93.4 mebibytes. A sole onenote.rs backend removes the packaged OfficeIMO bridge and in-repository parser integration, while adding an unknown amount to the Rust binaries.</desc>
+            <g font-family="system-ui, sans-serif" font-size="14" fill="#172033"><text x="10" y="79">Windows MSI</text><text x="10" y="145">Portable ZIP</text></g>
+            <g fill="#e8edf7"><rect x="160" y="52" width="500" height="38" rx="8"/><rect x="160" y="118" width="500" height="38" rx="8"/></g>
+            <g fill="#3157c8"><rect x="160" y="52" width="343" height="38" rx="8"/><rect x="160" y="118" width="467" height="38" rx="8"/></g>
+            <g fill="#fff" font-family="system-ui, sans-serif" font-size="14" font-weight="750"><text x="174" y="76">68.6 MiB</text><text x="174" y="142">93.4 MiB</text></g>
+            <g fill="#8a5700" font-family="system-ui, sans-serif" font-size="12"><text x="512" y="70">- old importer payload</text><text x="512" y="84">+ Rust code delta</text><text x="514" y="136">- old importer payload</text><text x="514" y="150">+ Rust code delta</text></g>
+            <g stroke="#8a5700" stroke-width="2" stroke-dasharray="5 4"><path d="M503 71h145M627 137h21"/></g>
+            <text x="160" y="198" font-family="system-ui, sans-serif" font-size="12" fill="#59677d">Observed local artifacts: dist/release, version 0.0.8. Values use MiB (1 MiB = 1,048,576 bytes).</text>
+            <text x="160" y="218" font-family="system-ui, sans-serif" font-size="12" fill="#59677d">Not a fresh reproducible benchmark. OfficeIMO bridge: 90.5 MiB unpacked (196 files).</text>
+          </svg>
+          <figcaption>Net change = remove the OfficeIMO package and old parser integration, then add the candidate's linked code. Actual MSI, ZIP, macOS, and Linux deltas require clean before-and-after package builds.</figcaption>
+        </figure>
+
+        <h3>Engineering effort estimate</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Work item</th><th>Planning range</th><th>Cost driver</th><th>Evidence to collect</th></tr></thead>
+            <tbody>
+              <tr><td>Dependency and license review</td><td>0.5-1 engineer day</td><td>MPL-2.0 distribution obligations, full dependency tree, notices, upstream policy.</td><td>Approved notice plan; dependency and license inventory.</td></tr>
+              <tr><td>Adapter and format mapping</td><td>1-3 engineer days</td><td>Translate parser model into NoteCraft pages, assets, hierarchy, colors, and reports.</td><td>Synthetic fixture parity report with explicit unsupported cases.</td></tr>
+              <tr><td>Single-backend cutover and old-path removal</td><td>2-5 additional engineer days after the spike</td><td>Route UI/CLI through one importer, remove OfficeIMO packaging and the old parser integration, update notices, and verify one production path.</td><td>Full CI and release package checks; owner review.</td></tr>
+              <tr><td>Focused evaluation spike</td><td>2-4 engineer days total</td><td>Dependency build, synthetic comparisons, sample corpus structure counts, and Windows package comparison.</td><td>Go/no-go memo; no production dual-backend support.</td></tr>
+              <tr><td>Full single-backend migration</td><td>4-9 engineer days total after the spike</td><td>Adapter and cutover work, all tests, supported platform packages, documentation, and release checks.</td><td>Full CI and package checks; owner review.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout"><strong>Estimate limits:</strong> ranges are planning estimates, not measured implementation times. They exclude fixing bugs found in either parser, testing against private notebooks, and any new import features. The largest unknown is semantic compatibility on representative synthetic inputs and supported platform targets.</div>
+
+        <h3>Ongoing costs with one backend</h3>
+        <div class="grid-2">
+          <div class="tile"><span class="tag pro">Reduced</span><h3>Fewer combinations</h3><p>One parser means one production behavior path to test and explain.</p></div>
+          <div class="tile"><span class="tag open">Recurring</span><h3>Clear support evidence</h3><p>Import reports should identify the parser version so a bug can be reproduced without recording notebook content.</p></div>
+          <div class="tile"><span class="tag open">Recurring</span><h3>More supply-chain work</h3><p>Pin and review upstream releases, dependency advisories, license changes, and notices.</p></div>
+          <div class="tile"><span class="tag pro">Removed on cutover</span><h3>No bridge payload</h3><p>The OfficeIMO runtime is removed from shipped packages if and only if onenote.rs passes the migration gates.</p></div>
+        </div>
+      </section>
+
+      <section id="evaluation">
+        <h2>Evaluation gates</h2>
+        <ol class="checklist">
+          <li><strong>Compatibility:</strong> run both current routes and the candidate against the same PII-safe synthetic `.one` cases for text, formatting, lists, tables, images, files, ink, missing data, malformed sections, and section color. Compare structural outputs and document intentional differences. This comparison is for development only.</li>
+          <li><strong>Notebook inputs:</strong> separately test `.onetoc2` and `.onepkg` only if the corresponding feature and compliant synthetic fixtures are included. Do not treat `.one` section tests as proof of notebook-package support.</li>
+          <li><strong>Regression:</strong> all existing tests pass unchanged, including `cargo xtask ci`; add assertions for whichever new backend behavior is exposed.</li>
+          <li><strong>Safety and isolation:</strong> malformed input does not panic or abort neighboring imports; sources remain read-only; test data is synthetic and isolated.</li>
+          <li><strong>License and dependencies:</strong> inspect the candidate revision, crate metadata, full dependency license set, notices, update path, and any test-fixture license before distribution or copying test data.</li>
+          <li><strong>Packaging:</strong> compare fresh release artifacts built from the same commit and toolchain: current full package versus a candidate-only package. Record executable, archive, MSI, and install-tree sizes on supported targets.</li>
+          <li><strong>Decision:</strong> if all gates pass, replace both current routes and ship onenote.rs only. If a required gate fails, do not cut over; choose one existing implementation in a revised decision before setting a single-backend release target.</li>
+        </ol>
+        <div class="callout good"><strong>One-backend rule:</strong> comparison may use all three implementations in isolated development builds. The target production package uses onenote.rs only; neither the OfficeIMO bridge nor the in-repository parser remains as another product route.</div>
+      </section>
+
+      <section id="testing">
+        <h2>Testing strategy and test data set</h2>
+        <p class="lede">A parser migration needs broad, trustworthy regression data. Build a PII-safe synthetic corpus as the primary test set, then add only individually cleared public fixtures for cases that synthetic files cannot represent.</p>
+
+        <h3>Test layers</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Layer</th><th>Coverage</th><th>Method and acceptance</th></tr></thead>
+            <tbody>
+              <tr><td>Unit tests</td><td>Parser-to-NoteCraft mapping for page titles, timestamps, hierarchy, reading order, text marks, lists, tables, links, color, images, files, ink, and unsupported content. Error mapping for malformed, truncated, encrypted, missing, and oversized inputs.</td><td>Use the real parser and deterministic test data; no mocks for parser, filesystem, or platform behavior. Assert semantic output and explicit warnings.</td></tr>
+              <tr><td>Functional import tests</td><td>Folder discovery, `.one` sections, `.onetoc2` hierarchy and color association, optional `.onepkg` extraction, collisions, damaged neighboring sections, cancellation, and read-only source behavior.</td><td>Import into isolated temporary folders using the real import pipeline. Reload the result with NoteCraft storage and verify node tree, page content, assets, counts, and report. Run all existing importer tests.</td></tr>
+              <tr><td>Cross-parser comparison</td><td>Current in-repository parser, current OfficeIMO route, and candidate output on the same supported synthetic cases.</td><td>Compare normalized NoteCraft results. Differences must be explained and accepted by requirement; parser success alone is not parity. This comparison is development-only, not a shipped backend selector.</td></tr>
+              <tr><td>Platform and release checks</td><td>Windows, macOS, and Linux paths, Unicode names, path limits, package contents, binary sizes, and startup/import behavior.</td><td>Run the repository quality gate and supported-target CI. Build comparable current and candidate-only release artifacts; retain the exact commands and byte counts.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Comprehensive synthetic corpus</h3>
+        <p>Generate small deterministic files from Microsoft's published format specifications and NoteCraft's own test builders. Each case should have a stable identifier, stated feature, expected semantic assertions, and generation recipe. Prefer focused cases that isolate one behavior, plus a small number of composed notebook cases that prove interactions between features.</p>
+        <div class="grid-2">
+          <div class="tile">
+            <h3>Valid content and metadata</h3>
+            <ul>
+              <li>Sections with one or many pages, nested page levels, page order, multiple sections, section groups, and TOC identity mapping.</li>
+              <li>Plain and formatted text, Unicode, mixed direction text, hyperlinks, lists, tables, tags, and page timestamps.</li>
+              <li>Notebook and section colors, pictures, generic attachments, audio/video references, embedded bytes, and native ink where the format builder can represent them.</li>
+              <li>Desktop `.one`, FSSHTTP-based section data, `.onetoc2`, and `.onepkg` as separate format families; include a family only when the candidate feature and tests support it.</li>
+            </ul>
+          </div>
+          <div class="tile">
+            <h3>Failure and boundary cases</h3>
+            <ul>
+              <li>Truncated headers, invalid lengths, unknown properties, damaged revisions, malformed TOC entries, and one corrupt section beside a valid section.</li>
+              <li>Missing or invalid attachment data, encrypted sections, duplicate names, Unicode and reserved filenames, and references that do not resolve.</li>
+              <li>Empty sections, very large declared sizes, excessive nesting, and resource limits, with stable skip/error reasons.</li>
+              <li>Verify no panic, no source modification, no silent content drop, and no loss of a valid neighboring section.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout good"><strong>Fixture acceptance:</strong> the test set contains no owner notebooks, personal names, private content, or copied vendor/source-code samples. Generated bytes and expected results are committed only after privacy review and pass the repository PII scan.</div>
+
+        <h3>Third-party fixture policy</h3>
+        <p>Credit in a test-set README is not by itself permission to copy a sample. Record provenance, exact license, copyright notice, file hash, privacy review, and permitted use for each third-party file. Preserve the source license in the fixture folder; treat parsed snapshots and extracted attachments as fixture-derived material too.</p>
+        <ul>
+          <li>The candidate corpus README states that its samples include third-party files under different licenses. Its <a href="https://github.com/msiemens/onenote.rs/blob/master/crates/parser/tests/samples/joplin/LICENSE">Joplin fixture license</a> identifies AGPL-3.0-or-later material. Do not copy that corpus into NoteCraft without an explicit license review and approval.</li>
+          <li>The candidate's <a href="https://github.com/msiemens/onenote.rs/blob/master/crates/parser/tests/samples/onenote-2016/LICENSE">OneNote 2016 fixture license</a> identifies MIT-licensed material from Microsoft's Interop-TestSuites. Copy only after verifying the specific file is covered, retaining the required notice, and checking its contents for personal data.</li>
+          <li>Other candidate sample files without clear file-level provenance or a covering notice remain uncleared. Do not infer permission from the parser repository's own license or from a general README credit.</li>
+        </ul>
+        <p class="small">If a licensed public fixture is essential, list it as a separate, clearly licensed test asset. The migration does not require importing the candidate's entire corpus.</p>
+      </section>
+
+      <section id="risks">
+        <h2>Risks and unanswered questions</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Question</th><th>Why it matters</th><th>How to resolve</th></tr></thead>
+            <tbody>
+              <tr><td>Can onenote.rs meet the required fidelity?</td><td>Different content models can lose or reorder information even when parsing succeeds. There is no shipped fallback after cutover.</td><td>Same synthetic fixtures, compare normalized NoteCraft output, and require the acceptance gates before switching.</td></tr>
+              <tr><td>How does MPL-2.0 apply to this distribution?</td><td>NoteCraft binaries and notices have their own license terms.</td><td>Review MPL text, crate notices, distribution form, and modifications before shipping; seek legal review if needed.</td></tr>
+              <tr><td>What current code is removed?</td><td>The UI uses OfficeIMO while the CLI also offers the in-repository parser; removing only one leaves multiple production routes.</td><td>On a passing cutover, route UI and CLI through onenote.rs and remove both old routes and their packaging/dependency wiring.</td></tr>
+              <tr><td>What is the exact binary-size delta?</td><td>Rust linking may add code to both app and CLI, across platforms.</td><td>Build same-revision packages with and without the dependency and record exact sizes.</td></tr>
+              <tr><td>What if the new parser fails after cutover?</td><td>There is no second parser to retry, so users need a reliable error and the team needs a supported rollback release path.</td><td>Fail clearly, preserve the source, and fix forward or deliberately roll back the release. Do not silently invoke a second backend.</td></tr>
+              <tr><td>Can we use the candidate's test corpus?</td><td>It includes AGPL-3.0-or-later Joplin material, MIT OfficeDev material, and files without a clear per-file notice in the local tree.</td><td>Prefer the synthetic corpus. Clear every third-party file individually, preserve its license and notice, and review privacy before copying.</td></tr>
+              <tr><td>Does the parser meet NoteCraft's clean-room boundary?</td><td>The product is described as clean-room and spec-based.</td><td>Review provenance and implementation claims; keep NoteCraft's adapter grounded in product requirements and public specifications.</td></tr>
+              <tr><td>Is upstream maintenance adequate?</td><td>A parser dependency becomes part of import reliability and release security.</td><td>Review release cadence, issue response, advisory process, supported Rust version, and pinned revision policy.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="acknowledgements">
+        <h2>Acknowledgements</h2>
+        <div class="grid-2">
+          <div class="tile">
+            <h3><a href="https://github.com/EvotecIT/OfficeIMO">OfficeIMO</a></h3>
+            <p>We recognize the OfficeIMO maintainers and contributors for their open-source Office and OneNote libraries. NoteCraft's current bridge is built on this project; the proposed cutover would remove the bridge from shipped packages only after the replacement passes its gates.</p>
+            <p class="small">Project license: <a href="https://github.com/EvotecIT/OfficeIMO/blob/master/LICENSE">MIT</a>.</p>
+          </div>
+          <div class="tile">
+            <h3><a href="https://github.com/msiemens/onenote.rs">onenote.rs</a></h3>
+            <p>We recognize Markus Siemens and the project's contributors for their Rust OneNote parser and the work represented by its public API. This ADR evaluates possible use as a dependency; it does not copy parser code or third-party test fixtures.</p>
+            <p class="small">Project license: <a href="https://github.com/msiemens/onenote.rs/blob/master/LICENSE">MPL-2.0</a>.</p>
+          </div>
+        </div>
+        <p class="small">This independent proposal is not an endorsement by, or an affiliation with, either project.</p>
+      </section>
+
+      <section id="sources">
+        <h2>Evidence and sources</h2>
+        <ul>
+          <li><strong>Verified in this checkout:</strong> <code>crates/import/src/lib.rs</code> uses <code>notecraft-onenote</code>; <code>crates/import/src/officeimo.rs</code> locates and invokes the external bridge; the CLI and UI expose OfficeIMO routes.</li>
+          <li><strong>Verified in the local candidate checkout:</strong> <a href="https://github.com/msiemens/onenote.rs">onenote.rs</a>, version 2.1.0, workspace license MPL-2.0; parser feature <code>onepkg</code> enables the optional <code>cab</code> dependency; default feature is <code>native-fs</code>.</li>
+          <li><strong>Existing integration:</strong> <a href="https://github.com/EvotecIT/OfficeIMO">OfficeIMO</a> is the project behind NoteCraft's currently packaged bridge.</li>
+          <li><strong>Verified local package figures:</strong> <code>dist/release/notecraft-0.0.8-windows-x64.msi</code> is 71,909,664 bytes (68.6 MiB); portable ZIP is 97,949,525 bytes (93.4 MiB). The local OfficeIMO bridge build directory totals 94,944,161 bytes (90.5 MiB) across 196 files.</li>
+          <li><strong>Limit:</strong> these package files are existing local artifacts and were not freshly rebuilt for this ADR. The candidate has not been integrated, run against NoteCraft tests, or measured in a release package.</li>
+          <li><strong>Test data:</strong> do not copy personal notebook files or third-party parser fixtures into the NoteCraft repository without a specific provenance and license check.</li>
+        </ul>
+        <p class="small">This ADR is an evaluation proposal. It does not claim feature parity, security review, license approval, performance, package-size impact, or production readiness.</p>
+      </section>
+    </main>
+  </div>
+  <footer>NoteCraft ADR 0.0.9-01. The HTML content and SVG charts are in this file; the Mermaid diagram is rendered from embedded source using a pinned Mermaid CDN module.</footer>
+</body>
+</html>
