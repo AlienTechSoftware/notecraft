@@ -403,6 +403,9 @@ impl Tokens {
 pub fn picker_popup_style(tokens: Tokens) -> egui::style::StyleModifier {
     egui::style::StyleModifier::new(move |style| {
         style.visuals.window_fill = tokens.panel;
+        // The popup can have a strongly tinted surface (for example, the Purple
+        // accent). Do not inherit the app's unrelated widget foreground colors.
+        style.visuals.override_text_color = Some(tokens.text);
         style.visuals.window_stroke = egui::Stroke::new(1.0, tokens.container_border);
         style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
         style.visuals.selection.bg_fill = tokens.row_selected;
@@ -428,6 +431,10 @@ mod tests {
             let mut style = egui::Style::default();
             picker_popup_style(tokens).apply(&mut style);
             assert_eq!(style.visuals.window_fill, tokens.panel, "{}: popup surface", theme.label());
+            assert_eq!(style.visuals.override_text_color, Some(tokens.text), "{}: popup text", theme.label());
+            assert!(contrast(tokens.text, tokens.panel) >= 7.0, "{}: popup text on surface", theme.label());
+            assert!(contrast(tokens.text, tokens.row_hover) >= 7.0, "{}: popup text on hover", theme.label());
+            assert!(contrast(tokens.text, tokens.row_selected) >= 7.0, "{}: popup text on selection", theme.label());
             assert_eq!(style.visuals.window_stroke.color, tokens.container_border, "{}: popup border", theme.label());
             assert_eq!(style.visuals.selection.bg_fill, tokens.row_selected, "{}: selected locale", theme.label());
             assert_eq!(style.visuals.menu_corner_radius, egui::CornerRadius::same(8), "{}: rounded popup", theme.label());
