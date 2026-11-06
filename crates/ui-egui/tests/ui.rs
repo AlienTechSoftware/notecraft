@@ -231,6 +231,37 @@ fn header_language_picker_changes_and_persists_interface_language() {
 }
 
 #[test]
+fn header_language_picker_labels_render_light_text_on_the_purple_band() {
+    let t = TempDir::new("ui-header-language-contrast");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    let mut h = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut h);
+
+    h.get_by_label("Interface language: English").click();
+    settle(&mut h);
+    let label_rect = h.get_by_label("Fran\u{00e7}ais").rect();
+    let image = h.render().expect("render open language picker");
+    let scale = image.width() as f32 / 1200.0;
+    let min_x = (label_rect.min.x * scale).floor().max(0.0) as u32;
+    let max_x = (label_rect.max.x * scale).ceil().min(image.width() as f32) as u32;
+    let min_y = (label_rect.min.y * scale).floor().max(0.0) as u32;
+    let max_y = (label_rect.max.y * scale).ceil().min(image.height() as f32) as u32;
+    let mut bright_text_pixels = 0;
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let pixel = image.get_pixel(x, y);
+            if pixel[0] > 190 && pixel[1] > 190 && pixel[2] > 190 {
+                bright_text_pixels += 1;
+            }
+        }
+    }
+
+    review(&mut h, "header_language_picker_contrast");
+    assert!(bright_text_pixels >= 8, "language names need a light foreground on the purple popup; found {bright_text_pixels} bright text pixels");
+}
+
+#[test]
 fn en_xa_can_be_selected_saved_and_restored_from_the_language_picker() {
     let t = TempDir::new("ui-en-xa-language");
     let s = session(&t);
