@@ -162,7 +162,7 @@ pub fn show(ui: &mut Ui, config: &mut Config, enabled: Enabled, t: &Tokens) -> (
     egui::Popup::menu(&arrow).show(|ui| {
         ui.set_width(floating::MENU_W + 20.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        ui.label(egui::RichText::new("Customize Quick Access Toolbar").strong());
+        ui.label(egui::RichText::new(crate::tl_id!("ui.customize_quick_access_toolbar")).strong());
         ui.add_space(4.0);
         for cmd in Command::ALL {
             if floating::menu_check_row(ui, config.shows(cmd), cmd.label(), t).clicked() {
@@ -195,9 +195,9 @@ fn button(ui: &mut Ui, cmd: Command, enabled: bool, t: &Tokens) -> egui::Respons
     let mut faint = *t;
     faint.text = t.muted;
     cmd.glyph().paint(&painter, egui::Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), if enabled { t } else { &faint });
-    let name = cmd.label().to_string();
+    let name = crate::tl!(cmd.label()).to_string();
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
-    resp.on_hover_text(cmd.tip())
+    resp.on_hover_text(crate::tl!(cmd.tip()))
 }
 
 /// The small arrow at the end of the strip, drawn as a triangle pointing down.
@@ -213,8 +213,10 @@ fn customize_button(ui: &mut Ui, t: &Tokens) -> egui::Response {
         t.text,
         egui::Stroke::NONE,
     ));
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Customize Quick Access Toolbar"));
-    resp.on_hover_text("Customize Quick Access Toolbar")
+    let label = crate::tl_id!("ui.customize_quick_access_toolbar");
+    let said = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &said));
+    resp.on_hover_text(crate::tl_id!("ui.customize_quick_access_toolbar"))
 }
 
 #[cfg(test)]

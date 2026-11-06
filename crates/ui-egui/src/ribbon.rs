@@ -231,6 +231,10 @@ impl RuleLines {
         }
     }
 
+    pub fn translated_label(self) -> &'static str {
+        crate::tl!(self.label())
+    }
+
     /// The name under a thumbnail, where the shelf above it already says what kind of paper
     /// this is. The full `label` stays the button's name, so it is still what a screen
     /// reader says and what the ribbon's button shows.
@@ -247,6 +251,26 @@ impl RuleLines {
             RuleLines::GridHuge => "Very large",
             RuleLines::CraftLines => "Ruled",
             RuleLines::CraftGrid => "Squares",
+        }
+    }
+
+    pub fn translated_short(self) -> &'static str {
+        crate::tl!(self.short())
+    }
+
+    pub fn translated_mid(self) -> &'static str {
+        match self {
+            RuleLines::None => crate::tl_id!("ui.none"),
+            RuleLines::Narrow => crate::tl_id!("ui.narrow_ruled"),
+            RuleLines::College => crate::tl_id!("ui.college_ruled"),
+            RuleLines::Standard => crate::tl_id!("ui.standard_ruled"),
+            RuleLines::Wide => crate::tl_id!("ui.wide_ruled"),
+            RuleLines::GridSmall => crate::tl_id!("ui.small_squares"),
+            RuleLines::GridMedium => crate::tl_id!("ui.medium_squares"),
+            RuleLines::GridLarge => crate::tl_id!("ui.large_squares"),
+            RuleLines::GridHuge => crate::tl_id!("ui.very_large_squares"),
+            RuleLines::CraftLines => crate::tl_id!("ui.notecraft_ruled"),
+            RuleLines::CraftGrid => crate::tl_id!("ui.notecraft_squares"),
         }
     }
 
@@ -409,11 +433,11 @@ pub const TAB_STRIP_H: f32 = 28.0;
 /// The ribbon's own height under the tabs: the buttons, then the group names along the
 /// bottom. Measured against OneNote at 100%, where a group is about 95 pixels tall with
 /// the name taking the last 16 of them.
-pub const GROUP_H: f32 = 88.0;
+pub const GROUP_H: f32 = 92.0;
 /// How far down a big button its icon, its first line of writing, and its second sit.
 const ICON_Y: f32 = 20.0;
 const LABEL_Y: f32 = 41.0;
-const LINE_H: f32 = 12.0;
+const LINE_H: f32 = 14.0;
 /// The narrowest a big button may be, and the room its writing gets either side.
 const BIG: f32 = 50.0;
 const BIG_PAD: f32 = 12.0;
@@ -496,8 +520,9 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
         let names = std::iter::once(FILE_TAB).chain(tabs(source, in_table));
         for name in names {
             let selected = name == chosen;
-            let font = egui::FontId::proportional(12.5);
-            let galley = ui.painter().layout_no_wrap(name.to_string(), font.clone(), t.text);
+            let display_name = crate::tl!(name);
+            let font = egui::FontId::proportional(13.5);
+            let galley = ui.painter().layout_no_wrap(display_name.to_string(), font.clone(), t.text);
             let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, TAB_STRIP_H), Sense::click());
             let painter = ui.painter_at(rect);
             if selected {
@@ -508,9 +533,9 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
                 painter.rect_filled(rect.shrink2(vec2(1.0, 3.0)), 3.0, t.band_hover);
             }
             let colour = if selected { t.accent } else { t.band_text };
-            painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, name, font, colour);
+            painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, display_name, font, colour);
             let enabled = ui.is_enabled();
-            let label = name.to_string();
+            let label = display_name.to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
             if resp.clicked() {
                 acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
@@ -523,7 +548,9 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
 pub const FILE_TAB: &str = "File";
 
 /// One group of the ribbon: its controls, a line on the right, and its name underneath.
+// i18n-ui-text: title
 fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
+    let display_title = crate::tl!(title);
     // The controls first; the group's name and its divider are painted around whatever they
     // took, so a group is exactly as wide as it needs to be, as in Office.
     let inner = ui
@@ -541,15 +568,15 @@ fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
     painter.text(
         egui::pos2(inner.center().x, inner.min.y + GROUP_H - GROUP_NAME_Y),
         Align2::CENTER_CENTER,
-        title,
-        egui::FontId::proportional(10.0),
+        display_title,
+        egui::FontId::proportional(11.5),
         t.muted,
     );
     // The name is painted, so it is no widget by itself and a screen reader would skip
     // straight from one group's buttons to the next with nothing to say where it is. It is
     // given its name here, the way `bidi::show` gives a painted line its words.
     let named = ui.interact(inner, ui.id().with(("group", title)), Sense::hover());
-    let (enabled, label) = (ui.is_enabled(), title.to_owned());
+    let (enabled, label) = (ui.is_enabled(), display_title.to_owned());
     named.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &label));
     // A crisp divider between groups, on a whole pixel so it does not blur, and dark enough
     // to read on a light or a dark surface, the way Office separates its groups.
@@ -565,17 +592,19 @@ fn group(ui: &mut Ui, title: &str, t: &Tokens, add: impl FnOnce(&mut Ui)) {
 /// A big button: the mark it makes above what it is called, as Office draws one. A label
 /// with a newline in it is written on two lines, which is how "Panning Hand" and "Full
 /// Page View" fit without making the button wide.
+// i18n-ui-text: label,tip
 fn big(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
     big_inner(ui, icon, label, tip, false, false, t)
 }
 
 /// The same, with the small chevron Office puts on a button that opens something.
+// i18n-ui-text: label,tip
 fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
 fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
-    let response = big_inner(ui, Icon::Picture, "Pictures", "Choose how to insert a picture", true, false, t);
+    let response = big_inner(ui, Icon::Picture, crate::tl_id!("ui.pictures"), crate::tl_id!("ui.choose_how_to_insert_a_picture"), true, false, t);
     let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.left(), response.rect.bottom() - 28.0), response.rect.right_bottom());
     let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
     if arrow.hovered() {
@@ -585,18 +614,20 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     egui::Popup::menu(&arrow).show(|ui| {
         egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.set_min_width(228.0);
-            if picture_menu_row(ui, Icon::Picture, "Picture from a file", t, true).clicked() {
+            if picture_menu_row(ui, Icon::Picture, crate::tl_id!("ui.picture_from_a_file"), t, true).clicked() {
                 acts.push(Act::AddPicture);
                 ui.close();
             }
-            let _ = picture_menu_row(ui, Icon::Attach, "From Camera", t, false);
-            let _ = picture_menu_row(ui, Icon::Link, "From Online", t, false);
+            let _ = picture_menu_row(ui, Icon::Attach, crate::tl_id!("ui.from_camera"), t, false);
+            let _ = picture_menu_row(ui, Icon::Link, crate::tl_id!("ui.from_online"), t, false);
         });
     });
     response.clicked() && !arrow.clicked()
 }
 
+// i18n-ui-text: label
 fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
+    let label = crate::tl!(label);
     let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), Sense::click());
     if response.hovered() && enabled {
         ui.painter().rect_filled(rect, 6.0, crate::theme::mix(t.panel, t.accent, 0.12));
@@ -631,9 +662,12 @@ fn chevron(painter: &egui::Painter, at: egui::Pos2, colour: egui::Color32) {
     ));
 }
 
+// i18n-ui-text: label,tip
 fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
     let lines: Vec<&str> = label.split('\n').collect();
-    let font = egui::FontId::proportional(11.0);
+    let font = egui::FontId::proportional(12.0);
     let widest = lines.iter().map(|l| ui.painter().layout_no_wrap((*l).to_string(), font.clone(), t.text).size().x).fold(0.0_f32, f32::max);
     let (rect, resp) = ui.allocate_exact_size(vec2(BIG.max(widest + BIG_PAD), GROUP_H - 18.0), Sense::click());
     let painter = ui.painter_at(rect);
@@ -676,11 +710,16 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
 
 /// A small button: an icon, or a letter for the marks that have one.
 /// `big`, with the button shown as the one in use.
+// i18n-ui-text: label,tip
 fn big_on(ui: &mut Ui, icon: Icon, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
     big_inner(ui, icon, label, tip, false, on, t)
 }
 
+// i18n-ui-text: letter,label,tip
 fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let letter = crate::tl!(letter);
     // Wide enough for whatever it says: a letter, or a word like "Copy".
     let width = if icon.is_some() || letter.is_empty() {
         SMALL_W
@@ -705,7 +744,10 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
 }
 
 /// A compact Office-style row control with a clear icon and its visible label.
+// i18n-ui-text: label,tip
 fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
     let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
     let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 34.0, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
@@ -747,26 +789,28 @@ pub const STYLES: [(&str, &str); 12] = [
 /// OneNote's tag list. Every one of them works: To Do is a task item, the rest are a
 /// marker word at the start of the line (`notecraft_model::Tag`).
 pub fn tag_label(tag: Tag) -> String {
+    let label = crate::tl!(tag.label());
     match tag.shortcut() {
-        Some(keys) => format!("{} ({keys})", tag.label()),
-        None => tag.label().to_string(),
+        Some(keys) => format!("{label} ({keys})"),
+        None => label.to_string(),
     }
 }
 
 fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // Undo comes first, as it does in OneNote's own Home tab: it is the button a writer
     // reaches for in a hurry, and a page editor without one is not safe to write in.
-    group(ui, "Undo", t, |ui| {
+    group(ui, crate::tl_id!("ui.undo"), t, |ui| {
         rows(ui, |ui| {
-            if row_button(ui, Icon::Undo, "Undo", "Ctrl+Z takes back the last change", view.can_undo, t).clicked() {
+            if row_button(ui, Icon::Undo, crate::tl_id!("ui.undo"), crate::tl_id!("ui.ctrl_z_takes_back_the_last_change"), view.can_undo, t).clicked()
+            {
                 acts.push(Act::Undo);
             }
-            if row_button(ui, Icon::Redo, "Redo", "Ctrl+Y puts it back", view.can_redo, t).clicked() {
+            if row_button(ui, Icon::Redo, crate::tl_id!("ui.redo"), crate::tl_id!("ui.ctrl_y_puts_it_back"), view.can_redo, t).clicked() {
                 acts.push(Act::Redo);
             }
         });
     });
-    group(ui, "Clipboard", t, |ui| {
+    group(ui, crate::tl_id!("ui.clipboard"), t, |ui| {
         if big_mark(ui, Mark::Paste, "Paste", "Ctrl+V pastes into the page", t).clicked() {
             acts.push(Act::Paste);
         }
@@ -782,7 +826,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             }
         });
     });
-    group(ui, "Basic Text", t, |ui| {
+    group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
                 if mark_button(ui, Mark::Bold, "Bold", "Bold (Ctrl+B)", false, t).clicked() {
@@ -794,18 +838,18 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if mark_button(ui, Mark::Strike, "Strikethrough", "Strike through", false, t).clicked() {
                     acts.push(Act::Mark("strike"));
                 }
-                if small(ui, Some(Icon::Code), "", "Code", "Code, in one line", false, t).clicked() {
+                if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
                     acts.push(Act::Mark("code"));
                 }
-                if small(ui, Some(Icon::Link), "", "Link", "A link", false, t).clicked() {
+                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
                     acts.push(Act::Insert("link"));
                 }
             });
             ui.horizontal(|ui| {
-                if small(ui, Some(Icon::ListBullet), "", "Bullets", "A bullet list", false, t).clicked() {
+                if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
                     acts.push(Act::Block("bullet"));
                 }
-                if small(ui, Some(Icon::ListNumber), "", "Numbering", "A numbered list", false, t).clicked() {
+                if small(ui, Some(Icon::ListNumber), "", crate::tl_id!("ui.numbering"), crate::tl_id!("ui.a_numbered_list"), false, t).clicked() {
                     acts.push(Act::Block("number"));
                 }
                 if mark_button(ui, Mark::IndentLess, "Decrease indentation", "Decrease indentation (Shift+Tab)", false, t).clicked() {
@@ -815,7 +859,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     acts.push(Act::Indent(true));
                 }
                 align_menu(ui, t, acts);
-                if small(ui, Some(Icon::Quote), "", "Quote", "Quote this paragraph", false, t).clicked() {
+                if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
                     acts.push(Act::Block("quote"));
                 }
                 if mark_button(ui, Mark::ClearFormat, "Clear formatting", "Take the marks off", false, t).clicked() {
@@ -829,37 +873,84 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // hidden in a Word-style dialog. Paragraph direction remains available beside it,
     // while the alignment menu remains the primary place for paragraph alignment and
     // direction.
-    group(ui, "Page Setup", t, |ui| {
+    group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Page").size(10.5).color(t.muted));
-                if small(ui, Some(Icon::DirLtr), "", "Page left to right", "The whole page reads left to right", false, t).clicked() {
+                ui.label(egui::RichText::new(crate::tl_id!("ui.page")).size(11.5).color(t.muted));
+                if small(
+                    ui,
+                    Some(Icon::DirLtr),
+                    "",
+                    crate::tl_id!("ui.page_left_to_right"),
+                    crate::tl_id!("ui.the_whole_page_reads_left_to_right"),
+                    false,
+                    t,
+                )
+                .clicked()
+                {
                     acts.push(Act::PageDirection(Some(notecraft_model::Dir::Ltr)));
                 }
-                if small(ui, Some(Icon::DirRtl), "", "Page right to left", "The whole page reads right to left (Arabic, Hebrew)", false, t).clicked()
+                if small(
+                    ui,
+                    Some(Icon::DirRtl),
+                    "",
+                    crate::tl_id!("ui.page_right_to_left"),
+                    crate::tl_id!("ui.the_whole_page_reads_right_to_left_arabic_hebrew"),
+                    false,
+                    t,
+                )
+                .clicked()
                 {
                     acts.push(Act::PageDirection(Some(notecraft_model::Dir::Rtl)));
                 }
-                if small(ui, Some(Icon::DirAuto), "Auto", "Page direction from the words", "Every paragraph decides for itself", false, t).clicked() {
+                if small(
+                    ui,
+                    Some(Icon::DirAuto),
+                    crate::tl_id!("ui.auto"),
+                    crate::tl_id!("ui.page_direction_from_the_words"),
+                    crate::tl_id!("ui.every_paragraph_decides_for_itself"),
+                    false,
+                    t,
+                )
+                .clicked()
+                {
                     acts.push(Act::PageDirection(None));
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Para").size(10.5).color(t.muted));
-                if small(ui, Some(Icon::ParaLtr), "", "Paragraph left to right", "This paragraph reads left to right", false, t).clicked() {
+                ui.label(egui::RichText::new(crate::tl_id!("ui.para")).size(11.5).color(t.muted));
+                if small(
+                    ui,
+                    Some(Icon::ParaLtr),
+                    "",
+                    crate::tl_id!("ui.paragraph_left_to_right"),
+                    crate::tl_id!("ui.this_paragraph_reads_left_to_right"),
+                    false,
+                    t,
+                )
+                .clicked()
+                {
                     acts.push(Act::Direction(Some(notecraft_model::Dir::Ltr)));
                 }
-                if small(ui, Some(Icon::ParaRtl), "", "Paragraph right to left", "This paragraph reads right to left (Arabic, Hebrew)", false, t)
-                    .clicked()
+                if small(
+                    ui,
+                    Some(Icon::ParaRtl),
+                    "",
+                    crate::tl_id!("ui.paragraph_right_to_left"),
+                    crate::tl_id!("ui.this_paragraph_reads_right_to_left_arabic_hebrew"),
+                    false,
+                    t,
+                )
+                .clicked()
                 {
                     acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
                 }
                 if small(
                     ui,
                     Some(Icon::ParaAuto),
-                    "Auto",
-                    "Paragraph direction from the words",
-                    "This paragraph decides from its own first letter",
+                    crate::tl_id!("ui.auto"),
+                    crate::tl_id!("ui.paragraph_direction_from_the_words"),
+                    crate::tl_id!("ui.this_paragraph_decides_from_its_own_first_letter"),
                     false,
                     t,
                 )
@@ -871,7 +962,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             run_direction_menu(ui, t, acts);
         });
     });
-    group(ui, "Styles", t, |ui| {
+    group(ui, crate::tl_id!("ui.styles"), t, |ui| {
         gallery(ui, "styles", view.style, t, acts, |ui, acts| {
             // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
             // a later style, that one and the next (the last two for the last), so the current
@@ -884,7 +975,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             }
         });
     });
-    group(ui, "Tags", t, |ui| {
+    group(ui, crate::tl_id!("ui.tags"), t, |ui| {
         gallery(ui, "tags", "", t, acts, |ui, acts| {
             for tag in [Tag::ToDo, Tag::Important] {
                 if tag_row(ui, tag, t).clicked() {
@@ -892,20 +983,20 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             }
         });
-        if big(ui, Icon::Todo, "To Do\nTag", "A to-do box on this line (Ctrl+1)", t).clicked() {
+        if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
             acts.push(Act::Block("todo"));
         }
-        if big(ui, Icon::Search, "Find\nTags", "Not built", t).clicked() {
+        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.not_built"), t).clicked() {
             acts.push(Act::NotBuilt("Find Tags"));
         }
     });
-    group(ui, "Email", t, |ui| {
-        if big(ui, Icon::Attach, "Send\nPage", "Not built", t).clicked() {
+    group(ui, crate::tl_id!("ui.email"), t, |ui| {
+        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.not_built"), t).clicked() {
             acts.push(Act::NotBuilt("Send Page"));
         }
     });
-    group(ui, "Meetings", t, |ui| {
-        if big(ui, Icon::Page, "Meeting\nDetails", "Not built", t).clicked() {
+    group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
+        if big(ui, Icon::Page, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.not_built"), t).clicked() {
             acts.push(Act::NotBuilt("Meeting Details"));
         }
     });
@@ -944,7 +1035,7 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
     painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, t.text));
     painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, t.text));
     let enabled = ui.is_enabled();
-    let name = if which == "styles" { "More styles" } else { "More tags" };
+    let name = if which == crate::tl_id!("ui.styles_2") { crate::tl_id!("ui.more_styles") } else { crate::tl_id!("ui.more_tags") };
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
     let resp = resp.on_hover_text(name);
     // The list opens over the box it belongs to, as OneNote's galleries do: same left edge,
@@ -971,12 +1062,12 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                             }
                         }
                         ui.separator();
-                        if ui.button("Clear formatting").clicked() {
+                        if ui.button(crate::tl_id!("ui.clear_formatting_2")).clicked() {
                             acts.push(Act::ClearFormatting);
                             picked = true;
                         }
                     } else {
-                        ui.label(egui::RichText::new("Tags").strong());
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.tags")).strong());
                         for tag in Tag::ALL {
                             if tag_row(ui, tag, t).clicked() {
                                 acts.push(Act::Tag(tag));
@@ -984,7 +1075,7 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                             }
                         }
                         ui.separator();
-                        ui.add_enabled(false, egui::Label::new(egui::RichText::new("Customize Tags... (not built)").color(t.muted)));
+                        ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.customize_tags_not_built")).color(t.muted)));
                     }
                 });
             })
@@ -1021,7 +1112,7 @@ pub const EQUATIONS: &[(&str, &str)] = &[
 
 /// The Equation button: a list of equations to start from, each drawn as it will look.
 fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = big_menu(ui, Icon::Equation, "Equation", "An equation, written in TeX: pick one to start from", t);
+    let resp = big_menu(ui, Icon::Equation, crate::tl_id!("ui.equation"), crate::tl_id!("ui.an_equation_written_in_tex_pick_one_to_start_from"), t);
     let open_id = egui::Id::new("ribbon-equation-gallery");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
@@ -1043,7 +1134,7 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         // The row is the name and the formula; the whole of it is the button.
                         let inner = ui.horizontal(|ui| {
                             ui.allocate_ui_with_layout(vec2(150.0, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.add(egui::Label::new(egui::RichText::new(*name).color(t.text)).selectable(false));
+                                ui.add(egui::Label::new(egui::RichText::new(crate::tl!(name)).color(t.text)).selectable(false));
                             });
                             crate::mathview::inline(ui, tex, 15.0, t.text);
                         });
@@ -1051,7 +1142,8 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         if row.hovered() {
                             ui.painter().rect_filled(inner.response.rect.expand(2.0), 3.0, t.row_hover.gamma_multiply(0.6));
                         }
-                        let (enabled, label) = (ui.is_enabled(), format!("Equation: {name}"));
+                        let label = crate::i18n::format_message_id("ui.equation_name", &[("name", crate::tl!(name))]);
+                        let (enabled, label) = (ui.is_enabled(), label);
                         row.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label));
                         if row.clicked() {
                             acts.push(Act::Equation(tex));
@@ -1073,7 +1165,15 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 /// and is the one of the four NoteCraft has an answer for that no other note taking
 /// application does (see `notecraft_text::kashida`).
 fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = small(ui, Some(Icon::ParaLtr), "", "Alignment and direction", "Alignment, and which way this paragraph reads", false, t);
+    let resp = small(
+        ui,
+        Some(Icon::ParaLtr),
+        "",
+        crate::tl_id!("ui.alignment_and_direction"),
+        crate::tl_id!("ui.alignment_and_which_way_this_paragraph_reads"),
+        false,
+        t,
+    );
     let open_id = egui::Id::new("ribbon-align-menu");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
@@ -1112,15 +1212,15 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         }
                     }
                     ui.separator();
-                    if direction_row(ui, Some(Icon::ParaLtr), "Left-to-Right", t).clicked() {
+                    if direction_row(ui, Some(Icon::ParaLtr), crate::tl_id!("ui.left_to_right"), t).clicked() {
                         acts.push(Act::Direction(Some(notecraft_model::Dir::Ltr)));
                         picked = true;
                     }
-                    if direction_row(ui, Some(Icon::ParaRtl), "Right-to-Left", t).clicked() {
+                    if direction_row(ui, Some(Icon::ParaRtl), crate::tl_id!("ui.right_to_left"), t).clicked() {
                         acts.push(Act::Direction(Some(notecraft_model::Dir::Rtl)));
                         picked = true;
                     }
-                    if direction_row(ui, None, "Direction from the words", t).clicked() {
+                    if direction_row(ui, None, crate::tl_id!("ui.direction_from_the_words"), t).clicked() {
                         acts.push(Act::Direction(None));
                         picked = true;
                     }
@@ -1138,14 +1238,23 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 
 /// One direction choice in a menu, with the icon that identifies its scope: paragraph mark
 /// for paragraph flow or caret-and-triangle for the direction of a text run.
+// i18n-ui-text: label
 fn direction_row(ui: &mut Ui, icon: Option<Icon>, label: &str, t: &Tokens) -> egui::Response {
-    floating::menu_row(ui, icon.map(Glyph::Icon), label, t)
+    floating::menu_row(ui, icon.map(Glyph::Icon), crate::tl!(label), t)
 }
 
 /// The less common direction for a selected or newly typed run, kept in a compact menu like
 /// the paragraph direction entries in OneNote's alignment menu.
 fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = small(ui, None, "More...", "Text run direction", "Set the direction of selected text, or the text typed next", false, t);
+    let resp = small(
+        ui,
+        None,
+        crate::tl_id!("ui.more"),
+        crate::tl_id!("ui.text_run_direction"),
+        crate::tl_id!("ui.set_the_direction_of_selected_text_or_the_text_typed_next"),
+        false,
+        t,
+    );
     let open_id = egui::Id::new("ribbon-run-direction-menu");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
@@ -1160,13 +1269,13 @@ fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
                     ui.set_width(220.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
-                    ui.label(egui::RichText::new("Selected text / next typing").small().color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.selected_text_next_typing")).small().color(t.muted));
                     ui.separator();
-                    if direction_row(ui, Some(Icon::CaretLtr), "Left-to-Right", t).clicked() {
+                    if direction_row(ui, Some(Icon::CaretLtr), crate::tl_id!("ui.left_to_right"), t).clicked() {
                         acts.push(Act::Embedding(notecraft_model::Dir::Ltr));
                         picked = true;
                     }
-                    if direction_row(ui, Some(Icon::CaretRtl), "Right-to-Left", t).clicked() {
+                    if direction_row(ui, Some(Icon::CaretRtl), crate::tl_id!("ui.right_to_left"), t).clicked() {
                         acts.push(Act::Embedding(notecraft_model::Dir::Rtl));
                         picked = true;
                     }
@@ -1183,7 +1292,9 @@ fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 }
 
 /// One line of the Styles gallery, drawn the way the style looks.
+// i18n-ui-text: label
 fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
     let (size, color, italics) = match kind {
         "h1" | "title" => (17.0, t.accent, false),
         "h2" => (15.0, t.accent, false),
@@ -1233,9 +1344,10 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
         mark,
         mark.color(t.text, t.accent),
     );
-    painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, tag_label(tag), egui::FontId::proportional(12.5), t.text);
+    let label = tag_label(tag);
+    painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, &label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
-    let name = tag_label(tag);
+    let name = label;
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
     resp
 }
@@ -1261,7 +1373,10 @@ pub fn mark_for(tag: Tag) -> Mark {
 /// A small button that draws one of the ribbon's own marks.
 /// A small button with its name beside the mark, as Office's Cut, Copy and Format Painter
 /// are drawn: a row of those reads as a list of actions, where bare icons read as a puzzle.
+// i18n-ui-text: label,tip
 fn mark_row(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
     let font = egui::FontId::proportional(11.0);
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x + SMALL_W + 8.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(width, SMALL_H), Sense::click());
@@ -1278,7 +1393,10 @@ fn mark_row(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui
     resp.on_hover_text(tip)
 }
 
+// i18n-ui-text: label,tip
 fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
     let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
     if on || resp.hovered() {
@@ -1295,71 +1413,87 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// wired; what it cannot is greyed and says so, so the tab is an honest map of where the
 /// work is rather than a short list of what happens to exist.
 fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
-    group(ui, "Insert", t, |ui| {
-        if big(ui, Icon::InsertSpace, "Insert\nSpace", "Add a blank paragraph at the caret", t).clicked() {
+    group(ui, crate::tl_id!("ui.insert"), t, |ui| {
+        if big(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.add_a_blank_paragraph_at_the_caret"), t).clicked() {
             acts.push(Act::Insert("space"));
         }
     });
-    group(ui, "Tables", t, |ui| {
+    group(ui, crate::tl_id!("ui.tables"), t, |ui| {
         table_menu(ui, view, t, acts);
     });
-    group(ui, "Files", t, |ui| {
-        if big(ui, Icon::Page, "File\nPrintout", "Pick a PDF or Office document and insert its pages as pictures", t).clicked() {
+    group(ui, crate::tl_id!("ui.files"), t, |ui| {
+        if big(
+            ui,
+            Icon::Page,
+            crate::tl_id!("ui.file_printout_2"),
+            crate::tl_id!("ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures"),
+            t,
+        )
+        .clicked()
+        {
             acts.push(Act::AddPrintout);
         }
-        if big(ui, Icon::Attach, "File\nAttachment", "A file: copied in, or linked where it is", t).clicked() {
+        if big(ui, Icon::Attach, crate::tl_id!("ui.file_attachment_2"), crate::tl_id!("ui.a_file_copied_in_or_linked_where_it_is"), t).clicked() {
             acts.push(Act::AddFile);
         }
         if view.gridcraft {
-            if big(ui, Icon::Spreadsheet, "Spreadsheet", "A new spreadsheet beside the page, opened in GridCraft", t).clicked() {
+            if big(
+                ui,
+                Icon::Spreadsheet,
+                crate::tl_id!("ui.spreadsheet"),
+                crate::tl_id!("ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft"),
+                t,
+            )
+            .clicked()
+            {
                 acts.push(Act::NewGridCraft);
             }
         } else {
             soon(ui, Icon::Spreadsheet, "Spreadsheet", t);
         }
     });
-    group(ui, "Images", t, |ui| {
+    group(ui, crate::tl_id!("ui.images"), t, |ui| {
         soon(ui, Icon::Clip, "Screen\nClipping", t);
         if pictures_menu(ui, t, acts) {
             acts.push(Act::AddPicture);
         }
     });
-    group(ui, "Media", t, |ui| {
+    group(ui, crate::tl_id!("ui.media"), t, |ui| {
         soon(ui, Icon::Video, "Online\nVideo", t);
     });
-    group(ui, "Links", t, |ui| {
-        if big(ui, Icon::Link, "Link", "A link to a page or an address", t).clicked() {
+    group(ui, crate::tl_id!("ui.links"), t, |ui| {
+        if big(ui, Icon::Link, crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link_to_a_page_or_an_address"), t).clicked() {
             acts.push(Act::Insert("link"));
         }
     });
-    group(ui, "Recording", t, |ui| {
+    group(ui, crate::tl_id!("ui.recording"), t, |ui| {
         soon(ui, Icon::Mic, "Transcribe", t);
         soon(ui, Icon::Video, "Record\nVideo", t);
     });
-    group(ui, "Time Stamp", t, |ui| {
-        if big(ui, Icon::Calendar, "Date", "Today's date", t).clicked() {
+    group(ui, crate::tl_id!("ui.time_stamp"), t, |ui| {
+        if big(ui, Icon::Calendar, crate::tl_id!("ui.date"), crate::tl_id!("ui.today_s_date"), t).clicked() {
             acts.push(Act::Insert("date"));
         }
-        if big(ui, Icon::Clock, "Time", "The time now", t).clicked() {
+        if big(ui, Icon::Clock, crate::tl_id!("ui.time"), crate::tl_id!("ui.the_time_now"), t).clicked() {
             acts.push(Act::Insert("time"));
         }
-        if big(ui, Icon::Calendar, "Date &\nTime", "Both, as the page's own stamp is written", t).clicked() {
+        if big(ui, Icon::Calendar, crate::tl_id!("ui.date_time_2"), crate::tl_id!("ui.both_as_the_page_s_own_stamp_is_written"), t).clicked() {
             acts.push(Act::Insert("datetime"));
         }
     });
-    group(ui, "Pages", t, |ui| {
+    group(ui, crate::tl_id!("ui.pages"), t, |ui| {
         soon(ui, Icon::PageStack, "Page\nTemplates", t);
     });
-    group(ui, "Symbols", t, |ui| {
+    group(ui, crate::tl_id!("ui.symbols"), t, |ui| {
         equation_gallery(ui, t, acts);
-        if big_menu(ui, Icon::Symbol, "Symbol", "Insert a common symbol", t).clicked() {
+        if big_menu(ui, Icon::Symbol, crate::tl_id!("ui.symbol"), crate::tl_id!("ui.insert_a_common_symbol"), t).clicked() {
             acts.push(Act::Symbols);
         }
     });
-    group(ui, "More", t, |ui| {
+    group(ui, crate::tl_id!("ui.more_2"), t, |ui| {
         // NoteCraft's own addition to OneNote's group: a diagram kept as its source, so it
         // can be read and changed in any editor rather than being a picture of one.
-        if big(ui, Icon::Diagram, "Diagram", "A Mermaid diagram, kept as its source", t).clicked() {
+        if big(ui, Icon::Diagram, crate::tl_id!("ui.diagram"), crate::tl_id!("ui.a_mermaid_diagram_kept_as_its_source"), t).clicked() {
             acts.push(Act::Insert("diagram"));
         }
         soon(ui, Icon::Sticker, "Stickers", t);
@@ -1376,7 +1510,8 @@ fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Resp
     const CAPTION: f32 = 15.0;
     let (rect, resp) = ui.allocate_exact_size(PAPER + vec2(0.0, CAPTION), egui::Sense::click());
     let enabled = ui.is_enabled();
-    let label = r.label();
+    let label = r.translated_label();
+    let caption = r.translated_mid();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, label));
     let paper = egui::Rect::from_min_size(rect.min, PAPER);
     let painter = ui.painter().with_clip_rect(paper);
@@ -1384,7 +1519,7 @@ fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Resp
     paint_paper(&painter, paper, r, SCALE, t.rule_line, t.rule_line_strong);
     // A page with no lines needs something to look at, so it says so in the middle.
     if !r.on() {
-        painter.text(paper.center(), egui::Align2::CENTER_CENTER, "Plain", egui::FontId::proportional(12.0), t.muted);
+        painter.text(paper.center(), egui::Align2::CENTER_CENTER, crate::tl_id!("ui.plain"), egui::FontId::proportional(12.0), t.muted);
     }
     let (edge, width) = if here {
         (t.accent, 2.0)
@@ -1398,7 +1533,7 @@ fn paper_swatch(ui: &mut Ui, r: RuleLines, here: bool, t: &Tokens) -> egui::Resp
     // paper beside it.
     let colour = if here { t.accent } else { t.text };
     let name = egui::pos2(paper.center().x, paper.max.y + 1.0);
-    ui.painter().with_clip_rect(rect).text(name, egui::Align2::CENTER_TOP, r.short(), egui::FontId::proportional(11.0), colour);
+    ui.painter().with_clip_rect(rect).text(name, egui::Align2::CENTER_TOP, caption, egui::FontId::proportional(11.0), colour);
     resp.on_hover_text(label)
 }
 
@@ -1422,7 +1557,7 @@ fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: 
     if colour.is_none() {
         painter.text(rect.center(), egui::Align2::CENTER_CENTER, "/", egui::FontId::proportional(13.0), t.muted);
     }
-    let name = colour.map(notecraft_model::NodeColor::label).unwrap_or("No colour");
+    let name = colour.map(notecraft_model::NodeColor::label).unwrap_or(crate::tl_id!("ui.no_colour"));
     let enabled = ui.is_enabled();
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, name));
     resp.on_hover_text(name)
@@ -1438,7 +1573,7 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     const SIDE: f32 = 17.0;
     const GAP: f32 = 3.0;
 
-    let resp = big_menu(ui, Icon::Table, "Table", "A table: pick its size", t);
+    let resp = big_menu(ui, Icon::Table, crate::tl_id!("ui.table_3"), crate::tl_id!("ui.a_table_pick_its_size"), t);
     let open_id = egui::Id::new("ribbon-insert-table");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
@@ -1470,7 +1605,10 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         let at = grid.min + vec2(c as f32 * (SIDE + GAP), r as f32 * (SIDE + GAP));
                         let cell = egui::Rect::from_min_size(at, egui::vec2(SIDE, SIDE));
                         let resp = ui.interact(cell, open_id.with((r, c)), Sense::click());
-                        let name = format!("{} x {} Table", c + 1, r + 1);
+                        let name = crate::i18n::format_message_id(
+                            "ui.columns_x_rows_table",
+                            &[("columns", &(c + 1).to_string()), ("rows", &(r + 1).to_string())],
+                        );
                         let enabled = ui.is_enabled();
                         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
                         if resp.hovered() {
@@ -1490,8 +1628,11 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     paint.rect_stroke(cell, 1.0, egui::Stroke::new(1.0, line), egui::StrokeKind::Inside);
                 }
                 let title = match over {
-                    Some((r, c)) => format!("{} x {} Table", c + 1, r + 1),
-                    None => "Table".to_string(),
+                    Some((r, c)) => crate::i18n::format_message_id(
+                        "ui.columns_x_rows_table",
+                        &[("columns", &(c + 1).to_string()), ("rows", &(r + 1).to_string())],
+                    ),
+                    None => crate::tl_id!("ui.table_3").to_string(),
                 };
                 paint.text(naming.left_top(), egui::Align2::LEFT_TOP, title, egui::FontId::proportional(13.0), t.text);
                 if let Some((r, c)) = chose {
@@ -1499,14 +1640,17 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     picked = true;
                 }
                 ui.separator();
-                ui.add_enabled(false, egui::Label::new(egui::RichText::new("Insert Table... (not built)").color(t.muted)));
+                ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.insert_table_not_built")).color(t.muted)));
                 if view.gridcraft {
                     if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), "New GridCraft Spreadsheet", t).clicked() {
                         acts.push(Act::NewGridCraft);
                         picked = true;
                     }
                 } else {
-                    ui.add_enabled(false, egui::Label::new(egui::RichText::new("New GridCraft Spreadsheet (not installed)").color(t.muted)));
+                    ui.add_enabled(
+                        false,
+                        egui::Label::new(egui::RichText::new(crate::tl_id!("ui.new_gridcraft_spreadsheet_not_installed")).color(t.muted)),
+                    );
                 }
             });
         })
@@ -1523,7 +1667,15 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     let open_id = egui::Id::new("ribbon-rule-lines");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
-    let resp = big_inner(ui, Icon::Ruler, "Format\nBackground", "Lines or squares behind the page, as on paper", true, open, t);
+    let resp = big_inner(
+        ui,
+        Icon::Ruler,
+        crate::tl_id!("ui.format_background_2"),
+        crate::tl_id!("ui.lines_or_squares_behind_the_page_as_on_paper"),
+        true,
+        open,
+        t,
+    );
     if resp.clicked() {
         open = !open;
     }
@@ -1551,10 +1703,12 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                     shelf(ui, "Grid lines", &RuleLines::GRIDS, acts, &mut picked);
                     shelf(ui, "NoteCraft's own", &RuleLines::CRAFT, acts, &mut picked);
                     ui.add_space(1.0);
-                    ui.label(egui::RichText::new("Every fifth line is slightly stronger for easier counting.").small().color(t.muted));
+                    ui.label(
+                        egui::RichText::new(crate::tl_id!("ui.every_fifth_line_is_slightly_stronger_for_easier_counting")).small().color(t.muted),
+                    );
                     ui.separator();
                     // OneNote's Page Color, under the paper: a pale wash behind the words.
-                    ui.label(egui::RichText::new("Page colour").strong().color(t.text));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
                     ui.horizontal(|ui| {
                         if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
                             acts.push(Act::PageColour(None));
@@ -1567,9 +1721,9 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                             }
                         }
                     });
-                    ui.label(egui::RichText::new("The paper and colour apply to this page only.").small().color(t.muted));
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
                     ui.separator();
-                    ui.add_enabled(false, egui::Label::new(egui::RichText::new("Rule line colour (not built)").color(t.muted)));
+                    ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.rule_line_colour_not_built")).color(t.muted)));
                 });
             })
             .response;
@@ -1623,27 +1777,29 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             }
         }
         let enabled = pressure_available && ui.is_enabled();
-        let said = if pressure_available { format!("Pressure sensitivity {now} of 100") } else { "Pressure sensitivity unavailable".to_string() };
+        let said = if pressure_available {
+            crate::i18n::format_message_id("ui.pressure_sensitivity_now_of_100", &[("now", &now.to_string())])
+        } else {
+            crate::tl_id!("ui.pressure_sensitivity_unavailable").to_owned()
+        };
         resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
         let tip = if pressure_available {
             "How readily the pen answers pressure: turned up, a light hand lays down more ink"
         } else {
             "No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled."
         };
-        resp.on_hover_text(tip);
+        resp.on_hover_text(crate::tl!(tip));
         ui.label(
-            egui::RichText::new(if pressure_available { format!("{now}") } else { "OFF".to_string() }).size(10.5).color(if pressure_available {
-                t.text
-            } else {
-                t.warn
-            }),
+            egui::RichText::new(if pressure_available { format!("{now}") } else { crate::tl_id!("ui.off").to_owned() })
+                .size(11.5)
+                .color(if pressure_available { t.text } else { t.warn }),
         );
     });
 }
 
 /// OneNote's Add button: a new tool of whatever kind, put on the end of the rack.
 fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
-    let resp = big_menu(ui, Icon::Plus, "Add", "Put another tool on the rack", t);
+    let resp = big_menu(ui, Icon::Plus, crate::tl_id!("ui.add"), crate::tl_id!("ui.put_another_tool_on_the_rack"), t);
     let id = egui::Id::new("ribbon-add-pen");
     let mut open = ui.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
     if resp.clicked() {
@@ -1671,12 +1827,13 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         painter.text(
                             egui::pos2(row.min.x + 32.0, row.center().y),
                             Align2::LEFT_CENTER,
-                            tool.label(),
+                            crate::tl!(tool.label()),
                             egui::FontId::proportional(12.5),
                             t.text,
                         );
                         let enabled = ui.is_enabled();
-                        let name = format!("Add {}", tool.label());
+                        let tool_label = crate::tl!(tool.label());
+                        let name = crate::i18n::format_message_id("ui.add_tool", &[("tool", tool_label)]);
                         hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
                         if hit.clicked() {
                             acts.push(Act::InkRack(RackEdit::Add(tool)));
@@ -1718,7 +1875,8 @@ fn away(ui: &Ui, area: &egui::Response, button: &egui::Response) -> bool {
 fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let (rect, resp) = ui.allocate_exact_size(vec2(27.0, GROUP_H - 20.0), Sense::click());
     let enabled = ui.is_enabled();
-    let name = format!("{} {}", nib.tool.label(), swatch_name(nib.colour));
+    let name =
+        crate::i18n::format_message_id("ui.tool_colour", &[("tool", crate::tl!(nib.tool.label())), ("colour", crate::tl!(swatch_name(nib.colour)))]);
     let label = name.clone();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, label.clone()));
     let painter = ui.painter_at(rect);
@@ -1750,25 +1908,28 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     // rectangle looked harmless and was not: later widgets win in egui, so it swallowed
     // every left click and only the eraser, which had no such overlay, could be picked up.
     resp.context_menu(|ui| {
-        if ui.button("Modify Tool").clicked() {
+        if ui.button(crate::tl_id!("ui.modify_tool")).clicked() {
             modify = true;
             ui.close();
         }
         ui.separator();
-        if ui.add_enabled(i > 0, egui::Button::new("Move Left")).clicked() {
+        if ui.add_enabled(i > 0, egui::Button::new(crate::tl_id!("ui.move_left"))).clicked() {
             acts.push(Act::InkRack(RackEdit::Move(i, true)));
             ui.close();
         }
-        if ui.add_enabled(i + 1 < rack_len, egui::Button::new("Move Right")).clicked() {
+        if ui.add_enabled(i + 1 < rack_len, egui::Button::new(crate::tl_id!("ui.move_right"))).clicked() {
             acts.push(Act::InkRack(RackEdit::Move(i, false)));
             ui.close();
         }
         ui.separator();
-        if ui.button(format!("Add Another {}", nib.tool.label())).clicked() {
+        let tool = crate::tl!(nib.tool.label());
+        let label = crate::i18n::format_message_id("ui.add_another_tool", &[("tool", tool)]);
+        if ui.button(label).clicked() {
             acts.push(Act::InkRack(RackEdit::Add(nib.tool)));
             ui.close();
         }
-        if ui.add_enabled(rack_len > 1, egui::Button::new(format!("Delete {}", nib.tool.label()))).clicked() {
+        let label = crate::i18n::format_message_id("ui.delete_tool_2", &[("tool", crate::tl!(nib.tool.label()))]);
+        if ui.add_enabled(rack_len > 1, egui::Button::new(label)).clicked() {
             acts.push(Act::InkRack(RackEdit::Remove(i)));
             ui.close();
         }
@@ -1813,7 +1974,7 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 crate::inkpad::paint_stroke(&ui.painter_at(sample), sample.min, &stroke);
                 ui.separator();
 
-                ui.label(egui::RichText::new("Thickness").size(10.5).color(t.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.thickness")).size(11.5).color(t.muted));
                 ui.horizontal(|ui| {
                     for tenths in rack::THICKNESSES {
                         let here = nib.tenths == tenths;
@@ -1828,16 +1989,18 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                         let r = (f32::from(tenths) / 10.0 / 2.0).clamp(1.0, 7.0);
                         painter.circle_filled(dot.center(), r, t.text);
                         let enabled = ui.is_enabled();
-                        let name = format!("{:.1} pt", f32::from(tenths) / 10.0);
+                        let size = format!("{:.1}", f32::from(tenths) / 10.0);
+                        let name = crate::i18n::format_message_id("ui.size_pt", &[("size", &size)]);
+                        let tip = name.clone();
                         resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
-                        if resp.on_hover_text(format!("{:.1} pt", f32::from(tenths) / 10.0)).clicked() {
+                        if resp.on_hover_text(tip).clicked() {
                             acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, nib.colour, tenths))));
                         }
                     }
                 });
 
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new("Colours").size(10.5).color(t.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.colours")).size(11.5).color(t.muted));
                 for row in rack::PALETTE {
                     ui.horizontal(|ui| {
                         for colour in row {
@@ -1853,7 +2016,10 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                                 egui::StrokeKind::Outside,
                             );
                             let enabled = ui.is_enabled();
-                            let name = format!("{} {}", swatch_name(colour), colour.hex());
+                            let name = crate::i18n::format_message_id(
+                                "ui.colour_hex",
+                                &[("colour", crate::tl!(swatch_name(colour))), ("hex", &colour.hex())],
+                            );
                             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
                             if resp.on_hover_text(colour.hex()).clicked() {
                                 acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, colour, nib.tenths))));
@@ -1895,7 +2061,7 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
 fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(27.0, GROUP_H - 20.0), Sense::click());
     let enabled = ui.is_enabled();
-    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, "Eraser"));
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, crate::tl_id!("ui.eraser")));
     let painter = ui.painter_at(rect);
     if chosen {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
@@ -1930,7 +2096,7 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     if chosen {
         chevron(&painter, egui::pos2(rect.center().x, rect.max.y - 5.0), t.muted);
     }
-    resp.on_hover_text("Rub out whatever the pointer passes over")
+    resp.on_hover_text(crate::tl_id!("ui.rub_out_whatever_the_pointer_passes_over"))
 }
 
 /// Draws one drawing tool upright inside `rect`, the way OneNote draws its rack.
@@ -2073,10 +2239,17 @@ fn swatch_name(colour: Rgb) -> &'static str {
 /// not. It keeps the tab's shape honest: the control is where a OneNote user looks for it,
 /// greyed, saying plainly that it is not here yet rather than being left out.
 /// A small button with an icon and a word, greyed when there is nothing for it to do.
+// i18n-ui-text: label,tip
 fn row_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, live: bool, t: &Tokens) -> egui::Response {
     let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
     let resp = ui.add_enabled_ui(live, |ui| small(ui, Some(icon), "", label, tip, false, if live { t } else { &dim })).inner;
-    if live { resp } else { resp.on_hover_text(format!("{label}: nothing to {}", label.to_lowercase())) }
+    if live {
+        resp
+    } else {
+        let label = crate::tl!(label);
+        let action = label.to_lowercase();
+        resp.on_hover_text(crate::i18n::format_message_id("ui.label_nothing_to_action", &[("label", label), ("action", &action)]))
+    }
 }
 
 /// OneNote's Shapes group: a row of regular shapes, and the one in hand is lit.
@@ -2085,7 +2258,7 @@ fn row_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, live: bool, t: &T
 /// all work on it the day it is drawn.
 fn shapes_group(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     use notecraft_ink::shapes::Shape;
-    group(ui, "Shapes", t, |ui| {
+    group(ui, crate::tl_id!("ui.shapes"), t, |ui| {
         let in_hand = |s: Shape| view.pointer == Pointer::Shape(s);
         let mut row = |ui: &mut Ui, shapes: &[Shape]| {
             ui.vertical(|ui| {
@@ -2118,33 +2291,36 @@ fn shape_button(ui: &mut Ui, shape: notecraft_ink::shapes::Shape, here: bool, t:
         ui.painter().add(egui::Shape::line(points, egui::Stroke::new(1.2, if here { t.accent } else { t.text })));
     }
     let at = egui::pos2(rect.min.x + 24.0, rect.center().y);
-    ui.painter().text(at, egui::Align2::LEFT_CENTER, shape.label(), egui::FontId::proportional(11.5), t.text);
+    let shape_label = crate::tl!(shape.label());
+    ui.painter().text(at, egui::Align2::LEFT_CENTER, shape_label, egui::FontId::proportional(11.5), t.text);
     let enabled = ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, shape.label()));
-    resp.on_hover_text(format!("{}: drag on the page to draw one", shape.label()))
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, shape_label));
+    resp.on_hover_text(crate::i18n::format_message_id("ui.shape_drag_on_the_page_to_draw_one", &[(crate::tl_id!("ui.shape"), shape_label)]))
 }
 
 fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
     let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
-    let resp = ui.add_enabled_ui(false, |ui| big(ui, icon, label, "Not built yet", &dim)).inner;
-    resp.on_hover_text(format!("{label}: not built yet"));
+    let resp = ui.add_enabled_ui(false, |ui| big(ui, icon, label, crate::tl_id!("ui.not_built_yet"), &dim)).inner;
+    resp.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[(crate::tl_id!("ui.label"), crate::tl!(label))]));
 }
 
 /// OneNote's History tab, with the same groups and controls. NoteCraft does not yet keep
 /// unread flags or authors, so those controls are visible but disabled.
 fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
-    group(ui, "Unread", t, |ui| {
+    group(ui, crate::tl_id!("ui.unread"), t, |ui| {
         soon(ui, Icon::PageStack, "Next\nUnread", t);
         soon(ui, Icon::Todo, "Mark as\nRead", t);
     });
-    group(ui, "Authors", t, |ui| {
+    group(ui, crate::tl_id!("ui.authors"), t, |ui| {
         soon(ui, Icon::Clock, "Recent\nEdits", t);
         soon(ui, Icon::Search, "Find by\nAuthor", t);
         soon(ui, Icon::Page, "Hide\nAuthors", t);
     });
-    group(ui, "History", t, |ui| {
+    group(ui, crate::tl_id!("ui.history"), t, |ui| {
         if ui
-            .add_enabled_ui(view.has_page, |ui| big(ui, Icon::PageStack, "Page\nVersions", "See and restore saved copies of this page", t))
+            .add_enabled_ui(view.has_page, |ui| {
+                big(ui, Icon::PageStack, crate::tl_id!("ui.page_versions_4"), crate::tl_id!("ui.see_and_restore_saved_copies_of_this_page"), t)
+            })
             .inner
             .clicked()
         {
@@ -2152,7 +2328,13 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
         if ui
             .add_enabled_ui(view.has_page, |ui| {
-                big(ui, Icon::Notebook, "Notebook\nRecycle Bin", "Restore pages, sections and groups removed from this notebook", t)
+                big(
+                    ui,
+                    Icon::Notebook,
+                    crate::tl_id!("ui.notebook_recycle_bin_3"),
+                    crate::tl_id!("ui.restore_pages_sections_and_groups_removed_from_this_notebook"),
+                    t,
+                )
             })
             .inner
             .clicked()
@@ -2166,19 +2348,10 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 /// with the mark each one makes above its name. What NoteCraft cannot do yet is greyed and
 /// says so, rather than being left out, so the tab is an honest map of the ink work.
 fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
-    group(ui, "Undo", t, |ui| {
+    group(ui, crate::tl_id!("ui.undo"), t, |ui| {
         // Named apart from the group they sit in, so a screen reader and a test can tell
         // the Undo group from the Undo button inside it.
-        if big(
-            ui,
-            Icon::Undo,
-            "Undo
-stroke",
-            "Take the last stroke back",
-            t,
-        )
-        .clicked()
-        {
+        if big(ui, Icon::Undo, crate::tl_id!("ui.undo_stroke"), crate::tl_id!("ui.take_the_last_stroke_back"), t).clicked() {
             acts.push(Act::InkUndo);
         }
         soon(
@@ -2189,18 +2362,24 @@ stroke",
             t,
         );
     });
-    group(ui, "Selection", t, |ui| {
-        if big_on(ui, Icon::Pointer, "Select", "Click a stroke to pick it up, then move, stretch or delete it", view.pointer == Pointer::Pick, t)
-            .clicked()
+    group(ui, crate::tl_id!("ui.selection"), t, |ui| {
+        if big_on(
+            ui,
+            Icon::Pointer,
+            crate::tl_id!("ui.select"),
+            crate::tl_id!("ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it"),
+            view.pointer == Pointer::Pick,
+            t,
+        )
+        .clicked()
         {
             acts.push(Act::InkPointer(Pointer::Pick));
         }
         if big_on(
             ui,
             Icon::Lasso,
-            "Lasso
-Select",
-            "Draw a loop round ink to pick it up",
+            crate::tl_id!("ui.lasso_select"),
+            crate::tl_id!("ui.draw_a_loop_round_ink_to_pick_it_up"),
             view.pointer == Pointer::Lasso,
             t,
         )
@@ -2211,11 +2390,20 @@ Select",
         // OneNote has no such button: there, the pointer is always the caret until a pen
         // is picked up. Ours needs one, because picking ink up and writing words are both
         // things a plain click does, and only the person knows which they meant.
-        if big_on(ui, Icon::DirLtr, "Type", "Put the pointer back to the words and the caret", view.pointer == Pointer::Write, t).clicked() {
+        if big_on(
+            ui,
+            Icon::DirLtr,
+            crate::tl_id!("ui.type"),
+            crate::tl_id!("ui.put_the_pointer_back_to_the_words_and_the_caret"),
+            view.pointer == Pointer::Write,
+            t,
+        )
+        .clicked()
+        {
             acts.push(Act::InkPointer(Pointer::Write));
         }
     });
-    group(ui, "Drawing Tools", t, |ui| {
+    group(ui, crate::tl_id!("ui.drawing_tools"), t, |ui| {
         if eraser_on_rack(ui, view.pointer == Pointer::Erase, t).clicked() {
             acts.push(Act::InkPointer(Pointer::Erase));
         }
@@ -2228,7 +2416,7 @@ Select",
         add_menu(ui, t, acts);
         sensitivity(ui, view.sensitivity, view.pressure_available, t, acts);
     });
-    group(ui, "Input Mode", t, |ui| {
+    group(ui, crate::tl_id!("ui.input_mode"), t, |ui| {
         soon(
             ui,
             Icon::Hand,
@@ -2237,14 +2425,22 @@ Hand",
             t,
         );
     });
-    group(ui, "Stencils", t, |ui| {
+    group(ui, crate::tl_id!("ui.stencils"), t, |ui| {
         soon(ui, Icon::Ruler, "Ruler", t);
     });
-    group(ui, "Edit", t, |ui| {
-        if big(ui, Icon::Pen, "Draw\nhere", "Put a sheet to draw on into the page", t).clicked() {
+    group(ui, crate::tl_id!("ui.edit"), t, |ui| {
+        if big(ui, Icon::Pen, crate::tl_id!("ui.draw_here_2"), crate::tl_id!("ui.put_a_sheet_to_draw_on_into_the_page"), t).clicked() {
             acts.push(Act::InkInsert);
         }
-        if big(ui, Icon::Picture, "Save\npicture", "Write the drawing again with no pen readings in it, for sending on", t).clicked() {
+        if big(
+            ui,
+            Icon::Picture,
+            crate::tl_id!("ui.save_picture_2"),
+            crate::tl_id!("ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f"),
+            t,
+        )
+        .clicked()
+        {
             acts.push(Act::InkExportPlain);
         }
         soon(
@@ -2259,7 +2455,7 @@ Space",
         rule_lines_menu(ui, view, t, acts);
     });
     shapes_group(ui, view, t, acts);
-    group(ui, "Shapes", t, |ui| {
+    group(ui, crate::tl_id!("ui.shapes"), t, |ui| {
         soon(
             ui,
             Icon::Shapes,
@@ -2268,7 +2464,7 @@ Shapes",
             t,
         );
     });
-    group(ui, "Text", t, |ui| {
+    group(ui, crate::tl_id!("ui.text"), t, |ui| {
         soon(
             ui,
             Icon::InkToText,
@@ -2277,7 +2473,7 @@ Text",
             t,
         );
     });
-    group(ui, "Math", t, |ui| {
+    group(ui, crate::tl_id!("ui.math"), t, |ui| {
         soon(
             ui,
             Icon::Equation,
@@ -2286,7 +2482,7 @@ Math",
             t,
         );
     });
-    group(ui, "Replay", t, |ui| {
+    group(ui, crate::tl_id!("ui.replay"), t, |ui| {
         soon(
             ui,
             Icon::Replay,
@@ -2295,12 +2491,12 @@ Replay",
             t,
         );
     });
-    group(ui, "Mode", t, |ui| {
-        if big(ui, Icon::FullPage, "Full Page\nView", "Hide everything but the page", t).clicked() {
+    group(ui, crate::tl_id!("ui.mode"), t, |ui| {
+        if big(ui, Icon::FullPage, crate::tl_id!("ui.full_page_view_2"), crate::tl_id!("ui.hide_everything_but_the_page"), t).clicked() {
             acts.push(Act::ToggleFullPage);
         }
     });
-    group(ui, "Help", t, |ui| {
+    group(ui, crate::tl_id!("ui.help"), t, |ui| {
         soon(
             ui,
             Icon::Help,
@@ -2316,45 +2512,45 @@ Help",
 fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     use crate::pageedit::TableEdit as E;
     use crate::pageedit::TableSpan as S;
-    group(ui, "Select", t, |ui| {
-        if big(ui, Icon::Table, "Select\nTable", "Pick the whole table", t).clicked() {
+    group(ui, crate::tl_id!("ui.select"), t, |ui| {
+        if big(ui, Icon::Table, crate::tl_id!("ui.select_table_2"), crate::tl_id!("ui.pick_the_whole_table"), t).clicked() {
             acts.push(Act::TableSelect(S::Whole));
         }
-        if big(ui, Icon::TableColumn, "Select\nColumns", "Pick the caret's column", t).clicked() {
+        if big(ui, Icon::TableColumn, crate::tl_id!("ui.select_columns_2"), crate::tl_id!("ui.pick_the_caret_s_column"), t).clicked() {
             acts.push(Act::TableSelect(S::Column));
         }
-        if big(ui, Icon::TableRow, "Select\nRows", "Pick the caret's row", t).clicked() {
+        if big(ui, Icon::TableRow, crate::tl_id!("ui.select_rows_2"), crate::tl_id!("ui.pick_the_caret_s_row"), t).clicked() {
             acts.push(Act::TableSelect(S::Row));
         }
     });
-    group(ui, "Delete", t, |ui| {
+    group(ui, crate::tl_id!("ui.delete"), t, |ui| {
         soon(ui, Icon::Table, "Delete\nTable", t);
-        if big(ui, Icon::TableColumn, "Delete\nColumns", "Take the caret's column out", t).clicked() {
+        if big(ui, Icon::TableColumn, crate::tl_id!("ui.delete_columns_2"), crate::tl_id!("ui.take_the_caret_s_column_out"), t).clicked() {
             acts.push(Act::Table(E::DeleteColumn));
         }
-        if big(ui, Icon::TableRow, "Delete\nRows", "Take the caret's row out", t).clicked() {
+        if big(ui, Icon::TableRow, crate::tl_id!("ui.delete_rows_2"), crate::tl_id!("ui.take_the_caret_s_row_out"), t).clicked() {
             acts.push(Act::Table(E::DeleteRow));
         }
     });
-    group(ui, "Insert", t, |ui| {
-        if big(ui, Icon::TableRow, "Insert Row\nAbove", "A row above the caret's", t).clicked() {
+    group(ui, crate::tl_id!("ui.insert"), t, |ui| {
+        if big(ui, Icon::TableRow, crate::tl_id!("ui.insert_row_above_2"), crate::tl_id!("ui.a_row_above_the_caret_s"), t).clicked() {
             acts.push(Act::Table(E::InsertRow(true)));
         }
-        if big(ui, Icon::TableRow, "Insert Row\nBelow", "A row below the caret's", t).clicked() {
+        if big(ui, Icon::TableRow, crate::tl_id!("ui.insert_row_below_2"), crate::tl_id!("ui.a_row_below_the_caret_s"), t).clicked() {
             acts.push(Act::Table(E::InsertRow(false)));
         }
-        if big(ui, Icon::TableColumn, "Insert Column\nLeft", "A column left of the caret's", t).clicked() {
+        if big(ui, Icon::TableColumn, crate::tl_id!("ui.insert_column_left_2"), crate::tl_id!("ui.a_column_left_of_the_caret_s"), t).clicked() {
             acts.push(Act::Table(E::InsertColumn(true)));
         }
-        if big(ui, Icon::TableColumn, "Insert Column\nRight", "A column right of the caret's", t).clicked() {
+        if big(ui, Icon::TableColumn, crate::tl_id!("ui.insert_column_right_2"), crate::tl_id!("ui.a_column_right_of_the_caret_s"), t).clicked() {
             acts.push(Act::Table(E::InsertColumn(false)));
         }
     });
-    group(ui, "Merge", t, |ui| {
+    group(ui, crate::tl_id!("ui.merge"), t, |ui| {
         soon(ui, Icon::Table, "Merge\nCells", t);
         soon(ui, Icon::Table, "Split\nCells", t);
     });
-    group(ui, "Format", t, |ui| {
+    group(ui, crate::tl_id!("ui.format"), t, |ui| {
         // One button that says what it will do, the way OneNote's does: it reads Hide
         // Borders while they are drawn, and Show Borders once they are not.
         let hiding = view.table_borders;
@@ -2365,32 +2561,52 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
         soon(ui, Icon::Picture, "Shading", t);
     });
-    group(ui, "Alignment", t, |ui| {
+    group(ui, crate::tl_id!("ui.alignment"), t, |ui| {
         soon(ui, Icon::DirLtr, "Align\nLeft", t);
         soon(ui, Icon::DirLtr, "Center", t);
         soon(ui, Icon::DirRtl, "Align\nRight", t);
     });
-    group(ui, "Data", t, |ui| {
+    group(ui, crate::tl_id!("ui.data"), t, |ui| {
         soon(ui, Icon::ListNumber, "Sort", t);
     });
-    group(ui, "Convert", t, |ui| {
+    group(ui, crate::tl_id!("ui.convert"), t, |ui| {
         // Where OneNote converts a table to an Excel spreadsheet, NoteCraft hands it to
         // GridCraft, the open spreadsheet from the same workshop. Greyed when GridCraft
         // is not installed, because there is nowhere to hand it to.
         if view.gridcraft {
-            if big(ui, Icon::Spreadsheet, "Convert to\nGridCraft", "Write the table out and open it in GridCraft", t).clicked() {
+            if big(
+                ui,
+                Icon::Spreadsheet,
+                crate::tl_id!("ui.convert_to_gridcraft_2"),
+                crate::tl_id!("ui.write_the_table_out_and_open_it_in_gridcraft"),
+                t,
+            )
+            .clicked()
+            {
                 acts.push(Act::ToGridCraft);
             }
             // The table went out as a file; this brings back what the spreadsheet made of
             // it. Nothing watches the file, because a page being edited should not change
             // under the writer's hands.
-            if big(ui, Icon::Spreadsheet, "Read back\nfrom it", "Put what the spreadsheet holds back into this table", t).clicked() {
+            if big(
+                ui,
+                Icon::Spreadsheet,
+                crate::tl_id!("ui.read_back_from_it_2"),
+                crate::tl_id!("ui.put_what_the_spreadsheet_holds_back_into_this_table"),
+                t,
+            )
+            .clicked()
+            {
                 acts.push(Act::FromGridCraft);
             }
         } else {
             let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
-            let resp = ui.add_enabled_ui(false, |ui| big(ui, Icon::Spreadsheet, "Convert to\nGridCraft", "GridCraft is not installed", &dim)).inner;
-            resp.on_hover_text("Convert to GridCraft: GridCraft is not installed");
+            let resp = ui
+                .add_enabled_ui(false, |ui| {
+                    big(ui, Icon::Spreadsheet, crate::tl_id!("ui.convert_to_gridcraft_2"), crate::tl_id!("ui.gridcraft_is_not_installed"), &dim)
+                })
+                .inner;
+            resp.on_hover_text(crate::tl_id!("ui.convert_to_gridcraft_gridcraft_is_not_installed"));
         }
     });
 }
@@ -2398,21 +2614,18 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
-    group(ui, "Views", t, |ui| {
+    group(ui, crate::tl_id!("ui.views"), t, |ui| {
+        if big(ui, Icon::Page, crate::tl_id!("ui.normal_view"), crate::tl_id!("ui.the_page_beside_the_notebooks"), t).clicked() && view.full_page {
+            acts.push(Act::ToggleFullPage);
+        }
         if big(
             ui,
-            Icon::Page,
-            "Normal
-view",
-            "The page beside the notebooks",
+            if view.full_page { Icon::ExitFullPage } else { Icon::FullPage },
+            crate::tl_id!("ui.full_page_view_2"),
+            crate::tl_id!("ui.give_the_page_the_whole_window"),
             t,
         )
         .clicked()
-            && view.full_page
-        {
-            acts.push(Act::ToggleFullPage);
-        }
-        if big(ui, if view.full_page { Icon::ExitFullPage } else { Icon::FullPage }, "Full Page\nView", "Give the page the whole window", t).clicked()
         {
             acts.push(Act::ToggleFullPage);
         }
@@ -2420,78 +2633,108 @@ view",
             not_built(ui, "Dock to desktop", t);
         });
     });
-    group(ui, "Layout", t, |ui| {
+    group(ui, crate::tl_id!("ui.layout"), t, |ui| {
         rows(ui, |ui| {
             // What OneNote calls the navigation pane: notebooks and sections in one
             // column, the pages of the chosen section in the next.
-            if small(ui, None, "Split", "Separate pages", "Notebooks and sections in one column, pages in the next", view.split_panes, t).clicked() {
+            if small(
+                ui,
+                None,
+                crate::tl_id!("ui.split"),
+                crate::tl_id!("ui.separate_pages"),
+                crate::tl_id!("ui.notebooks_and_sections_in_one_column_pages_in_the_next"),
+                view.split_panes,
+                t,
+            )
+            .clicked()
+            {
                 acts.push(Act::TogglePanes);
             }
             not_built(ui, "Tabs layout", t);
         });
     });
-    group(ui, "Tools", t, |ui| {
+    group(ui, crate::tl_id!("ui.tools"), t, |ui| {
         rows(ui, |ui| {
             not_built(ui, "Immersive reader", t);
             not_built(ui, "Live captions", t);
         });
     });
-    group(ui, "Page Setup", t, |ui| {
+    group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
         rows(ui, |ui| {
-            if small(ui, None, "T", "Hide page title", "Hide the page title", view.hide_title, t).clicked() {
+            if small(ui, None, "T", crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
             }
             not_built(ui, "Page colour", t);
             not_built(ui, "Paper size", t);
         });
     });
-    group(ui, "Zoom", t, |ui| {
+    group(ui, crate::tl_id!("ui.zoom"), t, |ui| {
         ui.horizontal(|ui| {
-            if big(ui, Icon::ZoomOut, "Zoom Out", "Make the page smaller", t).clicked() {
+            if big(ui, Icon::ZoomOut, crate::tl_id!("ui.zoom_out"), crate::tl_id!("ui.make_the_page_smaller"), t).clicked() {
                 acts.push(Act::Zoom(-1));
             }
-            if big(ui, Icon::ZoomIn, "Zoom In", "Make the page larger", t).clicked() {
+            if big(ui, Icon::ZoomIn, crate::tl_id!("ui.zoom_in"), crate::tl_id!("ui.make_the_page_larger"), t).clicked() {
                 acts.push(Act::Zoom(1));
             }
             rows(ui, |ui| {
-                egui::ComboBox::from_label("Zoom").width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
+                egui::ComboBox::from_label(crate::tl_id!("ui.zoom")).width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
                     for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
                         if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
                             acts.push(Act::ZoomTo(percent));
                         }
                     }
                 });
-                if small(ui, None, "100%", "Zoom to 100%", "Show the page at 100%", false, t).clicked() {
+                if small(ui, None, "100%", crate::tl_id!("ui.zoom_to_100"), crate::tl_id!("ui.show_the_page_at_100"), false, t).clicked() {
                     acts.push(Act::Zoom(0));
                 }
-                if small_labeled_icon(ui, Icon::PageWidth, "Page Width", "Fit the page to the available width", t).clicked() {
+                if small_labeled_icon(ui, Icon::PageWidth, crate::tl_id!("ui.page_width"), crate::tl_id!("ui.fit_the_page_to_the_available_width"), t)
+                    .clicked()
+                {
                     acts.push(Act::PageWidth);
                 }
             });
         });
     });
-    group(ui, "Window", t, |ui| {
+    group(ui, crate::tl_id!("ui.window"), t, |ui| {
         rows(ui, |ui| {
             // Always on top is the window manager's business, and eframe can ask for it.
-            if small(ui, None, "Top", "Always on top", "Keep this window above the others", view.always_on_top, t).clicked() {
+            if small(
+                ui,
+                None,
+                crate::tl_id!("ui.top"),
+                crate::tl_id!("ui.always_on_top"),
+                crate::tl_id!("ui.keep_this_window_above_the_others"),
+                view.always_on_top,
+                t,
+            )
+            .clicked()
+            {
                 acts.push(Act::ToggleAlwaysOnTop);
             }
             not_built(ui, "New window", t);
             not_built(ui, "New quick note", t);
         });
     });
-    group(ui, "Appearance", t, |ui| {
-        if big(ui, Icon::Sun, "Theme", "Light or dark, and the accent colour", t).clicked() {
+    group(ui, crate::tl_id!("ui.appearance"), t, |ui| {
+        if big(ui, Icon::Sun, crate::tl_id!("ui.theme"), crate::tl_id!("ui.light_or_dark_and_the_accent_colour"), t).clicked() {
             acts.push(Act::OpenThemes);
         }
     });
-    group(ui, "Source", t, |ui| {
-        if big(ui, Icon::Code, if source { "Hide" } else { "Show" }, "The page source, beside the page", t).clicked() {
+    group(ui, crate::tl_id!("ui.source"), t, |ui| {
+        if big(
+            ui,
+            Icon::Code,
+            if source { crate::tl_id!("ui.hide") } else { crate::tl_id!("ui.show") },
+            crate::tl_id!("ui.the_page_source_beside_the_page"),
+            t,
+        )
+        .clicked()
+        {
             acts.push(Act::ToggleSource);
         }
     });
-    group(ui, "Window", t, |ui| {
+    group(ui, crate::tl_id!("ui.window"), t, |ui| {
         rows(ui, |ui| {
             not_built(ui, "New window", t);
             not_built(ui, "Always on top", t);
@@ -2504,22 +2747,25 @@ view",
 /// Something OneNote has that NoteCraft does not, among the small controls: drawn as a
 /// greyed chip the size of a control rather than as a line of writing, so a row of them
 /// reads as buttons that are off and not as a paragraph.
+// i18n-ui-text: label
 fn not_built(ui: &mut Ui, label: &str, t: &Tokens) {
-    let font = egui::FontId::proportional(10.5);
+    let label = crate::tl!(label);
+    let font = egui::FontId::proportional(11.5);
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.muted).size().x + 12.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(width, SMALL_H), Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.14)), egui::StrokeKind::Inside);
     painter.text(rect.center(), Align2::CENTER_CENTER, label, font, t.muted);
     let enabled = ui.is_enabled();
-    let name = format!("{label} (not built)");
+    let name = crate::i18n::format_message_id("ui.label_not_built", &[("label", label)]);
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
-    resp.on_hover_text(format!("{label}: not built yet"));
+    resp.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[("label", crate::tl!(label))]));
 }
 
 /// A compact action in the ink-tool popup. The same treatment is used for unavailable
 /// actions and the destructive tool removal, with the accent colour making the state clear
 /// without overpowering the swatches above it.
+// i18n-ui-text: label,tip
 fn popup_action_button(ui: &mut Ui, label: &str, enabled: bool, colour: egui::Color32, tip: &str) -> egui::Response {
     let fg = if enabled { colour } else { ui.visuals().widgets.noninteractive.fg_stroke.color };
     let fill = crate::theme::mix(ui.visuals().panel_fill, colour, if enabled { 0.10 } else { 0.04 });
@@ -2532,23 +2778,26 @@ fn popup_action_button(ui: &mut Ui, label: &str, enabled: bool, colour: egui::Co
 }
 
 fn source_tab(ui: &mut Ui, format: Option<PageFormat>, t: &Tokens, acts: &mut Vec<Act>) {
-    group(ui, "Source", t, |ui| {
-        if big(ui, Icon::Code, "Hide", "Close the source pane", t).clicked() {
+    group(ui, crate::tl_id!("ui.source"), t, |ui| {
+        if big(ui, Icon::Code, crate::tl_id!("ui.hide"), crate::tl_id!("ui.close_the_source_pane"), t).clicked() {
             acts.push(Act::ToggleSource);
         }
     });
-    group(ui, "This page", t, |ui| {
+    group(ui, crate::tl_id!("ui.this_page"), t, |ui| {
         let name = format.map(PageFormat::label).unwrap_or("No page");
         ui.vertical(|ui| {
             ui.add_space(8.0);
             ui.label(egui::RichText::new(name).size(12.0).color(t.text));
-            ui.label(egui::RichText::new("The format is set when the page is created").size(10.0).color(t.muted));
+            ui.label(egui::RichText::new(crate::tl_id!("ui.the_format_is_set_when_the_page_is_created")).size(10.0).color(t.muted));
         });
     });
 }
 
 /// A big button that draws one of the ribbon's own marks.
+// i18n-ui-text: label,tip
 fn big_mark(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
     let (rect, resp) = ui.allocate_exact_size(vec2(BIG, GROUP_H - 18.0), Sense::click());
     let painter = ui.painter_at(rect);
     if resp.hovered() {

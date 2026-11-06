@@ -399,9 +399,41 @@ impl Tokens {
     }
 }
 
+/// The shared popup treatment for language pickers: themed surface, outline, selection and padding.
+pub fn picker_popup_style(tokens: Tokens) -> egui::style::StyleModifier {
+    egui::style::StyleModifier::new(move |style| {
+        style.visuals.window_fill = tokens.panel;
+        style.visuals.window_stroke = egui::Stroke::new(1.0, tokens.container_border);
+        style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
+        style.visuals.selection.bg_fill = tokens.row_selected;
+        style.visuals.selection.stroke = egui::Stroke::new(1.0, tokens.accent);
+        style.visuals.widgets.hovered.bg_fill = tokens.row_hover;
+        style.visuals.widgets.hovered.weak_bg_fill = tokens.row_hover;
+        style.visuals.widgets.active.bg_fill = tokens.row_selected;
+        style.visuals.widgets.active.weak_bg_fill = tokens.row_selected;
+        style.visuals.widgets.open.bg_fill = tokens.row_selected;
+        style.visuals.widgets.open.weak_bg_fill = tokens.row_selected;
+        style.spacing.menu_margin = egui::Margin::same(8);
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_picker_popup_uses_theme_surface_border_and_selection() {
+        for theme in Theme::all() {
+            let tokens = theme.tokens();
+            let mut style = egui::Style::default();
+            picker_popup_style(tokens).apply(&mut style);
+            assert_eq!(style.visuals.window_fill, tokens.panel, "{}: popup surface", theme.label());
+            assert_eq!(style.visuals.window_stroke.color, tokens.container_border, "{}: popup border", theme.label());
+            assert_eq!(style.visuals.selection.bg_fill, tokens.row_selected, "{}: selected locale", theme.label());
+            assert_eq!(style.visuals.menu_corner_radius, egui::CornerRadius::same(8), "{}: rounded popup", theme.label());
+            assert_eq!(style.spacing.menu_margin, egui::Margin::same(8), "{}: popup padding", theme.label());
+        }
+    }
 
     #[test]
     fn there_are_fourteen_distinct_themes() {

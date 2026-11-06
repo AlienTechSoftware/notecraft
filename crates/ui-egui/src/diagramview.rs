@@ -194,11 +194,11 @@ pub fn show_zoomed(ui: &mut Ui, source: &str, t: &Tokens, zoom: f32) -> Shown {
         Shown::Drawing => {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(egui::RichText::new("Drawing...").color(t.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.drawing")).color(t.muted));
             });
         }
         Shown::Failed(why) => {
-            ui.label(egui::RichText::new(format!("Not drawn: {why}")).small().color(t.warn));
+            ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.not_drawn_why", &[("why", why)])).small().color(t.warn));
         }
     }
     shown

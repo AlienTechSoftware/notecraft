@@ -40,13 +40,13 @@ change the underlying command result.
   lets the two drift. Keep document content, logs, machine-readable results, and other explicitly
   excluded data outside the UI catalog. Machine-code symbols may be cataloged separately as
   English-invariant values under `SYMBOL_NAME_ID`, as described below.
-- Keep catalogs as UTF-8 TSV and use the shared `craft-i18n` runtime. Before implementing the
-  stable-ID catalog flow, verify that the pinned runtime and NoteCraft adapter can look up arbitrary
-  UI IDs and fall back to `en.tsv`. The current runtime's `tid` path is for command-label IDs and
-  still requires an English label fallback; it does not by itself satisfy this recommendation for
-  all UI strings. If that capability is absent, extend the shared runtime or add a small supported
-  adapter/build-time mapping, then test ID lookup, English fallback, locale fallback, placeholders,
-  and pseudo-localization. Do not work around the gap by copying English wording into Rust.
+- Keep catalogs as UTF-8 TSV and use the shared `craft-i18n` runtime. The current NoteCraft pilot
+  implements stable-ID lookup with a build-time generated mapping from `i18n/en.tsv`
+  (`crates/ui-egui/build.rs`). The shared runtime's `tid` path still takes an English fallback
+  label, so the adapter supplies that value from the generated catalog mapping rather than
+  duplicating English copy in Rust. Preserve this boundary unless a later shared-runtime API
+  supersedes it. Test ID lookup, English fallback, locale fallback, placeholders, plural forms, and
+  pseudo-localization.
 - Use a stable TSV row shape for the ID catalog, such as
   `@id<TAB>ui.settings.interface_language<TAB>Interface language`; locale files use the same ID
   with their translated value. Confirm the exact syntax and escaping against the pinned runtime

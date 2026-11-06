@@ -534,6 +534,7 @@ pub(crate) fn show_block_zoomed(
                             }
                         }
                         None => {
+                            // i18n-exempt: This glyph is the visual bullet marker for an unordered list.
                             ui.label(RichText::new(if *ordered { format!("{number}.") } else { "\u{2022}".to_string() }).color(tokens.muted));
                         }
                     }
@@ -800,7 +801,7 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
             mark,
             mark.color(tokens.text, tokens.accent),
         );
-        resp.on_hover_text(tag.label());
+        resp.on_hover_text(crate::tl!(tag.label()));
         ui.vertical(body);
     });
 }

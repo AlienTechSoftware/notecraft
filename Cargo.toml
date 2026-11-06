@@ -6,7 +6,7 @@ default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "xtask"]
 [workspace.package]
 version = "0.0.8"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/AlienTechSoftware/notecraft"
 publish = false
@@ -24,10 +24,11 @@ notecraft-store = { path = "crates/store" }
 notecraft-engine = { path = "crates/engine" }
 notecraft-mcp = { path = "crates/mcp" }
 notecraft-ui-egui = { path = "crates/ui-egui" }
+craft-i18n = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }
 
 # Versions match the sibling Craft apps (storytold/wordcraft).
 eframe = "0.37"
-egui = "0.37"
+egui = { version = "0.37", features = ["default_fonts"] }
 egui_extras = { version = "0.37", default-features = false, features = ["image", "file", "svg_text"] }
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 serde_json = "1"

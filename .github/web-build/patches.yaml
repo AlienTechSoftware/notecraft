@@ -141,14 +141,14 @@
   find: 'let mut picker = rfd::FileDialog::new\(\)'
   replace: 'let mut picker = playground_rfd::FileDialog::new()'
 - file: crates/ui-egui/src/app.rs
-  find: 'rfd::FileDialog::new\(\)\.set_title\("Choose a OneNote notebook folder"\)'
-  replace: 'playground_rfd::FileDialog::new().set_title("Choose a OneNote notebook folder")'
+  find: 'rfd::FileDialog::new\(\)\.set_title\(crate::tl_id!\("ui\.choose_a_onenote_notebook_folder"\)\)'
+  replace: 'playground_rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_onenote_notebook_folder"))'
 - file: crates/ui-egui/src/app.rs
-  find: 'rfd::FileDialog::new\(\)\.set_title\("Choose a file to import"\)'
-  replace: 'playground_rfd::FileDialog::new().set_title("Choose a file to import")'
+  find: 'rfd::FileDialog::new\(\)\.set_title\(crate::tl_id!\("ui\.choose_a_file_to_import"\)\)'
+  replace: 'playground_rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_a_file_to_import"))'
 - file: crates/ui-egui/src/app.rs
-  find: 'rfd::FileDialog::new\(\)\.set_title\("Add file to this page"\)'
-  replace: 'playground_rfd::FileDialog::new().set_title("Add file to this page")'
+  find: 'rfd::FileDialog::new\(\)\.set_title\(crate::tl_id!\("ui\.add_file_to_this_page"\)\)'
+  replace: 'playground_rfd::FileDialog::new().set_title(crate::tl_id!("ui.add_file_to_this_page"))'
 - file: crates/ui-egui/src/app.rs
   find: '(?![\s\S])'
   after: "\n#[cfg(target_arch = \"wasm32\")] mod playground_rfd {\n    use std::path::PathBuf;\n    pub struct FileDialog;\n    impl FileDialog {\n        pub fn new() -> Self { Self }\n        pub fn set_title(self, _: &str) -> Self { self }\n        pub fn set_file_name(self, _: impl AsRef<str>) -> Self { self }\n        pub fn pick_folder(self) -> Option<PathBuf> { None }\n        pub fn pick_file(self) -> Option<PathBuf> { None }\n        pub fn save_file(self) -> Option<PathBuf> { None }\n    }\n}\n#[cfg(not(target_arch = \"wasm32\"))] mod playground_rfd {\n    pub use ::rfd::FileDialog;\n}\n"

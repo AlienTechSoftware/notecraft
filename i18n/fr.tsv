@@ -1,0 +1,294 @@
+@plural	{n} item|{n} items	{n} élément|{n} éléments
+@plural	{n} notebook|{n} notebooks	{n} bloc-notes|{n} blocs-notes
+@id	language.name	Français
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	Un nouveau bloc-notes est un dossier dans {folder}, contenant une section et une page.
+@id	ui.a_new_page_in_this_section	Nouvelle page dans cette section
+@id	ui.a_to_do_box_on_this_line_ctrl_1	Une case à cocher sur cette ligne (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	Une visite guidée de NoteCraft, présentée sur ses propres pages. Elle est ajoutée au premier démarrage si le dossier des blocs-notes est vide. Cette action l’ajoute de nouveau ou l’ouvre si elle s’y trouve encore.
+@id	ui.about_notecraft	À propos de NoteCraft
+@id	ui.add_file	Ajouter un fichier
+@id	ui.add_page	Ajouter une page
+@id	ui.address	Adresse
+@id	ui.alignment	Alignement
+@id	ui.all_of_them_live_in_folder	Ils se trouvent tous dans {folder}
+@id	ui.appearance	Apparence
+@id	ui.application_preferences	Préférences de l’application
+@id	ui.arrow	Arrow
+@id	ui.authors	Auteurs
+@id	ui.auto	Auto
+@id	ui.automatic_system_language	Automatique (langue du système)
+@id	ui.back	Retour
+@id	ui.back_to_the_notebook	Retour au bloc-notes
+@id	ui.back_to_the_page_before_alt_left	Back to the page before (Alt+Left)
+@id	ui.basic_text	Texte de base
+@id	ui.black	black
+@id	ui.blue	blue
+@id	ui.blue_2	Blue
+@id	ui.bold	Gras
+@id	ui.bold_ctrl_b	Gras (Ctrl+B)
+@id	ui.browse_for_a_notebook	Rechercher un bloc-notes…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	Parcourez les blocs-notes dans {folder} ou choisissez un autre dossier.
+@id	ui.brush_pen	Brush Pen
+@id	ui.built_with	Réalisé avec
+@id	ui.bullets	Puces
+@id	ui.choose_a_custom_ink_colour	Choisir une couleur d?encre personnalis?e
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	Choisissez ce que NoteCraft enregistre localement. Aucune donnée n’est envoyée automatiquement.
+@id	ui.chosen_for_this_page	chosen for this page
+@id	ui.circle	Circle
+@id	ui.clear_formatting	Effacer la mise en forme
+@id	ui.clear_formatting_2	Effacer la mise en forme
+@id	ui.clear_telemetry	Effacer les données de télémétrie
+@id	ui.clipboard	Presse-papiers
+@id	ui.close_notebook	Fermer le bloc-notes
+@id	ui.cloud_import_is_not_implemented_yet	L’importation depuis le cloud n’est pas encore disponible.
+@id	ui.code_2	Code
+@id	ui.collapse	R?duire
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	Contact
+@id	ui.convert	Convertir
+@id	ui.copy	Copier
+@id	ui.copy_full_path	Copier le chemin complet
+@id	ui.copy_link_to_page	Copier le lien vers la page
+@id	ui.copy_the_selection	Copier la sélection
+@id	ui.could_not_save_the_interface_language_error	Impossible d’enregistrer la langue de l’interface : {error}
+@id	ui.count_items_colour_colour	{count} éléments, couleur {colour}
+@id	ui.critical	Critique
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V colle dans la page
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y puts it back
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z takes back the last change
+@id	ui.current_session_id	Session actuelle : {id}
+@id	ui.custom	custom
+@id	ui.cut	Couper
+@id	ui.cut_the_selection	Couper la sélection
+@id	ui.dark	Dark
+@id	ui.data	Donn?es
+@id	ui.debug	debug
+@id	ui.decrease_indentation	Diminuer le retrait
+@id	ui.decrease_indentation_shift_tab	Diminuer le retrait (Maj+Tab)
+@id	ui.default	Default
+@id	ui.default_format	Format par défaut
+@id	ui.definition	Définition
+@id	ui.delete	Supprimer
+@id	ui.delete_ellipsis	Supprimer...
+@id	ui.delete_notebook	Delete notebook
+@id	ui.delete_notebook_2	Supprimer le bloc-notes...
+@id	ui.delete_tool	Supprimer l?outil
+@id	ui.diamond	Diamond
+@id	ui.direction_from_the_words	Direction from the words
+@id	ui.dock_to_desktop	Ancrer au bureau
+@id	ui.draw	Dessin
+@id	ui.drawing_tools	Outils de dessin
+@id	ui.drop_a_file_onto_the_page_to_add_it	Déposez un fichier sur la page pour l’ajouter
+@id	ui.edit	Modifier
+@id	ui.editing	Modification...
+@id	ui.egui_and_eframe	egui et eframe
+@id	ui.ellipse	Ellipse
+@id	ui.email	E-mail
+@id	ui.error	error
+@id	ui.expand	D?velopper
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	L’export crée un fichier ZIP à l’emplacement choisi, puis supprime le dossier de session exporté.
+@id	ui.export_current_session_zip	Exporter la session actuelle en ZIP
+@id	ui.eyedropper	Pipette
+@id	ui.eyedropper_not_built	La pipette n?est pas encore disponible
+@id	ui.file	Fichier
+@id	ui.files	Fichiers
+@id	ui.find	Rechercher des étiquettes
+@id	ui.find_tags	Find Tags
+@id	ui.folder_folder	Dossier : {folder}
+@id	ui.format	Format
+@id	ui.format_painter	Reproduire la mise en forme
+@id	ui.forward	Forward
+@id	ui.forward_to_the_page_after_alt_right	Forward to the page after (Alt+Right)
+@id	ui.fountain_pen	Fountain Pen
+@id	ui.gray	Gray
+@id	ui.green	Green
+@id	ui.green_2	green
+@id	ui.grey	grey
+@id	ui.help	Aide
+@id	ui.hide	Hide
+@id	ui.highlight	Surlignage
+@id	ui.highlighter	Highlighter
+@id	ui.history	Historique
+@id	ui.home	Accueil
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	Idée
+@id	ui.images	Images
+@id	ui.immersive_reader	Lecteur immersif
+@id	ui.import_file	Importer un fichier
+@id	ui.import_from_the_cloud	Importer depuis le cloud
+@id	ui.import_notebook_folder	Importer un dossier de bloc-notes
+@id	ui.important	Important
+@id	ui.increase_indentation	Augmenter le retrait
+@id	ui.increase_indentation_tab	Augmenter le retrait (Tab)
+@id	ui.info	info
+@id	ui.input_mode	Mode de saisie
+@id	ui.insert	Insertion
+@id	ui.interface_language	Langue de l’interface
+@id	ui.interface_language_language	Langue de l’interface : {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Les tickets, la feuille de route et la documentation s’y trouvent. NoteCraft ne communique de lui-même ni avec ce dépôt ni avec aucun autre service.
+@id	ui.italic	Italique
+@id	ui.italic_ctrl_i	Italique (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.label	label
+@id	ui.language_click_to_change_it	{language}. Cliquez pour changer.
+@id	ui.laser_pointer	Pointeur laser
+@id	ui.layout	Disposition
+@id	ui.left_to_right	Left-to-Right
+@id	ui.level	Niveau :
+@id	ui.licence	Licence
+@id	ui.light	Light
+@id	ui.line	Line
+@id	ui.link	Lien
+@id	ui.links	Liens
+@id	ui.live_captions	Sous-titres en direct
+@id	ui.local_diagnostics_and_usage	Diagnostic et utilisation locaux
+@id	ui.logging_folder_folder	Dossier des journaux : {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Les journaux et données de télémétrie restent sur cet appareil. NoteCraft ne les envoie pas automatiquement.
+@id	ui.magenta	Magenta
+@id	ui.many_thanks_to_its_authors_and_contributors	— avec tous nos remerciements à ses auteurs et contributeurs.
+@id	ui.markdown	Markdown
+@id	ui.math	Maths
+@id	ui.md_2	md
+@id	ui.media	M?dias
+@id	ui.meeting_details	Meeting Details
+@id	ui.meetings	R?unions
+@id	ui.merge	Fusionner
+@id	ui.mermaid	Mermaid
+@id	ui.mint	mint
+@id	ui.mit_license	Licence MIT
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	Licence MIT ou Apache-2.0, au choix. L’illustration du koala n’est pas couverte par ces licences ; consultez ATTRIBUTION.md.
+@id	ui.mode	Mode
+@id	ui.more	More...
+@id	ui.more_2	Plus?
+@id	ui.more_colours	Plus de couleurs
+@id	ui.more_styles	Plus de styles
+@id	ui.more_tags	Plus d’étiquettes
+@id	ui.move_to_recycle_bin	Move to recycle bin
+@id	ui.new_gridcraft_spreadsheet	Nouveau tableur GridCraft
+@id	ui.new_pages	Nouvelles pages :
+@id	ui.new_quick_note	Nouvelle note rapide
+@id	ui.new_window	Nouvelle fen?tre
+@id	ui.not_built	Non disponible
+@id	ui.not_built_2	non disponible
+@id	ui.not_built_yet	Pas encore disponible
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	Prise de notes et organisation en Rust pur. Vos notes sont de simples dossiers et fichiers.
+@id	ui.notebook	Notebook
+@id	ui.notebook_information	Informations sur le bloc-notes
+@id	ui.notebooks_2	BLOCS-NOTES
+@id	ui.notebooks_you_open_will_appear_here	Les blocs-notes que vous ouvrez apparaîtront ici.
+@id	ui.numbering	Numérotation
+@id	ui.off_2	off
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive et SharePoint ne sont pas encore pris en charge. Indiquez à NoteCraft un dossier déjà surveillé par votre outil de synchronisation : le résultat est le même.
+@id	ui.onenote_import	Importation depuis OneNote
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Les blocs-notes en ligne (OneDrive, SharePoint) ne sont pas encore pris en charge. Un bloc-notes placé dans un dossier surveillé par votre outil de synchronisation sera synchronisé par celui-ci.
+@id	ui.open	Ouvrir
+@id	ui.open_a_notebook	Ouvrir un bloc-notes
+@id	ui.open_folder	Ouvrir le dossier
+@id	ui.open_in_folder	Ouvrir dans le dossier
+@id	ui.open_name	Ouvrir {name}
+@id	ui.open_telemetry_folder	Ouvrir le dossier de télémétrie
+@id	ui.open_this_notebook	Ouvrir ce bloc-notes
+@id	ui.open_using_shell	Ouvrir dans le terminal
+@id	ui.opened	Page ouverte
+@id	ui.options	Options
+@id	ui.orange	Orange
+@id	ui.page	Page
+@id	ui.page_left_to_right	Page de gauche à droite
+@id	ui.page_right_to_left	Page de droite à gauche
+@id	ui.page_setup	Mise en page
+@id	ui.pages	Pages
+@id	ui.paper_size	Taille du papier
+@id	ui.para	Paragraphe
+@id	ui.paragraph_direction_from_the_words	Direction du paragraphe déterminée par le texte
+@id	ui.paragraph_left_to_right	Paragraphe de gauche à droite
+@id	ui.paragraph_right_to_left	Paragraphe de droite à gauche
+@id	ui.paste	Coller
+@id	ui.pen	Pen
+@id	ui.pencil	Pencil
+@id	ui.phone_number	Phone number
+@id	ui.plain_text	Plain text
+@id	ui.powered_by	Propulsé par
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	La protection de votre vie privée est notre priorité. Les journaux et données de télémétrie restent sur cet appareil. NoteCraft ne nous les envoie pas.
+@id	ui.purple	Purple
+@id	ui.question	Question
+@id	ui.quote_2	Citation
+@id	ui.ready_2	Prêt
+@id	ui.recently_opened	Récemment ouverts
+@id	ui.recording	Enregistrement
+@id	ui.rectangle	Rectangle
+@id	ui.red	red
+@id	ui.red_2	Red
+@id	ui.redo	Rétablir
+@id	ui.redo_ctrl_y	Redo (Ctrl+Y)
+@id	ui.remember_for_later	Remember for later
+@id	ui.remove_from_list	Retirer de la liste
+@id	ui.remove_this_tool_from_the_rack	Retirer cet outil de la barre
+@id	ui.rename_ellipsis	Renommer...
+@id	ui.replay	Relecture
+@id	ui.reset_app_preferences_2	Réinitialiser les préférences…
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Rétablir les thèmes, la disposition, les choix du ruban et les autres préférences enregistrées de NoteCraft à leurs valeurs par défaut.
+@id	ui.right_to_left	Right-to-Left
+@id	ui.rounded	Rounded
+@id	ui.saved	Enregistré
+@id	ui.search_all_pages	Rechercher dans toutes les pages
+@id	ui.section	Section
+@id	ui.section_group	Section group
+@id	ui.select	Sélectionner
+@id	ui.selected_text_next_typing	Texte sélectionné / prochaine saisie
+@id	ui.selection	Sélection
+@id	ui.send_page	Send Page
+@id	ui.session_id_id	Identifiant de session : {id}
+@id	ui.shape	shape
+@id	ui.shapes	Shapes
+@id	ui.show	Show
+@id	ui.show_notebooks_folder	Afficher le dossier des blocs-notes
+@id	ui.somewhere_else	Ailleurs
+@id	ui.source	Source
+@id	ui.split	Split
+@id	ui.square	Square
+@id	ui.star	Star
+@id	ui.stencils	Pochoirs
+@id	ui.strike_through	Barrer
+@id	ui.strikethrough	Barré
+@id	ui.styles	Styles
+@id	ui.symbols	Symboles
+@id	ui.table_3	Tableau
+@id	ui.tables	Tableaux
+@id	ui.tabs_layout	Disposition avec onglets
+@id	ui.tags	Étiquettes
+@id	ui.take_the_marks_off	Retirer la mise en forme
+@id	ui.teal_2	Teal
+@id	ui.text	Texte
+@id	ui.text_74	{} {}
+@id	ui.text_run_direction	Direction du texte sélectionné
+@id	ui.the_built_in_default	the built-in default
+@id	ui.the_code	Le code
+@id	ui.the_global_setting	the global setting
+@id	ui.the_notebook_or_section_setting	the notebook or section setting
+@id	ui.the_welcome_notebook	Le bloc-notes de bienvenue
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	La fenêtre est dessinée par le GPU. Les icônes sont dessinées par le code. Le logo est la seule image.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	Il n’y a pas encore de bloc-notes. « Nouveau » permet d’en créer un.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	Cette action ne supprime ni les blocs-notes ni les pages. Elle est irréversible.
+@id	ui.this_page	Cette page
+@id	ui.time_stamp	Horodatage
+@id	ui.to_do_2	Étiquette « À faire »
+@id	ui.toml	TOML
+@id	ui.tools	Outils
+@id	ui.top	Top
+@id	ui.triangle	Triangle
+@id	ui.under_the	sous licence
+@id	ui.undo	Annuler
+@id	ui.undo_ctrl_z	Undo (Ctrl+Z)
+@id	ui.unread	Non lus
+@id	ui.version_version_alpha	Version {version} (alpha)
+@id	ui.view	Affichage
+@id	ui.views	Affichage
+@id	ui.warn	warn
+@id	ui.web_site_to_visit	Web site to visit
+@id	ui.window	Fen?tre
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	Yellow
+@id	ui.yellow_2	yellow
+@id	ui.zoom	Zoom

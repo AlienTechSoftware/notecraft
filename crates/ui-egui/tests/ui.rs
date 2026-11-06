@@ -156,6 +156,125 @@ fn the_window_opens_and_shows_the_sample() {
 }
 
 #[test]
+fn interface_language_choice_is_saved_and_restored_in_a_new_app() {
+    let t = TempDir::new("ui-language-setting");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("set English UI");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_backstage_page("Options");
+    pump(&mut h);
+    h.get_by_label("Interface language").click();
+    h.run();
+    h.get_by_label("Fran\u{00e7}ais").click();
+    h.run();
+    drop(h);
+
+    let settings = Settings::at(t.path().join("settings.toml"));
+    assert_eq!(settings.get("ui_language").as_deref(), Some("fr"));
+
+    let mut restored = NoteCraftApp::new(Session::new(&t.path().join("notebooks"), settings).expect("reopen session"));
+    restored.set_redact_paths(true);
+    let mut restored = harness(restored, LIGHT);
+    pump(&mut restored);
+    let _ = restored.get_by_label("Accueil");
+    let _ = restored.get_by_label("Presse-papiers");
+    restored.state_mut().open_backstage_page("Options");
+    pump(&mut restored);
+    let _ = restored.get_by_label("Langue de l\u{2019}interface");
+}
+
+#[test]
+fn french_screen_strings_from_the_localization_screenshots_are_rendered() {
+    let t = TempDir::new("ui-french-ribbon");
+    let s = session(&t);
+    s.settings.set("ui_language", "fr").expect("French UI setting");
+    let mut h = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut h);
+
+    for label in [
+        "Accueil",
+        "Insertion",
+        "Dessin",
+        "Historique",
+        "Affichage",
+        "Presse-papiers",
+        "Coller",
+        "Couper",
+        "Copier",
+        "Reproduire la mise en forme",
+        "Gras",
+        "Italique",
+    ] {
+        let _ = h.get_by_label(label);
+    }
+}
+
+#[test]
+fn header_language_picker_changes_and_persists_interface_language() {
+    let t = TempDir::new("ui-header-language");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    let mut h = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut h);
+
+    h.get_by_label("Interface language: English").click();
+    h.run();
+    h.get_by_label("Fran\u{00e7}ais").click();
+    h.run();
+    settle(&mut h);
+
+    let settings = Settings::at(t.path().join("settings.toml"));
+    assert_eq!(settings.get("ui_language").as_deref(), Some("fr"));
+    let _ = h.get_by_label_contains("Langue de l\u{2019}interface");
+}
+
+#[test]
+fn en_xa_can_be_selected_saved_and_restored_from_the_language_picker() {
+    let t = TempDir::new("ui-en-xa-language");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    let mut h = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut h);
+
+    h.get_by_label("Interface language: English").click();
+    h.run();
+    h.get_by_label("English (Pseudo, LTR)").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ui_language").as_deref(), Some("en-XA"));
+    assert!(h.query_all_by_label_contains("$$$Home@@@").count() > 0, "pseudo text is visible");
+
+    let s = Session::new(&t.path().join("notebooks"), Settings::at(t.path().join("settings.toml"))).expect("reopened session");
+    let mut restored = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut restored);
+    assert!(restored.query_all_by_label_contains("$$$Home@@@").count() > 0, "pseudo choice is restored");
+}
+
+#[test]
+fn ar_xb_can_be_selected_saved_and_restored_from_the_language_picker() {
+    let t = TempDir::new("ui-ar-xb-language");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    let mut h = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut h);
+
+    h.get_by_label("Interface language: English").click();
+    h.run();
+    h.get_by_label("Arabic (Pseudo, RTL)").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ui_language").as_deref(), Some("ar-XB"));
+    assert!(h.query_all_by_label_contains("$$$Home@@@").count() > 0, "RTL pseudo text is visible");
+
+    let s = Session::new(&t.path().join("notebooks"), Settings::at(t.path().join("settings.toml"))).expect("reopened session");
+    let mut restored = harness(NoteCraftApp::new(s), LIGHT);
+    settle(&mut restored);
+    assert!(restored.query_all_by_label_contains("$$$Home@@@").count() > 0, "RTL pseudo choice is restored");
+}
+
+#[test]
 fn pressure_availability_is_detected_from_input_not_tab_selection() {
     let t = TempDir::new("ui-pressure-modes");
     let mut s = pressure_session(&t);
@@ -1377,15 +1496,14 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     ask(&mut h, "ui.scroll", json!({"y": -400})).expect("scroll to the language links");
     settle(&mut h);
     review(&mut h, "welcome_language_links");
-    // "English" is on screen twice, once as a row of the tree and once in the page, so the
-    // one further right is the page's own, and the click lands on its first word.
-    let rect =
-        h.get_all_by_label_contains("English").map(|n| n.rect()).max_by(|a, b| a.min.x.total_cmp(&b.min.x)).expect("the link on the start page");
+    // The header's language picker and the tree can also contain "English"; select the
+    // document hyperlink by its semantic role so this test continues to target the page link.
+    let rect = h.get_by_role_and_label(egui::accesskit::Role::Label, "English").rect();
     ask(&mut h, "ui.click", json!({"x": rect.min.x + 20.0, "y": rect.center().y})).expect("click");
     for _ in 0..6 {
         pump(&mut h);
     }
-    assert_eq!(h.state().title(), Some("Welcome"), "the English welcome page");
+    assert_eq!(h.state().title(), Some("Welcome"), "the English welcome page after clicking {rect:?}; status={}", h.state().status());
     assert!(h.state().body().is_some_and(|b| b.contains("banner-en.png")), "which opens with its banner: {:?}", h.state().body());
 
     h.state_mut().add_welcome();
@@ -3352,6 +3470,47 @@ Paper,12,
     // integration tests. The deterministic app-level test covers the read-back behavior;
     // this test owns the UI contract that the action is exposed for a selected table.
     assert!(h.query_all_by_label("Read back from it").count() > 0, "read-back action is exposed");
+}
+
+/// A page that first lays out in a narrow window fills the page when the window grows.
+#[test]
+fn the_default_page_layout_recovers_after_an_initial_narrow_viewport() {
+    let (_t, mut app, sample) = sample_app("ui-default-page-layout-resize");
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(400.0, 700.0));
+    settle(&mut h);
+
+    let narrow =
+        look_at(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).expect("default page container width in the narrow window");
+    assert!(narrow < 500.0, "the first layout uses the narrow viewport width: {narrow}");
+
+    ask(&mut h, "ui.resize", json!({"width": 1280.0, "height": 760.0})).expect("widen window");
+    settle(&mut h);
+
+    let wide = look_at(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).expect("default page container width after resize");
+    assert!(wide > narrow + 200.0, "an unarranged page expands with the viewport: narrow={narrow}, wide={wide}");
+}
+
+/// Denying local collection is saved in the real settings file and suppresses the welcome dialog next launch.
+#[test]
+fn privacy_choice_survives_restarting_the_app() {
+    let t = TempDir::new("ui-privacy-choice-restart");
+    let settings_path = t.path().join("settings.toml");
+    let s = Session::new(&t.path().join("notebooks"), Settings::at(&settings_path)).expect("session");
+    let mut h = sized_harness(NoteCraftApp::new(s), LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+
+    h.get_by_label("Deny").click();
+    settle(&mut h);
+
+    let settings = Settings::at(&settings_path);
+    assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some("true"));
+    assert_eq!(settings.get("telemetry_level").as_deref(), Some("none"));
+
+    let s = Session::new(&t.path().join("notebooks"), settings).expect("reopened session");
+    let mut h = sized_harness(NoteCraftApp::new(s), LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Deny").count(), 0, "a saved choice closes the welcome dialog on restart");
 }
 
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

@@ -1,0 +1,761 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?
+@plural	{n} item|{n} items	{n} item|{n} items
+@plural	{n} notebook opened|{n} notebooks opened	{n} notebook opened|{n} notebooks opened
+@plural	{n} notebook|{n} notebooks	{n} notebook|{n} notebooks
+@plural	{n} stroke|{n} strokes	{n} stroke|{n} strokes
+@id	language.name	English
+@id	ui.a_bullet_list	A bullet list
+@id	ui.a_column_left_of_the_caret_s	A column left of the caret's
+@id	ui.a_column_right_of_the_caret_s	A column right of the caret's
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	A copy goes into this page's folder, so the notebook carries it everywhere.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	A direction goes on a paragraph of text
+@id	ui.a_file_copied_in_or_linked_where_it_is	A file: copied in, or linked where it is
+@id	ui.a_link	A link
+@id	ui.a_link_to_a_page_or_an_address	A link to a page or an address
+@id	ui.a_link_to_paste_into_another_page	A link to paste into another page
+@id	ui.a_mermaid_diagram_kept_as_its_source	A Mermaid diagram, kept as its source
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	A new notebook is a folder in {folder}, with one section and one page inside it.
+@id	ui.a_new_page_in_this_section	A new page in this section
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	A new spreadsheet beside the page, opened in GridCraft
+@id	ui.a_numbered_list	A numbered list
+@id	ui.a_page_here	A page here
+@id	ui.a_row_above_the_caret_s	A row above the caret's
+@id	ui.a_row_below_the_caret_s	A row below the caret's
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	A table keeps its heading row and at least one column
+@id	ui.a_table_pick_its_size	A table: pick its size
+@id	ui.a_tag_goes_on_a_line_of_text	A tag goes on a line of text
+@id	ui.a_to_do_box_on_this_line_ctrl_1	A to-do box on this line (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	A tour of NoteCraft, shown on its own pages. It is added to an empty notebooks folder on the first start; this adds it again, or opens it if it is still here.
+@id	ui.about_notecraft	About NoteCraft
+@id	ui.accent_accent	Accent: {accent}
+@id	ui.accept	Accept
+@id	ui.add	Add
+@id	ui.add_a_blank_paragraph_at_the_caret	Add a blank paragraph at the caret
+@id	ui.add_a_page_here	Add a page here
+@id	ui.add_a_sub_page	Add a sub-page
+@id	ui.add_another_tool	Add another {tool}
+@id	ui.add_file	Add file
+@id	ui.add_file_to_this_page	Add file to this page
+@id	ui.add_inside_this_kind	Add inside this {kind}
+@id	ui.add_name	Add {name}
+@id	ui.add_name_left_more	Add {name} ({left} more)
+@id	ui.add_page	Add page
+@id	ui.add_the_welcome_notebook	Add the welcome notebook
+@id	ui.add_tool	Add {tool}
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	Added a link to {name} at the end of the page
+@id	ui.added_a_tool	Added a {tool}
+@id	ui.address	Address
+@id	ui.alignment	Alignment
+@id	ui.alignment_and_direction	Alignment and direction
+@id	ui.alignment_and_which_way_this_paragraph_reads	Alignment, and which way this paragraph reads
+@id	ui.all_of_them_live_in_folder	All of them live in {folder}
+@id	ui.always_on_top	Always on top
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	An equation, written in TeX: pick one to start from
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	App preferences reset. Restart NoteCraft to apply every default.
+@id	ui.appearance	Appearance
+@id	ui.append_link	Append link
+@id	ui.application_preferences	Application preferences
+@id	ui.arrow	Arrow
+@id	ui.attach_the_file	Attach the file
+@id	ui.attachment_icon_missing	Attachment icon missing
+@id	ui.attachment_not_linked	Attachment not linked
+@id	ui.attachment_recovery	Attachment recovery
+@id	ui.authors	Authors
+@id	ui.auto	Auto
+@id	ui.automatic_system_language	Automatic (system language)
+@id	ui.back	Back
+@id	ui.back_to_the_notebook	Back to the notebook
+@id	ui.back_to_the_page_before_alt_left	Back to the page before (Alt+Left)
+@id	ui.basic_text	Basic Text
+@id	ui.black	black
+@id	ui.blue	blue
+@id	ui.blue_2	Blue
+@id	ui.bold	Bold
+@id	ui.bold_ctrl_b	Bold (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	Both, as the page's own stamp is written
+@id	ui.browse_for_a_notebook	Browse for a notebook…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	Browse notebooks in {folder} or choose another folder.
+@id	ui.brush_pen	Brush Pen
+@id	ui.built_with	Built with
+@id	ui.bullets	Bullets
+@id	ui.cancel	Cancel
+@id	ui.cancel_import	Cancel import
+@id	ui.cannot_open_gridcraft_error	Cannot open GridCraft: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	Cannot open the table in GridCraft: {error}
+@id	ui.cannot_save_the_pasted_picture_error	Cannot save the pasted picture: {error}
+@id	ui.cannot_write_name_error	Cannot write {name}: {error}
+@id	ui.cannot_write_the_drawing_error	Cannot write the drawing: {error}
+@id	ui.cannot_write_the_picture_error	Cannot write the picture: {error}
+@id	ui.cannot_write_this_page_s_ink	Cannot write this page's ink
+@id	ui.choose_a_custom_ink_colour	Choose a custom ink colour
+@id	ui.choose_a_file_to_attach	Choose a file to attach
+@id	ui.choose_a_file_to_import	Choose a file to import
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	Choose a local collection level. Logging is off by default in release builds.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	Choose a notebook, a folder of notebooks, or an empty folder for a new notebook
+@id	ui.choose_a_onenote_notebook_folder	Choose a OneNote notebook folder
+@id	ui.choose_a_pdf_or_office_document_to_print_out	Choose a PDF or Office document to print out
+@id	ui.choose_a_picture	Choose a picture
+@id	ui.choose_a_section_to_see_its_pages	Choose a section to see its pages.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	Choose a symbol to insert at the caret
+@id	ui.choose_how_to_insert_a_picture	Choose how to insert a picture
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	Choose what NoteCraft records locally. Nothing is uploaded automatically.
+@id	ui.chosen_for_this_page	chosen for this page
+@id	ui.circle	Circle
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	Clear all local telemetry sessions and exported telemetry ZIP files?
+@id	ui.clear_formatting	Clear formatting
+@id	ui.clear_formatting_2	Clear formatting
+@id	ui.clear_telemetry	Clear telemetry
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	Click a stroke to pick it up, then move, stretch or delete it
+@id	ui.click_in_a_table_first	Click in a table first
+@id	ui.click_in_the_page_first	Click in the page first
+@id	ui.click_in_the_page_first_then_use_the_ribbon	Click in the page first, then use the ribbon
+@id	ui.click_in_the_table_first	Click in the table first
+@id	ui.clipboard	Clipboard
+@id	ui.close	Close
+@id	ui.close_notebook	Close notebook
+@id	ui.close_the_find_bar_escape	Close the Find bar (Escape)
+@id	ui.close_the_source_pane	Close the source pane
+@id	ui.cloud_import_is_not_implemented_yet	Cloud import is not implemented yet.
+@id	ui.code_2	Code
+@id	ui.code_in_one_line	Code, in one line
+@id	ui.collapse	Collapse
+@id	ui.collapse_all	Collapse all
+@id	ui.college	College
+@id	ui.college_ruled	College ruled
+@id	ui.colour	Colour
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	Colour removed
+@id	ui.colour_set_to_colour	Colour set to {colour}
+@id	ui.colours	Colours
+@id	ui.columns_x_rows_table	{columns} x {rows} Table
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	Contact
+@id	ui.convert	Convert
+@id	ui.convert_to_gridcraft_2	Convert to\nGridCraft
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	Convert to GridCraft: GridCraft is not installed
+@id	ui.copied	Copied
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	Copies the file and inserts one picture for each printed page.
+@id	ui.copy	Copy
+@id	ui.copy_full_path	Copy full path
+@id	ui.copy_link_to_page	Copy link to page
+@id	ui.copy_the_selection	Copy the selection
+@id	ui.could_not_attach_name_before_rendering_its_pages	Could not attach {name} before rendering its pages
+@id	ui.could_not_attach_name_to_this_page	Could not attach {name} to this page.
+@id	ui.could_not_complete_the_action_error	Could not complete the action: {error}
+@id	ui.could_not_import_the_notebook_error	Could not import the notebook: {error}
+@id	ui.could_not_open_the_containing_folder_error	Could not open the containing folder: {error}
+@id	ui.could_not_open_the_file_error	Could not open the file: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	Could not repair the icon for {name}: {error}
+@id	ui.could_not_reset_app_preferences_error	Could not reset app preferences: {error}
+@id	ui.could_not_restore_the_link_for_name_error	Could not restore the link for {name}: {error}
+@id	ui.could_not_save_the_interface_language_error	Could not save the interface language: {error}
+@id	ui.could_not_store_printout_page_page_error	Could not store printout page {page}: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} items, {colour} colour
+@id	ui.create	Create
+@id	ui.created	Created
+@id	ui.critical	Critical
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V pastes into the page
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y puts it back
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z takes back the last change
+@id	ui.current_session_id	Current session: {id}
+@id	ui.custom	custom
+@id	ui.customize_quick_access_toolbar	Customize Quick Access Toolbar
+@id	ui.customize_tags_not_built	Customize Tags... (not built)
+@id	ui.cut	Cut
+@id	ui.cut_2	cut
+@id	ui.cut_the_selection	Cut the selection
+@id	ui.dark	Dark
+@id	ui.data	Data
+@id	ui.date	Date
+@id	ui.date_time_2	Date &\nTime
+@id	ui.debug	debug
+@id	ui.decrease_indentation	Decrease indentation
+@id	ui.decrease_indentation_shift_tab	Decrease indentation (Shift+Tab)
+@id	ui.default	Default
+@id	ui.default_format	Default format
+@id	ui.default_format_for_pages_below	Default format for pages below
+@id	ui.definition	Definition
+@id	ui.delete	Delete
+@id	ui.delete_assets_name_from_this_page_s_folder	Delete "assets/{name}" from this page's folder?
+@id	ui.delete_columns_2	Delete\nColumns
+@id	ui.delete_ellipsis	Delete...
+@id	ui.delete_file	Delete file
+@id	ui.delete_notebook	Delete notebook
+@id	ui.delete_notebook_2	Delete notebook...
+@id	ui.delete_notebook_title_and_everything_inside_it	Delete notebook "{title}" and everything inside it?
+@id	ui.delete_permanently	Delete permanently
+@id	ui.delete_rows_2	Delete\nRows
+@id	ui.delete_tool	Delete Tool
+@id	ui.delete_tool_2	Delete {tool}
+@id	ui.deleted_notebook	Deleted notebook
+@id	ui.deleted_notebook_path	Deleted notebook {path}
+@id	ui.deny	Deny
+@id	ui.diagram	Diagram
+@id	ui.diamond	Diamond
+@id	ui.direction_from_the_words	Direction from the words
+@id	ui.discovering_sections	Discovering sections…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	Do not warn about similar attachment issues again this session
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	Do not warn about similar missing icons again this session
+@id	ui.do_not_warn_again_for_this_file_type_this_session	Do not warn again for this file type this session
+@id	ui.dock_to_desktop	Dock to desktop
+@id	ui.document_renderer_coming_soon	Document renderer coming soon
+@id	ui.don_t_show_this_again_in_this_session	Don't show this again in this session
+@id	ui.don_t_show_this_ever	Don't show this ever
+@id	ui.draw	Draw
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	Draw a loop round ink to pick it up
+@id	ui.draw_here_2	Draw\nhere
+@id	ui.drawing	Drawing...
+@id	ui.drawing_saved_count_strokes	Drawing saved, {count} strokes
+@id	ui.drawing_tools	Drawing Tools
+@id	ui.drop_a_file_onto_the_page_to_add_it	Drop a file onto the page to add it
+@id	ui.edit	Edit
+@id	ui.editing	Editing...
+@id	ui.egui_and_eframe	egui and eframe
+@id	ui.ellipse	Ellipse
+@id	ui.email	Email
+@id	ui.english	English
+@id	ui.equation	Equation
+@id	ui.equation_name	Equation: {name}
+@id	ui.eraser	Eraser
+@id	ui.error	error
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	Every fifth line is slightly stronger for easier counting.
+@id	ui.every_line_of_this_page_decides_for_itself	Every line of this page decides for itself
+@id	ui.every_paragraph_decides_for_itself	Every paragraph decides for itself
+@id	ui.expand	Expand
+@id	ui.expand_all	Expand all
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Export creates a user-selected ZIP, then removes the exported session folder.
+@id	ui.export_current_session_zip	Export current session ZIP
+@id	ui.export_telemetry_zip	Export telemetry ZIP
+@id	ui.eyedropper	Eyedropper
+@id	ui.eyedropper_not_built	The eyedropper is not built yet
+@id	ui.file	File
+@id	ui.file_attachment_2	File\nAttachment
+@id	ui.file_options	File options
+@id	ui.file_printout_2	File\nPrintout
+@id	ui.files	Files
+@id	ui.files_in_this_page	FILES IN THIS PAGE
+@id	ui.find	Find
+@id	ui.find_in_this_file	Find in this file
+@id	ui.find_tags	Find Tags
+@id	ui.find_tags_3	Find\nTags
+@id	ui.fit_the_page_to_the_available_width	Fit the page to the available width
+@id	ui.folder_folder	Folder: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	Follow the system light or dark setting
+@id	ui.format	Format
+@id	ui.format_background_2	Format\nBackground
+@id	ui.format_for_this_page	Format for this page
+@id	ui.format_painter	Format Painter
+@id	ui.forward	Forward
+@id	ui.forward_to_the_page_after_alt_right	Forward to the page after (Alt+Right)
+@id	ui.fountain_pen	Fountain Pen
+@id	ui.from_camera	From Camera
+@id	ui.from_online	From Online
+@id	ui.full_page	Full page
+@id	ui.full_page_view_2	Full Page\nView
+@id	ui.full_path_copied	Full path copied
+@id	ui.give_the_page_the_whole_window	Give the page the whole window
+@id	ui.gray	Gray
+@id	ui.green	Green
+@id	ui.green_2	green
+@id	ui.grey	grey
+@id	ui.gridcraft_is_not_installed	GridCraft is not installed
+@id	ui.help	Help
+@id	ui.hide	Hide
+@id	ui.hide_everything_but_the_page	Hide everything but the page
+@id	ui.hide_page_title	Hide page title
+@id	ui.hide_the_page_source	Hide the page source
+@id	ui.hide_the_page_title	Hide the page title
+@id	ui.highlight	Highlight
+@id	ui.highlighter	Highlighter
+@id	ui.history	History
+@id	ui.home	Home
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	Idea
+@id	ui.images	Images
+@id	ui.immersive_reader	Immersive reader
+@id	ui.import_file	Import file
+@id	ui.import_from_the_cloud	Import from the cloud
+@id	ui.import_notebook_folder	Import notebook folder
+@id	ui.important	Important
+@id	ui.importing	Importing…
+@id	ui.importing_onenote	Importing OneNote
+@id	ui.increase_indentation	Increase indentation
+@id	ui.increase_indentation_tab	Increase indentation (Tab)
+@id	ui.index_of_total_sections	{index} of {total} sections
+@id	ui.info	info
+@id	ui.inherit_notebook_section_or_global_setting	Inherit (notebook, section or global setting)
+@id	ui.input_mode	Input Mode
+@id	ui.insert	Insert
+@id	ui.insert_a_common_symbol	Insert a common symbol
+@id	ui.insert_column_left_2	Insert Column\nLeft
+@id	ui.insert_column_right_2	Insert Column\nRight
+@id	ui.insert_printout	Insert printout
+@id	ui.insert_row_above_2	Insert Row\nAbove
+@id	ui.insert_row_below_2	Insert Row\nBelow
+@id	ui.insert_space_2	Insert\nSpace
+@id	ui.insert_symbol	Insert symbol
+@id	ui.insert_table_not_built	Insert Table... (not built)
+@id	ui.insert_the_picture	Insert the picture
+@id	ui.insert_the_recording	Insert the recording
+@id	ui.insert_the_video	Insert the video
+@id	ui.inserted_name_and_count_printout_pages	Inserted {name} and {count} printout pages
+@id	ui.interface_language	Interface language
+@id	ui.interface_language_language	Interface language: {language}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Issues, the roadmap and the documentation are all there. Nothing in NoteCraft talks to it, or to any other service, by itself.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	It is listed so the page's folder is not a secret.
+@id	ui.italic	Italic
+@id	ui.italic_ctrl_i	Italic (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	Justification goes on a paragraph of text
+@id	ui.keep_this_window_above_the_others	Keep this window above the others
+@id	ui.label	label
+@id	ui.label_not_built	{label} (not built)
+@id	ui.label_not_built_yet	{label}: not built yet
+@id	ui.label_nothing_to_action	{label}: nothing to {action}
+@id	ui.language_click_to_change_it	{language}. Click to change it.
+@id	ui.large	Large
+@id	ui.large_squares	Large squares
+@id	ui.laser_pointer	Laser Pointer
+@id	ui.lasso_select	Lasso\nSelect
+@id	ui.layout	Layout
+@id	ui.leave_it	Leave it
+@id	ui.left_to_right	Left-to-Right
+@id	ui.level	Level:
+@id	ui.licence	Licence
+@id	ui.light	Light
+@id	ui.light_or_dark_and_the_accent_colour	Light or dark, and the accent colour
+@id	ui.line	Line
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	Lines or squares behind the page, as on paper
+@id	ui.link	Link
+@id	ui.link_to_the_file_where_it_is	Link to the file where it is
+@id	ui.link_to_title_copied	Link to "{title}" copied
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	Linked {name} where it is; the file was not copied
+@id	ui.links	Links
+@id	ui.live_captions	Live captions
+@id	ui.local_collection_level	Local collection level
+@id	ui.local_diagnostics	Local diagnostics
+@id	ui.local_diagnostics_and_usage	Local diagnostics and usage
+@id	ui.logging_folder_folder	Logging folder: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Logs and telemetry stay on this device. NoteCraft does not send them automatically.
+@id	ui.magenta	Magenta
+@id	ui.make_the_page_larger	Make the page larger
+@id	ui.make_the_page_smaller	Make the page smaller
+@id	ui.many_thanks_to_its_authors_and_contributors	— many thanks to its authors and contributors.
+@id	ui.markdown	Markdown
+@id	ui.match_case	Match case
+@id	ui.math	Math
+@id	ui.maximize	Maximize
+@id	ui.md_2	md
+@id	ui.media	Media
+@id	ui.medium	Medium
+@id	ui.medium_squares	Medium squares
+@id	ui.meeting_details	Meeting Details
+@id	ui.meeting_details_3	Meeting\nDetails
+@id	ui.meetings	Meetings
+@id	ui.merge	Merge
+@id	ui.mermaid	Mermaid
+@id	ui.mint	mint
+@id	ui.mit_license	MIT license
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	MIT or Apache-2.0, at your option. The koala artwork is not covered by it; see ATTRIBUTION.md.
+@id	ui.mode	Mode
+@id	ui.modify_tool	Modify Tool
+@id	ui.more	More...
+@id	ui.more_2	More
+@id	ui.more_colours	More Colours
+@id	ui.more_styles	More styles
+@id	ui.more_tags	More tags
+@id	ui.move_left	Move Left
+@id	ui.move_right	Move Right
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?
+@id	ui.move_to_recycle_bin	Move to recycle bin
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Moved {moved} strokes from this page's old drawing onto the page itself
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	Moved {moved} strokes onto the page; {left} old drawing files could not be removed
+@id	ui.moved_to_the_notebook_recycle_bin	Moved to the notebook recycle bin
+@id	ui.n_item_n_items	{n} item|{n} items
+@id	ui.n_notebook_n_notebooks	{n} notebook|{n} notebooks
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} notebook opened|{n} notebooks opened
+@id	ui.n_stroke_n_strokes	{n} stroke|{n} strokes
+@id	ui.name_2	Name
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} is not built yet. See the roadmap for what is coming.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} is now a file in this page's folder
+@id	ui.name_is_open_in_gridcraft	{name} is open in GridCraft
+@id	ui.name_not_used_by_the_page	{name}: not used by the page
+@id	ui.narrow	Narrow
+@id	ui.narrow_ruled	Narrow ruled
+@id	ui.new_gridcraft_spreadsheet	New GridCraft Spreadsheet
+@id	ui.new_gridcraft_spreadsheet_not_installed	New GridCraft Spreadsheet (not installed)
+@id	ui.new_notebook	New notebook
+@id	ui.new_notebook_2	New notebook...
+@id	ui.new_page	New page
+@id	ui.new_page_2	New page...
+@id	ui.new_pages	New pages:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	New pages use {format} unless the notebook or section says otherwise
+@id	ui.new_quick_note	New quick note
+@id	ui.new_window	New window
+@id	ui.next	Next
+@id	ui.next_match_enter_f3	Next match (Enter, F3)
+@id	ui.no	no
+@id	ui.no_colour	No colour
+@id	ui.no_generated_preview_icon_is_available	No generated preview icon is available.
+@id	ui.no_lines_behind_the_page	No lines behind the page
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	No {name} beside this page: hand the table over first
+@id	ui.no_notebooks_yet_use_new_notebook	No notebooks yet. Use "New notebook".
+@id	ui.no_pages_in_this_section_yet	No pages in this section yet.
+@id	ui.no_pages_match	No pages match.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	No saved versions yet. NoteCraft keeps a copy when the page changes.
+@id	ui.none	None
+@id	ui.normal_view	Normal\nview
+@id	ui.not_built	Not built
+@id	ui.not_built_2	not built
+@id	ui.not_built_yet	Not built yet
+@id	ui.not_drawn_why	Not drawn: {why}
+@id	ui.not_used_by_the_page	not used by the page
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	Note taking and organization in pure Rust. Your notes are plain folders and files.
+@id	ui.notebook	Notebook
+@id	ui.notebook_closed_its_files_are_still_on_disk	Notebook closed; its files are still on disk
+@id	ui.notebook_created	Notebook created
+@id	ui.notebook_information	Notebook information
+@id	ui.notebook_recycle_bin_2	Notebook recycle bin
+@id	ui.notebook_recycle_bin_3	Notebook\nRecycle Bin
+@id	ui.notebooks_2	NOTEBOOKS
+@id	ui.notebooks_and_pages_in_their_own_columns	Notebooks and pages in their own columns
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Notebooks and sections in one column, pages in the next
+@id	ui.notebooks_folder_folder	Notebooks folder: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	Notebooks you open will appear here.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft found an attachment that is not referenced by this page:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft found an attachment without its generated icon:
+@id	ui.notecraft_ruled	NoteCraft ruled
+@id	ui.notecraft_squares	NoteCraft squares
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	Notes as plain folders. Open a page, or create a notebook to start.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	Nothing at {path}: the link points to a page or file that is not there
+@id	ui.nothing_here_can_show_this_kind_of_file	Nothing here can show this kind of file.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	Nothing is copied. The link breaks if the file moves.
+@id	ui.nothing_to_redo	Nothing to redo
+@id	ui.nothing_to_undo	Nothing to undo
+@id	ui.numbering	Numbering
+@id	ui.off	OFF
+@id	ui.off_2	off
+@id	ui.office_document	Office document
+@id	ui.office_text_inspection	Office text inspection
+@id	ui.officeimo	OfficeIMO
+@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO import worker stopped unexpectedly
+@id	ui.ok	OK
+@id	ui.one_tree_of_notebooks	One tree of notebooks
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive and SharePoint: not built. Point NoteCraft at a folder your sync tool already watches and it is the same thing.
+@id	ui.onenote_import	OneNote import
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Online notebooks (OneDrive, SharePoint) are not built. A notebook in a folder your sync tool watches is synced by it.
+@id	ui.only_a_list_item_can_be_indented	Only a list item can be indented
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	Only open it if you trust the file and the person who created it.
+@id	ui.open	Open
+@id	ui.open_a_folder	Open a folder...
+@id	ui.open_a_notebook	Open a notebook
+@id	ui.open_a_page_first	Open a page first
+@id	ui.open_a_page_first_then_drop_files_onto_it	Open a page first, then drop files onto it.
+@id	ui.open_attachment	Open attachment
+@id	ui.open_every_level	Open every level
+@id	ui.open_folder	Open folder
+@id	ui.open_in_folder	Open in folder
+@id	ui.open_name	Open {name}
+@id	ui.open_telemetry_folder	Open telemetry folder
+@id	ui.open_the_artcraft_discord	Open the ArtCraft Discord
+@id	ui.open_this_notebook	Open this notebook
+@id	ui.open_using_shell	Open using shell
+@id	ui.open_with_associated_app	Open with associated app
+@id	ui.opened	Opened
+@id	ui.opened_path	Opened {path}
+@id	ui.opened_path_it_has_no_pages_yet	Opened {path}; it has no pages yet
+@id	ui.opened_the_containing_folder	Opened the containing folder
+@id	ui.opened_url_in_the_browser	Opened {url} in the browser
+@id	ui.opened_using_the_associated_application	Opened using the associated application
+@id	ui.opening_path	Opening {path}
+@id	ui.options	Options
+@id	ui.orange	Orange
+@id	ui.page	Page
+@id	ui.page_colour	Page colour
+@id	ui.page_direction_from_the_words	Page direction from the words
+@id	ui.page_format	Page format
+@id	ui.page_left_to_right	Page left to right
+@id	ui.page_right_to_left	Page right to left
+@id	ui.page_setup	Page Setup
+@id	ui.page_source	Page source
+@id	ui.page_versions_2	Page versions
+@id	ui.page_versions_4	Page\nVersions
+@id	ui.page_width	Page Width
+@id	ui.pages	Pages
+@id	ui.paper_behind_the_page	{paper} behind the page
+@id	ui.paper_size	Paper size
+@id	ui.para	Para
+@id	ui.paragraph_direction_from_the_words	Paragraph direction from the words
+@id	ui.paragraph_left_to_right	Paragraph left to right
+@id	ui.paragraph_right_to_left	Paragraph right to left
+@id	ui.paragraph_selected	Paragraph selected
+@id	ui.paste	Paste
+@id	ui.pasted	Pasted
+@id	ui.pasted_a_picture_width_by_height	Pasted a picture, {width} by {height}
+@id	ui.pasted_formatted_content	Pasted formatted content
+@id	ui.path_opened_as_an_empty_notebook	{path} opened as an empty notebook
+@id	ui.pdf_and_office_documents	PDF and Office documents
+@id	ui.pdf_document	PDF document
+@id	ui.pdf_text_inspection	PDF text inspection
+@id	ui.pen	Pen
+@id	ui.pencil	Pencil
+@id	ui.permanently_delete	Permanently delete?
+@id	ui.permanently_delete_title_and_everything_inside_it	Permanently delete "{title}" and everything inside it?
+@id	ui.permanently_deleted	Permanently deleted
+@id	ui.phone_number	Phone number
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	Pick a PDF or Office document and insert its pages as pictures
+@id	ui.pick_the_caret_s_column	Pick the caret's column
+@id	ui.pick_the_caret_s_row	Pick the caret's row
+@id	ui.pick_the_whole_table	Pick the whole table
+@id	ui.picture_from_a_file	Picture from a file
+@id	ui.pictures	Pictures
+@id	ui.plain	Plain
+@id	ui.plain_text	Plain text
+@id	ui.powered_by	Powered by
+@id	ui.pressure_sensitivity_now_of_100	Pressure sensitivity {now} of 100
+@id	ui.pressure_sensitivity_unavailable	Pressure sensitivity unavailable
+@id	ui.previous	Previous
+@id	ui.previous_match_shift_enter	Previous match (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	Printout is available for PDF and Office documents.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Privacy is our top priority. All logs and telemetry stay on this device. NoteCraft never sends them automatically.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.
+@id	ui.purple	Purple
+@id	ui.put_a_sheet_to_draw_on_into_the_page	Put a sheet to draw on into the page
+@id	ui.put_another_tool_on_the_rack	Put another tool on the rack
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	Put the pointer back to the words and the caret
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	Put what the spreadsheet holds back into this table
+@id	ui.question	Question
+@id	ui.quote_2	Quote
+@id	ui.quote_this_paragraph	Quote this paragraph
+@id	ui.read_back_from_it_2	Read back\nfrom it
+@id	ui.read_back_rows_rows_and_columns_columns	Read back {rows} rows and {columns} columns
+@id	ui.read_only	read-only
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	Read-only text extraction. Full document rendering is coming soon.
+@id	ui.ready_2	Ready
+@id	ui.recently_opened	Recently opened
+@id	ui.recording	Recording
+@id	ui.rectangle	Rectangle
+@id	ui.red	red
+@id	ui.red_2	Red
+@id	ui.redo	Redo
+@id	ui.redo_ctrl_y	Redo (Ctrl+Y)
+@id	ui.remember_for_later	Remember for later
+@id	ui.remove_from_list	Remove from list
+@id	ui.remove_this_tool_from_the_rack	Remove this tool from the rack
+@id	ui.removed_notebook_from_the_known_notebooks_list	Removed notebook from the known notebooks list
+@id	ui.rename	Rename
+@id	ui.rename_ellipsis	Rename...
+@id	ui.renamed	Renamed
+@id	ui.rendered_svg_preview	Rendered SVG preview
+@id	ui.repair_icon	Repair icon
+@id	ui.repaired_the_attachment_icon_for_name	Repaired the attachment icon for {name}
+@id	ui.replay	Replay
+@id	ui.reset_app_preferences	Reset app preferences
+@id	ui.reset_app_preferences_2	Reset app preferences…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	Reset NoteCraft's saved preferences to their built-in defaults?
+@id	ui.reset_preferences	Reset preferences
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Reset themes, layout, ribbon choices, and other saved NoteCraft preferences to their defaults.
+@id	ui.restore	Restore
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	Restore pages, sections and groups removed from this notebook
+@id	ui.restored_the_saved_page_version	Restored the saved page version
+@id	ui.restored_to_the_original_location	Restored to the original location
+@id	ui.right_to_left	Right-to-Left
+@id	ui.rounded	Rounded
+@id	ui.rub_out_whatever_the_pointer_passes_over	Rub out whatever the pointer passes over
+@id	ui.rule_line_colour_not_built	Rule line colour (not built)
+@id	ui.ruled	Ruled
+@id	ui.save_picture_2	Save\npicture
+@id	ui.saved	Saved
+@id	ui.saved_copies_of_this_page	Saved copies of this page
+@id	ui.saved_the_drawing_as_a_picture_path	Saved the drawing as a picture: {path}
+@id	ui.saved_time	Saved {time}
+@id	ui.search	Search
+@id	ui.search_all_pages	Search all pages
+@id	ui.section	Section
+@id	ui.section_group	Section group
+@id	ui.see_and_restore_saved_copies_of_this_page	See and restore saved copies of this page
+@id	ui.select	Select
+@id	ui.select_columns_2	Select\nColumns
+@id	ui.select_rows_2	Select\nRows
+@id	ui.select_some_words_first	Select some words first
+@id	ui.select_table_2	Select\nTable
+@id	ui.selected_text_next_typing	Selected text / next typing
+@id	ui.selection	Selection
+@id	ui.send_page	Send Page
+@id	ui.send_page_3	Send\nPage
+@id	ui.separate_pages	Separate pages
+@id	ui.session_id_id	Session ID: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	Set the direction of selected text, or the text typed next
+@id	ui.shape	shape
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: drag on the page to draw one
+@id	ui.shapes	Shapes
+@id	ui.show	Show
+@id	ui.show_notebooks_folder	Show notebooks folder
+@id	ui.show_or_hide_the_notebooks_column	Show or hide the notebooks column
+@id	ui.show_the_code	Show the code
+@id	ui.show_the_notebooks_again	Show the notebooks again
+@id	ui.show_the_notebooks_folder	Show the notebooks folder
+@id	ui.show_the_page_at_100	Show the page at 100%
+@id	ui.show_the_page_source	Show the page source
+@id	ui.show_the_strokes	Show the strokes
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	Small
+@id	ui.small_squares	Small squares
+@id	ui.somewhere_else	Somewhere else
+@id	ui.source	Source
+@id	ui.split	Split
+@id	ui.spreadsheet	Spreadsheet
+@id	ui.square	Square
+@id	ui.squares	Squares
+@id	ui.standard	Standard
+@id	ui.standard_ruled	Standard ruled
+@id	ui.star	Star
+@id	ui.starting_officeimo	Starting OfficeIMO…
+@id	ui.stencils	Stencils
+@id	ui.strike_through	Strike through
+@id	ui.strikethrough	Strikethrough
+@id	ui.styles	Styles
+@id	ui.styles_2	styles
+@id	ui.svg_source	SVG source
+@id	ui.symbol	Symbol
+@id	ui.symbols	Symbols
+@id	ui.table_3	Table
+@id	ui.tables	Tables
+@id	ui.tabs_layout	Tabs layout
+@id	ui.tag_tag	{tag} tag
+@id	ui.tags	Tags
+@id	ui.take_the_caret_s_column_out	Take the caret's column out
+@id	ui.take_the_caret_s_row_out	Take the caret's row out
+@id	ui.take_the_last_stroke_back	Take the last stroke back
+@id	ui.take_the_marks_off	Take the marks off
+@id	ui.teal_2	Teal
+@id	ui.text	Text
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	Text inspection is shown below.
+@id	ui.text_run_direction	Text run direction
+@id	ui.thank_you_for_trying_notecraft	Thank you for trying NoteCraft!
+@id	ui.that_file_has_nothing_in_it_to_put_back	That file has nothing in it to put back
+@id	ui.that_file_is_not_in_this_page_s_folder	That file is not in this page's folder
+@id	ui.that_is_not_something_a_page_can_hold	That is not something a page can hold
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	That link points outside the notebooks folder, so it was not followed
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	That page is not in a notebook that is open
+@id	ui.the_attachment_returned_an_invalid_page_link	The attachment returned an invalid page link
+@id	ui.the_built_in_default	the built-in default
+@id	ui.the_code	The code
+@id	ui.the_diagnostics_folder_could_not_be_created_error	The diagnostics folder could not be created: {error}
+@id	ui.the_file_could_not_be_opened_error	The file could not be opened: {error}
+@id	ui.the_file_is_gone	The file is gone
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	The file is removed from disk. Undo does not bring a file back.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	The file is safe. NoteCraft can append a link to it at the end of the page.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	The file was not attached: the attach command returned an unexpected result.
+@id	ui.the_folder_could_not_be_opened_error	The folder could not be opened: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	The format is set when the page is created
+@id	ui.the_global_setting	the global setting
+@id	ui.the_last_tool_stays_on_the_rack	The last tool stays on the rack
+@id	ui.the_notebook_could_not_be_deleted_error	The notebook could not be deleted: {error}
+@id	ui.the_notebook_or_section_setting	the notebook or section setting
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	The original file is still safe. NoteCraft can regenerate the icon beside it.
+@id	ui.the_page_beside_the_notebooks	The page beside the notebooks
+@id	ui.the_page_is_colour	The page is {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	The page is the theme's own colour
+@id	ui.the_page_source_beside_the_page	The page source, beside the page
+@id	ui.the_paper_and_colour_apply_to_this_page_only	The paper and colour apply to this page only.
+@id	ui.the_theme_could_not_be_saved_error	The theme could not be saved: {error}
+@id	ui.the_time_now	The time now
+@id	ui.the_welcome_notebook	The welcome notebook
+@id	ui.the_whole_page_reads_left_to_right	The whole page reads left to right
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	The whole page reads right to left (Arabic, Hebrew)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	The window, drawn on the GPU. The icons are drawn in code. The logo is the only picture.
+@id	ui.theme	Theme
+@id	ui.theme_theme	Theme {theme}
+@id	ui.theme_theme_2	Theme: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme} theme. Click to change it.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	There are no notebooks yet. "New" starts one.
+@id	ui.there_is_no_drawing_on_this_page	There is no drawing on this page
+@id	ui.there_is_no_earlier_page	There is no earlier page
+@id	ui.there_is_no_later_page	There is no later page
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	There is no room on the rack for another tool
+@id	ui.there_is_no_stroke_to_take_back	There is no stroke to take back
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	There is nothing on the clipboard to paste
+@id	ui.thickness	Thickness
+@id	ui.this_cannot_be_undone	This cannot be undone.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	This could not be moved to the recycle bin. Nothing was deleted.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	This does not delete notebooks or pages. It cannot be undone.
+@id	ui.this_file_will_be_opened_by_its_associated_application	This file will be opened by its associated application.
+@id	ui.this_notebook_s_recycle_bin_is_empty	This notebook's recycle bin is empty.
+@id	ui.this_page	This page
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	This page holds markup NoteCraft does not edit yet, so it is shown as it reads.
+@id	ui.this_page_reads_left_to_right	This page reads left to right
+@id	ui.this_page_reads_right_to_left	This page reads right to left
+@id	ui.this_paragraph_decides_from_its_own_first_letter	This paragraph decides from its own first letter
+@id	ui.this_paragraph_fills_the_column	This paragraph fills the column
+@id	ui.this_paragraph_fills_the_column_stretched_hard	This paragraph fills the column, stretched hard
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	This paragraph fills the column, stretched lightly
+@id	ui.this_paragraph_is_ragged_again	This paragraph is ragged again
+@id	ui.this_paragraph_reads_left_to_right	This paragraph reads left to right
+@id	ui.this_paragraph_reads_right_to_left	This paragraph reads right to left
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	This paragraph reads right to left (Arabic, Hebrew)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	This paragraph reads whichever way its words do
+@id	ui.this_picture_cannot_be_shown_here	This picture cannot be shown here.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	This removes the notebook folder from disk and cannot be undone.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	This run reads left to right. A mixed line is still drawn in one order; see the roadmap
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	This run reads right to left. A mixed line is still drawn in one order; see the roadmap
+@id	ui.this_svg_cannot_be_rendered_here	This SVG cannot be rendered here.
+@id	ui.this_window_behaves_like_the_others	This window behaves like the others
+@id	ui.this_window_stays_on_top	This window stays on top
+@id	ui.time	Time
+@id	ui.time_stamp	Time Stamp
+@id	ui.title_2	Title
+@id	ui.title_saved	Title saved
+@id	ui.title_the_folder_name_does_not_change	Title (the folder name does not change)
+@id	ui.to_do_2	To Do
+@id	ui.to_do_tag_2	To Do\nTag
+@id	ui.today_s_date	Today's date
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	Took it off the rack
+@id	ui.took_the_last_stroke_back_count_left	Took the last stroke back; {count} left
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	Tools
+@id	ui.top	Top
+@id	ui.triangle	Triangle
+@id	ui.type	Type
+@id	ui.under_the	under the
+@id	ui.undo	Undo
+@id	ui.undo_ctrl_z	Undo (Ctrl+Z)
+@id	ui.undo_stroke	Undo\nstroke
+@id	ui.unread	Unread
+@id	ui.updated_the_welcome_notebook	Updated the welcome notebook
+@id	ui.use_notecraft_s_own_title_bar	Use NoteCraft's own title bar
+@id	ui.use_the_system_title_bar	Use the system title bar
+@id	ui.version_version_alpha	Version {version} (alpha)
+@id	ui.very_large	Very large
+@id	ui.very_large_squares	Very large squares
+@id	ui.view	View
+@id	ui.views	Views
+@id	ui.warn	warn
+@id	ui.web_site_to_visit	Web site to visit
+@id	ui.welcome_to_notecraft	Welcome to NoteCraft
+@id	ui.what_should_happen_to_this_file	What should happen to this file?
+@id	ui.what_to_add	What to add
+@id	ui.wide	Wide
+@id	ui.wide_ruled	Wide ruled
+@id	ui.window	Window
+@id	ui.write_anywhere_on_the_page	Write anywhere on the page
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	Write the drawing again with no pen readings in it, for sending on
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	Write the table out and open it in GridCraft
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	Yellow
+@id	ui.yellow_2	yellow
+@id	ui.you_can_continue_working_while_the_import_runs	You can continue working while the import runs.
+@id	ui.you_can_restore_it_from_history	You can restore it from History.
+@id	ui.zoom	Zoom
+@id	ui.zoom_in	Zoom In
+@id	ui.zoom_out	Zoom Out
+@id	ui.zoom_to_100	Zoom to 100%

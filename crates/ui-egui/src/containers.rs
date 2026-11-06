@@ -32,6 +32,11 @@ const GRIP: f32 = 10.0;
 /// The gap between a container's edge and the words inside it.
 const PAD: f32 = 6.0;
 const INITIAL_PAGE_LINES: f32 = 20.0;
+
+/// Width for an unarranged page's single default container, in page coordinates.
+pub fn responsive_default_width(available_width: f32, zoom: f32) -> f32 {
+    (available_width / zoom - 2.0 * PAD).max(container::MIN_WIDTH)
+}
 const EMPTY_LINE_HEIGHT: f32 = 22.0;
 const TRAILING_LINE_HEIGHT: f32 = 22.0;
 

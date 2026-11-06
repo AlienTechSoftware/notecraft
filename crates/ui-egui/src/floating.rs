@@ -43,7 +43,9 @@ const GLYPH: f32 = 16.0;
 /// One row of a context menu: a picture in its own column, then the words. `glyph` is `None`
 /// for a row that has no picture; its words still start where the others' do, so a column of
 /// mixed rows lines up as it does in Office.
+// i18n-ui-text: label
 pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> Response {
+    let label = crate::tl!(label);
     // Context-menu parents can report the full remaining window width. Cap the row so a
     // four-item menu does not become a large empty ribbon across the page.
     let width = ui.available_width().min(MENU_W);
@@ -64,7 +66,9 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
 
 /// A menu row with a tick in the picture column when `checked`, the way OneNote lists the
 /// things a menu can turn on and off.
+// i18n-ui-text: label
 pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Response {
+    let label = crate::tl!(label);
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
@@ -108,6 +112,7 @@ pub struct Bar {
     pub rows: Vec<Vec<BarButton>>,
 }
 
+// i18n-ui-text: label,tip
 fn button(glyph: Glyph, label: &'static str, tip: &'static str, act: Act) -> BarButton {
     BarButton { glyph, label, tip, act }
 }
@@ -189,9 +194,9 @@ fn bar_button(ui: &mut Ui, b: &BarButton, t: &Tokens) -> Response {
     }
     b.glyph.paint(&painter, Rect::from_center_size(rect.center(), vec2(GLYPH, GLYPH)), t);
     let enabled = ui.is_enabled();
-    let name = b.label.to_string();
+    let name = crate::tl!(b.label).to_string();
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
-    resp.on_hover_text(b.tip)
+    resp.on_hover_text(crate::tl!(b.tip))
 }
 
 #[cfg(test)]
