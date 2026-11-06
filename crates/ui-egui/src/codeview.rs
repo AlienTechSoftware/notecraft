@@ -510,7 +510,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
         ui.allocate_ui_with_layout(vec2(list_width, height), egui::Layout::top_down(egui::Align::LEFT), |ui| {
             let list_surface = ui.interact(ui.max_rect(), ui.id().with("file-list-surface"), egui::Sense::click());
             list_surface.context_menu(|ui| {
-                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Add file", t).clicked() {
+                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), crate::tl_id!("ui.add_file"), t).clicked() {
                     log::debug!("source file-list add file requested");
                     out.file_action = Some(FileAction::AddFile);
                     ui.close();
@@ -874,21 +874,21 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
     let full = page_dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR));
     let name = entry.name.clone();
     resp.context_menu(|ui| {
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), "Copy full path", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_full_path"), t).clicked() {
             *action = Some(FileAction::CopyPath(full.to_string_lossy().into_owned()));
             ui.close();
         }
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), "Open in folder", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_in_folder"), t).clicked() {
             *action = Some(FileAction::OpenFolder(full.parent().unwrap_or(page_dir).to_path_buf()));
             ui.close();
         }
-        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), "Open using shell", t).clicked() {
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Attach)), crate::tl_id!("ui.open_using_shell"), t).clicked() {
             *action = Some(FileAction::OpenShell(full.clone()));
             ui.close();
         }
         if entry.kind != Kind::PageFile {
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Delete)), crate::tl_id!("ui.delete"), t).clicked() {
                 *action = Some(FileAction::Delete(name.strip_prefix("assets/").unwrap_or(&name).to_string()));
                 ui.close();
             }

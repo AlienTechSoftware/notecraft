@@ -811,17 +811,17 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     group(ui, crate::tl_id!("ui.clipboard"), t, |ui| {
-        if big_mark(ui, Mark::Paste, "Paste", "Ctrl+V pastes into the page", t).clicked() {
+        if big_mark(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t).clicked() {
             acts.push(Act::Paste);
         }
         rows(ui, |ui| {
-            if mark_row(ui, Mark::Cut, "Cut", "Cut the selection", t).clicked() {
+            if mark_row(ui, Mark::Cut, crate::tl_id!("ui.cut"), crate::tl_id!("ui.cut_the_selection"), t).clicked() {
                 acts.push(Act::Clipboard("cut"));
             }
-            if mark_row(ui, Mark::Copy, "Copy", "Copy the selection", t).clicked() {
+            if mark_row(ui, Mark::Copy, crate::tl_id!("ui.copy"), crate::tl_id!("ui.copy_the_selection"), t).clicked() {
                 acts.push(Act::Clipboard("copy"));
             }
-            if mark_row(ui, Mark::Painter, "Format Painter", "Not built", t).clicked() {
+            if mark_row(ui, Mark::Painter, crate::tl_id!("ui.format_painter"), crate::tl_id!("ui.not_built"), t).clicked() {
                 acts.push(Act::NotBuilt("Format Painter"));
             }
         });
@@ -829,13 +829,13 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Bold, "Bold", "Bold (Ctrl+B)", false, t).clicked() {
+                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
-                if mark_button(ui, Mark::Italic, "Italic", "Italic (Ctrl+I)", false, t).clicked() {
+                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), false, t).clicked() {
                     acts.push(Act::Mark("italic"));
                 }
-                if mark_button(ui, Mark::Strike, "Strikethrough", "Strike through", false, t).clicked() {
+                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), false, t).clicked() {
                     acts.push(Act::Mark("strike"));
                 }
                 if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
@@ -852,17 +852,30 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if small(ui, Some(Icon::ListNumber), "", crate::tl_id!("ui.numbering"), crate::tl_id!("ui.a_numbered_list"), false, t).clicked() {
                     acts.push(Act::Block("number"));
                 }
-                if mark_button(ui, Mark::IndentLess, "Decrease indentation", "Decrease indentation (Shift+Tab)", false, t).clicked() {
+                if mark_button(
+                    ui,
+                    Mark::IndentLess,
+                    crate::tl_id!("ui.decrease_indentation"),
+                    crate::tl_id!("ui.decrease_indentation_shift_tab"),
+                    false,
+                    t,
+                )
+                .clicked()
+                {
                     acts.push(Act::Indent(false));
                 }
-                if mark_button(ui, Mark::IndentMore, "Increase indentation", "Increase indentation (Tab)", false, t).clicked() {
+                if mark_button(ui, Mark::IndentMore, crate::tl_id!("ui.increase_indentation"), crate::tl_id!("ui.increase_indentation_tab"), false, t)
+                    .clicked()
+                {
                     acts.push(Act::Indent(true));
                 }
                 align_menu(ui, t, acts);
                 if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
                     acts.push(Act::Block("quote"));
                 }
-                if mark_button(ui, Mark::ClearFormat, "Clear formatting", "Take the marks off", false, t).clicked() {
+                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
+                    .clicked()
+                {
                     acts.push(Act::ClearFormatting);
                 }
             });
@@ -1642,7 +1655,7 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 ui.separator();
                 ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.insert_table_not_built")).color(t.muted)));
                 if view.gridcraft {
-                    if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), "New GridCraft Spreadsheet", t).clicked() {
+                    if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), crate::tl_id!("ui.new_gridcraft_spreadsheet"), t).clicked() {
                         acts.push(Act::NewGridCraft);
                         picked = true;
                     }
@@ -1841,7 +1854,7 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         }
                     }
                     ui.separator();
-                    not_built(ui, "Laser Pointer", t);
+                    not_built(ui, crate::tl_id!("ui.laser_pointer"), t);
                 });
             })
             .response;
@@ -2028,7 +2041,8 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                     });
                 }
                 ui.separator();
-                if popup_action_button(ui, "More Colours", true, t.accent, "Choose a custom ink colour").clicked() {
+                if popup_action_button(ui, crate::tl_id!("ui.more_colours"), true, t.accent, crate::tl_id!("ui.choose_a_custom_ink_colour")).clicked()
+                {
                     more_colours = !more_colours;
                 }
                 if more_colours {
@@ -2042,8 +2056,10 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                         done = true;
                     }
                 }
-                popup_action_button(ui, "Eyedropper", false, t.accent, "The eyedropper is not built yet");
-                if popup_action_button(ui, "Delete Tool", rack_len > 1, t.warn, "Remove this tool from the rack").clicked() {
+                popup_action_button(ui, crate::tl_id!("ui.eyedropper"), false, t.accent, crate::tl_id!("ui.eyedropper_not_built"));
+                if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
+                    .clicked()
+                {
                     acts.push(Act::InkRack(RackEdit::Remove(i)));
                     done = true;
                 }
@@ -2630,7 +2646,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleFullPage);
         }
         rows(ui, |ui| {
-            not_built(ui, "Dock to desktop", t);
+            not_built(ui, crate::tl_id!("ui.dock_to_desktop"), t);
         });
     });
     group(ui, crate::tl_id!("ui.layout"), t, |ui| {
@@ -2650,23 +2666,24 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::TogglePanes);
             }
-            not_built(ui, "Tabs layout", t);
+            not_built(ui, crate::tl_id!("ui.tabs_layout"), t);
         });
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {
         rows(ui, |ui| {
-            not_built(ui, "Immersive reader", t);
-            not_built(ui, "Live captions", t);
+            not_built(ui, crate::tl_id!("ui.immersive_reader"), t);
+            not_built(ui, crate::tl_id!("ui.live_captions"), t);
         });
     });
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
         rows(ui, |ui| {
+            // i18n-exempt: T is the compact symbol on the page-title toggle.
             if small(ui, None, "T", crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
             }
-            not_built(ui, "Page colour", t);
-            not_built(ui, "Paper size", t);
+            not_built(ui, crate::tl_id!("ui.page_colour"), t);
+            not_built(ui, crate::tl_id!("ui.paper_size"), t);
         });
     });
     group(ui, crate::tl_id!("ui.zoom"), t, |ui| {
@@ -2685,6 +2702,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                         }
                     }
                 });
+                // i18n-exempt: 100% is a numeric zoom value, not translated copy.
                 if small(ui, None, "100%", crate::tl_id!("ui.zoom_to_100"), crate::tl_id!("ui.show_the_page_at_100"), false, t).clicked() {
                     acts.push(Act::Zoom(0));
                 }
@@ -2712,8 +2730,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleAlwaysOnTop);
             }
-            not_built(ui, "New window", t);
-            not_built(ui, "New quick note", t);
+            not_built(ui, crate::tl_id!("ui.new_window"), t);
+            not_built(ui, crate::tl_id!("ui.new_quick_note"), t);
         });
     });
     group(ui, crate::tl_id!("ui.appearance"), t, |ui| {
@@ -2736,9 +2754,9 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     });
     group(ui, crate::tl_id!("ui.window"), t, |ui| {
         rows(ui, |ui| {
-            not_built(ui, "New window", t);
-            not_built(ui, "Always on top", t);
-            not_built(ui, "Dock to desktop", t);
+            not_built(ui, crate::tl_id!("ui.new_window"), t);
+            not_built(ui, crate::tl_id!("ui.always_on_top"), t);
+            not_built(ui, crate::tl_id!("ui.dock_to_desktop"), t);
         });
     });
 }

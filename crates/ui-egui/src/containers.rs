@@ -670,17 +670,17 @@ pub fn show(
                 egui::Frame::popup(menu.style()).inner_margin(egui::Margin::same(4)).show(menu, |menu| {
                     menu.set_width(floating::MENU_W);
                     menu.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Cut)), "Cut", t).clicked() {
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
                         copy = true;
                         delete_at = Some(i);
                         picked = true;
                     }
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Copy)), "Copy", t).clicked() {
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
                         copy = true;
                         picked = true;
                     }
                     floating::menu_separator(menu, t);
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Delete)), "Delete", t).clicked() {
+                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Delete)), crate::tl_id!("ui.delete"), t).clicked() {
                         delete_at = Some(i);
                         picked = true;
                     }

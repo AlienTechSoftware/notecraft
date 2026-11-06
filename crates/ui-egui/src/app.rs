@@ -1675,12 +1675,12 @@ impl NoteCraftApp {
                 }
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), "Rename...", t).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
             }
             if node.info.kind == NodeKind::Notebook
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), "Close notebook", t).clicked()
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
             {
                 acts.push(Act::CloseNotebook(node.path.clone()));
                 ui.close();
@@ -1689,7 +1689,7 @@ impl NoteCraftApp {
                 && floating::menu_row(
                     ui,
                     Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
-                    if open { "Collapse" } else { "Expand" },
+                    if open { crate::tl_id!("ui.collapse") } else { crate::tl_id!("ui.expand") },
                     t,
                 )
                 .clicked()
@@ -1719,19 +1719,24 @@ impl NoteCraftApp {
                     }
                 });
             }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), "Copy link to page", t)
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_link_to_page"), t)
                 .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
                 .clicked()
             {
                 acts.push(Act::CopyLink(node.path.clone()));
                 ui.close();
             }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), "Open folder", t).on_hover_text(self.shown(&node.path)).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_folder"), t)
+                .on_hover_text(self.shown(&node.path))
+                .clicked()
+            {
                 acts.push(Act::Reveal(node.path.clone()));
                 ui.close();
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), "Delete...", t).clicked() {
+            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+                .clicked()
+            {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
                 ui.close();
             }
