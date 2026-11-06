@@ -58,11 +58,12 @@ name or mark.
 
 ### Clean-machine check
 
-Before publishing, install the MSI on a machine that has never run NoteCraft. Uninstalling leaves
-`%APPDATA%\NoteCraft\settings.toml` behind, and an old copy hides the first-use dialog and the
-Welcome notebook. Delete that folder and `Documents\NoteCraft` first, then check that
-`Documents\NoteCraft\welcome-to-notecraft` appears with its 13 language folders, and that the first-use
-dialog shows once.
+Before publishing, install the MSI on a machine that has never run NoteCraft. Follow the
+`packaging/installation artifacts.md` contract for the expected user
+notebook location and verify the installer places the Welcome notebook there before NoteCraft
+launches. Check that it contains all 13 language folders. Also verify that app startup does not
+copy or replace it, and that edits survive restart and upgrade. Clear old app settings only when
+the first-use privacy dialog itself is under test.
 
 | File | What it is |
 |---|---|
@@ -92,10 +93,10 @@ the `release` environment of the repository, never in a file.
 - The MSI `UpgradeCode` in `packaging/windows/notecraft.wxs` is fixed once the first MSI is public.
   Changing it later stops new versions from replacing old ones.
 - The exes carry the app icon and version information (build.rs, winresource), and the packaging script checks both.
-- Smoke test the artifact, not the build: it starts with no console window, a fresh profile gets
-  the Welcome notebook in `Documents\NoteCraft`, a page can be opened, edited and saved, and a bad
-  notebooks folder shows an error box. Install, upgrade and uninstall must leave the notebooks
-  alone.
+- Smoke test the artifact: it starts with no console window, the installer has deployed the
+  Welcome notebook before launch, a page can be opened and edited, and a bad notebooks folder shows
+  an error box. Install, upgrade and uninstall must preserve user notebook data. Use the canonical
+  `packaging/installation artifacts.md` contract for the full platform-specific checks.
 
 ## Building locally
 

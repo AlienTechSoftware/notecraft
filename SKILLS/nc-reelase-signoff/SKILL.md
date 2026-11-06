@@ -29,6 +29,10 @@ requested `reelase` spelling for discoverability.
 8. Verify installer contents, bundled bridge/discovery behavior, version/About text, icons,
    screenshots, licenses, and attribution. Test installation in a clean VM when the release changes
    packaging or external bridges.
+   Apply `packaging/installation artifacts.md`:
+   verify app binaries and the User Assistance notebook as separate payloads; verify setup deploys
+   the notebook before app launch; verify the app does not deploy it; and verify edits, deletion,
+   upgrade, and uninstall preserve user notebook data.
 9. Confirm no automatic telemetry upload, local privacy wording, and release defaults.
 10. Record exact commands, outputs, artifact paths, commit, tag candidate, known gaps, and manual
     checks. Do not push, publish, tag, or release without explicit owner approval.

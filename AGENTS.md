@@ -100,9 +100,12 @@ NoteCraft is an open-source, clean-room recreation of the OneNote notebook exper
   notebook path first.
 
 - The Welcome notebook's authored content lives in `docs/demo/scripts/content`.
-  `cargo xtask demo` generates `docs/demo/DemoNotebook`, and
-  `crates/engine/build.rs` embeds that generated folder into the app. Edit the
-  authored content, regenerate the notebook, and use `cargo xtask demo-check`
+  `cargo xtask demo` generates `docs/demo/DemoNotebook`. The canonical
+  `packaging/installation artifacts.md` contract
+  defines how installers deploy the generated User Assistance notebook separately
+  from application binaries. The current engine embedding and startup-copy path
+  are known legacy behavior that does not meet that contract; do not extend them.
+  Edit the authored content, regenerate the notebook, and use `cargo xtask demo-check`
   to confirm the checked-in bundle matches its source. Inspect Git status first
   and preserve unrelated edits to the source or generated notebook.
 - **HARD RULE: `docs/demo/DemoNotebook/html` and

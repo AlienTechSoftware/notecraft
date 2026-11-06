@@ -1,8 +1,8 @@
 # macOS installation issues
 
-This file records macOS-specific gaps related to demo notebook installation. It does not replace
-the cross-platform policy in `packaging/demo-notebook-install-design.md` or the general macOS
-packaging guide in this directory.
+This file records macOS-specific gaps related to demo notebook installation. The cross-platform
+policy lives in the canonical `packaging/installation artifacts.md` contract;
+this file records only macOS implementation gaps.
 
 ## Current limitations
 

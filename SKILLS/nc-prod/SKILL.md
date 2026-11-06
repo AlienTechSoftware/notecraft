@@ -69,6 +69,13 @@ repair must be atomic and must leave the original recoverable if interrupted.
 
 **Test:** A notebook should be readable by opening the folder with `ls` and `cat`. Content should be understandable as plain text or XML/JSON.
 
+### Installation responsibility
+
+Application binaries and the User Assistance demo notebook are separate installation artifacts.
+The installation tool deploys both; the application only discovers and opens the installed
+notebook. The app must not install, copy, refresh, replace, repair, or delete it. The single
+cross-platform contract is `packaging/installation artifacts.md`.
+
 ---
 
 ### 2. Format Serialization Parity (Dual Format Support)

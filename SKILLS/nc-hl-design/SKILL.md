@@ -31,6 +31,16 @@ Every design decision flows from this:
 - **Page** = one file (`.html` or `index.md`) + optional `_assets/` subfolder
 - **Assets** = files in the page's `_assets/` folder, linked by relative path
 
+### Installation artifact boundary
+
+Any design that packages or installs NoteCraft must follow the single product contract in
+`packaging/installation artifacts.md`. Keep
+application binaries and the User Assistance demo notebook as separate logical artifacts, even
+when one installer file contains both. Installation tools deploy both. The app may discover and
+open the installed notebook, but must not install, copy, refresh, replace, repair, or delete it.
+Do not begin installation implementation until the canonical contract and platform acceptance
+criteria are reviewed.
+
 Your feature lives *in* this folder tree. No database, no server, no magic. User owns the files.
 
 ## When to Use This Skill

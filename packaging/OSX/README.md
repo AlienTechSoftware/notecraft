@@ -48,7 +48,8 @@ The app includes both executables, its icon, project licences, attribution and t
 notices. It retains the upstream demo payload at `Contents/Resources/demo/DemoNotebook` in both
 HTML and CMGFM formats. Verification compares the mounted payload with the official source.
 Bundling this payload does not establish per-user installation or edit persistence; see
-[the macOS installation gaps](issues.md) and [the shared installation design](../demo-notebook-install-design.md).
+[the macOS installation gaps](issues.md) and the canonical
+`packaging/installation artifacts.md` contract.
 The standalone CLI zip can be extracted without installing the app. Both packages are
 signed ad-hoc by default for local testing. A downloaded ad-hoc package can be rejected by
 Gatekeeper; do not change system security settings to test it.
