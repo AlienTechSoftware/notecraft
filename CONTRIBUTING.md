@@ -92,14 +92,47 @@ Push your task branch to your fork or to a branch on the official repository, th
 
 Keep the pull request narrow and reviewable. Respond to review by updating the branch and rerunning affected checks. The required CI workflow runs formatting, clippy, static checks, demo checks, and builds/tests on Linux, Windows, and macOS. Coverage is reported as a warning and does not block a merge. A maintainer merges after required checks and review are satisfied.
 
+The usual contributor path is:
+
+```mermaid
+flowchart LR
+    A[Task branch] --> B[Focused checks]
+    B --> C[cargo xtask ci]
+    C --> D[Push branch]
+    D --> E[Open pull request]
+    E --> F[GitHub CI]
+    F --> G{Checks and review pass?}
+    G -- No --> H[Fix and push update]
+    H --> F
+    G -- Yes --> I[Maintainer merges]
+```
+
+**In short:** validate locally, open a PR, fix any CI or review findings, then a maintainer merges.
+
 ## 6. Understand CI and delivery
 
-CI is split into distinct lanes; a green source check does not imply a package or release exists:
+These are the GitHub Actions workflows contributors will see. A green source check does not mean a package or release exists:
 
-1. **Quality and platform tests:** `.github/workflows/ci.yml` validates source and tests across Linux, Windows, and macOS on pull requests and `main` pushes. Coverage is visible but nonblocking.
-2. **Packaging:** `.github/workflows/packaging.yml` runs manually and builds reviewable platform artifacts. It uploads artifacts and does not publish a release.
-3. **Release:** `.github/workflows/release.yml` runs manually using the ID of a successful Packaging workflow. It drafts a release from those exact artifacts; it does not rebuild them.
-4. **Publication:** a maintainer reviews the draft, installation evidence, and release notes before publishing. See [`docs/releasing.md`](docs/releasing.md).
+1. **CI** (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`: formatting, clippy, static checks, demo checks, and Linux/Windows/macOS build and tests. Coverage is visible and nonblocking.
+2. **Deploy website** (`.github/workflows/deploy-website.yml`) runs for website changes on `main`, creates previews for website changes in PRs, and can be run manually to redeploy the current `main` tip.
+3. **Packaging** (`.github/workflows/packaging.yml`) is started manually from GitHub Actions. It builds and verifies platform artifacts, then uploads them. It does not publish a release.
+4. **Release** (`.github/workflows/release.yml`) is started manually with the ID of a successful Packaging run. It drafts a release using those exact artifacts; it does not rebuild them.
+5. **Publication** happens after a maintainer reviews the draft, installation evidence, and release notes. See [`docs/releasing.md`](docs/releasing.md).
+
+```mermaid
+flowchart TD
+    PR[Pull request] --> CI[CI: checks and platform tests]
+    PR -->|website files changed| Preview[Deploy website: preview]
+    Main[Push to main] --> CI
+    Main -->|website files changed| Site[Deploy website: production]
+    ManualSite[Manual Deploy website run] --> Site
+    Actions[Manual Packaging run] --> Artifacts[Verified artifacts]
+    Artifacts -->|run ID| Release[Manual Release run]
+    Release --> Draft[Draft release]
+    Draft --> Review[Maintainer review and publish]
+```
+
+**In short:** CI checks code, website actions deploy previews or the site, Packaging creates artifacts, and Release drafts from a selected Packaging run.
 
 Contributors should not start packaging or release workflows for an ordinary pull request. Packaging, signing, deployment, and publication are separate from code review and require maintainer coordination.
 
