@@ -60,6 +60,36 @@ These checks answer different questions. Static `rg` searches are useful for fin
 literals, but cannot determine whether a value is interface text or prove that menus, tooltips,
 errors, and accessibility labels were rendered.
 
+## Source audit and exemptions
+
+Run `cargo xtask i18n-audit` before reviewing i18n changes. The command is also part of
+`cargo xtask ci` and the repository pre-commit hook. It checks English catalog structure and
+duplicate IDs, verifies that `en-XA` and `ar-XB` contain the English ID and plural sets with the
+expected wrappers, validates literal IDs passed through `tl_id!` and localized formatter calls,
+and scans production Rust UI code for literal text passed directly into common egui text sinks.
+Helpers that accept UI text must be marked directly above the function with a parameter list, for
+example `// i18n-ui-text: label,tip`; callers are then checked for raw literals too. Prefer passing
+`tl_id!("ui.stable_name")` through these helpers.
+
+The audit is deliberately a static source gate, not proof of rendered coverage. It cannot infer
+all project-specific helper semantics, runtime-generated text, all accessibility metadata, or
+whether every hidden UI state was exercised. Keep the `en-XA`/`ar-XB` rendered-state audit in the
+workflow and expand helper annotations/sinks when new patterns are added. Real-locale missing-row
+counts are informational because runtime English fallback remains supported.
+
+For a necessary non-language literal, put a narrow reason on the same line or immediately above
+the literal:
+
+```rust
+ui.label("T"); // i18n-exempt: single-letter toolbar glyph
+```
+
+`i18n-exempt` is reserved for actual non-language values such as a glyph, a stable machine code,
+or a keyboard shortcut when the displayed form is intentionally invariant. It is not a way to
+waive ordinary prose. The audit rejects blank and stale exemptions, so keep each comment attached
+to the specific literal it documents. If the value is user-facing language, add an English ID and
+use the catalog lookup instead.
+
 ## Integration phases
 
 The current NoteCraft pilot stores `i18n/<locale>.tsv` in this repository and directly embeds it

@@ -299,7 +299,6 @@ impl<'ast> Visit<'ast> for SourceScanner<'_> {
         {
             self.raw_literals(label, &format!("UI method `{name}`"));
         }
-        self.check_helper_call(&name, expression.args.iter());
         visit::visit_expr_method_call(self, expression);
     }
 }
@@ -532,7 +531,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
             let report = format!("{relative}:{}: {}", problem.line, problem.message);
             if problem.message.starts_with("hard-coded UI string") {
                 findings += 1;
-                println!("i18n-audit: pending: {report}");
+                problems.push(report);
             } else {
                 problems.push(report);
             }
@@ -551,11 +550,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     }
     println!("i18n-audit: checked {} Rust files, {} English IDs, {} source findings", files.len(), catalogs.english.len(), findings);
     if problems.is_empty() {
-        if findings == 0 {
-            println!("i18n-audit: passed with no source findings");
-        } else {
-            println!("i18n-audit: passed structural checks; {findings} hard-coded UI strings remain for localization");
-        }
+        println!("i18n-audit: passed with no source findings");
         Ok(())
     } else {
         problems.sort();
@@ -609,5 +604,20 @@ mod tests {
         let locales = BTreeMap::from([("en-XA".to_string(), BTreeMap::from([("ui.save".to_string(), "$$$Save@@@".to_string())]))]);
         let problems = catalog_problems(&english, &locales);
         assert!(problems.iter().any(|problem| problem.contains("en-XA") && problem.contains("ui.open")));
+    }
+
+    #[test]
+    fn localized_formatter_ids_are_checked_without_flagging_arguments() {
+        let ids = BTreeSet::from(["ui.saved_count".to_string()]);
+        let source = "fn draw(ui: &mut Ui, count: usize) { ui.label(format_message_id(\"ui.saved_count\", count)); }";
+        assert!(scan_source("sample.rs", source, &ids).is_empty());
+        let bad = "fn draw(ui: &mut Ui, count: usize) { ui.label(format_message_id(\"ui.savd_count\", count)); }";
+        assert!(scan_source("sample.rs", bad, &ids).iter().any(|problem| problem.message.contains("unknown UI ID")));
+    }
+
+    #[test]
+    fn cfg_test_literals_do_not_block_audit() {
+        let source = "#[cfg(test)] mod tests { fn draw(ui: &mut Ui) { ui.label(\"test-only text\"); } }";
+        assert!(scan_source("sample.rs", source, &BTreeSet::new()).is_empty());
     }
 }

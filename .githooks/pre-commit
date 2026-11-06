@@ -12,7 +12,7 @@
 # commit too, and --no-verify is the honest way through that.
 set -e
 
-echo "pre-commit (quality level L1): branch, pii, fmt, layers, assets, docs, text"
+echo "pre-commit (quality level L1): branch, pii, fmt, i18n-audit, layers, assets, docs, text"
 
 # Not on main, and nothing from local/, target/ or my-notebooks/ staged. Being behind
 # origin/main is a warning here; the push stops on it.
@@ -29,7 +29,7 @@ if ! bash SKILLS/nc-devx/scripts/check-pii.sh; then
     exit 1
 fi
 
-for task in fmt layers assets docs text; do
+for task in fmt i18n-audit layers assets docs text; do
     if ! cargo xtask "$task"; then
         echo
         echo "pre-commit: '$task' failed. Fix it, or commit with --no-verify if the failure is"
