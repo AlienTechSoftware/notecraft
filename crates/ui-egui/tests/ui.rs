@@ -2852,6 +2852,117 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
     assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
 }
 
+/// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
+/// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
+/// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
+/// justified paragraph after a box that went keeps its justification, in the window and in the
+/// file, and the window and the folder agree on the boxes.
+#[test]
+fn a_box_left_with_nothing_in_it_goes() {
+    let (_t, app, s) = sample_app("ui-blank-box");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"200\"><p>left box</p></div>\n<div class=\"nc-box\" data-x=\"220\" data-y=\"0\" data-width=\"120\"><p>m</p></div>\n<div class=\"nc-box\" data-x=\"360\" data-y=\"0\" data-width=\"200\"><p>right box</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Blank boxes", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    // The last box's paragraph, block 2, is justified.
+    ask(&mut h, "engine.execute", json!({"command": "page.justify", "params": {"path": dir, "blocks": "2"}})).expect("justify it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let count =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["containers"].as_array().map_or(0, Vec::len);
+    assert_eq!(count(&mut h), 3, "three boxes to begin with");
+    let origin = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"].clone();
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+
+    // A click on the open paper starts a fourth box, and the caret is in it.
+    ask(&mut h, "ui.click", json!({"x": ox + 700.0, "y": oy + 24.0})).expect("click the open paper");
+    settle(&mut h);
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(now["containers"].as_array().map_or(0, Vec::len), 4, "a click on the paper started a box: {now}");
+    assert!(now["caret"] != Value::Null, "and the caret is in it: {now}");
+    // A second click on the paper, before anything was written: the first box goes and a new one is made.
+    ask(&mut h, "ui.click", json!({"x": ox + 700.0, "y": oy + 160.0})).expect("click the paper again");
+    settle(&mut h);
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(now["containers"].as_array().map_or(0, Vec::len), 4, "the blank box went and a new one took its place: {now}");
+    assert!(now["containers"][3]["y"].as_f64().unwrap_or(0.0) > 100.0, "the one that stays is the new one, further down: {now}");
+    // Escape leaves that one too, with nothing in it.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+    settle(&mut h);
+    assert_eq!(count(&mut h), 3, "Escape from a blank box takes it away");
+
+    // A box with words in it stays when the caret leaves it.
+    ask(&mut h, "ui.click", json!({"x": ox + 700.0, "y": oy + 24.0})).expect("start a box");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "kept"})).expect("type");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+    settle(&mut h);
+    assert_eq!(count(&mut h), 4, "a box with words in it stays");
+    assert!(h.state().body().unwrap_or_default().contains("kept"), "and so do its words");
+
+    // The middle box has one letter. Backspace takes it, and the empty line with it: the caret goes
+    // back into the left box, and the middle box, holding nothing now, goes.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret in the middle box");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("delete its letter");
+    settle(&mut h);
+    assert_eq!(count(&mut h), 3, "the emptied box went once the caret left it");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("left box") && body.contains("right box") && body.contains("kept"), "every word is still there:\n{body}");
+    assert!(!body.contains("data-x=\"220\""), "the middle box is not in the page:\n{body}");
+
+    // Another page opened saves this one: the folder holds the three boxes the window shows.
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open another page");
+    settle(&mut h);
+    let page = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": dir}})).expect("load it");
+    let text = page.to_string();
+    assert_eq!(text.matches("nc-box").count(), 3, "three boxes in the file:\n{text}");
+    review(&mut h, "blank_box");
+
+    // An empty box between two boxes of words, saved that way, the second box justified. A
+    // click in it gives it a line to write in, ahead of the justified paragraph, which moves
+    // down one block and keeps its mark. Left blank, the box goes, and the mark comes back up.
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"200\"><p>left box</p></div>\n<div class=\"nc-box\" data-x=\"220\" data-y=\"0\" data-width=\"120\"></div>\n<div class=\"nc-box\" data-x=\"360\" data-y=\"0\" data-width=\"200\"><p>right box</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Justified after", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "engine.execute", json!({"command": "page.justify", "params": {"path": dir, "blocks": "1"}})).expect("justify it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let marks = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "engine.execute", json!({"command": "page.justify", "params": {"path": dir}})).expect("read the marks")
+    };
+    let opened = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(opened["containers"].as_array().map_or(0, Vec::len), 3, "three boxes, the middle one empty: {opened}");
+    assert_eq!(opened["blocks"], json!(2), "the empty box holds no block: {opened}");
+    ask(&mut h, "ui.click", json!({"x": ox + 260.0, "y": oy + 24.0})).expect("click in the empty box");
+    settle(&mut h);
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(now["blocks"], json!(3), "the click gave it a line: {now}");
+    assert_eq!(now["caret"]["block"], json!(1), "and the caret is on it: {now}");
+    assert_eq!(marks(&mut h), json!("2"), "\"right box\" is block 2 now, and still justified");
+    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 24.0})).expect("click in the left box");
+    settle(&mut h);
+    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(now["containers"].as_array().map_or(0, Vec::len), 2, "the empty box went: {now}");
+    assert_eq!(now["blocks"], json!(2), "and its line with it: {now}");
+    assert_eq!(marks(&mut h), json!("1"), "\"right box\" is block 1 again, and still justified");
+}
+
 /// A box copied with Ctrl+C and pasted into another comes back as it was: its heading a heading, its link a
 /// link, its diagram a diagram. The clipboard holds only Markdown text, and pasting that text as one
 /// paragraph, as the ribbon's Paste once did, made a page of lines with their marks showing, blank lines

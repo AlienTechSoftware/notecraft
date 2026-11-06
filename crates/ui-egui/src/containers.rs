@@ -119,6 +119,40 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
     true
 }
 
+/// Takes container `left` off the page when the caret has left it and nothing was written in
+/// it: every block it holds is a blank line. This is what OneNote does with a box that was
+/// clicked into and then abandoned, or whose words were all deleted (issue #21).
+///
+/// A box with any words, picture, maths, table or ink in it stays, and so does one the caret
+/// is still in. A box left holding no block at all, which Backspace at the start of its last
+/// line leaves, goes too. The caret, if it is in a box after this one, moves up with its
+/// block. Returns the blocks that went (none, for a box that held none), so what is kept
+/// against block numbers can be moved up too.
+pub fn drop_if_blank(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, left: usize) -> Option<std::ops::Range<usize>> {
+    let range = container::blocks_of(boxes, left);
+    if left >= boxes.len() || range.end > blocks.len() {
+        return None;
+    }
+    if caret.as_ref().is_some_and(|c| range.contains(&c.block)) {
+        return None;
+    }
+    // A to-do box with nothing written beside it yet is still a box somebody made on purpose.
+    let blank = |b: &Block| crate::preview::is_blank(b) && !matches!(b, Block::Item { task: Some(_), .. });
+    if !blocks[range.clone()].iter().all(blank) {
+        return None;
+    }
+    if !remove_container(blocks, boxes, left) {
+        return None;
+    }
+    if let Some(c) = caret.as_mut()
+        && c.block >= range.end
+    {
+        c.block -= range.len();
+    }
+    log::debug!("DROP_BLANK_BOX: i={left} blocks={range:?}");
+    Some(range)
+}
+
 /// What a frame of the canvas did.
 #[derive(Default)]
 pub struct Moved {
@@ -133,6 +167,10 @@ pub struct Moved {
     /// What the box's menu asked for besides its own Cut, Copy and Delete: the page's entries
     /// (Paste, Table, Link and the rest), which the window runs once this frame's borrow is over.
     pub acts: Vec<Act>,
+    /// True when the justified paragraphs were renumbered, because a box's line was put in
+    /// before them or a blank box before them went ([`drop_if_blank`]). The window writes
+    /// them into the page's file.
+    pub justified: bool,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -147,7 +185,7 @@ pub fn show(
     page: Option<notecraft_model::Dir>,
     borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
-    justified: &notecraft_model::justify::Justified,
+    justified: &mut notecraft_model::justify::Justified,
     across: &mut Option<pageedit::Across>,
     shown_title: &str,
     zoom: f32,
@@ -820,6 +858,9 @@ pub fn show(
         let at = container::blocks_of(boxes, i).start.min(blocks.len());
         log::debug!("FILL_EMPTY_BOX: i={i} inserts empty paragraph at block {at} (triggered by click)");
         blocks.insert(at, Block::Paragraph(Vec::new()));
+        // The blocks after it are one further down the page: what is kept against them follows.
+        out.changed.columns |= cols.insert_block(at);
+        out.justified |= justified.insert_block(at);
         if let Some(c) = boxes.get_mut(i) {
             c.blocks += 1;
         }
@@ -952,6 +993,46 @@ pub fn show(
     }
     if below.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    // The caret left a box this frame, for another box, new paper, a picture or Escape. If
+    // nothing was written in the box it left, the box goes. Not when a box was deleted this
+    // frame, which renumbers the boxes, and not when the box left is the selected one: a box
+    // picked by its handle is about to be moved, and the caret leaves it to let that happen.
+    let caret_now = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+    if let Some(left) = caret_box
+        && caret_now != Some(left)
+        && delete_at.is_none()
+        && delete_object.is_none()
+        && sel != Some(left)
+        && let Some(gone) = drop_if_blank(blocks, boxes, caret, left)
+    {
+        // What was remembered this frame by box or block number moves up past the box that went.
+        let n = gone.len();
+        ui.data_mut(|d| {
+            if let Some((k, on)) = d.get_temp::<(usize, String)>(selected_id())
+                && k > left
+            {
+                d.insert_temp(selected_id(), (k - 1, on));
+            }
+            if let Some((b, kind, on)) = d.get_temp::<(usize, String, String)>(selected_object_id())
+                && b >= gone.end
+            {
+                d.insert_temp(selected_object_id(), (b - n, kind, on));
+            }
+            if let Some((b, on)) = d.get_temp::<(usize, String)>(selected_image_id())
+                && b >= gone.end
+            {
+                d.insert_temp(selected_image_id(), (b - n, on));
+            }
+            // Measured again on the next frame with no button down.
+            d.remove::<(usize, usize, usize, usize)>(words_id());
+        });
+        out.changed.columns |= cols.remove_blocks(gone.clone());
+        out.justified |= justified.remove_blocks(gone);
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
     }
     out
 }
@@ -1314,6 +1395,81 @@ more
         assert_eq!(boxes.iter().map(|b| b.blocks).sum::<usize>(), blocks.len(), "every block is still in a box");
     }
 
+    fn caret_at(block: usize) -> Option<Caret> {
+        Some(Caret { block, text: String::new(), focus: false, selection: (0, 0), place: None, cell: None, span: None })
+    }
+
+    /// Issue #21: a box clicked into and left with nothing written in it goes, and the caret,
+    /// now in a box after it, stays on the same line of words.
+    #[test]
+    fn a_blank_box_the_caret_left_goes() {
+        let mut blocks = page("one\n\ntwo\n");
+        blocks.insert(1, Block::Paragraph(Vec::new()));
+        blocks.insert(2, Block::Paragraph(Vec::new()));
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1), Container::new(0.0, 50.0, 300.0, 2), Container::new(0.0, 120.0, 300.0, 1)];
+        // The caret has moved on to "two", in the last box.
+        let mut caret = caret_at(3);
+        assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 1), Some(1..3));
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(boxes.iter().map(|b| b.blocks).sum::<usize>(), blocks.len(), "every block is still in a box");
+        let c = caret.expect("the caret stays");
+        assert_eq!(crate::pageedit::text_for_caret(&blocks, c.block), "two", "the caret is still on its words");
+    }
+
+    /// A box with anything in it stays, however little: one letter, a picture, a rule, a table,
+    /// a to-do box with nothing beside it yet.
+    #[test]
+    fn a_box_with_anything_in_it_stays() {
+        for md in ["x\n", "![a](assets/a.png)\n", "---\n", "| a |\n|---|\n| b |\n", "- [ ] \n"] {
+            let mut blocks = page(md);
+            blocks.push(Block::Paragraph(Vec::new()));
+            let n = blocks.len();
+            let mut boxes = vec![Container::new(0.0, 0.0, 300.0, n)];
+            let mut caret = None;
+            assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 0), None, "{md:?} keeps its box");
+            assert_eq!(boxes.len(), 1);
+            assert_eq!(blocks.len(), n);
+        }
+    }
+
+    /// The box the caret is still in is being written in, even when it is still blank.
+    #[test]
+    fn the_box_the_caret_is_in_stays() {
+        let mut blocks = vec![Block::Paragraph(Vec::new())];
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1)];
+        let mut caret = caret_at(0);
+        assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 0), None);
+        assert_eq!(boxes.len(), 1);
+        // Once the caret is gone, Escape say, the blank box goes and the page is bare paper.
+        let mut caret = None;
+        assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 0), Some(0..1));
+        assert!(boxes.is_empty() && blocks.is_empty());
+    }
+
+    /// Backspace at the start of a box's last line takes the line into the box before, and
+    /// leaves a box that holds no block at all. It goes too, and no block moves.
+    #[test]
+    fn a_box_left_holding_no_block_goes() {
+        let mut blocks = page("one\n\ntwo\n");
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1), Container::new(0.0, 50.0, 300.0, 0), Container::new(0.0, 90.0, 300.0, 1)];
+        let mut caret = caret_at(1);
+        assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 1), Some(1..1));
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(blocks.len(), 2, "no block went with it");
+        assert_eq!(caret.map(|c| c.block), Some(1), "the caret did not move");
+    }
+
+    /// A box number past the end changes nothing.
+    #[test]
+    fn nothing_to_drop_changes_nothing() {
+        let mut blocks = page("one\n");
+        let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1)];
+        let mut caret = None;
+        assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 5), None);
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(blocks.len(), 1);
+    }
+
     #[test]
     fn removing_a_container_that_is_not_there_changes_nothing() {
         let mut blocks = page("one\n\ntwo\n");
@@ -1345,7 +1501,7 @@ more
                 Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
-                &Default::default(),
+                &mut Default::default(),
                 &mut None,
                 "",
                 1.0,
@@ -1376,7 +1532,7 @@ more
                 Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
-                &Default::default(),
+                &mut Default::default(),
                 &mut None,
                 "",
                 1.0,
@@ -1409,7 +1565,7 @@ more
                 Some(notecraft_model::Dir::Ltr),
                 true,
                 &mut Default::default(),
-                &Default::default(),
+                &mut Default::default(),
                 &mut None,
                 "",
                 1.0,

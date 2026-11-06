@@ -53,6 +53,34 @@ impl Widths {
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
     }
+
+    /// A block was put into the page at `at`. What is kept for a table at or after it moves
+    /// down one with it, so it stays on the same table. True when anything changed.
+    pub fn insert_block(&mut self, at: usize) -> bool {
+        let mut moved = false;
+        for (block, _) in &mut self.tables {
+            if *block >= at {
+                *block += 1;
+                moved = true;
+            }
+        }
+        moved
+    }
+
+    /// The blocks in `gone` were taken off the page. A width kept for one of them goes, and
+    /// a width kept for a table after them moves up with it, so it stays on the same table.
+    /// True when anything changed.
+    pub fn remove_blocks(&mut self, gone: std::ops::Range<usize>) -> bool {
+        let before = self.tables.clone();
+        let n = gone.len();
+        self.tables.retain(|(at, _)| !gone.contains(at));
+        for (at, _) in &mut self.tables {
+            if *at >= gone.end {
+                *at -= n;
+            }
+        }
+        self.tables != before
+    }
 }
 
 /// Reads the line a page keeps: `block:w,w,w`, one table after another, `;` between them.
@@ -97,6 +125,24 @@ pub fn write(widths: &Widths) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_width_follows_its_table_when_blocks_before_it_go() {
+        let mut widths = parse("1:100,100; 6:120,200");
+        assert!(widths.remove_blocks(2..4));
+        assert_eq!(write(&widths), "1:100,100; 4:120,200");
+        // A width kept for a block that went goes with it.
+        assert!(widths.remove_blocks(1..2));
+        assert_eq!(write(&widths), "3:120,200");
+        // Blocks after the last table move nothing.
+        assert!(!widths.remove_blocks(8..10));
+        assert_eq!(write(&widths), "3:120,200");
+        // A block put in before the table moves it down; one put in after it does not.
+        assert!(widths.insert_block(3));
+        assert_eq!(write(&widths), "4:120,200");
+        assert!(!widths.insert_block(5));
+        assert_eq!(write(&widths), "4:120,200");
+    }
 
     #[test]
     fn widths_survive_the_round_trip() {
