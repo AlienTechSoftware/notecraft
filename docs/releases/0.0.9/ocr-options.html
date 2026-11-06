@@ -43,7 +43,7 @@
     <p class="lede">A comparison of options that can keep working without a network connection. “OCR” covers several different jobs here, and the best fit depends on what the input is.</p>
   </header>
 
-  <div class="callout"><strong>Key distinction:</strong> handwriting written with a stylus already has stroke paths and timing. Recognizing those paths is usually a different and lighter task than recognizing handwriting in a photo or scan. Describing what an image depicts is a third task: it needs a vision-language model, not just OCR.</div>
+  <div class="callout"><strong>Scope constraint:</strong> recognition must be free to the user and run on the device. There must be no cloud inference or per-use charge. For disconnected use, the model must already be on the device; a first-use download is a setup requirement, not offline-from-install. <strong>Key distinction:</strong> stylus handwriting arrives as timed strokes; handwriting in photos needs image segmentation and HTR; describing a picture needs a vision-language model.</div>
 
   <section>
     <h2>At a glance</h2>
@@ -56,20 +56,37 @@
   </section>
 
   <section>
+    <h2>Working proposal for NoteCraft</h2>
+    <p>This is a discussion proposal, not an implementation decision. Keep recognition optional and preserve the original ink or image unchanged.</p>
+    <div class="grid">
+      <article class="card"><span class="tag">1 · Notes written with the pen</span><h3>Recognize the stroke data</h3><p>Use an on-device platform recognizer when its model is already available. Apple PencilKit is a strong iPad candidate. On Android, evaluate the open <a href="https://github.com/PellelNitram/OnlineHTR">OnlineHTR</a> research engine and compare it with ML Kit. ML Kit is no-cost and supports many languages, but its digital-ink language packs are dynamically downloaded and cannot be bundled through its documented installation paths.</p><p><strong>Proposal:</strong> treat Android stroke recognition as an evaluation gap until a model can be provisioned without a network at use time, its model/data terms are clear, and it performs well on NoteCraft's scripts.</p></article>
+      <article class="card"><span class="tag">2 · Text inside photos and scans</span><h3>Start with printed OCR</h3><p>Use Apple Vision on Apple devices and ML Kit Text Recognition's bundled model on Android. These are on-device, have no per-call fee, and can be available without a runtime model download. Keep handwritten-photo recognition as a separate, later-quality question.</p></article>
+      <article class="card"><span class="tag">3 · Describing an image</span><h3>Generate an editable draft</h3><p>Use Apple's on-device Foundation Models on eligible devices. Evaluate Gemma 3n E2B on Android as a local multimodal candidate; also compare Apache-2.0 SmolVLM2 if its target-device runtime and model size are practical. Generate only when requested, and let the user accept, edit, or discard the description.</p></article>
+    </div>
+    <div class="callout"><strong>Free and offline distinction:</strong> ML Kit and OS frameworks have no per-request charge, but ML Kit Digital Ink still needs a language-pack download. “Free” also does not mean “open source”: Google and Apple platform SDKs are proprietary. If open model weights are required, verify both weight and training-data terms before bundling.</div>
+    <h3>Decision points for the next ideation pass</h3>
+    <ul>
+      <li>Must the feature work on a fully disconnected fresh install, or is installing a model pack ahead of time acceptable?</li>
+      <li>Does “free” mean no user/API charge, or must the model and its weights also use an open-source license?</li>
+      <li>Which scripts are first-class for recognition quality, including Arabic, Persian, Urdu, Hebrew, and mixed RTL/LTR?</li>
+    </ul>
+  </section>
+
+  <section>
     <h2>Options and tradeoffs</h2>
     <div class="table-wrap"><table>
       <thead><tr><th>Option</th><th>Input and job</th><th>Offline and platform fit</th><th>Pros</th><th>Cons and cost</th></tr></thead>
       <tbody>
-        <tr><td><strong>Google ML Kit Digital Ink</strong></td><td>Captured pen/finger strokes → text, gestures, shapes</td><td>Android and iOS; on-device once the language model is present</td><td>Broad language coverage (Google documents 300+ languages); designed for stroke input; no per-recognition cloud call</td><td>Closed SDK and vendor dependency. Language model download is required before offline use; Google documents about 20 MB per language. SDK/API is offered at no cost; device storage and integration still cost.</td></tr>
+        <tr><td><strong>Google ML Kit Digital Ink</strong></td><td>Captured pen/finger strokes → text, gestures, shapes</td><td>Android and iOS; local inference after its language model is present</td><td>Broad language coverage (Google documents 300+ languages); designed for stroke input; no per-recognition cloud call; SDK/API is offered at no cost</td><td>Closed SDK and vendor dependency. The Android guide lists dynamic model downloads only for Digital Ink, around 20 MB per language. It therefore needs advance provisioning and is not offline-from-install through the documented install paths.</td></tr>
         <tr><td><strong>Apple PencilKit stroke recognition</strong></td><td>Apple PencilKit drawing → recognized handwriting</td><td>Apple platforms; recognition is on-device and offline where supported</td><td>Native fit for Apple Pencil input; no per-call service fee</td><td>Apple-only and OS/device availability must be checked. Requires a native platform adapter; cannot serve as the shared cross-platform engine. Apple framework has no separate per-request price.</td></tr>
         <tr><td><strong>Apple Vision text recognition</strong></td><td>Image → detected text, including supported handwriting cases</td><td>Apple platforms; Vision processing can run locally</td><td>Built-in image text detection; no model server to operate</td><td>Language and handwriting performance vary. Not a general promise of accurate cursive transcription. Native integration and Apple platform scope are the main costs.</td></tr>
         <tr><td><strong>TrOCR and other open HTR models</strong></td><td>Usually a cropped line image → text</td><td>Can run locally on desktop; mobile deployment is possible but needs model/runtime work</td><td>Open weights and no per-request fee; useful for experimentation and offline processing</td><td>Line cropping/layout detection remain separate problems. Model quality is dataset- and script-dependent. Verify model and training-data rights before distribution; model storage, memory, battery, and maintenance are real costs.</td></tr>
         <tr><td><strong>Kraken / trained HTR pipeline</strong></td><td>Scanned pages → segmented lines → text</td><td>Local desktop/server-style processing; can work offline with models installed</td><td>Open tooling; customizable for scripts and archival documents</td><td>Needs suitable training or a suitable pretrained model, page segmentation, and evaluation. Higher setup and compute cost; less turnkey for live note strokes.</td></tr>
-        <tr><td><strong>ML Kit Text Recognition</strong></td><td>Image → printed text OCR</td><td>Android/iOS on-device options; model provisioning depends on API/install path</td><td>Convenient for printed text and common document/photo OCR; no cloud request required during local inference</td><td>Do not treat printed OCR as handwriting recognition. Initial model acquisition, platform integration, and supported-script constraints apply.</td></tr>
+        <tr><td><strong>ML Kit Text Recognition (bundled)</strong></td><td>Image → printed text OCR</td><td>Android; bundled model is available immediately and runs locally</td><td>No per-call fee; can work without a network at first use when the bundled library is selected</td><td>Do not treat printed OCR as handwriting recognition. Bundling increases app size and coverage differs by script. The iOS route needs separate evaluation.</td></tr>
         <tr><td><strong>Apple Foundation Models image prompting</strong></td><td>Image + prompt → description, visual summary, or image questions</td><td>On-device on supported Apple Intelligence devices; can work without internet</td><td>Natural-language descriptions from an OS-provided model; no per-request cloud charge for on-device use</td><td>Apple-only and device eligibility is a hard limit. Output can hallucinate or omit details; model behavior and availability are OS-controlled. Needs an explicit review/edit flow.</td></tr>
-        <tr><td><strong>Bundled/downloadable open vision-language model</strong></td><td>Image + prompt → caption or image questions</td><td>Potentially desktop, Android, and some iOS devices with compatible runtimes and converted models</td><td>Can be selected for broader platform control and offline use after installation</td><td>Model size, speed, memory, heat, battery, language quality, and conversion support vary widely. No inference API fee, but distribution, storage, support, and license review are costs.</td></tr>
+        <tr><td><strong>Gemma 3n E2B / SmolVLM2 (evaluation candidates)</strong></td><td>Image + prompt → caption or image questions</td><td>Gemma 3n is documented for mobile multimodal use; SmolVLM2 is a small Apache-2.0 model, but tablet runtime and conversion need verification</td><td>Local inference avoids per-call charges and can work offline when the model is already installed</td><td>Gemma uses Google's model terms, not a standard open-source license. Both candidates need device tests for size, speed, memory, heat, battery, and caption quality. A model download must happen before offline use unless bundled.</td></tr>
         <tr><td><strong>CLIP-style image embeddings</strong></td><td>Image → vector for similarity/search</td><td>Local runtimes exist for desktop and mobile</td><td>Enables semantic or “find similar” search without sending images to a service</td><td>Does not produce a caption or transcribe text. Requires a local index, re-indexing, storage, and relevance evaluation.</td></tr>
-        <tr><td><strong>Commercial interactive-ink SDK (e.g. MyScript)</strong></td><td>Strokes → polished text, math, diagrams, reflow</td><td>Vendor/platform support and offline capabilities vary by product and contract</td><td>Potentially richer live ink workflows than basic transcription</td><td>Proprietary terms and commercial pricing; get a vendor quote and verify offline terms before relying on it. Highest licensing/vendor dependence.</td></tr>
+        <tr><td><strong>Cloud or paid recognition services</strong></td><td>Strokes or images → text/description</td><td>May need network access and send data off device</td><td>Can offer higher accuracy or richer services</td><td><strong>Excluded:</strong> fails the free, on-device requirement.</td></tr>
       </tbody>
     </table></div>
     <p class="chart-note">Cost means total ownership here: license or API charge, model acquisition, storage, compute, integration, and upkeep. “No per-call fee” does not mean zero product cost.</p>
@@ -83,7 +100,7 @@
         <style>.t{font:15px system-ui;fill:var(--ink)}.small{font:12px system-ui;fill:var(--muted)}.head{font:13px system-ui;font-weight:700;fill:var(--ink)}.yes{fill:var(--green)}.some{fill:var(--gold)}.no{fill:var(--line)}.gridline{stroke:var(--line);stroke-width:1}</style>
         <text x="16" y="34" class="head">Option</text><text x="322" y="25" text-anchor="middle" class="head">Mobile</text><text x="322" y="42" text-anchor="middle" class="small">Android + iOS</text><text x="438" y="25" text-anchor="middle" class="head">Apple</text><text x="438" y="42" text-anchor="middle" class="small">eligible devices</text><text x="554" y="25" text-anchor="middle" class="head">Image</text><text x="554" y="42" text-anchor="middle" class="small">handwriting</text><text x="670" y="25" text-anchor="middle" class="head">Image</text><text x="670" y="42" text-anchor="middle" class="small">description</text><text x="786" y="25" text-anchor="middle" class="head">Offline</text><text x="786" y="42" text-anchor="middle" class="small">after setup</text>
         <g class="gridline"><path d="M250 54v336M380 54v336M496 54v336M612 54v336M728 54v336M844 54v336"/><path d="M10 54h834M10 96h834M10 138h834M10 180h834M10 222h834M10 264h834M10 306h834M10 348h834M10 390h834"/></g>
-        <g class="t"><text x="16" y="81">ML Kit Digital Ink</text><text x="16" y="123">PencilKit recognizer</text><text x="16" y="165">TrOCR / Kraken</text><text x="16" y="207">Apple Vision OCR</text><text x="16" y="249">Apple Foundation Models</text><text x="16" y="291">Local vision-language model</text><text x="16" y="333">Image embeddings</text><text x="16" y="375">Commercial interactive ink</text></g>
+        <g class="t"><text x="16" y="81">ML Kit Digital Ink*</text><text x="16" y="123">PencilKit recognizer</text><text x="16" y="165">TrOCR / Kraken</text><text x="16" y="207">Apple Vision OCR</text><text x="16" y="249">Apple Foundation Models</text><text x="16" y="291">Gemma / SmolVLM2</text><text x="16" y="333">Image embeddings</text><text x="16" y="375">Paid/cloud (excluded)</text></g>
         <g font-family="system-ui" font-size="21" font-weight="700" text-anchor="middle"><text x="322" y="82" class="yes">●</text><text x="438" y="82" class="some">◐</text><text x="786" y="82" class="some">◐</text>
           <text x="438" y="124" class="yes">●</text><text x="322" y="124" class="no">—</text><text x="786" y="124" class="yes">●</text>
           <text x="554" y="166" class="yes">●</text><text x="786" y="166" class="yes">●</text>
@@ -95,7 +112,7 @@
         <text x="250" y="414" class="small">● documented fit   ◐ depends on model, OS, or integration   — not the intended path</text>
       </svg>
     </div>
-    <p class="chart-note">This is a capability map, not an accuracy or speed score. “Offline after setup” may require downloading a model first. Empty cells mean the capability is not the option’s intended use.</p>
+    <p class="chart-note">This is a capability map, not an accuracy or speed score. *ML Kit Digital Ink needs a dynamically downloaded language model, so it is not offline-from-install through the documented path. Empty cells mean the capability is not the option’s intended use.</p>
   </section>
 
   <section>
@@ -103,17 +120,19 @@
     <pre class="mermaid">flowchart TD
       A[What should NoteCraft understand?]
       A -- Pen strokes already captured --> B[Digital ink recognition]
-      B -- Android or iOS --> C[Evaluate ML Kit Digital Ink]
-      B -- Apple-only path --> D[Evaluate PencilKit stroke recognition]
+      B -- Apple device --> D[Evaluate PencilKit stroke recognition]
+      B -- Android --> C[Evaluate bundled open stroke model]
+      C --> Q[Keep ML Kit as a pre-download comparator]
       A -- Text inside a picture or scan --> E{Printed or handwritten?}
-      E -- Printed --> F[On-device OCR: ML Kit or Apple Vision]
+      E -- Printed --> F[On-device OCR: bundled ML Kit or Apple Vision]
       E -- Handwritten --> G[Line detection + local HTR]
       G --> H[Measure on real scripts and page samples]
       A -- Describe what the picture depicts --> I[Local vision-language model]
       I --> J[Draft description; user can review and edit]
+      I --> R[Apple model or bundled mobile VLM]
       A -- Find similar pictures --> K[Local image embeddings]
       K --> L[Similarity search; not a text caption]
-      C --> M[Install model before offline use]
+      Q --> M[Network needed to fetch language pack]
       D --> N[On-device where supported]
       F --> O[Check language and OS coverage]
       H --> P[Expect variable handwriting quality]</pre>
@@ -137,18 +156,23 @@
     <ul class="sources">
       <li><a href="https://developers.google.com/ml-kit/vision/digital-ink-recognition">Google ML Kit Digital Ink Recognition overview</a> — inputs, mobile support, offline behavior, languages, and model download.</li>
       <li><a href="https://developers.google.com/ml-kit/vision/digital-ink-recognition/android">Google ML Kit Android guide</a> — model management and per-language download details.</li>
+      <li><a href="https://developers.google.com/ml-kit/tips/installation-paths">Google ML Kit model installation paths</a> — confirms Digital Ink uses dynamic model downloads and Android image text recognition offers a bundled path.</li>
+      <li><a href="https://developers.google.com/ml-kit/vision/text-recognition/v2/android">Google ML Kit Android Text Recognition</a> — bundled versus unbundled image OCR.</li>
       <li><a href="https://developers.google.com/ml-kit/vision/digital-ink-recognition/ios">Google ML Kit iOS guide</a> — iOS integration and model management.</li>
       <li><a href="https://developers.google.com/ml-kit/guides">Google ML Kit overview</a> — describes the SDK as free and on-device.</li>
       <li><a href="https://developer.apple.com/documentation/pencilkit/recognizing-handwriting-and-converting-to-text">Apple PencilKit handwriting recognition</a> — on-device stroke recognition.</li>
       <li><a href="https://developer.apple.com/documentation/Vision/VNRecognizeTextRequest">Apple Vision text recognition</a> — image text recognition API.</li>
       <li><a href="https://developer.apple.com/documentation/FoundationModels/analyzing-images-with-multimodal-prompting">Apple Foundation Models image prompting</a> and <a href="https://developer.apple.com/documentation/FoundationModels">framework requirements</a> — image understanding and eligible Apple Intelligence devices.</li>
       <li><a href="https://ai.google.dev/gemma/docs/integrations/mobile">Google AI Edge mobile model deployment</a> — local model deployment direction for Android and iOS.</li>
+      <li><a href="https://ai.google.dev/gemma/docs/get_started">Google Gemma model overview</a> and <a href="https://ai.google.dev/gemma/docs/gemma-3n/model_card">Gemma 3n model card</a> — image input, mobile target, open weights, and Google model terms.</li>
+      <li><a href="https://huggingface.co/HuggingFaceTB/SmolVLM2-256M-Video-Instruct">Hugging Face SmolVLM2 model card</a> — image-and-text model, Apache 2.0 checkpoint license, and accuracy cautions.</li>
+      <li><a href="https://github.com/PellelNitram/OnlineHTR">OnlineHTR</a> — open research candidate for recognizing captured stroke sequences; model/data redistribution and language quality need evaluation.</li>
       <li><a href="https://huggingface.co/microsoft/trocr-base-handwritten">Microsoft TrOCR handwritten model card</a> and <a href="https://github.com/microsoft/unilm/blob/master/trocr/README.md">TrOCR project documentation</a> — model use, evaluation scope, and license information.</li>
       <li><a href="https://github.com/mittagessen/kraken">Kraken OCR/HTR</a> — open OCR and handwriting recognition toolkit.</li>
       <li><a href="https://onnxruntime.ai/docs/tutorials/mobile/">ONNX Runtime mobile documentation</a> — local inference runtime context.</li>
     </ul>
   </section>
-  <footer>Exploratory comparison, not a product decision or implementation plan. Costs and platform availability can change; confirm current license terms, minimum OS/device requirements, and model-download behavior before selecting an option. Mermaid is loaded from jsDelivr; the comparison chart is inline SVG.</footer>
+  <footer>Exploratory comparison and working proposal, not an implementation plan or product decision. Costs and platform availability can change; confirm current license terms, minimum OS/device requirements, model sizes, and model-download behavior before selecting an option. Mermaid is loaded from jsDelivr; the comparison chart is inline SVG.</footer>
 </main>
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
