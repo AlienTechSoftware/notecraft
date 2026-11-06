@@ -89,11 +89,15 @@ fn walk(root: &Path, dir: &Path, out: &mut Scan, depth: usize) {
         }
         if kind.is_dir() {
             walk(root, &path, out, depth + 1);
-        } else if let Some(ext) = path.extension().map(|e| e.to_string_lossy().to_lowercase()) {
-            match ext.as_str() {
-                "one" => out.files.extend(section_file(&path, root)),
-                "onetoc2" | "onepkg" => out.ignored.push(path),
-                _ => {}
+        } else if let Some(name) = path.file_name().map(|name| name.to_string_lossy().to_lowercase()) {
+            if name == ".onetoc2" || name == ".onepkg" {
+                out.ignored.push(path);
+            } else if let Some(ext) = path.extension().map(|e| e.to_string_lossy().to_lowercase()) {
+                match ext.as_str() {
+                    "one" => out.files.extend(section_file(&path, root)),
+                    "onetoc2" | "onepkg" => out.ignored.push(path),
+                    _ => {}
+                }
             }
         }
     }
@@ -196,6 +200,7 @@ fn newest_key(f: &SectionFile) -> (Option<Date>, Option<SystemTime>, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notecraft_store::testing::TempDir;
 
     fn file(folders: &[&str], name: &str, date: Option<Date>, size: u64) -> SectionFile {
         SectionFile {
@@ -226,6 +231,20 @@ mod tests {
     #[test]
     fn a_name_in_arabic_survives() {
         assert_eq!(parse_file_name("ملاحظات (On 3-4-2024).one"), ("ملاحظات".to_string(), Some((2024, 3, 4))));
+    }
+
+    #[test]
+    fn dotfile_notebook_metadata_is_reported_as_ignored() {
+        let temp = TempDir::new("discover-dotfile-notebook-metadata");
+        fs::write(temp.path().join(".onetoc2"), b"synthetic toc").expect("write hidden toc fixture");
+        fs::write(temp.path().join(".onepkg"), b"synthetic package").expect("write hidden package fixture");
+
+        let scan = scan(temp.path());
+
+        assert!(scan.files.is_empty(), "metadata files are not section files");
+        assert_eq!(scan.ignored.len(), 2, "hidden metadata files are noticed");
+        assert!(scan.ignored.iter().any(|path| path.file_name().is_some_and(|name| name == ".onetoc2")));
+        assert!(scan.ignored.iter().any(|path| path.file_name().is_some_and(|name| name == ".onepkg")));
     }
 
     #[test]

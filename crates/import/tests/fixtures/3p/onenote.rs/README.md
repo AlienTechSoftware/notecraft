@@ -1,35 +1,17 @@
-# `onenote.rs` test fixtures
+# onenote.rs OneNote fixture corpus
 
-This folder recognizes the work of the [`onenote.rs` Rust OneNote parser](https://github.com/msiemens/onenote.rs) and the upstream fixture contributors credited here. Only test data is copied; no parser source code is included.
+This folder recognizes the work of the [`onenote.rs` Rust OneNote parser](https://github.com/msiemens/onenote.rs) and the fixture contributors credited by that project. Only test data is copied; no parser source code is included.
 
-The samples under `samples/` are copied unchanged from `onenote.rs` commit `de3a64e8159c684b137ded89c3fef3c17272ec1d`, preserving their upstream paths. The repository's MPL-2.0 license applies unless a fixture has a more specific notice. A copy is included as `LICENSE-MPL-2.0.txt`.
+The full upstream `crates/parser/tests/samples/` fixture set at commit `de3a64e8159c684b137ded89c3fef3c17272ec1d` is represented under `samples/`, preserving relative paths and source bytes. It contains 34 `.one` section files and 20 `.onetoc2` files. `samples/SHA256SUMS.txt` records the SHA-256 of every sample. Paths with non-ASCII characters are percent-encoded as UTF-8 in the manifest.
 
-`handwriting_recognition.one` has separate provenance recorded by OfficeIMO: it is from `onenote.rs` commit `5138a39a3f4e72b840932f9872fecde52fa9da60`, original path `crates/parser/tests/samples/handwriting_recognition.one`, under MPL-2.0.
+The onenote.rs repository is MPL-2.0. `LICENSE-MPL-2.0.txt` is included for samples without a more specific notice. The `joplin/` subtree has its own AGPL-3.0-or-later notice and full license. The `onenote-2016/` subtree has an MIT notice from OfficeDev/Interop-TestSuites. Each subfolder README describes its source and terms.
 
-The upstream `onenote-2016/OneWithFileData.one` sample is recorded as vendored from OfficeDev/Interop-TestSuites under MIT. It is excluded because binary text inspection found an email-like value. The source file is not copied.
-
-The selected files include section and `.onetoc2` samples covering page hierarchy, deleted-page/recycle-bin structure, non-legacy sections, object revisions, and handwriting. NoteCraft imports the handwriting section and currently skips the other eight `.one` files as unrecognized section files. `.onetoc2` files are reported as noticed but not imported. Tests record these limits in both output formats.
-
-The `joplin/` fixtures are excluded because they carry separate AGPL-3.0-or-later terms and need a separate license compatibility review. `Large Desktop.one` and `Large OneDrive.one` are excluded from normal CI because together they exceed 260 MB. No included source bytes were modified.
-
-## Selected sample paths
+The two large upstream samples, `Large Desktop.one` and `Large OneDrive.one`, are included unchanged through Git LFS. Their sizes and hashes are in `SHA256SUMS.txt`. They are deliberately excluded from routine CI import tests. To hydrate them for manual tests, run:
 
 ```text
-handwriting_recognition.one
-New Section 1.one
-New Section Group/New Section 1.one
-New Section Group/New Section 2.one
-New Section Group/Open Notebook.onetoc2
-OneNote_RecycleBin/OneNote_DeletedPages.one
-OneNote_RecycleBin/Open Notebook.onetoc2
-Open Notebook.onetoc2
-Schnelle Notizen.one
-non-legacy/New Section 1 2.one
-non-legacy/New Section 2.one
-non-legacy/New Section 3.one
-non-legacy/Open Notebook.onetoc2
-object-revision/Open Notebook.onetoc2
+git lfs pull --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one"
 ```
 
-Source revision: https://github.com/msiemens/onenote.rs/tree/de3a64e8159c684b137ded89c3fef3c17272ec1
-OfficeDev/Interop-TestSuites source: https://github.com/OfficeDev/Interop-TestSuites/
+The regular corpus tests exercise all smaller `.one` files and report ignored `.onetoc2` files in both HTML and CMGFM modes. The large-file checks are opt-in because each file is over 100 MB and the current importer reads a complete section before parsing. Unsupported or skipped samples are recorded as such; their presence does not claim compatibility.
+
+Source revision: https://github.com/msiemens/onenote.rs/tree/de3a64e8159c684b137ded89c3fef3c17272ec1d

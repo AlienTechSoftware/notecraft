@@ -3,7 +3,7 @@
 //! ```text
 //! check-branch          L1, before a commit: not on main, a branch name with a known prefix,
 //!                       nothing from local/, target/, my-notebooks/ or a log staged, no staged
-//!                       file over 10 MB; behind origin/main or a merge commit is a warning
+//!                       Git blob over 10 MB; behind origin/main or a merge commit is a warning
 //! check-branch --push   L2, before a push: fetches main, and being behind origin/main stops the
 //!                       push. Merge commits are allowed so integration provenance is preserved.
 //! commit-msg FILE       the commit-msg hook: a subject line `type(scope): what`, at most 72
@@ -22,12 +22,18 @@ const PREFIXES: &[&str] = &["feat/", "fix/", "docs/", "test/", "chore/", "refact
 
 const TYPES: &[&str] = &["feat", "fix", "docs", "test", "chore", "refactor", "perf", "ci", "build", "style", "revert"];
 
-/// A staged file larger than this is almost always a mistake (a build, a video, a notebook).
+/// A staged Git blob larger than this is almost always a mistake (a build, a video, a notebook).
 const LARGEST_FILE: u64 = 10 * 1024 * 1024;
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new("git").args(args).current_dir(root).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Size of the object staged for this path, rather than its possibly LFS-hydrated worktree size.
+fn staged_blob_size(root: &Path, path: &str) -> Option<u64> {
+    let spec = format!(":{path}");
+    git(root, &["cat-file", "-s", &spec])?.parse().ok()
 }
 
 pub fn branch_name_ok(name: &str) -> bool {
@@ -135,7 +141,7 @@ pub fn check_branch(root: &Path, options: &[String]) -> Result<(), String> {
         for path in git(root, &["diff", "--cached", "--name-only", "--diff-filter=AM"]).unwrap_or_default().lines().filter(|l| !l.is_empty()) {
             if let Some(why) = stray_file(path) {
                 problems.push(format!("{path} is staged: {why}. Unstage it: git restore --staged {path}"));
-            } else if std::fs::metadata(root.join(path)).is_ok_and(|m| m.len() > LARGEST_FILE) {
+            } else if staged_blob_size(root, path).is_some_and(|size| size > LARGEST_FILE) {
                 problems.push(format!("{path} is over {} MB; a file that size does not belong in git", LARGEST_FILE / 1024 / 1024));
             }
         }
@@ -155,6 +161,24 @@ pub fn check_branch(root: &Path, options: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+
+    #[test]
+    fn staged_size_uses_git_blob_instead_of_hydrated_worktree_file() {
+        let root = std::env::temp_dir().join(format!("notecraft-staged-size-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temporary repository");
+        let init = Command::new("git").args(["init", "-q"]).current_dir(&root).status().expect("git init");
+        assert!(init.success());
+        let path = root.join("large.one");
+        std::fs::write(&path, "version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nsize 20000000\n")
+            .expect("write pointer");
+        let add = Command::new("git").args(["add", "large.one"]).current_dir(&root).status().expect("git add");
+        assert!(add.success());
+        assert!(std::fs::metadata(path).is_ok_and(|metadata| metadata.len() < LARGEST_FILE));
+        assert!(staged_blob_size(&root, "large.one").is_some_and(|size| size < LARGEST_FILE));
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn branch_names_need_a_prefix() {
