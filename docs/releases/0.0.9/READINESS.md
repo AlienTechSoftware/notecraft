@@ -5,15 +5,15 @@
 | Field | Value |
 |---|---|
 | Release version | 0.0.9 |
-| Release source commit | `f44d977` plus uncommitted changes on `fix/web-demo-version-deploy-guard` |
-| Release branch or tag candidate | `fix/web-demo-version-deploy-guard`; no tag candidate set |
+| Release source commit | `171e2d5328a2cb5ce0df165ff0f6a8b896741eae` |
+| Release branch or tag candidate | `release/0.0.9`; no tag candidate set |
 | Previous release tag | Not verified in this signoff run |
 | Approved release scope reference | `docs/releases/0.0.9/RELEASE_NOTES.md` |
 | Signoff owner | NoteCraft owner |
 
-This is a local readiness snapshot, not release approval. The source tree is dirty, so the built
-files do not yet have an immutable source commit. Any artifact rebuilt after a source change needs
-new evidence and a new hash.
+This is a local readiness snapshot, not release approval. The local WASM and archive were built from
+the source tree immediately before it was committed as `171e2d5`; rebuild them from that exact commit
+in CI to establish published artifact provenance. The working tree is clean.
 
 ## Platform signoff matrix
 
@@ -50,7 +50,7 @@ upload and deployment requirements are satisfied for one immutable source commit
 | [x] | Approved version is consistent in workspace metadata and local artifacts. | PASS: version 0.0.9. Release draft consistency not rechecked in this run. |
 | [x] | Demo scripts and authored content are updated; HTML and CMGFM outputs are regenerated and parity-checked. | PASS: `cargo xtask demo both`, `cargo xtask demo-check`, and `cargo test -p notecraft-formats --test format_parity`. |
 | [x] | Both generated formats and all 13 locales are present; developer copy is refreshed. | PASS: selected-format and both-format commands completed; `my-notebooks/welcome-notebook` refreshed from each output. |
-| [x] | Formatting, lint, tests, static gates, and CI pass on the local candidate tree. | PASS: `cargo xtask ci`; `python .github/web-build/test_bundle_demo.py`; `git diff --check`. Tree remains uncommitted. |
+| [x] | Formatting, lint, tests, static gates, and CI pass on the local candidate tree. | PASS: `cargo xtask ci`; pre-commit L1 hooks; `python .github/web-build/test_bundle_demo.py`; `git diff --check`. Candidate is committed as `171e2d5`. |
 | [ ] | Coverage is run and its result is recorded. | NOT RUN. |
 | [ ] | Each platform has build, install, clean-install test, artifact, and provenance evidence. | BLOCKED: see platform matrix. |
 | [ ] | Release notes match verified scope. | NOT RUN: notes exist but have not been reconciled against merged release scope in this signoff. |
@@ -60,11 +60,10 @@ upload and deployment requirements are satisfied for one immutable source commit
 
 ## Next actions
 
-1. Finish and review the local changes, then create one immutable candidate commit after approval.
-2. Rebuild platform artifacts from that exact commit; build macOS on a macOS runner and Android
+1. Rebuild platform artifacts from `171e2d5328a2cb5ce0df165ff0f6a8b896741eae`; build macOS on a macOS runner and Android
    through its external builder.
-3. Install and launch each candidate on clean targets and verify demo provisioning and data
+2. Install and launch each candidate on clean targets and verify demo provisioning and data
    preservation.
-4. Upload the exact artifacts, deploy the website from the same source commit, and verify the
+3. Upload the exact artifacts, deploy the website from the same source commit, and verify the
    hosted demo and release draft.
-5. Run coverage and complete the remaining release checklist with immutable evidence links.
+4. Run coverage and complete the remaining release checklist with immutable evidence links.
