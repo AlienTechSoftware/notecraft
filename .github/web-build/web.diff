@@ -424,12 +424,17 @@ index 0000000..f4394fb
 +                    Box::new(move |cc| {
 +                        CTX.with(|c| c.set(cc.egui_ctx.clone()).ok());
 +                        cc.egui_ctx.add_bytes_loader(std::sync::Arc::new(Files));
-+                        let session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
-+                        // A fresh browser starts with the same bundled Welcome notebook as the desktop app.
++                        let mut session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
++                        // Give a fresh browser session a synthetic notebook to explore.
 +                        let first = !had && !invited();
++                        let sample = if first {
++                            Some(notecraft_engine::sample::create_sample(&mut session, None).map_err(|e| e.to_string())?)
++                        } else {
++                            None
++                        };
 +                        let mut app = NoteCraftApp::new(session);
-+                        if first {
-+                            app.add_welcome();
++                        if let Some(sample) = sample {
++                            app.open_path(&sample.md_page.to_string_lossy());
 +                        }
 +                        Ok(Box::new(Web { app, persist, local_settings, unsaved: None }))
 +                    }),
