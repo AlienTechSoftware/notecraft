@@ -1,65 +1,53 @@
-# NoteCraft v0.0.9 - Release Preview Draft
+# NoteCraft v0.0.9 Release Notes
 
-**Status:** Preview copy; release scope and verification are still in progress.
+## Highlights
 
-## Planned v0.0.9 focus
+- **Android:** First Android release, with thanks to [MostafaXS1](https://github.com/MostafaXS1).
+- **Infinite canvas:** Draw in open page space beyond text blocks.
+- **Languages:** Interface localization across 13 locales, with French and Spanish User Assistance.
+- **Page organization:** UI improvements for creating pages and promoting them to sub-pages.
+- **Installation:** Consistent installation across supported platforms, with the demo notebook provided as user content.
+- **Importing:** Import test dataset and preserve section colours.
 
-- Infinite canvas interaction for drawing in open page space.
-- An Android preview.
-- Continued language support work.
+## About NoteCraft
 
-These are work-in-progress goals, not a final release checklist.
+NoteCraft stores notebooks in plain folders and pages in ordinary files. Choose HTML for rich
+layout or CommonMark + GFM for readable diffs and merges. Pages and their media stay together,
+so you can use the sync and backup tools you already trust.
 
-## NoteCraft overview
+## Release preview
 
-NoteCraft keeps notebooks in plain folders and pages in ordinary files. Choose HTML for rich
-layout or CommonMark + GFM for readable diffs and merges. Your pages and their media stay
-together, so you can use the sync and backup tools you already trust.
-
-## Get started
-
-- Create a notebook.
-- Add sections and pages.
-- Choose the default page format.
-- Try attaching a picture.
-
-## Why folders?
-
-- A page and its media move together.
-- Sub-pages nest without a limit.
-- A backup is a copy.
-- Notes should outlive the app that wrote them.
-
-## Choose a page format
-
-| Format | Extension | Good for |
-| --- | --- | --- |
-| HTML | `index.html` | Rich layout |
-| CommonMark + GFM | `index.md` | Clean diffs and merges |
-
-## Rich content
-
-Inline equation: `E = mc^2`
-
-Display equation:
-
-```math
-\int_0^1 x^2\,dx = \frac{1}{3}
-```
-
-Simple page structure diagram:
-
-```mermaid
-graph TD
-  Page --> SubPage
-  Page --> Assets
-```
-
-Use code freely, and cross things out with Markdown, like ~~this~~.
-
-The release-preview GIF is generated from the Pillow script and the supplied background:
-[RELEASE_NOTES.gif](RELEASE_NOTES.gif). Rebuild it with:
+The animated preview is generated from the supplied background by the Pillow script:
+[view the release GIF](RELEASE_NOTES.gif). To regenerate it, run:
 
 ```sh
-python docs/releases/0.0.9/art/generate-release-artwork.py
+python docs/releases/0.0.9/0.0.9.py
 ```
+
+The [individual slide images](frames/01-android-release.png) are available for inspection.
+
+## Contributors
+
+Code and packaging contributions: [tanmaysinghx](https://github.com/tanmaysinghx),
+[MPro87](https://github.com/MPro87), and [rastacalavera](https://github.com/rastacalavera).
+Android application collaboration: [MostafaXS1](https://github.com/MostafaXS1).
+
+Thank you to issue reporters [AKRking](https://github.com/AKRking),
+[Christian-Espinosa](https://github.com/Christian-Espinosa), [AshOtis](https://github.com/AshOtis),
+[mgrenonville](https://github.com/mgrenonville), [Virility](https://github.com/Virility),
+[Mathew-D](https://github.com/Mathew-D), [sl-books](https://github.com/sl-books),
+[BYIIHub](https://github.com/BYIIHub), [MSTSmusic](https://github.com/MSTSmusic), and
+[Devilmayycryyy](https://github.com/Devilmayycryyy). MPro87's issue reports are included with
+their contributor credit in [the detailed credits](CONTRIBUTORS.md).
+
+See the [detailed v0.0.9 contributor credits](CONTRIBUTORS.md) for contributions and issue links,
+and the [contributor guide](https://github.com/AlienTechSoftware/notecraft/blob/main/CONTRIBUTING.md)
+to learn how to contribute.
+
+## Online
+
+- [Project profile](https://notecraft.cloud/)
+- [Reddit community](https://www.reddit.com/r/notecraftai/)
+- [Playground](https://playground.daijro.dev/head/notecraft/)
+- [GitHub repository](https://github.com/AlienTechSoftware/notecraft)
+- [Discord](https://discord.com/channels/1359579021108842617/1559147620084088982)
