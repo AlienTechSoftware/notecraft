@@ -151,6 +151,123 @@ pub fn create_untitled_page(parent: &Path, explicit: Option<PageFormat>, want_or
     create_node_inner(parent, tree::UNTITLED_PAGE, NodeKind::Page, explicit, settings, want_order, None)
 }
 
+/// Demotes a page beneath its preceding page sibling. The page folder and everything in it
+/// move together; the remaining siblings are compacted without changing their order.
+pub fn make_subpage(path: &Path) -> Result<PathBuf> {
+    let page = canonical_page(path)?;
+    let parent = page.parent().ok_or_else(|| StoreError::invalid("a page has no parent"))?;
+    let siblings = node_children(parent);
+    let index = siblings.iter().position(|sibling| sibling == &page).ok_or_else(|| StoreError::invalid("the page is not in its parent's tree"))?;
+    let previous = index
+        .checked_sub(1)
+        .and_then(|previous| siblings.get(previous))
+        .ok_or_else(|| StoreError::invalid("there is no preceding page to make this a subpage of"))?;
+    if !read_node(previous).is_some_and(|info| info.kind == NodeKind::Page) {
+        return Err(StoreError::invalid("the preceding sibling is not a page"));
+    }
+    let target_parent = previous.clone();
+    let mut target_order = node_children(&target_parent);
+    target_order.push(page.clone());
+    let target_name = unique_child(&target_parent, &tree::folder_name(&page));
+    fs::rename(&page, &target_name).map_err(|e| StoreError::io("move page", &target_name, e))?;
+    compact_orders(parent)?;
+    compact_orders_in_order(&target_order, &page, &target_name)?;
+    Ok(target_name)
+}
+
+/// Promotes a subpage to its grandparent, immediately after its former parent.
+pub fn promote_subpage(path: &Path) -> Result<PathBuf> {
+    let page = canonical_page(path)?;
+    let parent = page.parent().ok_or_else(|| StoreError::invalid("a page has no parent"))?.to_path_buf();
+    if !read_node(&parent).is_some_and(|info| info.kind == NodeKind::Page) {
+        return Err(StoreError::invalid("this page is not a subpage"));
+    }
+    let target_parent = parent.parent().ok_or_else(|| StoreError::invalid("the parent page has no parent"))?.to_path_buf();
+    if !read_node(&target_parent).is_some_and(|info| info.kind.may_contain().contains(&NodeKind::Page)) {
+        return Err(StoreError::invalid("the subpage cannot be promoted to this parent"));
+    }
+    let siblings = node_children(&target_parent);
+    let parent_index =
+        siblings.iter().position(|sibling| sibling == &parent).ok_or_else(|| StoreError::invalid("the parent page is not in its parent's tree"))?;
+    let mut desired = siblings;
+    desired.insert(parent_index + 1, page.clone());
+    let target_name = unique_child(&target_parent, &tree::folder_name(&page));
+    fs::rename(&page, &target_name).map_err(|e| StoreError::io("move page", &target_name, e))?;
+    compact_orders(&parent)?;
+    compact_orders_in_order(&desired, &page, &target_name)?;
+    Ok(target_name)
+}
+
+/// Moves a page one place among its siblings. Crossing a non-page sibling is refused so a
+/// page cannot jump over a section or group.
+pub fn move_page(path: &Path, up: bool) -> Result<PathBuf> {
+    let page = canonical_page(path)?;
+    let parent = page.parent().ok_or_else(|| StoreError::invalid("a page has no parent"))?;
+    let mut siblings = node_children(parent);
+    let index = siblings.iter().position(|sibling| sibling == &page).ok_or_else(|| StoreError::invalid("the page is not in its parent's tree"))?;
+    let adjacent = if up { index.checked_sub(1) } else { index.checked_add(1).filter(|next| *next < siblings.len()) }
+        .ok_or_else(|| StoreError::invalid("the page is already at that end of the list"))?;
+    if !read_node(&siblings[adjacent]).is_some_and(|info| info.kind == NodeKind::Page) {
+        return Err(StoreError::invalid("a page cannot be moved past a non-page sibling"));
+    }
+    siblings.swap(index, adjacent);
+    for (position, sibling) in siblings.iter().enumerate() {
+        set_node_order(sibling, u32::try_from(position).unwrap_or(u32::MAX).saturating_add(1).saturating_mul(10))?;
+    }
+    Ok(page)
+}
+
+fn canonical_page(path: &Path) -> Result<PathBuf> {
+    let page = fs::canonicalize(path).map_err(|e| StoreError::io("open", path, e))?;
+    if !read_node(&page).is_some_and(|info| info.kind == NodeKind::Page) {
+        return Err(StoreError::invalid("the selected node is not a page"));
+    }
+    Ok(page)
+}
+
+fn compact_orders(parent: &Path) -> Result<()> {
+    let children = node_children(parent);
+    for (index, child) in children.iter().enumerate() {
+        set_node_order(child, u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1).saturating_mul(10))?;
+    }
+    Ok(())
+}
+
+fn node_children(parent: &Path) -> Vec<PathBuf> {
+    child_dirs(parent).into_iter().filter(|child| read_node(child).is_some()).collect()
+}
+
+fn compact_orders_in_order(before_move: &[PathBuf], moved_before: &Path, moved_after: &Path) -> Result<()> {
+    for (index, child) in before_move.iter().enumerate() {
+        let path = if child == moved_before { moved_after } else { child };
+        set_node_order(path, u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1).saturating_mul(10))?;
+    }
+    Ok(())
+}
+
+fn set_node_order(path: &Path, order: u32) -> Result<()> {
+    if let Some((format, file)) = page_file(path) {
+        let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        let updated = match format {
+            PageFormat::Html => html::set_meta(&text, "notecraft:order", &order.to_string()),
+            PageFormat::Cmgfm => {
+                let (front, body) = frontmatter::split_front(&text);
+                format!("{}{body}", frontmatter::set_value(&front, "order", &order.to_string()))
+            }
+        };
+        return write_atomic(&file, &updated);
+    }
+    let file = path.join("_node.toml");
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let prefix = "order =";
+    let updated = if text.lines().any(|line| line.trim_start().starts_with(prefix)) {
+        kv::replace_line(&text, prefix, &format!("order = {order}"))
+    } else {
+        format!("{}{newline}order = {order}{newline}", text.trim_end(), newline = if text.contains("\r\n") { "\r\n" } else { "\n" })
+    };
+    write_atomic(&file, &updated)
+}
+
 /// Shared by `create_node_at` and `create_untitled_page`. `slug_title` names the folder;
 /// `page_title` is what is written into a page's own head, `None` leaving it out
 /// entirely. A section group or section always gets `slug_title` as its real title: only a

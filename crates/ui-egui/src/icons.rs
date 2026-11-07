@@ -24,6 +24,10 @@ pub enum Icon {
     Folder,
     /// A stack of sheets: a page that has sub-pages, shown while collapsed.
     PageStack,
+    /// An arrow showing a page moving earlier among its siblings.
+    MoveUp,
+    /// An arrow showing a page moving later among its siblings.
+    MoveDown,
     /// Angle brackets: show or hide the page source.
     Code,
     /// A magnifier: search.
@@ -461,6 +465,8 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line((9.5, 5.5), (9.5, 19.0)),
             line((14.5, 5.5), (14.5, 19.0)),
         ],
+        Icon::MoveUp => vec![line((12.0, 20.0), (12.0, 4.5)), path(&[(6.0, 10.5), (12.0, 4.5), (18.0, 10.5)])],
+        Icon::MoveDown => vec![line((12.0, 4.0), (12.0, 19.5)), path(&[(6.0, 13.5), (12.0, 19.5), (18.0, 13.5)])],
         // A plain plus.
         Icon::Plus => vec![line((12.0, 4.5), (12.0, 19.5)), line((4.5, 12.0), (19.5, 12.0))],
         // A plain minus, the companion to the plus above.
@@ -675,7 +681,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 66] = [
+    pub const ALL: [Icon; 68] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -683,6 +689,8 @@ mod tests {
         Icon::Page,
         Icon::Folder,
         Icon::PageStack,
+        Icon::MoveUp,
+        Icon::MoveDown,
         Icon::Code,
         Icon::Search,
         Icon::FullPage,

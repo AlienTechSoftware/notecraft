@@ -501,6 +501,7 @@ enum Act {
     Add(PathBuf, NodeKind),
     /// A page in this section at this place in the order, from the line between two pages.
     AddPageAt(PathBuf, u32),
+    NewPage(PathBuf),
     /// Add a child of this kind, named in the menu rather than chosen in the dialog.
     AddKind(PathBuf, NodeKind, NodeKind),
     /// A notebook, from the menu on the empty space.
@@ -512,6 +513,11 @@ enum Act {
     /// Ask the system for the folder to work from.
     ChooseRoot,
     Rename(PathBuf, String),
+    MakeSubpage(PathBuf),
+    PromoteSubpage(PathBuf),
+    MovePageUp(PathBuf),
+    MovePageDown(PathBuf),
+    PageVersions(PathBuf),
     Delete(PathBuf, String, usize),
     Color(PathBuf, Option<NodeColor>),
     /// Show the node's folder in the operating system's file manager.
@@ -1105,6 +1111,92 @@ impl NoteCraftApp {
         }
     }
 
+    fn reparent_page(&mut self, path: &Path, command: &str) {
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
+        let Some(Output::Path(new_path)) = self.run(command, &params(&[("path", &path_str(path))])) else { return };
+        self.nav.relocate(path, &new_path);
+        let remap = |candidate: &Path| candidate.strip_prefix(path).map_or_else(|_| candidate.to_path_buf(), |suffix| new_path.join(suffix));
+        self.open = self.open.iter().map(|branch| remap(branch)).collect();
+        self.selected = self.selected.as_deref().map(remap);
+        if let Some(editor_path) = editor_path.filter(|editor_path| editor_path.starts_with(path)) {
+            let relocated = remap(&editor_path);
+            self.open_page_inner(&relocated);
+        }
+    }
+
+    fn create_page_in(&mut self, parent: &Path) {
+        if let Some(Output::Path(page)) = self.run("node.create", &params(&[("parent", &path_str(parent)), ("kind", "page")])) {
+            self.open_page(&page);
+            self.say(crate::tl_id!("ui.new_page"));
+        }
+    }
+
+    fn show_page_versions(&mut self, page: &Path) {
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let p = params(&[("path", &path_str(page))]);
+        if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
+            self.dialog = Some(Dialog::PageVersions { page: page.to_path_buf(), versions });
+        }
+    }
+
+    fn can_move_page(path: &Path, up: bool) -> bool {
+        let Some(parent) = path.parent() else { return false };
+        let siblings: Vec<_> =
+            notecraft_store::tree::child_dirs(parent).into_iter().filter(|sibling| notecraft_store::tree::read_node(sibling).is_some()).collect();
+        let Some(index) = siblings.iter().position(|sibling| sibling == path) else { return false };
+        let adjacent = if up { index.checked_sub(1) } else { index.checked_add(1).filter(|next| *next < siblings.len()) };
+        adjacent
+            .and_then(|adjacent| siblings.get(adjacent))
+            .and_then(|sibling| notecraft_store::tree::read_node(sibling))
+            .is_some_and(|info| info.kind == NodeKind::Page)
+    }
+
+    fn can_make_subpage(path: &Path) -> bool {
+        let Some(parent) = path.parent() else { return false };
+        let siblings: Vec<_> =
+            notecraft_store::tree::child_dirs(parent).into_iter().filter(|sibling| notecraft_store::tree::read_node(sibling).is_some()).collect();
+        let Some(index) = siblings.iter().position(|sibling| sibling == path) else { return false };
+        index
+            .checked_sub(1)
+            .and_then(|previous| siblings.get(previous))
+            .and_then(|previous| notecraft_store::tree::read_node(previous))
+            .is_some_and(|info| info.kind == NodeKind::Page)
+    }
+
+    fn can_promote_subpage(path: &Path) -> bool {
+        path.parent().and_then(notecraft_store::tree::read_node).is_some_and(|info| info.kind == NodeKind::Page)
+    }
+
+    fn hierarchy_keys(&mut self, ctx: &Context) {
+        if ctx.egui_wants_keyboard_input() || self.dialog.is_some() || self.backstage.is_some() {
+            return;
+        }
+        let Some(page) = self.selected.clone().filter(|path| notecraft_store::tree::read_node(path).is_some_and(|info| info.kind == NodeKind::Page))
+        else {
+            return;
+        };
+        if ctx.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::N)) {
+            if let Some(parent) = page.parent() {
+                self.create_page_in(parent);
+            }
+            return;
+        }
+        let is_macos = cfg!(target_os = "macos");
+        let mods = Modifiers { ctrl: !is_macos, alt: true, mac_cmd: is_macos, command: true, ..Modifiers::NONE };
+        if Self::can_make_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::CloseBracket)) {
+            self.reparent_page(&page, "node.demote");
+        } else if Self::can_promote_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::OpenBracket)) {
+            self.reparent_page(&page, "node.promote");
+        }
+    }
+
     // ---------- page open, save ----------
 
     fn open_page(&mut self, dir: &Path) {
@@ -1539,7 +1631,23 @@ impl NoteCraftApp {
                     self.say(crate::tl_id!("ui.new_page"));
                 }
             }
+            Act::NewPage(parent) => self.create_page_in(&parent),
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
+            Act::MakeSubpage(path) => self.reparent_page(&path, "node.demote"),
+            Act::PromoteSubpage(path) => self.reparent_page(&path, "node.promote"),
+            Act::MovePageUp(path) => {
+                if let Some(Output::Path(path)) = self.run("node.move_up", &params(&[("path", &path_str(&path))])) {
+                    self.selected = Some(path.clone());
+                    self.session.refresh();
+                }
+            }
+            Act::MovePageDown(path) => {
+                if let Some(Output::Path(path)) = self.run("node.move_down", &params(&[("path", &path_str(&path))])) {
+                    self.selected = Some(path.clone());
+                    self.session.refresh();
+                }
+            }
+            Act::PageVersions(path) => self.show_page_versions(&path),
             Act::Delete(path, title, count) => self.dialog = Some(Dialog::Delete { path, title, count }),
             Act::Color(path, color) => {
                 let value = color.map_or("none", NodeColor::id);
@@ -1652,6 +1760,14 @@ impl NoteCraftApp {
             }
         }
         resp.context_menu(|ui| {
+            let new_page_label = if cfg!(target_os = "macos") { crate::tl_id!("ui.new_page_cmd_n") } else { crate::tl_id!("ui.new_page_ctrl_n") };
+            if node.info.kind == NodeKind::Page
+                && let Some(parent) = node.path.parent()
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), new_page_label, t).clicked()
+            {
+                acts.push(Act::NewPage(parent.to_path_buf()));
+                ui.close();
+            }
             // What this node may hold, named in full rather than left to the dialog: a
             // notebook and a group take sections and groups, a section takes pages, and a
             // page takes sub-pages.
@@ -1659,8 +1775,8 @@ impl NoteCraftApp {
                 let label = match kind {
                     NodeKind::SectionGroup => "New section group...",
                     NodeKind::Section => "New section...",
-                    NodeKind::Page if node.info.kind == NodeKind::Page => "New sub-page...",
-                    NodeKind::Page => "New page...",
+                    NodeKind::Page if node.info.kind == NodeKind::Page => crate::tl_id!("ui.add_a_sub_page"),
+                    NodeKind::Page => crate::tl_id!("ui.add_page"),
                     NodeKind::Notebook => "New notebook...",
                 };
                 let icon = match kind {
@@ -1671,6 +1787,45 @@ impl NoteCraftApp {
                 };
                 if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
                     acts.push(Act::AddKind(node.path.clone(), node.info.kind, *kind));
+                    ui.close();
+                }
+            }
+            if node.info.kind == NodeKind::Page
+                && (Self::can_make_subpage(&node.path)
+                    || Self::can_promote_subpage(&node.path)
+                    || Self::can_move_page(&node.path, true)
+                    || Self::can_move_page(&node.path, false))
+            {
+                floating::menu_separator(ui, t);
+                if Self::can_make_subpage(&node.path)
+                    && floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentMore)), crate::tl_id!("ui.make_subpage"), t)
+                        .clicked()
+                {
+                    acts.push(Act::MakeSubpage(node.path.clone()));
+                    ui.close();
+                }
+                if Self::can_promote_subpage(&node.path)
+                    && floating::menu_row(
+                        ui,
+                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentLess)),
+                        crate::tl_id!("ui.promote_subpage"),
+                        t,
+                    )
+                    .clicked()
+                {
+                    acts.push(Act::PromoteSubpage(node.path.clone()));
+                    ui.close();
+                }
+                if Self::can_move_page(&node.path, true)
+                    && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveUp)), crate::tl_id!("ui.move_up"), t).clicked()
+                {
+                    acts.push(Act::MovePageUp(node.path.clone()));
+                    ui.close();
+                }
+                if Self::can_move_page(&node.path, false)
+                    && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_down"), t).clicked()
+                {
+                    acts.push(Act::MovePageDown(node.path.clone()));
                     ui.close();
                 }
             }
@@ -1689,7 +1844,13 @@ impl NoteCraftApp {
                 && floating::menu_row(
                     ui,
                     Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
-                    if open { crate::tl_id!("ui.collapse") } else { crate::tl_id!("ui.expand") },
+                    if node.info.kind == NodeKind::Page {
+                        if open { crate::tl_id!("ui.collapse_subpages") } else { crate::tl_id!("ui.expand_subpages") }
+                    } else if open {
+                        crate::tl_id!("ui.collapse")
+                    } else {
+                        crate::tl_id!("ui.expand")
+                    },
                     t,
                 )
                 .clicked()
@@ -1731,6 +1892,12 @@ impl NoteCraftApp {
                 .clicked()
             {
                 acts.push(Act::Reveal(node.path.clone()));
+                ui.close();
+            }
+            if node.info.kind == NodeKind::Page
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::PageStack)), crate::tl_id!("ui.page_versions_2"), t).clicked()
+            {
+                acts.push(Act::PageVersions(node.path.clone()));
                 ui.close();
             }
             floating::menu_separator(ui, t);
@@ -4149,7 +4316,8 @@ impl NoteCraftApp {
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        if ui.button(crate::tl_id!("ui.add_page")).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
+                        let add_page = egui::Button::new(crate::tl_id!("ui.add_page")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
+                        if ui.add(add_page).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
                             acts.push(Act::Add(path.clone(), NodeKind::Section));
                         }
                     });
@@ -6067,6 +6235,7 @@ impl NoteCraftApp {
         }
         self.nav_keys(ctx);
         self.direction_keys(ctx);
+        self.hierarchy_keys(ctx);
         self.restore_last_page();
         self.attach_dropped(ctx);
         // The File screen takes the whole window while it is open, as it does in Office.

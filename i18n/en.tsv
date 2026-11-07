@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	Code, in one line
 @id	ui.collapse	Collapse
 @id	ui.collapse_all	Collapse all
+@id	ui.collapse_subpages	Collapse Subpages
 @id	ui.college	College
 @id	ui.college_ruled	College ruled
 @id	ui.colour	Colour
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	Every paragraph decides for itself
 @id	ui.expand	Expand
 @id	ui.expand_all	Expand all
+@id	ui.expand_subpages	Expand Subpages
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Export creates a user-selected ZIP, then removes the exported session folder.
 @id	ui.export_current_session_zip	Export current session ZIP
 @id	ui.export_telemetry_zip	Export telemetry ZIP
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	Logging folder: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Logs and telemetry stay on this device. NoteCraft does not send them automatically.
 @id	ui.magenta	Magenta
+@id	ui.make_subpage	Make Subpage
 @id	ui.make_the_page_larger	Make the page larger
 @id	ui.make_the_page_smaller	Make the page smaller
 @id	ui.many_thanks_to_its_authors_and_contributors	— many thanks to its authors and contributors.
@@ -370,10 +373,12 @@
 @id	ui.more_colours	More Colours
 @id	ui.more_styles	More styles
 @id	ui.more_tags	More tags
+@id	ui.move_down	Move Down
 @id	ui.move_left	Move Left
 @id	ui.move_right	Move Right
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?
 @id	ui.move_to_recycle_bin	Move to recycle bin
+@id	ui.move_up	Move Up
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Moved {moved} strokes from this page's old drawing onto the page itself
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	Moved {moved} strokes onto the page; {left} old drawing files could not be removed
 @id	ui.moved_to_the_notebook_recycle_bin	Moved to the notebook recycle bin
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	New notebook...
 @id	ui.new_page	New page
 @id	ui.new_page_2	New page...
+@id	ui.new_page_cmd_n	New Page (Cmd+N)
+@id	ui.new_page_ctrl_n	New Page (Ctrl+N)
 @id	ui.new_pages	New pages:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	New pages use {format} unless the notebook or section says otherwise
 @id	ui.new_quick_note	New quick note
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	Printout is available for PDF and Office documents.
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Privacy is our top priority. All logs and telemetry stay on this device. NoteCraft never sends them automatically.
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Privacy is our top priority. Logs and telemetry stay on this device. NoteCraft does not send them to us.
+@id	ui.promote_subpage	Promote Subpage
 @id	ui.purple	Purple
 @id	ui.put_a_sheet_to_draw_on_into_the_page	Put a sheet to draw on into the page
 @id	ui.put_another_tool_on_the_rack	Put another tool on the rack

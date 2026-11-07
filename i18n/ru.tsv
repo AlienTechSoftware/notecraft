@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	Код, в одну строку
 @id	ui.collapse	Свернуть
 @id	ui.collapse_all	Свернуть все
+@id	ui.collapse_subpages	Свернуть подстраницы
 @id	ui.college	Колледж
 @id	ui.college_ruled	Правила колледжа
 @id	ui.colour	Цвет
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	Каждый абзац решает сам за себя
 @id	ui.expand	Развернуть
 @id	ui.expand_all	Развернуть все
+@id	ui.expand_subpages	Развернуть подстраницы
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Экспорт создаёт ZIP-архив по выбору пользователя, затем удаляет папку экспортированной сессии.
 @id	ui.export_current_session_zip	Экспортировать текущую сессию в ZIP
 @id	ui.export_telemetry_zip	Экспортировать телеметрию в ZIP
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	Папка журналов: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Журналы и телеметрия остаются на этом устройстве. NoteCraft не отправляет их автоматически.
 @id	ui.magenta	Маджента
+@id	ui.make_subpage	Сделать подстраницей
 @id	ui.make_the_page_larger	Увеличить страницу
 @id	ui.make_the_page_smaller	Уменьшить страницу
 @id	ui.many_thanks_to_its_authors_and_contributors	— большое спасибо авторам и участникам.
@@ -370,10 +373,12 @@
 @id	ui.more_colours	Больше цветов
 @id	ui.more_styles	Больше стилей
 @id	ui.more_tags	Больше тегов
+@id	ui.move_down	Переместить вниз
 @id	ui.move_left	Сдвинуть влево
 @id	ui.move_right	Сдвинуть вправо
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	Переместить «{title}» и всё содержимое ({n} элемент) в корзину этого блокнота?|Переместить «{title}» и всё содержимое ({n} элементы) в корзину этого блокнота?
 @id	ui.move_to_recycle_bin	В корзину
+@id	ui.move_up	Переместить вверх
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Штрихи {moved} со старого рисунка этой страницы перенесены на саму страницу
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	Штрихи {moved} перенесены на страницу; старые файлы рисунков {left} не удалось удалить
 @id	ui.moved_to_the_notebook_recycle_bin	Перемещено в корзину блокнота
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	Новый блокнот...
 @id	ui.new_page	Новая страница
 @id	ui.new_page_2	Новая страница...
+@id	ui.new_page_cmd_n	Новая страница (Cmd+N)
+@id	ui.new_page_ctrl_n	Новая страница (Ctrl+N)
 @id	ui.new_pages	Создано страниц:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	Новые страницы используют {format}, если блокнот или раздел не указывают иное
 @id	ui.new_quick_note	Новая быстрая заметка
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	Печать доступна для PDF и документов Office.
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Конфиденциальность — наш главный приоритет. Все журналы и телеметрия остаются на этом устройстве. NoteCraft никогда не отправляет их автоматически.
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Конфиденциальность — наш главный приоритет. Журналы и телеметрия остаются на этом устройстве. NoteCraft не отправляет их нам.
+@id	ui.promote_subpage	Повысить подстраницу
 @id	ui.purple	Фиолетовый
 @id	ui.put_a_sheet_to_draw_on_into_the_page	Добавить лист для рисования на страницу
 @id	ui.put_another_tool_on_the_rack	Добавить ещё один инструмент в панель

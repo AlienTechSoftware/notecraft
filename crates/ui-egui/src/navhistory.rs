@@ -18,6 +18,14 @@ pub struct NavHistory {
 }
 
 impl NavHistory {
+    /// Update visits whose page folder was moved, including visits to its child pages.
+    pub fn relocate(&mut self, from: &Path, to: &Path) {
+        let remap = |page: &PathBuf| page.strip_prefix(from).map_or_else(|_| page.clone(), |suffix| to.join(suffix));
+        self.back.iter_mut().for_each(|page| *page = remap(page));
+        self.forward.iter_mut().for_each(|page| *page = remap(page));
+        self.current = self.current.as_ref().map(remap);
+    }
+
     /// A page was opened by hand. Opening the page that is already showing changes nothing.
     pub fn visit(&mut self, page: &Path) {
         if self.current.as_deref() == Some(page) {

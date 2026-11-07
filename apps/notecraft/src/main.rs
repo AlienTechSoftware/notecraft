@@ -262,7 +262,6 @@ mod tests {
 
     #[test]
     #[cfg(not(target_os = "windows"))]
-    #[test]
     fn a_windows_saved_path_is_not_used_on_linux() {
         let settings = Settings::at(std::env::temp_dir().join("notecraft-windows-saved-path.toml"));
         settings.set("last_notebooks_root", r"C:\Notes").expect("save Windows path");

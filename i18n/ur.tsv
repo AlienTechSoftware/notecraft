@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	کوڈ، ایک لائن میں
 @id	ui.collapse	سکیڑیں
 @id	ui.collapse_all	سب کو سکڑائیں
+@id	ui.collapse_subpages	ذیلی صفحات سمیٹیں
 @id	ui.college	کالج
 @id	ui.college_ruled	کالج رولڈ
 @id	ui.colour	رنگ
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	ہر پیراگراف خود فیصلہ کرتا ہے
 @id	ui.expand	پھیلائیں
 @id	ui.expand_all	سب کو پھیلائیں
+@id	ui.expand_subpages	ذیلی صفحات پھیلائیں
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	ایکسپورٹ صارف کے منتخب کردہ ZIP بناتا ہے، پھر ایکسپورٹ شدہ سیشن فولڈر کو ہٹا دیتا ہے۔
 @id	ui.export_current_session_zip	موجودہ سیشن ZIP ایکسپورٹ کریں
 @id	ui.export_telemetry_zip	ٹیلمیٹری ZIP ایکسپورٹ کریں
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	لاگنگ فولڈر: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	لاگز اور ٹیلی میٹری اس ڈیوائس پر ہی رہتے ہیں۔ NoteCraft انہیں خود بخود نہیں بھیجتا۔
 @id	ui.magenta	میجنٹا
+@id	ui.make_subpage	ذیلی صفحہ بنائیں
 @id	ui.make_the_page_larger	صفحے کو بڑا کریں
 @id	ui.make_the_page_smaller	صفحے کو چھوٹا کریں
 @id	ui.many_thanks_to_its_authors_and_contributors	— اس کے مصنفین اور تعاون کرنے والوں کا بہت بہت شکریہ۔
@@ -370,10 +373,12 @@
 @id	ui.more_colours	مزید رنگ
 @id	ui.more_styles	مزید اسٹائلز
 @id	ui.more_tags	مزید ٹیگز
+@id	ui.move_down	نیچے لے جائیں
 @id	ui.move_left	بائیں طرف منتقل کریں
 @id	ui.move_right	دائیں طرف منتقل کریں
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	کیا "{title}" اور اس کے اندر موجود سب کچھ ({n} آئٹم) اس نوٹ بک کے ری سائیکل بین میں منتقل کیا جائے؟|کیا "{title}" اور اس کے اندر موجود سب کچھ ({n} آئٹمز) اس نوٹ بک کے ری سائیکل بین میں منتقل کیا جائے؟
 @id	ui.move_to_recycle_bin	ری سائیکل بین میں منتقل کریں
+@id	ui.move_up	اوپر لے جائیں
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	{moved} اسٹروکس اس صفحے کے پرانے ڈرائنگ سے صفحے پر منتقل کر دیے گئے
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} اسٹروکس صفحے پر منتقل کر دیے گئے؛ {left} پرانے ڈرائنگ فائلز کو حذف نہیں کیا جا سکا
 @id	ui.moved_to_the_notebook_recycle_bin	نوٹ بک کے ری سائیکل بین میں منتقل کر دیا گیا
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	نئی نوٹ بک...
 @id	ui.new_page	نیا صفحہ
 @id	ui.new_page_2	نیا صفحہ...
+@id	ui.new_page_cmd_n	نیا صفحہ (Cmd+N)
+@id	ui.new_page_ctrl_n	نیا صفحہ (Ctrl+N)
 @id	ui.new_pages	نئے صفحات:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	نئے صفحات {format} استعمال کرتے ہیں، سوائے اس کے کہ نوٹ بک یا سیکشن میں کوئی اور ہدایت ہو
 @id	ui.new_quick_note	نیا فوری نوٹ
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	پرنٹ آؤٹ PDF اور آفس دستاویزات کے لیے دستیاب ہے۔
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	رازداری ہماری سب سے بڑی ترجیح ہے۔ تمام لاگز اور ٹیلی میٹری اس ڈیوائس پر رہتی ہیں۔ NoteCraft انہیں کبھی خودکار طور پر نہیں بھیجتا۔
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	رازداری ہماری سب سے بڑی ترجیح ہے۔ لاگز اور ٹیلی میٹری اس ڈیوائس پر رہتی ہیں۔ NoteCraft انہیں ہمیں نہیں بھیجتا۔
+@id	ui.promote_subpage	ذیلی صفحہ اوپر لائیں
 @id	ui.purple	جامنی
 @id	ui.put_a_sheet_to_draw_on_into_the_page	صفحے میں کھچنے کے لیے شیٹ رکھیں
 @id	ui.put_another_tool_on_the_rack	رک پر ایک اور ٹول رکھیں
