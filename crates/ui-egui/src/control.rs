@@ -288,9 +288,18 @@ mod tests {
     #[test]
     fn an_over_long_line_is_refused() {
         let (server, _h, _dir) = echo_server("ctl5");
-        let long = format!(r#"{{"method":"x","pad":"{}"}}"#, "a".repeat(MAX_LINE));
-        let replies = talk(server.port, &[long]);
-        assert_eq!(replies[0]["error"], "line too long");
+        let mut stream = TcpStream::connect(("127.0.0.1", server.port)).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+
+        // Send exactly the byte at which the server rejects the line. Sending extra bytes
+        // lets the server close while the client is still writing, which races on macOS.
+        stream.write_all(&vec![b'a'; MAX_LINE + 1]).expect("write over-long line");
+
+        let mut response = String::new();
+        assert_ne!(reader.read_line(&mut response).expect("read response"), 0, "server replies before closing");
+        let response: Value = serde_json::from_str(&response).expect("JSON response");
+        assert_eq!(response["error"], "line too long");
     }
 
     #[test]
