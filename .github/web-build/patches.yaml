@@ -185,9 +185,6 @@
 - file: crates/ui-egui/src/history.rs
   find: '(?![\s\S])'
   after: "\n// Playground's browser build: the clock (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
-- file: crates/engine/src/welcome.rs
-  find: '(?![\s\S])'
-  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
 - file: crates/store/src/links.rs
   find: '(?![\s\S])'
   after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
