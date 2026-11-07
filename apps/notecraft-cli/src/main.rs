@@ -163,8 +163,10 @@ fn import_onenote(root: &Path, mut args: Vec<String>) -> Result<(String, bool), 
     options.all_versions = all_versions;
     options.dry_run = dry_run;
     let mut progress = |e: &Event| match e {
-        Event::Found { sections, copies_skipped, ignored } => {
-            eprintln!("found {sections} sections ({copies_skipped} older copies left out, {ignored} other OneNote files noticed)")
+        Event::Found { sections, copies_skipped, tocs_read, ignored } => {
+            eprintln!(
+                "found {sections} sections ({copies_skipped} older copies left out, {tocs_read} notebook TOCs read, {ignored} packages noticed)"
+            )
         }
         Event::Section { index, total, label } => eprintln!("[{index}/{total}] {label}"),
         Event::Done => {}

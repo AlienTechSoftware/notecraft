@@ -1,6 +1,6 @@
 # Known gaps and risks
 
-Last reviewed: 2026-10-17. An honest list of what is missing or unproven. Remove an item when
+Last reviewed: 2026-11-06. An honest list of what is missing or unproven. Remove an item when
 it is fixed and tested, not when it is promised.
 
 ## Product
@@ -22,10 +22,11 @@ it is fixed and tested, not when it is promised.
   (owner's decision, 2026-10-17). `notecraft-cli import onenote` turns a folder of `.one`
   section files into notebooks, section groups, sections, pages and sub-pages, with pictures
   and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
-  `docs/research/onenote-file-format/real-files.md`). Missing: ink, tags, page dates, the
-  notebook table of contents (`.onetoc2`, so section order and colours), `.onepkg` packages,
-  password-protected sections, and an import command in the window. Underline and equation
-  structure have nowhere to go in the page formats.
+  `docs/research/onenote-file-format/real-files.md`). Notebook and section colors are read from
+  `.onetoc2` when available and section colors from `.one` metadata; arbitrary source colors
+  map lossily to NoteCraft's named palette. Still missing: section order, ink, tags, page dates,
+  `.onepkg` packages, password-protected sections, and an import command in the window.
+  Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
   one version, and a smaller engine of our own is the fallback. Arabic, Hebrew and Chinese inside

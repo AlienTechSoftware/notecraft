@@ -215,22 +215,29 @@ fn parse_ifndf(reference: &str) -> Option<Guid> {
 
 /// Reads the header and checks that this is a `.one` section file.
 pub fn read_header(data: &[u8]) -> Result<Header> {
+    read_header_inner(data, false)
+}
+
+fn read_header_inner(data: &[u8], allow_toc: bool) -> Result<Header> {
     if (data.len() as u64) < HEADER_SIZE {
-        return Err(OneError::NotASection(format!("the file is only {} bytes", data.len())));
+        let message = format!("the file is only {} bytes", data.len());
+        return Err(if allow_toc { OneError::NotAToc(message) } else { OneError::NotASection(message) });
     }
     let mut r = Reader::new(data, "the header");
     let file_type = Guid(r.guid()?);
     let file = Guid(r.guid()?);
     let _legacy = r.guid()?;
     let format = Guid(r.guid()?);
-    if file_type == FILE_TYPE_TOC {
+    if file_type == FILE_TYPE_TOC && !allow_toc {
         return Err(OneError::NotesetFile);
     }
-    if file_type != FILE_TYPE_ONE {
-        return Err(OneError::NotASection(format!("the file starts with {file_type}")));
+    if file_type != FILE_TYPE_ONE && !(allow_toc && file_type == FILE_TYPE_TOC) {
+        let message = format!("the file starts with {file_type}");
+        return Err(if allow_toc { OneError::NotAToc(message) } else { OneError::NotASection(message) });
     }
     if format != FILE_FORMAT {
-        return Err(OneError::NotASection(format!("unknown format {format}")));
+        let message = format!("unknown format {format}");
+        return Err(if allow_toc { OneError::NotAToc(message) } else { OneError::NotASection(message) });
     }
     r.skip(16)?; // four version codes
     r.skip(16)?; // legacy free chunk list and transaction log
@@ -254,10 +261,18 @@ fn chunk_ref64x32(r: &mut Reader<'_>) -> Result<ChunkRef> {
 
 /// Reads a whole `.one` file.
 pub fn read(data: &[u8]) -> Result<Store> {
+    read_store(data, false)
+}
+
+pub(crate) fn read_toc_store(data: &[u8]) -> Result<Store> {
+    read_store(data, true)
+}
+
+fn read_store(data: &[u8], allow_toc: bool) -> Result<Store> {
     if data.len() as u64 > MAX_FILE {
         return Err(OneError::TooLarge(data.len() as u64));
     }
-    let header = read_header(data)?;
+    let header = read_header_inner(data, allow_toc)?;
     let mut w = Walk { data, limits: Limits::default(), counts: BTreeMap::new(), file_data: BTreeMap::new() };
     w.counts = transaction_counts(data, header).unwrap_or_default();
     let mut spaces: Vec<ObjectSpace> = Vec::new();
@@ -643,6 +658,7 @@ fn string_in_storage(r: &mut Reader<'_>) -> Result<String> {
 }
 
 #[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
 pub mod build {
     //! A builder for synthetic `.one` files, so the tests do not need a real notebook (the
     //! owner's files hold personal data and stay off the repository).
@@ -658,6 +674,8 @@ pub mod build {
         pub data: Vec<u8>,
         next_list: u32,
         counts: Vec<(u32, u32)>,
+        file_type: Guid,
+        file_identity: Guid,
     }
 
     pub struct Decl {
@@ -675,7 +693,13 @@ pub mod build {
 
     impl One {
         pub fn new() -> One {
-            One { data: vec![0; HEADER_SIZE as usize], next_list: 0x10, counts: Vec::new() }
+            One {
+                data: vec![0; HEADER_SIZE as usize],
+                next_list: 0x10,
+                counts: Vec::new(),
+                file_type: FILE_TYPE_ONE,
+                file_identity: Self::guid(0x77),
+            }
         }
 
         fn put(&mut self, bytes: &[u8]) -> ChunkRef {
@@ -781,36 +805,44 @@ pub mod build {
             self.space_with(gosid, decls, root_oid, false)
         }
 
+        /// An object space with content and metadata roots.
+        pub fn space_with_metadata(&mut self, gosid: u8, decls: &[Decl], root_oid: u32, metadata_oid: u32, extra_ids: &[u32]) -> ChunkRef {
+            let group = self.group_with_ids(decls, extra_ids);
+            self.space_from_group(gosid, group, &[(root_oid, 1), (metadata_oid, 2)], false)
+        }
+
         /// One object space whose objects reference other object spaces by compact id.
         pub fn space_ids(&mut self, gosid: u8, decls: &[Decl], root_oid: u32, extra_ids: &[u32]) -> ChunkRef {
             let group = self.group_with_ids(decls, extra_ids);
-            self.space_from_group(gosid, group, root_oid, false)
+            self.space_from_group(gosid, group, &[(root_oid, 1)], false)
         }
 
         /// An object space with synthetic inserted files referenced by its properties.
         pub fn space_with_files(&mut self, gosid: u8, decls: &[Decl], files: &[FileDecl], root_oid: u32, extra_ids: &[u32]) -> ChunkRef {
             let group = self.group_with_files(decls, files, extra_ids);
-            self.space_from_group(gosid, group, root_oid, false)
+            self.space_from_group(gosid, group, &[(root_oid, 1)], false)
         }
 
         /// The same, with the revision manifest's encryption flag set: a protected section.
         pub fn space_with(&mut self, gosid: u8, decls: &[Decl], root_oid: u32, encrypted: bool) -> ChunkRef {
             let group = self.group(decls);
-            self.space_from_group(gosid, group, root_oid, encrypted)
+            self.space_from_group(gosid, group, &[(root_oid, 1)], encrypted)
         }
 
-        fn space_from_group(&mut self, gosid: u8, group: ChunkRef, root_oid: u32, encrypted: bool) -> ChunkRef {
+        fn space_from_group(&mut self, gosid: u8, group: ChunkRef, roots: &[(u32, u32)], encrypted: bool) -> ChunkRef {
             let mut manifest = Vec::new();
             manifest.extend_from_slice(&Self::egid(gosid)); // rid
             manifest.extend_from_slice(&[0; 20]); // no dependency
             manifest.extend_from_slice(&1u32.to_le_bytes()); // role 1
             manifest.extend_from_slice(&if encrypted { 2u16 } else { 0 }.to_le_bytes());
-            let mut root = Self::guid((root_oid >> 8) as u8).0.to_vec();
-            root.extend_from_slice(&(root_oid & 0xFF).to_le_bytes());
-            root.extend_from_slice(&1u32.to_le_bytes()); // role 1
             let mut revision_nodes = vec![One::node(0x014, 0, None, &Self::egid(gosid)), One::node(0x01E, 0, None, &manifest)];
             revision_nodes.push(One::node(0x0B0, 2, Some(group), &Self::egid(9)));
-            revision_nodes.push(One::node(0x05A, 0, None, &root));
+            for (root_oid, role) in roots {
+                let mut root = Self::guid((root_oid >> 8) as u8).0.to_vec();
+                root.extend_from_slice(&(root_oid & 0xFF).to_le_bytes());
+                root.extend_from_slice(&role.to_le_bytes());
+                revision_nodes.push(One::node(0x05A, 0, None, &root));
+            }
             revision_nodes.push(One::node(0x01C, 0, None, &[]));
             let revisions = self.fragment(revision_nodes);
             let space_nodes = vec![One::node(0x00C, 0, None, &Self::egid(gosid)), One::node(0x010, 2, Some(revisions), &[])];
@@ -856,8 +888,8 @@ pub mod build {
             let log_ref = self.put(&log);
 
             let mut h = Vec::with_capacity(HEADER_SIZE as usize);
-            h.extend_from_slice(&FILE_TYPE_ONE.0);
-            h.extend_from_slice(&Self::guid(0x77).0);
+            h.extend_from_slice(&self.file_type.0);
+            h.extend_from_slice(&self.file_identity.0);
             h.extend_from_slice(&[0; 16]);
             h.extend_from_slice(&FILE_FORMAT.0);
             for _ in 0..4 {
@@ -897,6 +929,8 @@ pub mod build {
     #[derive(Default)]
     pub struct OneNote {
         pages: Vec<(String, u8, Vec<Line>, Vec<Attachment>)>,
+        color: Option<u32>,
+        identity: u8,
     }
 
     /// Synthetic picture or attached file on a page.
@@ -947,7 +981,23 @@ pub mod build {
 
     impl OneNote {
         pub fn new() -> OneNote {
-            OneNote::default()
+            OneNote { pages: Vec::new(), color: None, identity: 0x77 }
+        }
+
+        /// Gives a synthetic section a notebook-format identity for TOC matching tests.
+        pub fn with_identity(mut self, identity: u8) -> OneNote {
+            self.identity = identity;
+            self
+        }
+
+        /// Adds a synthetic section metadata color.
+        pub fn with_color(mut self, color: u32) -> OneNote {
+            self.color = Some(color);
+            self
+        }
+
+        pub fn file_identity(identity: u8) -> Guid {
+            One::guid(identity)
         }
 
         pub fn line(text: &str) -> Line {
@@ -1002,6 +1052,7 @@ pub mod build {
         /// Writes the file.
         pub fn finish(self) -> Vec<u8> {
             let mut one = One::new();
+            one.file_identity = One::guid(self.identity);
             let mut spaces = Vec::new();
             // One object space per page: manifest, page, outline, elements and their text.
             let mut file_data = Vec::new();
@@ -1091,9 +1142,80 @@ pub mod build {
             }
             // The page spaces are named by compact id, so their identities join the table.
             let extra: Vec<u32> = (0..self.pages.len()).map(|i| (10 + i) as u32).collect();
-            let section_list = one.space_ids(1, &decls, section_oid, &extra);
+            let section_list = if let Some(color) = self.color {
+                let metadata_oid = 0x0000_0301;
+                let mut metadata = Build::default();
+                metadata.u32(crate::toc::NOTEBOOK_COLOR_COMPATIBILITY_ID, color);
+                decls.push(Decl { oid: metadata_oid, jcid: JCID_PROP_SET | 0x0031, props: metadata.finish() });
+                one.space_with_metadata(1, &decls, section_oid, metadata_oid, &extra)
+            } else {
+                one.space_ids(1, &decls, section_oid, &extra)
+            };
             spaces.insert(0, (1, section_list));
             one.finish(&spaces, 1, file_data)
+        }
+    }
+
+    /// One synthetic notebook TOC, with colors and stable identities for import tests.
+    #[derive(Default)]
+    pub struct Toc {
+        color: Option<u32>,
+        sections: Vec<(String, Option<Guid>, Option<u32>)>,
+    }
+
+    impl Toc {
+        pub fn new() -> Toc {
+            Toc::default()
+        }
+
+        pub fn with_color(mut self, color: u32) -> Toc {
+            self.color = Some(color);
+            self
+        }
+
+        pub fn section(mut self, filename: &str, identity: Guid, color: Option<u32>) -> Toc {
+            self.sections.push((filename.to_string(), Some(identity), color));
+            self
+        }
+
+        /// Adds a synthetic TOC entry that can only be matched by its filename.
+        pub fn section_without_identity(mut self, filename: &str, color: Option<u32>) -> Toc {
+            self.sections.push((filename.to_string(), None, color));
+            self
+        }
+
+        pub fn finish(self) -> Vec<u8> {
+            const TOC_CHILDREN: u32 = 0x2400_1CF6;
+            const FILE_IDENTITY: u32 = 0x1C00_1D94;
+            const FOLDER_CHILD_FILENAME: u32 = 0x1C00_1D6B;
+            const ORDERING_ID: u32 = 0x1400_1CB9;
+
+            let mut one = One::new();
+            one.file_type = FILE_TYPE_TOC;
+            one.file_identity = One::guid(0x78);
+            let root_oid = 0x0000_0101;
+            let entry_oids: Vec<u32> = (0..self.sections.len()).map(|i| ((i as u32 + 2) << 8) | 1).collect();
+            let mut declarations = Vec::new();
+            let mut root = Build::default();
+            root.objects(TOC_CHILDREN, &entry_oids);
+            if let Some(color) = self.color {
+                root.u32(crate::toc::NOTEBOOK_COLOR_COMPATIBILITY_ID, color);
+            }
+            declarations.push(Decl { oid: root_oid, jcid: JCID_PROP_SET | 0x0001, props: root.finish() });
+            for (index, ((filename, identity, color), oid)) in self.sections.iter().zip(entry_oids).enumerate() {
+                let mut entry = Build::default();
+                if let Some(identity) = identity {
+                    entry.data(FILE_IDENTITY, &identity.0);
+                }
+                entry.text(FOLDER_CHILD_FILENAME, filename);
+                entry.u32(ORDERING_ID, index as u32);
+                if let Some(color) = color {
+                    entry.u32(crate::toc::NOTEBOOK_COLOR_COMPATIBILITY_ID, *color);
+                }
+                declarations.push(Decl { oid, jcid: JCID_PROP_SET | 0x0001, props: entry.finish() });
+            }
+            let space = one.space(1, &declarations, root_oid);
+            one.finish(&[(1, space)], 1, Vec::new())
         }
     }
 }

@@ -94,8 +94,8 @@ fn synthetic_corpus_imports_without_loss_of_supported_content_in_both_formats() 
         options.format = format;
         let report = run(&options, &mut quiet).expect("import synthetic corpus");
 
-        assert_eq!((report.sections_planned, report.sections_imported), (6, 5), "{report}");
-        assert_eq!((report.pages, report.subpages, report.deepest, report.rtl_pages), (10, 3, 3, 1), "{report}");
+        assert_eq!((report.sections_planned, report.sections_imported), (8, 7), "{report}");
+        assert_eq!((report.pages, report.subpages, report.deepest, report.rtl_pages), (12, 3, 3, 1), "{report}");
         assert_eq!((report.images, report.files, report.loss.missing_data), (2, 1, 1), "{report}");
         assert_eq!(report.older_copies_left, 1);
         assert_eq!(report.skipped.len(), 1, "the damaged section is isolated: {report}");

@@ -22,10 +22,13 @@ in HTML and CMGFM formats.
 | `versions (On 1-2-2026).one` | Newest copy of one synthetic section. |
 | `versions (On 1-2-2025).one` | Older copy; excluded by default version selection. |
 | `broken.one` | Truncated section beside valid sections; must be reported without stopping the import. |
+| `colors/Work/.onetoc2` | Synthetic notebook color, section colors, section identities, and an undefined TOC color. |
+| `colors/Work/Planning.one` | Synthetic section color overridden by the matching TOC entry. |
+| `colors/Work/Archive.one` | Synthetic section color used when the TOC entry is undefined. |
 
-This first corpus slice covers `.one` sections supported by the current importer.
-It does not establish `.onetoc2`, `.onepkg`, notebook color, ink, table, or full
-OneNote parser interoperability coverage. Those need separate builders or cleared
-independent samples and explicit tests.
+The color cases are generated from synthetic content and exercise `.one` section
+metadata and `.onetoc2` color records through the real reader and importer. They do
+not establish `.onepkg`, ink, table, or full OneNote parser interoperability
+coverage. Those need separate builders or cleared independent samples and tests.
 
 Third-party samples, when cleared for redistribution, belong in the separate `crates/import/tests/fixtures/3p/<source-name>/` tree with source-specific recognition, provenance, and required license notices. They are not part of this synthetic corpus.

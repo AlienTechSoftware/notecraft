@@ -30,8 +30,18 @@ pub struct SectionFile {
 #[derive(Clone, Debug, Default)]
 pub struct Scan {
     pub files: Vec<SectionFile>,
-    /// `.onetoc2` table-of-contents files and `.onepkg` packages: noticed, not imported yet.
+    /// `.onetoc2` table-of-contents files, used to read notebook and section colors.
+    pub tocs: Vec<TocFile>,
+    /// `.onepkg` packages: noticed, not imported yet.
     pub ignored: Vec<PathBuf>,
+}
+
+/// A notebook table-of-contents file found during discovery.
+#[derive(Clone, Debug)]
+pub struct TocFile {
+    pub path: PathBuf,
+    /// The folders between the scan root and the TOC.
+    pub folders: Vec<String>,
 }
 
 /// One section to import, after dated copies have been sorted out.
@@ -60,7 +70,7 @@ pub fn default_source() -> Option<PathBuf> {
     base.is_dir().then_some(base)
 }
 
-/// Every `.one` file under `source` (or `source` itself, if it is one file), sorted by path.
+/// OneNote sections and notebook TOCs under `source`, sorted by path.
 pub fn scan(source: &Path) -> Scan {
     let mut out = Scan::default();
     if source.is_file() {
@@ -71,6 +81,7 @@ pub fn scan(source: &Path) -> Scan {
     }
     walk(source, source, &mut out, 0);
     out.files.sort_by(|a, b| a.path.cmp(&b.path));
+    out.tocs.sort_by(|a, b| a.path.cmp(&b.path));
     out.ignored.sort();
     out
 }
@@ -90,17 +101,35 @@ fn walk(root: &Path, dir: &Path, out: &mut Scan, depth: usize) {
         if kind.is_dir() {
             walk(root, &path, out, depth + 1);
         } else if let Some(name) = path.file_name().map(|name| name.to_string_lossy().to_lowercase()) {
-            if name == ".onetoc2" || name == ".onepkg" {
+            if name == ".onetoc2" {
+                if let Some(toc) = toc_file(&path, root) {
+                    out.tocs.push(toc);
+                }
+            } else if name == ".onepkg" {
                 out.ignored.push(path);
             } else if let Some(ext) = path.extension().map(|e| e.to_string_lossy().to_lowercase()) {
                 match ext.as_str() {
                     "one" => out.files.extend(section_file(&path, root)),
-                    "onetoc2" | "onepkg" => out.ignored.push(path),
+                    "onetoc2" => {
+                        if let Some(toc) = toc_file(&path, root) {
+                            out.tocs.push(toc);
+                        }
+                    }
+                    "onepkg" => out.ignored.push(path),
                     _ => {}
                 }
             }
         }
     }
+}
+
+fn toc_file(path: &Path, root: &Path) -> Option<TocFile> {
+    let folders = path
+        .parent()
+        .and_then(|parent| parent.strip_prefix(root).ok())
+        .map(|rel| rel.components().map(|component| component.as_os_str().to_string_lossy().into_owned()).collect())
+        .unwrap_or_default();
+    Some(TocFile { path: path.to_path_buf(), folders })
 }
 
 fn section_file(path: &Path, root: &Path) -> Option<SectionFile> {
@@ -234,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn dotfile_notebook_metadata_is_reported_as_ignored() {
+    fn dotfile_toc_is_discovered_and_package_is_reported_as_ignored() {
         let temp = TempDir::new("discover-dotfile-notebook-metadata");
         fs::write(temp.path().join(".onetoc2"), b"synthetic toc").expect("write hidden toc fixture");
         fs::write(temp.path().join(".onepkg"), b"synthetic package").expect("write hidden package fixture");
@@ -242,8 +271,8 @@ mod tests {
         let scan = scan(temp.path());
 
         assert!(scan.files.is_empty(), "metadata files are not section files");
-        assert_eq!(scan.ignored.len(), 2, "hidden metadata files are noticed");
-        assert!(scan.ignored.iter().any(|path| path.file_name().is_some_and(|name| name == ".onetoc2")));
+        assert_eq!(scan.tocs.len(), 1, "a hidden TOC is available to import metadata");
+        assert_eq!(scan.ignored.len(), 1, "the package file remains unimported");
         assert!(scan.ignored.iter().any(|path| path.file_name().is_some_and(|name| name == ".onepkg")));
     }
 

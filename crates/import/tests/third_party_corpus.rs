@@ -58,7 +58,7 @@ fn run_full_small_rust_corpus(source: &Path, format: PageFormat, destination: &P
     let one_files = 32;
     let toc_files = 20;
     assert_eq!(report.files_found, one_files, "all non-large .one fixtures are discovered: {report}");
-    assert_eq!(report.ignored, toc_files, "all .onetoc2 fixtures are reported: {report}");
+    assert_eq!(report.toc_files_found, toc_files, "all .onetoc2 fixtures are discovered: {report}");
     assert_eq!(
         report.sections_planned + report.older_copies_left,
         one_files,

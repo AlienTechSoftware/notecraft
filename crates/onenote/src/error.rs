@@ -6,6 +6,8 @@ use std::fmt;
 pub enum OneError {
     /// The file does not start with the `.one` file type GUID.
     NotASection(String),
+    /// The file does not start with the `.onetoc2` file type GUID.
+    NotAToc(String),
     /// The file is a table of contents (`.onetoc2`), not a section.
     NotesetFile,
     /// A structure points outside the file or is cut short.
@@ -22,6 +24,7 @@ impl fmt::Display for OneError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OneError::NotASection(why) => write!(f, "not a OneNote section file: {why}"),
+            OneError::NotAToc(why) => write!(f, "not a OneNote table-of-contents file: {why}"),
             OneError::NotesetFile => write!(f, "this is a notebook table of contents (.onetoc2), not a section (.one)"),
             OneError::Truncated(what) => write!(f, "the file is cut short while reading {what}"),
             OneError::Corrupt(what) => write!(f, "the file is damaged: {what}"),

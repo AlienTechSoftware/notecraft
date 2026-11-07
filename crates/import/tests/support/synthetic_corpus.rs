@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use notecraft_onenote::testing::OneNote;
+use notecraft_onenote::testing::{OneNote, Toc};
 
 /// Writes the deterministic `.one` files used by the importer regression corpus.
 pub fn generate(root: &Path) -> io::Result<()> {
@@ -56,6 +56,27 @@ pub fn generate(root: &Path) -> io::Result<()> {
     write_case(root, "versions (On 1-2-2026).one", current.clone())?;
     write_case(root, "versions (On 1-2-2025).one", previous)?;
     write_case(root, "broken.one", broken)?;
+
+    let color_root = root.join("colors").join("Work");
+    fs::create_dir_all(&color_root)?;
+    let planning = OneNote::new()
+        .with_identity(2)
+        .with_color(0x001E_8A44)
+        .with_page("Synthetic color page", &[OneNote::line("synthetic color metadata")])
+        .finish();
+    fs::write(color_root.join("Planning.one"), planning)?;
+    let archive = OneNote::new()
+        .with_identity(3)
+        .with_color(0x00C0_392B)
+        .with_page("Synthetic archive page", &[OneNote::line("synthetic fallback color")])
+        .finish();
+    fs::write(color_root.join("Archive.one"), archive)?;
+    let toc = Toc::new()
+        .with_color(0x007A_45B8)
+        .section("Planning.one", OneNote::file_identity(2), Some(0x001A_5FD0))
+        .section("Archive.one", OneNote::file_identity(3), Some(u32::MAX))
+        .finish();
+    fs::write(color_root.join(".onetoc2"), toc)?;
     Ok(())
 }
 

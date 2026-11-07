@@ -26,7 +26,7 @@ personal data.
 - About 18,700 `.bin` files totaling about 2 GB. These are cache files.
 - 60 `.db` files (about 177 MB) with 58 empty `.db-journal` files, and one
   `.onesrvcache` file. Likely search and index data; not inspected.
-- No `.onetoc2` files at all.
+- No `.onetoc2` files at all in the inspected backup listing.
 - `Backup` is organised by notebook or year folder, with section group folders
   below them, and section files named like `<Section> (On <date>).one`. The same
   section appears many times with different dates.
@@ -39,10 +39,11 @@ personal data.
   output must be structural only unless the owner agrees otherwise.
 - **Many dated copies of each section.** The importer must choose the newest
   copy per section, or offer to import several as history.
-- **No `.onetoc2` in backups.** Section order, section colors and notebook
-  metadata are not available from the backup files. The importer would rebuild
-  order from folder and file names and mark the notebook as reconstructed.
-  Section groups are real subfolders, so that part of the structure survives.
+- **No `.onetoc2` in the inspected backups.** Notebook colors and per-section
+  TOC overrides are unavailable there. A section color can still be present in
+  each `.one` section's metadata. Notebook color must remain unset when no TOC
+  or other supported source provides it. Section groups are real subfolders,
+  so that part of the structure survives.
 - **Large files.** Files of 100 MB and more need streaming reads and a memory
   budget, not whole-file loads.
 - **Cache `.bin` files are an unknown.** Importing from the cache would reach
@@ -57,3 +58,20 @@ personal data.
 - What does the Graph API return for ink, layout and attachments?
 - Does `onenote_parser` read desktop revision-store files? Unconfirmed.
 - Retention: how far back do backups go and how are old ones pruned?
+
+## Color compatibility mapping
+
+Microsoft's published MS-ONE specification documents `NotebookColor` on the
+notebook TOC record, TOC section record, and section metadata record. It defines
+the value as a 32-bit color and specifies `0xFFFFFFFF` as undefined for TOC
+sections. The published property-ID table does not list the numeric ID used by
+existing parsers. The mapping `0x14001CBE` is corroborated by public source in
+[onenote.rs at commit de3a64e](https://github.com/msiemens/onenote.rs/blob/de3a64e8159c684b137ded89c3fef3c17272ec1d/crates/parser/src/one/property/mod.rs)
+and [OfficeIMO at commit 8e0c7f5](https://github.com/EvotecIT/OfficeIMO/blob/8e0c7f5d06c8ee7c2658c4e90eaa3c1bcd32d1f/OfficeIMO.OneNote/Internal/Semantic/OneNoteTocMapper.cs).
+NoteCraft uses this value only as a documented compatibility mapping; no parser
+implementation code is copied.
+
+NoteCraft stores container colors as nine named palette choices. Imported OneNote
+colors are therefore mapped by hue to the nearest named hue; low-saturation
+values map to Gray and alpha is ignored. This is lossy and does not reproduce an
+arbitrary source color exactly. The undefined sentinel is left unset.
