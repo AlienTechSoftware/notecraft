@@ -25,6 +25,38 @@ Parameters:
 - title (required for section-group and section; optional for page, which is created untitled if left out)
 - format (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below
 
+## `node.demote`
+
+Make a page a subpage of its preceding sibling (changes the tree).
+
+Parameters:
+
+- path (required): the page to make a subpage
+
+## `node.promote`
+
+Promote a subpage to its parent's level (changes the tree).
+
+Parameters:
+
+- path (required): the subpage to promote
+
+## `node.move_up`
+
+Move a page up among its siblings (changes the tree).
+
+Parameters:
+
+- path (required): the page to move up
+
+## `node.move_down`
+
+Move a page down among its siblings (changes the tree).
+
+Parameters:
+
+- path (required): the page to move down
+
 ## `node.color`
 
 Colour a notebook, section group or section (changes the tree).

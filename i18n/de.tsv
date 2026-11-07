@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	Code, in einer Zeile
 @id	ui.collapse	Zusammenklappen
 @id	ui.collapse_all	Alle einklappen
+@id	ui.collapse_subpages	Unterseiten einklappen
 @id	ui.college	Hochschule
 @id	ui.college_ruled	Hochschulregelung
 @id	ui.colour	Farbe
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	Jeder Absatz entscheidet selbst
 @id	ui.expand	Erweitern
 @id	ui.expand_all	Alle erweitern
+@id	ui.expand_subpages	Unterseiten ausklappen
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Export erstellt einen benutzerdefinierten ZIP und entfernt dann den exportierten Sitzungsort.
 @id	ui.export_current_session_zip	Aktuelle Sitzung als ZIP exportieren
 @id	ui.export_telemetry_zip	Telemetrie als ZIP exportieren
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	Protokollierungsordner: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Protokolle und Telemetrie bleiben auf diesem Gerät. NoteCraft sendet sie nicht automatisch.
 @id	ui.magenta	Magenta
+@id	ui.make_subpage	Als Unterseite einrücken
 @id	ui.make_the_page_larger	Seite vergrößern
 @id	ui.make_the_page_smaller	Seite verkleinern
 @id	ui.many_thanks_to_its_authors_and_contributors	— vielen Dank an die Autoren und Mitwirkenden.
@@ -370,10 +373,12 @@
 @id	ui.more_colours	Weitere Farben
 @id	ui.more_styles	Weitere Stile
 @id	ui.more_tags	Weitere Tags
+@id	ui.move_down	Nach unten
 @id	ui.move_left	Nach links verschieben
 @id	ui.move_right	Nach rechts verschieben
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	{title} und alles darin ({n}-Element) in den Papierkorb dieses Notizbuchs verschieben?|{title} und alles darin ({n}-Elemente) in den Papierkorb dieses Notizbuchs verschieben?
 @id	ui.move_to_recycle_bin	In den Papierkorb verschieben
+@id	ui.move_up	Nach oben
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	{moved} Striche vom alten Zeichnungsbereich dieser Seite auf die Seite selbst verschoben
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} Striche auf die Seite verschoben; {left} alte Zeichnungsdateien konnten nicht entfernt werden
 @id	ui.moved_to_the_notebook_recycle_bin	In den Notizbuch-Papierkorb verschoben
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	Neues Notizbuch...
 @id	ui.new_page	Neue Seite
 @id	ui.new_page_2	Neue Seite...
+@id	ui.new_page_cmd_n	Neue Seite (Cmd+N)
+@id	ui.new_page_ctrl_n	Neue Seite (Ctrl+N)
 @id	ui.new_pages	Neue Seiten:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	Neue Seiten verwenden {format}, sofern das Notizbuch oder der Abschnitt nichts anderes angibt
 @id	ui.new_quick_note	Neuer Schnellnotiz
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	Ausdruck ist für PDF- und Office-Dokumente verfügbar.
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Datenschutz hat höchste Priorität. Alle Protokolle und Telemetriedaten verbleiben auf diesem Gerät. NoteCraft sendet sie niemals automatisch.
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Datenschutz hat höchste Priorität. Protokolle und Telemetriedaten verbleiben auf diesem Gerät. NoteCraft sendet sie nicht an uns.
+@id	ui.promote_subpage	Unterseite heraufstufen
 @id	ui.purple	Lila
 @id	ui.put_a_sheet_to_draw_on_into_the_page	Eine Zeichenfläche in die Seite einfügen
 @id	ui.put_another_tool_on_the_rack	Ein weiteres Werkzeug in den Halter legen

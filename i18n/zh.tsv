@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	代码，单行
 @id	ui.collapse	折叠
 @id	ui.collapse_all	全部折叠
+@id	ui.collapse_subpages	折叠子页面
 @id	ui.college	大学
 @id	ui.college_ruled	大学横格
 @id	ui.colour	颜色
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	每个段落自行决定
 @id	ui.expand	展开
 @id	ui.expand_all	全部展开
+@id	ui.expand_subpages	展开子页面
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	导出将创建用户选择的 ZIP 文件，然后删除导出的会话文件夹。
 @id	ui.export_current_session_zip	导出当前会话 ZIP
 @id	ui.export_telemetry_zip	导出遥测 ZIP
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	日志文件夹：{folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	日志和遥测数据保留在此设备上。NoteCraft 不会自动发送它们。
 @id	ui.magenta	洋红色
+@id	ui.make_subpage	设为子页面
 @id	ui.make_the_page_larger	放大页面
 @id	ui.make_the_page_smaller	缩小页面
 @id	ui.many_thanks_to_its_authors_and_contributors	—— 衷心感谢其作者和贡献者。
@@ -370,10 +373,12 @@
 @id	ui.more_colours	更多颜色
 @id	ui.more_styles	更多样式
 @id	ui.more_tags	更多标签
+@id	ui.move_down	下移
 @id	ui.move_left	向左移动
 @id	ui.move_right	向右移动
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	将“{title}”及其内部所有内容（{n} 个项目）移至此笔记本的回收站？|将“{title}”及其内部所有内容（{n} 个项目）移至此笔记本的回收站？
 @id	ui.move_to_recycle_bin	移至回收站
+@id	ui.move_up	上移
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	已将 {moved} 笔迹从本页的旧绘图移至页面本身
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	已将 {moved} 笔迹移至页面；无法删除 {left} 个旧绘图文件
 @id	ui.moved_to_the_notebook_recycle_bin	已移至笔记本回收站
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	新建笔记本...
 @id	ui.new_page	新建页面
 @id	ui.new_page_2	新建页面...
+@id	ui.new_page_cmd_n	新建页面 (Cmd+N)
+@id	ui.new_page_ctrl_n	新建页面 (Ctrl+N)
 @id	ui.new_pages	新建页面：
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	除非笔记本或章节另有说明，否则新页面使用 {format}
 @id	ui.new_quick_note	新建快速笔记
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	PDF 和 Office 文档支持打印。
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	隐私是我们的首要任务。所有日志和遥测数据均保留在此设备上。NoteCraft 绝不会自动发送这些数据。
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	隐私是我们的首要任务。日志和遥测数据保留在此设备上。NoteCraft 不会将这些数据发送给我们。
+@id	ui.promote_subpage	提升子页面
 @id	ui.purple	紫色
 @id	ui.put_a_sheet_to_draw_on_into_the_page	将绘图画布放入页面
 @id	ui.put_another_tool_on_the_rack	在工具架上添加另一个工具

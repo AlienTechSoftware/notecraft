@@ -65,7 +65,7 @@ When something there should be scriptable, it becomes an engine command.
 4. **Save.** About 0.9 seconds after the last keystroke, and on Ctrl+S, the UI sends
    `page.save`. `store::page::save_body` keeps the page's metadata, refreshes `updated`, and
    writes through a temporary file and a rename.
-5. **Tree changes** (`node.create`, `node.delete`, `node.title`, `notebook.create`) make the
+5. **Tree changes** (`node.create`, `node.demote`, `node.promote`, `node.move_up`, `node.move_down`, `node.delete`, `node.title`, `notebook.create`) make the
    session reload the tree from disk, so the UI always shows what is on disk.
 
 ## Themes

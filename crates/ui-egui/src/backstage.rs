@@ -205,7 +205,9 @@ fn info_page(ui: &mut Ui, notebooks: &[Node], folder: &str, show_path: &dyn Fn(&
                     ui.label(egui::RichText::new(&n.info.title).size(17.0).color(t.accent));
                     ui.label(egui::RichText::new(show_path(&n.path)).size(11.5).monospace().color(t.muted));
                     ui.horizontal(|ui| {
-                        if ui.small_button(crate::tl_id!("ui.open_folder")).clicked() {
+                        let open_folder =
+                            egui::Button::new(crate::tl_id!("ui.open_folder")).small().stroke(egui::Stroke::new(1.0, t.container_border));
+                        if ui.add(open_folder).clicked() {
                             acts.push(Act::OpenFolder(n.path.clone()));
                         }
                         let count = n.count().to_string();

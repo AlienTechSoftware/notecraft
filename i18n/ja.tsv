@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	1行のコード
 @id	ui.collapse	折りたたむ
 @id	ui.collapse_all	すべて折りたたむ
+@id	ui.collapse_subpages	サブページを折りたたむ
 @id	ui.college	大学
 @id	ui.college_ruled	大学規則
 @id	ui.colour	色
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	各段落が個別に決定します
 @id	ui.expand	展開
 @id	ui.expand_all	すべて展開
+@id	ui.expand_subpages	サブページを展開
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	エクスポートはユーザーが選択したZIPを作成し、その後エクスポートされたセッションフォルダを削除します。
 @id	ui.export_current_session_zip	現在のセッションのZIPをエクスポート
 @id	ui.export_telemetry_zip	テレメトリのZIPをエクスポート
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	ログフォルダー: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	ログとテレメトリはこのデバイス上に留まります。NoteCraft はそれらを自動的に送信しません。
 @id	ui.magenta	マゼンタ
+@id	ui.make_subpage	サブページにする
 @id	ui.make_the_page_larger	ページを大きくする
 @id	ui.make_the_page_smaller	ページを小さくする
 @id	ui.many_thanks_to_its_authors_and_contributors	— 著者および貢献者に心より感謝いたします。
@@ -370,10 +373,12 @@
 @id	ui.more_colours	その他の色
 @id	ui.more_styles	その他のスタイル
 @id	ui.more_tags	その他のタグ
+@id	ui.move_down	下へ移動
 @id	ui.move_left	左へ移動
 @id	ui.move_right	右へ移動
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	「{title}」およびその中のすべての内容（{n} アイテム）をこのノートブックのゴミ箱に移動しますか？|「{title}」およびその中のすべての内容（{n} アイテム）をこのノートブックのゴミ箱に移動しますか？
 @id	ui.move_to_recycle_bin	ゴミ箱へ移動
+@id	ui.move_up	上へ移動
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	このページの以前の描画から {moved} のストロークをページ自体に移動しました
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} のストロークをページに移動しましたが、{left} の以前の描画ファイルを削除できませんでした
 @id	ui.moved_to_the_notebook_recycle_bin	ノートブックのゴミ箱へ移動しました
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	新しいノートブック...
 @id	ui.new_page	新しいページ
 @id	ui.new_page_2	新しいページ...
+@id	ui.new_page_cmd_n	新しいページ (Cmd+N)
+@id	ui.new_page_ctrl_n	新しいページ (Ctrl+N)
 @id	ui.new_pages	新しいページ:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	ノートブックまたはセクションで指定がない限り、新しいページは {format} を使用します
 @id	ui.new_quick_note	新しいクイックノート
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	PDFおよびOffice文書に対して印刷出力が可能です。
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	プライバシーは最優先事項です。すべてのログとテレメトリはこのデバイス上に留まります。NoteCraftはそれらを自動的に送信しません。
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	プライバシーは最優先事項です。ログとテレメトリはこのデバイス上に留まります。NoteCraftはそれらを送信しません。
+@id	ui.promote_subpage	サブページを昇格する
 @id	ui.purple	紫
 @id	ui.put_a_sheet_to_draw_on_into_the_page	描画用のシートをページに配置します
 @id	ui.put_another_tool_on_the_rack	ラックにもう一つのツールを置きます

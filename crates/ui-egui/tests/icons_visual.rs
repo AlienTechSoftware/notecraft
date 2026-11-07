@@ -24,13 +24,15 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 65] = [
+const ALL: [Icon; 67] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
     Icon::Section,
     Icon::Page,
     Icon::PageStack,
+    Icon::MoveUp,
+    Icon::MoveDown,
     Icon::Code,
     Icon::Search,
     Icon::FullPage,
@@ -104,6 +106,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::Page => "page",
         Icon::Folder => "folder",
         Icon::PageStack => "page-stack",
+        Icon::MoveUp => "move-up",
+        Icon::MoveDown => "move-down",
         Icon::Code => "code",
         Icon::Eraser => "eraser",
         Icon::Undo => "undo",
@@ -361,6 +365,8 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             open(&[(12.0, 6.0), (12.0, 11.0), (17.0, 11.0)]),
             seg((7.5, 16.0), (14.0, 16.0)),
         ],
+        Icon::MoveUp => vec![seg((12.0, 20.0), (12.0, 4.5)), open(&[(6.0, 10.5), (12.0, 4.5), (18.0, 10.5)])],
+        Icon::MoveDown => vec![seg((12.0, 4.0), (12.0, 19.5)), open(&[(6.0, 13.5), (12.0, 19.5), (18.0, 13.5)])],
         Icon::Code => vec![open(&[(9.0, 6.0), (4.0, 12.0), (9.0, 18.0)]), open(&[(15.0, 6.0), (20.0, 12.0), (15.0, 18.0)])],
         Icon::Search => vec![Shape::circle_stroke(at(10.5, 10.5), SIZE * 5.5 / 24.0, stroke), seg((14.6, 14.6), (19.5, 19.5))],
         Icon::FullPage => vec![

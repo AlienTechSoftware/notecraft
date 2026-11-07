@@ -124,6 +124,7 @@
 @id	ui.code_in_one_line	한 줄의 코드
 @id	ui.collapse	접기
 @id	ui.collapse_all	모두 접기
+@id	ui.collapse_subpages	하위 페이지 접기
 @id	ui.college	대학
 @id	ui.college_ruled	대학 규정 적용됨
 @id	ui.colour	색상
@@ -228,6 +229,7 @@
 @id	ui.every_paragraph_decides_for_itself	각 단락이 자체적으로 결정합니다.
 @id	ui.expand	펼치기
 @id	ui.expand_all	모두 펼치기
+@id	ui.expand_subpages	하위 페이지 펼치기
 @id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	내보내기는 사용자가 선택한 ZIP을 생성한 후 내보낸 세션 폴더를 제거합니다.
 @id	ui.export_current_session_zip	현재 세션 ZIP 내보내기
 @id	ui.export_telemetry_zip	텔레메트리 ZIP 내보내기
@@ -344,6 +346,7 @@
 @id	ui.logging_folder_folder	로그 폴더: {folder}
 @id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	로그 및 원격 분석 데이터는 이 장치에만 유지됩니다. NoteCraft는 자동으로 전송하지 않습니다.
 @id	ui.magenta	자홍색
+@id	ui.make_subpage	하위 페이지로 만들기
 @id	ui.make_the_page_larger	페이지 크기 키우기
 @id	ui.make_the_page_smaller	페이지 크기 줄이기
 @id	ui.many_thanks_to_its_authors_and_contributors	— 저자와 기여자들에게 깊은 감사를 드립니다.
@@ -370,10 +373,12 @@
 @id	ui.more_colours	추가 색상
 @id	ui.more_styles	추가 스타일
 @id	ui.more_tags	추가 태그
+@id	ui.move_down	아래로 이동
 @id	ui.move_left	왼쪽으로 이동
 @id	ui.move_right	오른쪽으로 이동
 @id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	"{title}"와 그 안의 모든 항목({n} 개)을 이 노트북 휴지통으로 이동하시겠습니까?|"{title}"와 그 안의 모든 항목({n} 개)을 이 노트북 휴지통으로 이동하시겠습니까?
 @id	ui.move_to_recycle_bin	휴지통으로 이동
+@id	ui.move_up	위로 이동
 @id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	이 페이지의 이전 그림에서 {moved} 스트로크를 페이지 자체로 이동했습니다
 @id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} 스트로크가 페이지로 이동되었습니다; {left} 이전 그림 파일을 제거할 수 없습니다
 @id	ui.moved_to_the_notebook_recycle_bin	노트북 휴지통으로 이동됨
@@ -394,6 +399,8 @@
 @id	ui.new_notebook_2	새 노트북...
 @id	ui.new_page	새 페이지
 @id	ui.new_page_2	새 페이지...
+@id	ui.new_page_cmd_n	새 페이지 (Cmd+N)
+@id	ui.new_page_ctrl_n	새 페이지 (Ctrl+N)
 @id	ui.new_pages	새 페이지:
 @id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	노트북이나 섹션에서 달리 명시하지 않는 한 새 페이지는 {format}를 사용합니다
 @id	ui.new_quick_note	새 빠른 메모
@@ -527,6 +534,7 @@
 @id	ui.printout_is_available_for_pdf_and_office_documents	PDF 및 Office 문서에 대해 인쇄가 가능합니다.
 @id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	프라이버시는 최우선입니다. 모든 로그와 원격 데이터는 이 장치에 저장됩니다. NoteCraft는 자동으로 전송하지 않습니다.
 @id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	프라이버시는 최우선입니다. 로그와 원격 데이터는 이 장치에 저장됩니다. NoteCraft는 이를 저희에게 전송하지 않습니다.
+@id	ui.promote_subpage	하위 페이지 승격
 @id	ui.purple	보라색
 @id	ui.put_a_sheet_to_draw_on_into_the_page	페이지에 그릴 수 있는 시트 추가
 @id	ui.put_another_tool_on_the_rack	랙에 다른 도구 추가

@@ -82,6 +82,22 @@ fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(dir))
 }
 
+fn node_demote(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::make_subpage(&s.resolve(req(p, "path")?)?)?))
+}
+
+fn node_promote(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::promote_subpage(&s.resolve(req(p, "path")?)?)?))
+}
+
+fn node_move_up(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::move_page(&s.resolve(req(p, "path")?)?, true)?))
+}
+
+fn node_move_down(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::move_page(&s.resolve(req(p, "path")?)?, false)?))
+}
+
 fn node_color(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     let raw = req(p, "color")?.trim();
@@ -331,6 +347,34 @@ static REGISTRY: &[CommandSpec] = &[
         params: "parent (required): path of the notebook, group, section or page to add to\nkind (required): section-group, section or page\ntitle (required for section-group and section; optional for page, which is created untitled if left out)\nformat (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below",
         changes_tree: true,
         run: node_create,
+    },
+    CommandSpec {
+        id: "node.demote",
+        label: "Make a page a subpage of its preceding sibling",
+        params: "path (required): the page to make a subpage",
+        changes_tree: true,
+        run: node_demote,
+    },
+    CommandSpec {
+        id: "node.promote",
+        label: "Promote a subpage to its parent's level",
+        params: "path (required): the subpage to promote",
+        changes_tree: true,
+        run: node_promote,
+    },
+    CommandSpec {
+        id: "node.move_up",
+        label: "Move a page up among its siblings",
+        params: "path (required): the page to move up",
+        changes_tree: true,
+        run: node_move_up,
+    },
+    CommandSpec {
+        id: "node.move_down",
+        label: "Move a page down among its siblings",
+        params: "path (required): the page to move down",
+        changes_tree: true,
+        run: node_move_down,
     },
     CommandSpec {
         id: "node.color",
