@@ -28,6 +28,7 @@ index 0000000..d9828a4
 +notecraft-ui-egui = { workspace = true }
 +eframe = { workspace = true }
 +egui = { workspace = true }
++zip = { workspace = true }
 +wasm-bindgen = "0.2"
 +wasm-bindgen-futures = "0.4"
 +js-sys = "0.3"
@@ -77,16 +78,15 @@ new file mode 100644
 index 0000000..f4394fb
 --- /dev/null
 +++ b/apps/notecraft-web/src/main.rs
-@@ -0,0 +1,339 @@
 +// SPDX-License-Identifier: MIT OR Apache-2.0
 +//! NoteCraft in the browser, for Playground (patches/onenote.yaml in github.com/daijro/openplayground): the desktop
 +//! window (crates/ui-egui) on the page's canvas.
 +//!
 +//! The notebooks folder is `/NoteCraft`, in memory (crates/model/src/playground.rs). Playground's Files keep it as the
-+//! same plain folders at `browser:/NoteCraft/…`: it is read from there at start, and every file NoteCraft writes or
++//! same plain folders at `browser:/NoteCraft/â€¦`: it is read from there at start, and every file NoteCraft writes or
 +//! removes is written or removed there after the frame (through the page's `globalThis.playgroundFiles`). The standalone
 +//! site keeps personal settings in that browser's local storage; an invitation session stays transient. The first
-+//! start makes the sample notebooks. A page opened from a Playground invitation (`?pg-session=<room>`) keeps its
++//! start loads the official Welcome notebook as a separate notebook. A page opened from a Playground invitation (`?pg-session=<room>`) keeps its
 +//! notebooks in the tab only, so joining someone's session never touches this browser's own notebooks.
 +//! Also: pictures in pages load from the in-memory folder, files dropped on the page can be inserted, and "Open in
 +//! NoteCraft" on a page file opens it (one of these notebooks') or copies it into a Quick Notes notebook. The CJK face
@@ -101,6 +101,7 @@ index 0000000..f4394fb
 +    use notecraft_store::Settings;
 +    use notecraft_ui_egui::NoteCraftApp;
 +    use std::cell::RefCell;
++    use std::io::{Cursor, Read as _};
 +    use std::path::Path;
 +    use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 +
@@ -149,6 +150,61 @@ index 0000000..f4394fb
 +        Some(js_sys::Uint8Array::new(&wait(read.call0(&response).ok()).await?).to_vec())
 +    }
 +
++    /// Replaces only the managed browser Welcome notebook; sibling notebooks stay untouched.
++    async fn ensure_welcome_notebook() -> Result<Option<String>, String> {
++        let notebook = Path::new(ROOT).join("welcome-to-notecraft");
++        let bytes = fetch("./welcome-notebook.zip").await.ok_or_else(|| "The release Welcome notebook could not be downloaded".to_string())?;
++        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("The release Welcome notebook archive is invalid: {e}"))?;
++        if archive.len() > 1000 {
++            return Err("The release Welcome notebook archive contains too many files".into());
++        }
++        let mut files = Vec::with_capacity(archive.len());
++        let mut total = 0_u64;
++        for index in 0..archive.len() {
++            let mut entry = archive.by_index(index).map_err(|e| format!("Could not read a Welcome notebook file: {e}"))?;
++            if entry.is_dir() {
++                continue;
++            }
++            let relative = entry.enclosed_name().ok_or_else(|| "The Welcome notebook archive has an unsafe path".to_string())?.to_path_buf();
++            let components = relative.components().collect::<Vec<_>>();
++            if components.len() < 2 || !matches!(components[0].as_os_str().to_str(), Some("html" | "cmgfm")) {
++                return Err("The Welcome notebook archive has an unexpected path".into());
++            }
++            total = total.saturating_add(entry.size());
++            if total > 40 * 1024 * 1024 || entry.size() > 20 * 1024 * 1024 {
++                return Err("The Welcome notebook archive is larger than expected".into());
++            }
++            let mut content = Vec::with_capacity(entry.size() as usize);
++            entry.read_to_end(&mut content).map_err(|e| format!("Could not unpack a Welcome notebook file: {e}"))?;
++            files.push((relative, content));
++        }
++        for (format, page) in [("html", "00-start/welcome/index.html"), ("cmgfm", "00-start/welcome/index.md")] {
++            for required in [Path::new(format).join("_node.toml"), Path::new(format).join(page)] {
++                if !files.iter().any(|(name, _)| name == &required) {
++                    return Err(format!("The Welcome notebook archive is missing {}", required.display()));
++                }
++            }
++            let languages = files
++                .iter()
++                .filter_map(|(name, _)| {
++                    let mut parts = name.components();
++                    let first = parts.next()?.as_os_str().to_str()?;
++                    let second = parts.next()?.as_os_str().to_str()?;
++                    (first == format && second.len() == 5 && second.as_bytes()[0].is_ascii_digit()).then_some(second.to_owned())
++                })
++                .collect::<std::collections::HashSet<_>>();
++            if languages.len() != 13 {
++                return Err(format!("The {format} Welcome notebook has {} language folders; expected 13", languages.len()));
++            }
++        }
++        if fs::metadata(&notebook).is_ok() {
++            fs::remove_dir_all(&notebook).map_err(|e| format!("Could not replace the existing Welcome notebook: {e}"))?;
++        }
++        for (relative, content) in files {
++            fs::write(notebook.join(relative), content).map_err(|e| format!("Could not install the Welcome notebook: {e}"))?;
++        }
++        Ok(Some(notebook.join("00-start/welcome/index.html").to_string_lossy().into_owned()))
++    }
 +    /// Follows the canvas's pen pointers: eframe turns them into mouse events and drops their pressure.
 +    fn listen_to_the_pen(canvas: &web_sys::HtmlCanvasElement) {
 +        use egui::TouchPhase::{Cancel, End, Move, Start};
@@ -217,7 +273,7 @@ index 0000000..f4394fb
 +        !paths.is_empty()
 +    }
 +
-+    /// Picture links in pages (`file:///NoteCraft/…/assets/x.png`), read from the in-memory folder.
++    /// Picture links in pages (`file:///NoteCraft/â€¦/assets/x.png`), read from the in-memory folder.
 +    struct Files;
 +
 +    impl egui::load::BytesLoader for Files {
@@ -407,10 +463,13 @@ index 0000000..f4394fb
 +        wasm_bindgen_futures::spawn_local(async {
 +            let persist = !invited() && ["files", "write", "remove"].iter().all(|m| api().is_some_and(|a| get(&a, m).is_function()));
 +            let local_settings = !persist && !invited();
-+            let had = persist && load().await;
++            if persist {
++                load().await;
++            }
 +            if !persist && !invited() {
 +                load_browser_settings();
 +            }
++            let welcome_page = if !invited() { Some(ensure_welcome_notebook().await) } else { None };
 +            let document = web_sys::window().and_then(|w| w.document()).expect("no document");
 +            let canvas = document
 +                .get_element_by_id("notecraft_canvas")
@@ -424,17 +483,12 @@ index 0000000..f4394fb
 +                    Box::new(move |cc| {
 +                        CTX.with(|c| c.set(cc.egui_ctx.clone()).ok());
 +                        cc.egui_ctx.add_bytes_loader(std::sync::Arc::new(Files));
-+                        let mut session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
-+                        // Give a fresh browser session a synthetic notebook to explore.
-+                        let first = !had && !invited();
-+                        let sample = if first {
-+                            Some(notecraft_engine::sample::create_sample(&mut session, None).map_err(|e| e.to_string())?)
-+                        } else {
-+                            None
-+                        };
++                        let session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
 +                        let mut app = NoteCraftApp::new(session);
-+                        if let Some(sample) = sample {
-+                            app.open_path(&sample.md_page.to_string_lossy());
++                        if let Some(page) = welcome_page {
++                            if let Some(page) = page.map_err(|e| e.to_string())? {
++                                app.open_path(&page);
++                            }
 +                        }
 +                        Ok(Box::new(Web { app, persist, local_settings, unsaved: None }))
 +                    }),
@@ -865,9 +919,9 @@ index 0000000..f851b31
 +                STATE.set(State::Arrived(read));
 +                CTX.with_borrow(|c| c.as_ref().map(egui::Context::request_repaint));
 +            });
-+            Some("Reading the clipboard…")
++            Some("Reading the clipboardâ€¦")
 +        }
-+        State::Reading | State::Arrived(_) => Some("Reading the clipboard…"),
++        State::Reading | State::Arrived(_) => Some("Reading the clipboardâ€¦"),
 +    })
 +}
 +

@@ -6,7 +6,7 @@
 - **Infinite canvas:** Draw in open page space beyond text blocks.
 - **Languages:** Interface localization across 13 locales, with French and Spanish User Assistance.
 - **Page organization:** UI improvements for creating pages and promoting them to sub-pages.
-- **Installation:** Consistent installation across supported platforms, with the demo notebook provided as user content.
+- **Installation:** The app refreshes the bundled HTML and CMGFM Welcome notebook in 13 languages at launch. Other notebooks are left unchanged.
 - **Importing:** Import test dataset and preserve section colours.
 
 ## About NoteCraft

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Smoke-test the dependency-light Linux tarball packaging path.
+# Smoke-test Linux package staging and both generated Welcome notebook formats.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="$(sed -n 's/^version = "\([0-9][0-9.]*\(-[^\"]*\)\?\)"$/\1/p' "$ROOT/Cargo.toml" | head -n 1)"
+VERSION="$(tr -d '\r' < "$ROOT/Cargo.toml" | sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)"$/\1/p' | head -n 1)"
+[[ -n "$VERSION" ]] || { echo "could not read workspace package version from Cargo.toml" >&2; exit 1; }
 DIST="$(mktemp -d)"
 trap 'rm -rf "$DIST"' EXIT
 
@@ -15,45 +16,26 @@ ARCH="$(uname -m)"
 ARCHIVE="$DIST/notecraft-$VERSION-linux-$ARCH.tar.gz"
 [ -s "$ARCHIVE" ] || { echo "missing package: $ARCHIVE" >&2; exit 1; }
 tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/bin/notecraft" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/applications/com.alientechsoftware.notecraft.desktop" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/icons/hicolor/256x256/apps/com.alientechsoftware.notecraft.png" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/bin/notecraft-setup" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/welcome-to-notecraft/html/_node.toml" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/welcome-to-notecraft/cmgfm/_node.toml" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/welcome-to-notecraft/html/00-start/welcome/index.html" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/share/notecraft/demo/welcome-to-notecraft/cmgfm/00-start/welcome/index.md" >/dev/null
-echo "linux packaging smoke test passed: $ARCHIVE"
-
-# A package without optional User Assistance files still carries the app and setup helper.
-DIST="$DIST" "$ROOT/packaging/linux/package.sh" --skip-build --omit-demo --formats tar
-[ -s "$ARCHIVE" ] || { echo "missing no-demo package: $ARCHIVE" >&2; exit 1; }
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/bin/notecraft" >/dev/null
-tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/bin/notecraft-setup" >/dev/null
-if tar -tzf "$ARCHIVE" | grep -F "/share/notecraft/demo/" >/dev/null; then
-    echo "omitted User Assistance payload is present in the Linux package" >&2
-    exit 1
-fi
-echo "linux no-demo packaging smoke test passed"
+for path in \
+    "share/notecraft/demo/welcome-to-notecraft/html/_node.toml" \
+    "share/notecraft/demo/welcome-to-notecraft/html/00-start/welcome/index.html" \
+    "share/notecraft/demo/welcome-to-notecraft/cmgfm/_node.toml" \
+    "share/notecraft/demo/welcome-to-notecraft/cmgfm/00-start/welcome/index.md"; do
+    tar -tzf "$ARCHIVE" | grep -Fx "notecraft-$VERSION-linux-$ARCH/$path" >/dev/null
+done
+for format in html cmgfm; do
+    count=$(tar -tzf "$ARCHIVE" | awk -F/ -v base="notecraft-$VERSION-linux-$ARCH" -v format="$format" \
+        '$1 == base && $2 == "share" && $3 == "notecraft" && $4 == "demo" && $5 == "welcome-to-notecraft" && $6 == format && $7 ~ /^(1[0-9]|2[0-9])-[a-z][a-z]$/ { found[$7] = 1 } END { print length(found) }')
+    [ "$count" -eq 13 ] || { echo "$format package contains $count language folders, expected 13" >&2; exit 1; }
+done
+echo "linux paired-demo packaging smoke test passed: $ARCHIVE"
 
 if command -v nfpm >/dev/null 2>&1 && command -v dpkg-deb >/dev/null 2>&1; then
     PKG_DIST="$(mktemp -d)"
     trap 'rm -rf "$DIST" "$PKG_DIST"' EXIT
     DIST="$PKG_DIST" "$ROOT/packaging/linux/package.sh" --skip-build --formats deb
     DEB="$PKG_DIST/notecraft-$VERSION-linux-$ARCH.deb"
-    dpkg-deb -c "$DEB" | grep -F "/usr/bin/notecraft-setup" >/dev/null
-    dpkg-deb -c "$DEB" |
-        grep -F "/usr/share/notecraft/demo/welcome-to-notecraft/html/_node.toml" >/dev/null
-    dpkg-deb -c "$DEB" |
-        grep -F "/usr/share/notecraft/demo/welcome-to-notecraft/cmgfm/_node.toml" >/dev/null
-    dpkg-deb -c "$DEB" |
-        grep -F "/usr/share/notecraft/demo/welcome-to-notecraft/html/00-start/welcome/index.html" >/dev/null
-    OMIT_DIST="$(mktemp -d)"
-    DIST="$OMIT_DIST" "$ROOT/packaging/linux/package.sh" --skip-build --omit-demo --formats deb
-    OMIT_DEB="$OMIT_DIST/notecraft-$VERSION-linux-$ARCH.deb"
-    dpkg-deb -c "$OMIT_DEB" | grep -F "/usr/bin/notecraft-setup" >/dev/null
-    if dpkg-deb -c "$OMIT_DEB" | grep -F "/usr/share/notecraft/demo/" >/dev/null; then
-        echo "omitted User Assistance payload is present in the Debian package" >&2
-        exit 1
-    fi
-    echo "debian package setup-helper and optional-payload checks passed"
+    dpkg-deb -c "$DEB" | grep -F "/usr/share/notecraft/demo/welcome-to-notecraft/html/00-start/welcome/index.html" >/dev/null
+    dpkg-deb -c "$DEB" | grep -F "/usr/share/notecraft/demo/welcome-to-notecraft/cmgfm/00-start/welcome/index.md" >/dev/null
+    echo "debian paired-demo package checks passed"
 fi

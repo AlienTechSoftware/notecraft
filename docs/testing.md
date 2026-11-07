@@ -1,6 +1,6 @@
 # Testing NoteCraft
 
-Last reviewed: 2026-10-17.
+Last reviewed: 2026-11-07.
 
 Quality is not negotiable here, so the project is tested on several levels. The UI testing
 follows the method of the other Craft apps: no committed golden pictures, paired comparisons
@@ -14,7 +14,9 @@ cargo xtask ci
 That runs, in order: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, the layer check, the asset attribution check, the documentation
 link check, the text style check, and the check that the Welcome notebook in
-`docs/demo/DemoNotebook` is current with its content. Each can be run alone:
+`docs/demo/DemoNotebook` is current with its content. The default `cargo xtask demo` generates
+both formats. Use `cargo xtask demo html` or `cargo xtask demo cmgfm` to generate one format,
+or `cargo xtask demo both` to request both explicitly. Each can be run alone:
 `cargo xtask fmt|clippy|test|layers|assets|docs|text|demo-check`.
 
 ## What is tested, and how
@@ -26,6 +28,8 @@ link check, the text style check, and the check that the Welcome notebook in
 | Store tests | `crates/store` | The folder format on a real temporary folder: creating nodes, the format cascade, deep nesting, unusual titles, both formats, attachments, search, the checker. |
 | Engine tests | `crates/engine` | Every command through the registry, a full workflow with commands only, path confinement, and `hostile_params_never_panic`. |
 | Command line tests | `apps/notecraft-cli` | A whole session through the command line, and error paths. |
+| Install provisioning tests | `apps/notecraft-setup` | Creates or replaces only the managed Welcome notebook, keeps sibling user notebooks unchanged, rejects incomplete payloads before replacing an existing copy, and refreshes a deleted copy on the next launch. |
+| Install payload checks | `packaging/*`, `.github/web-build`, Android builder contract tests | Windows, Linux, macOS, Android and browser payloads include both generated formats and all 13 language folders; release page version and archive checks guard the website bundle. |
 | MCP tests | `crates/mcp` | The protocol lifecycle over a pipe, the tool list and its schemas, a notebook made, written, searched and checked through the tools, and the errors a tool reports instead of failing. |
 | UI behaviour tests | `crates/ui-egui/tests/ui.rs` | The real window, driven headlessly through the control methods: open a page, toolbar buttons, dialogs, default format, theme, restart with the saved theme, a real TCP control connection, accessibility labels. |
 | Pixel tests | same file | Rendered pixels have the theme's colours for all 14 themes; display math leaves ink where it should. |

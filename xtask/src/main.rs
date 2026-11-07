@@ -19,6 +19,7 @@
 //! check-branch [--push]  the branch and history checks of quality levels L1 and L2
 //! commit-msg FILE        the commit message check, for the commit-msg hook
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
+//! demo [html|cmgfm|both]            build one or both official demo formats (default: both)
 //! demo-copy [html|cmgfm] [--replace]  copy one bundled demo format; --replace approves overwriting a changed scratch copy
 //! ```
 
@@ -47,9 +48,10 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-engine", 4),
     ("notecraft-mcp", 5),
     ("notecraft-ui-egui", 6),
+    ("notecraft-setup", 6),
     ("notecraft", 7),
+    ("notecraft-web", 7),
     ("notecraft-cli", 7),
-    ("notecraft-setup", 7),
     ("xtask", 7),
     ("notecraft-demo", 7),
 ];
@@ -530,9 +532,19 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
         "demo" => {
-            cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build"])?;
+            let selection = match options {
+                [] => "both".to_string(),
+                [format] if ["html", "cmgfm", "both"].contains(&format.as_str()) => format.clone(),
+                _ => return Err("usage: cargo xtask demo [html|cmgfm|both] (default: both)".into()),
+            };
+            cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
             // The scratch copy is always replaced from docs/demo: the source is the one truth.
-            demo_copy(&root, &["html".into(), "--replace".into()])
+            if selection == "both" {
+                demo_copy(&root, &["html".into(), "--replace".into()])?;
+                demo_copy(&root, &["cmgfm".into(), "--replace".into()])
+            } else {
+                demo_copy(&root, &[selection, "--replace".into()])
+            }
         }
         "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),

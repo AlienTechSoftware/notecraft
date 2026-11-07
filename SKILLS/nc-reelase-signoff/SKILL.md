@@ -42,6 +42,28 @@ requested `reelase` spelling for discoverability.
 9. Confirm no automatic telemetry upload, local privacy wording, and release defaults.
 10. Record exact commands, outputs, artifact paths, commit, tag candidate, known gaps, and manual
     checks. Do not push, publish, tag, or release without explicit owner approval.
+11. For a GitHub draft, check the actual draft body and asset list after the final edit. Confirm
+    every embedded image URL returns HTTP 200 and renders in the draft preview; an uploaded GIF
+    asset alone does not make it appear inline. Resolve repository-relative links to stable URLs
+    that exist at the referenced ref. Re-read the draft URL after editing because an untagged draft
+    URL can change.
+12. Check every shipped platform, including external Android build workflows. Verify the build
+    source commit and embedded/package version match the approved release. Do not attach an APK
+    from an older version or describe a platform as included when its verified artifact is absent.
+13. Verify the hosted demo after deployment, not just the checked-in notebook: the latest
+    `Deploy website` run must be successful for the release source commit, and its live-version
+    check must match `[workspace.package] version` for both the WASM and the separate Welcome
+    notebook archive. Test the demo in a clean browser session and confirm it opens the official
+    `Welcome to NoteCraft` notebook, not the engine's generic sample. If deployment was cancelled,
+    rerun it from `main` and verify the live assets before signoff.
+14. Keep deployment provenance aligned. Run desktop Packaging and Release from the same `main`
+    commit; confirm the Release workflow accepted that exact Packaging run. For Android, record
+    the external builder's source commit, APK package version, signing certificate identity, and
+    clean-install result. Android is a separate manual build today. Do not present the release as
+    platform-complete until every advertised platform has a verified artifact or its absence is
+    clearly called out.
+15. Confirm every shipped User Assistance payload contains both generated formats and all 13
+    languages. Both formats must pass parity checks before packaging.
 
 ## Platform signoff matrix
 

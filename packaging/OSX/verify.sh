@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verify the staged package, mounted DMG and extracted CLI without installing either.
-# Usage: packaging/OSX/verify.sh [aarch64|x86_64|universal] [--expect-demo|--expect-no-demo]
+# Usage: packaging/OSX/verify.sh [aarch64|x86_64|universal]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -27,11 +27,10 @@ check_cli_provenance() {
   [[ "$(cat "$manifest")" = "$expected" ]] || { echo "package provenance mismatch: $binary" >&2; exit 1; }
 }
 check_dmg_provenance() {
-  local manifest="$1" app="$2" setup="$3" expected app_hash setup_hash
+  local manifest="$1" app="$2" expected app_hash
   [[ -f "$manifest" ]] || { echo "missing DMG provenance: $manifest" >&2; exit 1; }
   app_hash="$(sha256 "$app")"
-  setup_hash="$(sha256 "$setup")"
-  expected="$(printf '%s\n%s\n%s\n%s\n%s' "$VERSION" "$ARCH" "$app_hash" "$setup_hash" "$build_source")"
+  expected="$(printf '%s\n%s\n%s\n%s' "$VERSION" "$ARCH" "$app_hash" "$build_source")"
   [[ "$(cat "$manifest")" = "$expected" ]] || { echo "DMG provenance mismatch" >&2; exit 1; }
 }
 check_architectures() {
@@ -45,14 +44,6 @@ check_architectures() {
   done
 }
 ARCH="${1:-universal}"
-EXPECT_DEMO="any"
-if [[ $# -ge 2 ]]; then
-  case "$2" in
-    --expect-demo) EXPECT_DEMO=yes ;;
-    --expect-no-demo) EXPECT_DEMO=no ;;
-    *) echo "unknown option: $2" >&2; exit 2 ;;
-  esac
-fi
 case "$ARCH" in
   aarch64) EXPECTED="arm64"; EXPECTED_COUNT=1 ;;
   x86_64) EXPECTED="x86_64"; EXPECTED_COUNT=1 ;;
@@ -90,24 +81,25 @@ hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$DMG" >/dev/null
 mounted=1
 [[ "$(readlink "$MOUNT/Applications")" = /Applications ]]
 APP="$MOUNT/NoteCraft.app"
-SETUP_APP="$MOUNT/Install NoteCraft Welcome Notebook.app"
 [[ -x "$APP/Contents/MacOS/notecraft" && -x "$APP/Contents/MacOS/notecraft-cli" ]]
 [[ -s "$APP/Contents/Resources/notecraft.icns" ]]
-[[ -x "$SETUP_APP/Contents/MacOS/notecraft-setup" && -s "$SETUP_APP/Contents/Resources/notecraft.icns" ]]
-[[ ! -e "$APP/Contents/Resources/demo" ]] || { echo "the app bundle must not contain the demo notebook" >&2; exit 1; }
+for entry in html/_node.toml html/00-start/welcome/index.html cmgfm/_node.toml cmgfm/00-start/welcome/index.md; do
+  [[ -s "$APP/Contents/Resources/demo/welcome-to-notecraft/$entry" ]] || { echo "the app bundle demo is missing $entry" >&2; exit 1; }
+done
+for format in html cmgfm; do
+  languages=0
+  for folder in "$APP/Contents/Resources/demo/welcome-to-notecraft/$format"/*; do
+    [[ -d "$folder" ]] || continue
+    name="${folder##*/}"
+    if [[ "$name" =~ ^(1[0-9]|2[0-9])-[a-z]{2}$ ]]; then languages=$((languages + 1)); fi
+  done
+  [[ "$languages" = 13 ]] || { echo "$format demo has $languages language folders, expected 13" >&2; exit 1; }
+done
 [[ -s "$MOUNT/Read Me First.txt" ]]
 for doc in licenses/LICENSE-MIT licenses/LICENSE-APACHE licenses/NOTICE ATTRIBUTION.md licenses/PDF-RENDERING-NOTICES.txt; do
   [[ -s "$APP/Contents/Resources/$doc" ]] || { echo "app notice missing: $doc" >&2; exit 1; }
 done
-if [[ -d "$MOUNT/Welcome Notebook" ]]; then
-  [[ "$EXPECT_DEMO" != no ]] || { echo "unexpected optional demo payload in no-demo DMG" >&2; exit 1; }
-  for entry in html/_node.toml cmgfm/_node.toml html/00-start/welcome/index.html cmgfm/00-start/welcome/index.md; do
-    [[ -s "$MOUNT/Welcome Notebook/$entry" ]] || { echo "separate demo payload is missing $entry" >&2; exit 1; }
-  done
-  diff -rq "$ROOT/docs/demo/DemoNotebook" "$MOUNT/Welcome Notebook"
-else
-  [[ "$EXPECT_DEMO" != yes ]] || { echo "expected separate Welcome Notebook payload is absent" >&2; exit 1; }
-fi
+diff -rq "$ROOT/docs/demo/DemoNotebook" "$APP/Contents/Resources/demo/welcome-to-notecraft"
 plutil -lint "$APP/Contents/Info.plist"
 [[ "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" = com.alientechsoftware.notecraft ]]
 [[ "$(plutil -extract CFBundleExecutable raw -o - "$APP/Contents/Info.plist")" = notecraft ]]
@@ -118,24 +110,12 @@ plutil -lint "$APP/Contents/Info.plist"
 [[ "$(plutil -extract NoteCraftBuildCommit raw -o - "$APP/Contents/Info.plist")" = "$build_sha" ]]
 codesign --verify --strict --deep --verbose=2 "$APP"
 codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/notecraft-cli"
-codesign --verify --strict --deep --verbose=2 "$SETUP_APP"
-codesign --verify --strict --verbose=2 "$SETUP_APP/Contents/MacOS/notecraft-setup"
-plutil -lint "$SETUP_APP/Contents/Info.plist"
-[[ "$(plutil -extract CFBundleIdentifier raw -o - "$SETUP_APP/Contents/Info.plist")" = com.alientechsoftware.notecraft.setup ]]
-[[ "$(plutil -extract CFBundleExecutable raw -o - "$SETUP_APP/Contents/Info.plist")" = notecraft-setup ]]
-[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$SETUP_APP/Contents/Info.plist")" = "${VERSION%%[-+]*}" ]]
-[[ "$(plutil -extract NoteCraftVersion raw -o - "$SETUP_APP/Contents/Info.plist")" = "$VERSION" ]]
-[[ "$(plutil -extract CFBundleVersion raw -o - "$SETUP_APP/Contents/Info.plist")" = "$build_number" ]]
-[[ "$(plutil -extract NoteCraftBuildCommit raw -o - "$SETUP_APP/Contents/Info.plist")" = "$build_sha" ]]
-check_dmg_provenance "$MOUNT/BuildProvenance.txt" "$APP/Contents/MacOS/notecraft" "$SETUP_APP/Contents/MacOS/notecraft-setup"
+check_dmg_provenance "$MOUNT/BuildProvenance.txt" "$APP/Contents/MacOS/notecraft"
 check_architectures "$APP/Contents/MacOS/notecraft"
 check_architectures "$APP/Contents/MacOS/notecraft-cli"
-check_architectures "$SETUP_APP/Contents/MacOS/notecraft-setup"
 ditto "$APP" "$WORK/NoteCraft.app"
-ditto "$SETUP_APP" "$WORK/Install NoteCraft Welcome Notebook.app"
 codesign --verify --strict --deep --verbose=2 "$WORK/NoteCraft.app"
-codesign --verify --strict --deep --verbose=2 "$WORK/Install NoteCraft Welcome Notebook.app"
-check_dmg_provenance "$MOUNT/BuildProvenance.txt" "$WORK/NoteCraft.app/Contents/MacOS/notecraft" "$WORK/Install NoteCraft Welcome Notebook.app/Contents/MacOS/notecraft-setup"
+check_dmg_provenance "$MOUNT/BuildProvenance.txt" "$WORK/NoteCraft.app/Contents/MacOS/notecraft"
 if [[ "$ARCH" = universal || ( "$ARCH" = aarch64 && "$(uname -m)" = arm64 ) || \
       ( "$ARCH" = x86_64 && "$(uname -m)" = x86_64 ) ]]; then
   check_version "$WORK/NoteCraft.app/Contents/MacOS/notecraft" notecraft

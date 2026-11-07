@@ -42,9 +42,9 @@ The Welcome notebook is the User Assistance demo artifact. Its installation owne
 destinations, and preservation rules are defined only in
 `packaging/installation artifacts.md`. Its content
 source remains `docs/demo/scripts/content`; generated HTML and CMGFM outputs must stay in parity.
-User Assistance work must not add app-startup copying or installer-specific behavior to content
-code. Release evidence verifies the notebook after installation at the destination in the
-canonical contract.
+User Assistance content remains format-neutral and generated from its authored source. Platform
+startup provisioning is owned by the app and the mechanisms in the canonical installation
+contract; it refreshes only the managed Welcome notebook and preserves sibling notebooks.
 
 ## Product coverage ownership
 

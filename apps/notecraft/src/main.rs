@@ -70,6 +70,27 @@ fn should_remember_notebooks_root(root: &std::path::Path) -> bool {
     !root.starts_with(temp)
 }
 
+/// Locates the generated HTML and CMGFM demo payload installed beside the app.
+fn demo_payload(_executable: &std::path::Path) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let installed = _executable.parent()?.join("demo").join("welcome-to-notecraft");
+
+    #[cfg(target_os = "linux")]
+    let installed = if let Some(appdir) = std::env::var_os("APPDIR") {
+        PathBuf::from(appdir).join("usr/share/notecraft/demo/welcome-to-notecraft")
+    } else {
+        PathBuf::from("/usr/share/notecraft/demo/welcome-to-notecraft")
+    };
+
+    #[cfg(target_os = "macos")]
+    let installed = _executable.parent()?.parent()?.join("Resources/demo/welcome-to-notecraft");
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    let installed = _executable.parent()?.join("demo").join("welcome-to-notecraft");
+
+    if installed.is_dir() { Some(installed) } else { Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook")) }
+}
+
 fn flag_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
@@ -140,6 +161,15 @@ fn main() -> eframe::Result {
     }
     let root = notebooks_dir(&args);
     applog::info(&format!("notebooks folder: {}", root.display()));
+    let executable = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(error) => fail(&format!("Could not locate the generated Welcome notebook payload: {error}")),
+    };
+    let payload = demo_payload(&executable).unwrap_or_else(|| fail("Could not locate the generated Welcome notebook payload."));
+    if let Err(error) = notecraft_setup::refresh_demo(&payload, &root) {
+        applog::line("ERROR", &format!("cannot refresh the managed Welcome notebook: {error}"));
+        fail(&format!("NoteCraft could not create or refresh the Welcome notebook: {error}"));
+    }
     let session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
@@ -159,8 +189,7 @@ fn main() -> eframe::Result {
         let _ = session.settings.set("privacy_welcome_seen", "");
         applog::info("First-use flag set: privacy welcome dialog will show");
     }
-    // Notebook setup is owned by the platform installer helper. This process only discovers
-    // notebooks from the normal root and opens a path the user or installer explicitly names.
+    // The app refreshes its own Welcome notebook before discovery; every other notebook remains user-owned.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.

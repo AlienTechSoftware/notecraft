@@ -1,7 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use notecraft_setup::{SetupOutcome, install_if_needed};
+use notecraft_setup::{SetupOutcome, refresh_demo};
 use notecraft_store::{Settings, settings::default_notebooks_dir};
 use std::path::{Path, PathBuf};
 #[cfg(not(target_os = "macos"))]
@@ -59,8 +59,9 @@ fn launch_desktop_app(executable: &Path) {
     };
     let settings = Settings::default_location();
     let payload = locate_payload(executable);
+    let payload = payload.as_deref().unwrap_or_else(|| fail("The generated Welcome notebook is missing from this installation."));
     let notebooks = notecraft_store::settings::configured_notebooks_dir(&settings).unwrap_or_else(default_notebooks_dir);
-    let outcome = match install_if_needed(&settings, payload.as_deref(), &notebooks) {
+    let outcome = match refresh_demo(payload, &notebooks) {
         Ok(outcome) => outcome,
         Err(error) => fail(&format!("The User Assistance notebook could not be installed: {error}")),
     };
@@ -68,12 +69,8 @@ fn launch_desktop_app(executable: &Path) {
     let mut command = Command::new(app);
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        match outcome {
-            SetupOutcome::Installed(path) | SetupOutcome::Existing(path) => {
-                command.arg("--open").arg(path);
-            }
-            SetupOutcome::AlreadyConfigured | SetupOutcome::NoPayload => {}
-        }
+        let SetupOutcome::Installed(path) = outcome;
+        command.arg("--open").arg(path);
     } else {
         command.args(args);
     }
@@ -93,24 +90,10 @@ fn install_from_dmg(executable: &Path) {
         show_notice("The Welcome notebook is not included in this NoteCraft disk image. NoteCraft is ready to use.");
         return;
     };
-    let prompt = format!("Install the optional Welcome notebook in {}? Existing notebook data will be left unchanged.", notebooks.display());
-    if rfd::MessageDialog::new()
-        .set_level(rfd::MessageLevel::Info)
-        .set_buttons(rfd::MessageButtons::YesNo)
-        .set_title("Install NoteCraft Welcome Notebook")
-        .set_description(&prompt)
-        .show()
-        != rfd::MessageDialogResult::Yes
-    {
-        return;
-    }
-    match install_if_needed(&settings, Some(&payload), &notebooks) {
+    match refresh_demo(&payload, &notebooks) {
         Ok(SetupOutcome::Installed(path)) => {
-            show_notice(&format!("The Welcome notebook was installed in {}. You can now open NoteCraft from Applications.", path.display()))
+            show_notice(&format!("The Welcome notebook was refreshed in {}. You can now open NoteCraft from Applications.", path.display()))
         }
-        Ok(SetupOutcome::Existing(path)) => show_notice(&format!("A Welcome notebook already exists in {}. It was left unchanged.", path.display())),
-        Ok(SetupOutcome::AlreadyConfigured) => show_notice("Welcome notebook setup has already run. A notebook deleted later is not recreated."),
-        Ok(SetupOutcome::NoPayload) => show_notice("The Welcome notebook is not included in this disk image. NoteCraft is ready to use."),
         Err(error) => fail(&format!("The Welcome notebook could not be installed: {error}")),
     }
 }

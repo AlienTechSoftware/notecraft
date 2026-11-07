@@ -16,9 +16,6 @@ contents:
   - src: ${STAGE}/usr/bin/notecraft
     dst: /usr/bin/notecraft
     file_info: { mode: 0755 }
-  - src: ${STAGE}/usr/bin/notecraft-setup
-    dst: /usr/bin/notecraft-setup
-    file_info: { mode: 0755 }
   - src: ${STAGE}/usr/share/applications/com.alientechsoftware.notecraft.desktop
     dst: /usr/share/applications/com.alientechsoftware.notecraft.desktop
   - src: ${STAGE}/usr/share/icons/hicolor/32x32/apps/com.alientechsoftware.notecraft.png

@@ -17,7 +17,7 @@
 # --release` (the playground-web profile: LTO fat, one codegen unit) produces a working demo.
 #
 # What this buys, why the website lives in this repo instead of its own:
-#   - Every push to main that touches website/** redeploys the production site.
+#   - Changes to website code, workspace version, app crates, web-build patches, demo sources, or assets redeploy.
 #   - Every pull_request gets its own live preview URL (Azure Static Web Apps' built-in preview
 #     environments, free tier allows 3) — this is the whole reason the site is a subfolder here rather
 #     than a separate repo: Azure's preview-per-PR only works when the Static Web App is linked to the
@@ -35,15 +35,30 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
+      - ".github/web-build/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "apps/**"
+      - "crates/**"
+      - "docs/demo/**"
+      - "assets/**"
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, closed]
     paths:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
+      - ".github/web-build/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "apps/**"
+      - "crates/**"
+      - "docs/demo/**"
+      - "assets/**"
   workflow_dispatch:
-    # Manual production redeploy with no website/** source change (e.g. to refresh the live demo
-    # after an app-only commit, which this workflow's path filters wouldn't otherwise trigger on).
+    # Manual production redeploy after a cancelled deployment or CDN issue.
     # Always builds and deploys from main's current tip.
 
 permissions:
@@ -52,7 +67,8 @@ permissions:
 
 concurrency:
   group: deploy-website-${{ github.event.pull_request.number || 'production' }}
-  cancel-in-progress: true
+  # Supersede stale PR previews, but never cancel a production build/deploy halfway through.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Closing (or merging) a PR tears down its preview environment. No demo fetch needed for a close.
@@ -92,6 +108,12 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
+      - name: Resolve workspace version
+        id: version
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build the demo from source (no external build service)
         run: |
           set -eu
@@ -115,6 +137,33 @@ jobs:
               "$f" -o "$f"
           done
 
+      - name: Build and test both User Assistance notebook formats
+        env:
+          NOTECRAFT_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          python3 .github/web-build/test_bundle_demo.py
+          python3 .github/web-build/bundle_demo.py \
+            docs/demo/DemoNotebook website/demo/welcome-notebook.zip \
+            --version "$NOTECRAFT_VERSION"
+
+      - name: Verify built demo embeds the workspace version
+        env:
+          NOTECRAFT_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+
+          version = os.environ["NOTECRAFT_VERSION"].encode()
+          wasm_files = list(Path("website/demo").glob("*.wasm"))
+          if not wasm_files:
+              sys.exit("No WebAssembly file was produced")
+          if not any(version in wasm.read_bytes() for wasm in wasm_files):
+              sys.exit(f"Built web demo does not embed workspace version {version.decode()}")
+          print(f"Built demo embeds NoteCraft {version.decode()}")
+          PY
+
       - uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
@@ -123,3 +172,62 @@ jobs:
           app_location: "website"
           output_location: ""
           skip_app_build: true
+
+      - name: Verify deployed production demo version
+        if: github.event_name != 'pull_request'
+        env:
+          NOTECRAFT_VERSION: ${{ steps.version.outputs.value }}
+          VERIFY_QUERY: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          import time
+          import zipfile
+          from io import BytesIO
+          from urllib.error import URLError
+          from urllib.parse import urljoin
+          from urllib.request import urlopen
+
+          base = "https://notecraft.cloud/demo/"
+          version = os.environ["NOTECRAFT_VERSION"].encode()
+          query = "?release-check=" + os.environ["VERIFY_QUERY"]
+          last_error = "no attempt made"
+          for attempt in range(1, 13):
+              try:
+                  with urlopen(base + query, timeout=30) as response:
+                      html = response.read().decode("utf-8")
+                  match = re.search(r"['\"](\./[^'\"]+\.wasm)['\"]", html)
+                  if not match:
+                      raise RuntimeError("deployed demo index does not reference a WASM file")
+                  wasm_url = urljoin(base, match.group(1)) + query
+                  with urlopen(wasm_url, timeout=60) as response:
+                      wasm = response.read()
+                  if version not in wasm:
+                      last_error = f"live WASM does not contain NoteCraft {version.decode()}"
+                      raise RuntimeError(last_error)
+                  with urlopen(base + "welcome-notebook.zip" + query, timeout=60) as response:
+                      archive_bytes = response.read()
+                  with zipfile.ZipFile(BytesIO(archive_bytes)) as notebook:
+                      html = notebook.read("html/00-start/welcome/index.html").decode("utf-8")
+                      cmgfm = notebook.read("cmgfm/00-start/welcome/index.md").decode("utf-8")
+                      names = notebook.namelist()
+                  title = f"Welcome to NoteCraft (Ver {version.decode()})"
+                  if title not in html or title not in cmgfm:
+                      last_error = f"live Welcome notebook formats do not match NoteCraft {version.decode()}"
+                      raise RuntimeError(last_error)
+                  if not all(name in names for name in (
+                      "html/_node.toml", "cmgfm/_node.toml",
+                      "html/00-start/welcome/index.html", "cmgfm/00-start/welcome/index.md",
+                  )):
+                      last_error = "live Welcome notebook must contain both generated formats"
+                      raise RuntimeError(last_error)
+                  print(f"Live demo at {wasm_url} and both Welcome notebook formats embed NoteCraft {version.decode()}")
+                  sys.exit(0)
+              except (URLError, TimeoutError, RuntimeError, zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
+                  last_error = str(error)
+              if attempt < 12:
+                  time.sleep(10)
+          sys.exit(f"Live demo version verification failed after {attempt} attempts: {last_error}")
+          PY

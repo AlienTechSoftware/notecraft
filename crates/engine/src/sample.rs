@@ -1,5 +1,5 @@
-//! Sample notebooks: a small, fixed set of content that shows every feature. Used by the
-//! tests, by the headless screenshot runner, by `notecraft-cli sample` and by the demo.
+//! Generic sample notebooks used by tests, the headless screenshot runner, and
+//! `notecraft-cli sample`. The release Welcome notebook is authored separately under `docs/demo`.
 
 use crate::{Output, Params, Session};
 use std::path::PathBuf;

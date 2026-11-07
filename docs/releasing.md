@@ -38,10 +38,28 @@ name or mark.
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.
 2. Run Actions, Packaging, Run workflow on the approved commit. This manually builds and verifies
-   Linux, Windows, and macOS artifacts and uploads them without publishing anything.
-3. After the Packaging run is green, run Actions, Release, Run workflow and enter that run ID.
-   Release downloads those exact artifacts and drafts `NoteCraft v<version>`. Nothing is published.
-   Try the packages on clean machines, then publish the draft by hand.
+   Linux, Windows, and macOS artifacts and uploads them without publishing anything. Record its
+   source commit and the version from `[workspace.package]`.
+3. Run Actions, Release, Run workflow from `main` at that same commit and enter that Packaging run
+   ID. The workflow rejects runs from another branch, commit, or workflow, and derives the release
+   version from the checked-out workspace. If `main` advanced, rerun Packaging for the new commit.
+   The workflow drafts `NoteCraft v<version>`; it does not publish it.
+4. Build Android separately through the approved ArtCraft Android builder. Record the NoteCraft
+   source commit and package version, verify the APK package metadata and signing certificate match
+   the intended release, then install it on a clean emulator/device. Attach it only after those
+   checks pass. Android is not built by this repository's Packaging workflow today.
+5. For the website, wait for the `Deploy website` workflow on the same `main` commit to succeed.
+   It publishes the browser app and the separately version-checked Welcome notebook archive from
+   `docs/demo/DemoNotebook`. Its production check verifies both the served WASM and notebook
+   payload. Open the demo in a clean browser session and confirm it opens the official Welcome
+   notebook. If a production run is cancelled or fails, rerun it before signoff.
+6. Review the draft's complete asset list and rendered notes, then test each platform package on a
+   clean target. Publish the draft only after the owner approves.
+
+The website, desktop release, and Android package are separate pipelines. Each bundles both
+generated Welcome formats and provisions the managed Welcome notebook at app startup; the website
+uses a static archive transport. The generic engine sample stays separate. Record and verify the
+source revision and version for every artifact.
 
 ### Notes and the draft
 
@@ -59,17 +77,16 @@ name or mark.
 ### Clean-machine check
 
 Before publishing, install the MSI on a machine that has never run NoteCraft. Follow the
-`packaging/installation artifacts.md` contract for the expected user
-notebook location and verify the installer places the Welcome notebook there before NoteCraft
-launches through the separate `notecraft-setup` helper. Check both formats and all 13 language
-folders. Also verify that app startup does not copy or replace it, and that edits and deletion
-survive restart and upgrade. Clear old app settings only when the first-use privacy dialog itself
-is under test; setup completion has its own marker.
+`packaging/installation artifacts.md` contract for the expected user notebook location. Launch
+NoteCraft and verify it creates or refreshes `welcome-to-notecraft` with both formats and all 13
+languages before loading the notebook tree. Place a sentinel user notebook beside it and verify it
+is unchanged. Confirm an older Welcome notebook is replaced on restart; its edits are expected to
+be replaced by the generated release content.
 
 | File | What it is |
 |---|---|
 | `notecraft-<version>-windows-x64.msi` | Per-machine installer: Program Files, Start menu shortcut |
-| `notecraft-<version>-windows-x64-portable.zip` | App, `notecraft-setup.exe`, and CLI; helper installs the optional notebook on first launch |
+| `notecraft-<version>-windows-x64-portable.zip` | App and CLI with the paired-format Welcome source |
 | `SHA256SUMS.txt` | SHA-256 of the two files above |
 
 Each file also gets a build provenance attestation. Check a download with
@@ -94,10 +111,10 @@ the `release` environment of the repository, never in a file.
 - The MSI `UpgradeCode` in `packaging/windows/notecraft.wxs` is fixed once the first MSI is public.
   Changing it later stops new versions from replacing old ones.
 - The exes carry the app icon and version information (build.rs, winresource), and the packaging script checks both.
-- Smoke test the artifact: it starts with no console window, the separate setup helper deploys the
-  optional User Assistance notebook before opening the page, a page can be edited, and a bad
-  notebooks folder shows an error box. Install, upgrade and uninstall must preserve user notebook
-  data. Use the canonical `packaging/installation artifacts.md` contract for the full checks.
+- Smoke test the artifact: it starts with no console window, refreshes the managed Welcome notebook,
+  leaves sibling notebooks unchanged, and reports an invalid notebooks folder. Install, upgrade and
+  uninstall must preserve other user notebook data. Use the canonical
+  `packaging/installation artifacts.md` contract for the full checks.
 
 ## Building locally
 

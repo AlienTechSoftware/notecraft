@@ -2,14 +2,15 @@
 # Build NoteCraft Linux release packages from one staged FHS tree.
 #
 # Usage:
-#   packaging/linux/package.sh [--skip-build] [--omit-demo] [--formats "tar appimage deb rpm"]
+#   packaging/linux/package.sh [--skip-build] [--formats "tar appimage deb rpm"]
 #
 # The default format is tar. AppImage needs appimagetool. Deb and rpm need nfpm.
 # Missing optional tools are reported as errors only when their format is requested.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="$(sed -n 's/^version = "\([0-9][0-9.]*\(-[^\"]*\)\?\)"$/\1/p' "$ROOT/Cargo.toml" | head -n 1)"
+VERSION="$(tr -d '\r' < "$ROOT/Cargo.toml" | sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)"$/\1/p' | head -n 1)"
+[[ -n "$VERSION" ]] || { echo "could not read workspace package version from Cargo.toml" >&2; exit 1; }
 ARCH="$(uname -m)"
 case "$ARCH" in
     x86_64) NFPM_ARCH=amd64 ;;
@@ -18,12 +19,10 @@ case "$ARCH" in
 esac
 
 SKIP_BUILD=0
-INCLUDE_DEMO=1
 FORMATS="tar"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build) SKIP_BUILD=1; shift ;;
-        --omit-demo) INCLUDE_DEMO=0; shift ;;
         --formats) FORMATS="${2:?--formats needs a value}"; shift 2 ;;
         -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -47,15 +46,12 @@ mkdir -p "$DIST"
 rm -rf "$WORK"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-    (cd "$ROOT" && cargo build --release --locked -p notecraft -p notecraft-setup)
+    (cd "$ROOT" && cargo build --release --locked -p notecraft)
 fi
 
 BIN="${CARGO_TARGET_DIR:-$ROOT/target}/release/notecraft"
 [ -x "$BIN" ] || { echo "release binary not found: $BIN" >&2; exit 1; }
 install -Dm755 "$BIN" "$STAGE/usr/bin/notecraft"
-SETUP_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/release/notecraft-setup"
-[ -x "$SETUP_BIN" ] || { echo "setup helper not found: $SETUP_BIN" >&2; exit 1; }
-install -Dm755 "$SETUP_BIN" "$STAGE/usr/bin/notecraft-setup"
 install -Dm644 "$ROOT/packaging/linux/com.alientechsoftware.notecraft.desktop" \
     "$STAGE/usr/share/applications/com.alientechsoftware.notecraft.desktop"
 
@@ -68,20 +64,21 @@ install -Dm644 "$ROOT/LICENSE-MIT" "$STAGE/usr/share/doc/notecraft/LICENSE-MIT"
 install -Dm644 "$ROOT/LICENSE-APACHE" "$STAGE/usr/share/doc/notecraft/LICENSE-APACHE"
 install -Dm644 "$ROOT/NOTICE" "$STAGE/usr/share/doc/notecraft/NOTICE"
 
-if [ "$INCLUDE_DEMO" = 1 ]; then
-    # Keep the optional User Assistance notebook as a distinct payload beside the app binaries.
-    DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
-    for format in html cmgfm; do
-        [ -d "$DEMO_SOURCE/$format" ] || { echo "required demo format is missing: $format" >&2; exit 1; }
-    done
-    DEMO_DEST="$STAGE/usr/share/notecraft/demo/welcome-to-notecraft"
-    mkdir -p "$DEMO_DEST"
-    cp -R "$DEMO_SOURCE/." "$DEMO_DEST/"
-    [ -f "$DEMO_DEST/html/_node.toml" ] && [ -f "$DEMO_DEST/cmgfm/_node.toml" ] && \
-        [ -f "$DEMO_DEST/html/00-start/welcome/index.html" ] && [ -f "$DEMO_DEST/cmgfm/00-start/welcome/index.md" ] || {
-        echo "demo was not staged" >&2; exit 1;
-    }
-fi
+# The app copies both generated formats into the user's notebooks folder at startup.
+DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
+for format in html cmgfm; do
+    [ -d "$DEMO_SOURCE/$format" ] || { echo "required $format demo format is missing" >&2; exit 1; }
+    [ -f "$DEMO_SOURCE/$format/_node.toml" ] || { echo "required $format demo notebook is missing" >&2; exit 1; }
+    count=$(find "$DEMO_SOURCE/$format" -mindepth 1 -maxdepth 1 -type d -regex '.*/\(1[0-9]\|2[0-9]\)-.*' | wc -l)
+    [ "$count" -eq 13 ] || { echo "$format demo has $count language folders, expected 13" >&2; exit 1; }
+done
+DEMO_DEST="$STAGE/usr/share/notecraft/demo/welcome-to-notecraft"
+mkdir -p "$DEMO_DEST"
+cp -R "$DEMO_SOURCE/." "$DEMO_DEST/"
+[ -f "$DEMO_DEST/html/_node.toml" ] && [ -f "$DEMO_DEST/html/00-start/welcome/index.html" ] && \
+    [ -f "$DEMO_DEST/cmgfm/_node.toml" ] && [ -f "$DEMO_DEST/cmgfm/00-start/welcome/index.md" ] || {
+    echo "paired demo payload was not staged" >&2; exit 1;
+}
 
 if has_format tar; then
     mkdir -p "$DIST/tar"
@@ -98,9 +95,6 @@ if has_format deb || has_format rpm; then
         -e "s|\${VERSION}|$VERSION|g"
         -e "s|\${NFPM_ARCH}|$NFPM_ARCH|g"
     )
-    if [ "$INCLUDE_DEMO" = 0 ]; then
-        NFPM_SED_ARGS+=( -e '/^  - src: .*\/usr\/share\/notecraft\/demo\/$/,/^    type: tree$/d' )
-    fi
     NFPM_ARCH="$NFPM_ARCH" VERSION="$VERSION" STAGE="$STAGE" \
         sed "${NFPM_SED_ARGS[@]}" "$ROOT/packaging/linux/nfpm.yaml" > "$WORK/nfpm.yaml"
     for format in deb rpm; do

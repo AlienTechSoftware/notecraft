@@ -16,10 +16,6 @@ on:
         description: "Successful Packaging workflow run ID whose artifacts should be published"
         required: true
         type: string
-      version:
-        description: "Version override for a test run, e.g. 0.1.0-rc.1 (empty: Cargo.toml)"
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -34,6 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
+      actions: read # inspect and download the selected Packaging run
       contents: write # the draft release
     # Signing secrets, when they exist, live in the `release` environment.
     environment: release
@@ -45,14 +42,12 @@ jobs:
       - name: Resolve the version
         id: v
         shell: bash
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          v="$INPUT_VERSION"
-          v="${v#v}"
-          if [ -z "$v" ]; then
-            v="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' Cargo.toml)"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Draft releases must be created from main"
+            exit 1
           fi
+          v="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' Cargo.toml)"
           if ! printf '%s' "$v" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
             echo "::error::'$v' is not a version like 1.2.3 or 1.2.3-rc.1"
             exit 1
@@ -64,6 +59,34 @@ jobs:
             echo "prerelease=$pre"
           } >>"$GITHUB_OUTPUT"
           echo "### NoteCraft v$v (\`${GITHUB_SHA::9}\`)" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the selected Packaging run matches this source
+        env:
+          PACKAGING_RUN_ID: ${{ inputs.packaging_run_id }}
+          EXPECTED_VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          gh run view "$PACKAGING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json workflowName,conclusion,headBranch,headSha > "$RUNNER_TEMP/packaging-run.json"
+          python3 - "$GITHUB_SHA" "$EXPECTED_VERSION" "$RUNNER_TEMP/packaging-run.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          expected_sha, expected_version, metadata_path = sys.argv[1:]
+          run = json.loads(Path(metadata_path).read_text())
+          problems = []
+          if run.get("workflowName") != "Packaging":
+              problems.append(f"selected run is {run.get('workflowName')!r}, not Packaging")
+          if run.get("conclusion") != "success":
+              problems.append(f"selected Packaging run concluded {run.get('conclusion')!r}")
+          if run.get("headBranch") != "main":
+              problems.append(f"selected Packaging run used branch {run.get('headBranch')!r}, not main")
+          if run.get("headSha") != expected_sha:
+              problems.append(f"Packaging source {run.get('headSha')} does not match release source {expected_sha}")
+          if problems:
+              sys.exit("; ".join(problems))
+          print(f"Packaging run matches main commit {expected_sha} and workspace version {expected_version}")
+          PY
 
       - name: Download artifacts from the selected Packaging run
         run: gh run download "${{ inputs.packaging_run_id }}" --repo "$GITHUB_REPOSITORY" --dir dist --pattern 'notecraft-*'

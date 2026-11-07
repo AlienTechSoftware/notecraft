@@ -1,56 +1,45 @@
 # Installation artifacts
 
-Status: product contract approved by the owner on 2026-11-06. This is the single authority for
-installation artifact responsibilities and the User Assistance demo notebook. Windows and Linux
-now use separate setup helpers. macOS DMGs carry the optional notebook beside the app and include
-a separate, consented setup app. Clean installed-flow verification remains open for desktop.
+Status: product contract updated by the owner on 2026-11-07. This is the single authority for
+installation artifact responsibilities and the User Assistance demo notebook. Every app launch
+refreshes the managed Welcome notebook from the generated content bundled with the application.
 
 ## Separate installation artifacts
 
 Every distribution has two logically separate artifacts:
 
-1. **Application binaries**: executable code and runtime dependencies, deployed to the platform's
-   normal application location.
-2. **User Assistance demo notebook**: user-facing notebook files, deployed to the target user's
-   normal `NoteCraft` notebooks folder.
+1. **Application binaries and bundled source content**: executable code plus the two generated
+   Welcome notebook formats, deployed to the platform's normal application location.
+2. **Managed Welcome notebook**: a per-user copy in the target user's normal `NoteCraft`
+   notebooks folder, refreshed by the app when it starts.
 
-One outer download or installer may contain both artifacts. One MSI, DMG, APK, archive, or other
-package can carry both. Its manifest, staging, and verification must still identify the binaries
-and notebook as separate payloads. The notebook is not executable code and must not be compiled
-into the app binary as a substitute for installation.
+Each installer carries the generated content with the app so the app can provision it without a
+separate setup download, helper choice, or network request. The content remains ordinary notebook
+files; it is not executable code.
 
 The authored notebook source is `docs/demo/scripts/content`. `cargo xtask demo` generates the
-official HTML and CMGFM versions under `docs/demo/DemoNotebook`. Both formats belong to the User
-Assistance artifact and must remain in parity. Installers use these generated outputs, never
-`my-notebooks/welcome-notebook` or another local test copy.
+official HTML and CMGFM notebooks under `docs/demo/DemoNotebook`, each with all 13 languages.
+Both are built, bundled, and tested for parity. Installers use this generated source, never
+`my-notebooks/welcome-notebook` or another local test copy. NoteCraft supports both formats for
+the Welcome notebook and for notebooks created or opened by users.
 
 ## Separation of responsibility
 
-The installation tool owns deployment of both artifacts:
+The running app owns the per-user copy:
 
 - Install application binaries in the application location.
 - Install the User Assistance notebook in the user's normal notebooks folder.
-- On a fresh install, create the notebook only if it is absent.
-- On upgrade, preserve an existing notebook, including user edits and deletion.
+- At app startup, create or replace only `welcome-to-notecraft` from the bundled HTML and CMGFM
+  formats. This refreshes app-authored content on every launch.
+- Preserve every sibling notebook and its contents.
 - On uninstall, remove application files only; leave user notebooks in place.
-- Report installation failures through the installer or setup tool.
+- If refreshing the Welcome notebook fails, report the error and preserve the existing copy.
 
-Windows starts the separate `notecraft-setup` helper from the MSI finish action and its shortcuts.
-Linux desktop entries and the AppImage launcher start the same helper. It runs in the signed-in
-user's context, installs only when the User Assistance folder is absent, records completion outside
-app preferences, and then opens NoteCraft. Linux system package scripts never write into a guessed
-user's home. If a package omits the optional payload, the helper opens NoteCraft without copying
-anything.
-
-The application does not install the notebook. It must not unpack, seed, copy, refresh, replace,
-repair, or delete the notebook at startup or in response to an app update. After setup, the app
-discovers and opens the already-installed notebook through its ordinary notebook discovery and
-open behavior. If setup did not deploy it, the app does not silently compensate.
-
-After installation, the Welcome notebook is ordinary user-owned notebook data. Users can edit,
-move, sync, back up, or delete it. App upgrades must not overwrite or recreate it. Android's
-app-specific storage is removed by the OS when NoteCraft is uninstalled; retaining Android
-notebooks after uninstall requires a future shared-storage design.
+Desktop apps copy the generated source from the installed package or app bundle into the selected
+user notebook root. Android refreshes from APK assets before opening the native app. Browser startup
+refreshes it from the website archive on each non-invited session. The Welcome notebook's content
+and edits are replaced with the release-authored version on app start; sibling notebooks are
+untouched. Android app-specific storage follows Android's normal uninstall lifecycle.
 
 ## Platform installation contract
 
@@ -62,55 +51,45 @@ do not guess a home or storage path when the platform provides an API.
 
 | Platform | Application binaries | User Assistance notebook | Installation owner |
 |---|---|---|---|
-| Windows | Normal per-machine or per-user app location | Current user's Documents/NoteCraft/welcome-to-notecraft | MSI or its setup helper, running for the intended user |
-| Linux | Normal package or portable-app location | Current user's Documents/NoteCraft/welcome-to-notecraft | A user-context setup tool; a system package script must not guess which user's home to modify |
-| macOS | `NoteCraft.app` copied to Applications | Current user's Documents/NoteCraft/welcome-to-notecraft | Separate, consented `Install NoteCraft Welcome Notebook.app` in the DMG; dragging the app alone does not perform this step |
-| Android | Installed APK application package | App-specific external files/NoteCraft/welcome-to-notecraft, beside notebooks created on-device | The APK's dedicated setup activity, before it opens the NoteCraft activity |
+| Website demo | Browser app (JavaScript and WebAssembly) | `/NoteCraft/welcome-to-notecraft`, containing HTML and CMGFM | Browser startup refreshes it from the two-format archive |
+| Windows | Normal per-machine or per-user app location | Current user's Documents/NoteCraft/welcome-to-notecraft | App startup copies from the package's bundled source |
+| Linux | Normal package or portable-app location | Current user's Documents/NoteCraft/welcome-to-notecraft | App startup copies from the package's bundled source |
+| macOS | `NoteCraft.app` copied to Applications | Current user's Documents/NoteCraft/welcome-to-notecraft | App startup copies from app resources |
+| Android | Installed APK application package | App-specific external files/NoteCraft/welcome-to-notecraft | APK setup activity refreshes both asset formats before opening NoteCraft |
 
-An installation format that cannot perform the per-user notebook step by itself must provide a
-separate installation/setup component with a clear user action. The Android setup activity is a
-distinct installer entry point in the APK. It offers to install the optional payload or skip it,
-then opens NoteCraft. The NoteCraft activity itself only discovers and opens notebooks. Do not
-claim that an artifact installs the notebook until a clean installation proves the notebook is
-present before the NoteCraft activity launches.
+The browser archive contains both directories under `docs/demo/DemoNotebook`, is version-checked
+in the website workflow, and is loaded under the same `/NoteCraft` root as other browser notebooks.
+The generic engine sample remains a separate sample notebook and is not the release Welcome
+notebook.
 
-## Current implementation gap
+The Android launch activity refreshes the managed notebook from both APK asset formats before
+opening the native app.
 
-Windows and Linux package staging now follows the separate-payload contract:
+## Current implementation status
 
-- The Windows MSI and portable ZIP include the setup helper and support builds with the optional
-  notebook included or omitted. Both MSI variants compile; installation on a clean Windows profile,
-  upgrade and uninstall behavior still need a VM smoke test.
-- Linux tar, Debian and AppImage packages include the setup helper and support builds with the
-  optional notebook included or omitted. Package builds and tar/DEB content smoke tests pass;
-  running the helper from an installed package and checking upgrade/uninstall behavior still need
-  a clean user-profile test.
-- The helper and app share the saved notebook root. The app's current fallback is
-  Documents/NoteCraft under the user's home; redirected Windows Documents folders are not yet
-  resolved through the OS known-folder API.
+Desktop and mobile package staging follows the app-managed refresh contract:
 
-Android's separate APK setup flow passed a fresh tablet-emulator install on 2026-11-06: setup
-installed the payload, NoteCraft opened its Welcome page from the app-specific notebook folder, and
-a relaunch kept the notebook and bypassed setup. Android upgrade and user-deletion flows remain
-unverified.
+- The Windows MSI and portable ZIP include both generated formats. Clean VM refresh and
+  sibling-preservation checks remain required.
+- Linux packages include both generated formats. Installed-run refresh and sibling-preservation
+  checks remain required.
+- macOS bundles both formats in app resources; native launch verification remains required.
+
+Android stages both formats as APK assets and refreshes them before opening NoteCraft. Build and
+emulator checks remain required.
 
 ## Installation verification
 
 For each supported artifact and platform, signoff proves:
 
-1. The final package contains two separately identifiable payloads: app binaries and both
-   generated notebook formats.
-2. A clean installation or first desktop setup places the notebook in the platform's expected
-   location before NoteCraft opens it. Android setup may be skipped when the package omits the
-   optional payload.
-3. The app opens the installed notebook without creating or copying it at startup.
-4. An edit survives app restart and application upgrade. Setup completion is separate from app
-   preferences so resetting preferences does not reinstall a deleted notebook.
-5. A user-deleted notebook stays deleted after restart and upgrade.
+1. The package contains both generated formats and all 13 languages.
+2. App startup creates or replaces only `welcome-to-notecraft` in the platform notebook root.
+3. A sentinel sibling notebook stays byte-for-byte unchanged.
+4. Both format variants retain their page tree, assets, and metadata.
+5. The managed Welcome notebook is refreshed from app content on restart.
 6. Desktop uninstall removes app binaries and leaves the user's notebook untouched. Android
    uninstall removes app-specific notebook files as required by the OS storage model.
-7. A failed notebook installation is reported by the installation tool; the app does not install
-   a fallback copy.
+7. A failed refresh is reported and does not replace the existing copy with a partial notebook.
 
 Run `cargo xtask demo-check` and
 `cargo test -p notecraft-formats --test format_parity` for the source outputs. Then inspect the

@@ -15,6 +15,7 @@ workspace = true
 notecraft-engine = { workspace = true }
 notecraft-store = { workspace = true }
 notecraft-ui-egui = { workspace = true }
+notecraft-setup = { path = "../notecraft-setup" }
 eframe = { workspace = true, features = ["clipboard"] }
 egui = { workspace = true }
 image = { workspace = true }

@@ -1,10 +1,9 @@
 # NoteCraft macOS packaging guide
 
-This directory contains the NoteCraft macOS app, notebook setup app, DMG and CLI archive scripts.
-The DMG carries the application and optional User Assistance notebook as separate items. The
-setup app installs the notebook into the user's normal notebooks folder with consent; NoteCraft
-does not install or recreate it. Packages remain test artifacts until a maintainer completes
-signing, notarization and clean-machine installation checks.
+This directory contains the NoteCraft macOS app, DMG and CLI archive scripts. The app bundle
+includes both generated Welcome notebook formats and refreshes the managed Welcome notebook when
+it starts. It replaces only `welcome-to-notecraft`; sibling notebooks remain unchanged. Packages
+remain test artifacts until a maintainer completes signing, notarization and clean-machine checks.
 
 ## Build and verify test packages
 
@@ -14,23 +13,14 @@ Use macOS with Xcode Command Line Tools, the pinned Rust toolchain in `rust-tool
 ```sh
 rustup install
 packaging/OSX/package.sh --arch aarch64
-packaging/OSX/verify.sh aarch64 --expect-demo
+packaging/OSX/verify.sh aarch64
 packaging/OSX/test-stale.sh aarch64
 bash packaging/OSX/test-provenance.sh
 ```
 
-The optional notebook may be omitted without changing the app:
-
-```sh
-packaging/OSX/package.sh --arch aarch64 --omit-demo --out "$PWD/dist/macos-no-demo"
-DIST="$PWD/dist/macos-no-demo" packaging/OSX/verify.sh aarch64 --expect-no-demo
-```
-
-The included-notebook DMG contains `NoteCraft.app`, `Install NoteCraft Welcome Notebook.app`,
-`Welcome Notebook/`, an Applications link and a read-me file at its root. Drag the app to
-Applications, run the separate setup app while the disk image is mounted, confirm the notebook
-copy, then open NoteCraft. The setup app leaves an existing notebook untouched. If the payload is
-omitted, the setup app explains that no notebook was included and the application remains usable.
+The DMG contains `NoteCraft.app`, an Applications link and a read-me file at its root. Drag the
+app to Applications and open it. NoteCraft creates or refreshes the Welcome notebook in the user's
+notebook folder before loading the notebook tree.
 
 The default `--arch universal` builds both Apple targets and combines the GUI and CLI with
 `lipo`. `--arch x86_64` produces Intel-only packages. The DMG and separate CLI zip are written to
@@ -59,23 +49,21 @@ requires the bundle number to equal that count. On a host that cannot execute a 
 architecture, successful Cargo builds and matching records establish source provenance;
 runtime behavior still needs a native host check.
 
-The app bundle contains its executables, icon, project licences, attribution and third-party
-notices. It does not contain the demo notebook. When included, the separate `Welcome Notebook/`
-folder at the DMG root carries both HTML and CMGFM formats; verification compares it with the
-official source. The DMG verifier also checks the setup app, both app signatures, architecture
-slices, source hashes and the no-payload variant. These package checks do not replace a clean
-macOS installation test; see [the macOS installation gaps](issues.md) and the canonical
+The app bundle contains its executables, icon, both generated Welcome notebook formats, project
+licences, attribution and third-party notices. The DMG verifier compares the bundled notebooks
+with their official generated source and checks signatures, architecture slices and source hashes.
+These package checks do not replace a clean macOS installation test; see [the macOS installation gaps](issues.md) and the canonical
 `packaging/installation artifacts.md` contract.
 The standalone CLI zip can be extracted without installing the app. Both packages are
 signed ad-hoc by default for local testing. A downloaded ad-hoc package can be rejected by
 Gatekeeper; do not change system security settings to test it.
 
-For a manual Finder check, use a disposable notebook directory. Open the DMG, drag
-`NoteCraft.app` into Applications, run `Install NoteCraft Welcome Notebook.app` from the mounted
-DMG and accept, then open the installed app. Confirm the notebook exists before NoteCraft starts,
-edit it, quit, relaunch and confirm the edit remains. Run setup again and confirm it preserves the
-edit. Remove only the test app after the check; keep the notebook directory to confirm app removal
-does not remove notes. Repeat with a DMG built using `--omit-demo` and on Intel before release.
+For a manual Finder check, use a disposable notebook directory containing a sentinel user notebook
+and an older `welcome-to-notecraft`. Open the DMG, drag `NoteCraft.app` into Applications, then
+launch it. Confirm the Welcome notebook has both formats and the current content, while the
+sentinel notebook is unchanged. Quit and relaunch to verify refresh behavior. Remove only the test
+app after the check; confirm app removal leaves the notebook root in place. Repeat on Intel before
+release.
 
 The preferred direction is to follow the packaging tools and libraries already used by the
 ArtCraft applications, especially the sibling MailCraft macOS package. Do not introduce a new

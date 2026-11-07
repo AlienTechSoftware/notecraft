@@ -2756,6 +2756,7 @@ dependencies = [
  "image",
  "log",
  "notecraft-engine",
+ "notecraft-setup",
  "notecraft-store",
  "notecraft-ui-egui",
  "raw-window-handle",
