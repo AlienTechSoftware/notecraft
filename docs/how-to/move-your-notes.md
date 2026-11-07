@@ -58,8 +58,10 @@ were imported, what was left out and why, and what could not be carried over.
 - **Pictures that were never stored.** Some pictures were only ever in the cloud, and the backup
   does not hold their bytes. They are counted in the report, not invented.
 - **Windows metafile and TIFF pictures.** A browser cannot show them. They are kept as files.
-- **Section order and colours.** They live in the notebook's table of contents (`.onetoc2`),
-  which the backups do not contain and the importer does not read yet. Sections come in by name.
+- **Section order.** It lives in the notebook's table of contents (`.onetoc2`), which the
+  inspected backups do not contain. Sections come in by name. Notebook colors are read from
+  `.onetoc2` when present; section colors are read from the TOC or section metadata.
+  Imported colors map to NoteCraft's named palette, so exact shades may differ.
 - **Page layout.** A page is a free canvas of boxes. Boxes come in as blocks in reading order.
 - **Tags, creation dates and authors.** Not read yet.
 

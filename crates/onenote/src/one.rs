@@ -12,6 +12,7 @@
 use crate::guid::CompactId;
 use crate::props::PropertySet;
 use crate::store::{Object, ObjectData, ObjectSpace, Store};
+use crate::toc::NOTEBOOK_COLOR_COMPATIBILITY_ID;
 
 // JCID index values ([MS-ONE] 2.1.13). The high half of a JCID holds flags; `Object::kind`
 // returns this part.
@@ -63,7 +64,6 @@ const EMBEDDED_FILE_NAME: u32 = 0x1C00_1D9C;
 const ROW_COUNT: u32 = 0x1400_1D57;
 const COLUMN_COUNT: u32 = 0x1400_1D58;
 const IS_TITLE_TEXT: u32 = 0x0800_1CB4;
-
 /// A damaged file must not be able to make the walk run away.
 const MAX_DEPTH: usize = 24;
 const MAX_PAGES: usize = 10_000;
@@ -77,6 +77,8 @@ pub struct Section {
     /// True when the file did not declare its section node and the page order is a guess
     /// from creation order.
     pub recovered: bool,
+    /// The raw OneNote color value from section metadata, when declared.
+    pub color: Option<u32>,
 }
 
 /// A page. `level` is OneNote's page level, 1 to 3: 1 is a page, 2 and 3 are sub-pages of
@@ -125,6 +127,12 @@ pub struct Run {
 pub fn section(store: &Store) -> Section {
     let mut pages = Vec::new();
     let Some(root) = store.spaces.first() else { return Section::default() };
+    let color = root
+        .metadata_root()
+        .and_then(Object::props)
+        .and_then(|properties| properties.number(NOTEBOOK_COLOR_COMPATIBILITY_ID))
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value != u32::MAX);
     let mut recovered = false;
     let mut series_list: Vec<&Object> = Vec::new();
     if let Some(props) = root.content_root().filter(|o| o.kind() == SECTION_NODE).and_then(Object::props) {
@@ -151,7 +159,7 @@ pub fn section(store: &Store) -> Section {
         let metas = series_props.object_ids(META_DATA_OBJECTS_ABOVE_GRAPH_SPACE);
         for (i, space_id) in spaces.iter().enumerate() {
             if pages.len() >= MAX_PAGES {
-                return Section { pages, recovered };
+                return Section { pages, recovered, color };
             }
             let meta = metas.get(i).and_then(|m| resolve(root, *m)).and_then(Object::props);
             if let Some(page) = page_of(store, root, *space_id, meta) {
@@ -159,7 +167,7 @@ pub fn section(store: &Store) -> Section {
             }
         }
     }
-    Section { pages, recovered }
+    Section { pages, recovered, color }
 }
 
 /// One page: its object space, with the metadata the section keeps beside it.
@@ -433,6 +441,15 @@ mod tests {
                 assert_eq!((*list, *depth), (None, 0));
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_section_metadata_color_is_read_and_undefined_is_ignored() {
+        for (value, expected) in [(0x00E4_A88A, Some(0x00E4_A88A)), (u32::MAX, None)] {
+            let data = OneNote::new().with_color(value).with_page("Color test", &[OneNote::line("synthetic")]).finish();
+            let store = crate::store::read(&data).expect("read synthetic section");
+            assert_eq!(section(&store).color, expected);
         }
     }
 

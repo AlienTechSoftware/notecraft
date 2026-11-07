@@ -137,6 +137,7 @@ fn main() {
             Err(e) => {
                 let kind = match e {
                     OneError::NotASection(_) => "not-a-section",
+                    OneError::NotAToc(_) => "not-a-toc",
                     OneError::NotesetFile => "toc",
                     OneError::Truncated(w) => w,
                     OneError::Corrupt(_) => "corrupt",

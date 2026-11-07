@@ -20,7 +20,7 @@ use notecraft_formats::markdown::Block;
 use notecraft_formats::render::{blocks_to_html, blocks_to_markdown};
 use notecraft_model::text::{Dir, direction};
 use notecraft_model::{NodeKind, PageFormat};
-use notecraft_onenote::{OneError, Page, Section, Store};
+use notecraft_onenote::{OneError, Page, Section, Store, Toc};
 use notecraft_store::tree::{child_dirs, read_node};
 use notecraft_store::{Settings, assets, ops, page};
 use std::fmt;
@@ -42,7 +42,7 @@ pub enum Existing {
 
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// A folder of `.one` files (searched all the way down), or one `.one` file.
+    /// A folder of `.one` files and optional `.onetoc2` metadata (searched recursively), or one `.one` file.
     pub source: PathBuf,
     /// The notebooks folder to write into.
     pub dest: PathBuf,
@@ -75,7 +75,7 @@ impl Options {
 /// Something that happened, for a progress display.
 #[derive(Clone, Debug)]
 pub enum Event<'a> {
-    Found { sections: usize, copies_skipped: usize, ignored: usize },
+    Found { sections: usize, copies_skipped: usize, tocs_read: usize, ignored: usize },
     Section { index: usize, total: usize, label: &'a str },
     Done,
 }
@@ -94,8 +94,12 @@ pub struct Report {
     pub sections_planned: usize,
     /// Older dated copies that were not imported because a newer one was.
     pub older_copies_left: usize,
-    /// `.onetoc2` and `.onepkg` files seen and not imported.
+    /// `.onepkg` files seen and not imported.
     pub ignored: usize,
+    /// `.onetoc2` files found, successfully read, or failed to read or parse.
+    pub toc_files_found: usize,
+    pub toc_files_read: usize,
+    pub toc_files_failed: usize,
     pub notebooks_made: usize,
     pub sections_imported: usize,
     pub sections_recovered: usize,
@@ -117,8 +121,15 @@ impl fmt::Display for Report {
         let mode = if self.dry_run { " (dry run, nothing written)" } else { "" };
         writeln!(f, "OneNote import{mode}")?;
         writeln!(f, "  files found: {}  sections: {}  older copies left out: {}", self.files_found, self.sections_planned, self.older_copies_left)?;
+        if self.toc_files_found > 0 {
+            writeln!(
+                f,
+                "  notebook table-of-contents files: {} found, {} read, {} failed",
+                self.toc_files_found, self.toc_files_read, self.toc_files_failed
+            )?;
+        }
         if self.ignored > 0 {
-            writeln!(f, "  table-of-contents and package files noticed, not imported yet: {}", self.ignored)?;
+            writeln!(f, "  OneNote package files noticed, not imported yet: {}", self.ignored)?;
         }
         if !self.dry_run {
             writeln!(
@@ -167,12 +178,37 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
         return Err(format!("the source {} does not exist", options.source.display()));
     }
     let scan: Scan = discover::scan(&options.source);
-    let mut report = Report { dry_run: options.dry_run, files_found: scan.files.len(), ignored: scan.ignored.len(), ..Report::default() };
+    let mut report = Report {
+        dry_run: options.dry_run,
+        files_found: scan.files.len(),
+        ignored: scan.ignored.len(),
+        toc_files_found: scan.tocs.len(),
+        ..Report::default()
+    };
+    let loaded_tocs: Vec<LoadedToc> = scan
+        .tocs
+        .iter()
+        .filter_map(|file| match fs::read(&file.path).ok().and_then(|bytes| notecraft_onenote::read_toc(&bytes).ok()) {
+            Some(toc) => {
+                report.toc_files_read += 1;
+                Some(LoadedToc { folders: file.folders.clone(), toc })
+            }
+            None => {
+                report.toc_files_failed += 1;
+                None
+            }
+        })
+        .collect();
     let all = discover::plan(&scan.files, options.all_versions);
     report.older_copies_left = scan.files.len().saturating_sub(all.len());
     let planned: Vec<Planned> = all.into_iter().filter(|p| wanted(p, &options.only)).collect();
     report.sections_planned = planned.len();
-    progress(&Event::Found { sections: planned.len(), copies_skipped: report.older_copies_left, ignored: report.ignored });
+    progress(&Event::Found {
+        sections: planned.len(),
+        copies_skipped: report.older_copies_left,
+        tocs_read: report.toc_files_read,
+        ignored: report.ignored,
+    });
 
     let fallback = loose_notebook_name(&options.source);
     let settings = Settings::default_location();
@@ -186,7 +222,7 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
         if options.dry_run {
             continue;
         }
-        if let Err(reason) = import_section(options, &settings, item, &fallback, &mut report) {
+        if let Err(reason) = import_section(options, &settings, item, &fallback, &loaded_tocs, &mut report) {
             report.skipped.push(Skipped { label, reason });
         }
     }
@@ -231,7 +267,19 @@ fn child_by_title(parent: &Path, title: &str, kind: NodeKind) -> Option<PathBuf>
     child_dirs(parent).into_iter().find(|d| read_node(d).is_some_and(|n| n.kind == kind && n.title == title))
 }
 
-fn import_section(options: &Options, settings: &Settings, item: &Planned, fallback: &str, report: &mut Report) -> Result<(), String> {
+struct LoadedToc {
+    folders: Vec<String>,
+    toc: Toc,
+}
+
+fn import_section(
+    options: &Options,
+    settings: &Settings,
+    item: &Planned,
+    fallback: &str,
+    tocs: &[LoadedToc],
+    report: &mut Report,
+) -> Result<(), String> {
     let data = fs::read(&item.file.path).map_err(|e| format!("cannot read the file: {e}"))?;
     let store = match notecraft_onenote::read(&data) {
         Ok(s) => s,
@@ -249,6 +297,7 @@ fn import_section(options: &Options, settings: &Settings, item: &Planned, fallba
     // The notebook and its section groups.
     let mut folders = item.file.folders.clone();
     let notebook_title = clean_title(&if folders.is_empty() { fallback.to_string() } else { folders.remove(0) }, "Notebook");
+    let notebook_color = notebook_color_for(&item.file.folders, tocs);
     let notebook = match child_by_title(&options.dest, &notebook_title, NodeKind::Notebook) {
         Some(p) => p,
         None => {
@@ -256,6 +305,11 @@ fn import_section(options: &Options, settings: &Settings, item: &Planned, fallba
             ops::create_notebook(&options.dest, &notebook_title, Some(options.format), settings).map_err(|e| e.to_string())?
         }
     };
+    if read_node(&notebook).is_some_and(|node| node.color.is_none())
+        && let Some(color) = notebook_color.and_then(node_color)
+    {
+        ops::set_color(&notebook, Some(color)).map_err(|e| e.to_string())?;
+    }
     let mut parent = notebook;
     for group in &folders {
         let title = clean_title(group, "Section group");
@@ -280,6 +334,10 @@ fn import_section(options: &Options, settings: &Settings, item: &Planned, fallba
         }
     }
     let section_dir = ops::create_node(&parent, &name, NodeKind::Section, None, settings).map_err(|e| e.to_string())?;
+    let raw_section_color = section_color_for(&item.file, store.header.file, tocs).or(section.color);
+    if let Some(color) = raw_section_color.and_then(node_color) {
+        ops::set_color(&section_dir, Some(color)).map_err(|e| e.to_string())?;
+    }
     write_pages(options, settings, &store, &data, &section, &section_dir, report)?;
     report.sections_imported += 1;
     if section.recovered {
@@ -292,6 +350,77 @@ fn import_section(options: &Options, settings: &Settings, item: &Planned, fallba
         });
     }
     Ok(())
+}
+
+fn notebook_color_for(section_folders: &[String], tocs: &[LoadedToc]) -> Option<u32> {
+    let notebook_folders = section_folders.first().map(std::slice::from_ref).unwrap_or(&[]);
+    tocs.iter().find(|toc| same_folders(&toc.folders, notebook_folders)).and_then(|toc| toc.toc.color)
+}
+
+fn section_color_for(file: &discover::SectionFile, identity: notecraft_onenote::Guid, tocs: &[LoadedToc]) -> Option<u32> {
+    let filename = file.path.file_name()?.to_string_lossy();
+    for toc in tocs.iter().filter(|toc| same_folders(&toc.folders, &file.folders)) {
+        for entry in &toc.toc.sections {
+            let matches = match entry.identity {
+                Some(entry_identity) => entry_identity == identity,
+                None => toc_filename_matches(&entry.filename, &filename),
+            };
+            if matches {
+                return entry.color;
+            }
+        }
+    }
+    None
+}
+
+fn same_folders(a: &[String], b: &[String]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(left, right)| left.eq_ignore_ascii_case(right))
+}
+
+fn toc_filename_matches(toc_name: &str, file_name: &str) -> bool {
+    let normalized = toc_name.replace("^M", "+").replace("^J", ",");
+    normalized.eq_ignore_ascii_case(file_name)
+}
+
+/// Maps OneNote's free-form ARGB values to NoteCraft's named container palette by hue.
+/// This is intentionally lossy; alpha is ignored because OneNote section colors commonly
+/// store it as zero, and near-neutral colors use NoteCraft's Gray option.
+fn node_color(argb: u32) -> Option<notecraft_model::NodeColor> {
+    use notecraft_model::NodeColor;
+
+    if argb == u32::MAX {
+        return None;
+    }
+    let rgb = (((argb >> 16) & 0xFF) as u8, ((argb >> 8) & 0xFF) as u8, (argb & 0xFF) as u8);
+    let (maximum, minimum) = (rgb.0.max(rgb.1).max(rgb.2), rgb.0.min(rgb.1).min(rgb.2));
+    if maximum == 0 || u16::from(maximum - minimum) * 100 / u16::from(maximum) < 18 {
+        return Some(NodeColor::Gray);
+    }
+    let hue = rgb_hue(rgb);
+    NodeColor::ALL.into_iter().filter(|color| *color != NodeColor::Gray).min_by_key(|color| hue_distance(hue, rgb_hue(color.rgb(false))))
+}
+
+fn rgb_hue(rgb: (u8, u8, u8)) -> i16 {
+    let (red, green, blue) = (i32::from(rgb.0), i32::from(rgb.1), i32::from(rgb.2));
+    let maximum = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let delta = maximum - minimum;
+    if delta == 0 {
+        return 0;
+    }
+    let degrees = if maximum == red {
+        60 * (green - blue) / delta
+    } else if maximum == green {
+        60 * (2 * delta + blue - red) / delta
+    } else {
+        60 * (4 * delta + red - green) / delta
+    };
+    degrees.rem_euclid(360) as i16
+}
+
+fn hue_distance(left: i16, right: i16) -> u16 {
+    let distance = left.abs_diff(right);
+    distance.min(360 - distance)
 }
 
 fn write_pages(
@@ -386,6 +515,20 @@ mod tests {
     }
 
     fn quiet(_: &Event) {}
+
+    #[test]
+    fn imported_colors_map_to_the_named_palette_and_ignore_undefined_values() {
+        for color in notecraft_model::NodeColor::ALL {
+            if color == notecraft_model::NodeColor::Gray {
+                continue;
+            }
+            let (red, green, blue) = color.rgb(false);
+            let argb = (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue);
+            assert_eq!(node_color(argb), Some(color), "{color:?}");
+        }
+        assert_eq!(node_color(0x0080_8080), Some(notecraft_model::NodeColor::Gray));
+        assert_eq!(node_color(u32::MAX), None);
+    }
 
     fn sample(src: &Path) {
         let mut one = OneNote::new();
