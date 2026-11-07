@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build a NoteCraft.app, drag-to-Applications DMG and separate CLI archive on macOS.
-# Default: universal. Options: --arch aarch64|x86_64|universal, --out DIR, --no-build.
+# Build a NoteCraft.app, a separate notebook setup app, DMG and CLI archive on macOS.
+# Default: universal. Options: --arch aarch64|x86_64|universal, --out DIR, --no-build, --omit-demo.
 # CARGO_TARGET_DIR and DIST may override the build and distribution directories.
 set -euo pipefail
 
@@ -8,11 +8,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCH=universal
 OUT="${DIST:-$ROOT/dist/macos}"
 BUILD=1
+INCLUDE_DEMO=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch) [[ $# -ge 2 ]] || { echo "--arch needs a value" >&2; exit 2; }; ARCH="$2"; shift 2 ;;
     --out) [[ $# -ge 2 ]] || { echo "--out needs a value" >&2; exit 2; }; OUT="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
+    --omit-demo) INCLUDE_DEMO=0; shift ;;
     -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -58,7 +60,7 @@ echo "==> NoteCraft $VERSION ($ARCH)"
 if [[ "$BUILD" = 1 ]]; then
   rustup target add "${targets[@]}"
   for target in "${targets[@]}"; do
-    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli)
+    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli -p notecraft-setup)
   done
 fi
 # Both slices must be built from the same inputs, including local uncommitted work.
@@ -78,27 +80,30 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 APP="$WORK/NoteCraft.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$APP/Contents/Resources/demo"
+SETUP_APP="$WORK/Install NoteCraft Welcome Notebook.app"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses" "$SETUP_APP/Contents/MacOS" "$SETUP_APP/Contents/Resources"
 
 # --no-build accepts only binaries recorded by a successful package build. The record
 # binds both executable hashes to the Cargo version and source identity, including foreign slices.
 for target in "${targets[@]}"; do
   gui="$TARGET_ROOT/$target/release/notecraft"
   cli="$TARGET_ROOT/$target/release/notecraft-cli"
+  setup="$TARGET_ROOT/$target/release/notecraft-setup"
   record="$TARGET_ROOT/$target/release/.notecraft-osx-provenance"
-  [[ -x "$gui" && -x "$cli" ]] || { echo "missing executable for $target" >&2; exit 1; }
+  [[ -x "$gui" && -x "$cli" && -x "$setup" ]] || { echo "missing executable for $target" >&2; exit 1; }
   expected_arch="${target%%-*}"
   [[ "$expected_arch" = aarch64 ]] && expected_arch=arm64
-  for binary in "$gui" "$cli"; do
+  for binary in "$gui" "$cli" "$setup"; do
     [[ "$(lipo -archs "$binary")" = "$expected_arch" ]] || { echo "wrong architecture: $binary" >&2; exit 1; }
   done
   gui_hash="$(sha256 "$gui")"
   cli_hash="$(sha256 "$cli")"
-  expected_record="$(printf '%s\n%s\n%s\n%s' "$VERSION" "$target" "$gui_hash" "$cli_hash")"
+  setup_hash="$(sha256 "$setup")"
+  expected_record="$(printf '%s\n%s\n%s\n%s\n%s' "$VERSION" "$target" "$gui_hash" "$cli_hash" "$setup_hash")"
   if [[ "$BUILD" = 0 ]]; then
     [[ -f "$record" && ! -L "$record" ]] || { echo "missing build provenance for $target; build this target with package.sh first" >&2; exit 1; }
-    [[ "$(head -n 4 "$record")" = "$expected_record" ]] || { echo "stale or changed executable for $target; rebuild without --no-build" >&2; exit 1; }
-    check_source_provenance "$(tail -n +5 "$record")" "$build_source" 1
+    [[ "$(head -n 5 "$record")" = "$expected_record" ]] || { echo "stale or changed executable for $target; rebuild without --no-build" >&2; exit 1; }
+    check_source_provenance "$(tail -n +6 "$record")" "$build_source" 1
   else
     if native_target "$target"; then
       check_version "$gui" notecraft
@@ -111,6 +116,18 @@ for target in "${targets[@]}"; do
     RECORD_TMP=""
   fi
 done
+
+setup_slices=()
+for target in "${targets[@]}"; do
+  setup_slices+=("$TARGET_ROOT/$target/release/notecraft-setup")
+done
+if [[ "$ARCH" = universal ]]; then
+  lipo -create "${setup_slices[@]}" -output "$SETUP_APP/Contents/MacOS/notecraft-setup"
+else
+  cp "${setup_slices[0]}" "$SETUP_APP/Contents/MacOS/notecraft-setup"
+fi
+chmod 755 "$SETUP_APP/Contents/MacOS/notecraft-setup"
+lipo -info "$SETUP_APP/Contents/MacOS/notecraft-setup"
 
 for binary in notecraft notecraft-cli; do
   slices=()
@@ -135,6 +152,10 @@ sed -e "s|@VERSION@|${VERSION%%[-+]*}|g" -e "s|@FULL_VERSION@|$VERSION|g" \
   -e "s|@BUILD@|$build_number|g" -e "s|@BUILD_SHA@|$build_sha|g" \
   "$ROOT/packaging/OSX/Info.plist.in" > "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
+sed -e "s|@VERSION@|${VERSION%%[-+]*}|g" -e "s|@FULL_VERSION@|$VERSION|g" \
+  -e "s|@BUILD@|$build_number|g" -e "s|@BUILD_SHA@|$build_sha|g" \
+  "$ROOT/packaging/OSX/Setup-Info.plist.in" > "$SETUP_APP/Contents/Info.plist"
+plutil -lint "$SETUP_APP/Contents/Info.plist"
 
 # Build the .icns from the checked-in PNG family; this keeps the source asset portable.
 ICONSET="$WORK/notecraft.iconset"
@@ -145,23 +166,13 @@ for spec in "16:32" "32:64" "128:256" "256:512" "512:1024"; do
   sips -z "$source_size" "$source_size" "$ROOT/assets/brand/notecraft-512.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil --convert icns "$ICONSET" --output "$APP/Contents/Resources/notecraft.icns"
+cp "$APP/Contents/Resources/notecraft.icns" "$SETUP_APP/Contents/Resources/notecraft.icns"
 
 for file in LICENSE-MIT LICENSE-APACHE NOTICE; do
   install -m 644 "$ROOT/$file" "$APP/Contents/Resources/licenses/$file"
 done
 install -m 644 "$ROOT/ATTRIBUTION.md" "$APP/Contents/Resources/ATTRIBUTION.md"
 ditto "$ROOT/licenses" "$APP/Contents/Resources/licenses"
-
-# Carry the same release demo as the Windows and Linux packages. The application deploys
-# its embedded copy to the current user's ~/Documents/NoteCraft on first launch; this copy
-# makes the macOS artifact self-auditing and available to packaging inspection tools.
-cp -R "$ROOT/docs/demo/DemoNotebook" "$APP/Contents/Resources/demo/"
-for entry in html/00-start/welcome/index.html cmgfm/00-start/welcome/index.md; do
-  [[ -s "$APP/Contents/Resources/demo/DemoNotebook/$entry" ]] || {
-    echo "demo notebook entry was not staged in the macOS app: $entry" >&2
-    exit 1
-  }
-done
 
 identity="${APPLE_SIGNING_IDENTITY:-}"
 sign() {
@@ -177,8 +188,12 @@ sign() {
 }
 sign "$APP/Contents/MacOS/notecraft-cli"
 sign "$APP"
+sign "$SETUP_APP/Contents/MacOS/notecraft-setup"
+sign "$SETUP_APP"
 codesign --verify --strict --deep --verbose=2 "$APP"
 codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/notecraft-cli"
+codesign --verify --strict --deep --verbose=2 "$SETUP_APP"
+codesign --verify --strict --verbose=2 "$SETUP_APP/Contents/MacOS/notecraft-setup"
 if [[ "$ARCH" = universal || ( "$ARCH" = aarch64 && "$(uname -m)" = arm64 ) || \
       ( "$ARCH" = x86_64 && "$(uname -m)" = x86_64 ) ]]; then
   check_version "$APP/Contents/MacOS/notecraft" notecraft
@@ -190,8 +205,18 @@ fi
 DMG_ROOT="$WORK/dmg"
 mkdir -p "$DMG_ROOT"
 ditto "$APP" "$DMG_ROOT/NoteCraft.app"
+ditto "$SETUP_APP" "$DMG_ROOT/Install NoteCraft Welcome Notebook.app"
+if [[ "$INCLUDE_DEMO" = 1 ]]; then
+  mkdir -p "$DMG_ROOT/Welcome Notebook"
+  ditto "$ROOT/docs/demo/DemoNotebook" "$DMG_ROOT/Welcome Notebook"
+  for entry in html/_node.toml cmgfm/_node.toml html/00-start/welcome/index.html cmgfm/00-start/welcome/index.md; do
+    [[ -s "$DMG_ROOT/Welcome Notebook/$entry" ]] || { echo "demo payload is missing $entry" >&2; exit 1; }
+  done
+fi
+install -m 644 "$ROOT/packaging/OSX/DMG Read Me.txt" "$DMG_ROOT/Read Me First.txt"
 app_hash="$(sha256 "$DMG_ROOT/NoteCraft.app/Contents/MacOS/notecraft")"
-printf '%s\n%s\n%s\n%s\n' "$VERSION" "$ARCH" "$app_hash" "$build_source" > "$DMG_ROOT/BuildProvenance.txt"
+setup_hash="$(sha256 "$DMG_ROOT/Install NoteCraft Welcome Notebook.app/Contents/MacOS/notecraft-setup")"
+printf '%s\n%s\n%s\n%s\n%s\n' "$VERSION" "$ARCH" "$app_hash" "$setup_hash" "$build_source" > "$DMG_ROOT/BuildProvenance.txt"
 ln -s /Applications "$DMG_ROOT/Applications"
 hdiutil create -volname "NoteCraft $VERSION" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DMG"
 sign "$DMG"

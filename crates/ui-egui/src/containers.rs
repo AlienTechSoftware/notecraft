@@ -642,10 +642,41 @@ pub fn show(
                 ui.painter().rect_filled(edge.shrink2(vec2(2.0, 4.0)), 2.0, t.row_hover);
             }
         }
+        if drag.drag_started() || drag.dragged() || drag.drag_stopped() {
+            let phase = if drag.drag_started() {
+                "start"
+            } else if drag.drag_stopped() {
+                "stop"
+            } else {
+                "move"
+            };
+            log::debug!(
+                "CONTAINER_MOVE_EVENT: phase={phase} container={i} pointer={:?} bar={bar:?} zoom={zoom:.3} delta_screen={:?}",
+                ui.ctx().pointer_latest_pos(),
+                drag.drag_delta()
+            );
+        }
         if drag.dragged() {
             let d = drag.drag_delta();
             if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
+                let old = *c;
+                let requested_x = old.x + d.x / zoom;
+                let requested_y = old.y + d.y / zoom;
+                let moved = Container::new(requested_x, requested_y, old.width, old.blocks);
+                log::debug!(
+                    "CONTAINER_MOVE: container={i} delta_screen=({:.2},{:.2}) delta_page=({:.2},{:.2}) old=({:.2},{:.2}) requested=({requested_x:.2},{requested_y:.2}) stored=({:.2},{:.2}) clamped_x={} clamped_y={}",
+                    d.x,
+                    d.y,
+                    d.x / zoom,
+                    d.y / zoom,
+                    old.x,
+                    old.y,
+                    moved.x,
+                    moved.y,
+                    moved.x != requested_x,
+                    moved.y != requested_y
+                );
+                *c = moved;
             }
             out.boxes = true;
         }

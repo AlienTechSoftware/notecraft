@@ -2083,10 +2083,6 @@ impl NoteCraftApp {
                         let _ = crate::telemetry_export::export(&session.path(), &destination);
                     }
                 }
-                backstage::Act::AddWelcome => {
-                    self.backstage = None;
-                    self.add_welcome();
-                }
                 backstage::Act::NotBuilt(name) => {
                     self.status =
                         crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(name))]);
@@ -2387,32 +2383,6 @@ impl NoteCraftApp {
                 self.status = crate::i18n::format_message_id("ui.the_folder_could_not_be_opened_error", &[("error", &e.to_string())]);
                 self.status_is_error = true;
             }
-        }
-    }
-
-    /// Adds the Welcome notebook and opens it on its start page; if it is already in the
-    /// folder, opens that one instead.
-    pub fn add_welcome(&mut self) {
-        // Always call install to replace with the current bundled demo version
-        // (allows demo updates on every startup)
-        let message = match self.run("notebook.welcome", &Params::default()) {
-            Some(Output::Path(dir)) => {
-                // Refresh the session to pick up the newly replaced content
-                self.session.refresh();
-                // Now open the updated demo
-                self.remember_recent_notebook(&dir);
-                self.open.insert(dir.clone());
-                self.selected = Some(dir.clone());
-                if let Some(first) = first_page_under(self.session.tree(), &dir) {
-                    self.open_path(&path_str(&first));
-                }
-                crate::tl_id!("ui.updated_the_welcome_notebook").to_string()
-            }
-            _ => return,
-        };
-        // After the page opened, so the message is the one the user reads.
-        if !self.status_is_error {
-            self.say(message);
         }
     }
 

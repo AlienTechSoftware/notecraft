@@ -3,84 +3,9 @@
   "badges": {
     "linux": "83.4%",
     "macos": "not measured",
-    "windows": "83.3%"
+    "windows": "84.3%"
   },
   "platforms": {
-    "windows": {
-      "crates": {
-        "apps/notecraft": {
-          "count": 394,
-          "lines": 47.5
-        },
-        "apps/notecraft-cli": {
-          "count": 302,
-          "lines": 57.3
-        },
-        "crates/diagram": {
-          "count": 320,
-          "lines": 97.5
-        },
-        "crates/engine": {
-          "count": 1040,
-          "lines": 94.1
-        },
-        "crates/formats": {
-          "count": 1874,
-          "lines": 98.0
-        },
-        "crates/import": {
-          "count": 1240,
-          "lines": 65.0
-        },
-        "crates/ink": {
-          "count": 1160,
-          "lines": 98.6
-        },
-        "crates/input-language": {
-          "count": 48,
-          "lines": 27.1
-        },
-        "crates/math": {
-          "count": 1095,
-          "lines": 95.7
-        },
-        "crates/mcp": {
-          "count": 493,
-          "lines": 86.6
-        },
-        "crates/model": {
-          "count": 960,
-          "lines": 98.3
-        },
-        "crates/onenote": {
-          "count": 1656,
-          "lines": 86.8
-        },
-        "crates/store": {
-          "count": 2093,
-          "lines": 89.3
-        },
-        "crates/text": {
-          "count": 539,
-          "lines": 97.0
-        },
-        "crates/ui-egui": {
-          "count": 16720,
-          "lines": 79.2
-        }
-      },
-      "measured": {
-        "commit": "81d7956",
-        "date": "2026-10-26",
-        "rust": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-        "tool": "cargo-llvm-cov 0.9.1"
-      },
-      "total": {
-        "functions": 83.7,
-        "lines": 83.3,
-        "regions": 83.5
-      }
-    },
     "linux": {
       "crates": {
         "apps/notecraft": {
@@ -154,6 +79,85 @@
         "functions": 83.7,
         "lines": 83.4,
         "regions": 83.6
+      }
+    },
+    "windows": {
+      "crates": {
+        "apps/notecraft": {
+          "count": 440,
+          "lines": 49.3
+        },
+        "apps/notecraft-cli": {
+          "count": 302,
+          "lines": 57.3
+        },
+        "apps/notecraft-setup": {
+          "count": 217,
+          "lines": 76.0
+        },
+        "crates/diagram": {
+          "count": 320,
+          "lines": 97.5
+        },
+        "crates/engine": {
+          "count": 962,
+          "lines": 94.3
+        },
+        "crates/formats": {
+          "count": 1940,
+          "lines": 95.9
+        },
+        "crates/import": {
+          "count": 1429,
+          "lines": 71.5
+        },
+        "crates/ink": {
+          "count": 1211,
+          "lines": 98.6
+        },
+        "crates/input-language": {
+          "count": 48,
+          "lines": 27.1
+        },
+        "crates/math": {
+          "count": 1095,
+          "lines": 95.7
+        },
+        "crates/mcp": {
+          "count": 493,
+          "lines": 86.6
+        },
+        "crates/model": {
+          "count": 1024,
+          "lines": 98.4
+        },
+        "crates/onenote": {
+          "count": 1876,
+          "lines": 94.4
+        },
+        "crates/store": {
+          "count": 2177,
+          "lines": 89.4
+        },
+        "crates/text": {
+          "count": 539,
+          "lines": 97.0
+        },
+        "crates/ui-egui": {
+          "count": 18754,
+          "lines": 80.6
+        }
+      },
+      "measured": {
+        "commit": "0645124",
+        "date": "2026-11-06",
+        "rust": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+        "tool": "cargo-llvm-cov 0.9.1"
+      },
+      "total": {
+        "functions": 84.9,
+        "lines": 84.3,
+        "regions": 84.3
       }
     }
   }

@@ -2,7 +2,7 @@
 # Build NoteCraft Linux release packages from one staged FHS tree.
 #
 # Usage:
-#   packaging/linux/package.sh [--skip-build] [--formats "tar appimage deb rpm"]
+#   packaging/linux/package.sh [--skip-build] [--omit-demo] [--formats "tar appimage deb rpm"]
 #
 # The default format is tar. AppImage needs appimagetool. Deb and rpm need nfpm.
 # Missing optional tools are reported as errors only when their format is requested.
@@ -18,10 +18,12 @@ case "$ARCH" in
 esac
 
 SKIP_BUILD=0
+INCLUDE_DEMO=1
 FORMATS="tar"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build) SKIP_BUILD=1; shift ;;
+        --omit-demo) INCLUDE_DEMO=0; shift ;;
         --formats) FORMATS="${2:?--formats needs a value}"; shift 2 ;;
         -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -45,12 +47,15 @@ mkdir -p "$DIST"
 rm -rf "$WORK"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-    (cd "$ROOT" && cargo build --release --locked -p notecraft)
+    (cd "$ROOT" && cargo build --release --locked -p notecraft -p notecraft-setup)
 fi
 
 BIN="${CARGO_TARGET_DIR:-$ROOT/target}/release/notecraft"
 [ -x "$BIN" ] || { echo "release binary not found: $BIN" >&2; exit 1; }
 install -Dm755 "$BIN" "$STAGE/usr/bin/notecraft"
+SETUP_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/release/notecraft-setup"
+[ -x "$SETUP_BIN" ] || { echo "setup helper not found: $SETUP_BIN" >&2; exit 1; }
+install -Dm755 "$SETUP_BIN" "$STAGE/usr/bin/notecraft-setup"
 install -Dm644 "$ROOT/packaging/linux/com.alientechsoftware.notecraft.desktop" \
     "$STAGE/usr/share/applications/com.alientechsoftware.notecraft.desktop"
 
@@ -63,17 +68,20 @@ install -Dm644 "$ROOT/LICENSE-MIT" "$STAGE/usr/share/doc/notecraft/LICENSE-MIT"
 install -Dm644 "$ROOT/LICENSE-APACHE" "$STAGE/usr/share/doc/notecraft/LICENSE-APACHE"
 install -Dm644 "$ROOT/NOTICE" "$STAGE/usr/share/doc/notecraft/NOTICE"
 
-# The demo notebook is a release payload, not only build-time test data. Keep both
-# generated formats so Linux users can inspect the same examples as Windows users.
-DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
-for format in html cmgfm; do
-    [ -d "$DEMO_SOURCE/$format" ] || { echo "required demo format is missing: $format" >&2; exit 1; }
-done
-mkdir -p "$STAGE/usr/share/notecraft/demo"
-cp -R "$DEMO_SOURCE" "$STAGE/usr/share/notecraft/demo/"
-[ -f "$STAGE/usr/share/notecraft/demo/DemoNotebook/html/00-start/welcome/index.html" ] || {
-    echo "demo notebook was not staged" >&2; exit 1;
-}
+if [ "$INCLUDE_DEMO" = 1 ]; then
+    # Keep the optional User Assistance notebook as a distinct payload beside the app binaries.
+    DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
+    for format in html cmgfm; do
+        [ -d "$DEMO_SOURCE/$format" ] || { echo "required demo format is missing: $format" >&2; exit 1; }
+    done
+    DEMO_DEST="$STAGE/usr/share/notecraft/demo/welcome-to-notecraft"
+    mkdir -p "$DEMO_DEST"
+    cp -R "$DEMO_SOURCE/." "$DEMO_DEST/"
+    [ -f "$DEMO_DEST/html/_node.toml" ] && [ -f "$DEMO_DEST/cmgfm/_node.toml" ] && \
+        [ -f "$DEMO_DEST/html/00-start/welcome/index.html" ] && [ -f "$DEMO_DEST/cmgfm/00-start/welcome/index.md" ] || {
+        echo "demo was not staged" >&2; exit 1;
+    }
+fi
 
 if has_format tar; then
     mkdir -p "$DIST/tar"
@@ -85,9 +93,16 @@ fi
 
 if has_format deb || has_format rpm; then
     need_command nfpm
+    NFPM_SED_ARGS=(
+        -e "s|\${STAGE}|$STAGE|g"
+        -e "s|\${VERSION}|$VERSION|g"
+        -e "s|\${NFPM_ARCH}|$NFPM_ARCH|g"
+    )
+    if [ "$INCLUDE_DEMO" = 0 ]; then
+        NFPM_SED_ARGS+=( -e '/^  - src: .*\/usr\/share\/notecraft\/demo\/$/,/^    type: tree$/d' )
+    fi
     NFPM_ARCH="$NFPM_ARCH" VERSION="$VERSION" STAGE="$STAGE" \
-        sed -e "s|\${STAGE}|$STAGE|g" -e "s|\${VERSION}|$VERSION|g" -e "s|\${NFPM_ARCH}|$NFPM_ARCH|g" \
-        "$ROOT/packaging/linux/nfpm.yaml" > "$WORK/nfpm.yaml"
+        sed "${NFPM_SED_ARGS[@]}" "$ROOT/packaging/linux/nfpm.yaml" > "$WORK/nfpm.yaml"
     for format in deb rpm; do
         if has_format "$format"; then
             nfpm package -f "$WORK/nfpm.yaml" -p "$format" -t "$DIST/$BASENAME.$format"
@@ -101,7 +116,8 @@ if has_format appimage; then
     APPDIR="$WORK/NoteCraft.AppDir"
     cp -R "$STAGE" "$APPDIR"
     install -Dm755 "$ROOT/packaging/linux/AppRun" "$APPDIR/AppRun"
-    install -Dm644 "$ROOT/packaging/linux/com.alientechsoftware.notecraft.desktop" "$APPDIR/com.alientechsoftware.notecraft.desktop"
+    sed 's/^Exec=.*/Exec=AppRun %U/; s/^TryExec=.*/TryExec=AppRun/' \
+        "$ROOT/packaging/linux/com.alientechsoftware.notecraft.desktop" > "$APPDIR/com.alientechsoftware.notecraft.desktop"
     install -Dm644 "$ROOT/assets/brand/notecraft-256.png" "$APPDIR/com.alientechsoftware.notecraft.png"
     (cd "$DIST" && appimagetool "$APPDIR" "$DIST/$BASENAME.AppImage")
     echo "wrote $DIST/$BASENAME.AppImage"

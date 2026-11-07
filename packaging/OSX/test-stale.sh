@@ -11,7 +11,7 @@ case "$ARCH" in
   *) echo "test-stale.sh expects aarch64 or x86_64" >&2; exit 2 ;;
 esac
 SOURCE="$SOURCE_ROOT/$TARGET/release"
-for file in notecraft notecraft-cli .notecraft-osx-provenance; do
+for file in notecraft notecraft-cli notecraft-setup .notecraft-osx-provenance; do
   [[ -f "$SOURCE/$file" ]] || { echo "run package.sh for $ARCH before test-stale.sh: missing $SOURCE/$file" >&2; exit 1; }
 done
 
@@ -22,7 +22,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 DEST="$WORK/target/$TARGET/release"
 mkdir -p "$DEST"
-cp "$SOURCE/notecraft" "$SOURCE/notecraft-cli" "$SOURCE/.notecraft-osx-provenance" "$DEST/"
+cp "$SOURCE/notecraft" "$SOURCE/notecraft-cli" "$SOURCE/notecraft-setup" "$SOURCE/.notecraft-osx-provenance" "$DEST/"
 RECORD="$DEST/.notecraft-osx-provenance"
 
 expect_rejection() {
@@ -41,5 +41,8 @@ expect_rejection() {
 expect_rejection
 cp "$SOURCE/.notecraft-osx-provenance" "$RECORD"
 printf 'changed' >> "$DEST/notecraft"
+expect_rejection
+cp "$SOURCE/.notecraft-osx-provenance" "$RECORD"
+printf 'changed' >> "$DEST/notecraft-setup"
 expect_rejection
 echo "stale version and changed binary rejected for $ARCH"

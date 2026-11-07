@@ -14,14 +14,6 @@ Parameters:
 - format (optional): html or cmgfm; default: the global setting
 - empty (optional): true to leave the notebook empty instead of creating the first section and page
 
-## `notebook.welcome`
-
-Add the welcome notebook (changes the tree).
-
-Parameters:
-
-- (none). Writes the Welcome to NoteCraft notebook, a tour of the app, into the notebooks folder. Refused when it is already there
-
 ## `node.create`
 
 New section group, section or page (changes the tree).

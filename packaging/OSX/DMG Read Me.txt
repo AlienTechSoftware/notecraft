@@ -1,0 +1,14 @@
+NoteCraft for macOS
+
+Install the app
+1. Drag NoteCraft.app to Applications.
+2. Open Install NoteCraft Welcome Notebook.app from this disk image.
+3. Choose Install to copy the optional Welcome notebook into your normal NoteCraft notebooks folder.
+   An existing notebook with the same name is preserved.
+4. Open NoteCraft from Applications.
+
+The Welcome notebook is a separate user-owned folder. You can edit or delete it like any other
+notebook. NoteCraft does not install or recreate it. If this disk image does not include the
+Welcome Notebook folder, skip step 2 and open NoteCraft.
+
+You can also drag NoteCraft.app to Applications and use the app without the optional notebook.

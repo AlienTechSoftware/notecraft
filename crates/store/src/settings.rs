@@ -43,6 +43,19 @@ pub fn default_notebooks_dir_for_home(home: impl AsRef<Path>) -> PathBuf {
     home.as_ref().join("Documents").join("NoteCraft")
 }
 
+/// The notebook root the app should use when no explicit command-line root is supplied.
+pub fn configured_notebooks_dir(settings: &Settings) -> Option<PathBuf> {
+    let saved = settings.get("last_notebooks_root")?;
+    #[cfg(not(target_os = "windows"))]
+    if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
+        return None;
+    }
+    let path = PathBuf::from(saved);
+    let temp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+    let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    (!canonical.starts_with(temp)).then_some(path)
+}
+
 #[derive(Clone, Debug)]
 pub struct Settings {
     path: PathBuf,
@@ -152,6 +165,22 @@ mod tests {
     fn notebooks_default_is_under_the_current_users_documents_folder() {
         assert_eq!(default_notebooks_dir_for_home(r"C:\Users\Ada"), PathBuf::from(r"C:\Users\Ada").join("Documents").join("NoteCraft"));
         assert_eq!(default_notebooks_dir_for_home("/home/ada"), PathBuf::from("/home/ada/Documents/NoteCraft"));
+    }
+
+    #[test]
+    fn configured_notebooks_root_uses_the_saved_user_location() {
+        let t = TempDir::new("settings-notebook-root");
+        let s = Settings::at(t.path().join("settings.toml"));
+        s.set("last_notebooks_root", "Notes/Research").expect("save notebooks root");
+        assert_eq!(configured_notebooks_dir(&s), Some(PathBuf::from("Notes/Research")));
+    }
+
+    #[test]
+    fn configured_notebooks_root_ignores_a_saved_temporary_test_location() {
+        let t = TempDir::new("settings-notebook-root-temp");
+        let s = Settings::at(t.path().join("settings.toml"));
+        s.set("last_notebooks_root", &t.path().to_string_lossy()).expect("save temporary root");
+        assert_eq!(configured_notebooks_dir(&s), None);
     }
 
     #[test]

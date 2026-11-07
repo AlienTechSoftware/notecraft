@@ -52,9 +52,7 @@ fn notebooks_dir(args: &[String]) -> PathBuf {
     if let Some(i) = args.iter().position(|a| a == "--notebooks") {
         return args.get(i + 1).map(PathBuf::from).unwrap_or_else(notecraft_store::settings::default_notebooks_dir);
     }
-    if let Some(saved) = Settings::default_location().get("last_notebooks_root")
-        && let Some(path) = saved_notebooks_dir(&saved)
-    {
+    if let Some(path) = notecraft_store::settings::configured_notebooks_dir(&Settings::default_location()) {
         return path;
     }
     let local = PathBuf::from("my-notebooks");
@@ -62,15 +60,6 @@ fn notebooks_dir(args: &[String]) -> PathBuf {
         return local;
     }
     notecraft_store::settings::default_notebooks_dir()
-}
-
-fn saved_notebooks_dir(saved: &str) -> Option<PathBuf> {
-    #[cfg(not(target_os = "windows"))]
-    if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
-        return None;
-    }
-    let path = PathBuf::from(saved);
-    should_remember_notebooks_root(&path).then_some(path)
 }
 
 /// Test/screenshot sandboxes are valid explicit roots but must never become the next
@@ -151,7 +140,7 @@ fn main() -> eframe::Result {
     }
     let root = notebooks_dir(&args);
     applog::info(&format!("notebooks folder: {}", root.display()));
-    let mut session = match Session::new(&root, Settings::default_location()) {
+    let session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
             applog::line("ERROR", &format!("cannot open the notebooks folder {}: {e}", root.display()));
@@ -170,27 +159,9 @@ fn main() -> eframe::Result {
         let _ = session.settings.set("privacy_welcome_seen", "");
         applog::info("First-use flag set: privacy welcome dialog will show");
     }
-    // The Welcome notebook is part of the installed product. Replace the user's old copy on
-    // every startup so an upgrade always exposes the demo shipped with this build.
-    let tree_was_empty = session.tree().is_empty();
-    let mut open_first: Option<String> = None;
-    // Problems found before the window opens. The window shows each one in an alert.
+    // Notebook setup is owned by the platform installer helper. This process only discovers
+    // notebooks from the normal root and opens a path the user or installer explicitly names.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
-
-    match session.run("notebook.welcome", &notecraft_engine::Params::default()) {
-        Ok(notecraft_engine::Output::Path(dir)) => {
-            if tree_was_empty {
-                open_first = Some(dir.to_string_lossy().into_owned());
-            }
-            session.refresh();
-        }
-        Ok(_) => {}
-        Err(e) => {
-            let message = format!("The Welcome notebook could not be deployed to {}: {e}", session.root().display());
-            eprintln!("{message}");
-            startup_alerts.push(("welcome-notebook-deploy", message));
-        }
-    }
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
@@ -253,7 +224,7 @@ fn main() -> eframe::Result {
             if expand {
                 app.expand_all();
             }
-            if let Some(p) = open.as_ref().or(open_first.as_ref()) {
+            if let Some(p) = open.as_ref() {
                 app.open_path(p);
             }
             applog::info("window ready");
@@ -290,17 +261,12 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_temp_root_is_not_used_as_the_production_default() {
-        let saved = std::env::temp_dir().to_string_lossy().into_owned();
-        assert_eq!(saved_notebooks_dir(&saved), None);
-    }
-
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn a_windows_saved_path_is_not_used_on_linux() {
-        assert_eq!(saved_notebooks_dir(r"\\?\C:\Notes"), None);
-        assert_eq!(saved_notebooks_dir(r"C:\Notes"), None);
-        assert_eq!(saved_notebooks_dir("/mnt/c/Notes"), Some(PathBuf::from("/mnt/c/Notes")));
+        let settings = Settings::at(std::env::temp_dir().join("notecraft-windows-saved-path.toml"));
+        settings.set("last_notebooks_root", r"C:\Notes").expect("save Windows path");
+        assert_eq!(notecraft_store::settings::configured_notebooks_dir(&settings), None);
     }
 
     #[test]

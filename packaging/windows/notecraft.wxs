@@ -10,8 +10,10 @@
   Per-machine install into Program Files with a Start Menu shortcut. The installer shows the
   standard WiX dialogs: welcome and licence, progress, and a finish page.
 
-  The installer never touches the user's notebooks. They are plain folders under Documents, and
-  uninstalling removes only the program files.
+  The app and optional notebook are separate payloads. On first launch, the distinct
+  notecraft-setup helper copies the notebook into the user's normal notebooks folder only when absent.
+  The helper records completion so an upgrade or user deletion never triggers a replacement.
+  Uninstall removes only the program files and the installer-owned copy under Program Files.
 
   UpgradeCode and the component GUIDs below belong to NoteCraft alone. Never change the
   UpgradeCode after the first public release: Windows Installer would stop treating a new
@@ -44,23 +46,14 @@
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch NoteCraft" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <Property Id="WixShellExecTarget" Value="[#NotecraftExe]" />
-    <!-- Delete old demo notebook folder before launching app (ensures fresh bundled demo on upgrade) -->
-    <CustomAction Id="DeleteOldDemo" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
-        Impersonate="yes" Return="ignore" />
-    <CustomAction Id="SetDeleteOldDemoCommand" Property="DeleteOldDemo"
-        Value="powershell.exe -NoProfile -Command &quot;$path = Join-Path $env:USERPROFILE 'Documents\NoteCraft\welcome-to-notecraft'; if (Test-Path $path) { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue }; exit 0&quot;" />
+    <Property Id="WixShellExecTarget" Value="[#NotecraftSetupExe]" />
     <CustomAction Id="LaunchNotecraft" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec"
         Impersonate="yes" Return="ignore" />
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
-      <!-- Delete old demo, then launch app on finish -->
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetDeleteOldDemoCommand"
-          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="DeleteOldDemo"
-          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+      <!-- The separate setup helper deploys the optional user payload, then opens the app. -->
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchNotecraft"
-          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
     </UI>
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -70,14 +63,24 @@
 
     <Feature Id="Main" Title="NoteCraft" Level="1">
       <ComponentGroupRef Id="NotecraftFiles" />
+      <?if $(var.IncludeDemo) = "yes" ?>
       <ComponentGroupRef Id="DemoFiles" />
+      <?endif?>
     </Feature>
   </Package>
 
   <Fragment>
     <ComponentGroup Id="NotecraftFiles" Directory="INSTALLFOLDER">
       <Component Id="NotecraftApp" Guid="154A19E7-AB76-4B48-994F-8DE5BAE61F47">
-        <File Id="NotecraftExe" Source="$(var.BinDir)\notecraft.exe" KeyPath="yes">
+        <File Id="NotecraftExe" Source="$(var.BinDir)\notecraft.exe" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\notecraft.exe" Value="[#NotecraftExe]" Type="string" />
+      </Component>
+
+      <Component Id="NotecraftCli" Guid="E3061CAE-99C3-48E0-8250-8C192AABBFFA">
+        <File Id="NotecraftCliExe" Source="$(var.BinDir)\notecraft-cli.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="NotecraftSetup" Guid="D7D67A25-F477-4537-8A2B-AB33412C6F4A">
+        <File Id="NotecraftSetupExe" Source="$(var.BinDir)\notecraft-setup.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="NoteCraft"
               Description="NoteCraft note taking" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
               Icon="NotecraftIcon.ico" IconIndex="0" />
@@ -85,11 +88,6 @@
               Description="NoteCraft note taking" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
               Icon="NotecraftIcon.ico" IconIndex="0" />
         </File>
-        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\notecraft.exe" Value="[#NotecraftExe]" Type="string" />
-      </Component>
-
-      <Component Id="NotecraftCli" Guid="E3061CAE-99C3-48E0-8250-8C192AABBFFA">
-        <File Id="NotecraftCliExe" Source="$(var.BinDir)\notecraft-cli.exe" KeyPath="yes" />
       </Component>
       <ComponentRef Id="OfficeimoBridge" />
       <ComponentRef Id="Notices" />
@@ -99,8 +97,7 @@
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
-      <!-- The generated demo is a required installation payload. The app deploys its HTML copy
-           into Documents on first start; keeping both formats here prevents packaging drift. -->
+      <!-- Separate optional User Assistance payload; the setup helper installs it per-user. -->
       <Directory Id="DemoDir" Name="demo">
         <Directory Id="DemoNotebookDir" Name="welcome-to-notecraft">
         </Directory>
@@ -128,8 +125,10 @@
         </Directory>
       </Directory>
     </DirectoryRef>
+    <?if $(var.IncludeDemo) = "yes" ?>
     <ComponentGroup Id="DemoFiles" Directory="DemoNotebookDir">
       <Files Include="$(var.BinDir)\demo\welcome-to-notecraft\**" />
     </ComponentGroup>
+    <?endif?>
   </Fragment>
 </Wix>

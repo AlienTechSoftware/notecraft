@@ -49,6 +49,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-ui-egui", 6),
     ("notecraft", 7),
     ("notecraft-cli", 7),
+    ("notecraft-setup", 7),
     ("xtask", 7),
     ("notecraft-demo", 7),
 ];

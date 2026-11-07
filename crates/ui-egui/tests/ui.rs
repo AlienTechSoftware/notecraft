@@ -1494,21 +1494,50 @@ fn the_caret_lands_in_the_last_word_of_a_line_that_holds_a_link() {
     assert!(at >= last_word, "the caret is in the last word: character {at} of {:?}, which begins at {last_word}", body.trim_end());
 }
 
-/// The Welcome notebook: the File screen adds it to an empty folder, the window opens on its
-/// start page, the link to the English group opens that group's first page, and asking
-/// again opens the one that is there instead of making another.
+fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).expect("create notebook folder");
+    for entry in std::fs::read_dir(source).expect("read source notebook") {
+        let entry = entry.expect("notebook entry");
+        let target = destination.join(entry.file_name());
+        if entry.file_type().expect("entry type").is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("copy notebook file");
+        }
+    }
+}
+
 #[test]
-fn the_welcome_notebook_is_added_once_and_its_links_work() {
-    let t = TempDir::new("ui-welcome");
+fn an_empty_notebooks_folder_stays_empty_when_the_app_opens() {
+    let t = TempDir::new("ui-empty-notebooks");
     let app = NoteCraftApp::new(session(&t));
     let mut h = harness(app, LIGHT);
     h.run();
-    assert!(h.state().session().tree().is_empty());
-    h.state_mut().add_welcome();
-    settle(&mut h);
+    assert!(h.state().session().tree().is_empty(), "app startup only discovers existing user data");
+    assert!(!t.path().join("notebooks/welcome-to-notecraft").exists(), "app startup does not install demo content");
+}
+
+/// A notebook installed by the platform is just user data: NoteCraft discovers it in the
+/// ordinary notebooks root and opens it through the same path used for any other notebook.
+#[test]
+fn an_installed_welcome_notebook_is_discovered_and_opened_as_user_data() {
+    let t = TempDir::new("ui-welcome");
+    let notebooks = t.path().join("notebooks");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook/html");
+    let destination = notebooks.join("welcome-to-notecraft");
+    copy_tree(&source, &destination);
+
+    let settings = Settings::at(t.path().join("settings.toml"));
+    settings.set("privacy_welcome_seen", "true").expect("test settings");
+    settings.set("split_panes", "false").expect("test navigation setting");
+    settings.set("pressure_unavailable_never", "true").expect("test pressure setting");
+    let app = NoteCraftApp::new(Session::new(&notebooks, settings).expect("session"));
+    let mut h = harness(app, LIGHT);
+    h.run();
     assert_eq!(h.state().session().tree().len(), 1);
     assert_eq!(h.state().session().tree()[0].info.title, "Welcome to NoteCraft");
-    assert_eq!(h.state().status(), "Updated the welcome notebook");
+    h.state_mut().open_path(&destination.to_string_lossy());
+    settle(&mut h);
     // The start page's title is in its head and the window shows it above the page. Its
     // large banner is the first thing in the body.
     let expected_title = format!("Welcome to NoteCraft (Ver {})", env!("CARGO_PKG_VERSION"));
@@ -1537,10 +1566,7 @@ fn the_welcome_notebook_is_added_once_and_its_links_work() {
     assert_eq!(h.state().title(), Some("Welcome"), "the English welcome page after clicking {rect:?}; status={}", h.state().status());
     assert!(h.state().body().is_some_and(|b| b.contains("banner-en.png")), "which opens with its banner: {:?}", h.state().body());
 
-    h.state_mut().add_welcome();
-    settle(&mut h);
-    assert_eq!(h.state().session().tree().len(), 1, "no second copy");
-    assert_eq!(h.state().status(), "Updated the welcome notebook");
+    assert_eq!(h.state().session().tree().len(), 1, "opening user data never installs another copy");
 }
 
 /// The same thing over a real loopback connection, with the key file.

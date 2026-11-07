@@ -1,8 +1,9 @@
 # Installation artifacts
 
 Status: product contract approved by the owner on 2026-11-06. This is the single authority for
-installation artifact responsibilities and the User Assistance demo notebook. It defines the
-target behavior; the current implementation does not yet conform.
+installation artifact responsibilities and the User Assistance demo notebook. Windows and Linux
+now use separate setup helpers. macOS DMGs carry the optional notebook beside the app and include
+a separate, consented setup app. Clean installed-flow verification remains open for desktop.
 
 ## Separate installation artifacts
 
@@ -34,50 +35,64 @@ The installation tool owns deployment of both artifacts:
 - On uninstall, remove application files only; leave user notebooks in place.
 - Report installation failures through the installer or setup tool.
 
+Windows starts the separate `notecraft-setup` helper from the MSI finish action and its shortcuts.
+Linux desktop entries and the AppImage launcher start the same helper. It runs in the signed-in
+user's context, installs only when the User Assistance folder is absent, records completion outside
+app preferences, and then opens NoteCraft. Linux system package scripts never write into a guessed
+user's home. If a package omits the optional payload, the helper opens NoteCraft without copying
+anything.
+
 The application does not install the notebook. It must not unpack, seed, copy, refresh, replace,
 repair, or delete the notebook at startup or in response to an app update. After setup, the app
 discovers and opens the already-installed notebook through its ordinary notebook discovery and
 open behavior. If setup did not deploy it, the app does not silently compensate.
 
 After installation, the Welcome notebook is ordinary user-owned notebook data. Users can edit,
-move, sync, back up, or delete it. App upgrades and uninstall must not overwrite or remove those
-files.
+move, sync, back up, or delete it. App upgrades must not overwrite or recreate it. Android's
+app-specific storage is removed by the OS when NoteCraft is uninstalled; retaining Android
+notebooks after uninstall requires a future shared-storage design.
 
 ## Platform installation contract
 
-The expected notebook destination is the platform's normal Documents location, followed by
-`NoteCraft/welcome-to-notecraft`. Use platform known-folder or user-directory APIs where
-available; do not assume a hard-coded home path when the platform provides a location API.
+The expected notebook destination is the platform's normal user notebook location. Desktop setup
+uses the app's saved notebook root when present, otherwise its current Documents/NoteCraft default.
+On Android, it is the same app-specific
+`NoteCraft` folder used for notebooks created on-device. Use platform APIs to find these locations;
+do not guess a home or storage path when the platform provides an API.
 
 | Platform | Application binaries | User Assistance notebook | Installation owner |
 |---|---|---|---|
 | Windows | Normal per-machine or per-user app location | Current user's Documents/NoteCraft/welcome-to-notecraft | MSI or its setup helper, running for the intended user |
 | Linux | Normal package or portable-app location | Current user's Documents/NoteCraft/welcome-to-notecraft | A user-context setup tool; a system package script must not guess which user's home to modify |
-| macOS | App bundle or package location | Current user's Documents/NoteCraft/welcome-to-notecraft | A `.pkg` installer or explicit, consented setup helper; dragging a DMG app alone does not perform this step |
-| Android | Installed APK application package | The installation tool's separate User Assistance payload, deployed to the agreed user Documents/NoteCraft location | APK installation or a dedicated setup component, never NoteCraft startup code |
+| macOS | `NoteCraft.app` copied to Applications | Current user's Documents/NoteCraft/welcome-to-notecraft | Separate, consented `Install NoteCraft Welcome Notebook.app` in the DMG; dragging the app alone does not perform this step |
+| Android | Installed APK application package | App-specific external files/NoteCraft/welcome-to-notecraft, beside notebooks created on-device | The APK's dedicated setup activity, before it opens the NoteCraft activity |
 
 An installation format that cannot perform the per-user notebook step by itself must provide a
-separate installation/setup component with a clear user action. The app itself is not that
-component. Do not claim that an artifact installs the notebook until a clean installation proves
-the notebook is present before the app launches.
+separate installation/setup component with a clear user action. The Android setup activity is a
+distinct installer entry point in the APK. It offers to install the optional payload or skip it,
+then opens NoteCraft. The NoteCraft activity itself only discovers and opens notebooks. Do not
+claim that an artifact installs the notebook until a clean installation proves the notebook is
+present before the NoteCraft activity launches.
 
 ## Current implementation gap
 
-The following existing behavior violates this contract and needs a later, separately approved
-implementation change:
+Windows and Linux package staging now follows the separate-payload contract:
 
-- `crates/engine/build.rs` embeds the HTML notebook into the engine binary.
-- `apps/notecraft/src/main.rs` runs `notebook.welcome` at every startup; the engine replaces the
-  existing notebook folder, which can discard user edits.
-- Windows and Linux package scripts stage a separate notebook payload, but desktop startup does
-  not use that payload.
-- The Windows MSI has a custom action that deletes the user's existing Welcome notebook before
-  launching the app. This contradicts the preservation requirement.
-- The Android build currently packages the notebook through the engine build; its adapter does
-  not use a separately deployed User Assistance payload.
+- The Windows MSI and portable ZIP include the setup helper and support builds with the optional
+  notebook included or omitted. Both MSI variants compile; installation on a clean Windows profile,
+  upgrade and uninstall behavior still need a VM smoke test.
+- Linux tar, Debian and AppImage packages include the setup helper and support builds with the
+  optional notebook included or omitted. Package builds and tar/DEB content smoke tests pass;
+  running the helper from an installed package and checking upgrade/uninstall behavior still need
+  a clean user-profile test.
+- The helper and app share the saved notebook root. The app's current fallback is
+  Documents/NoteCraft under the user's home; redirected Windows Documents folders are not yet
+  resolved through the OS known-folder API.
 
-These statements record the gap. They do not authorize changes to installer or application
-behavior. Implementation requires separate owner approval after this contract is reviewed.
+Android's separate APK setup flow passed a fresh tablet-emulator install on 2026-11-06: setup
+installed the payload, NoteCraft opened its Welcome page from the app-specific notebook folder, and
+a relaunch kept the notebook and bypassed setup. Android upgrade and user-deletion flows remain
+unverified.
 
 ## Installation verification
 
@@ -85,12 +100,15 @@ For each supported artifact and platform, signoff proves:
 
 1. The final package contains two separately identifiable payloads: app binaries and both
    generated notebook formats.
-2. A clean installation places the notebook in the expected user Documents/NoteCraft location
-   before NoteCraft is launched.
+2. A clean installation or first desktop setup places the notebook in the platform's expected
+   location before NoteCraft opens it. Android setup may be skipped when the package omits the
+   optional payload.
 3. The app opens the installed notebook without creating or copying it at startup.
-4. An edit survives app restart and application upgrade.
+4. An edit survives app restart and application upgrade. Setup completion is separate from app
+   preferences so resetting preferences does not reinstall a deleted notebook.
 5. A user-deleted notebook stays deleted after restart and upgrade.
-6. Uninstall removes app binaries and leaves the user's notebook untouched.
+6. Desktop uninstall removes app binaries and leaves the user's notebook untouched. Android
+   uninstall removes app-specific notebook files as required by the OS storage model.
 7. A failed notebook installation is reported by the installation tool; the app does not install
    a fallback copy.
 

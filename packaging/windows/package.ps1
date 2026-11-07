@@ -5,7 +5,7 @@
 .DESCRIPTION
   Produces, in $env:DIST (default: dist/release):
     notecraft-<version>-windows-x64.msi            per-machine installer (WiX v5)
-    notecraft-<version>-windows-x64-portable.zip   notecraft.exe + notecraft-cli.exe
+    notecraft-<version>-windows-x64-portable.zip   NoteCraft app, setup helper, and CLI
     SHA256SUMS.txt                                 checksums of the files above
 
   The binaries link the C runtime statically (+crt-static), so neither the MSI nor the portable
@@ -28,6 +28,7 @@
 param(
   [switch] $SkipBuild,
   [switch] $ZipOnly,
+  [switch] $OmitDemo,
   [string] $BridgeProject = (Join-Path $PSScriptRoot '..\..\tools\officeimo\OfficeIMO.NoteCraft.Bridge\OfficeIMO.NoteCraft.Bridge.csproj'),
   [string] $BridgeBinary = $env:NOTECRAFT_OFFICEIMO_BRIDGE
 )
@@ -67,7 +68,7 @@ if (-not $SkipBuild) {
   # proc-macros are unaffected.
   $flagVar = 'CARGO_TARGET_' + ($Target.ToUpper() -replace '-', '_') + '_RUSTFLAGS'
   [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
-  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p notecraft -p notecraft-cli --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p notecraft -p notecraft-cli -p notecraft-setup --target $Target }
 }
 
 $Bin = Join-Path $TargetDir "$Target\release"
@@ -80,7 +81,7 @@ function Get-PeHeader([string] $Path) {
   $pe = [BitConverter]::ToInt32($bytes, 0x3C)
   return @{ Machine = [BitConverter]::ToUInt16($bytes, $pe + 4); Subsystem = [BitConverter]::ToUInt16($bytes, $pe + 0x5C) }
 }
-foreach ($check in @(@('notecraft.exe', 2), @('notecraft-cli.exe', 3))) {
+foreach ($check in @(@('notecraft.exe', 2), @('notecraft-cli.exe', 3), @('notecraft-setup.exe', 2))) {
   $h = Get-PeHeader (Join-Path $Bin $check[0])
   if ($h.Machine -ne 0x8664) { throw "$($check[0]) is for machine 0x$('{0:X}' -f $h.Machine), expected 0x8664 ($Arch)" }
   if ($h.Subsystem -ne $check[1]) { throw "$($check[0]) has PE subsystem $($h.Subsystem), expected $($check[1])" }
@@ -110,25 +111,26 @@ foreach ($name in @('notecraft.exe', 'notecraft-cli.exe')) {
 $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
-Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe') $Stage
+Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe'), (Join-Path $Bin 'notecraft-setup.exe') $Stage
 
-# The demo notebook is a required release payload. Keep both generated formats in the installed
-# package even though the app embeds the HTML copy for first-start deployment. This makes omission
-# visible in package inspection and gives future installers a stable payload to deploy.
-$DemoSource = Join-Path $Root 'docs\demo\DemoNotebook'
-foreach ($format in 'html', 'cmgfm') {
-  $formatDir = Join-Path $DemoSource $format
-  if (-not (Test-Path $formatDir -PathType Container)) { throw "required demo format is missing: $formatDir" }
-  $files = @(Get-ChildItem -Path $formatDir -File -Recurse)
-  if ($files.Count -eq 0) { throw "required demo format is empty: $formatDir" }
-  $languages = @(Get-ChildItem -Path $formatDir -Directory | Where-Object { $_.Name -match '^(1\d|2\d)-' })
-  if ($languages.Count -ne 13) { throw "demo format $format has $($languages.Count) language folders, expected 13" }
-}
-$DemoStage = Join-Path $Stage 'demo\welcome-to-notecraft'
-New-Item -ItemType Directory -Force -Path $DemoStage | Out-Null
-Copy-Item (Join-Path $DemoSource '*') $DemoStage -Recurse
-if (-not (Test-Path (Join-Path $DemoStage 'html\00-start\welcome\index.html'))) {
-  throw 'demo staging failed: HTML start page is missing'
+if (-not $OmitDemo) {
+  # Keep both generated formats in a distinct package payload beside the app binaries.
+  $DemoSource = Join-Path $Root 'docs\demo\DemoNotebook'
+  foreach ($format in 'html', 'cmgfm') {
+    $formatDir = Join-Path $DemoSource $format
+    if (-not (Test-Path $formatDir -PathType Container)) { throw "required demo format is missing: $formatDir" }
+    if (-not (Test-Path (Join-Path $formatDir '_node.toml') -PathType Leaf)) { throw "required notebook metadata is missing: $formatDir\_node.toml" }
+    $files = @(Get-ChildItem -Path $formatDir -File -Recurse)
+    if ($files.Count -eq 0) { throw "demo format is empty: $formatDir" }
+    $languages = @(Get-ChildItem -Path $formatDir -Directory | Where-Object { $_.Name -match '^(1\d|2\d)-' })
+    if ($languages.Count -ne 13) { throw "demo format $format has $($languages.Count) language folders, expected 13" }
+  }
+  $DemoStage = Join-Path $Stage 'demo\welcome-to-notecraft'
+  New-Item -ItemType Directory -Force -Path $DemoStage | Out-Null
+  Copy-Item (Join-Path $DemoSource '*') $DemoStage -Recurse
+  if (-not (Test-Path (Join-Path $DemoStage 'html\00-start\welcome\index.html'))) {
+    throw 'demo staging failed: HTML start page is missing'
+  }
 }
 
 # The importer is part of the Windows product, not an optional file that can silently be
@@ -143,7 +145,7 @@ $BridgeExe = Join-Path $BridgeStage 'importers\officeimo\win-x64\officeimo-notec
 if (-not (Test-Path $BridgeExe)) { throw "OfficeIMO bridge was not produced: $BridgeExe" }
 Copy-Item (Join-Path $BridgeStage 'importers') $Stage -Recurse
 
-& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'notecraft.exe') (Join-Path $Stage 'notecraft-cli.exe')
+& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'notecraft.exe') (Join-Path $Stage 'notecraft-cli.exe') (Join-Path $Stage 'notecraft-setup.exe')
 
 # The notices travel with the program: the installer and the portable zip both carry them, and the
 # licence texts they name, so a copy handed on alone still says what it contains.
@@ -191,10 +193,11 @@ if (-not $ZipOnly) {
 
   $Msi = Join-Path $Dist "notecraft-$Version-windows-$Arch.msi"
   Invoke-Native 'wix build' {
+    $IncludeDemo = if ($OmitDemo) { 'no' } else { 'yes' }
     wix build (Join-Path $PSScriptRoot 'notecraft.wxs') -arch $Arch `
       -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext `
       -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\notecraft.ico')" `
-      -d "LicenseRtf=$LicenseRtf" `
+      -d "LicenseRtf=$LicenseRtf" -d "IncludeDemo=$IncludeDemo" `
       -o $Msi
   }
   # wix writes its debug symbols (.wixpdb) next to the MSI; keep them out of the release assets.
@@ -210,7 +213,7 @@ New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
 Copy-Item (Join-Path $Stage 'importers') $Portable -Recurse
 Copy-Item (Join-Path $Stage 'licenses') $Portable -Recurse
-Copy-Item (Join-Path $Stage 'demo') $Portable -Recurse
+if (-not $OmitDemo) { Copy-Item (Join-Path $Stage 'demo') $Portable -Recurse }
 foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }

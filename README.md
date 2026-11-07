@@ -138,7 +138,7 @@ cargo run -p notecraft-cli -- --notebooks ./demo sample
 cargo run --release -p notecraft -- --notebooks ./demo --expand-all
 ```
 
-To try the bundled Welcome notebook, first copy one format into the ignored `./my-notebooks`
+To try the Welcome demo notebook from its generated release files, first copy one format into the ignored `./my-notebooks`
 folder. The copy task never writes to `docs/demo/DemoNotebook`:
 
 ```sh
@@ -263,7 +263,7 @@ the earlier versions and their notes. `<ver>` in a file name is the version numb
 | Build | Installer | Portable |
 |---|---|---|
 | Windows x64 (64-bit Intel and AMD) | `notecraft-<ver>-windows-x64.msi` | `notecraft-<ver>-windows-x64-portable.zip` |
-| Linux x64 (glibc, 64-bit Intel and AMD) | - | `notecraft-<ver>-linux-x64.tar.xz` |
+| Linux x64 (glibc, 64-bit Intel and AMD) | - | `notecraft-<ver>-linux-x86_64.tar.gz` |
 
 Windows x64 and Linux x64 builds are available. macOS is untested, so there is no build for it; the
 [Quick start](#quick-start) builds from source.
@@ -273,9 +273,15 @@ Choose More info, then Run anyway. Check the download against `SHA256SUMS.txt`, 
 built on GitHub, against its build attestation:
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-The installer puts the program in Program Files and needs administrator rights. The portable zip
-needs neither: unzip it and run `notecraft.exe`. Neither one touches your notebooks, which are
-plain folders (by default `Documents\NoteCraft`), so removing the app never removes them.
+The MSI puts the program in Program Files and needs administrator rights. Its separate setup helper
+places the optional demo notebook in the normal notebooks folder (Documents by default) on first
+launch; the app itself only
+opens notebook folders. In the portable zip, run `notecraft-setup.exe` for the same setup flow or
+run `notecraft.exe` to start without setup. User notebooks remain plain folders, and uninstall
+leaves them in place.
+
+For the Linux tar archive, extract it and run `./notecraft-setup` from the extracted package's
+`bin` directory. Debian packages and the AppImage start the helper from their application entry.
 
 Every release is an alpha and is marked a pre-release. [docs/releasing.md](docs/releasing.md) describes the
 version numbers and how a release is built.

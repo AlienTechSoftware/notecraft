@@ -61,14 +61,15 @@ name or mark.
 Before publishing, install the MSI on a machine that has never run NoteCraft. Follow the
 `packaging/installation artifacts.md` contract for the expected user
 notebook location and verify the installer places the Welcome notebook there before NoteCraft
-launches. Check that it contains all 13 language folders. Also verify that app startup does not
-copy or replace it, and that edits survive restart and upgrade. Clear old app settings only when
-the first-use privacy dialog itself is under test.
+launches through the separate `notecraft-setup` helper. Check both formats and all 13 language
+folders. Also verify that app startup does not copy or replace it, and that edits and deletion
+survive restart and upgrade. Clear old app settings only when the first-use privacy dialog itself
+is under test; setup completion has its own marker.
 
 | File | What it is |
 |---|---|
 | `notecraft-<version>-windows-x64.msi` | Per-machine installer: Program Files, Start menu shortcut |
-| `notecraft-<version>-windows-x64-portable.zip` | `notecraft.exe` and `notecraft-cli.exe`, no install |
+| `notecraft-<version>-windows-x64-portable.zip` | App, `notecraft-setup.exe`, and CLI; helper installs the optional notebook on first launch |
 | `SHA256SUMS.txt` | SHA-256 of the two files above |
 
 Each file also gets a build provenance attestation. Check a download with
@@ -93,10 +94,10 @@ the `release` environment of the repository, never in a file.
 - The MSI `UpgradeCode` in `packaging/windows/notecraft.wxs` is fixed once the first MSI is public.
   Changing it later stops new versions from replacing old ones.
 - The exes carry the app icon and version information (build.rs, winresource), and the packaging script checks both.
-- Smoke test the artifact: it starts with no console window, the installer has deployed the
-  Welcome notebook before launch, a page can be opened and edited, and a bad notebooks folder shows
-  an error box. Install, upgrade and uninstall must preserve user notebook data. Use the canonical
-  `packaging/installation artifacts.md` contract for the full platform-specific checks.
+- Smoke test the artifact: it starts with no console window, the separate setup helper deploys the
+  optional User Assistance notebook before opening the page, a page can be edited, and a bad
+  notebooks folder shows an error box. Install, upgrade and uninstall must preserve user notebook
+  data. Use the canonical `packaging/installation artifacts.md` contract for the full checks.
 
 ## Building locally
 

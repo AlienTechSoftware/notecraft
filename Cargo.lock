@@ -2863,6 +2863,14 @@ name = "notecraft-onenote"
 version = "0.0.8"
 
 [[package]]
+name = "notecraft-setup"
+version = "0.0.8"
+dependencies = [
+ "notecraft-store",
+ "rfd",
+]
+
+[[package]]
 name = "notecraft-store"
 version = "0.0.8"
 dependencies = [

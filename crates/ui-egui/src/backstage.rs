@@ -15,8 +15,6 @@ pub enum Act {
     /// Leave the File screen.
     Close,
     NewNotebook,
-    /// Write the Welcome notebook into the notebooks folder, or open it if it is there.
-    AddWelcome,
     /// Show this notebook's folder in the file manager.
     OpenFolder(std::path::PathBuf),
     /// Show the notebooks folder in the file manager.
@@ -234,13 +232,6 @@ fn new_page(ui: &mut Ui, folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
     ui.add_space(10.0);
     if ui.button(crate::tl_id!("ui.new_notebook")).clicked() {
         acts.push(Act::NewNotebook);
-    }
-    ui.add_space(14.0);
-    ui.label(egui::RichText::new(crate::tl_id!("ui.the_welcome_notebook")).size(14.0).color(t.strong));
-    ui.label(egui::RichText::new(crate::tl_id!("ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0")).size(11.5).color(t.muted));
-    ui.add_space(6.0);
-    if ui.button(crate::tl_id!("ui.add_the_welcome_notebook")).clicked() {
-        acts.push(Act::AddWelcome);
     }
     ui.add_space(14.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.somewhere_else")).size(14.0).color(t.strong));

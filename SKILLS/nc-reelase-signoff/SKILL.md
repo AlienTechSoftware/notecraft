@@ -32,7 +32,10 @@ requested `reelase` spelling for discoverability.
    Apply `packaging/installation artifacts.md`:
    verify app binaries and the User Assistance notebook as separate payloads; verify setup deploys
    the notebook before app launch; verify the app does not deploy it; and verify edits, deletion,
-   upgrade, and uninstall preserve user notebook data.
+   upgrade, optional-payload omission, and uninstall preserve user notebook data on Windows and
+   Linux. The desktop setup marker must survive app preference reset. Android's app-specific
+   notebook folder is removed by the OS on uninstall; verify its edits and deletion persist across
+   restart and app upgrade.
 9. Confirm no automatic telemetry upload, local privacy wording, and release defaults.
 10. Record exact commands, outputs, artifact paths, commit, tag candidate, known gaps, and manual
     checks. Do not push, publish, tag, or release without explicit owner approval.

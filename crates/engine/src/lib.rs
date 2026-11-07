@@ -15,7 +15,6 @@ mod error;
 mod json;
 pub mod sample;
 mod session;
-pub mod welcome;
 
 pub use commands::{CommandSpec, Output, Params, registry};
 pub use error::EngineError;

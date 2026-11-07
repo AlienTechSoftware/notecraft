@@ -64,11 +64,6 @@ fn notebook_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(dir))
 }
 
-fn notebook_welcome(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
-    let dir = crate::welcome::install(s.root(), s.tree())?;
-    Ok(Output::Path(dir))
-}
-
 fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let parent = s.resolve(req(p, "parent")?)?;
     let kind = NodeKind::parse(req(p, "kind")?).ok_or_else(|| EngineError::BadParam("kind must be section-group, section or page".into()))?;
@@ -331,13 +326,6 @@ static REGISTRY: &[CommandSpec] = &[
         run: notebook_create,
     },
     CommandSpec {
-        id: "notebook.welcome",
-        label: "Add the welcome notebook",
-        params: "(none). Writes the Welcome to NoteCraft notebook, a tour of the app, into the notebooks folder. Refused when it is already there",
-        changes_tree: true,
-        run: notebook_welcome,
-    },
-    CommandSpec {
         id: "node.create",
         label: "New section group, section or page",
         params: "parent (required): path of the notebook, group, section or page to add to\nkind (required): section-group, section or page\ntitle (required for section-group and section; optional for page, which is created untitled if left out)\nformat (optional): html or cmgfm. For a page, its format; for a group or section, the default for pages below",
@@ -595,6 +583,11 @@ mod tests {
             assert!(!c.label.is_empty());
             assert!(c.id.contains('.'), "ids are namespaced: {}", c.id);
         }
+    }
+
+    #[test]
+    fn notebook_installation_is_not_an_app_command() {
+        assert!(!registry().iter().any(|command| command.id == "notebook.welcome"));
     }
 
     /// OneNote gives a new notebook one section and one empty page. NoteCraft does the same,

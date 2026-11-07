@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask", "docs/demo/scripts"]
-default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "xtask"]
+default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "apps/notecraft-setup", "xtask"]
 
 [workspace.package]
 version = "0.0.8"
