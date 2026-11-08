@@ -682,6 +682,7 @@ impl NoteCraftApp {
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         let wizard_format = session.settings.global_format().0;
+        let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -696,7 +697,7 @@ impl NoteCraftApp {
             frameless: false,
             editor: None,
             dialog: if privacy_welcome {
-                Some(Dialog::FirstUseWizard { step: 0, level: telemetry_level, format: wizard_format, add_demo: true, error: None })
+                Some(Dialog::FirstUseWizard { step: 0, level: wizard_level, format: wizard_format, add_demo: true, error: None })
             } else {
                 None
             },
@@ -767,7 +768,7 @@ impl NoteCraftApp {
     fn first_use_wizard(&self) -> Dialog {
         Dialog::FirstUseWizard {
             step: 0,
-            level: self.session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string()),
+            level: self.session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string()),
             format: self.session.settings.global_format().0,
             add_demo: true,
             error: None,
