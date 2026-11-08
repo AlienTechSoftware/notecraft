@@ -5057,9 +5057,7 @@ impl NoteCraftApp {
                         }
                         modal_title(ui, &self.tokens, title.as_str());
                         match *step {
-                            0 => {
-                                ui.label(crate::tl_id!("ui.thank_you_for_trying_notecraft"));
-                            }
+                            0 => {}
                             1 => {
                                 ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
                                 ui.add_space(6.0);
