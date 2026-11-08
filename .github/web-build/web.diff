@@ -117,6 +117,8 @@ index 0000000..f4394fb
 +        static CTX: std::cell::OnceCell<egui::Context> = const { std::cell::OnceCell::new() };
 +        static CJK: RefCell<Face> = const { RefCell::new(Face::Wanted) };
 +        static PEN: RefCell<Vec<PenReading>> = const { RefCell::new(Vec::new()) };
++        /// The release Welcome archive's files (html/… and cmgfm/…), kept so Finish can install the chosen edition.
++        static WELCOME: RefCell<Vec<(std::path::PathBuf, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
 +    }
 +
 +    /// A pen's reading from the canvas's pointer events: phase, pointer, where (CSS pixels), pressure.
@@ -197,13 +199,27 @@ index 0000000..f4394fb
 +                return Err(format!("The {format} Welcome notebook has {} language folders; expected 13", languages.len()));
 +            }
 +        }
++        WELCOME.with_borrow_mut(|w| *w = files);
++        install_edition("html")?;
++        Ok(Some(notebook.to_string_lossy().into_owned()))
++    }
++
++    /// Installs one edition ("html" or "cmgfm") of the Welcome notebook at the notebook root, replacing the managed
++    /// copy. Finish calls this through the same hook the desktop app uses, so the chosen format is what gets installed.
++    fn install_edition(format: &str) -> Result<std::path::PathBuf, String> {
++        let notebook = Path::new(ROOT).join("welcome-to-notecraft");
++        let files = WELCOME.with_borrow(|w| w.clone());
++        if files.is_empty() {
++            return Err("the Welcome notebook has not been loaded yet".into());
++        }
 +        if fs::metadata(&notebook).is_ok() {
 +            fs::remove_dir_all(&notebook).map_err(|e| format!("Could not replace the existing Welcome notebook: {e}"))?;
 +        }
 +        for (relative, content) in files {
-+            fs::write(notebook.join(relative), content).map_err(|e| format!("Could not install the Welcome notebook: {e}"))?;
++            let Ok(edition) = relative.strip_prefix(format) else { continue };
++            fs::write(notebook.join(edition), content).map_err(|e| format!("Could not install the Welcome notebook: {e}"))?;
 +        }
-+        Ok(Some(notebook.join("00-start/welcome/index.html").to_string_lossy().into_owned()))
++        Ok(notebook)
 +    }
 +    /// Follows the canvas's pen pointers: eframe turns them into mouse events and drops their pressure.
 +    fn listen_to_the_pen(canvas: &web_sys::HtmlCanvasElement) {
@@ -484,7 +500,9 @@ index 0000000..f4394fb
 +                        CTX.with(|c| c.set(cc.egui_ctx.clone()).ok());
 +                        cc.egui_ctx.add_bytes_loader(std::sync::Arc::new(Files));
 +                        let session = Session::new(Path::new(ROOT), Settings::at(SETTINGS)).map_err(|e| e.to_string())?;
-+                        let mut app = NoteCraftApp::new(session);
++                        // The web demo has no first-use wizard: mark it seen, so it never opens here.
++                        session.settings.set("privacy_welcome_seen", "true").map_err(|e| e.to_string())?;
++                        let mut app = NoteCraftApp::new(session).with_welcome_notebook_setup(|_root, format| install_edition(format));
 +                        if let Some(page) = welcome_page {
 +                            if let Some(page) = page.map_err(|e| e.to_string())? {
 +                                app.open_path(&page);

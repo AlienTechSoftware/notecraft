@@ -45,5 +45,13 @@ class BundleDemoTests(unittest.TestCase):
                 bundle_demo(self.root / "docs" / "demo" / "DemoNotebook", Path(temporary) / "demo.zip", wrong_version)
 
 
+    def test_first_run_installs_only_the_html_edition_at_the_notebook_root(self) -> None:
+        patch = (self.root / ".github" / "web-build" / "web.diff").read_text(encoding="utf-8")
+        self.assertIn("with_welcome_notebook_setup(|_root, format| install_edition(format))", patch)
+        self.assertIn('session.settings.set("privacy_welcome_seen", "true")', patch)
+        self.assertIn('relative.strip_prefix(format)', patch)
+        self.assertIn("Ok(Some(notebook.to_string_lossy().into_owned()))", patch)
+        self.assertNotIn('Ok(Some(notebook.join("00-start/welcome/index.html")', patch)
+
 if __name__ == "__main__":
     unittest.main()
