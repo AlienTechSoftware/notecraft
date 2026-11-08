@@ -111,6 +111,8 @@ $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe') $Stage
+# The installer leaves this marker beside the app. The first launch after installing shows the first-use wizard again.
+[IO.File]::WriteAllText((Join-Path $Stage 'first-use.pending'), '')
 
   # The app copies both generated formats into the user's notebooks folder at startup.
   $DemoSource = Join-Path $Root 'docs\demo\DemoNotebook'

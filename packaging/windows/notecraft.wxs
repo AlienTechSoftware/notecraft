@@ -80,6 +80,9 @@
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\notecraft.exe" Value="[#NotecraftExe]" Type="string" />
       </Component>
 
+      <Component Id="FirstUseMarker" Guid="A2062015-AD07-4256-8130-46B476783F74">
+        <File Id="FirstUseMarkerFile" Source="$(var.BinDir)\first-use.pending" KeyPath="yes" />
+      </Component>
       <Component Id="NotecraftCli" Guid="E3061CAE-99C3-48E0-8250-8C192AABBFFA">
         <File Id="NotecraftCliExe" Source="$(var.BinDir)\notecraft-cli.exe" KeyPath="yes" />
       </Component>

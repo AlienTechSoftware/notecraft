@@ -91,6 +91,23 @@ fn demo_payload(_executable: &std::path::Path) -> Option<PathBuf> {
     if installed.is_dir() { Some(installed) } else { Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook")) }
 }
 
+/// The file the MSI leaves beside the app to ask for the first-use wizard once.
+const INSTALL_MARKER: &str = "first-use.pending";
+
+/// Clears the first-use state when the installer left its marker, then removes the marker. The
+/// marker stays if the setting cannot be saved, so the next launch tries again.
+fn take_install_marker(install_dir: &std::path::Path, settings: &Settings) -> bool {
+    let marker = install_dir.join(INSTALL_MARKER);
+    if !marker.is_file() {
+        return false;
+    }
+    if settings.set("privacy_welcome_seen", "").is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_file(&marker);
+    true
+}
+
 fn flag_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
@@ -185,6 +202,10 @@ fn main() -> eframe::Result {
         let _ = session.settings.set("privacy_welcome_seen", "");
         applog::info("First-use flag set: the first-use wizard will show");
     }
+    // The installer leaves a marker beside the app. The first launch after installing shows the wizard again.
+    if let Some(dir) = executable.parent() {
+        take_install_marker(dir, &session.settings);
+    }
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
@@ -270,6 +291,19 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_installer_marker_asks_for_the_first_use_wizard_once() {
+        let t = notecraft_store::testing::TempDir::new("install-marker");
+        let settings = Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("seen before install");
+        std::fs::write(t.path().join(INSTALL_MARKER), "").expect("installer marker");
+
+        assert!(take_install_marker(t.path(), &settings));
+        assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some(""), "the wizard shows again");
+        assert!(!t.path().join(INSTALL_MARKER).exists(), "the marker is used up");
+        assert!(!take_install_marker(t.path(), &settings), "a second launch does not ask again");
+    }
 
     #[test]
     fn the_notebooks_flag_wins() {
