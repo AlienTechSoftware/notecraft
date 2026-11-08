@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	$$$Back to the notebook@@@
 @id	ui.back_to_the_page_before_alt_left	$$$Back to the page before (Alt+Left)@@@
 @id	ui.basic_text	$$$Basic Text@@@
+@id	ui.font_size	$$$Font Size@@@
+@id	ui.select_text_before_changing_font_size	$$$Select text before changing font size.@@@
 @id	ui.black	$$$black@@@
 @id	ui.blue	$$$blue@@@
 @id	ui.blue_2	$$$Blue@@@

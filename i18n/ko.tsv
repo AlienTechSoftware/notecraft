@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	노트북으로 돌아가기
 @id	ui.back_to_the_page_before_alt_left	이전 페이지로 돌아가기 (Alt+Left)
 @id	ui.basic_text	기본 텍스트
+@id	ui.font_size	글꼴 크기
+@id	ui.select_text_before_changing_font_size	글꼴 크기를 변경하기 전에 텍스트를 선택하세요.
 @id	ui.black	검정
 @id	ui.blue	파랑
 @id	ui.blue_2	파란색

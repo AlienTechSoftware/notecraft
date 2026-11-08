@@ -84,6 +84,7 @@ fn pieces(spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens) -> V
 /// How one span is drawn.
 fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> TextFormat {
     let mono = s.code || s.math;
+    let size = s.font_size.map_or(size, |points| size * f32::from(points) / 11.0);
     let c = if s.link.is_some() {
         tokens.link
     } else if s.bold {
@@ -110,6 +111,7 @@ pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &To
             continue;
         }
         let mono = s.code || s.math;
+        let size = s.font_size.map_or(size, |points| size * f32::from(points) / 11.0);
         let c = if s.link.is_some() {
             tokens.link
         } else if s.bold {
@@ -809,6 +811,14 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_font_size_scales_the_span_without_changing_the_base_size() {
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let span = Span { text: "larger".into(), font_size: Some(18), ..Span::default() };
+        let format = format_of(&span, 11.0, tokens.text, &tokens);
+        assert_eq!(format.font_id.size, 18.0);
+    }
 
     #[test]
     fn a_blank_line_is_a_line_tall_so_it_can_be_clicked() {

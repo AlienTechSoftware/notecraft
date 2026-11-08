@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	नोटबुक पर वापस जाएं
 @id	ui.back_to_the_page_before_alt_left	पिछले पृष्ठ पर वापस (Alt+Left)
 @id	ui.basic_text	मूल पाठ
+@id	ui.font_size	फ़ॉन्ट आकार
+@id	ui.select_text_before_changing_font_size	फ़ॉन्ट आकार बदलने से पहले पाठ चुनें।
 @id	ui.black	काला
 @id	ui.blue	नीला
 @id	ui.blue_2	नीला

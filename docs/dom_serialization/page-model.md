@@ -53,7 +53,7 @@ rules below; they must not become hidden editor-only state.
 | `MathBlock` | `$$` display-math fence | `p.math` |
 | `Table` | GFM table | `table`, rows, header and data cells |
 | `Image` and inline image `Span` | Markdown image/link syntax | `img` with `src` and `alt` |
-| Inline `Span` marks and links | Emphasis, code, strike, math and link syntax | `b`, `i`, `s`, `code`, `span.math`, `a` |
+| Inline `Span` marks, links and font size | Emphasis, code, strike, math and links; font size uses `<span style="font-size: Npt">` | `b`, `i`, `s`, `code`, `span.math`, `a`, and a `span` with `font-size` |
 | `Container` layout | `div.nc-box` with `data-x`, `data-y`, `data-width` | `div.nc-box` with the same data attributes and browser positioning style |
 
 The writers are `render::blocks_to_markdown` / `spans_to_markdown` (CMGFM) and

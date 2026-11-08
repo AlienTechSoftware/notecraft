@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	بازگشت به دفترچه یادداشت
 @id	ui.back_to_the_page_before_alt_left	بازگشت به صفحه قبل (Alt+Left)
 @id	ui.basic_text	متن ساده
+@id	ui.font_size	اندازه قلم
+@id	ui.select_text_before_changing_font_size	پیش از تغییر اندازه قلم، متنی را انتخاب کنید.
 @id	ui.black	سیاه
 @id	ui.blue	آبی تیره
 @id	ui.blue_2	آبی

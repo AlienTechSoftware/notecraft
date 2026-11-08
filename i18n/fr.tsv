@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	Retour au bloc-notes
 @id	ui.back_to_the_page_before_alt_left	Back to the page before (Alt+Left)
 @id	ui.basic_text	Texte de base
+@id	ui.font_size	Taille de police
+@id	ui.select_text_before_changing_font_size	Sélectionnez du texte avant de modifier sa taille.
 @id	ui.black	black
 @id	ui.blue	blue
 @id	ui.blue_2	Blue

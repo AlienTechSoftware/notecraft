@@ -18,6 +18,7 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
+pub const FONT_SIZES: [u8; 14] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
 /// Shown only while the caret is in a table, the way Office shows a tab for the thing in
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
 pub const TABLE_TAB: &str = "Table";
@@ -35,6 +36,8 @@ pub enum Act {
     Symbols,
     /// Put marks around the selection, or at the caret: bold, italic, strikethrough, code.
     Mark(&'static str),
+    /// Apply a point size to the selected text.
+    FontSize(u8),
     /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
     /// `number`, `todo`.
     Block(&'static str),
@@ -829,6 +832,14 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.menu_button(crate::tl_id!("ui.font_size"), |ui| {
+                    for size in FONT_SIZES {
+                        if ui.button(format!("{size} pt")).clicked() {
+                            acts.push(Act::FontSize(size));
+                            ui.close();
+                        }
+                    }
+                });
                 if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }

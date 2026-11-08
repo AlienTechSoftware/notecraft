@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	نات بک پر واپس
 @id	ui.back_to_the_page_before_alt_left	پچھلے صفحے پر واپس (Alt+Left)
 @id	ui.basic_text	بنیادی متن
+@id	ui.font_size	فونٹ سائز
+@id	ui.select_text_before_changing_font_size	فونٹ سائز تبدیل کرنے سے پہلے متن منتخب کریں۔
 @id	ui.black	کالا
 @id	ui.blue	نیلا
 @id	ui.blue_2	نیلا

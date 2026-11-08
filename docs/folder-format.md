@@ -136,8 +136,10 @@ tags: []
 - Supported Markdown: headings, paragraphs, bullet, numbered and task lists (nested by
   indentation), block quotes, fenced code, tables, rules, images, bold, italic,
   strikethrough, inline code, links. Equations are `$...$` and `$$ ... $$` (TeX). A fenced
-  block with the language `mermaid` is a diagram. This is a subset of CommonMark and GFM,
-  not a full implementation. See `crates/formats/src/markdown.rs` for the exact list.
+  block with the language `mermaid` is a diagram. Font size uses the inline
+  `<span style="font-size: Npt">text</span>` form, where N is 8 through 72. This is a
+  subset of CommonMark and GFM, not a full implementation. See `crates/formats/src/markdown.rs`
+  for the exact list.
 
 ### 3.3 Metadata keys
 

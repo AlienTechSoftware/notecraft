@@ -2745,6 +2745,7 @@ impl NoteCraftApp {
             act,
             ribbon::Act::Clipboard(_)
                 | ribbon::Act::Mark(_)
+                | ribbon::Act::FontSize(_)
                 | ribbon::Act::Block(_)
                 | ribbon::Act::ClearFormatting
                 | ribbon::Act::Direction(_)
@@ -2761,6 +2762,11 @@ impl NoteCraftApp {
         match act {
             ribbon::Act::Clipboard(which) => {
                 crate::containers::ask_clipboard(ctx, *which == "cut");
+                return true;
+            }
+            ribbon::Act::FontSize(_) => {
+                self.status = crate::tl_id!("ui.select_text_before_changing_font_size").into();
+                self.status_is_error = false;
                 return true;
             }
             ribbon::Act::Mark(mark) => {
@@ -2855,6 +2861,7 @@ impl NoteCraftApp {
             ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
             ribbon::Act::Tab(name) => self.ribbon_tab = name,
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
+            ribbon::Act::FontSize(size) => self.apply_font_size(size),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),
             ribbon::Act::Insert(what) => match what {
                 "space" => {
@@ -3616,6 +3623,33 @@ impl NoteCraftApp {
         caret.text = text;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             pageedit::set_block_text(b, &caret.text);
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+    }
+
+    fn apply_font_size(&mut self, size: u8) {
+        if !ribbon::FONT_SIZES.contains(&size) {
+            log::warn!("ribbon requested unsupported font size {size} pt");
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(caret) = ed.caret.as_mut() else {
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+            self.status_is_error = false;
+            return;
+        };
+        if caret.selection.0 == caret.selection.1 {
+            self.status = crate::tl_id!("ui.select_text_before_changing_font_size").into();
+            self.status_is_error = false;
+            return;
+        }
+        let open = format!("<span style=\"font-size: {size}pt\">");
+        let (text, selection) = pageedit::wrap_selection_with(&caret.text, caret.selection, &open, "</span>");
+        caret.text = text;
+        caret.selection = selection;
+        if let Some(block) = ed.blocks.get_mut(caret.block) {
+            pageedit::set_block_text(block, &caret.text);
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);

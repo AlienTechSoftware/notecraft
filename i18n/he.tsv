@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	חזרה למחברת
 @id	ui.back_to_the_page_before_alt_left	חזרה לדף הקודם (Alt+Left)
 @id	ui.basic_text	טקסט בסיסי
+@id	ui.font_size	גודל גופן
+@id	ui.select_text_before_changing_font_size	בחרו טקסט לפני שינוי גודל הגופן.
 @id	ui.black	שחור
 @id	ui.blue	כחול
 @id	ui.blue_2	כחול

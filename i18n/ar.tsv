@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	العودة إلى الدفتر
 @id	ui.back_to_the_page_before_alt_left	العودة إلى الصفحة السابقة (Alt+Left)
 @id	ui.basic_text	نص أساسي
+@id	ui.font_size	حجم الخط
+@id	ui.select_text_before_changing_font_size	حدد نصًا قبل تغيير حجم الخط.
 @id	ui.black	أسود
 @id	ui.blue	أزرق
 @id	ui.blue_2	أزرق
