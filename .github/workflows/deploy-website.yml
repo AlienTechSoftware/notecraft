@@ -17,11 +17,9 @@
 # --release` (the playground-web profile: LTO fat, one codegen unit) produces a working demo.
 #
 # What this buys, why the website lives in this repo instead of its own:
-#   - Changes to website code, workspace version, app crates, web-build patches, demo sources, or assets redeploy.
-#   - Every pull_request gets its own live preview URL (Azure Static Web Apps' built-in preview
-#     environments, free tier allows 3) — this is the whole reason the site is a subfolder here rather
-#     than a separate repo: Azure's preview-per-PR only works when the Static Web App is linked to the
-#     same repo the PR is opened against.
+#   - Pull requests that touch website code, workspace version, app crates, web-build patches, demo
+#     sources, or assets build and validate the demo without deploying it.
+#   - Production deployment runs only by manual dispatch.
 #
 # Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
 # token — create the Free-tier resource first, then copy its token here; never commit it). Set on
@@ -30,22 +28,9 @@
 name: Deploy website
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "website/**"
-      - ".github/workflows/deploy-website.yml"
-      - ".github/web-build/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "apps/**"
-      - "crates/**"
-      - "docs/demo/**"
-      - "assets/**"
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     paths:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
@@ -58,12 +43,11 @@ on:
       - "docs/demo/**"
       - "assets/**"
   workflow_dispatch:
-    # Manual production redeploy after a cancelled deployment or CDN issue.
+    # Manual production deployment after a cancelled deployment or CDN issue.
     # Always builds and deploys from main's current tip.
 
 permissions:
   contents: read
-  pull-requests: write # Azure's action comments the preview URL on the PR
 
 concurrency:
   group: deploy-website-${{ github.event.pull_request.number || 'production' }}
@@ -71,18 +55,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Closing (or merging) a PR tears down its preview environment. No demo fetch needed for a close.
-  close_preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: close
-
   deploy:
-    if: github.event_name == 'push' || github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -165,6 +138,7 @@ jobs:
           PY
 
       - uses: Azure/static-web-apps-deploy@v1
+        if: github.event_name != 'pull_request'
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ github.token }}
