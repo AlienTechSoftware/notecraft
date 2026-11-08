@@ -71,10 +71,15 @@ repair must be atomic and must leave the original recoverable if interrupted.
 
 ### Installation responsibility
 
-Application binaries and the User Assistance demo notebook are separate installation artifacts.
-The installation tool deploys both; the application only discovers and opens the installed
-notebook. The app must not install, copy, refresh, replace, repair, or delete it. The single
-cross-platform contract is `packaging/installation artifacts.md`.
+Application binaries and the User Assistance demo notebook remain separate artifacts, even when
+one installer bundles both. Installation copies no notebook content. The app bundles the generated
+editions as the source for a one-time first-use wizard: one dialog with five pages (welcome and
+banner, logging level, page format, create the demo notebook, thank you). It opens once after
+installation or a preferences reset and does not reopen for later app versions. Choosing Yes creates
+or completely replaces the per-user `welcome-to-notecraft` copy in the chosen format only; No creates
+nothing and leaves an existing copy alone. The app never changes sibling notebooks. For 0.0.9 the
+wizard is implemented and verified on Windows only. The single cross-platform contract is
+`packaging/installation artifacts.md`.
 
 ---
 

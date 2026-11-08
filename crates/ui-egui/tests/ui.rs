@@ -1508,6 +1508,106 @@ fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
 }
 
 #[test]
+fn welcome_notebook_prompt_can_replace_and_open_the_release_copy() {
+    let t = TempDir::new("ui-welcome-prompt-yes");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    s.settings.set("privacy_welcome_seen", "").expect("first use: the wizard opens");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
+    let notebooks = t.path().join("notebooks");
+    let destination = notebooks.join("welcome-to-notecraft");
+    std::fs::create_dir_all(&destination).expect("old Welcome notebook");
+    std::fs::write(destination.join("old-user-edit.txt"), "replace this managed copy").expect("old Welcome edit");
+    let app = NoteCraftApp::new(s).with_welcome_notebook_setup(move |root, format| {
+        let destination = root.join("welcome-to-notecraft");
+        if destination.exists() {
+            std::fs::remove_dir_all(&destination).map_err(|error| error.to_string())?;
+        }
+        copy_tree(&source.join(format), &destination);
+        Ok(destination)
+    });
+    let mut h = harness(app, LIGHT);
+    // Welcome, logging, format, demo, thank you.
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("CommonMark + GFM").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Yes, add it").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Finish").click();
+    settle(&mut h);
+
+    assert!(!destination.join("old-user-edit.txt").exists(), "Yes replaces the old managed notebook completely");
+    assert!(destination.join("_node.toml").is_file(), "the chosen edition is the notebook itself, so the notebook list finds it");
+    assert!(destination.join("00-start/welcome/index.md").is_file(), "the chosen CMGFM release content is installed");
+    assert!(!destination.join("html").exists(), "the other edition is not installed");
+    assert_eq!(h.state().session().settings.default_format(), Some(notecraft_model::PageFormat::Cmgfm), "the format step saves the default");
+    assert_eq!(
+        h.state().title(),
+        Some(format!("Welcome to NoteCraft (Ver {})", env!("CARGO_PKG_VERSION")).as_str()),
+        "the generated Welcome page is opened"
+    );
+    assert_eq!(h.state().session().settings.get("privacy_welcome_seen").as_deref(), Some("true"), "finishing the wizard marks it seen");
+}
+
+#[test]
+fn declining_the_welcome_notebook_prompt_does_not_create_it() {
+    let t = TempDir::new("ui-welcome-prompt-no");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    s.settings.set("privacy_welcome_seen", "").expect("first use: the wizard opens");
+    let app = NoteCraftApp::new(s).with_welcome_notebook_setup(|root, _format| {
+        let destination = root.join("welcome-to-notecraft");
+        std::fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+        Ok(destination)
+    });
+    let mut h = harness(app, LIGHT);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("No, not now").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Finish").click();
+    settle(&mut h);
+
+    assert!(!t.path().join("notebooks/welcome-to-notecraft").exists(), "No leaves the notebooks folder unchanged");
+    assert_eq!(h.state().session().settings.get("privacy_welcome_seen").as_deref(), Some("true"), "finishing the wizard marks it seen");
+}
+
+#[test]
+fn failed_welcome_notebook_generation_keeps_the_prompt_open() {
+    let t = TempDir::new("ui-welcome-prompt-error");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    s.settings.set("privacy_welcome_seen", "").expect("first use: the wizard opens");
+    let app = NoteCraftApp::new(s).with_welcome_notebook_setup(|_, _| Err("permission denied".to_string()));
+    let mut h = harness(app, LIGHT);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Yes, add it").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Finish").click();
+    settle(&mut h);
+
+    let _ = h.get_by_label("Could not update the Welcome notebook: permission denied");
+    assert_eq!(h.state().session().settings.get("welcome_notebook_choice_version"), None, "a failed copy is not remembered");
+    assert!(!t.path().join("notebooks/welcome-to-notecraft").exists(), "a failed copy creates no partial notebook");
+}
+
+#[test]
 fn an_empty_notebooks_folder_stays_empty_when_the_app_opens() {
     let t = TempDir::new("ui-empty-notebooks");
     let app = NoteCraftApp::new(session(&t));
@@ -3659,26 +3759,35 @@ fn the_default_page_layout_recovers_after_an_initial_narrow_viewport() {
     assert!(wide > narrow + 200.0, "an unarranged page expands with the viewport: narrow={narrow}, wide={wide}");
 }
 
-/// Denying local collection is saved in the real settings file and suppresses the welcome dialog next launch.
+/// Finishing the first-use wizard is saved in the real settings file and does not reopen on restart.
 #[test]
-fn privacy_choice_survives_restarting_the_app() {
+fn first_use_wizard_choices_survive_restarting_the_app() {
     let t = TempDir::new("ui-privacy-choice-restart");
     let settings_path = t.path().join("settings.toml");
     let s = Session::new(&t.path().join("notebooks"), Settings::at(&settings_path)).expect("session");
     let mut h = sized_harness(NoteCraftApp::new(s), LIGHT, egui::vec2(900.0, 700.0));
     settle(&mut h);
 
-    h.get_by_label("Deny").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("No, not now").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Finish").click();
     settle(&mut h);
 
     let settings = Settings::at(&settings_path);
     assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some("true"));
-    assert_eq!(settings.get("telemetry_level").as_deref(), Some("none"));
+    assert!(settings.get("telemetry_level").is_some(), "the logging step saves its level");
 
     let s = Session::new(&t.path().join("notebooks"), settings).expect("reopened session");
     let mut h = sized_harness(NoteCraftApp::new(s), LIGHT, egui::vec2(900.0, 700.0));
     settle(&mut h);
-    assert_eq!(h.query_all_by_label("Deny").count(), 0, "a saved choice closes the welcome dialog on restart");
+    assert_eq!(h.query_all_by_label("Finish").count(), 0, "a finished wizard does not open again on restart");
 }
 
 /// A tab with many groups in a narrow window: the Draw tab has eleven, as OneNote's does,

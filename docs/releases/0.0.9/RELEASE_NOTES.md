@@ -6,7 +6,7 @@
 - **Infinite canvas:** Draw in open page space beyond text blocks.
 - **Languages:** Interface localization across 13 locales, with French and Spanish User Assistance.
 - **Page organization:** UI improvements for creating pages and promoting them to sub-pages.
-- **Installation:** The app refreshes the bundled HTML and CMGFM Welcome notebook in 13 languages at launch. Other notebooks are left unchanged.
+- **First-use setup (Windows):** After installation, or after a preferences reset, NoteCraft opens one setup dialog: a welcome page with the banner, the local logging level, your page format (HTML or CommonMark + GFM), whether to add the Welcome notebook in that format (13 languages), and a thank-you page. It does not appear again for later app versions. Other notebooks are never replaced, and installation copies no notebook content. macOS, Linux, the website and Android are deferred for this flow in 0.0.9.
 - **Importing:** Import test dataset and preserve section colours.
 
 ## About NoteCraft
@@ -51,3 +51,4 @@ to learn how to contribute.
 - [Playground](https://playground.daijro.dev/head/notecraft/)
 - [GitHub repository](https://github.com/AlienTechSoftware/notecraft)
 - [Discord](https://discord.com/channels/1359579021108842617/1559147620084088982)
+

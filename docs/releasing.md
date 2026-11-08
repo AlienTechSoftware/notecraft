@@ -57,9 +57,10 @@ name or mark.
    clean target. Publish the draft only after the owner approves.
 
 The website, desktop release, and Android package are separate pipelines. Each bundles both
-generated Welcome formats and provisions the managed Welcome notebook at app startup; the website
-uses a static archive transport. The generic engine sample stays separate. Record and verify the
-source revision and version for every artifact.
+generated Welcome formats. Desktop NoteCraft runs the first-use wizard once after installation or
+a preferences reset and creates the managed Welcome notebook only when the user chooses Yes. For
+0.0.9 the wizard is verified on Windows only; the website and Android flows are deferred for it. The website uses a static archive transport. The generic engine sample stays
+separate. Record and verify the source revision and version for every artifact.
 
 ### Notes and the draft
 
@@ -78,10 +79,11 @@ source revision and version for every artifact.
 
 Before publishing, install the MSI on a machine that has never run NoteCraft. Follow the
 `packaging/installation artifacts.md` contract for the expected user notebook location. Launch
-NoteCraft and verify it creates or refreshes `welcome-to-notecraft` with both formats and all 13
-languages before loading the notebook tree. Place a sentinel user notebook beside it and verify it
-is unchanged. Confirm an older Welcome notebook is replaced on restart; its edits are expected to
-be replaced by the generated release content.
+NoteCraft and verify the first-use wizard appears: welcome page with the banner, logging, page format,
+create the demo, then thank you. Choose Yes on the demo page and verify it creates
+`welcome-to-notecraft` in the chosen format before opening it. Place a sentinel user notebook beside
+it and verify it is unchanged. Restart and confirm the wizard does not appear again. Reset the
+preferences and confirm it appears again. Confirm an upgrade does not show it.
 
 | File | What it is |
 |---|---|
@@ -111,9 +113,9 @@ the `release` environment of the repository, never in a file.
 - The MSI `UpgradeCode` in `packaging/windows/notecraft.wxs` is fixed once the first MSI is public.
   Changing it later stops new versions from replacing old ones.
 - The exes carry the app icon and version information (build.rs, winresource), and the packaging script checks both.
-- Smoke test the artifact: it starts with no console window, refreshes the managed Welcome notebook,
-  leaves sibling notebooks unchanged, and reports an invalid notebooks folder. Install, upgrade and
-  uninstall must preserve other user notebook data. Use the canonical
+- Smoke test the artifact: it starts with no console window, asks before refreshing the managed
+  Welcome notebook, leaves sibling notebooks unchanged, and reports an invalid notebooks folder.
+  Install, upgrade and uninstall must preserve other user notebook data. Use the canonical
   `packaging/installation artifacts.md` contract for the full checks.
 
 ## Building locally

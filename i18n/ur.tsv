@@ -771,3 +771,17 @@
 @id	ui.zoom_in	زوم ان
 @id	ui.zoom_out	زوم آؤٹ
 @id	ui.zoom_to_100	100% تک زوم کریں
+@id	ui.welcome_format_title	صفحے کا فارمیٹ منتخب کریں
+@id	ui.welcome_format_body	NoteCraft ہر صفحہ HTML (تجویز کردہ) یا CommonMark + GFM Markdown میں محفوظ کرتا ہے۔ نئے صفحات اس فارمیٹ میں بنیں گے جو یہاں منتخب کیا جائے۔ آپ اسے بعد میں بدل سکتے ہیں۔
+@id	ui.welcome_format_next	آگے
+@id	ui.welcome_notebook_prompt_format	فارمیٹ: {format}۔
+@id	ui.welcome_notebook_prompt_title	خوش آمدید نوٹ بک شامل کریں؟
+@id	ui.welcome_notebook_prompt_body	اس ریلیز کی خوش آمدید نوٹ بک اپنی نوٹ بکس میں شامل کریں۔ اگر وہ پہلے سے موجود ہے تو اسے حذف کر کے نئی کاپی سے بدل دیا جائے گا۔
+@id	ui.welcome_notebook_replace_warning	موجودہ خوش آمدید نوٹ بک میں کی گئی تبدیلیاں ضائع ہو جائیں گی۔ دوسری نوٹ بکس تبدیل نہیں ہوں گی۔
+@id	ui.welcome_notebook_add_yes	ہاں، شامل کریں
+@id	ui.welcome_notebook_add_no	نہیں، ابھی نہیں
+@id	ui.welcome_notebook_action_failed	خوش آمدید نوٹ بک اپ ڈیٹ نہیں ہو سکی: {error}
+@id	ui.welcome_wizard_back	پیچھے
+@id	ui.welcome_wizard_finish	ختم
+@id	ui.welcome_wizard_done_title	شکریہ
+@id	ui.welcome_wizard_done_body	NoteCraft استعمال کے لیے تیار ہے۔ آپ کا انتخاب محفوظ ہو گیا ہے۔ یہ ترتیب صرف ترجیحات دوبارہ ترتیب دینے کے بعد ظاہر ہوگی۔

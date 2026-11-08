@@ -1,9 +1,10 @@
 # NoteCraft macOS packaging guide
 
 This directory contains the NoteCraft macOS app, DMG and CLI archive scripts. The app bundle
-includes both generated Welcome notebook formats and refreshes the managed Welcome notebook when
-it starts. It replaces only `welcome-to-notecraft`; sibling notebooks remain unchanged. Packages
-remain test artifacts until a maintainer completes signing, notarization and clean-machine checks.
+includes both generated Welcome notebook formats as the source for the first-use setup. For 0.0.9
+the setup is verified on Windows only; the macOS check is deferred. It replaces only `welcome-to-notecraft`; sibling notebooks
+remain unchanged. Packages remain test artifacts until a maintainer completes signing,
+notarization and clean-machine checks.
 
 ## Build and verify test packages
 
@@ -19,8 +20,8 @@ bash packaging/OSX/test-provenance.sh
 ```
 
 The DMG contains `NoteCraft.app`, an Applications link and a read-me file at its root. Drag the
-app to Applications and open it. NoteCraft creates or refreshes the Welcome notebook in the user's
-notebook folder before loading the notebook tree.
+app to Applications and open it. On first launch of each version, NoteCraft asks whether to add
+the bundled Welcome notebook to the user's notebook folder.
 
 The default `--arch universal` builds both Apple targets and combines the GUI and CLI with
 `lipo`. `--arch x86_64` produces Intel-only packages. The DMG and separate CLI zip are written to
@@ -60,10 +61,10 @@ Gatekeeper; do not change system security settings to test it.
 
 For a manual Finder check, use a disposable notebook directory containing a sentinel user notebook
 and an older `welcome-to-notecraft`. Open the DMG, drag `NoteCraft.app` into Applications, then
-launch it. Confirm the Welcome notebook has both formats and the current content, while the
-sentinel notebook is unchanged. Quit and relaunch to verify refresh behavior. Remove only the test
-app after the check; confirm app removal leaves the notebook root in place. Repeat on Intel before
-release.
+launch it. Choose Yes and confirm the Welcome notebook has both formats and the current content,
+the old Welcome files are gone, and the sentinel notebook is unchanged. Relaunch to confirm the
+same version does not ask again. Remove only the test app after the check; confirm app removal
+leaves the notebook root in place. Repeat on Intel before release.
 
 The preferred direction is to follow the packaging tools and libraries already used by the
 ArtCraft applications, especially the sibling MailCraft macOS package. Do not introduce a new

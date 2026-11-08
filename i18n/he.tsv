@@ -771,3 +771,17 @@
 @id	ui.zoom_in	הגדל תקריב
 @id	ui.zoom_out	הקטן תקריב
 @id	ui.zoom_to_100	תקריב ל-100%
+@id	ui.welcome_format_title	בחרו תבנית לדף
+@id	ui.welcome_format_body	NoteCraft שומר כל דף כ-HTML (מומלץ) או כ-Markdown מסוג CommonMark + GFM. דפים חדשים ייווצרו בתבנית שתבחרו כאן. אפשר לשנות אותה מאוחר יותר.
+@id	ui.welcome_format_next	הבא
+@id	ui.welcome_notebook_prompt_format	תבנית: {format}.
+@id	ui.welcome_notebook_prompt_title	להוסיף את מחברת הברוכים הבאים?
+@id	ui.welcome_notebook_prompt_body	הוסיפו את מחברת הברוכים הבאים של גרסה זו למחברות שלכם. אם היא כבר קיימת, היא תימחק ותוחלף בעותק החדש.
+@id	ui.welcome_notebook_replace_warning	שינויים שנעשו במחברת הברוכים הבאים הקיימת יאבדו. מחברות אחרות לא ישתנו.
+@id	ui.welcome_notebook_add_yes	כן, הוסף
+@id	ui.welcome_notebook_add_no	לא, לא עכשיו
+@id	ui.welcome_notebook_action_failed	לא ניתן לעדכן את מחברת הברוכים הבאים: {error}
+@id	ui.welcome_wizard_back	הקודם
+@id	ui.welcome_wizard_finish	סיום
+@id	ui.welcome_wizard_done_title	תודה
+@id	ui.welcome_wizard_done_body	NoteCraft מוכן לשימוש. הבחירות שלכם נשמרו. ההגדרה הזו תופיע שוב רק אחרי איפוס ההעדפות.

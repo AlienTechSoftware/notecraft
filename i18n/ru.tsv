@@ -771,3 +771,17 @@
 @id	ui.zoom_in	Увеличить
 @id	ui.zoom_out	Уменьшить
 @id	ui.zoom_to_100	Масштаб 100%
+@id	ui.welcome_format_title	Выберите формат страниц
+@id	ui.welcome_format_body	NoteCraft сохраняет каждую страницу как HTML (рекомендуется) или как Markdown CommonMark + GFM. Новые страницы используют формат, выбранный здесь. Его можно изменить позже.
+@id	ui.welcome_format_next	Далее
+@id	ui.welcome_notebook_prompt_format	Формат: {format}.
+@id	ui.welcome_notebook_prompt_title	Добавить приветственный блокнот?
+@id	ui.welcome_notebook_prompt_body	Добавить приветственный блокнот этой версии в ваши блокноты. Если он уже есть, он будет удалён и заменён новой копией.
+@id	ui.welcome_notebook_replace_warning	Изменения в текущем приветственном блокноте будут потеряны. Другие блокноты не изменятся.
+@id	ui.welcome_notebook_add_yes	Да, добавить
+@id	ui.welcome_notebook_add_no	Нет, не сейчас
+@id	ui.welcome_notebook_action_failed	Не удалось обновить приветственный блокнот: {error}
+@id	ui.welcome_wizard_back	Назад
+@id	ui.welcome_wizard_finish	Готово
+@id	ui.welcome_wizard_done_title	Спасибо
+@id	ui.welcome_wizard_done_body	NoteCraft готов к работе. Ваш выбор сохранён. Эта настройка появится снова только после сброса параметров.

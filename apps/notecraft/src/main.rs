@@ -166,10 +166,6 @@ fn main() -> eframe::Result {
         Err(error) => fail(&format!("Could not locate the generated Welcome notebook payload: {error}")),
     };
     let payload = demo_payload(&executable).unwrap_or_else(|| fail("Could not locate the generated Welcome notebook payload."));
-    if let Err(error) = notecraft_setup::refresh_demo(&payload, &root) {
-        applog::line("ERROR", &format!("cannot refresh the managed Welcome notebook: {error}"));
-        fail(&format!("NoteCraft could not create or refresh the Welcome notebook: {error}"));
-    }
     let session = match Session::new(&root, Settings::default_location()) {
         Ok(s) => s,
         Err(e) => {
@@ -184,12 +180,11 @@ fn main() -> eframe::Result {
         let remembered = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         let _ = session.settings.set("last_notebooks_root", &remembered.to_string_lossy());
     }
-    // Reset first-use flag for testing (shows logging consent dialog again)
+    // Reset first-use flags so both current first-run prompts can be reviewed again.
     if args.iter().any(|arg| arg == "--first-use") {
         let _ = session.settings.set("privacy_welcome_seen", "");
-        applog::info("First-use flag set: privacy welcome dialog will show");
+        applog::info("First-use flag set: the first-use wizard will show");
     }
-    // The app refreshes its own Welcome notebook before discovery; every other notebook remains user-owned.
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
@@ -228,7 +223,12 @@ fn main() -> eframe::Result {
         "NoteCraft",
         options,
         Box::new(move |cc| {
-            let mut app = NoteCraftApp::new(session).with_clipboard(clipboard);
+            let setup_payload = payload.clone();
+            let mut app = NoteCraftApp::new(session)
+                .with_welcome_notebook_setup(move |notebooks_root, format| {
+                    notecraft_setup::install_edition(&setup_payload, notebooks_root, format).map_err(|error| error.to_string())
+                })
+                .with_clipboard(clipboard);
             for (key, message) in startup_alerts.drain(..) {
                 app.alert(key, "NoteCraft", &message);
             }

@@ -10,8 +10,9 @@
   Per-machine install into Program Files with a Start Menu shortcut. The installer shows the
   standard WiX dialogs: welcome and licence, progress, and a finish page.
 
-  The app carries both generated Welcome notebook formats and refreshes only its dedicated
-  per-user Welcome notebook folder at startup. Other notebook folders remain unchanged.
+  The app carries both generated Welcome notebook formats and asks once per app version before
+  creating or replacing its dedicated per-user Welcome notebook. Other notebook folders remain
+  unchanged.
 
   UpgradeCode and the component GUIDs below belong to NoteCraft alone. Never change the
   UpgradeCode after the first public release: Windows Installer would stop treating a new
@@ -49,7 +50,7 @@
         Impersonate="yes" Return="ignore" />
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
-      <!-- The app provisions its managed Welcome notebook on startup. -->
+      <!-- The app offers its bundled Welcome notebook on first launch of each version. -->
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchNotecraft"
           Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
     </UI>

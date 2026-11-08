@@ -771,3 +771,17 @@
 @id	ui.zoom_in	ズームイン
 @id	ui.zoom_out	ズームアウト
 @id	ui.zoom_to_100	100%にズーム
+@id	ui.welcome_format_title	ページ形式を選択
+@id	ui.welcome_format_body	NoteCraft は各ページを HTML（推奨）または CommonMark + GFM の Markdown で保存します。新しいページはここで選んだ形式で作成されます。後から変更できます。
+@id	ui.welcome_format_next	次へ
+@id	ui.welcome_notebook_prompt_format	形式: {format}
+@id	ui.welcome_notebook_prompt_title	ようこそノートブックを追加しますか？
+@id	ui.welcome_notebook_prompt_body	このバージョンのようこそノートブックをノートブックに追加します。既に存在する場合は削除され、新しいコピーに置き換えられます。
+@id	ui.welcome_notebook_replace_warning	既存のようこそノートブックへの変更は失われます。他のノートブックは変更されません。
+@id	ui.welcome_notebook_add_yes	はい、追加します
+@id	ui.welcome_notebook_add_no	いいえ、今はしない
+@id	ui.welcome_notebook_action_failed	ようこそノートブックを更新できませんでした: {error}
+@id	ui.welcome_wizard_back	戻る
+@id	ui.welcome_wizard_finish	完了
+@id	ui.welcome_wizard_done_title	ありがとうございます
+@id	ui.welcome_wizard_done_body	NoteCraft の準備ができました。選択内容は保存されています。この設定は環境設定をリセットしたときにだけ再表示されます。

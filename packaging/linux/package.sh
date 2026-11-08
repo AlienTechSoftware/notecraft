@@ -64,7 +64,7 @@ install -Dm644 "$ROOT/LICENSE-MIT" "$STAGE/usr/share/doc/notecraft/LICENSE-MIT"
 install -Dm644 "$ROOT/LICENSE-APACHE" "$STAGE/usr/share/doc/notecraft/LICENSE-APACHE"
 install -Dm644 "$ROOT/NOTICE" "$STAGE/usr/share/doc/notecraft/NOTICE"
 
-# The app copies both generated formats into the user's notebooks folder at startup.
+# The app offers both generated formats on first launch of each app version.
 DEMO_SOURCE="$ROOT/docs/demo/DemoNotebook"
 for format in html cmgfm; do
     [ -d "$DEMO_SOURCE/$format" ] || { echo "required $format demo format is missing" >&2; exit 1; }

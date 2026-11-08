@@ -771,3 +771,17 @@
 @id	ui.zoom_in	$$$Zoom In@@@
 @id	ui.zoom_out	$$$Zoom Out@@@
 @id	ui.zoom_to_100	$$$Zoom to 100%@@@
+@id	ui.welcome_format_title	$$$Choose a page format@@@
+@id	ui.welcome_format_body	$$$NoteCraft saves each page as HTML (recommended) or as CommonMark + GFM Markdown. New pages use the format you choose here. You can change it later.@@@
+@id	ui.welcome_format_next	$$$Next@@@
+@id	ui.welcome_notebook_prompt_format	$$$Format: {format}.@@@
+@id	ui.welcome_notebook_prompt_title	$$$Add the Welcome notebook?@@@
+@id	ui.welcome_notebook_prompt_body	$$$Add this release's Welcome notebook to your notebooks. If one already exists, it will be deleted and replaced with the new copy.@@@
+@id	ui.welcome_notebook_replace_warning	$$$Changes made to the existing Welcome notebook will be lost. Other notebooks will not change.@@@
+@id	ui.welcome_notebook_add_yes	$$$Yes, add it@@@
+@id	ui.welcome_notebook_add_no	$$$No, not now@@@
+@id	ui.welcome_notebook_action_failed	$$$Could not update the Welcome notebook: {error}@@@
+@id	ui.welcome_wizard_back	$$$Back@@@
+@id	ui.welcome_wizard_finish	$$$Finish@@@
+@id	ui.welcome_wizard_done_title	$$$Thank you@@@
+@id	ui.welcome_wizard_done_body	$$$NoteCraft is ready to use. Your choices are saved. This setup appears again only after you reset the preferences.@@@

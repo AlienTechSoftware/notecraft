@@ -771,3 +771,17 @@
 @id	ui.zoom_in	Zoom avant
 @id	ui.zoom_out	Zoom arrière
 @id	ui.zoom_to_100	Zoom à 100 %
+@id	ui.welcome_format_title	Choisissez un format de page
+@id	ui.welcome_format_body	NoteCraft enregistre chaque page en HTML (recommandé) ou en Markdown CommonMark + GFM. Les nouvelles pages utilisent le format choisi ici. Vous pourrez le modifier plus tard.
+@id	ui.welcome_format_next	Suivant
+@id	ui.welcome_notebook_prompt_format	Format : {format}.
+@id	ui.welcome_notebook_prompt_title	Ajouter le carnet de bienvenue ?
+@id	ui.welcome_notebook_prompt_body	Ajoutez le carnet de bienvenue de cette version à vos carnets. S'il existe déjà, il sera supprimé et remplacé par la nouvelle copie.
+@id	ui.welcome_notebook_replace_warning	Les modifications apportées au carnet de bienvenue existant seront perdues. Les autres carnets ne changeront pas.
+@id	ui.welcome_notebook_add_yes	Oui, l'ajouter
+@id	ui.welcome_notebook_add_no	Non, pas maintenant
+@id	ui.welcome_notebook_action_failed	Impossible de mettre à jour le carnet de bienvenue : {error}
+@id	ui.welcome_wizard_back	Retour
+@id	ui.welcome_wizard_finish	Terminer
+@id	ui.welcome_wizard_done_title	Merci
+@id	ui.welcome_wizard_done_body	NoteCraft est prêt à l'emploi. Vos choix sont enregistrés. Cette configuration ne réapparaîtra qu'après une réinitialisation des préférences.

@@ -10,15 +10,12 @@ pub fn macos_dmg_payload(executable: &Path) -> Option<PathBuf> {
     payload.is_dir().then_some(payload)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SetupOutcome {
-    Installed(PathBuf),
-}
-
-/// Replaces only the app-managed Welcome notebook with the generated HTML and CMGFM editions.
-/// Other notebooks in `notebooks_root` are never visited or changed.
-pub fn refresh_demo(payload: &Path, notebooks_root: &Path) -> io::Result<SetupOutcome> {
-    validate_payload(payload)?;
+/// Installs one generated edition (`html` or `cmgfm`) of the release Welcome notebook as the
+/// app-managed notebook folder. The edition's own `_node.toml` ends up directly under the
+/// notebook folder, so the notebook list finds it. Other notebooks in `notebooks_root` are never
+/// visited or changed. Returns the installed notebook folder.
+pub fn install_edition(payload: &Path, notebooks_root: &Path, format: &str) -> io::Result<PathBuf> {
+    validate_edition(payload, format)?;
     let destination = notebooks_root.join(NOTEBOOK_NAME);
     if std::fs::symlink_metadata(&destination).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "refusing to replace a symbolic link at the Welcome notebook path"));
@@ -27,7 +24,7 @@ pub fn refresh_demo(payload: &Path, notebooks_root: &Path) -> io::Result<SetupOu
     let staging = notebooks_root.join(format!(".{NOTEBOOK_NAME}-installing-{}", unique_suffix()));
     let backup = notebooks_root.join(format!(".{NOTEBOOK_NAME}-backup-{}", unique_suffix()));
     fs_create_dir(&staging)?;
-    if let Err(error) = copy_tree(payload, &staging) {
+    if let Err(error) = copy_tree(&payload.join(format), &staging) {
         remove_tree_if_present(&staging);
         return Err(error);
     }
@@ -43,38 +40,44 @@ pub fn refresh_demo(payload: &Path, notebooks_root: &Path) -> io::Result<SetupOu
         return Err(error);
     }
     remove_tree_if_present(&backup);
-    Ok(SetupOutcome::Installed(destination))
+    Ok(destination)
 }
 
-fn validate_payload(payload: &Path) -> io::Result<()> {
-    for (format, page) in [("html", "00-start/welcome/index.html"), ("cmgfm", "00-start/welcome/index.md")] {
-        for relative in [Path::new(format).join("_node.toml"), Path::new(format).join(page)] {
-            if !payload.join(&relative).is_file() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("the User Assistance payload is incomplete: missing {}", relative.display()),
-                ));
-            }
+/// Checks that one edition is complete before anything in the notebooks folder is replaced.
+fn validate_edition(payload: &Path, format: &str) -> io::Result<()> {
+    let page = match format {
+        "html" => "00-start/welcome/index.html",
+        "cmgfm" => "00-start/welcome/index.md",
+        other => {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("unknown page format {other:?}")));
         }
-        let format_root = payload.join(format);
-        let language_count = std::fs::read_dir(&format_root)?
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                    return false;
-                }
-                let name = entry.file_name();
-                let Some(name) = name.to_str() else { return false };
-                let Some((number, language)) = name.split_once('-') else { return false };
-                matches!(number.parse::<u8>(), Ok(10..=23)) && language.len() == 2 && language.bytes().all(|byte| byte.is_ascii_lowercase())
-            })
-            .count();
-        if language_count != 13 {
+    };
+    let format_root = payload.join(format);
+    for relative in [Path::new("_node.toml").to_path_buf(), PathBuf::from(page)] {
+        if !format_root.join(&relative).is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("the {format} User Assistance notebook has {language_count} language folders; expected 13"),
+                format!("the User Assistance payload is incomplete: missing {format}/{}", relative.display()),
             ));
         }
+    }
+    let language_count = std::fs::read_dir(&format_root)?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                return false;
+            }
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { return false };
+            let Some((number, language)) = name.split_once('-') else { return false };
+            matches!(number.parse::<u8>(), Ok(10..=23)) && language.len() == 2 && language.bytes().all(|byte| byte.is_ascii_lowercase())
+        })
+        .count();
+    if language_count != 13 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the {format} User Assistance notebook has {language_count} language folders; expected 13"),
+        ));
     }
     Ok(())
 }
@@ -184,22 +187,24 @@ mod tests {
     }
 
     #[test]
-    fn official_generated_demo_is_a_valid_setup_payload() {
+    fn official_generated_demo_is_a_valid_payload_for_both_editions() {
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
-        validate_payload(&payload).expect("official generated HTML and CMGFM notebooks are a valid setup payload");
+        validate_edition(&payload, "html").expect("official HTML edition is valid");
+        validate_edition(&payload, "cmgfm").expect("official CMGFM edition is valid");
     }
 
     #[test]
-    fn refreshes_both_demo_formats_and_preserves_other_notebooks() {
+    fn installs_only_the_chosen_edition_at_the_notebook_root() {
         let (_temp, source, notebooks) = fixture();
         let other = notebooks.join("My notebook");
         fs::create_dir_all(&other).expect("create user notebook");
         fs::write(other.join("notes.txt"), "user content").expect("write user content");
-        let outcome = refresh_demo(&source, &notebooks).expect("install payload");
-        let destination = notebooks.join(NOTEBOOK_NAME);
-        assert_eq!(outcome, SetupOutcome::Installed(destination.clone()));
-        assert_eq!(fs::read(destination.join("html/00-start/welcome/index.html")).expect("HTML format"), b"HTML format");
-        assert_eq!(fs::read(destination.join("cmgfm/00-start/welcome/index.md")).expect("CMGFM format"), b"CMGFM format");
+        let destination = install_edition(&source, &notebooks, "cmgfm").expect("install CMGFM edition");
+
+        assert_eq!(destination, notebooks.join(NOTEBOOK_NAME));
+        assert!(destination.join("_node.toml").is_file(), "the edition's notebook metadata is directly under the notebook folder");
+        assert_eq!(fs::read(destination.join("00-start/welcome/index.md")).expect("CMGFM format"), b"CMGFM format");
+        assert!(!destination.join("html").exists(), "the other edition is not installed");
         assert_eq!(fs::read(other.join("notes.txt")).expect("user content"), b"user content");
     }
 
@@ -213,44 +218,48 @@ mod tests {
         fs::create_dir_all(&other).expect("create user notebook");
         fs::write(other.join("notes.txt"), "keep my notes").expect("write user notes");
 
-        let html = source.join("html/00-start/welcome/index.html");
-        fs::write(html, "updated HTML").expect("update payload");
-        let outcome = refresh_demo(&source, &notebooks).expect("replace existing demo");
-        assert_eq!(outcome, SetupOutcome::Installed(destination.clone()));
+        fs::write(source.join("html/00-start/welcome/index.html"), "updated HTML").expect("update payload");
+        assert_eq!(install_edition(&source, &notebooks, "html").expect("replace existing demo"), destination);
         assert!(!destination.join("old-page.txt").exists(), "stale demo data is removed");
-        assert_eq!(fs::read(destination.join("html/00-start/welcome/index.html")).expect("new demo"), b"updated HTML");
+        assert_eq!(fs::read(destination.join("00-start/welcome/index.html")).expect("new demo"), b"updated HTML");
         assert_eq!(fs::read(other.join("notes.txt")).expect("user notes"), b"keep my notes");
     }
 
     #[test]
-    fn a_missing_demo_is_recreated_on_next_launch() {
+    fn a_missing_demo_is_recreated_on_next_install() {
         let (_temp, source, notebooks) = fixture();
-        let destination = notebooks.join(NOTEBOOK_NAME);
-        assert_eq!(refresh_demo(&source, &notebooks).expect("initial install"), SetupOutcome::Installed(destination.clone()));
+        let destination = install_edition(&source, &notebooks, "html").expect("initial install");
         fs::remove_dir_all(&destination).expect("user deletes the notebook");
-        assert_eq!(refresh_demo(&source, &notebooks).expect("refresh deleted demo"), SetupOutcome::Installed(destination.clone()));
-        assert!(destination.join("html/00-start/welcome/index.html").is_file(), "the app recreates its managed demo");
+        assert_eq!(install_edition(&source, &notebooks, "html").expect("reinstall deleted demo"), destination);
+        assert!(destination.join("00-start/welcome/index.html").is_file(), "the app recreates its managed demo");
     }
 
     #[test]
-    fn an_incomplete_payload_fails_without_replacing_the_existing_demo() {
+    fn an_incomplete_edition_fails_without_replacing_the_existing_demo() {
         let (_temp, source, notebooks) = fixture();
         fs::create_dir_all(notebooks.join(NOTEBOOK_NAME)).expect("create current demo");
         fs::write(notebooks.join(NOTEBOOK_NAME).join("keep.txt"), "current").expect("write current demo");
         fs::remove_file(source.join("html/00-start/welcome/index.html")).expect("remove required HTML page");
-        assert_eq!(refresh_demo(&source, &notebooks).expect_err("reject incomplete payload").kind(), io::ErrorKind::InvalidData);
+        assert_eq!(install_edition(&source, &notebooks, "html").expect_err("reject incomplete payload").kind(), io::ErrorKind::InvalidData);
         assert_eq!(fs::read(notebooks.join(NOTEBOOK_NAME).join("keep.txt")).expect("current demo"), b"current");
     }
 
     #[test]
-    fn a_payload_missing_a_language_is_rejected_before_replacing_the_current_demo() {
+    fn an_edition_missing_a_language_is_rejected_before_replacing_the_current_demo() {
         let (_temp, source, notebooks) = fixture();
         let destination = notebooks.join(NOTEBOOK_NAME);
         fs::create_dir_all(&destination).expect("create current demo");
         fs::write(destination.join("keep.txt"), "current").expect("write current demo");
         fs::remove_dir_all(source.join("html/23-he")).expect("remove one generated language");
 
-        assert_eq!(refresh_demo(&source, &notebooks).expect_err("reject incomplete languages").kind(), io::ErrorKind::InvalidData);
+        assert_eq!(install_edition(&source, &notebooks, "html").expect_err("reject incomplete languages").kind(), io::ErrorKind::InvalidData);
         assert_eq!(fs::read(destination.join("keep.txt")).expect("current demo"), b"current");
+    }
+
+    #[test]
+    fn an_unknown_format_is_rejected_before_anything_is_written() {
+        let (_temp, source, notebooks) = fixture();
+        assert_eq!(install_edition(&source, &notebooks, "docx").expect_err("reject unknown format").kind(), io::ErrorKind::InvalidInput);
+        assert!(!notebooks.join(NOTEBOOK_NAME).exists());
     }
 }

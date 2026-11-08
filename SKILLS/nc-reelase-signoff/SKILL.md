@@ -35,8 +35,9 @@ requested `reelase` spelling for discoverability.
    screenshots, licenses, and attribution. Test installation in a clean VM, device, or browser when
    the release changes packaging or external bridges. Apply `packaging/installation artifacts.md`
    and the platform matrix below. Verify each artifact carries both generated formats and all 13
-   demo locales. On first start, install the managed Welcome notebook only when its folder is
-   absent. Later starts preserve an existing Welcome notebook and a sentinel sibling notebook.
+   demo locales. The first-use wizard offers the managed Welcome notebook once, after installation or a
+   preferences reset; installation copies none. A sentinel sibling notebook must survive it. For
+   0.0.9 the wizard is signed off on Windows only.
    Verify upgrade and uninstall behavior for each platform, including Android's app-specific data
    behavior. Record platform limits rather than treating a package build as an install test.
 9. Confirm no automatic telemetry upload, local privacy wording, and release defaults.

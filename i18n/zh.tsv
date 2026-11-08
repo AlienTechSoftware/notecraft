@@ -771,3 +771,17 @@
 @id	ui.zoom_in	放大
 @id	ui.zoom_out	缩小
 @id	ui.zoom_to_100	缩放至 100%
+@id	ui.welcome_format_title	选择页面格式
+@id	ui.welcome_format_body	NoteCraft 会将每个页面保存为 HTML（推荐）或 CommonMark + GFM Markdown。新页面将使用您在此处选择的格式。以后可以更改。
+@id	ui.welcome_format_next	下一步
+@id	ui.welcome_notebook_prompt_format	格式：{format}
+@id	ui.welcome_notebook_prompt_title	添加欢迎笔记本？
+@id	ui.welcome_notebook_prompt_body	将本版本的欢迎笔记本添加到您的笔记本中。如果已存在，它将被删除并替换为新副本。
+@id	ui.welcome_notebook_replace_warning	对现有欢迎笔记本所做的更改将丢失。其他笔记本不会改变。
+@id	ui.welcome_notebook_add_yes	是，添加
+@id	ui.welcome_notebook_add_no	否，暂不
+@id	ui.welcome_notebook_action_failed	无法更新欢迎笔记本：{error}
+@id	ui.welcome_wizard_back	上一步
+@id	ui.welcome_wizard_finish	完成
+@id	ui.welcome_wizard_done_title	谢谢
+@id	ui.welcome_wizard_done_body	NoteCraft 已准备就绪。您的选择已保存。只有在重置偏好设置后，此设置才会再次出现。

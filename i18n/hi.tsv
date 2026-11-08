@@ -771,3 +771,17 @@
 @id	ui.zoom_in	ज़ूम इन
 @id	ui.zoom_out	ज़ूम आउट
 @id	ui.zoom_to_100	100% पर ज़ूम करें
+@id	ui.welcome_format_title	पेज का फ़ॉर्मेट चुनें
+@id	ui.welcome_format_body	NoteCraft हर पेज को HTML (अनुशंसित) या CommonMark + GFM Markdown में सहेजता है। नए पेज यहाँ चुने गए फ़ॉर्मेट में बनेंगे। इसे बाद में बदला जा सकता है।
+@id	ui.welcome_format_next	आगे
+@id	ui.welcome_notebook_prompt_format	फ़ॉर्मेट: {format}।
+@id	ui.welcome_notebook_prompt_title	स्वागत नोटबुक जोड़ें?
+@id	ui.welcome_notebook_prompt_body	इस रिलीज़ की स्वागत नोटबुक अपनी नोटबुक में जोड़ें। यदि वह पहले से मौजूद है, तो उसे हटाकर नई कॉपी से बदल दिया जाएगा।
+@id	ui.welcome_notebook_replace_warning	मौजूदा स्वागत नोटबुक में किए गए बदलाव खो जाएँगे। अन्य नोटबुक नहीं बदलेंगी।
+@id	ui.welcome_notebook_add_yes	हाँ, जोड़ें
+@id	ui.welcome_notebook_add_no	नहीं, अभी नहीं
+@id	ui.welcome_notebook_action_failed	स्वागत नोटबुक अपडेट नहीं हो सकी: {error}
+@id	ui.welcome_wizard_back	पीछे
+@id	ui.welcome_wizard_finish	समाप्त
+@id	ui.welcome_wizard_done_title	धन्यवाद
+@id	ui.welcome_wizard_done_body	NoteCraft उपयोग के लिए तैयार है। आपकी पसंद सहेज ली गई है। यह सेटअप केवल प्राथमिकताएँ रीसेट करने के बाद फिर दिखेगा।

@@ -66,3 +66,6 @@ macro_rules! tl_id {
 
 /// The app icon (256 x 256, transparent corners). See ATTRIBUTION.md.
 pub const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-256.png");
+/// The brand banner for the first-use wizard, light and dark variants.
+pub const BANNER_LIGHT_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-social-light.png");
+pub const BANNER_DARK_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-social-dark.png");

@@ -771,3 +771,17 @@
 @id	ui.zoom_in	Vergrößern
 @id	ui.zoom_out	Verkleinern
 @id	ui.zoom_to_100	Auf 100 % zoomen
+@id	ui.welcome_format_title	Seitenformat wählen
+@id	ui.welcome_format_body	NoteCraft speichert jede Seite als HTML (empfohlen) oder als CommonMark-+ GFM-Markdown. Neue Seiten verwenden das hier gewählte Format. Du kannst es später ändern.
+@id	ui.welcome_format_next	Weiter
+@id	ui.welcome_notebook_prompt_format	Format: {format}.
+@id	ui.welcome_notebook_prompt_title	Willkommensnotizbuch hinzufügen?
+@id	ui.welcome_notebook_prompt_body	Füge das Willkommensnotizbuch dieser Version deinen Notizbüchern hinzu. Falls es bereits vorhanden ist, wird es gelöscht und durch die neue Kopie ersetzt.
+@id	ui.welcome_notebook_replace_warning	Änderungen am vorhandenen Willkommensnotizbuch gehen verloren. Andere Notizbücher bleiben unverändert.
+@id	ui.welcome_notebook_add_yes	Ja, hinzufügen
+@id	ui.welcome_notebook_add_no	Nein, nicht jetzt
+@id	ui.welcome_notebook_action_failed	Das Willkommensnotizbuch konnte nicht aktualisiert werden: {error}
+@id	ui.welcome_wizard_back	Zurück
+@id	ui.welcome_wizard_finish	Fertig
+@id	ui.welcome_wizard_done_title	Vielen Dank
+@id	ui.welcome_wizard_done_body	NoteCraft ist einsatzbereit. Deine Auswahl ist gespeichert. Diese Einrichtung erscheint erst wieder, wenn du die Einstellungen zurücksetzt.

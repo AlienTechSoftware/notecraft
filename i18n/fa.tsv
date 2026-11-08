@@ -771,3 +771,17 @@
 @id	ui.zoom_in	بزرگنمایی به داخل
 @id	ui.zoom_out	بزرگنمایی به خارج
 @id	ui.zoom_to_100	بزرگنمایی تا ۱۰۰٪
+@id	ui.welcome_format_title	قالب صفحه را انتخاب کنید
+@id	ui.welcome_format_body	NoteCraft هر صفحه را به صورت HTML (توصیه می‌شود) یا Markdown با CommonMark + GFM ذخیره می‌کند. صفحه‌های جدید با قالبی که اینجا انتخاب می‌کنید ساخته می‌شوند. بعدا می‌توانید آن را تغییر دهید.
+@id	ui.welcome_format_next	بعدی
+@id	ui.welcome_notebook_prompt_format	قالب: {format}.
+@id	ui.welcome_notebook_prompt_title	دفترچه خوش‌آمدگویی اضافه شود؟
+@id	ui.welcome_notebook_prompt_body	دفترچه خوش‌آمدگویی این نسخه را به دفترچه‌های شما اضافه کنید. اگر از قبل وجود داشته باشد، حذف و با نسخه جدید جایگزین می‌شود.
+@id	ui.welcome_notebook_replace_warning	تغییرات دفترچه خوش‌آمدگویی فعلی از بین می‌رود. دفترچه‌های دیگر تغییر نمی‌کنند.
+@id	ui.welcome_notebook_add_yes	بله، اضافه کن
+@id	ui.welcome_notebook_add_no	نه، فعلا نه
+@id	ui.welcome_notebook_action_failed	به‌روزرسانی دفترچه خوش‌آمدگویی ممکن نشد: {error}
+@id	ui.welcome_wizard_back	قبلی
+@id	ui.welcome_wizard_finish	پایان
+@id	ui.welcome_wizard_done_title	متشکریم
+@id	ui.welcome_wizard_done_body	NoteCraft آماده استفاده است. انتخاب‌های شما ذخیره شد. این راه‌اندازی تنها پس از بازنشانی تنظیمات دوباره نمایش داده می‌شود.

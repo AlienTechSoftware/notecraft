@@ -771,3 +771,17 @@
 @id	ui.zoom_in	확대
 @id	ui.zoom_out	축소
 @id	ui.zoom_to_100	100%로 확대
+@id	ui.welcome_format_title	페이지 형식 선택
+@id	ui.welcome_format_body	NoteCraft는 각 페이지를 HTML(권장) 또는 CommonMark + GFM Markdown으로 저장합니다. 새 페이지는 여기서 고른 형식으로 만들어집니다. 나중에 바꿀 수 있습니다.
+@id	ui.welcome_format_next	다음
+@id	ui.welcome_notebook_prompt_format	형식: {format}
+@id	ui.welcome_notebook_prompt_title	환영 노트북을 추가할까요?
+@id	ui.welcome_notebook_prompt_body	이 버전의 환영 노트북을 노트북에 추가합니다. 이미 있으면 삭제되고 새 복사본으로 바뀝니다.
+@id	ui.welcome_notebook_replace_warning	기존 환영 노트북에서 한 변경 내용은 사라집니다. 다른 노트북은 바뀌지 않습니다.
+@id	ui.welcome_notebook_add_yes	예, 추가합니다
+@id	ui.welcome_notebook_add_no	아니요, 나중에요
+@id	ui.welcome_notebook_action_failed	환영 노트북을 업데이트할 수 없습니다: {error}
+@id	ui.welcome_wizard_back	이전
+@id	ui.welcome_wizard_finish	완료
+@id	ui.welcome_wizard_done_title	감사합니다
+@id	ui.welcome_wizard_done_body	NoteCraft를 사용할 준비가 되었습니다. 선택한 내용은 저장되었습니다. 이 설정은 환경설정을 초기화한 뒤에만 다시 나타납니다.

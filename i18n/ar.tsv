@@ -771,3 +771,17 @@
 @id	ui.zoom_in	تكبير
 @id	ui.zoom_out	تصغير
 @id	ui.zoom_to_100	تكبير إلى 100%
+@id	ui.welcome_format_title	اختر تنسيق الصفحة
+@id	ui.welcome_format_body	يحفظ NoteCraft كل صفحة بصيغة HTML (موصى بها) أو Markdown من نوع CommonMark + GFM. تستخدم الصفحات الجديدة التنسيق الذي تختاره هنا. يمكنك تغييره لاحقا.
+@id	ui.welcome_format_next	التالي
+@id	ui.welcome_notebook_prompt_format	التنسيق: {format}.
+@id	ui.welcome_notebook_prompt_title	هل تريد إضافة دفتر الترحيب؟
+@id	ui.welcome_notebook_prompt_body	أضف دفتر الترحيب الخاص بهذا الإصدار إلى دفاترك. إذا كان موجودا فستُحذف نسخته وتُستبدل بالنسخة الجديدة.
+@id	ui.welcome_notebook_replace_warning	ستفقد التغييرات التي أجريتها على دفتر الترحيب الحالي. لن تتغير الدفاتر الأخرى.
+@id	ui.welcome_notebook_add_yes	نعم، أضفه
+@id	ui.welcome_notebook_add_no	لا، ليس الآن
+@id	ui.welcome_notebook_action_failed	تعذر تحديث دفتر الترحيب: {error}
+@id	ui.welcome_wizard_back	رجوع
+@id	ui.welcome_wizard_finish	إنهاء
+@id	ui.welcome_wizard_done_title	شكرا لك
+@id	ui.welcome_wizard_done_body	أصبح NoteCraft جاهزا للاستخدام. تم حفظ اختياراتك. لن يظهر هذا الإعداد مرة أخرى إلا بعد إعادة ضبط التفضيلات.

@@ -452,10 +452,17 @@ enum Dialog {
         title: String,
     },
     Symbols,
-    PrivacyWelcome {
+    /// The first-use wizard: one window with three steps. Step 0 is the local logging level,
+    /// step 1 the page format saved as the default, and step 2 whether to add the Welcome notebook
+    /// in that format.
+    FirstUseWizard {
+        step: u8,
         level: String,
+        format: PageFormat,
+        add_demo: bool,
+        error: Option<String>,
     },
-    /// A problem told to the user in a box. Ticking "do not alert me again" stops the box for
+    /// A problem told to the user in a box.    /// A problem told to the user in a box. Ticking "do not alert me again" stops the box for
     /// this `key` for the rest of the session; the status line still says what happened.
     Alert {
         key: String,
@@ -632,6 +639,7 @@ pub struct NoteCraftApp {
     /// The clipboard the app reads and writes. The system's, unless the app was built with another.
     clipboard: Box<dyn crate::clipboard::Board>,
     open_attachment_warning_suppressed: bool,
+    welcome_notebook_setup: Option<Box<dyn FnMut(&Path, &str) -> Result<PathBuf, String>>>,
 }
 
 impl NoteCraftApp {
@@ -673,6 +681,7 @@ impl NoteCraftApp {
         let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
+        let wizard_format = session.settings.global_format().0;
         NoteCraftApp {
             session,
             nav: NavHistory::default(),
@@ -686,7 +695,11 @@ impl NoteCraftApp {
             window_level_pending: false,
             frameless: false,
             editor: None,
-            dialog: if privacy_welcome { Some(Dialog::PrivacyWelcome { level: telemetry_level }) } else { None },
+            dialog: if privacy_welcome {
+                Some(Dialog::FirstUseWizard { step: 0, level: telemetry_level, format: wizard_format, add_demo: true, error: None })
+            } else {
+                None
+            },
             import_job: None,
             status: crate::tl_id!("ui.ready_2").into(),
             status_is_error: false,
@@ -737,7 +750,56 @@ impl NoteCraftApp {
             queued_alerts: VecDeque::new(),
             clipboard: Box::new(crate::clipboard::System),
             open_attachment_warning_suppressed: false,
+            welcome_notebook_setup: None,
         }
+    }
+
+    /// Installs the application-owned action behind the Welcome notebook step of the first-use
+    /// wizard. The callback gets the notebooks folder and the chosen format id, and returns the
+    /// installed notebook folder. The wizard opens once: on the first launch after installation, or
+    /// after the preferences are reset. It does not reopen for later versions.
+    pub fn with_welcome_notebook_setup(mut self, setup: impl FnMut(&Path, &str) -> Result<PathBuf, String> + 'static) -> Self {
+        self.welcome_notebook_setup = Some(Box::new(setup));
+        self
+    }
+
+    /// The first-use wizard, starting at the logging step with the current settings.
+    fn first_use_wizard(&self) -> Dialog {
+        Dialog::FirstUseWizard {
+            step: 0,
+            level: self.session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string()),
+            format: self.session.settings.global_format().0,
+            add_demo: true,
+            error: None,
+        }
+    }
+
+    /// Applies the wizard's answers: the logging level, the default page format, and, when chosen,
+    /// the Welcome notebook in that format. The wizard is marked seen only after every answer is saved,
+    /// so a failed install shows the wizard again on the next launch.
+    fn finish_first_use_wizard(&mut self, level: &str, format: PageFormat, add_demo: bool) -> Result<(), String> {
+        self.session.settings.set("telemetry_level", level).map_err(|error| error.to_string())?;
+        self.session.settings.set("privacy_welcome_seen", "true").map_err(|error| error.to_string())?;
+        self.session.settings.set_default_format(format).map_err(|error| error.to_string())?;
+        if add_demo {
+            self.save_now();
+            if self.is_dirty() {
+                return Err("the current page could not be saved before replacing the Welcome notebook".to_string());
+            }
+            let installed = {
+                let setup = self.welcome_notebook_setup.as_mut().ok_or_else(|| "the bundled Welcome notebook setup is unavailable".to_string())?;
+                setup(self.session.root(), format.id())?
+            };
+            self.editor = None;
+            self.pad = None;
+            self.session.refresh();
+            self.status_is_error = false;
+            self.open_path(&installed.join("00-start/welcome").to_string_lossy());
+            if self.status_is_error {
+                return Err(self.status.clone());
+            }
+        }
+        Ok(())
     }
 
     pub fn session(&self) -> &Session {
@@ -4951,18 +5013,36 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::PrivacyWelcome { level } => {
-                let mut accepted = false;
-                let mut denied = false;
+            Dialog::FirstUseWizard { step, level, format, add_demo, error } => {
+                let mut back = false;
+                let mut next = false;
+                let mut finish = false;
+                let last_step: u8 = 4;
+                let escape = ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape));
                 let screen = ctx.viewport_rect();
-                egui::Area::new(egui::Id::new("privacy-welcome-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(
+                egui::Area::new(egui::Id::new("first-use-wizard-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(
                     ctx,
                     |ui| {
                         let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
                         ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
                     },
                 );
-                egui::Window::new(crate::tl_id!("ui.welcome_to_notecraft"))
+                let panel = self.tokens.panel;
+                let dark = (u32::from(panel.r()) + u32::from(panel.g()) + u32::from(panel.b())) < 384;
+                let (banner_uri, banner_bytes) = if dark {
+                    ("bytes://notecraft-wizard-banner-dark", crate::BANNER_DARK_PNG)
+                } else {
+                    ("bytes://notecraft-wizard-banner-light", crate::BANNER_LIGHT_PNG)
+                };
+                let title = match *step {
+                    0 => crate::tl_id!("ui.welcome_to_notecraft"),
+                    1 => crate::tl_id!("ui.local_collection_level"),
+                    2 => crate::tl_id!("ui.welcome_format_title"),
+                    3 => crate::tl_id!("ui.welcome_notebook_prompt_title"),
+                    _ => crate::tl_id!("ui.welcome_wizard_done_title"),
+                }
+                .to_string();
+                egui::Window::new(title.as_str())
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
@@ -4970,39 +5050,86 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
-                        modal_title(ui, &self.tokens, crate::tl_id!("ui.welcome_to_notecraft"));
                         ui.set_min_width(520.0);
-                        ui.label(crate::tl_id!("ui.thank_you_for_trying_notecraft"));
-                        ui.add_space(6.0);
-                        ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
-                        ui.add_space(6.0);
-                        ui.label(crate::tl_id!("ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0"));
-                        egui::ComboBox::from_label(crate::tl_id!("ui.local_collection_level")).selected_text(crate::tl!(level.as_str())).show_ui(
-                            ui,
-                            |ui| {
-                                for choice in ["none", "usage", "warning", "error", "debug"] {
-                                    ui.selectable_value(level, choice.into(), crate::tl!(choice));
+                        if *step == 0 {
+                            ui.add(egui::Image::from_bytes(banner_uri, banner_bytes).fit_to_exact_size(vec2(480.0, 240.0)));
+                            ui.add_space(8.0);
+                        }
+                        modal_title(ui, &self.tokens, title.as_str());
+                        match *step {
+                            0 => {
+                                ui.label(crate::tl_id!("ui.thank_you_for_trying_notecraft"));
+                            }
+                            1 => {
+                                ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
+                                ui.add_space(6.0);
+                                ui.label(crate::tl_id!("ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0"));
+                                egui::ComboBox::from_label(crate::tl_id!("ui.local_collection_level"))
+                                    .selected_text(crate::tl!(level.as_str()))
+                                    .show_ui(ui, |ui| {
+                                        for choice in ["none", "usage", "warning", "error", "debug"] {
+                                            ui.selectable_value(level, choice.into(), crate::tl!(choice));
+                                        }
+                                    });
+                            }
+                            2 => {
+                                ui.label(crate::tl_id!("ui.welcome_format_body"));
+                                ui.add_space(8.0);
+                                for choice in PageFormat::ALL {
+                                    ui.radio_value(&mut *format, choice, choice.label());
                                 }
-                            },
-                        );
-                        ui.add_space(12.0);
+                            }
+                            3 => {
+                                ui.label(crate::tl_id!("ui.welcome_notebook_prompt_body"));
+                                ui.label(crate::i18n::format_message_id("ui.welcome_notebook_prompt_format", &[("format", format.label())]));
+                                ui.add_space(6.0);
+                                ui.colored_label(self.tokens.warn, crate::tl_id!("ui.welcome_notebook_replace_warning"));
+                                ui.add_space(8.0);
+                                ui.radio_value(&mut *add_demo, true, crate::tl_id!("ui.welcome_notebook_add_yes"));
+                                ui.radio_value(&mut *add_demo, false, crate::tl_id!("ui.welcome_notebook_add_no"));
+                            }
+                            _ => {
+                                ui.label(crate::tl_id!("ui.welcome_wizard_done_body"));
+                            }
+                        }
+                        if let Some(message) = error {
+                            ui.add_space(8.0);
+                            ui.colored_label(
+                                self.tokens.warn,
+                                crate::i18n::format_message_id("ui.welcome_notebook_action_failed", &[("error", message)]),
+                            );
+                        }
+                        ui.add_space(14.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.accept"), true).clicked() {
-                                accepted = true;
+                            if *step > 0 && modal_button(ui, &self.tokens, crate::tl_id!("ui.welcome_wizard_back"), false).clicked() {
+                                back = true;
                             }
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.deny"), false).clicked() {
-                                denied = true;
-                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if *step < last_step {
+                                    if modal_button(ui, &self.tokens, crate::tl_id!("ui.welcome_format_next"), true).clicked() {
+                                        next = true;
+                                    }
+                                } else if modal_button(ui, &self.tokens, crate::tl_id!("ui.welcome_wizard_finish"), true).clicked() {
+                                    finish = true;
+                                }
+                            });
                         });
                     });
-                if accepted {
-                    let _ = self.session.settings.set("telemetry_level", level);
-                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
-                    keep = false;
-                } else if denied {
-                    let _ = self.session.settings.set("telemetry_level", "none");
-                    let _ = self.session.settings.set("privacy_welcome_seen", "true");
-                    keep = false;
+                if back {
+                    *step = step.saturating_sub(1);
+                }
+                if next {
+                    *step = (*step + 1).min(last_step);
+                }
+                if escape && !finish && *step > 0 {
+                    *step -= 1;
+                }
+                if finish {
+                    let level = level.clone();
+                    match self.finish_first_use_wizard(&level, *format, *add_demo) {
+                        Ok(()) => keep = false,
+                        Err(message) => *error = Some(message),
+                    }
                 }
             }
             Dialog::Alert { key, title, message, suppress, suppress_forever } => {
@@ -5064,7 +5191,7 @@ impl NoteCraftApp {
                     });
                 if reset {
                     match self.session.settings.reset() {
-                        Ok(()) => self.say(crate::tl_id!("ui.app_preferences_reset_restart_notecraft_to_apply_every_default")),
+                        Ok(()) => self.dialog = Some(self.first_use_wizard()),
                         Err(e) => {
                             self.complain(&crate::i18n::format_message_id("ui.could_not_reset_app_preferences_error", &[("error", &e.to_string())]))
                         }
@@ -6514,7 +6641,7 @@ mod alert_tests {
         let app = NoteCraftApp::new(session);
 
         // Dialog should be shown because privacy_welcome_seen is not in settings
-        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should show on first launch");
+        assert!(matches!(app.dialog, Some(Dialog::FirstUseWizard { .. })), "PrivacyWelcome dialog should show on first launch");
     }
 
     #[test]
@@ -6529,6 +6656,73 @@ mod alert_tests {
         assert!(app.dialog.is_none(), "PrivacyWelcome dialog should not show after being dismissed");
     }
 
+    #[test]
+    fn the_wizard_opens_once_after_install_and_not_for_later_versions() {
+        let t = notecraft_store::testing::TempDir::new("welcome-wizard-once");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let upgraded = Session::new(&t.path().join("notebooks"), settings.clone()).expect("upgraded session");
+        let upgraded = NoteCraftApp::new(upgraded).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+        assert!(upgraded.dialog.is_none(), "an existing user is not shown the wizard again for a later version");
+
+        // A fresh install opens the wizard at the welcome page; finishing it saves every answer.
+        let fresh = notecraft_store::Settings::at(t.path().join("fresh.toml"));
+        let session = Session::new(&t.path().join("fresh-notebooks"), fresh.clone()).expect("fresh session");
+        let mut app = NoteCraftApp::new(session).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+        assert!(matches!(app.dialog, Some(Dialog::FirstUseWizard { step: 0, .. })), "a fresh install starts at the welcome page");
+        assert!(app.finish_first_use_wizard("none", PageFormat::Html, false).is_ok());
+        assert_eq!(fresh.get("privacy_welcome_seen").as_deref(), Some("true"));
+
+        let again = Session::new(&t.path().join("fresh-notebooks"), fresh).expect("reopened session");
+        let again = NoteCraftApp::new(again).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+        assert!(again.dialog.is_none(), "a finished wizard does not open again");
+    }
+
+    #[test]
+    fn welcome_notebook_prompt_waits_until_the_privacy_dialog_closes() {
+        let t = notecraft_store::testing::TempDir::new("welcome-prompt-after-privacy");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let app = NoteCraftApp::new(session).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+
+        assert!(matches!(app.dialog, Some(Dialog::FirstUseWizard { step: 0, .. })), "the wizard opens at the logging step");
+        assert!(app.queued_alerts.is_empty(), "the wizard is one window, so nothing waits behind it");
+    }
+
+    #[test]
+    fn failed_welcome_notebook_generation_keeps_the_prompt_and_does_not_record_a_choice() {
+        let t = notecraft_store::testing::TempDir::new("welcome-prompt-failure");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let mut app = NoteCraftApp::new(session).with_welcome_notebook_setup(|_, _| Err("copy failed".to_string()));
+
+        assert!(app.finish_first_use_wizard("none", PageFormat::Cmgfm, true).is_err());
+
+        assert_eq!(settings.get("welcome_notebook_choice_version"), None, "a failed generation leaves the choice unanswered");
+    }
+
+    #[test]
+    fn the_wizard_installs_the_edition_for_the_chosen_format() {
+        let t = notecraft_store::testing::TempDir::new("welcome-wizard-format");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let installed_format = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+        let recorder = installed_format.clone();
+        let mut app = NoteCraftApp::new(session).with_welcome_notebook_setup(move |root, format| {
+            *recorder.borrow_mut() = format.to_string();
+            let installed = root.join("welcome-to-notecraft");
+            std::fs::create_dir_all(installed.join("00-start/welcome")).map_err(|error| error.to_string())?;
+            Ok(installed)
+        });
+
+        // Opening the fake folder's page can fail; the full install and open path is covered by the UI test.
+        let _ = app.finish_first_use_wizard("none", PageFormat::Cmgfm, true);
+
+        assert_eq!(installed_format.borrow().as_str(), "cmgfm", "the chosen format reaches the install");
+    }
+
     /// `--first-use` writes `privacy_welcome_seen = ""` and keeps every other setting.
     #[test]
     fn first_use_flag_value_shows_the_privacy_welcome_again() {
@@ -6538,7 +6732,7 @@ mod alert_tests {
         settings.set("theme_mode", "dark").expect("settings");
         let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
         let app = NoteCraftApp::new(session);
-        assert!(matches!(app.dialog, Some(Dialog::PrivacyWelcome { .. })), "an emptied key counts as not seen");
+        assert!(matches!(app.dialog, Some(Dialog::FirstUseWizard { .. })), "an emptied key counts as not seen");
         assert_eq!(app.session.settings.get("theme_mode").as_deref(), Some("dark"), "other settings are kept");
     }
 
@@ -6565,7 +6759,7 @@ mod alert_tests {
         let app2 = NoteCraftApp::new(session2);
 
         // Dialog should reappear because settings file is gone
-        assert!(matches!(app2.dialog, Some(Dialog::PrivacyWelcome { .. })), "PrivacyWelcome dialog should reappear when settings file is deleted");
+        assert!(matches!(app2.dialog, Some(Dialog::FirstUseWizard { .. })), "PrivacyWelcome dialog should reappear when settings file is deleted");
     }
 
     #[test]

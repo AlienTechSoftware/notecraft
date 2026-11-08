@@ -771,3 +771,17 @@
 @id	ui.zoom_in	Acercar
 @id	ui.zoom_out	Alejar
 @id	ui.zoom_to_100	Zoom al 100 %
+@id	ui.welcome_format_title	Elige un formato de página
+@id	ui.welcome_format_body	NoteCraft guarda cada página como HTML (recomendado) o como Markdown CommonMark + GFM. Las páginas nuevas usan el formato que elijas aquí. Podrás cambiarlo más tarde.
+@id	ui.welcome_format_next	Siguiente
+@id	ui.welcome_notebook_prompt_format	Formato: {format}.
+@id	ui.welcome_notebook_prompt_title	¿Añadir el cuaderno de bienvenida?
+@id	ui.welcome_notebook_prompt_body	Añade a tus cuadernos el cuaderno de bienvenida de esta versión. Si ya existe, se eliminará y se sustituirá por la copia nueva.
+@id	ui.welcome_notebook_replace_warning	Se perderán los cambios hechos en el cuaderno de bienvenida actual. Los demás cuadernos no cambiarán.
+@id	ui.welcome_notebook_add_yes	Sí, añadirlo
+@id	ui.welcome_notebook_add_no	No, ahora no
+@id	ui.welcome_notebook_action_failed	No se pudo actualizar el cuaderno de bienvenida: {error}
+@id	ui.welcome_wizard_back	Atrás
+@id	ui.welcome_wizard_finish	Terminar
+@id	ui.welcome_wizard_done_title	Gracias
+@id	ui.welcome_wizard_done_body	NoteCraft está listo para usar. Tus opciones están guardadas. Esta configuración solo volverá a aparecer si restableces las preferencias.
