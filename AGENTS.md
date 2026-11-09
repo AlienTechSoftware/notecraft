@@ -77,8 +77,9 @@ NoteCraft is an open-source, clean-room recreation of the OneNote notebook exper
 - Keep shared contracts and behavior platform-neutral while using useful native
   platform support through isolated implementations. Name platform-specific
   files `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for
-  macOS and `.lnx.*` for Linux. Rust must select these files explicitly through
-  `cfg`-gated module wiring; the suffix alone does not select a file.
+  macOS, `.lnx.*` for Linux, `.droid.*` for Android, and `.ios.*` for iOS. Rust
+  must select these files explicitly through `cfg`-gated module wiring; the
+  suffix alone does not select a file.
 - **Union, not intersection.** NoteCraft does not reduce every platform to what they
   all share. Each platform branch uses what that platform does best, and a shared
   fallback is only for a platform with no specialized branch yet. Any missing

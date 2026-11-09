@@ -91,7 +91,7 @@ Organize code so a reader encounters important things first:
 | Request/Response types | `{Action}Request`, `{Action}Response` | `CreatePageRequest`, `CreatePageResponse` |
 | Builders | `{Type}Builder` | `NotebookBuilder` |
 | Optional fields | Prefix with `maybe_` | `maybe_description`, `maybe_parent_id` |
-| Platform-specific files | `name.{platform}.rs` | `clipboard.win.rs`, `sync.mac.rs` |
+| Platform-specific files | `name.{platform}.rs` | `clipboard.win.rs`, `sync.mac.rs`, `picker.droid.rs`, `share.ios.rs` |
 
 ### 7. Imports & Module Organization
 
@@ -495,7 +495,7 @@ Use `/nc-code-rust` for:
 
 - Use `PathBuf` instead of string paths (platform-agnostic)
 - Use `std::fs` for file I/O (works on all platforms)
-- For platform-specific code, use `.win.rs`, `.mac.rs`, `.lnx.rs` files
+- For platform-specific code, use `.win.rs`, `.mac.rs`, `.lnx.rs`, `.droid.rs`, or `.ios.rs` files
 - Test on Windows, macOS, and Linux (or CI)
 - Fallback to pure Rust when platform code unavailable
 
