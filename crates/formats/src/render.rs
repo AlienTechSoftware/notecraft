@@ -214,27 +214,49 @@ fn marked(spans: &[Span], level: usize) -> String {
 
 /// One span with nothing but its code, picture, maths or link written round it.
 fn leaf(s: &Span) -> String {
-    let sized = |text: String| match s.font_size {
-        Some(size) => format!("<span style=\"font-size: {size}pt\">{text}</span>"),
-        None => text,
-    };
+    let styled = |text: String| inline_style(s, inline_marks(s, text));
     if let Some(src) = &s.image {
         let image = format!("![{}]({src})", s.text);
         let image = match &s.link {
             Some(target) => format!("[{image}]({target})"),
             None => image,
         };
-        return sized(image);
+        return styled(image);
     }
     if s.math {
-        return sized(format!("${}$", s.text));
+        return styled(format!("${}$", s.text));
     }
     let text = if s.code { format!("`{}`", s.text) } else { s.text.clone() };
     let text = match &s.link {
         Some(target) => format!("[{text}]({target})"),
         None => text,
     };
-    sized(text)
+    styled(text)
+}
+
+fn inline_marks(s: &Span, mut text: String) -> String {
+    if s.underline {
+        text = format!("<u>{text}</u>");
+    }
+    if let Some(script) = s.script {
+        let tag = match script {
+            crate::markdown::Script::Subscript => "sub",
+            crate::markdown::Script::Superscript => "sup",
+        };
+        text = format!("<{tag}>{text}</{tag}>");
+    }
+    text
+}
+
+fn inline_style(s: &Span, text: String) -> String {
+    let mut styles = Vec::new();
+    if let Some(family) = &s.font_family {
+        styles.push(format!("font-family: {}", escape(&crate::markdown::font_family_css(family))));
+    }
+    if let Some(size) = s.font_size {
+        styles.push(format!("font-size: {size}pt"));
+    }
+    if styles.is_empty() { text } else { format!("<span style=\"{}\">{text}</span>", styles.join("; ")) }
 }
 
 /// Blocks as the HTML body of a page: the inside of `<body>`, one block per line.
@@ -331,9 +353,7 @@ pub fn spans_to_html(spans: &[Span]) -> String {
     for s in spans {
         if let Some(src) = &s.image {
             let mut image = format!("<img src=\"{}\" alt=\"{}\">", escape(src), escape(&s.text));
-            if let Some(size) = s.font_size {
-                image = format!("<span style=\"font-size: {size}pt\">{image}</span>");
-            }
+            image = inline_style(s, inline_marks(s, image));
             match &s.link {
                 Some(target) => out.push_str(&format!("<a href=\"{}\">{image}</a>", escape(target))),
                 None => out.push_str(&image),
@@ -342,9 +362,7 @@ pub fn spans_to_html(spans: &[Span]) -> String {
         }
         if s.math {
             let mut math = format!("<span class=\"math\">${}$</span>", escape(&s.text));
-            if let Some(size) = s.font_size {
-                math = format!("<span style=\"font-size: {size}pt\">{math}</span>");
-            }
+            math = inline_style(s, inline_marks(s, math));
             out.push_str(&math);
             continue;
         }
@@ -366,10 +384,7 @@ pub fn spans_to_html(spans: &[Span]) -> String {
             Some(target) => format!("<a href=\"{}\">{text}</a>", escape(target)),
             None => text,
         };
-        let text = match s.font_size {
-            Some(size) => format!("<span style=\"font-size: {size}pt\">{text}</span>"),
-            None => text,
-        };
+        let text = inline_style(s, inline_marks(s, text));
         out.push_str(&text);
     }
     out
@@ -563,5 +578,58 @@ fn b() {}"
         let html = blocks_to_html(&blocks);
         assert!(html.contains("<span style=\"font-size: 18pt\">larger text</span>"), "{html}");
         assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML retains the size");
+    }
+
+    #[test]
+    fn font_family_underline_and_scripts_round_trip_in_both_formats() {
+        let source = "<span style=\"font-family: DejaVu Sans; font-size: 18pt\"><u>underlined</u> H<sub>2</sub>O x<sup>2</sup></span>";
+        let blocks = parse(source);
+        assert_eq!(blocks_to_text(&blocks), "underlined H2O x2", "formatting tags are not visible page text");
+        let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+        assert!(spans.iter().all(|span| span.font_family.as_deref() == Some("DejaVu Sans") && span.font_size == Some(18)));
+        assert!(spans.iter().any(|span| span.text == "underlined" && span.underline));
+        assert!(spans.iter().any(|span| span.text == "2" && span.script == Some(crate::markdown::Script::Subscript)));
+        assert!(spans.iter().any(|span| span.text == "2" && span.script == Some(crate::markdown::Script::Superscript)));
+        let markdown = blocks_to_markdown(&blocks);
+        let html = blocks_to_html(&blocks);
+
+        assert!(markdown.contains("font-family: DejaVu Sans"), "CMGFM preserves the font family: {markdown}");
+        assert!(markdown.contains("<u>") && markdown.contains("<sub>") && markdown.contains("<sup>"), "CMGFM preserves the marks: {markdown}");
+        assert!(html.contains("font-family: DejaVu Sans"), "HTML preserves the font family: {html}");
+        assert!(html.contains("<u>") && html.contains("<sub>") && html.contains("<sup>"), "HTML preserves the marks: {html}");
+        assert_eq!(parse(&markdown), blocks, "CMGFM round-trips the formatting");
+        assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML round-trips the formatting");
+    }
+
+    #[test]
+    fn font_family_names_with_punctuation_round_trip_safely() {
+        for name in [
+            "Noto Sans (Arabic)",
+            "O'Brien & Sons",
+            "Family; color: red",
+            "Family \"A\"",
+            "Family <one>",
+            "Font\\'X",
+            "3D Fonts",
+            "Font.Name",
+            "東京",
+        ] {
+            let blocks = vec![Block::Paragraph(vec![Span { text: "words".into(), font_family: Some(name.into()), ..Span::default() }])];
+            let markdown = blocks_to_markdown(&blocks);
+            let html = blocks_to_html(&blocks);
+            assert_eq!(parse(&markdown), blocks, "CMGFM round trip: {name:?}: {markdown}");
+            assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML round trip: {name:?}: {html}");
+        }
+    }
+
+    #[test]
+    fn nested_font_styles_preserve_unselected_marks_and_unicode() {
+        let source = "<span style=\"font-family: Noto Sans; font-size: 18pt\">A **<u>bold</u>** <span style=\"font-size: 12pt\">مرحبا<sub>2</sub></span></span>";
+        let blocks = parse(source);
+        assert_eq!(blocks_to_text(&blocks), "A bold مرحبا2");
+        let markdown = blocks_to_markdown(&blocks);
+        let html = blocks_to_html(&blocks);
+        assert_eq!(parse(&markdown), blocks, "CMGFM round-trips nested formatting: {markdown}");
+        assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML round-trips nested formatting: {html}");
     }
 }

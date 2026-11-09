@@ -140,6 +140,11 @@ tags: []
   `<span style="font-size: Npt">text</span>` form, where N is 8 through 72. This is a
   subset of CommonMark and GFM, not a full implementation. See `crates/formats/src/markdown.rs`
   for the exact list.
+- Font-family spans in the in-progress font-formatting model use the `font-family` CSS
+  property. Names that need CSS quoting are written as single-quoted strings, with quotes and
+  backslashes escaped, and HTML attribute characters encoded. This representation preserves
+  names across the HTML and CMGFM formats; choosing and rendering installed fonts is not yet
+  complete.
 
 ### 3.3 Metadata keys
 

@@ -91,7 +91,7 @@ pub fn char_at(
     offset: egui::Vec2,
     page: Option<notecraft_model::Dir>,
 ) -> usize {
-    let job = pagetext::inline_job(text, size, strong, t, width.max(1.0), page);
+    let job = pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width.max(1.0), page);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let chars = text.chars().count();
     // Two things have to be undone for a right-to-left line, both measured in
@@ -142,24 +142,266 @@ pub fn isolate(text: &str, selection: (usize, usize), dir: notecraft_model::Dir)
     (format!("{before}{open}{middle}{PDI}{after}"), (a + 1, a + 1 + len))
 }
 
+/// An inline formatting change over visible character offsets. Images occupy one offset.
+#[derive(Clone, Debug)]
+pub enum InlineFormat {
+    Bold,
+    Italic,
+    Strike,
+    Underline,
+    Subscript,
+    Superscript,
+    Size(u8),
+    Family(String),
+}
+
+/// Formats text in a visible-character range without splitting atomic images or maths.
+/// Returns false when no formattable text was selected or nothing changed.
+pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, format: InlineFormat) -> bool {
+    use notecraft_formats::markdown::Script;
+    if range.start >= range.end {
+        return false;
+    }
+    let selected = |span: &Span, start: usize| {
+        let len = if span.image.is_some() { 1 } else { span.text.chars().count() };
+        (start < range.end && start.saturating_add(len) > range.start && span.image.is_none() && !span.math && !span.text.is_empty(), len)
+    };
+    let active = |span: &Span| match &format {
+        InlineFormat::Bold => span.bold,
+        InlineFormat::Italic => span.italic,
+        InlineFormat::Strike => span.strike,
+        InlineFormat::Underline => span.underline,
+        InlineFormat::Subscript => span.script == Some(Script::Subscript),
+        InlineFormat::Superscript => span.script == Some(Script::Superscript),
+        InlineFormat::Size(size) => span.font_size == Some(*size),
+        InlineFormat::Family(family) => span.font_family.as_ref() == Some(family),
+    };
+    let mut at = 0usize;
+    let mut any = false;
+    let mut all = true;
+    for span in spans.iter() {
+        let (hit, len) = selected(span, at);
+        if hit {
+            any = true;
+            all &= active(span);
+        }
+        at += len;
+    }
+    if !any || (all && matches!(format, InlineFormat::Size(_) | InlineFormat::Family(_))) {
+        return false;
+    }
+    let mut output = Vec::new();
+    at = 0;
+    for span in std::mem::take(spans) {
+        let (hit, len) = selected(&span, at);
+        if hit {
+            let a = range.start.saturating_sub(at).min(len);
+            let b = range.end.saturating_sub(at).min(len);
+            let first = span.text.char_indices().nth(a).map_or(span.text.len(), |(i, _)| i);
+            let last = span.text.char_indices().nth(b).map_or(span.text.len(), |(i, _)| i);
+            for (text, change) in [(&span.text[..first], false), (&span.text[first..last], true), (&span.text[last..], false)] {
+                if text.is_empty() {
+                    continue;
+                }
+                let mut piece = Span { text: text.to_owned(), ..span.clone() };
+                if change {
+                    match &format {
+                        InlineFormat::Bold => piece.bold = !all,
+                        InlineFormat::Italic => piece.italic = !all,
+                        InlineFormat::Strike => piece.strike = !all,
+                        InlineFormat::Underline => piece.underline = !all,
+                        InlineFormat::Subscript => piece.script = (!all).then_some(Script::Subscript),
+                        InlineFormat::Superscript => piece.script = (!all).then_some(Script::Superscript),
+                        InlineFormat::Size(size) => piece.font_size = Some(*size),
+                        InlineFormat::Family(family) => piece.font_family = Some(family.clone()),
+                    }
+                }
+                output.push(piece);
+            }
+        } else {
+            output.push(span);
+        }
+        at += len;
+    }
+    *spans = output;
+    true
+}
+
+fn span_characters(spans: &[Span]) -> Option<Vec<(char, Span)>> {
+    let mut result = Vec::new();
+    for span in spans {
+        if span.image.is_some() || span.math {
+            return None;
+        }
+        let style = Span { text: String::new(), ..span.clone() };
+        result.extend(span.text.chars().map(|character| (character, style.clone())));
+    }
+    Some(result)
+}
+
+fn source_offset(text: &str, offset: usize, marker: char, original: &[(char, Span)]) -> Option<usize> {
+    let (probe, _) = insert_at_caret(text, (offset, offset), &marker.to_string());
+    let mut characters = span_characters(&parse_inline(&probe))?;
+    let at = characters.iter().position(|(character, _)| *character == marker)?;
+    characters.remove(at);
+    (characters == original).then_some(at)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum FontValue<T> {
+    #[default]
+    Unavailable,
+    Mixed,
+    Value(Option<T>),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FontSelection {
+    pub family: FontValue<String>,
+    pub size: FontValue<u8>,
+}
+
+impl FontSelection {
+    pub fn merge(&mut self, other: Self) {
+        fn merge_value<T: PartialEq>(current: &mut FontValue<T>, other: FontValue<T>) {
+            match (&*current, &other) {
+                (FontValue::Value(a), FontValue::Value(b)) if a == b => {}
+                (FontValue::Unavailable, _) | (_, FontValue::Unavailable) => *current = FontValue::Unavailable,
+                _ => *current = FontValue::Mixed,
+            }
+        }
+        merge_value(&mut self.family, other.family);
+        merge_value(&mut self.size, other.size);
+    }
+
+    pub fn from_spans<'a>(spans: impl IntoIterator<Item = &'a Span>) -> Self {
+        let mut result = Self::default();
+        for span in spans {
+            if span.text.is_empty() || span.image.is_some() {
+                continue;
+            }
+            if span.code || span.math {
+                return Self::default();
+            }
+            fn add<T: PartialEq>(current: &mut FontValue<T>, value: Option<T>) {
+                match current {
+                    FontValue::Unavailable => *current = FontValue::Value(value),
+                    FontValue::Value(first) if *first != value => *current = FontValue::Mixed,
+                    _ => {}
+                }
+            }
+            add(&mut result.family, span.font_family.clone());
+            add(&mut result.size, span.font_size);
+        }
+        result
+    }
+}
+
+/// Finds font attributes at a caret or a safely mapped source selection.
+pub fn selection_fonts(text: &str, selection: (usize, usize)) -> Option<FontSelection> {
+    if text.contains(INLINE_IMAGE_CHAR) || selection.0.max(selection.1) > text.chars().count() {
+        return None;
+    }
+    let marker = ('\u{e000}'..='\u{f8ff}').find(|c| !text.contains(*c))?;
+    let original = span_characters(&parse_inline(text))?;
+    let lo = selection.0.min(selection.1);
+    let hi = selection.0.max(selection.1);
+    let start = source_offset(text, lo, marker, &original)?;
+    if lo == hi {
+        let (probe, _) = insert_at_caret(text, (lo, lo), &marker.to_string());
+        let spans = parse_inline(&probe);
+        let span = spans.iter().find(|span| span.text.contains(marker))?;
+        return Some(FontSelection::from_spans([span]));
+    }
+    let end = source_offset(text, hi, marker, &original)?;
+    if start >= end {
+        return None;
+    }
+    let selected: Vec<Span> = original[start..end].iter().map(|(character, span)| Span { text: character.to_string(), ..span.clone() }).collect();
+    Some(FontSelection::from_spans(&selected))
+}
+
+fn insert_span_marker(spans: &mut [Span], offset: usize, marker: char) -> Option<()> {
+    let mut at = 0;
+    for span in spans {
+        let len = span.text.chars().count();
+        if offset <= at + len {
+            let byte = span.text.char_indices().nth(offset - at).map_or(span.text.len(), |(byte, _)| byte);
+            span.text.insert(byte, marker);
+            return Some(());
+        }
+        at += len;
+    }
+    None
+}
+
+/// Formats a source selection only when its endpoints map unambiguously to text and the
+/// resulting serialization preserves every character and its formatting.
+pub fn format_source_selection(text: &str, selection: (usize, usize), format: InlineFormat) -> Option<(String, (usize, usize))> {
+    if text.contains(INLINE_IMAGE_CHAR) || selection.0 == selection.1 || selection.0.max(selection.1) > text.chars().count() {
+        return None;
+    }
+    let marker = ('\u{e000}'..='\u{f8ff}').find(|c| !text.contains(*c))?;
+    let mut spans = parse_inline(text);
+    let original = span_characters(&spans)?;
+    let a = source_offset(text, selection.0.min(selection.1), marker, &original)?;
+    let b = source_offset(text, selection.0.max(selection.1), marker, &original)?;
+    if a >= b {
+        return None;
+    }
+    if !format_span_range(&mut spans, a..b, format) {
+        return Some((text.to_string(), selection));
+    }
+    let wanted = span_characters(&spans)?;
+    let end_marker = ('\u{e000}'..='\u{f8ff}').find(|c| *c != marker && !text.contains(*c))?;
+    insert_span_marker(&mut spans, b, end_marker)?;
+    insert_span_marker(&mut spans, a, marker)?;
+    let serialized = spans_to_markdown(&spans);
+    let start_byte = serialized.find(marker)?;
+    let end_byte = serialized.find(end_marker)?;
+    if end_byte < start_byte {
+        return None;
+    }
+    let start = serialized[..start_byte].chars().count();
+    let end = serialized[..end_byte].chars().count().saturating_sub(1);
+    let result = serialized.replace([marker, end_marker], "");
+    if span_characters(&parse_inline(&result))? != wanted {
+        return None;
+    }
+    Some((result, if selection.0 <= selection.1 { (start, end) } else { (end, start) }))
+}
+
 /// Bold, italic, strikethrough or code on every line of words in `range`, as a toggle: when all of
 /// those words already have the mark it comes off, otherwise it goes on all of them. Done on the
 /// spans, not on the text, so words that are partly marked already come out right (`a **b** c`
 /// becomes `**a b c**`, not `**a **b** c**`). Returns false when the range has no words to mark.
 pub fn toggle_mark(blocks: &mut [Block], range: std::ops::Range<usize>, mark: &str) -> bool {
+    use notecraft_formats::markdown::Script;
+    if !matches!(mark, "bold" | "italic" | "strike" | "underline" | "subscript" | "superscript" | "code") {
+        log::warn!("unknown inline mark requested: {mark}");
+        return false;
+    }
     let flag = |s: &mut Span| -> bool {
         match mark {
             "bold" => s.bold,
             "italic" => s.italic,
             "strike" => s.strike,
-            _ => s.code,
+            "underline" => s.underline,
+            "subscript" => s.script == Some(Script::Subscript),
+            "superscript" => s.script == Some(Script::Superscript),
+            "code" => s.code,
+            _ => false,
         }
     };
     let set = |s: &mut Span, on: bool| match mark {
         "bold" => s.bold = on,
         "italic" => s.italic = on,
         "strike" => s.strike = on,
-        _ => s.code = on,
+        "underline" => s.underline = on,
+        "subscript" => s.script = on.then_some(Script::Subscript),
+        "superscript" => s.script = on.then_some(Script::Superscript),
+        "code" => s.code = on,
+        _ => {}
     };
     let mut targets: Vec<&mut Vec<Span>> = Vec::new();
     for b in blocks.get_mut(range).unwrap_or_default() {
@@ -1261,7 +1503,8 @@ pub fn show_blocks(
             let size = size * zoom;
             let Some(c) = caret.as_mut() else { continue };
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
-                ui.fonts_mut(|f| f.layout_job(pagetext::inline_job(text.as_str(), size, strong, t, width, page)))
+                let job = pagetext::inline_job_with_fonts(ui.ctx(), text.as_str(), size, strong, t, width, page);
+                ui.fonts_mut(|f| f.layout_job(job))
             };
             let mut at_start = false;
             let mut selection = None;
@@ -1502,19 +1745,6 @@ pub fn show_blocks(
             if let Some(sel) = selection {
                 c.selection = sel;
             }
-            // A right click collapsed the selection; the container has asked for it back.
-            let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
-            if let Some((block_at, primary, secondary)) = wanted
-                && block_at == i
-            {
-                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {
-                    let (a, b) = (c.text.chars().count().min(secondary), c.text.chars().count().min(primary));
-                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(a), egui::text::CCursor::new(b))));
-                    state.store(ui.ctx(), id);
-                    c.selection = (b, a);
-                }
-                ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
-            }
             // Ctrl+click (Cmd on a Mac) on a link while writing in the block follows it; a
             // plain click only moves the caret, which is how Word and OneNote do it.
             if resp.clicked()
@@ -1538,6 +1768,19 @@ pub fn show_blocks(
                     state.store(ui.ctx(), id);
                     c.selection = (at, at);
                 }
+            }
+            // Restore after focus placement, which otherwise collapses the selected range.
+            let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
+            if let Some((block_at, primary, secondary)) = wanted
+                && block_at == i
+            {
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {
+                    let (a, b) = (c.text.chars().count().min(secondary), c.text.chars().count().min(primary));
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(b), egui::text::CCursor::new(a))));
+                    state.store(ui.ctx(), id);
+                    c.selection = (b, a);
+                }
+                ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
             }
             if resp.changed() {
                 // What was typed goes into the block at once, so the page and the file
@@ -2034,10 +2277,8 @@ pub struct Wrote {
 /// line reads in when it has no mark of its own, the same as when it is not being written in.
 pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id, page: Option<notecraft_model::Dir>) -> Wrote {
     let width = ui.available_width().max(32.0);
-    let pieces = vec![(
-        0..c.text.len(),
-        egui::text::TextFormat { font_id: egui::FontId::proportional(size), color: t.text, ..egui::text::TextFormat::default() },
-    )];
+    let job = pagetext::inline_job_with_fonts(ui.ctx(), &c.text, size, false, t, width, page);
+    let pieces = job.sections.into_iter().map(|section| (section.byte_range.start.0..section.byte_range.end.0, section.format)).collect::<Vec<_>>();
     let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width, page);
     // The block's own id, the same one the egui text box uses for a line without
     // right-to-left text in it, so the focus carries over when a line becomes one or stops
@@ -2065,6 +2306,14 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         // them crammed into one paragraph.
         let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
         c.selection = (at, at);
+    }
+    let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
+    if let Some((block, primary, secondary)) = wanted
+        && block == c.block
+    {
+        let len = c.text.chars().count();
+        c.selection = (primary.min(len), secondary.min(len));
+        ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
     }
     // The caret is in this block, so this is where the typing goes.
     if !resp.has_focus() {
@@ -2601,6 +2850,107 @@ mod tests {
     }
 
     #[test]
+    fn selection_fonts_follow_caret_and_mixed_unicode_text() {
+        let text = "<span style=\"font-family: Example Sans; font-size: 18pt\">مرحبا</span> plain";
+        let start = text.find("مرحبا").expect("text");
+        let at = text[..start].chars().count();
+        let selected = selection_fonts(text, (at, at + 3)).expect("selection");
+        assert_eq!(selected.family, FontValue::Value(Some("Example Sans".to_string())));
+        assert_eq!(selected.size, FontValue::Value(Some(18)));
+        assert_eq!(selection_fonts(text, (at + 2, at + 2)), Some(selected));
+        let mixed = selection_fonts(text, (0, text.chars().count())).expect("whole selection");
+        assert_eq!(mixed.family, FontValue::Mixed);
+        assert_eq!(mixed.size, FontValue::Mixed);
+        assert!(selection_fonts("**abc**", (1, 4)).is_none());
+    }
+
+    #[test]
+    fn partial_source_selection_formats_nested_mixed_unicode_without_losing_marks() {
+        let text = "a **مرحبا** z";
+        let (formatted, selection) = format_source_selection(text, (5, 8), InlineFormat::Underline).expect("safe selection");
+        let spans = parse_inline(&formatted);
+        assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), "a مرحبا z");
+        assert_eq!(spans.iter().filter(|s| s.underline).map(|s| s.text.as_str()).collect::<String>(), "رحب");
+        assert!(spans.iter().filter(|s| s.underline).all(|s| s.bold));
+        let (off, _) = format_source_selection(&formatted, selection, InlineFormat::Underline).expect("toggle");
+        assert!(parse_inline(&off).iter().all(|s| !s.underline));
+    }
+
+    #[test]
+    fn partial_source_selection_refuses_markup_boundaries_and_images() {
+        assert!(format_source_selection("**abc**", (1, 4), InlineFormat::Underline).is_none());
+        assert!(format_source_selection("a \u{fffc} b", (0, 3), InlineFormat::Underline).is_none());
+    }
+
+    #[test]
+    fn partial_source_family_and_script_preserve_other_styles_and_selection_direction() {
+        let text = "a **مرحبا** z";
+        let (family, selection) = format_source_selection(text, (8, 5), InlineFormat::Family("Noto Sans".into())).expect("family");
+        assert!(selection.0 > selection.1);
+        let (script, _) = format_source_selection(&family, selection, InlineFormat::Superscript).expect("script");
+        let spans = parse_inline(&script);
+        assert_eq!(
+            spans.iter().filter(|s| s.script == Some(notecraft_formats::markdown::Script::Superscript)).map(|s| s.text.as_str()).collect::<String>(),
+            "رحب"
+        );
+        assert!(spans.iter().filter(|s| s.script.is_some()).all(|s| s.bold && s.font_family.as_deref() == Some("Noto Sans")), "{script}");
+    }
+
+    #[test]
+    fn formatting_a_partial_unicode_selection_preserves_other_span_properties() {
+        let mut spans = parse_inline("a **مرحبا** z");
+        assert!(format_span_range(&mut spans, 3..6, InlineFormat::Underline));
+        assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), "a مرحبا z");
+        let underlined: String = spans.iter().filter(|s| s.underline).map(|s| s.text.as_str()).collect();
+        assert_eq!(underlined, "رحب");
+        assert!(spans.iter().filter(|s| s.underline).all(|s| s.bold));
+        assert!(format_span_range(&mut spans, 3..6, InlineFormat::Underline));
+        assert!(spans.iter().all(|s| !s.underline));
+        assert_eq!(spans.iter().filter(|s| s.bold).map(|s| s.text.as_str()).collect::<String>(), "مرحبا");
+    }
+
+    #[test]
+    fn formatting_mixed_runs_and_scripts_uses_one_consistent_toggle() {
+        use notecraft_formats::markdown::Script;
+        let mut spans = parse_inline("<u>a</u>b<sub>c</sub>");
+        assert!(format_span_range(&mut spans, 0..3, InlineFormat::Underline));
+        assert!(spans.iter().all(|s| s.underline));
+        assert!(format_span_range(&mut spans, 1..3, InlineFormat::Superscript));
+        assert_eq!(spans.iter().filter(|s| s.script == Some(Script::Superscript)).map(|s| s.text.as_str()).collect::<String>(), "bc");
+        assert!(format_span_range(&mut spans, 1..3, InlineFormat::Superscript));
+        assert!(spans.iter().all(|s| s.script.is_none()));
+    }
+
+    #[test]
+    fn sizing_and_family_only_change_selected_text_and_ignore_atomic_content() {
+        let mut spans = vec![
+            Span { text: "ab".into(), link: Some("target".into()), ..Span::default() },
+            Span { text: "picture".into(), image: Some("image.png".into()), ..Span::default() },
+            Span { text: "cd".into(), ..Span::default() },
+        ];
+        assert!(format_span_range(&mut spans, 1..4, InlineFormat::Size(18)));
+        assert!(format_span_range(&mut spans, 1..4, InlineFormat::Family("Noto Sans".into())));
+        assert_eq!(spans.iter().filter(|s| s.font_size == Some(18)).map(|s| s.text.as_str()).collect::<String>(), "bc");
+        assert!(spans.iter().filter(|s| s.font_size == Some(18)).all(|s| s.font_family.as_deref() == Some("Noto Sans")));
+        assert_eq!(spans.iter().find(|s| s.image.is_some()).and_then(|s| s.font_size), None);
+        assert!(spans.iter().filter(|s| s.text == "a" || s.text == "b").all(|s| s.link.as_deref() == Some("target")));
+        assert!(!format_span_range(&mut spans, 2..3, InlineFormat::Underline));
+    }
+
+    #[test]
+    fn partial_styles_round_trip_through_both_page_formats() {
+        let mut spans = parse_inline("a **مرحبا** z");
+        assert!(format_span_range(&mut spans, 3..6, InlineFormat::Underline));
+        assert!(format_span_range(&mut spans, 3..6, InlineFormat::Family("Noto Sans".into())));
+        assert!(format_span_range(&mut spans, 3..6, InlineFormat::Size(18)));
+        let original = vec![Block::Paragraph(spans)];
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let body = to_body(format, &original);
+            assert_eq!(preview::blocks_for(format, &body), original, "{format:?}: {body}");
+        }
+    }
+
+    #[test]
     fn inline_images_are_one_logical_caret_character() {
         let mut block = blocks("before ![a picture](assets/picture.png) after").remove(0);
 
@@ -3057,6 +3407,8 @@ A note to self.
         assert!(round_trips(PageFormat::Cmgfm, "# T\n\n- one\n- two\n"));
         // Markup the block model does not know does not round-trip, so it is read-only.
         assert!(!round_trips(PageFormat::Html, "<p>Words</p><aside data-x=\"1\"><p>side note</p></aside>"));
+        assert!(!round_trips(PageFormat::Html, "<p><span style=\"font-family: Noto Sans; color: red\">words</span></p>"));
+        assert!(round_trips(PageFormat::Html, "<p><span style=\"font-family: Noto Sans; font-size: 18pt\">words</span></p>"));
     }
 
     /// The actions are pure state changes, so they are tested without a window.
@@ -3244,6 +3596,29 @@ code
 ",
         );
         assert!(!toggle_mark(&mut only_code, 0..1, "bold"), "nothing to mark");
+    }
+
+    #[test]
+    fn underline_and_scripts_toggle_across_mixed_blocks_without_changing_other_marks() {
+        use notecraft_formats::markdown::Script;
+        for (mark, script) in [("underline", None), ("subscript", Some(Script::Subscript)), ("superscript", Some(Script::Superscript))] {
+            let mut blocks = blocks("plain **bold**\n\n*italic*\n");
+            let original = blocks.clone();
+            assert!(toggle_mark(&mut blocks, 0..2, mark));
+            for block in &blocks {
+                let spans = match block {
+                    Block::Paragraph(spans) => spans,
+                    _ => panic!("paragraph"),
+                };
+                assert!(spans.iter().all(|span| if mark == "underline" { span.underline } else { span.script == script }), "{mark}: {spans:?}");
+            }
+            assert!(toggle_mark(&mut blocks, 0..2, mark));
+            assert_eq!(blocks, original, "{mark} must preserve the other marks");
+        }
+        let mut blocks = blocks("<sub>before</sub> plain\n");
+        assert!(toggle_mark(&mut blocks, 0..1, "superscript"));
+        let Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
+        assert!(spans.iter().all(|span| span.script == Some(Script::Superscript)));
     }
 
     /// What the ribbon's Styles and Lists buttons do to the block under the caret.

@@ -72,6 +72,14 @@
 @id	ui.back_to_the_page_before_alt_left	Back to the page before (Alt+Left)
 @id	ui.basic_text	Basic Text
 @id	ui.font_size	Font Size
+@id	ui.font_family	Font Family
+@id	ui.mixed	Mixed
+@id	ui.font_catalog_unavailable	Installed fonts could not be listed on this device.
+@id	ui.underline	Underline
+@id	ui.subscript	Subscript
+@id	ui.superscript	Superscript
+@id	ui.inline_mark_whole_line	This formatting is not available for this selection or caret position yet. Select a whole line instead.
+@id	ui.fonts_unavailable	These fonts could not be loaded; fallback fonts are shown: {fonts}
 @id	ui.select_text_before_changing_font_size	Select text before changing font size.
 @id	ui.black	black
 @id	ui.blue	blue

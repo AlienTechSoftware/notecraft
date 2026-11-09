@@ -2899,6 +2899,7 @@ dependencies = [
  "egui-wgpu",
  "egui_extras",
  "egui_kittest",
+ "fontdb",
  "hayro",
  "image",
  "log",

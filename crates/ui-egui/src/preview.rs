@@ -66,7 +66,7 @@ fn file_uri(path: &str) -> String {
 }
 
 /// The same formats [`job`] uses, as ranges into the line's own text, for the bidi painter.
-fn pieces(spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens) -> Vec<crate::bidi::Piece> {
+fn pieces(ctx: &egui::Context, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens) -> Vec<crate::bidi::Piece> {
     let mut out = Vec::new();
     let mut at = 0usize;
     for s in spans {
@@ -75,16 +75,31 @@ fn pieces(spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens) -> V
         }
         let text = if s.math { format!("${}$", s.text) } else { s.text.clone() };
         let end = at + text.len();
-        out.push((at..end, format_of(s, size, color, tokens)));
+        out.push((at..end, format_with_family(ctx, s, size, color, tokens)));
         at = end;
     }
     out
+}
+
+fn format_with_family(ctx: &egui::Context, span: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> TextFormat {
+    let mut format = format_of(span, size, color, tokens);
+    if !span.code
+        && !span.math
+        && let Some(name) = span.font_family.as_deref()
+    {
+        let family = crate::fonts::named_family(name);
+        if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&family)) {
+            format.font_id.family = family;
+        }
+    }
+    format
 }
 
 /// How one span is drawn.
 fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> TextFormat {
     let mono = s.code || s.math;
     let size = s.font_size.map_or(size, |points| size * f32::from(points) / 11.0);
+    let size = if s.script.is_some() { size * 0.7 } else { size };
     let c = if s.link.is_some() {
         tokens.link
     } else if s.bold {
@@ -96,8 +111,9 @@ fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> Text
         font_id: if mono { FontId::monospace(size * 0.92) } else { FontId::proportional(size) },
         color: c,
         italics: s.italic || s.math,
-        underline: if s.link.is_some() { Stroke::new(1.0, c) } else { Stroke::NONE },
+        underline: if s.link.is_some() || s.underline { Stroke::new(1.0, c) } else { Stroke::NONE },
         strikethrough: if s.strike { Stroke::new(1.0, c) } else { Stroke::NONE },
+        valign: if s.script == Some(notecraft_formats::markdown::Script::Superscript) { egui::Align::TOP } else { egui::Align::BOTTOM },
         background: if s.code { tokens.code_bg } else { egui::Color32::TRANSPARENT },
         ..TextFormat::default()
     }
@@ -110,24 +126,7 @@ pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &To
         if s.image.is_some() {
             continue;
         }
-        let mono = s.code || s.math;
-        let size = s.font_size.map_or(size, |points| size * f32::from(points) / 11.0);
-        let c = if s.link.is_some() {
-            tokens.link
-        } else if s.bold {
-            tokens.strong
-        } else {
-            color
-        };
-        let format = TextFormat {
-            font_id: if mono { FontId::monospace(size * 0.92) } else { FontId::proportional(size) },
-            color: c,
-            italics: s.italic || s.math,
-            underline: if s.link.is_some() { Stroke::new(1.0, c) } else { Stroke::NONE },
-            strikethrough: if s.strike { Stroke::new(1.0, c) } else { Stroke::NONE },
-            background: if s.code { tokens.code_bg } else { egui::Color32::TRANSPARENT },
-            ..TextFormat::default()
-        };
+        let format = format_with_family(ui.ctx(), s, size, color, tokens);
         let text = if s.math { format!("${}$", s.text) } else { s.text.clone() };
         job.append(&text, 0.0, format);
     }
@@ -211,7 +210,7 @@ fn draw_spans(
         // marks inside the words are kept.
         let text = text_of(spans);
         if crate::bidi::paints(&text, page) {
-            let pieces = pieces(spans, size, color, tokens);
+            let pieces = pieces(ui.ctx(), spans, size, color, tokens);
             let width = ui.available_width();
             // Kashida is for the joins of Arabic and Persian letters. A line that mixes the
             // two directions and reads left to right has nothing to stretch, and the bidi
@@ -812,12 +811,50 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 mod tests {
     use super::*;
 
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn preview_uses_an_installed_named_family_for_ltr_and_bidi() {
+        let mut database = fontdb::Database::new();
+        database.load_font_data(crate::fonts::BUNDLED[0].1.to_vec());
+        let catalog = crate::fonts::system::Catalog::from_database(database);
+        let family = catalog.families().first().expect("fixture family");
+        let mut definitions = crate::fonts::definitions();
+        let key = catalog.install(family, &mut definitions).expect("install the fixture family");
+        let ctx = egui::Context::default();
+        ctx.set_fonts(definitions);
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let span = Span { text: "Hello مرحبا".into(), font_family: Some(family.clone()), ..Span::default() };
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let job = job(ui, std::slice::from_ref(&span), 14.0, tokens.text, &tokens, None);
+            assert_eq!(job.sections[0].format.font_id.family, key);
+            let bidi = pieces(ui.ctx(), std::slice::from_ref(&span), 14.0, tokens.text, &tokens);
+            assert_eq!(bidi[0].1.font_id.family, key);
+        });
+        output.textures_delta.clear();
+    }
+
     #[test]
     fn inline_font_size_scales_the_span_without_changing_the_base_size() {
         let tokens = crate::theme::Theme::DEFAULT.tokens();
         let span = Span { text: "larger".into(), font_size: Some(18), ..Span::default() };
         let format = format_of(&span, 11.0, tokens.text, &tokens);
         assert_eq!(format.font_id.size, 18.0);
+    }
+
+    #[test]
+    fn underline_and_scripts_change_preview_text_format() {
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let underline = Span { underline: true, ..Span::default() };
+        assert_ne!(format_of(&underline, 20.0, tokens.text, &tokens).underline, Stroke::NONE);
+        for (script, alignment) in [
+            (notecraft_formats::markdown::Script::Subscript, egui::Align::BOTTOM),
+            (notecraft_formats::markdown::Script::Superscript, egui::Align::TOP),
+        ] {
+            let span = Span { script: Some(script), ..Span::default() };
+            let format = format_of(&span, 20.0, tokens.text, &tokens);
+            assert_eq!(format.font_id.size, 14.0);
+            assert_eq!(format.valign, alignment);
+        }
     }
 
     #[test]

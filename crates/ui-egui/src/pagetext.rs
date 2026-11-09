@@ -163,7 +163,12 @@ fn inline(text: &str, from: usize, to: usize, out: &mut Vec<(std::ops::Range<usi
     while i < bytes.len() {
         let rest = line.get(i..).unwrap_or("");
         let tag_end = rest.find('>').map(|n| n + 1);
-        if rest.starts_with("<span ") && tag_end.is_some_and(|end| tag_font_size(rest.get(..end).unwrap_or("")).is_some()) {
+        if rest.starts_with("<span ")
+            && tag_end.is_some_and(|end| {
+                let tag = rest.get(..end).unwrap_or("");
+                tag_font_size(tag).is_some() || tag_font_family(tag).is_some()
+            })
+        {
             let end = tag_end.unwrap_or(0);
             out.push((from + i..from + i + end, Style::Marker));
             i += end;
@@ -258,6 +263,32 @@ fn tag_font_size(tag: &str) -> Option<u8> {
     })
 }
 
+fn tag_font_family(tag: &str) -> Option<String> {
+    let source = format!("{tag}x</span>");
+    let spans = notecraft_formats::markdown::parse_inline(&source);
+    let span = spans.first()?;
+    (spans.len() == 1 && span.text == "x").then(|| span.font_family.clone()).flatten()
+}
+
+fn font_family_ranges(text: &str) -> Vec<(std::ops::Range<usize>, String)> {
+    let mut out = Vec::new();
+    let mut spans: Vec<Option<(String, usize)>> = Vec::new();
+    let mut at = 0;
+    while let Some(start) = text.get(at..).and_then(|rest| rest.find('<')).map(|n| at + n) {
+        let Some(end) = text.get(start..).and_then(|rest| rest.find('>')).map(|n| start + n + 1) else { break };
+        let tag = text.get(start..end).unwrap_or("");
+        if tag.eq_ignore_ascii_case("</span>") {
+            if let Some((family, content_start)) = spans.pop().flatten() {
+                out.push((content_start..start, family));
+            }
+        } else if tag.to_ascii_lowercase().starts_with("<span ") {
+            spans.push(tag_font_family(tag).map(|family| (family, end)));
+        }
+        at = end;
+    }
+    out
+}
+
 fn font_size_ranges(text: &str) -> Vec<(std::ops::Range<usize>, u8)> {
     let mut out = Vec::new();
     let mut spans: Vec<Option<(u8, usize)>> = Vec::new();
@@ -277,6 +308,57 @@ fn font_size_ranges(text: &str) -> Vec<(std::ops::Range<usize>, u8)> {
         at = end;
     }
     out
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InlineTag {
+    Underline,
+    Subscript,
+    Superscript,
+}
+
+fn inline_tag_ranges(
+    text: &str,
+    pieces: &[(std::ops::Range<usize>, Style)],
+) -> (Vec<std::ops::Range<usize>>, Vec<(std::ops::Range<usize>, InlineTag)>) {
+    let mut markers = Vec::new();
+    let mut ranges = Vec::new();
+    let mut open: Vec<(InlineTag, usize, usize)> = Vec::new();
+    let mut at = 0;
+    while let Some(start) = text.get(at..).and_then(|rest| rest.find('<')).map(|n| at + n) {
+        let Some(end) = text.get(start..).and_then(|rest| rest.find('>')).map(|n| start + n + 1) else { break };
+        let escaped = text.as_bytes().get(..start).unwrap_or_default().iter().rev().take_while(|&&byte| byte == b'\\').count() % 2 == 1;
+        if escaped || pieces.iter().any(|(range, style)| matches!(style, Style::Code | Style::Math) && range.start <= start && end <= range.end) {
+            at = end;
+            continue;
+        }
+        let tag = text.get(start..end).unwrap_or("");
+        let (kind, closing) = match tag {
+            "<u>" => (InlineTag::Underline, false),
+            "</u>" => (InlineTag::Underline, true),
+            "<sub>" => (InlineTag::Subscript, false),
+            "</sub>" => (InlineTag::Subscript, true),
+            "<sup>" => (InlineTag::Superscript, false),
+            "</sup>" => (InlineTag::Superscript, true),
+            _ => {
+                at = end;
+                continue;
+            }
+        };
+        if closing {
+            if open.last().is_some_and(|(active, _, _)| *active == kind)
+                && let Some((_, opening, content)) = open.pop()
+            {
+                markers.push(opening..content);
+                markers.push(start..end);
+                ranges.push((content..start, kind));
+            }
+        } else {
+            open.push((kind, start, end));
+        }
+        at = end;
+    }
+    (markers, ranges)
 }
 
 /// HTML: the tags are the syntax, so they are dimmed and the text between them reads normally.
@@ -332,20 +414,54 @@ pub fn halign(text: &str, page: Option<notecraft_model::Dir>) -> egui::Align {
 
 /// The layout for one block being written in: inline marks styled, in the block's own size.
 pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f32, page: Option<notecraft_model::Dir>) -> LayoutJob {
+    inline_job_inner(text, base, strong, t, wrap_width, page, None)
+}
+
+pub fn inline_job_with_fonts(
+    ctx: &egui::Context,
+    text: &str,
+    base: f32,
+    strong: bool,
+    t: &Tokens,
+    wrap_width: f32,
+    page: Option<notecraft_model::Dir>,
+) -> LayoutJob {
+    let families = ctx.fonts(|fonts| fonts.definitions().families.keys().cloned().collect::<std::collections::BTreeSet<_>>());
+    inline_job_inner(text, base, strong, t, wrap_width, page, Some(&families))
+}
+
+fn inline_job_inner(
+    text: &str,
+    base: f32,
+    strong: bool,
+    t: &Tokens,
+    wrap_width: f32,
+    page: Option<notecraft_model::Dir>,
+    available: Option<&std::collections::BTreeSet<egui::FontFamily>>,
+) -> LayoutJob {
     let mut job = LayoutJob {
         wrap: egui::text::TextWrapping { max_width: wrap_width, ..Default::default() },
         halign: halign(text, page),
         ..Default::default()
     };
     let font_sizes = font_size_ranges(text);
-    for (range, style) in inline_pieces(text) {
+    let font_families = font_family_ranges(text);
+    let pieces = inline_pieces(text);
+    let (tag_markers, tag_ranges) = inline_tag_ranges(text, &pieces);
+    for (range, style) in pieces {
         let mut boundaries = vec![range.start, range.end];
-        for (size_range, _) in &font_sizes {
-            if size_range.start > range.start && size_range.start < range.end {
-                boundaries.push(size_range.start);
+        for extra in font_sizes
+            .iter()
+            .map(|(r, _)| r)
+            .chain(font_families.iter().map(|(r, _)| r))
+            .chain(tag_ranges.iter().map(|(r, _)| r))
+            .chain(tag_markers.iter())
+        {
+            if extra.start > range.start && extra.start < range.end {
+                boundaries.push(extra.start);
             }
-            if size_range.end > range.start && size_range.end < range.end {
-                boundaries.push(size_range.end);
+            if extra.end > range.start && extra.end < range.end {
+                boundaries.push(extra.end);
             }
         }
         boundaries.sort_unstable();
@@ -355,9 +471,35 @@ pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f
             let Some(part) = text.get(*start..*end) else { continue };
             let font_size =
                 font_sizes.iter().filter(|(r, _)| r.start <= *start && r.end >= *end).min_by_key(|(r, _)| r.end - r.start).map(|(_, size)| *size);
-            let mut format = style.format(base, t);
+            let marker = style != Style::Code && style != Style::Math && tag_markers.iter().any(|r| r.start <= *start && r.end >= *end);
+            let mut format = if marker { Style::Marker } else { style }.format(base, t);
+            if !marker
+                && !matches!(style, Style::Marker | Style::Code | Style::Math)
+                && let Some((_, name)) = font_families.iter().filter(|(r, _)| r.start <= *start && r.end >= *end).min_by_key(|(r, _)| r.len())
+                && let Some(available) = available
+            {
+                let family = crate::fonts::named_family(name);
+                if available.contains(&family) {
+                    format.font_id.family = family;
+                }
+            }
             if let Some(points) = font_size {
                 format.font_id.size = base * f32::from(points) / 11.0;
+            }
+            if !marker && style != Style::Code && style != Style::Math {
+                let active = tag_ranges.iter().filter(|(r, _)| r.start <= *start && r.end >= *end);
+                let mut script = None;
+                for (r, tag) in active {
+                    if *tag == InlineTag::Underline {
+                        format.underline = egui::Stroke::new(1.0, format.color);
+                    } else if script.as_ref().is_none_or(|(size, _)| r.len() < *size) {
+                        script = Some((r.len(), *tag));
+                    }
+                }
+                if let Some((_, tag)) = script {
+                    format.font_id.size *= 0.7;
+                    format.valign = if tag == InlineTag::Superscript { egui::Align::TOP } else { egui::Align::BOTTOM };
+                }
             }
             if strong && style == Style::Body {
                 format.color = t.strong;
@@ -466,6 +608,80 @@ mod tests {
         let job = inline_job(text, 11.0, false, &tokens, 1000.0, Some(notecraft_model::Dir::Ltr));
         let section = job.sections.iter().find(|section| section.format.font_id.size > 11.0).expect("sized text section");
         assert_eq!(section.format.font_id.size, 18.0);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn editor_uses_installed_family_and_keeps_markers_dimmed() {
+        let mut database = fontdb::Database::new();
+        database.load_font_data(crate::fonts::BUNDLED[0].1.to_vec());
+        let catalog = crate::fonts::system::Catalog::from_database(database);
+        let family = catalog.families().first().expect("fixture family");
+        let mut definitions = crate::fonts::definitions();
+        let key = catalog.install(family, &mut definitions).expect("install fixture");
+        let ctx = egui::Context::default();
+        ctx.set_fonts(definitions);
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let text = format!("<span style=\"font-family: {family}; font-size: 18pt\">Hello</span>");
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let job = inline_job_with_fonts(ui.ctx(), &text, 11.0, false, &tokens, 1000.0, None);
+            let word = job.sections.iter().find(|s| text.get(s.byte_range.start.0..s.byte_range.end.0) == Some("Hello")).expect("word");
+            assert_eq!(word.format.font_id.family, key);
+            assert_eq!(word.format.font_id.size, 18.0);
+            assert_eq!(job.sections[0].format.color, tokens.muted);
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn editor_draws_nested_underline_and_scripts_without_styling_their_tags() {
+        let text = "<u>under <sup>مرحبا</sup> end</u> plain <sub>2</sub>";
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let job = inline_job(text, 20.0, false, &tokens, 1000.0, Some(notecraft_model::Dir::Ltr));
+        let format = |part: &str| {
+            job.sections
+                .iter()
+                .find(|section| text.get(section.byte_range.start.0..section.byte_range.end.0) == Some(part))
+                .map(|section| &section.format)
+                .expect("section")
+        };
+        assert_ne!(format("under ").underline, egui::Stroke::NONE);
+        assert_ne!(format("مرحبا").underline, egui::Stroke::NONE);
+        assert_eq!(format("مرحبا").font_id.size, 14.0);
+        assert_eq!(format("مرحبا").valign, egui::Align::TOP);
+        assert_eq!(format("2").font_id.size, 14.0);
+        assert_eq!(format("2").valign, egui::Align::BOTTOM);
+        assert_eq!(format(" plain ").underline, egui::Stroke::NONE);
+        for tag in ["<u>", "<sup>", "</sup>", "</u>", "<sub>", "</sub>"] {
+            assert_eq!(format(tag).color, tokens.muted);
+            assert_eq!(format(tag).underline, egui::Stroke::NONE);
+        }
+    }
+
+    #[test]
+    fn editor_keeps_combined_marks_and_does_not_format_literal_code_tags() {
+        let text = "**<u>bold</u>** `<u>`plain`</u>` <span style=\"font-size: 20pt\"><sub>2</sub></span>";
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let job = inline_job(text, 11.0, false, &tokens, 1000.0, Some(notecraft_model::Dir::Ltr));
+        let format = |part: &str| {
+            job.sections
+                .iter()
+                .find(|section| text.get(section.byte_range.start.0..section.byte_range.end.0) == Some(part))
+                .map(|section| &section.format)
+                .expect("section")
+        };
+        assert_eq!(format("bold").color, tokens.strong);
+        assert_ne!(format("bold").underline, egui::Stroke::NONE);
+        assert_eq!(format("plain").underline, egui::Stroke::NONE);
+        assert_eq!(format("2").font_id.size, 14.0);
+    }
+
+    #[test]
+    fn editor_does_not_format_escaped_tags() {
+        let text = "\\<u>plain\\</u>";
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let job = inline_job(text, 11.0, false, &tokens, 1000.0, Some(notecraft_model::Dir::Ltr));
+        assert!(job.sections.iter().all(|section| section.format.underline == egui::Stroke::NONE));
     }
 
     /// A tag marker is syntax: dimmed, with the words after it reading normally.

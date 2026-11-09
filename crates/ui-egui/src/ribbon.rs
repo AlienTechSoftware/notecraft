@@ -38,6 +38,8 @@ pub enum Act {
     Mark(&'static str),
     /// Apply a point size to the selected text.
     FontSize(u8),
+    /// Apply an installed font family to the selected text.
+    FontFamily(String),
     /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
     /// `number`, `todo`.
     Block(&'static str),
@@ -422,6 +424,8 @@ pub struct View<'a> {
     pub has_page: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
     pub style: &'static str,
+    pub font_family: Option<&'a str>,
+    pub font_size: Option<&'a str>,
 }
 
 impl View<'_> {
@@ -832,7 +836,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.menu_button(crate::tl_id!("ui.font_size"), |ui| {
+                let size_label = view.font_size.unwrap_or_else(|| crate::tl_id!("ui.font_size"));
+                let size_menu = ui.menu_button(size_label, |ui| {
                     for size in FONT_SIZES {
                         if ui.button(format!("{size} pt")).clicked() {
                             acts.push(Act::FontSize(size));
@@ -840,6 +845,12 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         }
                     }
                 });
+                size_menu.response.widget_info(|| {
+                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.font_size"));
+                    info.current_text_value = view.font_size.map(str::to_owned);
+                    info
+                });
+                size_menu.response.on_hover_text(crate::tl_id!("ui.font_size"));
                 if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
@@ -888,6 +899,52 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     .clicked()
                 {
                     acts.push(Act::ClearFormatting);
+                }
+            });
+            ui.horizontal(|ui| {
+                let family_label = view.font_family.unwrap_or_else(|| crate::tl_id!("ui.font_family"));
+                let shown_family = if family_label.chars().count() > 14 {
+                    format!("{}...", family_label.chars().take(11).collect::<String>())
+                } else {
+                    family_label.to_string()
+                };
+                let family_menu = ui.menu_button(shown_family, |ui| {
+                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                    match crate::fonts::system_catalog() {
+                        Ok(catalog) => {
+                            egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                                for family in catalog.families().iter().filter(|name| notecraft_formats::markdown::valid_font_family(name)) {
+                                    if ui.button(family).clicked() {
+                                        acts.push(Act::FontFamily(family.clone()));
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        Err(error) => {
+                            log::warn!("Could not discover installed fonts: {error}");
+                            ui.label(crate::tl_id!("ui.font_catalog_unavailable"));
+                        }
+                    }
+                    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+                    ui.label(crate::tl_id!("ui.font_catalog_unavailable"));
+                });
+                family_menu.response.widget_info(|| {
+                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.font_family"));
+                    info.current_text_value = view.font_family.map(str::to_owned);
+                    info
+                });
+                family_menu.response.on_hover_text(format!("{}: {family_label}", crate::tl_id!("ui.font_family")));
+                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), false, t).clicked() {
+                    acts.push(Act::Mark("underline"));
+                }
+                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
+                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), false, t).clicked() {
+                    acts.push(Act::Mark("subscript"));
+                }
+                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
+                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), false, t).clicked() {
+                    acts.push(Act::Mark("superscript"));
                 }
             });
         });

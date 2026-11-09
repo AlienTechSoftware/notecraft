@@ -12,7 +12,11 @@
 //! present the letters join and a run of one direction is ordered correctly. A mixed line
 //! goes through the bidi painter; see `docs/how-to/write-right-to-left.md`.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub mod system;
 
 /// The name the Arabic face goes by inside egui; the others are in [`BUNDLED`].
 pub const ARABIC_NAME: &str = "noto-naskh-arabic";
@@ -20,6 +24,76 @@ pub const ARABIC_NAME: &str = "noto-naskh-arabic";
 /// The faces NoteCraft bundles, in fallback order, with their bytes. The bytes live in the
 /// text crate so the window and the text layer share one copy.
 pub const BUNDLED: [(&str, &[u8]); 4] = notecraft_text::fonts::ALL;
+
+pub fn named_family(name: &str) -> egui::FontFamily {
+    egui::FontFamily::Name(format!("notecraft-system-font:{name}").into())
+}
+
+pub fn page_families(blocks: &[notecraft_formats::Block]) -> BTreeSet<String> {
+    use notecraft_formats::Block;
+    let mut families = BTreeSet::new();
+    let mut collect = |spans: &[notecraft_formats::markdown::Span]| {
+        families.extend(spans.iter().filter_map(|span| span.font_family.clone()));
+    };
+    for block in blocks {
+        match block {
+            Block::Paragraph(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Quote(spans) => collect(spans),
+            Block::Table { head, rows } => {
+                for cell in head.iter().chain(rows.iter().flatten()) {
+                    collect(cell);
+                }
+            }
+            _ => {}
+        }
+    }
+    families
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub fn system_catalog() -> Result<&'static system::Catalog, &'static str> {
+    static CATALOG: std::sync::OnceLock<Result<system::Catalog, String>> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(system::Catalog::discover).as_ref().map_err(String::as_str)
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn load_family(family: &str, definitions: &mut egui::FontDefinitions) -> Result<(), String> {
+    system_catalog().map_err(str::to_string)?.install(family, definitions)?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn load_family(_family: &str, _definitions: &mut egui::FontDefinitions) -> Result<(), String> {
+    Err("Installed font access is not available on this platform".to_string())
+}
+
+/// Register fonts used by a page once per context, returning names that could not be loaded.
+pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Vec<String> {
+    let id = egui::Id::new("notecraft-page-font-results");
+    let mut results = ctx.data(|data| data.get_temp::<BTreeMap<String, bool>>(id).unwrap_or_default());
+    let missing: Vec<_> = families.iter().filter(|family| !results.contains_key(*family)).cloned().collect();
+    if !missing.is_empty() {
+        let mut definitions = ctx.fonts(|fonts| fonts.definitions().clone());
+        let mut changed = false;
+        for family in missing {
+            match load_family(&family, &mut definitions) {
+                Ok(()) => {
+                    changed = true;
+                    results.insert(family, true);
+                }
+                Err(error) => {
+                    log::warn!("Could not load page font {family:?}: {error}");
+                    results.insert(family, false);
+                }
+            }
+        }
+        if changed {
+            ctx.set_fonts(definitions);
+            ctx.request_repaint();
+        }
+        ctx.data_mut(|data| data.insert_temp(id, results.clone()));
+    }
+    families.iter().filter(|family| results.get(*family) == Some(&false)).cloned().collect()
+}
 
 /// egui's own definitions plus the faces NoteCraft adds.
 pub fn definitions() -> egui::FontDefinitions {
@@ -66,6 +140,91 @@ pub fn install_once(ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_font_requests_cover_tables_and_report_missing_families() {
+        use notecraft_formats::markdown::{Block, Span};
+        let named = |text: &str, name: &str| Span { text: text.into(), font_family: Some(name.into()), ..Span::default() };
+        let blocks = vec![
+            Block::Paragraph(vec![named("text", "No such NoteCraft family 928474")]),
+            Block::Table { head: vec![vec![named("head", "No such NoteCraft family 928474")]], rows: vec![] },
+        ];
+        let families = page_families(&blocks);
+        assert_eq!(families.len(), 1);
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            install_once(ui.ctx());
+            let failures = ensure_page_fonts(ui.ctx(), &families);
+            assert_eq!(failures.len(), 1);
+            assert!(failures[0].contains("No such NoteCraft family 928474"));
+            assert_eq!(failures, ensure_page_fonts(ui.ctx(), &families), "failure remains visible in later frames");
+        });
+        output.textures_delta.clear();
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn a_real_font_can_be_catalogued_and_installed_with_fallbacks() {
+        let mut database = fontdb::Database::new();
+        database.load_font_data(BUNDLED[0].1.to_vec());
+        let catalog = super::system::Catalog::from_database(database);
+        let family = catalog.families().first().expect("bundled font has a family name").clone();
+        let mut fonts = definitions();
+        let selected = catalog.install(&family, &mut fonts).expect("install the real font");
+        let chain = fonts.families.get(&selected).expect("named family");
+        assert!(chain.len() > 1, "the selected face retains the normal fallbacks");
+        let face = fonts.font_data.get(&chain[0]).expect("selected font data");
+        assert_eq!(face.bytes(), BUNDLED[0].1);
+        let ctx = egui::Context::default();
+        ctx.set_fonts(fonts);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+        assert!(ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::new(14.0, selected), "abc")));
+        assert!(catalog.install("not a real family", &mut definitions()).is_err());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn desktop_font_discovery_reports_its_result_and_can_load_a_discovered_face() {
+        match super::system::Catalog::discover() {
+            Ok(catalog) => {
+                let family = catalog.families().first().expect("a discovered catalog is not empty");
+                let mut definitions = definitions();
+                let installed = catalog.install(family, &mut definitions).expect("a discovered font can be read");
+                assert!(definitions.families.contains_key(&installed));
+                eprintln!("Discovered {} installed font families and loaded one face", catalog.families().len());
+            }
+            Err(error) => {
+                assert!(!error.is_empty(), "a missing system catalog reports why");
+                eprintln!("System font discovery unavailable: {error}");
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn a_page_registers_an_installed_system_font_in_the_context() {
+        let Ok(catalog) = super::system::Catalog::discover() else {
+            eprintln!("No system fonts are available for this platform test");
+            return;
+        };
+        let family = catalog.families().first().expect("a discovered catalog is not empty").clone();
+        let wanted = std::collections::BTreeSet::from([family.clone()]);
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            install_once(ui.ctx());
+            assert!(ensure_page_fonts(ui.ctx(), &wanted).is_empty(), "the page's installed font loads");
+        });
+        output.textures_delta.clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            assert!(ui.ctx().fonts(|fonts| fonts.definitions().families.contains_key(&named_family(&family))));
+            for (name, _) in BUNDLED {
+                assert!(ui.ctx().fonts(|fonts| fonts.definitions().font_data.contains_key(name)), "page fonts must preserve bundled face {name}");
+            }
+            assert!(ensure_page_fonts(ui.ctx(), &wanted).is_empty());
+        });
+        output.textures_delta.clear();
+    }
 
     #[test]
     fn our_faces_are_fallbacks_not_replacements() {
