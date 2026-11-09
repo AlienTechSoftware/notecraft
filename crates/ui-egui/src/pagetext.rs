@@ -162,6 +162,18 @@ fn inline(text: &str, from: usize, to: usize, out: &mut Vec<(std::ops::Range<usi
     let mut i = 0usize;
     while i < bytes.len() {
         let rest = line.get(i..).unwrap_or("");
+        let tag_end = rest.find('>').map(|n| n + 1);
+        if rest.starts_with("<span ") && tag_end.is_some_and(|end| tag_font_size(rest.get(..end).unwrap_or("")).is_some()) {
+            let end = tag_end.unwrap_or(0);
+            out.push((from + i..from + i + end, Style::Marker));
+            i += end;
+            continue;
+        }
+        if rest.starts_with("</span>") {
+            out.push((from + i..from + i + "</span>".len(), Style::Marker));
+            i += "</span>".len();
+            continue;
+        }
         // The marks themselves are dimmed and the words inside them carry the style, so the
         // text reads as formatted text with the marks out of the way.
         let emphasis = |mark: &str, style: Style, out: &mut Vec<(std::ops::Range<usize>, Style)>| -> Option<usize> {
@@ -229,6 +241,44 @@ fn link_len(s: &str) -> Option<usize> {
     if s.get(..end)?.contains('\n') { None } else { Some(end) }
 }
 
+fn tag_font_size(tag: &str) -> Option<u8> {
+    let lower = tag.to_ascii_lowercase();
+    if !lower.starts_with("<span ") {
+        return None;
+    }
+    let style_start = lower.find("style=\"")? + "style=\"".len();
+    let style_end = lower.get(style_start..)?.find('"')? + style_start;
+    lower.get(style_start..style_end)?.split(';').find_map(|declaration| {
+        let (property, value) = declaration.split_once(':')?;
+        if !property.trim().eq("font-size") {
+            return None;
+        }
+        let points = value.trim().strip_suffix("pt")?.parse::<u8>().ok()?;
+        (8..=72).contains(&points).then_some(points)
+    })
+}
+
+fn font_size_ranges(text: &str) -> Vec<(std::ops::Range<usize>, u8)> {
+    let mut out = Vec::new();
+    let mut spans: Vec<Option<(u8, usize)>> = Vec::new();
+    let mut at = 0usize;
+    while let Some(start) = text.get(at..).and_then(|rest| rest.find('<')).map(|n| at + n) {
+        let Some(end) = text.get(start..).and_then(|rest| rest.find('>')).map(|n| start + n + 1) else {
+            break;
+        };
+        let tag = text.get(start..end).unwrap_or("");
+        if tag.eq_ignore_ascii_case("</span>") {
+            if let Some((size, content_start)) = spans.pop().flatten() {
+                out.push((content_start..start, size));
+            }
+        } else if tag.to_ascii_lowercase().starts_with("<span ") {
+            spans.push(tag_font_size(tag).map(|size| (size, end)));
+        }
+        at = end;
+    }
+    out
+}
+
 /// HTML: the tags are the syntax, so they are dimmed and the text between them reads normally.
 fn html_pieces(text: &str, out: &mut Vec<(std::ops::Range<usize>, Style)>) {
     let bytes = text.as_bytes();
@@ -287,9 +337,28 @@ pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f
         halign: halign(text, page),
         ..Default::default()
     };
+    let font_sizes = font_size_ranges(text);
     for (range, style) in inline_pieces(text) {
-        if let Some(part) = text.get(range) {
+        let mut boundaries = vec![range.start, range.end];
+        for (size_range, _) in &font_sizes {
+            if size_range.start > range.start && size_range.start < range.end {
+                boundaries.push(size_range.start);
+            }
+            if size_range.end > range.start && size_range.end < range.end {
+                boundaries.push(size_range.end);
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        for pair in boundaries.windows(2) {
+            let (Some(start), Some(end)) = (pair.first(), pair.get(1)) else { continue };
+            let Some(part) = text.get(*start..*end) else { continue };
+            let font_size =
+                font_sizes.iter().filter(|(r, _)| r.start <= *start && r.end >= *end).min_by_key(|(r, _)| r.end - r.start).map(|(_, size)| *size);
             let mut format = style.format(base, t);
+            if let Some(points) = font_size {
+                format.font_id.size = base * f32::from(points) / 11.0;
+            }
             if strong && style == Style::Body {
                 format.color = t.strong;
             }
@@ -388,6 +457,15 @@ mod tests {
         assert_eq!(got.iter().filter(|(t, s)| t == "*" && *s == Style::Marker).count(), 2);
         assert_eq!(got.iter().filter(|(t, s)| t == "`" && *s == Style::Marker).count(), 2);
         covers(PageFormat::Cmgfm, text);
+    }
+
+    #[test]
+    fn a_font_size_span_changes_the_editor_text_size() {
+        let text = "<span style=\"font-size: 18pt\">large</span>";
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let job = inline_job(text, 11.0, false, &tokens, 1000.0, Some(notecraft_model::Dir::Ltr));
+        let section = job.sections.iter().find(|section| section.format.font_id.size > 11.0).expect("sized text section");
+        assert_eq!(section.format.font_id.size, 18.0);
     }
 
     /// A tag marker is syntax: dimmed, with the words after it reading normally.

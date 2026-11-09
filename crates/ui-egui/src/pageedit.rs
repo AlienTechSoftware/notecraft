@@ -229,6 +229,20 @@ pub fn wrap_selection(text: &str, selection: (usize, usize), marks: &str) -> (St
     (format!("{before}{marks}{middle}{marks}{after}"), (a + n, a + n + len))
 }
 
+/// Wraps the selected characters with a pair of different delimiters and keeps them selected.
+pub fn wrap_selection_with(text: &str, selection: (usize, usize), open: &str, close: &str) -> (String, (usize, usize)) {
+    let chars: Vec<char> = text.chars().collect();
+    let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));
+    let (before, middle, after): (String, String, String) = (
+        chars.get(..a).unwrap_or(&[]).iter().collect(),
+        chars.get(a..b).unwrap_or(&[]).iter().collect(),
+        chars.get(b..).unwrap_or(&[]).iter().collect(),
+    );
+    let start = a + open.chars().count();
+    let end = start + middle.chars().count();
+    (format!("{before}{open}{middle}{close}{after}"), (start, end))
+}
+
 /// Puts `insert` where the caret is, replacing whatever is selected. Returns the new text
 /// and where the caret ends up.
 pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (String, usize) {
@@ -3128,6 +3142,14 @@ A note to self.
         // Characters outside the ASCII range are counted, not bytes.
         let (text, _) = wrap_selection("\u{4e2d}\u{6587}x", (0, 2), "**");
         assert_eq!(text, "**\u{4e2d}\u{6587}**x");
+    }
+
+    #[test]
+    fn a_size_wrapper_keeps_its_unicode_selection() {
+        let open = "<span style=\"font-size: 18pt\">";
+        let (text, selection) = wrap_selection_with("aمرحبا z", (6, 1), open, "</span>");
+        assert_eq!(text, format!("a{open}مرحبا</span> z"));
+        assert_eq!(text.chars().skip(selection.0).take(selection.1 - selection.0).collect::<String>(), "مرحبا");
     }
 
     /// The two code styles are one block with its lines numbered or not; changing between them keeps the words and the language.

@@ -4,8 +4,9 @@
 //! (nested by indentation), block quotes, fenced code (a `mermaid` fence is kept as
 //! code with its language), math blocks (`$$ ... $$`), tables, rules and standalone
 //! images. Supported inline: bold, italic, strikethrough, code, links, images and
-//! `$math$`. Not supported: reference links, HTML inside Markdown, nested block
-//! quotes and lists inside quotes, setext headings, footnotes.
+//! `$math$`, and NoteCraft font-size spans. Other HTML is not supported. Also not
+//! supported: reference links, nested block quotes and lists inside quotes, setext
+//! headings, footnotes.
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Span {
@@ -15,6 +16,8 @@ pub struct Span {
     pub strike: bool,
     pub code: bool,
     pub math: bool,
+    /// Font size in points, carried by a NoteCraft inline `<span>`.
+    pub font_size: Option<u8>,
     /// Link target, if this span is part of a link.
     pub link: Option<String>,
     /// Image source, if this span is an inline image (the text is the alt text).
@@ -53,6 +56,7 @@ struct Style {
     bold: bool,
     italic: bool,
     strike: bool,
+    font_size: Option<u8>,
 }
 
 /// Parses inline Markdown into styled spans.
@@ -76,8 +80,59 @@ fn slice(chars: &[char], a: usize, b: usize) -> &[char] {
 
 fn push_text(out: &mut Vec<Span>, buf: &mut String, st: Style, link: &Option<String>) {
     if !buf.is_empty() {
-        out.push(Span { text: std::mem::take(buf), bold: st.bold, italic: st.italic, strike: st.strike, link: link.clone(), ..Span::default() });
+        out.push(Span {
+            text: std::mem::take(buf),
+            bold: st.bold,
+            italic: st.italic,
+            strike: st.strike,
+            font_size: st.font_size,
+            link: link.clone(),
+            ..Span::default()
+        });
     }
+}
+
+fn span_open_end(chars: &[char], start: usize) -> Option<usize> {
+    let remaining = chars.get(start..)?;
+    let end = remaining.iter().position(|c| *c == '>')?;
+    let tag: String = remaining.get(..=end)?.iter().collect();
+    tag.to_ascii_lowercase().starts_with("<span ").then_some(start + end + 1)
+}
+
+fn font_size_open(chars: &[char], start: usize) -> Option<(u8, usize)> {
+    let end = span_open_end(chars, start)?;
+    let tag: String = chars.get(start..end)?.iter().collect();
+    let lower = tag.to_ascii_lowercase();
+    let style_start = lower.find("style=\"")? + "style=\"".len();
+    let style_end = lower.get(style_start..)?.find('"')? + style_start;
+    let style = lower.get(style_start..style_end)?;
+    let value = style.split(';').find_map(|declaration| {
+        let (property, value) = declaration.split_once(':')?;
+        property.trim().eq("font-size").then(|| value.trim())
+    })?;
+    let points = value.strip_suffix("pt")?.parse::<u8>().ok()?;
+    (8..=72).contains(&points).then_some((points, end))
+}
+
+fn font_size_close(chars: &[char], start: usize) -> Option<usize> {
+    let close = ['<', '/', 's', 'p', 'a', 'n', '>'];
+    let mut depth = 1usize;
+    let mut at = start;
+    while at < chars.len() {
+        if chars.get(at..at + close.len()) == Some(close.as_slice()) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(at);
+            }
+            at += close.len();
+        } else if let Some(after) = span_open_end(chars, at) {
+            depth += 1;
+            at = after;
+        } else {
+            at += 1;
+        }
+    }
+    None
 }
 
 fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<Span> {
@@ -87,6 +142,18 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
     while i < chars.len() {
         let c = chars.get(i).copied().unwrap_or(' ');
         let next = chars.get(i + 1).copied();
+        if c == '<'
+            && depth < MAX_DEPTH
+            && let Some((font_size, content_start)) = font_size_open(chars, i)
+            && let Some(content_end) = font_size_close(chars, content_start)
+        {
+            push_text(&mut out, &mut buf, st, &link);
+            let mut sized = st;
+            sized.font_size = Some(font_size);
+            out.extend(inline(slice(chars, content_start, content_end), sized, link.clone(), depth + 1));
+            i = content_end + "</span>".chars().count();
+            continue;
+        }
         match c {
             '\\' if next.is_some() => {
                 if let Some(n) = next {
@@ -104,6 +171,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                         bold: st.bold,
                         italic: st.italic,
                         strike: st.strike,
+                        font_size: st.font_size,
                         link: link.clone(),
                         ..Span::default()
                     });
@@ -162,7 +230,13 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             '$' => match find(chars, i + 1, &['$']) {
                 Some(end) if end > i + 1 && !slice(chars, i + 1, end).contains(&'\n') => {
                     push_text(&mut out, &mut buf, st, &link);
-                    out.push(Span { text: slice(chars, i + 1, end).iter().collect(), math: true, link: link.clone(), ..Span::default() });
+                    out.push(Span {
+                        text: slice(chars, i + 1, end).iter().collect(),
+                        math: true,
+                        font_size: st.font_size,
+                        link: link.clone(),
+                        ..Span::default()
+                    });
                     i = end + 1;
                 }
                 _ => {
@@ -175,7 +249,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                     push_text(&mut out, &mut buf, st, &link);
                     // Preserve the surrounding link when an image is nested in one. This is
                     // how attachment cards (`[![icon](icon) name](file)`) retain their target.
-                    out.push(Span { text: alt, image: Some(url), link: link.clone(), ..Span::default() });
+                    out.push(Span { text: alt, image: Some(url), font_size: st.font_size, link: link.clone(), ..Span::default() });
                     i = after;
                 }
                 None => {
@@ -413,6 +487,20 @@ mod tests {
     fn nested_styles_combine() {
         let s = parse_inline("**bold and *italic* inside**");
         assert!(s.iter().any(|x| x.bold && x.italic && x.text == "italic"));
+    }
+
+    #[test]
+    fn font_size_spans_round_trip_and_nest() {
+        let source = "<span style=\"font-size: 18pt\">outer <span style=\"font-size: 12pt\">inner</span> outer</span>";
+        let spans = parse_inline(source);
+        assert!(spans.iter().any(|span| span.text == "outer " && span.font_size == Some(18)));
+        assert!(spans.iter().any(|span| span.text == "inner" && span.font_size == Some(12)));
+        assert!(spans.iter().any(|span| span.text == " outer" && span.font_size == Some(18)));
+        assert_eq!(parse_inline(&crate::render::spans_to_markdown(&spans)), spans);
+
+        let invalid = parse_inline("<span style=\"font-size: 73pt\">too large</span>");
+        assert_eq!(text_of(&invalid), "<span style=\"font-size: 73pt\">too large</span>");
+        assert!(invalid.iter().all(|span| span.font_size.is_none()));
     }
 
     #[test]

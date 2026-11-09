@@ -214,21 +214,27 @@ fn marked(spans: &[Span], level: usize) -> String {
 
 /// One span with nothing but its code, picture, maths or link written round it.
 fn leaf(s: &Span) -> String {
+    let sized = |text: String| match s.font_size {
+        Some(size) => format!("<span style=\"font-size: {size}pt\">{text}</span>"),
+        None => text,
+    };
     if let Some(src) = &s.image {
         let image = format!("![{}]({src})", s.text);
-        return match &s.link {
+        let image = match &s.link {
             Some(target) => format!("[{image}]({target})"),
             None => image,
         };
+        return sized(image);
     }
     if s.math {
-        return format!("${}$", s.text);
+        return sized(format!("${}$", s.text));
     }
     let text = if s.code { format!("`{}`", s.text) } else { s.text.clone() };
-    match &s.link {
+    let text = match &s.link {
         Some(target) => format!("[{text}]({target})"),
         None => text,
-    }
+    };
+    sized(text)
 }
 
 /// Blocks as the HTML body of a page: the inside of `<body>`, one block per line.
@@ -324,7 +330,10 @@ pub fn spans_to_html(spans: &[Span]) -> String {
     let mut out = String::new();
     for s in spans {
         if let Some(src) = &s.image {
-            let image = format!("<img src=\"{}\" alt=\"{}\">", escape(src), escape(&s.text));
+            let mut image = format!("<img src=\"{}\" alt=\"{}\">", escape(src), escape(&s.text));
+            if let Some(size) = s.font_size {
+                image = format!("<span style=\"font-size: {size}pt\">{image}</span>");
+            }
             match &s.link {
                 Some(target) => out.push_str(&format!("<a href=\"{}\">{image}</a>", escape(target))),
                 None => out.push_str(&image),
@@ -332,7 +341,11 @@ pub fn spans_to_html(spans: &[Span]) -> String {
             continue;
         }
         if s.math {
-            out.push_str(&format!("<span class=\"math\">${}$</span>", escape(&s.text)));
+            let mut math = format!("<span class=\"math\">${}$</span>", escape(&s.text));
+            if let Some(size) = s.font_size {
+                math = format!("<span style=\"font-size: {size}pt\">{math}</span>");
+            }
+            out.push_str(&math);
             continue;
         }
         let mut text = escape(&s.text);
@@ -349,10 +362,15 @@ pub fn spans_to_html(spans: &[Span]) -> String {
                 text = format!("<b>{text}</b>");
             }
         }
-        match &s.link {
-            Some(target) => out.push_str(&format!("<a href=\"{}\">{text}</a>", escape(target))),
-            None => out.push_str(&text),
-        }
+        let text = match &s.link {
+            Some(target) => format!("<a href=\"{}\">{text}</a>", escape(target)),
+            None => text,
+        };
+        let text = match s.font_size {
+            Some(size) => format!("<span style=\"font-size: {size}pt\">{text}</span>"),
+            None => text,
+        };
+        out.push_str(&text);
     }
     out
 }
@@ -532,5 +550,18 @@ fn b() {}"
         assert!(html.contains("<h1>Title</h1>"), "{html}");
         assert!(html.contains("<b>bold</b>"), "{html}");
         assert!(html.contains("<a href=\"https://example.com\">a link</a>"), "{html}");
+    }
+
+    #[test]
+    fn inline_font_size_round_trips_through_cmgfm_and_html() {
+        let source = "<span style=\"font-size: 18pt\">larger text</span>";
+        let blocks = parse(source);
+
+        let markdown = blocks_to_markdown(&blocks);
+        assert_eq!(parse(&markdown), blocks, "CMGFM retains the size");
+
+        let html = blocks_to_html(&blocks);
+        assert!(html.contains("<span style=\"font-size: 18pt\">larger text</span>"), "{html}");
+        assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML retains the size");
     }
 }

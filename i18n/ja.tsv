@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	ノートブックに戻る
 @id	ui.back_to_the_page_before_alt_left	前のページに戻る（Alt+←）
 @id	ui.basic_text	基本テキスト
+@id	ui.font_size	フォント サイズ
+@id	ui.select_text_before_changing_font_size	フォント サイズを変更する前にテキストを選択してください。
 @id	ui.black	黒
 @id	ui.blue	青
 @id	ui.blue_2	青

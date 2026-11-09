@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	Volver al cuaderno
 @id	ui.back_to_the_page_before_alt_left	Back to the page before (Alt+Left)
 @id	ui.basic_text	Texto básico
+@id	ui.font_size	Tamaño de fuente
+@id	ui.select_text_before_changing_font_size	Selecciona texto antes de cambiar el tamaño de fuente.
 @id	ui.black	black
 @id	ui.blue	blue
 @id	ui.blue_2	Azul

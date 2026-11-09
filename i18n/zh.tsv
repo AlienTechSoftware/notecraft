@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	返回笔记本
 @id	ui.back_to_the_page_before_alt_left	返回上一页（Alt+左箭头）
 @id	ui.basic_text	基本文本
+@id	ui.font_size	字体大小
+@id	ui.select_text_before_changing_font_size	更改字体大小前，请先选择文本。
 @id	ui.black	黑色
 @id	ui.blue	蓝色
 @id	ui.blue_2	蓝色

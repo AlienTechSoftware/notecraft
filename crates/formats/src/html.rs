@@ -257,6 +257,18 @@ fn attr(attrs: &str, key: &str) -> Option<String> {
     attrs.get(start..start + end).map(unescape)
 }
 
+fn font_size(attrs: &str) -> Option<u8> {
+    let style = attr(attrs, "style")?;
+    style.split(';').find_map(|declaration| {
+        let (property, value) = declaration.split_once(':')?;
+        if !property.trim().eq_ignore_ascii_case("font-size") {
+            return None;
+        }
+        let points = value.trim().strip_suffix("pt")?.trim().parse::<u8>().ok()?;
+        (8..=72).contains(&points).then_some(points)
+    })
+}
+
 #[derive(Default)]
 struct Writer {
     out: String,
@@ -267,6 +279,7 @@ struct Writer {
     div_diagram: bool,
     in_math: bool,
     in_math_block: bool,
+    span_sizes: Vec<Option<u8>>,
     href: Vec<Option<String>>,
     row: Option<Vec<String>>,
     cell: String,
@@ -465,8 +478,23 @@ impl Writer {
                 self.out.push_str("```");
                 self.block_break();
             }
-            ("span", false) if attrs.to_lowercase().contains("math") => self.in_math = true,
-            ("span", true) => self.in_math = false,
+            ("span", false) => {
+                let size = font_size(attrs);
+                self.span_sizes.push(size);
+                if let Some(size) = size {
+                    self.push(&format!("<span style=\"font-size: {size}pt\">"));
+                }
+                if attrs.to_lowercase().contains("math") {
+                    self.in_math = true;
+                }
+            }
+            ("span", true) => {
+                if self.span_sizes.pop().flatten().is_some() {
+                    self.push("</span>");
+                } else {
+                    self.in_math = false;
+                }
+            }
             ("a", false) => {
                 let href = attr(attrs, "href");
                 self.push("[");

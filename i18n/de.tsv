@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	Zurück zum Notizbuch
 @id	ui.back_to_the_page_before_alt_left	Zurück zur vorherigen Seite (Alt+Links)
 @id	ui.basic_text	Basis-Text
+@id	ui.font_size	Schriftgröße
+@id	ui.select_text_before_changing_font_size	Markieren Sie Text, bevor Sie die Schriftgröße ändern.
 @id	ui.black	Schwarz
 @id	ui.blue	Blau
 @id	ui.blue_2	Blau

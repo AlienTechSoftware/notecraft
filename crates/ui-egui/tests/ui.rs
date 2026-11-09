@@ -5409,6 +5409,51 @@ fn bold_and_italic_toggle_over_a_line_that_is_partly_marked() {
     }
 }
 
+#[test]
+fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-font-size");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    let unchanged = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    let status =
+        ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/status/text").and_then(Value::as_str).unwrap_or_default().to_string();
+    assert!(status.contains("Select text"), "the UI explains that a selection is required: {status}");
+    assert_eq!(h.state().body().unwrap_or_default(), unchanged, "a size is not applied at an empty selection");
+
+    for page in [&s.md_page, &s.html_page] {
+        let path = page.to_string_lossy().to_string();
+        h.state_mut().open_path(&path);
+        settle(&mut h);
+        let original = h.state().body().unwrap_or_default().to_string();
+        let (selected_text, following_block) =
+            if original.contains("Kickoff notes") { ("Kickoff notes", "Goals") } else { ("plain files", "Why folders?") };
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select block text");
+        pump(&mut h);
+
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("18 pt").click();
+        settle(&mut h);
+
+        let body = h.state().body().unwrap_or_default().to_string();
+        assert!(body.contains("<span style=\"font-size: 18pt\">"), "selected text has a saved font size:\n{body}");
+        assert!(body.contains(selected_text) && body.contains(following_block), "the selected text and a following block remain present:\n{body}");
+        assert!(!body.contains(&format!("font-size: 18pt\">{following_block}")), "font size stays on the selected block:\n{body}");
+        h.state_mut().save();
+        h.state_mut().open_path(&path);
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), body.trim_end(), "the font size survives save and reopen");
+    }
+}
+
 /// A code block is drawn the same whether or not the caret is in it: same box, same place for the words.
 #[test]
 fn a_code_block_looks_the_same_when_the_caret_arrives() {

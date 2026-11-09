@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	[[RLI]]$$$Back to the notebook@@@[[PDI]]
 @id	ui.back_to_the_page_before_alt_left	[[RLI]]$$$Back to the page before (Alt+Left)@@@[[PDI]]
 @id	ui.basic_text	[[RLI]]$$$Basic Text@@@[[PDI]]
+@id	ui.font_size	[[RLI]]$$$Font Size@@@[[PDI]]
+@id	ui.select_text_before_changing_font_size	[[RLI]]$$$Select text before changing font size.@@@[[PDI]]
 @id	ui.black	[[RLI]]$$$black@@@[[PDI]]
 @id	ui.blue	[[RLI]]$$$blue@@@[[PDI]]
 @id	ui.blue_2	[[RLI]]$$$Blue@@@[[PDI]]

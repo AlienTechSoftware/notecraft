@@ -71,6 +71,8 @@
 @id	ui.back_to_the_notebook	Вернуться к блокноту
 @id	ui.back_to_the_page_before_alt_left	Вернуться к предыдущей странице (Alt+Left)
 @id	ui.basic_text	Базовый текст
+@id	ui.font_size	Размер шрифта
+@id	ui.select_text_before_changing_font_size	Выберите текст, чтобы изменить размер шрифта.
 @id	ui.black	чёрный
 @id	ui.blue	синий
 @id	ui.blue_2	Синий
