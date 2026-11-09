@@ -5426,6 +5426,8 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
         ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/status/text").and_then(Value::as_str).unwrap_or_default().to_string();
     assert!(status.contains("Select text"), "the UI explains that a selection is required: {status}");
     assert_eq!(h.state().body().unwrap_or_default(), unchanged, "a size is not applied at an empty selection");
+    let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
+    assert_eq!(history["canUndo"], json!(false), "an empty selection does not create an undo step");
 
     for page in [&s.md_page, &s.html_page] {
         let path = page.to_string_lossy().to_string();
@@ -5452,6 +5454,135 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
         settle(&mut h);
         assert_eq!(h.state().body().unwrap_or_default().trim_end(), body.trim_end(), "the font size survives save and reopen");
     }
+}
+
+#[test]
+fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-font-size-undo");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+
+    for page in [&s.md_page, &s.html_page] {
+        let path = page.to_string_lossy().to_string();
+        h.state_mut().open_path(&path);
+        settle(&mut h);
+        let original = h.state().body().unwrap_or_default().to_string();
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select block text");
+        pump(&mut h);
+
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("18 pt").click();
+        settle(&mut h);
+        let formatted = h.state().body().unwrap_or_default().to_string();
+        assert!(formatted.contains("<span style=\"font-size: 18pt\">"), "the size was applied: {formatted}");
+
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), original, "undo restores the original formatting for {path}");
+
+        ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("redo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), formatted, "redo reapplies the size for {path}");
+        h.state_mut().save();
+        h.state_mut().open_path(&path);
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), formatted.trim_end(), "redo survives save and reopen for {path}");
+
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret after reopen");
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select block text");
+        pump(&mut h);
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("24 pt").click();
+        settle(&mut h);
+        let resized = h.state().body().unwrap_or_default().to_string();
+        assert!(resized.contains("font-size: 24pt"), "the second size was applied for {path}: {resized}");
+        let format = if page == &s.md_page { notecraft_model::PageFormat::Cmgfm } else { notecraft_model::PageFormat::Html };
+        let (before_blocks, _) = notecraft_formats::boxes::read(format, &formatted);
+        let (after_blocks, _) = notecraft_formats::boxes::read(format, &resized);
+        let spans = |block: &notecraft_formats::Block| match block {
+            notecraft_formats::Block::Heading { spans, .. }
+            | notecraft_formats::Block::Paragraph(spans)
+            | notecraft_formats::Block::Quote(spans)
+            | notecraft_formats::Block::Item { spans, .. } => spans.clone(),
+            _ => panic!("expected a block of text"),
+        };
+        let before = spans(&before_blocks[1]);
+        let mut after = spans(&after_blocks[1]);
+        assert!(after.iter().all(|span| span.font_size == Some(24)), "all selected spans get the new size for {path}");
+        for span in &mut after {
+            span.font_size = Some(18);
+        }
+        assert_eq!(after, before, "resizing preserves text and other formatting for {path}");
+
+        let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select block text");
+        pump(&mut h);
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("24 pt").click();
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"], history, "same size is not an edit");
+        ask(&mut h, "ui.undo", json!({})).expect("undo through the user action");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), formatted.trim_end(), "undo restores the prior size for {path}");
+        ask(&mut h, "ui.redo", json!({})).expect("redo through the user action");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), resized, "redo restores the second size for {path}");
+        ask(&mut h, "ui.undo", json!({})).expect("undo the second size again");
+        settle(&mut h);
+        h.state_mut().save();
+        h.state_mut().open_path(&path);
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), formatted.trim_end(), "undo survives save and reopen for {path}");
+    }
+}
+
+#[test]
+fn font_size_history_stays_separate_from_typing() {
+    let (_t, app, s) = sample_app("ui-font-size-typing-undo");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let original = h.state().body().unwrap_or_default().to_string();
+
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    ask(&mut h, "ui.text", json!({"text": "before "})).expect("type before formatting");
+    pump(&mut h);
+    let typed = h.state().body().unwrap_or_default().to_string();
+    assert!(typed.contains("before "), "typing changed the page: {typed}");
+    ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select block text");
+    pump(&mut h);
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    h.run();
+    let formatted = h.state().body().unwrap_or_default().to_string();
+    assert!(formatted.contains("font-size: 18pt"), "the size was applied: {formatted}");
+
+    ask(&mut h, "ui.undo", json!({})).expect("undo formatting");
+    assert_eq!(h.state().body().unwrap_or_default(), typed, "undo leaves preceding typing intact");
+    ask(&mut h, "ui.undo", json!({})).expect("undo typing");
+    assert_eq!(h.state().body().unwrap_or_default(), original, "a second undo takes back the typing");
+    ask(&mut h, "ui.redo", json!({})).expect("redo typing");
+    ask(&mut h, "ui.redo", json!({})).expect("redo formatting");
+    assert_eq!(h.state().body().unwrap_or_default(), formatted, "redo restores both steps");
+
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret after formatting");
+    ask(&mut h, "ui.text", json!({"text": "after "})).expect("type after formatting");
+    pump(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("after "), "typing after formatting changed the page");
+    ask(&mut h, "ui.undo", json!({})).expect("undo later typing");
+    assert_eq!(h.state().body().unwrap_or_default(), formatted, "undo leaves formatting intact");
+    ask(&mut h, "ui.undo", json!({})).expect("undo formatting");
+    assert_eq!(h.state().body().unwrap_or_default(), typed, "the formatting remains a separate step");
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret after undo");
+    ask(&mut h, "ui.text", json!({"text": "replacement "})).expect("type after undo");
+    pump(&mut h);
+    let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
+    assert_eq!(history["canRedo"], json!(false), "a new edit after undo clears the redo branch");
 }
 
 /// A code block is drawn the same whether or not the caret is in it: same box, same place for the words.

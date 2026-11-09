@@ -184,7 +184,8 @@ changes when that lands, not before.
 - An edit changes the blocks. The body is then written again from the blocks and boxes, and saved
   to the page file by the autosave.
 - Undo and Redo go through the page's history: whole states of the page (body, blocks, boxes and
-  the caret), not a list of edits. Ink has its own undo, because a drawing is its own file.
+  the caret), not a list of edits. A font-size change is its own step, separate from typing.
+  Ink has its own undo, because a drawing is its own file.
 - Ink is drawn as a layer over the page. Its strokes are in ink files, one or many, and every one
   of them is drawn (decided by the owner, 2026-10-19). The page file names them. Section 5 has the
   detail.
