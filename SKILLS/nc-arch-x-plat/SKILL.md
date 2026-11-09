@@ -32,8 +32,32 @@ notifications, paths, or installers.
 1. **The core is platform-free.** Engine, store, model and formats do not name an operating system.
    They call a boundary: a small trait or function that describes what the app needs.
 2. **Each platform is a branch behind the boundary.** Platform code lives in files named
-   `<feature>.<platform>.<extension>` (`.win.*`, `.mac.*`, `.lnx.*`) and is selected explicitly
-   with `cfg`-gated module wiring. The suffix alone selects nothing.
+   `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for macOS, `.lnx.*` for
+   Linux, `.droid.*` for Android, and `.ios.*` for iOS. Rust selects each file explicitly with
+   `cfg`-gated module wiring. The suffix alone selects nothing. For example, a module can expose
+   a shared contract and select the native implementation like this:
+
+   ```rust
+   #[cfg(target_os = "windows")]
+   #[path = "clipboard.win.rs"]
+   mod platform;
+
+   #[cfg(target_os = "macos")]
+   #[path = "clipboard.mac.rs"]
+   mod platform;
+
+   #[cfg(target_os = "linux")]
+   #[path = "clipboard.lnx.rs"]
+   mod platform;
+
+   #[cfg(target_os = "android")]
+   #[path = "clipboard.droid.rs"]
+   mod platform;
+
+   #[cfg(target_os = "ios")]
+   #[path = "clipboard.ios.rs"]
+   mod platform;
+   ```
    Existing examples:
    - `crates/store/src/assets.win.rs` extracts a Windows Shell icon; `assets.rs` picks it on Windows
      and uses an SVG fallback elsewhere.

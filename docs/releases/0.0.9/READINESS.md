@@ -1,4 +1,4 @@
-# NoteCraft v0.0.9 Readiness
+# NoteCraft v0.0.9 Readiness
 
 ## Release identity
 
