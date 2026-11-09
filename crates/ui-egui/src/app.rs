@@ -5004,17 +5004,20 @@ impl NoteCraftApp {
                 self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
             }
         }
-        let editor_rect = ui.max_rect();
+        let page_input_rect = self.page_rect;
+        let wheel_canvas_pan_enabled = self.pointer != ribbon::Pointer::Write;
         if self.editor.is_some() && !self.show_source {
             let (pointer, middle_pressed, middle_down, wheel) = ui.input(|i| {
-                let pointer = i.pointer.interact_pos().filter(|p| editor_rect.contains(*p));
-                let wheel = if i.pointer.hover_pos().is_some_and(|p| editor_rect.contains(p)) {
+                let pointer = page_input_rect.and_then(|rect| i.pointer.interact_pos().filter(|p| rect.contains(*p)));
+                let wheel = if page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))) {
                     i.events.iter().fold(egui::Vec2::ZERO, |sum, event| match event {
                         egui::Event::MouseWheel { delta, modifiers, .. } if !modifiers.ctrl => {
                             if modifiers.shift {
                                 sum + egui::vec2(delta.y, 0.0)
-                            } else {
+                            } else if wheel_canvas_pan_enabled {
                                 sum + *delta
+                            } else {
+                                sum
                             }
                         }
                         _ => sum,
@@ -5024,9 +5027,11 @@ impl NoteCraftApp {
                 };
                 (pointer, i.pointer.button_pressed(egui::PointerButton::Middle), i.pointer.button_down(egui::PointerButton::Middle), wheel)
             });
-            self.canvas_pan += wheel;
-            self.canvas_pan.x = self.canvas_pan.x.clamp(-1.0e6, 1.0e6);
-            self.canvas_pan.y = self.canvas_pan.y.clamp(-1.0e6, 1.0e6);
+            if wheel_canvas_pan_enabled {
+                self.canvas_pan += wheel;
+                self.canvas_pan.x = self.canvas_pan.x.clamp(-1.0e6, 1.0e6);
+                self.canvas_pan.y = self.canvas_pan.y.clamp(-1.0e6, 1.0e6);
+            }
             if middle_pressed {
                 self.canvas_drag = pointer;
             } else if middle_down {
@@ -5040,7 +5045,8 @@ impl NoteCraftApp {
         } else {
             self.canvas_drag = None;
         }
-        let wheel_zoom = ui.input(|i| i.pointer.hover_pos().filter(|p| editor_rect.contains(*p)).map_or(1.0, |_| i.zoom_delta()));
+        let wheel_zoom =
+            ui.input(|i| page_input_rect.and_then(|rect| i.pointer.hover_pos().filter(|p| rect.contains(*p))).map_or(1.0, |_| i.zoom_delta()));
         if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
             #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             {
@@ -5357,19 +5363,25 @@ impl NoteCraftApp {
                 wrote_file = out.wrote;
                 file_action = out.file_action;
             } else {
-                page(
-                    ui,
-                    ed,
-                    true,
-                    &mut changed,
-                    &mut from_blocks,
-                    &mut toggle_source,
-                    &mut boxes_moved,
-                    &mut cols_moved,
-                    &mut justified_moved,
-                    &mut follow,
-                    &mut rename,
-                );
+                let scroll = egui::containers::scroll_area::ScrollSource {
+                    drag: egui::containers::scroll_area::DragScroll::Never,
+                    ..egui::containers::scroll_area::ScrollSource::default()
+                };
+                egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
+                    page(
+                        ui,
+                        ed,
+                        true,
+                        &mut changed,
+                        &mut from_blocks,
+                        &mut toggle_source,
+                        &mut boxes_moved,
+                        &mut cols_moved,
+                        &mut justified_moved,
+                        &mut follow,
+                        &mut rename,
+                    );
+                });
             }
             if changed {
                 Self::mark_dirty(ed);
