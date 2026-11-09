@@ -4992,6 +4992,16 @@ impl NoteCraftApp {
         });
     }
 
+    fn wheel_canvas_pan_delta(delta: egui::Vec2, modifiers: Modifiers, canvas_pan_enabled: bool) -> egui::Vec2 {
+        if modifiers.ctrl {
+            return egui::Vec2::ZERO;
+        }
+        if modifiers.shift {
+            return egui::vec2(delta.y, 0.0);
+        }
+        if canvas_pan_enabled { delta } else { egui::Vec2::ZERO }
+    }
+
     fn editor_ui(&mut self, ui: &mut Ui) {
         if !self.icon_recovery_suppressed
             && self.dialog.is_none()
@@ -5011,14 +5021,8 @@ impl NoteCraftApp {
                 let pointer = page_input_rect.and_then(|rect| i.pointer.interact_pos().filter(|p| rect.contains(*p)));
                 let wheel = if page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))) {
                     i.events.iter().fold(egui::Vec2::ZERO, |sum, event| match event {
-                        egui::Event::MouseWheel { delta, modifiers, .. } if !modifiers.ctrl => {
-                            if modifiers.shift {
-                                sum + egui::vec2(delta.y, 0.0)
-                            } else if wheel_canvas_pan_enabled {
-                                sum + *delta
-                            } else {
-                                sum
-                            }
+                        egui::Event::MouseWheel { delta, modifiers, .. } => {
+                            sum + Self::wheel_canvas_pan_delta(*delta, *modifiers, wheel_canvas_pan_enabled)
                         }
                         _ => sum,
                     })
@@ -7166,6 +7170,14 @@ mod alert_tests {
         assert_eq!(NoteCraftApp::sensitivity_width(0), 1.0);
         assert_eq!(NoteCraftApp::sensitivity_width(50), 1.0);
         assert_eq!(NoteCraftApp::sensitivity_width(100), 4.0);
+    }
+
+    #[test]
+    fn wheel_canvas_pan_ignores_ctrl_and_write_mode_but_keeps_horizontal_shift_scroll() {
+        assert_eq!(NoteCraftApp::wheel_canvas_pan_delta(vec2(0.0, 42.0), Modifiers::NONE, false), egui::Vec2::ZERO);
+        assert_eq!(NoteCraftApp::wheel_canvas_pan_delta(vec2(0.0, 42.0), Modifiers::NONE, true), egui::vec2(0.0, 42.0));
+        assert_eq!(NoteCraftApp::wheel_canvas_pan_delta(vec2(0.0, 42.0), Modifiers::SHIFT, false), egui::vec2(42.0, 0.0));
+        assert_eq!(NoteCraftApp::wheel_canvas_pan_delta(vec2(0.0, 42.0), Modifiers::CTRL, true), egui::Vec2::ZERO);
     }
 
     #[test]
