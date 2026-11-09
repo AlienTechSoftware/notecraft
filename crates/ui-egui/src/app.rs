@@ -3634,7 +3634,7 @@ impl NoteCraftApp {
             return;
         }
         let Some(ed) = self.editor.as_mut() else { return };
-        let Some(caret) = ed.caret.as_mut() else {
+        let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
@@ -3644,15 +3644,45 @@ impl NoteCraftApp {
             self.status_is_error = false;
             return;
         }
-        let open = format!("<span style=\"font-size: {size}pt\">");
-        let (text, selection) = pageedit::wrap_selection_with(&caret.text, caret.selection, &open, "</span>");
-        caret.text = text;
-        caret.selection = selection;
-        if let Some(block) = ed.blocks.get_mut(caret.block) {
-            pageedit::set_block_text(block, &caret.text);
+        Self::remember_step(ed);
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let len = caret.text.chars().count();
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        let spans = match ed.blocks.get_mut(caret.block) {
+            Some(
+                notecraft_formats::Block::Heading { spans, .. }
+                | notecraft_formats::Block::Paragraph(spans)
+                | notecraft_formats::Block::Quote(spans)
+                | notecraft_formats::Block::Item { spans, .. },
+            ) if lo == 0 && hi == len => Some(spans),
+            _ => None,
+        };
+        if let Some(spans) = spans {
+            if spans.iter().all(|span| span.font_size == Some(size)) {
+                return;
+            }
+            for span in spans {
+                span.font_size = Some(size);
+            }
+            if let Some(block) = ed.blocks.get(caret.block) {
+                caret.text = pageedit::caret_text(block);
+                caret.selection = (0, caret.text.chars().count());
+            }
+        } else {
+            let open = format!("<span style=\"font-size: {size}pt\">");
+            let (text, selection) = pageedit::wrap_selection_with(&caret.text, caret.selection, &open, "</span>");
+            caret.text = text;
+            caret.selection = selection;
+            if let Some(block) = ed.blocks.get_mut(caret.block) {
+                pageedit::set_block_text(block, &caret.text);
+            }
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
+        if !ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes) {
+            let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+            ed.history.record(step);
+        }
     }
 
     /// The keys Windows users expect for paragraph direction. Alt+Shift remains available
