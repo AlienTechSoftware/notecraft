@@ -275,6 +275,19 @@ fn shown_in(root: &Path, p: &Path, redact: bool) -> String {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct PendingFormat {
+    block: usize,
+    at: usize,
+    size: Option<u8>,
+    family: Option<String>,
+    bold: bool,
+    italic: bool,
+    strike: bool,
+    underline: bool,
+    script: Option<notecraft_formats::markdown::Script>,
+}
+
 struct Editor {
     dir: PathBuf,
     format: PageFormat,
@@ -287,6 +300,9 @@ struct Editor {
     attachments: Vec<(String, u64)>,
     /// Where the caret is in the page, and the text of that block while it is written in.
     caret: Option<pageedit::Caret>,
+    /// Formatting chosen at a collapsed caret, before any text has been inserted.
+    pending_format: Option<PendingFormat>,
+    restore_format_selection: Option<(usize, usize, usize)>,
     /// False when the page holds markup the block editor would drop: it is then read here
     /// and changed in its source.
     writable: bool,
@@ -325,6 +341,56 @@ impl Editor {
     fn rebuild_body(&mut self) {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
         self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
+    }
+
+    fn apply_pending_format(&mut self, before: Option<&pageedit::Caret>) {
+        let Some(pending) = self.pending_format.take() else { return };
+        let (block, at) = (pending.block, pending.at);
+        let (Some(before), Some(caret)) = (before, self.caret.as_mut()) else {
+            return;
+        };
+        if before.block != block || caret.block != block || before.selection != (at, at) || caret.cell.is_some() {
+            return;
+        }
+        let offset = before.text.char_indices().nth(at).map_or(before.text.len(), |(offset, _)| offset);
+        let (prefix, suffix) = before.text.split_at(offset);
+        let inserted = caret.text.strip_prefix(prefix).and_then(|text| text.strip_suffix(suffix));
+        let Some(inserted) = inserted.filter(|text| !text.is_empty()) else {
+            self.pending_format = Some(pending);
+            return;
+        };
+        let end = at + inserted.chars().count();
+        if caret.selection != (end, end) {
+            return;
+        }
+        let mut marker = "NoteCraftPendingTextMarker".to_string();
+        while pending.family.as_ref().is_some_and(|family| family.contains(&marker)) {
+            marker.push('X');
+        }
+        let span = notecraft_formats::markdown::Span {
+            text: marker.clone(),
+            font_size: pending.size,
+            font_family: pending.family,
+            bold: pending.bold,
+            italic: pending.italic,
+            strike: pending.strike,
+            underline: pending.underline,
+            script: pending.script,
+            ..Default::default()
+        };
+        let template = notecraft_formats::render::spans_to_markdown(&[span]);
+        let Some((open, close)) = template.split_once(&marker) else {
+            log::error!("Could not serialize pending formatting");
+            return;
+        };
+        let (text, selection) = pageedit::wrap_selection_with(&caret.text, (at, end), open, close);
+        caret.text = text;
+        caret.selection = (selection.1, selection.1);
+        caret.focus = true;
+        caret.place = Some(selection.1);
+        if let Some(target) = self.blocks.get_mut(block) {
+            pageedit::set_caret_text(target, &caret.text);
+        }
     }
 }
 
@@ -1324,6 +1390,8 @@ impl NoteCraftApp {
                 last_saved: None,
                 attachments: attachments.clone(),
                 caret: None,
+                pending_format: None,
+                restore_format_selection: None,
                 writable,
                 page_dir: page.dir,
                 boxes,
@@ -2696,6 +2764,19 @@ impl NoteCraftApp {
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
+        let font_selection = self.font_selection(ui.ctx());
+        let family = match &font_selection.family {
+            pageedit::FontValue::Value(Some(name)) => Some(name.clone()),
+            pageedit::FontValue::Value(None) => Some(crate::tl_id!("ui.default").to_string()),
+            pageedit::FontValue::Mixed => Some(crate::tl_id!("ui.mixed").to_string()),
+            pageedit::FontValue::Unavailable => None,
+        };
+        let size = match font_selection.size {
+            pageedit::FontValue::Value(Some(size)) => Some(format!("{size} pt")),
+            pageedit::FontValue::Value(None) => Some(crate::tl_id!("ui.default").to_string()),
+            pageedit::FontValue::Mixed => Some(crate::tl_id!("ui.mixed").to_string()),
+            pageedit::FontValue::Unavailable => None,
+        };
         let view = ribbon::View {
             split_panes: self.split_panes,
             always_on_top: self.always_on_top,
@@ -2716,6 +2797,8 @@ impl NoteCraftApp {
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
             style: self.caret_style(ui.ctx()),
+            font_family: family.as_deref(),
+            font_size: size.as_deref(),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -2737,6 +2820,53 @@ impl NoteCraftApp {
         }
     }
 
+    fn font_selection(&self, ctx: &Context) -> pageedit::FontSelection {
+        use notecraft_formats::Block;
+        let Some(ed) = self.editor.as_ref() else { return pageedit::FontSelection::default() };
+        if let Some(index) = crate::containers::selected(ctx, &ed.dir) {
+            let range = notecraft_model::container::blocks_of(&ed.boxes, index);
+            let Some(blocks) = ed.blocks.get(range) else { return pageedit::FontSelection::default() };
+            let spans = blocks.iter().flat_map(|block| match block {
+                Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans.as_slice(),
+                _ => &[],
+            });
+            return pageedit::FontSelection::from_spans(spans);
+        }
+        if let Some(across) = ed.across.filter(|a| !a.inside_one_block()) {
+            let mut result: Option<pageedit::FontSelection> = None;
+            for index in across.blocks() {
+                let Some(block) = ed.blocks.get(index).filter(|b| pageedit::is_one_line_of_words(b)) else {
+                    return pageedit::FontSelection::default();
+                };
+                let text = pageedit::block_text(block);
+                let Some((start, end)) = across.covering(index, text.len()) else { continue };
+                let (Some(left), Some(right)) = (text.get(..start), text.get(..end)) else { return pageedit::FontSelection::default() };
+                let Some(selection) = pageedit::selection_fonts(&text, (left.chars().count(), right.chars().count())) else {
+                    return pageedit::FontSelection::default();
+                };
+                if let Some(current) = result.as_mut() {
+                    current.merge(selection);
+                } else {
+                    result = Some(selection);
+                }
+            }
+            return result.unwrap_or_default();
+        }
+        let Some(caret) = ed.caret.as_ref() else { return pageedit::FontSelection::default() };
+        let mut result = pageedit::selection_fonts(&caret.text, caret.selection).unwrap_or_default();
+        if caret.selection.0 == caret.selection.1
+            && let Some(pending) = ed.pending_format.as_ref().filter(|p| p.block == caret.block && p.at == caret.selection.0)
+        {
+            if let Some(family) = &pending.family {
+                result.family = pageedit::FontValue::Value(Some(family.clone()));
+            }
+            if let Some(size) = pending.size {
+                result.size = pageedit::FontValue::Value(Some(size));
+            }
+        }
+        result
+    }
+
     /// What a ribbon button does while a container is selected: selecting a box selects everything in
     /// it, so Cut, Copy, the marks and the styles take all of it. True when the act was one of those.
     fn act_on_box(&mut self, ctx: &Context, at: usize, act: &ribbon::Act) -> bool {
@@ -2746,6 +2876,7 @@ impl NoteCraftApp {
             ribbon::Act::Clipboard(_)
                 | ribbon::Act::Mark(_)
                 | ribbon::Act::FontSize(_)
+                | ribbon::Act::FontFamily(_)
                 | ribbon::Act::Block(_)
                 | ribbon::Act::ClearFormatting
                 | ribbon::Act::Direction(_)
@@ -2764,13 +2895,63 @@ impl NoteCraftApp {
                 crate::containers::ask_clipboard(ctx, *which == "cut");
                 return true;
             }
-            ribbon::Act::FontSize(_) => {
-                self.status = crate::tl_id!("ui.select_text_before_changing_font_size").into();
+            ribbon::Act::FontSize(_) | ribbon::Act::FontFamily(_) => {
+                let format = match act {
+                    ribbon::Act::FontSize(size) if ribbon::FONT_SIZES.contains(size) => pageedit::InlineFormat::Size(*size),
+                    ribbon::Act::FontFamily(family) if notecraft_formats::markdown::valid_font_family(family) => {
+                        pageedit::InlineFormat::Family(family.clone())
+                    }
+                    _ => {
+                        log::warn!("ribbon requested an invalid font size or family");
+                        self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+                        self.status_is_error = false;
+                        return true;
+                    }
+                };
+                if !ed.writable {
+                    self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+                    self.status_is_error = false;
+                    return true;
+                }
+                Self::remember_step(ed);
+                let mut changed = false;
+                for block in ed.blocks.get_mut(range).unwrap_or_default() {
+                    if let Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } = block {
+                        changed |= pageedit::format_span_range(spans, 0..usize::MAX, format.clone());
+                    }
+                }
+                if changed {
+                    ed.pending_format = None;
+                    ed.rebuild_body();
+                    Self::mark_dirty_from_blocks(ed);
+                    let step =
+                        crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+                    ed.history.record(step);
+                }
+                self.status.clear();
                 self.status_is_error = false;
                 return true;
             }
             ribbon::Act::Mark(mark) => {
+                let new_mark = matches!(*mark, "underline" | "subscript" | "superscript");
+                if new_mark && !ed.writable {
+                    self.status = crate::tl_id!("ui.read_only").into();
+                    self.status_is_error = false;
+                    return true;
+                }
+                if new_mark {
+                    Self::remember_step(ed);
+                }
                 if !pageedit::toggle_mark(&mut ed.blocks, range, mark) {
+                    return true;
+                }
+                if new_mark {
+                    ed.pending_format = None;
+                    ed.rebuild_body();
+                    Self::mark_dirty_from_blocks(ed);
+                    let step =
+                        crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+                    ed.history.record(step);
                     return true;
                 }
             }
@@ -2862,6 +3043,7 @@ impl NoteCraftApp {
             ribbon::Act::Tab(name) => self.ribbon_tab = name,
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
+            ribbon::Act::FontFamily(family) => self.apply_font_family(&family),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),
             ribbon::Act::Insert(what) => match what {
                 "space" => {
@@ -3364,6 +3546,7 @@ impl NoteCraftApp {
                         ed.blocks = step.blocks;
                         ed.boxes = step.boxes;
                         ed.caret = step.caret.map(|c| pageedit::Caret { focus: true, ..c });
+                        ed.pending_format = None;
                         ed.dirty_since = Some(Instant::now());
                         // The restored text says whether the page was arranged.
                         ed.arranged = notecraft_formats::boxes::has_boxes(ed.format, &ed.body);
@@ -3594,6 +3777,37 @@ impl NoteCraftApp {
 
     /// Puts marks around the selection in the block the caret is in.
     fn apply_mark(&mut self, mark: &str) {
+        if self.editor.as_ref().and_then(|ed| ed.across).is_some_and(|selection| !selection.inside_one_block()) {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        if matches!(mark, "underline" | "subscript" | "superscript") {
+            self.apply_new_mark(mark);
+            return;
+        }
+        let collapsed_text_caret =
+            self.editor.as_ref().and_then(|ed| ed.caret.as_ref()).is_some_and(|caret| caret.cell.is_none() && caret.selection.0 == caret.selection.1);
+        if collapsed_text_caret && matches!(mark, "bold" | "italic" | "strike") {
+            self.apply_new_mark(mark);
+            return;
+        }
+        let partial = self.editor.as_ref().and_then(|ed| ed.caret.as_ref()).is_some_and(|caret| {
+            let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+            lo < hi && (lo != 0 || hi != caret.text.chars().count())
+        });
+        if partial {
+            let format = match mark {
+                "bold" => Some(pageedit::InlineFormat::Bold),
+                "italic" => Some(pageedit::InlineFormat::Italic),
+                "strike" => Some(pageedit::InlineFormat::Strike),
+                _ => None,
+            };
+            if let Some(format) = format {
+                self.apply_partial_inline_format(format);
+                return;
+            }
+        }
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
@@ -3628,22 +3842,299 @@ impl NoteCraftApp {
         Self::mark_dirty_from_blocks(ed);
     }
 
-    fn apply_font_size(&mut self, size: u8) {
-        if !ribbon::FONT_SIZES.contains(&size) {
-            log::warn!("ribbon requested unsupported font size {size} pt");
-            return;
-        }
+    fn apply_new_mark(&mut self, mark: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
             return;
         };
-        if caret.selection.0 == caret.selection.1 {
-            self.status = crate::tl_id!("ui.select_text_before_changing_font_size").into();
+        let len = caret.text.chars().count();
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        if ed.writable
+            && ed.across.is_none()
+            && caret.cell.is_none()
+            && lo == hi
+            && matches!(
+                ed.blocks.get(caret.block),
+                Some(
+                    notecraft_formats::Block::Heading { .. }
+                        | notecraft_formats::Block::Paragraph(_)
+                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Item { .. }
+                )
+            )
+        {
+            let mut marker = "NoteCraftCaretProbe".to_string();
+            while caret.text.contains(&marker) {
+                marker.push('X');
+            }
+            let (probe, _) = pageedit::insert_at_caret(&caret.text, (lo, lo), &marker);
+            let inherited = notecraft_formats::markdown::parse_inline(&probe).into_iter().find(|span| span.text.contains(&marker));
+            let unsafe_context = inherited.is_none_or(|span| {
+                span.code
+                    || span.math
+                    || span.image.is_some()
+                    || (mark == "bold" && span.bold)
+                    || (mark == "italic" && span.italic)
+                    || (mark == "strike" && span.strike)
+                    || (mark == "underline" && span.underline)
+                    || (matches!(mark, "subscript" | "superscript") && span.script.is_some())
+            });
+            if unsafe_context {
+                self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+                self.status_is_error = false;
+                return;
+            }
+            let pending = ed.pending_format.get_or_insert_with(|| PendingFormat { block: caret.block, at: lo, ..Default::default() });
+            if pending.block != caret.block || pending.at != lo {
+                *pending = PendingFormat { block: caret.block, at: lo, ..Default::default() };
+            }
+            match mark {
+                "bold" => pending.bold = !pending.bold,
+                "italic" => pending.italic = !pending.italic,
+                "strike" => pending.strike = !pending.strike,
+                "underline" => pending.underline = !pending.underline,
+                "subscript" => {
+                    let script = notecraft_formats::markdown::Script::Subscript;
+                    pending.script = (pending.script != Some(script)).then_some(script);
+                }
+                "superscript" => {
+                    let script = notecraft_formats::markdown::Script::Superscript;
+                    pending.script = (pending.script != Some(script)).then_some(script);
+                }
+                _ => {}
+            }
+            if let Some(caret) = ed.caret.as_mut() {
+                caret.focus = true;
+                caret.place = Some(lo);
+            }
+            self.status.clear();
             self.status_is_error = false;
             return;
         }
+        if ed.writable && ed.across.is_none() && caret.cell.is_none() && lo < hi && (lo != 0 || hi != len) {
+            let format = match mark {
+                "underline" => pageedit::InlineFormat::Underline,
+                "subscript" => pageedit::InlineFormat::Subscript,
+                "superscript" => pageedit::InlineFormat::Superscript,
+                _ => return,
+            };
+            self.apply_partial_inline_format(format);
+            return;
+        }
+        if !ed.writable || ed.across.is_some() || caret.cell.is_some() || len == 0 || lo != 0 || hi != len {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        let block = caret.block;
+        Self::remember_step(ed);
+        if !pageedit::toggle_mark(&mut ed.blocks, block..block + 1, mark) {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        ed.pending_format = None;
+        if let (Some(caret), Some(block)) = (ed.caret.as_mut(), ed.blocks.get(block)) {
+            caret.text = pageedit::caret_text(block);
+            caret.selection = (0, caret.text.chars().count());
+            caret.focus = true;
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        ed.history.record(step);
+        self.status.clear();
+        self.status_is_error = false;
+    }
+
+    fn apply_partial_inline_format(&mut self, format: pageedit::InlineFormat) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(caret) = ed.caret.as_ref() else { return };
+        if !ed.writable
+            || ed.across.is_some()
+            || caret.cell.is_some()
+            || !matches!(
+                ed.blocks.get(caret.block),
+                Some(
+                    notecraft_formats::Block::Heading { .. }
+                        | notecraft_formats::Block::Paragraph(_)
+                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Item { .. }
+                )
+            )
+        {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        let Some((text, selection)) = pageedit::format_source_selection(&caret.text, caret.selection, format) else {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        };
+        if text == caret.text {
+            return;
+        }
+        Self::remember_step(ed);
+        let Some(caret) = ed.caret.as_mut() else { return };
+        caret.text = text;
+        caret.selection = selection;
+        caret.focus = true;
+        ed.restore_format_selection = Some((caret.block, selection.0, selection.1));
+        if let Some(block) = ed.blocks.get_mut(caret.block) {
+            pageedit::set_caret_text(block, &caret.text);
+        }
+        ed.pending_format = None;
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        ed.history.record(step);
+        self.status.clear();
+        self.status_is_error = false;
+    }
+
+    fn apply_font_family(&mut self, family: &str) {
+        if !notecraft_formats::markdown::valid_font_family(family) {
+            log::warn!("ribbon requested an invalid font family");
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        let Some(caret) = ed.caret.as_ref() else {
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+            self.status_is_error = false;
+            return;
+        };
+        let len = caret.text.chars().count();
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        if ed.writable
+            && ed.across.is_none()
+            && caret.cell.is_none()
+            && lo == hi
+            && matches!(
+                ed.blocks.get(caret.block),
+                Some(
+                    notecraft_formats::Block::Heading { .. }
+                        | notecraft_formats::Block::Paragraph(_)
+                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Item { .. }
+                )
+            )
+        {
+            let pending = ed.pending_format.get_or_insert_with(|| PendingFormat { block: caret.block, at: lo, ..Default::default() });
+            if pending.block != caret.block || pending.at != lo {
+                *pending = PendingFormat { block: caret.block, at: lo, ..Default::default() };
+            }
+            pending.family = Some(family.to_owned());
+            if let Some(caret) = ed.caret.as_mut() {
+                caret.focus = true;
+                caret.place = Some(lo);
+            }
+            self.status.clear();
+            self.status_is_error = false;
+            return;
+        }
+        if ed.writable && ed.across.is_none() && caret.cell.is_none() && lo < hi && (lo != 0 || hi != len) {
+            self.apply_partial_inline_format(pageedit::InlineFormat::Family(family.to_owned()));
+            return;
+        }
+        if !ed.writable || ed.across.is_some() || caret.cell.is_some() || len == 0 || lo != 0 || hi != len {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        let block = caret.block;
+        Self::remember_step(ed);
+        let spans = match ed.blocks.get_mut(block) {
+            Some(
+                notecraft_formats::Block::Heading { spans, .. }
+                | notecraft_formats::Block::Paragraph(spans)
+                | notecraft_formats::Block::Quote(spans)
+                | notecraft_formats::Block::Item { spans, .. },
+            ) => spans,
+            _ => {
+                self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+                self.status_is_error = false;
+                return;
+            }
+        };
+        if !pageedit::format_span_range(spans, 0..usize::MAX, pageedit::InlineFormat::Family(family.to_owned())) {
+            return;
+        }
+        ed.pending_format = None;
+        if let (Some(caret), Some(block)) = (ed.caret.as_mut(), ed.blocks.get(block)) {
+            caret.text = pageedit::caret_text(block);
+            caret.selection = (0, caret.text.chars().count());
+            caret.focus = true;
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        ed.history.record(step);
+        self.status.clear();
+        self.status_is_error = false;
+    }
+
+    fn apply_font_size(&mut self, size: u8) {
+        if !ribbon::FONT_SIZES.contains(&size) {
+            log::warn!("ribbon requested unsupported font size {size} pt");
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        let Some(caret) = ed.caret.as_ref() else {
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+            self.status_is_error = false;
+            return;
+        };
+        if caret.selection.0 == caret.selection.1 {
+            if caret.cell.is_some()
+                || !matches!(
+                    ed.blocks.get(caret.block),
+                    Some(
+                        notecraft_formats::Block::Heading { .. }
+                            | notecraft_formats::Block::Paragraph(_)
+                            | notecraft_formats::Block::Quote(_)
+                            | notecraft_formats::Block::Item { .. }
+                    )
+                )
+            {
+                self.status = crate::tl_id!("ui.select_text_before_changing_font_size").into();
+                self.status_is_error = false;
+                return;
+            }
+            let pending = ed.pending_format.get_or_insert_with(|| PendingFormat { block: caret.block, at: caret.selection.0, ..Default::default() });
+            if pending.block != caret.block || pending.at != caret.selection.0 {
+                *pending = PendingFormat { block: caret.block, at: caret.selection.0, ..Default::default() };
+            }
+            pending.size = Some(size);
+            if let Some(caret) = ed.caret.as_mut() {
+                caret.focus = true;
+                caret.place = Some(caret.selection.0);
+            }
+            self.status.clear();
+            self.status_is_error = false;
+            return;
+        }
+        let len = caret.text.chars().count();
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        if lo != 0 || hi != len {
+            self.apply_partial_inline_format(pageedit::InlineFormat::Size(size));
+            return;
+        }
+        ed.pending_format = None;
         Self::remember_step(ed);
         let Some(caret) = ed.caret.as_mut() else { return };
         let len = caret.text.chars().count();
@@ -3658,15 +4149,14 @@ impl NoteCraftApp {
             _ => None,
         };
         if let Some(spans) = spans {
-            if spans.iter().all(|span| span.font_size == Some(size)) {
+            if !pageedit::format_span_range(spans, 0..usize::MAX, pageedit::InlineFormat::Size(size)) {
                 return;
-            }
-            for span in spans {
-                span.font_size = Some(size);
             }
             if let Some(block) = ed.blocks.get(caret.block) {
                 caret.text = pageedit::caret_text(block);
                 caret.selection = (0, caret.text.chars().count());
+                caret.focus = true;
+                ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
             }
         } else {
             let open = format!("<span style=\"font-size: {size}pt\">");
@@ -4608,6 +5098,11 @@ impl NoteCraftApp {
         let mut page_acts: Vec<ribbon::Act> = Vec::new();
         {
             let Some(ed) = self.editor.as_mut() else { return };
+            let missing_fonts = crate::fonts::ensure_page_fonts(ui.ctx(), &crate::fonts::page_families(&ed.blocks));
+            if !missing_fonts.is_empty() {
+                let message = crate::i18n::format_message_id("ui.fonts_unavailable", &[("fonts", &missing_fonts.join(", "))]);
+                ui.label(egui::RichText::new(message).color(tokens.muted));
+            }
             let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
             // One id for the title, whether it is drawn as words or as a text box.
             let title_id = egui::Id::new("page-title-box");
@@ -4730,7 +5225,11 @@ impl NoteCraftApp {
                             // than inside the blocks, where a container drawn later would
                             // clear what an earlier one had just set.
                             let ink_owns_canvas = pen.pointer != ribbon::Pointer::Write;
-                            if ui.input(|i| i.pointer.any_pressed()) && !ink_owns_canvas {
+                            let pressed = ui.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+                            let press_in_page = pressed.is_some_and(|pos| {
+                                viewport.contains(pos) && ui.ctx().layer_id_at(pos).is_none_or(|layer| layer.order < egui::Order::Foreground)
+                            });
+                            if press_in_page && !ink_owns_canvas {
                                 ed.across = None;
                             }
                             // A page without a saved arrangement is one responsive sheet of
@@ -4738,6 +5237,10 @@ impl NoteCraftApp {
                             if !ed.arranged && ed.boxes.len() == 1 {
                                 ed.boxes[0].width = crate::containers::responsive_default_width(ui.available_width(), zoom_scale);
                             }
+                            if let Some(selection) = ed.restore_format_selection.take() {
+                                ui.data_mut(|data| data.insert_temp(pageedit::restore_selection_id(), selection));
+                            }
+                            let before_caret = ed.pending_format.as_ref().and_then(|_| ed.caret.clone());
                             let mut moved = if ink_owns_canvas {
                                 crate::containers::show_ink_view(
                                     ui,
@@ -4767,6 +5270,13 @@ impl NoteCraftApp {
                                     zoom_scale,
                                 )
                             };
+                            if moved.changed.blocks && ui.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Text(_)))) {
+                                ed.apply_pending_format(before_caret.as_ref());
+                            } else if let Some(pending) = ed.pending_format.as_ref()
+                                && ed.caret.as_ref().is_none_or(|caret| caret.block != pending.block || caret.selection != (pending.at, pending.at))
+                            {
+                                ed.pending_format = None;
+                            }
                             page_acts.append(&mut moved.acts);
                             if let Some((html, text)) = moved.copy.take()
                                 && self.clipboard.set_html(&html, &text).is_err()

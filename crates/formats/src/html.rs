@@ -171,6 +171,8 @@ const KNOWN_TAGS: &[&str] = &[
     "s",
     "del",
     "u",
+    "sub",
+    "sup",
     "span",
     "div",
 ];
@@ -194,8 +196,46 @@ pub fn unsupported_tag(html: &str) -> Option<String> {
         if !KNOWN_TAGS.contains(&name.as_str()) {
             return Some(name);
         }
+        let (_, closing, attrs) = parse_tag(raw);
+        if name == "span" && !closing && attrs.to_ascii_lowercase().contains("style") && !supported_span_style(&attrs) {
+            return Some(name);
+        }
     }
     None
+}
+
+fn supported_span_style(attrs: &str) -> bool {
+    let attrs = attrs.trim();
+    if !attrs.get(..7).is_some_and(|prefix| prefix.eq_ignore_ascii_case("style=\"")) {
+        return false;
+    }
+    let Some(value) = attrs.get(7..) else { return false };
+    if value.find('"') != Some(value.len().saturating_sub(1)) {
+        return false;
+    }
+    let Some(style) = attr(attrs, "style") else { return false };
+    let mut size = false;
+    let mut family = false;
+    for declaration in crate::markdown::style_declarations(&style) {
+        if declaration.trim().is_empty() {
+            continue;
+        }
+        let Some((property, value)) = declaration.split_once(':') else { return false };
+        if property.trim().eq_ignore_ascii_case("font-size") && !size {
+            size = true;
+            if !value.trim().strip_suffix("pt").and_then(|v| v.trim().parse::<u8>().ok()).is_some_and(|v| (8..=72).contains(&v)) {
+                return false;
+            }
+        } else if property.trim().eq_ignore_ascii_case("font-family") && !family {
+            family = true;
+            if crate::markdown::font_family_from_css(value).is_none() {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    size || family
 }
 
 pub fn to_markdown(html: &str) -> String {
@@ -259,13 +299,21 @@ fn attr(attrs: &str, key: &str) -> Option<String> {
 
 fn font_size(attrs: &str) -> Option<u8> {
     let style = attr(attrs, "style")?;
-    style.split(';').find_map(|declaration| {
+    crate::markdown::style_declarations(&style).into_iter().find_map(|declaration| {
         let (property, value) = declaration.split_once(':')?;
         if !property.trim().eq_ignore_ascii_case("font-size") {
             return None;
         }
         let points = value.trim().strip_suffix("pt")?.trim().parse::<u8>().ok()?;
         (8..=72).contains(&points).then_some(points)
+    })
+}
+
+fn font_family(attrs: &str) -> Option<String> {
+    let style = attr(attrs, "style")?;
+    crate::markdown::style_declarations(&style).into_iter().find_map(|declaration| {
+        let (property, value) = declaration.split_once(':')?;
+        property.trim().eq_ignore_ascii_case("font-family").then(|| crate::markdown::font_family_from_css(value)).flatten()
     })
 }
 
@@ -279,7 +327,7 @@ struct Writer {
     div_diagram: bool,
     in_math: bool,
     in_math_block: bool,
-    span_sizes: Vec<Option<u8>>,
+    span_sizes: Vec<bool>,
     href: Vec<Option<String>>,
     row: Option<Vec<String>>,
     cell: String,
@@ -459,6 +507,7 @@ impl Writer {
             ("b" | "strong", _) => self.push("**"),
             ("i" | "em", _) => self.push("*"),
             ("s" | "del" | "strike", _) => self.push("~~"),
+            ("u" | "sub" | "sup", closing) => self.push(&format!("<{}{name}>", if closing { "/" } else { "" })),
             ("code", _) if !self.in_pre => self.push("`"),
             ("pre", false) => {
                 self.block_break();
@@ -480,16 +529,24 @@ impl Writer {
             }
             ("span", false) => {
                 let size = font_size(attrs);
-                self.span_sizes.push(size);
-                if let Some(size) = size {
-                    self.push(&format!("<span style=\"font-size: {size}pt\">"));
+                let family = font_family(attrs);
+                self.span_sizes.push(size.is_some() || family.is_some());
+                if size.is_some() || family.is_some() {
+                    let mut styles = Vec::new();
+                    if let Some(family) = family {
+                        styles.push(format!("font-family: {}", escape(&crate::markdown::font_family_css(&family))));
+                    }
+                    if let Some(size) = size {
+                        styles.push(format!("font-size: {size}pt"));
+                    }
+                    self.push(&format!("<span style=\"{}\">", styles.join("; ")));
                 }
                 if attrs.to_lowercase().contains("math") {
                     self.in_math = true;
                 }
             }
             ("span", true) => {
-                if self.span_sizes.pop().flatten().is_some() {
+                if self.span_sizes.pop().unwrap_or(false) {
                     self.push("</span>");
                 } else {
                     self.in_math = false;
@@ -666,6 +723,19 @@ mod tests {
         assert!(md.contains("# Title"), "{md}");
         assert!(md.contains("One **bold** and *italic* and `code`."), "{md}");
         assert!(md.contains("- a\n- b"), "{md}");
+    }
+
+    #[test]
+    fn unsupported_span_styles_are_not_silently_discarded() {
+        for html in [
+            "<p><span style=\"font-family: Noto Sans; color: red\">words</span></p>",
+            "<p><span style=\"font-size: 18pt; font-size: 24pt\">words</span></p>",
+            "<p><span style=\"font-size: 99pt\">words</span></p>",
+            "<p><span style='font-family: Noto Sans'>words</span></p>",
+        ] {
+            assert_eq!(unsupported_tag(html).as_deref(), Some("span"), "{html}");
+        }
+        assert_eq!(unsupported_tag("<p><span style=\"font-family: Noto Sans; font-size: 18pt\">words</span></p>"), None);
     }
 
     #[test]

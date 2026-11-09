@@ -70,6 +70,11 @@ mapping require round-trip tests in both formats and a whole-page parity check. 
 skill [nc-dom-ser](../../SKILLS/nc-dom-ser/SKILL.md) makes this review and verification workflow
 reusable.
 
+Work in progress: the shared span model can read and write font families, underlining,
+subscripts and superscripts. The font-family selector, installed-font loading and editor
+interaction for these marks are not yet complete. Do not treat this model work as finished
+font-formatting support.
+
 ## 2. The rules
 
 1. **The folder is the page.** Everything the page owns is a file directly in its folder, or in
@@ -184,7 +189,9 @@ changes when that lands, not before.
 - An edit changes the blocks. The body is then written again from the blocks and boxes, and saved
   to the page file by the autosave.
 - Undo and Redo go through the page's history: whole states of the page (body, blocks, boxes and
-  the caret), not a list of edits. A font-size change is its own step, separate from typing.
+  the caret), not a list of edits. A font-size change on selected text is its own step. Choosing a
+  size at a collapsed caret does not change the page or history; the next typed text carries the
+  size and is recorded as typing. Moving the caret cancels that pending choice.
   Ink has its own undo, because a drawing is its own file.
 - Ink is drawn as a layer over the page. Its strokes are in ink files, one or many, and every one
   of them is drawn (decided by the owner, 2026-10-19). The page file names them. Section 5 has the

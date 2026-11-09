@@ -5168,6 +5168,94 @@ fn a_drag_can_select_across_paragraphs() {
     assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
 }
 
+#[test]
+fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
+    let (_t, app, s) = sample_app("ui-cross-font-size");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.run();
+    page_of(&mut h, &s, "Cross Font", "First paragraph words\n\nSecond paragraph words");
+    let first = h.get_by_label("First paragraph words").rect();
+    let second = h.get_by_label("Second paragraph words").rect();
+    ask(&mut h, "ui.press", json!({"x": first.center().x, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+    assert!(!ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["across"].is_null());
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before, "unsupported cross-paragraph selection must not change an unrelated caret");
+    let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
+    assert!(!inspection["page"]["across"].is_null(), "selection remains available after using the menu");
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[test]
+fn font_family_preserves_cross_paragraph_selection_and_reports_limitation() {
+    let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("System font discovery unavailable: {error}");
+            return;
+        }
+    };
+    let family = catalog.families().first().expect("non-empty catalog");
+    let (_t, app, s) = sample_app("ui-cross-font-family");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.run();
+    page_of(&mut h, &s, "Cross Font Family", "First paragraph words\n\nSecond paragraph words");
+    let first = h.get_by_label("First paragraph words").rect();
+    let second = h.get_by_label("Second paragraph words").rect();
+    ask(&mut h, "ui.press", json!({"x": first.center().x, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(family).click();
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(!inspection["page"]["across"].is_null());
+    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
+}
+
+#[test]
+fn font_marks_preserve_cross_paragraph_selection_and_report_limitation() {
+    let (_t, app, s) = sample_app("ui-cross-font-marks");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.run();
+    page_of(&mut h, &s, "Cross Font Marks", "First paragraph words\n\nSecond paragraph words");
+    let first = h.get_by_label("First paragraph words").rect();
+    let second = h.get_by_label("Second paragraph words").rect();
+    ask(&mut h, "ui.press", json!({"x": first.center().x, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    for label in ["Bold", "Italic", "Strikethrough", "Underline", "Subscript", "Superscript"] {
+        h.get_by_label(label).click();
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before, "{label} must not change unrelated text");
+        let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert!(!inspection["page"]["across"].is_null(), "{label} must preserve the selection");
+        assert!(
+            inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"),
+            "{label} must report the limitation: {inspection}"
+        );
+    }
+}
+
 /// Ctrl+A, Ctrl+C and Ctrl+V work in an Arabic paragraph, where no egui text box listens.
 ///
 /// The owner reported all three: Ctrl+C did nothing, Ctrl+A selected nothing, and nothing
@@ -5410,24 +5498,798 @@ fn bold_and_italic_toggle_over_a_line_that_is_partly_marked() {
 }
 
 #[test]
-fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
-    let (_t, app, s) = sample_app("ui-font-size");
+fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-font-indicators");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, body) in [
+        (&s.md_page, "<span style=\"font-family: Example Sans; font-size: 18pt\">alpha</span> plain"),
+        (&s.html_page, "<p><span style=\"font-family: Example Sans; font-size: 18pt\">alpha</span> plain</p>"),
+    ] {
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+        settle(&mut h);
+        assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
+        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("24 pt").click();
+        settle(&mut h);
+        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24 pt"));
+        assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
+        review(&mut h, "font-indicators-mixed");
+    }
+}
 
+#[test]
+fn font_selectors_show_pending_size_without_editing_the_page() {
+    let (_t, app, s) = sample_app("ui-font-indicator-pending");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.state_mut().open_path(&s.md_page.to_string_lossy());
     settle(&mut h);
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
-    let unchanged = h.state().body().unwrap_or_default().to_string();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Default"));
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Default"));
+    let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
     h.get_by_label("18 pt").click();
     settle(&mut h);
-    let status =
-        ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/status/text").and_then(Value::as_str).unwrap_or_default().to_string();
-    assert!(status.contains("Select text"), "the UI explains that a selection is required: {status}");
-    assert_eq!(h.state().body().unwrap_or_default(), unchanged, "a size is not applied at an empty selection");
-    let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
-    assert_eq!(history["canUndo"], json!(false), "an empty selection does not create an undo step");
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"));
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("move caret");
+    settle(&mut h);
+    assert_ne!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the pending size does not follow a moved caret");
+}
+
+#[test]
+fn font_controls_include_family_underline_and_scripts() {
+    let (_t, app, s) = sample_app("ui-font-controls");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for label in ["Font Family", "Font Size", "Bold", "Italic", "Underline", "Strikethrough", "Subscript", "Superscript"] {
+        assert!(h.query_all_by_label(label).count() > 0, "the font group exposes {label}");
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[test]
+fn installed_font_family_can_be_applied_and_undone_in_both_formats() {
+    let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("System font discovery unavailable: {error}");
+            return;
+        }
+    };
+    let family = catalog.families().first().expect("non-empty catalog").clone();
+    let (_t, app, s) = sample_app("ui-font-family-selected");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        notecraft_store::page::save_body(page, if format == notecraft_model::PageFormat::Html { "<p>simple words</p>" } else { "simple words" })
+            .expect("write fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select text");
+        pump(&mut h);
+        h.get_by_label("Font Family").click();
+        h.run();
+        h.get_by_label(&family).click();
+        settle(&mut h);
+        let after = h.state().body().unwrap_or_default().to_string();
+        let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert!(spans.iter().all(|span| span.font_family.as_deref() == Some(family.as_str())), "{family}: {after}");
+        let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(family.as_str()), "{inspection}");
+        review(&mut h, "font-indicators-family");
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before);
+        ask(&mut h, "ui.redo", json!({})).expect("redo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+        h.state_mut().save();
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end());
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[test]
+fn installed_family_and_underline_apply_to_new_text() {
+    let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("System font discovery unavailable: {error}");
+            return;
+        }
+    };
+    let family = catalog.families().first().expect("non-empty catalog").clone();
+    let (_t, app, s) = sample_app("ui-pending-family");
+    notecraft_store::page::save_body(&s.md_page, "plain").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(&family).click();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(family.as_str()), "pending family is shown before typing");
+    h.get_by_label("Underline").click();
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    ask(&mut h, "ui.text", json!({"text": "字"})).expect("typing");
+    settle(&mut h);
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert!(spans.iter().any(|span| span.text.contains('字') && span.underline && span.font_family.as_deref() == Some(family.as_str())), "{spans:?}");
+}
+
+#[test]
+fn underline_and_scripts_toggle_and_undo_for_a_selected_line_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-inline-marks");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        for mark in ["Underline", "Subscript", "Superscript"] {
+            notecraft_store::page::save_body(page, if format == notecraft_model::PageFormat::Html { "<p>simple words</p>" } else { "simple words" })
+                .expect("write fixture");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let before = h.state().body().unwrap_or_default().to_string();
+            ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+            pump(&mut h);
+            ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select text");
+            pump(&mut h);
+            h.get_by_label(mark).click();
+            settle(&mut h);
+            let after = h.state().body().unwrap_or_default().to_string();
+            let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            assert!(
+                spans.iter().all(|span| match mark {
+                    "Underline" => span.underline,
+                    "Subscript" => span.script == Some(notecraft_formats::markdown::Script::Subscript),
+                    _ => span.script == Some(notecraft_formats::markdown::Script::Superscript),
+                }),
+                "{mark}: {after}"
+            );
+            ask(&mut h, "ui.undo", json!({})).expect("undo");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), before, "{mark} undo");
+            ask(&mut h, "ui.redo", json!({})).expect("redo");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), after, "{mark} redo");
+            h.state_mut().save();
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "{mark} survives reopening");
+        }
+    }
+}
+
+#[test]
+fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
+    let (_t, app, s) = sample_app("ui-partial-legacy-marks");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        for label in ["Bold", "Italic", "Strikethrough"] {
+            notecraft_store::page::save_body(
+                page,
+                if format == notecraft_model::PageFormat::Html { "<p><u>alpha bravo omega</u></p>" } else { "<u>alpha bravo omega</u>" },
+            )
+            .expect("fixture");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let before = h.state().body().unwrap_or_default().to_string();
+            ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+            pump(&mut h);
+            ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+            pump(&mut h);
+            for _ in 0..10 {
+                ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
+                pump(&mut h);
+            }
+            for _ in 0..5 {
+                ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("select");
+                pump(&mut h);
+            }
+            h.get_by_label(label).click();
+            settle(&mut h);
+            let after = h.state().body().unwrap_or_default().to_string();
+            let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let active = |s: &notecraft_formats::markdown::Span| match label {
+                "Bold" => s.bold,
+                "Italic" => s.italic,
+                _ => s.strike,
+            };
+            assert_eq!(spans.iter().filter(|s| active(s)).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{label}: {after}");
+            assert!(spans.iter().all(|s| s.underline), "{label} preserves underline: {after}");
+            h.get_by_label(label).click();
+            settle(&mut h);
+            let toggled = h.state().body().unwrap_or_default().to_string();
+            let (blocks, _) = notecraft_formats::boxes::read(format, &toggled);
+            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            assert!(spans.iter().all(|s| !active(s) && s.underline), "{label} toggles only the selection: {toggled}");
+            ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), after);
+            ask(&mut h, "ui.undo", json!({})).expect("undo");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), before);
+        }
+    }
+}
+
+#[test]
+fn underline_applies_only_to_a_partial_selection_and_undoes_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-partial-underline");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        notecraft_store::page::save_body(
+            page,
+            if format == notecraft_model::PageFormat::Html { "<p>alpha bravo omega</p>" } else { "alpha bravo omega" },
+        )
+        .expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        pump(&mut h);
+        for _ in 0..6 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+            pump(&mut h);
+        }
+        h.get_by_label("Underline").click();
+        settle(&mut h);
+        let after = h.state().body().unwrap_or_default().to_string();
+        let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert_eq!(spans.iter().filter(|s| s.underline).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{after}");
+        assert_eq!(spans.iter().filter(|s| !s.underline).map(|s| s.text.as_str()).collect::<String>(), "alpha  omega", "{after}");
+        h.get_by_label("Underline").click();
+        settle(&mut h);
+        let toggled = h.state().body().unwrap_or_default().to_string();
+        let (blocks, _) = notecraft_formats::boxes::read(format, &toggled);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert!(spans.iter().all(|s| !s.underline), "selection remains active for toggle: {toggled}");
+        ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before);
+        ask(&mut h, "ui.redo", json!({})).expect("redo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+    }
+}
+
+#[test]
+fn font_size_replaces_only_the_partial_selection_inside_an_existing_size() {
+    let (_t, app, s) = sample_app("ui-partial-resize");
+    notecraft_store::page::save_body(&s.md_page, "<span style=\"font-size: 18pt\">alpha bravo omega</span>").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+    pump(&mut h);
+    for _ in 0..13 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
+        pump(&mut h);
+    }
+    for _ in 0..5 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("select");
+        pump(&mut h);
+    }
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("24 pt").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert_eq!(spans.iter().filter(|s| s.font_size == Some(24)).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{body}");
+    assert_eq!(spans.iter().filter(|s| s.font_size == Some(18)).map(|s| s.text.as_str()).collect::<String>(), "alpha  omega", "{body}");
+}
+
+#[test]
+fn font_size_replaces_mixed_sizes_in_a_partial_selection() {
+    let (_t, app, s) = sample_app("ui-partial-mixed-size");
+    notecraft_store::page::save_body(&s.md_page, "alpha <span style=\"font-size: 18pt\">bravo</span> omega").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+    pump(&mut h);
+    for _ in 0..6 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home", "shift": true})).expect("select");
+    pump(&mut h);
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("24 pt").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert_eq!(spans.iter().filter(|s| s.font_size == Some(24)).map(|s| s.text.as_str()).collect::<String>(), "alpha bravo", "{body}");
+    assert!(spans.iter().all(|s| s.font_size != Some(18)), "{body}");
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[test]
+fn partial_selection_keeps_font_family_when_script_is_added() {
+    let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("System font discovery unavailable: {error}");
+            return;
+        }
+    };
+    let family = catalog.families().first().expect("non-empty catalog").clone();
+    let (_t, app, s) = sample_app("ui-partial-family-script");
+    notecraft_store::page::save_body(&s.md_page, "alpha bravo omega").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+    pump(&mut h);
+    for _ in 0..6 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+        pump(&mut h);
+    }
+    for _ in 0..5 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+        pump(&mut h);
+    }
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(&family).click();
+    settle(&mut h);
+    h.get_by_label("Subscript").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert!(
+        spans.iter().any(|span| span.text == "bravo"
+            && span.font_family.as_deref() == Some(family.as_str())
+            && span.script == Some(notecraft_formats::markdown::Script::Subscript)),
+        "{body}"
+    );
+    assert!(spans.iter().filter(|s| s.text != "bravo").all(|s| s.font_family.is_none() && s.script.is_none()), "{body}");
+}
+
+#[test]
+fn pending_marks_combine_with_size_for_unicode_typing_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-inline-marks-caret");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        notecraft_store::page::save_body(page, if format == notecraft_model::PageFormat::Html { "<p>tail</p>" } else { "tail" }).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+        h.get_by_label("Underline").click();
+        settle(&mut h);
+        h.get_by_label("Subscript").click();
+        settle(&mut h);
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("18 pt").click();
+        settle(&mut h);
+        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the pending size is shown");
+        assert_eq!(h.state().body().unwrap_or_default(), before);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"]["canUndo"], false);
+        ask(&mut h, "ui.text", json!({"text": "مرحبا"})).expect("typing");
+        settle(&mut h);
+        let after = h.state().body().unwrap_or_default().to_string();
+        let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert!(
+            spans.iter().any(|span| span.text.contains("مرحبا")
+                && span.underline
+                && span.script == Some(notecraft_formats::markdown::Script::Subscript)
+                && span.font_size == Some(18)),
+            "{after}"
+        );
+        assert!(spans.iter().any(|span| span.text.contains("tail") && !span.underline && span.script.is_none()), "{after}");
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before);
+        ask(&mut h, "ui.redo", json!({})).expect("redo");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+    }
+}
+
+#[test]
+fn pending_marks_toggle_and_cancel_when_the_caret_moves() {
+    let (_t, app, s) = sample_app("ui-pending-marks-cancel");
+    notecraft_store::page::save_body(&s.md_page, "plain").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    for label in ["Underline", "Underline", "Subscript", "Superscript"] {
+        h.get_by_label(label).click();
+        settle(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": "X"})).expect("typing");
+    settle(&mut h);
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert!(spans.iter().any(|s| s.text == "X" && !s.underline && s.script == Some(notecraft_formats::markdown::Script::Superscript)));
+
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("Underline").click();
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("move caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Y"})).expect("typing after moving");
+    settle(&mut h);
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
+    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    assert!(spans.iter().any(|s| s.text.contains('Y') && !s.underline), "{spans:?}");
+}
+
+#[test]
+fn turning_off_an_inherited_mark_is_reported_without_changing_page() {
+    let (_t, app, s) = sample_app("ui-inherited-mark");
+    notecraft_store::page::save_body(&s.md_page, "<u>words</u>").expect("fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+    pump(&mut h);
+    for _ in 0..4 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+        pump(&mut h);
+    }
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Underline").click();
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection or caret position"));
+    assert_eq!(inspection["page"]["history"]["canUndo"], false);
+}
+
+#[test]
+fn selected_line_script_switch_is_exclusive_and_can_be_toggled_off() {
+    let (_t, app, s) = sample_app("ui-inline-script-switch");
+    notecraft_store::page::save_body(&s.md_page, "<u>H<sub>2</sub>O</u>").expect("write fixture");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let select = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(h);
+        ask(h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select text");
+        pump(h);
+    };
+    for (button, expected) in [
+        ("Superscript", Some(notecraft_formats::markdown::Script::Superscript)),
+        ("Superscript", None),
+        ("Subscript", Some(notecraft_formats::markdown::Script::Subscript)),
+    ] {
+        select(&mut h);
+        h.get_by_label(button).click();
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default();
+        let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), "H2O");
+        assert!(spans.iter().all(|s| s.underline && s.script == expected), "{button}: {body}");
+    }
+}
+
+#[test]
+fn selected_container_font_size_is_undoable_and_leaves_other_boxes_alone() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-font-size");
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the selected container reports its size");
+    let after = h.state().body().unwrap_or_default().to_string();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, &after);
+    fn spans(block: &notecraft_formats::Block) -> &[notecraft_formats::markdown::Span] {
+        match block {
+            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans) => spans,
+            _ => panic!("expected text block"),
+        }
+    }
+    assert!(spans(&blocks[0]).iter().chain(spans(&blocks[1])).all(|span| span.font_size == Some(18)), "{after}");
+    assert!(spans(&blocks[2]).iter().all(|span| span.font_size.is_none()), "{after}");
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), after);
+}
+
+#[test]
+fn selected_container_new_marks_are_independent_undo_steps() {
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-inline-marks-history");
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    let original = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Underline").click();
+    settle(&mut h);
+    let underlined = h.state().body().unwrap_or_default().to_string();
+    assert_ne!(original, underlined);
+    h.get_by_label("Subscript").click();
+    settle(&mut h);
+    let scripted = h.state().body().unwrap_or_default().to_string();
+    assert_ne!(underlined, scripted);
+    ask(&mut h, "ui.undo", json!({})).expect("undo script");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), underlined);
+    ask(&mut h, "ui.undo", json!({})).expect("undo underline");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), original);
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[test]
+fn selected_container_font_family_is_undoable_and_leaves_other_boxes_alone() {
+    let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            eprintln!("System font discovery unavailable: {error}");
+            return;
+        }
+    };
+    let family = catalog.families().first().expect("non-empty catalog").clone();
+    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-font-family");
+    select_box_by_handle(&mut h, ox, oy, 160.0);
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(&family).click();
+    settle(&mut h);
+    let after = h.state().body().unwrap_or_default().to_string();
+    let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, &after);
+    fn spans(block: &notecraft_formats::Block) -> &[notecraft_formats::markdown::Span] {
+        match block {
+            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans) => spans,
+            _ => panic!("expected text block"),
+        }
+    }
+    assert!(spans(&blocks[0]).iter().chain(spans(&blocks[1])).all(|span| span.font_family.as_deref() == Some(family.as_str())), "{after}");
+    assert!(spans(&blocks[2]).iter().all(|span| span.font_family.is_none()), "{after}");
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), after);
+}
+
+#[test]
+fn missing_page_fonts_are_visible_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-missing-page-font");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, body) in [
+        (&s.md_page, "<span style=\"font-family: NoteCraft Missing Font 928474\">words</span>"),
+        (&s.html_page, "<p><span style=\"font-family: NoteCraft Missing Font 928474\">words</span></p>"),
+    ] {
+        notecraft_store::page::save_body(page, body).expect("write fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert!(h.query_all_by_label_contains("These fonts could not be loaded").count() > 0, "a missing family is reported for {}", page.display());
+        assert!(h.state().body().unwrap_or_default().contains("NoteCraft Missing Font 928474"), "the name stays on the page");
+    }
+}
+
+#[test]
+fn legacy_font_marks_apply_to_next_typed_text_without_changing_page_first() {
+    let (_t, app, s) = sample_app("ui-pending-legacy-marks");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        for label in ["Bold", "Italic", "Strikethrough"] {
+            notecraft_store::page::save_body(page, if format == notecraft_model::PageFormat::Html { "<p>plain</p>" } else { "plain" })
+                .expect("fixture");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+            settle(&mut h);
+            let before = h.state().body().unwrap_or_default().to_string();
+            h.get_by_label(label).click();
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), before, "{label} does not edit the page before typing");
+            ask(&mut h, "ui.text", json!({"text": "words"})).expect("type");
+            settle(&mut h);
+            let after = h.state().body().unwrap_or_default().to_string();
+            let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let marked = |s: &notecraft_formats::markdown::Span| match label {
+                "Bold" => s.bold,
+                "Italic" => s.italic,
+                _ => s.strike,
+            };
+            assert_eq!(spans.iter().filter(|s| marked(s)).map(|s| s.text.as_str()).collect::<String>(), "words", "{label}: {after}");
+            ask(&mut h, "ui.undo", json!({})).expect("undo");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), before);
+            ask(&mut h, "ui.redo", json!({})).expect("redo");
+            settle(&mut h);
+            assert_eq!(h.state().body().unwrap_or_default(), after);
+        }
+    }
+}
+
+#[test]
+fn pending_font_marks_combine_and_can_be_switched_off_before_typing() {
+    let (_t, app, s) = sample_app("ui-pending-marks-combined");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        notecraft_store::page::save_body(page, if format == notecraft_model::PageFormat::Html { "<p>plain</p>" } else { "plain" }).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        for label in ["Bold", "Italic", "Strikethrough", "Strikethrough", "Underline"] {
+            h.get_by_label(label).click();
+            settle(&mut h);
+        }
+        ask(&mut h, "ui.text", json!({"text": "words"})).expect("type");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default();
+        let (blocks, _) = notecraft_formats::boxes::read(format, body);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert!(
+            spans.iter().any(|span| span.text == "words" && span.bold && span.italic && span.underline && !span.strike),
+            "combined pending styles: {body}"
+        );
+    }
+}
+
+#[test]
+fn font_size_without_selection_formats_new_text() {
+    let (_t, app, s) = sample_app("ui-font-size-next");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for page in [&s.md_page, &s.html_page] {
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+        let original = h.state().body().unwrap_or_default().to_string();
+        h.get_by_label("Font Size").click();
+        h.run();
+        h.get_by_label("18 pt").click();
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), original, "choosing a size alone does not change the page");
+        let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
+        assert_eq!(history["canUndo"], json!(false), "choosing a typing style does not create an undo step");
+        let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["status"]["text"].as_str().unwrap_or_default().to_string();
+        assert!(!status.contains("Select text"), "a collapsed selection chooses the size for typing: {status}");
+        ask(&mut h, "ui.text", json!({"text": "new "})).expect("type at caret");
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "words"})).expect("continue typing");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default().to_string();
+        assert!(body.contains("font-size: 18pt") && body.contains("new words"), "new text carries the chosen size: {body}");
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo earlier typing");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), original, "undo removes the formatted typing");
+        ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("redo");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("redo later typing");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), body, "redo restores the formatted typing");
+        h.state_mut().save();
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), body.trim_end(), "the typed formatting survives reopening");
+    }
+}
+
+#[test]
+fn pending_font_size_is_cleared_when_caret_moves() {
+    let (_t, app, s) = sample_app("ui-font-size-next-move");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("move caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "later"})).expect("type at new location");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    assert!(body.contains("later"), "typing remains available after moving the caret");
+    assert!(!body.contains("font-size: 18pt"), "the old caret's pending size must not follow to a different position: {body}");
+}
+
+#[test]
+fn pending_font_size_applies_to_unicode_typing() {
+    let (_t, app, s) = sample_app("ui-font-size-next-unicode");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "مرحبا"})).expect("type unicode");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": " عالم"})).expect("continue typing unicode");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    assert!(body.contains("<span style=\"font-size: 18pt\">مرحبا عالم</span>"), "the unicode typing run is sized: {body}");
+}
+
+#[test]
+fn pending_font_size_can_change_in_a_typing_run() {
+    let (_t, app, s) = sample_app("ui-font-size-next-change");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("18 pt").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "first"})).expect("first size");
+    settle(&mut h);
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.get_by_label("24 pt").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "second"})).expect("second size");
+    settle(&mut h);
+    let blocks = notecraft_formats::markdown::parse(h.state().body().unwrap_or_default());
+    let Some(notecraft_formats::Block::Paragraph(spans)) = blocks.get(1) else { panic!("paragraph") };
+    assert!(spans.iter().any(|span| span.text.contains("first") && span.font_size == Some(18)), "{spans:?}");
+    assert!(spans.iter().any(|span| span.text.contains("second") && span.font_size == Some(24)), "{spans:?}");
+}
+
+#[test]
+fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
+    let (_t, app, s) = sample_app("ui-font-size");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
 
     for page in [&s.md_page, &s.html_page] {
         let path = page.to_string_lossy().to_string();

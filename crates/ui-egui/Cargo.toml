@@ -34,10 +34,12 @@ zip = { workspace = true }
 # SystemTime::now()/Instant::now() panic on wasm32-unknown-unknown; see the workspace Cargo.toml.
 web-time = { workspace = true }
 
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+fontdb = "0.23"
+
 [dev-dependencies]
 egui_kittest = { workspace = true }
 # The icon tests share one offscreen GPU device instead of building one per picture.
 egui-wgpu = "0.37"
-
 
 

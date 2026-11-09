@@ -42,6 +42,27 @@ it is fixed and tested, not when it is promised.
   horizontal rule cannot be edited in place: only the blocks around it.
 - **No bold or italic font.** egui bundles none; the preview uses colour and slant for emphasis.
   A bundled font family is the fix and needs a licence check.
+- **Installed font selection is in progress.** The desktop font catalog can discover and load
+  regular installed faces. Fonts named by a page are registered for the editor and preview;
+  missing fonts are reported and fall back. The desktop ribbon can apply a family to a whole
+  selected line, selected container, safely mapped partial selection, or text typed at the
+  caret. Selections that cannot be mapped without losing formatting are refused.
+  Bold and italic faces are not loaded. Windows and macOS discovery have not been tested on
+  those platforms. Browser local-font permission and access are not implemented.
+- **Font size is in progress.** The ribbon can size a selected line, text in a selected
+  container, a safely mapped partial selection, or text typed at a plain caret. Across-line
+  and ambiguous selections are not supported and are reported rather than changed.
+  The font controls show the current explicit value, `Default` for inherited defaults, and
+  `Mixed` when a selection has different values. Ambiguous selections show the control name.
+- **Underline, subscript and superscript are in progress.** The ribbon can toggle them on
+  an entire selected line or container, with undo, and can format newly typed text at a plain
+  caret, and safely mapped partial selections. Selections across lines, some selections that
+  cross markup, and turning off a mark inherited at the caret are not supported yet; the
+  controls report this rather than changing the page.
+- **Bold, italic and strikethrough are in progress.** Safely mapped partial selections and
+  newly typed text at a plain caret can use these marks. Across-line selections and turning
+  off a mark inherited at the caret are not supported yet; the controls report this rather
+  than changing the wrong text.
 - **Links follow by relative path only.** A click on a link opens the page or folder it
   names, a file in the program the system has for it, or a web address in the browser; the
   target is a path as written, so a renamed page breaks the links to it. Links by id are not

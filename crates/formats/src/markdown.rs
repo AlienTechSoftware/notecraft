@@ -14,14 +14,23 @@ pub struct Span {
     pub bold: bool,
     pub italic: bool,
     pub strike: bool,
+    pub underline: bool,
+    pub script: Option<Script>,
     pub code: bool,
     pub math: bool,
     /// Font size in points, carried by a NoteCraft inline `<span>`.
     pub font_size: Option<u8>,
+    pub font_family: Option<String>,
     /// Link target, if this span is part of a link.
     pub link: Option<String>,
     /// Image source, if this span is an inline image (the text is the alt text).
     pub image: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Script {
+    Subscript,
+    Superscript,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,12 +60,15 @@ pub fn code_lang(lang: &str) -> (bool, &str) {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct Style {
     bold: bool,
     italic: bool,
     strike: bool,
+    underline: bool,
+    script: Option<Script>,
     font_size: Option<u8>,
+    font_family: Option<String>,
 }
 
 /// Parses inline Markdown into styled spans.
@@ -78,14 +90,17 @@ fn slice(chars: &[char], a: usize, b: usize) -> &[char] {
     chars.get(a..b).unwrap_or(&[])
 }
 
-fn push_text(out: &mut Vec<Span>, buf: &mut String, st: Style, link: &Option<String>) {
+fn push_text(out: &mut Vec<Span>, buf: &mut String, st: &Style, link: &Option<String>) {
     if !buf.is_empty() {
         out.push(Span {
             text: std::mem::take(buf),
             bold: st.bold,
             italic: st.italic,
             strike: st.strike,
+            underline: st.underline,
+            script: st.script,
             font_size: st.font_size,
+            font_family: st.font_family.clone(),
             link: link.clone(),
             ..Span::default()
         });
@@ -99,19 +114,93 @@ fn span_open_end(chars: &[char], start: usize) -> Option<usize> {
     tag.to_ascii_lowercase().starts_with("<span ").then_some(start + end + 1)
 }
 
-fn font_size_open(chars: &[char], start: usize) -> Option<(u8, usize)> {
+pub fn valid_font_family(name: &str) -> bool {
+    !name.is_empty() && name.trim() == name && name.len() <= 128 && !name.chars().any(char::is_control)
+}
+
+pub(crate) fn font_family_css(name: &str) -> String {
+    let simple = name.split(' ').all(|word| {
+        let mut chars = word.chars();
+        chars.next().is_some_and(|c| c.is_alphabetic() || c == '_') && chars.all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+    });
+    if simple { name.to_string() } else { format!("'{}'", name.replace('\\', "\\\\").replace('\'', "\\'")) }
+}
+
+pub(crate) fn font_family_from_css(value: &str) -> Option<String> {
+    let value = value.trim();
+    let name = if let Some(inner) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+        let mut name = String::new();
+        let mut chars = inner.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                let escaped = chars.next()?;
+                if !matches!(escaped, '\\' | '\'') {
+                    return None;
+                }
+                name.push(escaped);
+            } else if c == '\'' {
+                return None;
+            } else {
+                name.push(c);
+            }
+        }
+        name
+    } else {
+        if !value.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')) {
+            return None;
+        }
+        value.to_string()
+    };
+    valid_font_family(&name).then_some(name)
+}
+
+pub(crate) fn style_declarations(style: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (at, c) in style.char_indices() {
+        if quoted && c == '\\' && !escaped {
+            escaped = true;
+            continue;
+        }
+        if c == '\'' && !escaped {
+            quoted = !quoted;
+        } else if c == ';' && !quoted {
+            result.push(&style[start..at]);
+            start = at + 1;
+        }
+        escaped = false;
+    }
+    result.push(&style[start..]);
+    result
+}
+
+fn font_style_open(chars: &[char], start: usize) -> Option<(Option<u8>, Option<String>, usize)> {
     let end = span_open_end(chars, start)?;
     let tag: String = chars.get(start..end)?.iter().collect();
     let lower = tag.to_ascii_lowercase();
     let style_start = lower.find("style=\"")? + "style=\"".len();
     let style_end = lower.get(style_start..)?.find('"')? + style_start;
-    let style = lower.get(style_start..style_end)?;
-    let value = style.split(';').find_map(|declaration| {
+    let style = crate::html::unescape(tag.get(style_start..style_end)?);
+    let mut size = None;
+    let mut family = None;
+    for declaration in style_declarations(&style).into_iter().filter(|part| !part.trim().is_empty()) {
         let (property, value) = declaration.split_once(':')?;
-        property.trim().eq("font-size").then(|| value.trim())
-    })?;
-    let points = value.strip_suffix("pt")?.parse::<u8>().ok()?;
-    (8..=72).contains(&points).then_some((points, end))
+        let value = value.trim();
+        if property.trim().eq_ignore_ascii_case("font-size") {
+            let points = value.strip_suffix("pt")?.parse::<u8>().ok()?;
+            if !(8..=72).contains(&points) {
+                return None;
+            }
+            size = Some(points);
+        } else if property.trim().eq_ignore_ascii_case("font-family") {
+            family = Some(font_family_from_css(value)?);
+        } else {
+            return None;
+        }
+    }
+    (size.is_some() || family.is_some()).then_some((size, family, end))
 }
 
 fn font_size_close(chars: &[char], start: usize) -> Option<usize> {
@@ -135,6 +224,26 @@ fn font_size_close(chars: &[char], start: usize) -> Option<usize> {
     None
 }
 
+fn inline_tag_close(chars: &[char], start: usize, open: &[char], close: &[char]) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut at = start;
+    while at < chars.len() {
+        if chars.get(at..at + close.len()) == Some(close) {
+            depth -= 1;
+            if depth == 0 {
+                return Some(at);
+            }
+            at += close.len();
+        } else if chars.get(at..at + open.len()) == Some(open) {
+            depth += 1;
+            at += open.len();
+        } else {
+            at += 1;
+        }
+    }
+    None
+}
+
 fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<Span> {
     let mut out = Vec::new();
     let mut buf = String::new();
@@ -144,15 +253,43 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
         let next = chars.get(i + 1).copied();
         if c == '<'
             && depth < MAX_DEPTH
-            && let Some((font_size, content_start)) = font_size_open(chars, i)
+            && let Some((font_size, font_family, content_start)) = font_style_open(chars, i)
             && let Some(content_end) = font_size_close(chars, content_start)
         {
-            push_text(&mut out, &mut buf, st, &link);
-            let mut sized = st;
-            sized.font_size = Some(font_size);
+            push_text(&mut out, &mut buf, &st, &link);
+            let mut sized = st.clone();
+            if font_size.is_some() {
+                sized.font_size = font_size;
+            }
+            if font_family.is_some() {
+                sized.font_family = font_family;
+            }
             out.extend(inline(slice(chars, content_start, content_end), sized, link.clone(), depth + 1));
             i = content_end + "</span>".chars().count();
             continue;
+        }
+        if c == '<' && depth < MAX_DEPTH {
+            let remaining: String = chars[i..].iter().collect();
+            let tag = [("<u>", "</u>", None), ("<sub>", "</sub>", Some(Script::Subscript)), ("<sup>", "</sup>", Some(Script::Superscript))]
+                .into_iter()
+                .find(|(open, _, _)| remaining.starts_with(open));
+            if let Some((open, close, script)) = tag {
+                let open_len = open.chars().count();
+                let opening: Vec<char> = open.chars().collect();
+                let closing: Vec<char> = close.chars().collect();
+                if let Some(end) = inline_tag_close(chars, i + open_len, &opening, &closing) {
+                    push_text(&mut out, &mut buf, &st, &link);
+                    let mut inner = st.clone();
+                    if let Some(script) = script {
+                        inner.script = Some(script);
+                    } else {
+                        inner.underline = true;
+                    }
+                    out.extend(inline(slice(chars, i + open_len, end), inner, link.clone(), depth + 1));
+                    i = end + closing.len();
+                    continue;
+                }
+            }
         }
         match c {
             '\\' if next.is_some() => {
@@ -163,7 +300,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             }
             '`' => {
                 if let Some(end) = find(chars, i + 1, &['`']) {
-                    push_text(&mut out, &mut buf, st, &link);
+                    push_text(&mut out, &mut buf, &st, &link);
                     let code: String = slice(chars, i + 1, end).iter().collect();
                     out.push(Span {
                         text: code,
@@ -171,7 +308,10 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                         bold: st.bold,
                         italic: st.italic,
                         strike: st.strike,
+                        underline: st.underline,
+                        script: st.script,
                         font_size: st.font_size,
+                        font_family: st.font_family.clone(),
                         link: link.clone(),
                         ..Span::default()
                     });
@@ -188,8 +328,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 && find(chars, i + 3, &['*', '*', '*']).is_some_and(|end| end > i + 3) =>
             {
                 if let Some(end) = find(chars, i + 3, &['*', '*', '*']) {
-                    push_text(&mut out, &mut buf, st, &link);
-                    let inner = Style { bold: true, italic: true, ..st };
+                    push_text(&mut out, &mut buf, &st, &link);
+                    let inner = Style { bold: true, italic: true, ..st.clone() };
                     out.extend(inline(slice(chars, i + 3, end), inner, link.clone(), depth + 1));
                     i = end + 3;
                 }
@@ -198,8 +338,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 let pat = [c, c];
                 match find(chars, i + 2, &pat) {
                     Some(end) if end > i + 2 => {
-                        push_text(&mut out, &mut buf, st, &link);
-                        let mut inner = st;
+                        push_text(&mut out, &mut buf, &st, &link);
+                        let mut inner = st.clone();
                         if c == '*' {
                             inner.bold = true;
                         } else {
@@ -216,8 +356,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             }
             '*' if depth < MAX_DEPTH && next.is_some_and(|n| !n.is_whitespace()) => match find(chars, i + 1, &['*']) {
                 Some(end) if end > i + 1 => {
-                    push_text(&mut out, &mut buf, st, &link);
-                    let mut inner = st;
+                    push_text(&mut out, &mut buf, &st, &link);
+                    let mut inner = st.clone();
                     inner.italic = true;
                     out.extend(inline(slice(chars, i + 1, end), inner, link.clone(), depth + 1));
                     i = end + 1;
@@ -229,11 +369,14 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             },
             '$' => match find(chars, i + 1, &['$']) {
                 Some(end) if end > i + 1 && !slice(chars, i + 1, end).contains(&'\n') => {
-                    push_text(&mut out, &mut buf, st, &link);
+                    push_text(&mut out, &mut buf, &st, &link);
                     out.push(Span {
                         text: slice(chars, i + 1, end).iter().collect(),
                         math: true,
                         font_size: st.font_size,
+                        font_family: st.font_family.clone(),
+                        underline: st.underline,
+                        script: st.script,
                         link: link.clone(),
                         ..Span::default()
                     });
@@ -246,10 +389,19 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             },
             '!' if next == Some('[') => match parse_link(chars, i + 1) {
                 Some((alt, url, after)) => {
-                    push_text(&mut out, &mut buf, st, &link);
+                    push_text(&mut out, &mut buf, &st, &link);
                     // Preserve the surrounding link when an image is nested in one. This is
                     // how attachment cards (`[![icon](icon) name](file)`) retain their target.
-                    out.push(Span { text: alt, image: Some(url), font_size: st.font_size, link: link.clone(), ..Span::default() });
+                    out.push(Span {
+                        text: alt,
+                        image: Some(url),
+                        font_size: st.font_size,
+                        font_family: st.font_family.clone(),
+                        underline: st.underline,
+                        script: st.script,
+                        link: link.clone(),
+                        ..Span::default()
+                    });
                     i = after;
                 }
                 None => {
@@ -259,9 +411,9 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             },
             '[' if depth < MAX_DEPTH => match parse_link(chars, i) {
                 Some((label, url, after)) => {
-                    push_text(&mut out, &mut buf, st, &link);
+                    push_text(&mut out, &mut buf, &st, &link);
                     let label_chars: Vec<char> = label.chars().collect();
-                    out.extend(inline(&label_chars, st, Some(url), depth + 1));
+                    out.extend(inline(&label_chars, st.clone(), Some(url), depth + 1));
                     i = after;
                 }
                 None => {
@@ -275,7 +427,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             }
         }
     }
-    push_text(&mut out, &mut buf, st, &link);
+    push_text(&mut out, &mut buf, &st, &link);
     out
 }
 
@@ -501,6 +653,23 @@ mod tests {
         let invalid = parse_inline("<span style=\"font-size: 73pt\">too large</span>");
         assert_eq!(text_of(&invalid), "<span style=\"font-size: 73pt\">too large</span>");
         assert!(invalid.iter().all(|span| span.font_size.is_none()));
+    }
+
+    #[test]
+    fn nested_identical_inline_tags_preserve_all_text_and_marks() {
+        for tag in ["u", "sub", "sup"] {
+            let source = format!("<{tag}>before <{tag}>inside</{tag}> after</{tag}>");
+            let spans = parse_inline(&source);
+            assert_eq!(text_of(&spans), "before inside after", "{tag}");
+            for span in &spans {
+                match tag {
+                    "u" => assert!(span.underline),
+                    "sub" => assert_eq!(span.script, Some(Script::Subscript)),
+                    "sup" => assert_eq!(span.script, Some(Script::Superscript)),
+                    _ => {}
+                }
+            }
+        }
     }
 
     #[test]
