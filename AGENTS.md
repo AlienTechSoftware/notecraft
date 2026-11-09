@@ -77,8 +77,9 @@ NoteCraft is an open-source, clean-room recreation of the OneNote notebook exper
 - Keep shared contracts and behavior platform-neutral while using useful native
   platform support through isolated implementations. Name platform-specific
   files `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for
-  macOS and `.lnx.*` for Linux. Rust must select these files explicitly through
-  `cfg`-gated module wiring; the suffix alone does not select a file.
+  macOS, `.lnx.*` for Linux, `.droid.*` for Android, and `.ios.*` for iOS. Rust
+  must select these files explicitly through `cfg`-gated module wiring; the
+  suffix alone does not select a file.
 - **Union, not intersection.** NoteCraft does not reduce every platform to what they
   all share. Each platform branch uses what that platform does best, and a shared
   fallback is only for a platform with no specialized branch yet. Any missing
@@ -153,6 +154,8 @@ purpose summary.
 | `nc-arch` | Level 1: architecture authority | System architecture, MVC boundaries, crate layering, ownership, data flow, and cross-platform constraints. | Does not define feature details or UI polish. Routes feature design to `nc-hl-design`. |
 | `nc-arch-x-plat` | Architecture rule: platforms | Union, not intersection: each platform branch uses what that platform does best, `<feature>.<platform>.<ext>` files, `cfg`-gated wiring, and a visible note for anything missing. | Does not own a feature's design. Applies inside `nc-arch` and every feature that touches a platform service. |
 | `nc-hl-design` | Level 2: design router | Feature scope, architecture handoff, state and data-flow design, decisions, risks, and acceptance criteria. | Does not replace `nc-arch` or implement MVC details. Routes the detailed design to the relevant specialist below. |
+| `nc-design-artcraft-integration` | Design specialist: ArtCraft integration | Reuse and adapt established ArtCraft suite patterns, shared tools, and Android integration guidance while preserving NoteCraft product and architecture boundaries. | Does not override NoteCraft requirements, repository boundaries, licenses, or platform rules. |
+| `nc-design-egui-integration` | Design specialist: egui integration | egui and winit input boundaries, semantic events, raw input adapters, clipboard behavior, and ArtCraft egui interaction patterns. | Does not own commands, product behavior, or platform service implementation. Consult `nc-design-controller` and `nc-arch-x-plat`. |
 | `nc-prod` | Product authority | Product requirements, non-negotiable behavior, local-file model, OneNote behavior, import, and format parity. | Does not design crate APIs or implement features. |
 | `nc-dom-ser` | MVC specialist: DOM and persistence | HTML and CMGFM page model, DOM semantics, serialization, deserialization, asset references, round trips, and cross-format parity. | Does not own general architecture or UI styling. Consult with `nc-arch`; route feature design through `nc-hl-design`. |
 | `nc-code-rust` | Implementation specialist | Rust code quality, error handling, logging, tests, linting, and maintainable crate implementation. | Does not decide product scope or architecture. Implements the approved design. |
@@ -173,6 +176,9 @@ purpose summary.
 
 Use the smallest set that covers the work, in this order when the change is substantial:
 `nc-arch` -> `nc-hl-design` -> the relevant MVC or UI specialist -> `nc-code-rust`.
+When a change integrates with ArtCraft conventions or tooling, also consult
+`nc-design-artcraft-integration`. When it crosses egui, eframe, winit, or raw input
+boundaries, consult `nc-design-egui-integration`.
 Add `nc-prod` when product requirements are involved, `nc-dom-ser` when page or DOM
 representation is involved, `nc-runtime-diagnostics` when logs, telemetry, sessions, or
 runtime evidence are involved, and `nc-reelase-signoff` for release work. `nc-ua` owns the
