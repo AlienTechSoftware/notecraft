@@ -1,0 +1,32 @@
+name: Build website WASM
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "website/**"
+      - ".github/workflows/build-website.yml"
+      - ".github/workflows/deploy-website.yml"
+      - ".github/workflows/website-pipeline.yml"
+      - ".github/web-build/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "apps/**"
+      - "crates/**"
+      - "docs/demo/**"
+      - "assets/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-website-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/website-pipeline.yml
+    with:
+      deploy: false
