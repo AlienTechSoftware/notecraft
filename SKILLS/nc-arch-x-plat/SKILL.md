@@ -118,3 +118,8 @@ normal default and its tests must remain portable.
 6. For path changes, check both separator behavior and the semantic location on Windows and Linux;
    do not rely on a Windows-only local pass.
 7. Update the feature-parity table and the relevant `SKILLS/*` notes.
+
+## References
+
+- [`references/android-ios-goals.md`](references/android-ios-goals.md): Android and iOS goals
+  and layout (goals only; no folder move yet).
