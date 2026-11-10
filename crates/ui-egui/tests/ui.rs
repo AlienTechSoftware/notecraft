@@ -6549,3 +6549,56 @@ fn a_selected_box_takes_direction_tags_and_lists_as_a_whole() {
         h.state().body().unwrap_or_default()
     );
 }
+
+#[test]
+fn a_picture_in_each_of_two_stacked_boxes_can_be_selected_and_resized() {
+    let (_t, mut app, s) = sample_app("ui-two-printout-boxes");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let body = "First card\n\n<img src=\"assets/koala.png\" alt=\"one\" width=\"300\" height=\"60\">\n\nSecond card\n\n<img src=\"assets/koala.png\" alt=\"two\" width=\"300\" height=\"60\">\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": body}})).expect("write the page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,2; 0,150,300,2"}}))
+        .expect("arrange two boxes");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the page");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+    for (block, top) in [(1u64, 0.0), (3u64, 150.0)] {
+        let mut selected = false;
+        for dy in (0..8).map(|n| 30.0 + 12.0 * f64::from(n)) {
+            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + dy})).expect("click");
+            settle(&mut h);
+            let v = look_at(&mut h);
+            if v.pointer("/page/selectedObject/block").and_then(Value::as_u64) == Some(block) {
+                selected = true;
+                break;
+            }
+        }
+        assert!(selected, "picture block {block} was never selected: {}", look_at(&mut h));
+        let index = (block / 2) as usize;
+        let width =
+            |h: &mut Harness<'_, NoteCraftApp>| look_at(h).pointer(&format!("/page/containers/{index}/width")).and_then(Value::as_f64).unwrap_or(0.0);
+        let before = width(&mut h);
+        let mut grew = false;
+        for dy in (0..10).map(|n| 30.0 + 8.0 * f64::from(n)) {
+            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + 55.0})).expect("select the picture again");
+            settle(&mut h);
+            let (x, y) = (ox + 6.0 + 300.0, oy + top + dy);
+            ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("press the edge");
+            for step in 1..=4 {
+                ask(&mut h, "ui.move", json!({"x": x + 15.0 * f64::from(step), "y": y})).expect("drag the edge");
+                pump(&mut h);
+            }
+            ask(&mut h, "ui.release", json!({"x": x + 60.0, "y": y})).expect("release the edge");
+            settle(&mut h);
+            if width(&mut h) > before + 30.0 {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "picture block {block} did not resize: {}", look_at(&mut h));
+    }
+}

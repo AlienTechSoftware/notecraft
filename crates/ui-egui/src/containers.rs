@@ -171,6 +171,8 @@ pub struct Moved {
     /// before them or a blank box before them went ([`drop_if_blank`]). The window writes
     /// them into the page's file.
     pub justified: bool,
+    /// How far down the page, in page points, the containers reach.
+    pub bottom: f32,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -558,7 +560,7 @@ pub fn show(
                     }
 
                     // Handle resize drag
-                    if handle_response.dragged() && standalone_image {
+                    if handle_response.dragged() && matches!(blocks.get(*block), Some(Block::Image { .. })) {
                         let frame_delta = handle_response.drag_delta();
                         let block_idx = *block;
                         let shift = ui.input(|input| input.modifiers.shift);
@@ -576,10 +578,17 @@ pub fn show(
                             zoom
                         );
                         let geometry = resize_image(start.width, start.height, delta / zoom, idx, shift);
+                        // A picture sharing its box with other blocks (a printout page under its
+                        // attachment card) keeps the box in place and only widens it to hold the
+                        // picture. The height follows the content.
                         if let Some(c) = boxes.get_mut(i) {
-                            c.x = start.x + geometry.offset.x;
-                            c.y = start.y + geometry.offset.y;
-                            c.width = geometry.width;
+                            if standalone_image {
+                                c.x = start.x + geometry.offset.x;
+                                c.y = start.y + geometry.offset.y;
+                                c.width = geometry.width;
+                            } else {
+                                c.width = c.width.max(geometry.width);
+                            }
                         }
                         if let Some(Block::Image { width, height, .. }) = blocks.get_mut(block_idx) {
                             *width = Some(geometry.width);

@@ -90,7 +90,8 @@ pub fn attachment(format: PageFormat, link: &str, name: &str) -> String {
 /// A page image produced by Insert as Printout, placed immediately after its attachment card.
 pub fn printout_page(format: PageFormat, link: &str, page: usize) -> String {
     match format {
-        PageFormat::Html => format!("\n<img src=\"{link}\" alt=\"Printout page {page}\">\n"),
+        // In a paragraph of its own, or neighbouring pages merge into one line of inline images.
+        PageFormat::Html => format!("\n<p><img src=\"{link}\" alt=\"Printout page {page}\"></p>\n"),
         PageFormat::Cmgfm => format!("\n![Printout page {page}]({link})\n"),
     }
 }
@@ -215,7 +216,49 @@ mod tests {
         assert_eq!(printout_page(PageFormat::Cmgfm, "assets/a.printout-001.png", 1), "\n![Printout page 1](assets/a.printout-001.png)\n");
         assert_eq!(
             printout_page(PageFormat::Html, "assets/a.printout-001.png", 1),
-            "\n<img src=\"assets/a.printout-001.png\" alt=\"Printout page 1\">\n"
+            "\n<p><img src=\"assets/a.printout-001.png\" alt=\"Printout page 1\"></p>\n"
         );
+    }
+
+    #[test]
+    fn every_printout_page_is_its_own_resizable_image_block() {
+        use notecraft_formats::markdown::Block;
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let mut text = attachment(format, "assets/a.pdf", "a.pdf");
+            for page in 1..=3 {
+                text.push_str(&printout_page(format, &format!("assets/a.pdf.printout-{page:03}.png"), page));
+            }
+            let (blocks, _) = notecraft_formats::boxes::read(format, &text);
+            let images = blocks.iter().filter(|b| matches!(b, Block::Image { src, .. } if src.contains("printout"))).count();
+            assert_eq!(images, 3, "{format:?}: {blocks:?}");
+        }
+    }
+
+    #[test]
+    fn resized_printout_pages_survive_a_save_and_reload_as_separate_blocks() {
+        use notecraft_formats::markdown::Block;
+        use notecraft_model::Container;
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let mut text = String::new();
+            for file in ["a.pdf", "b.pdf"] {
+                text.push_str(&attachment(format, &format!("assets/{file}"), file));
+                for page in 1..=2 {
+                    text.push_str(&printout_page(format, &format!("assets/{file}.printout-{page:03}.png"), page));
+                }
+            }
+            let (mut blocks, _) = notecraft_formats::boxes::read(format, &text);
+            let before = blocks.len();
+            if let Some(Block::Image { width, height, .. }) =
+                blocks.iter_mut().find(|b| matches!(b, Block::Image { src, .. } if src.contains("printout")))
+            {
+                *width = Some(300.0);
+                *height = Some(400.0);
+            }
+            let boxes = [Container::new(0.0, 0.0, 500.0, blocks.len())];
+            let saved = notecraft_formats::boxes::write(format, &blocks, Some(&boxes));
+            let (again, _) = notecraft_formats::boxes::read(format, &saved);
+            assert_eq!(again, blocks, "{format:?}: {saved}");
+            assert_eq!(again.len(), before);
+        }
     }
 }

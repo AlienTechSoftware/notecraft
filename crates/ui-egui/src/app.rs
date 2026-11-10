@@ -334,6 +334,8 @@ struct Editor {
     /// text, one column; moving, resizing or adding a box arranges it, and from then on the
     /// boxes are elements around the blocks.
     arranged: bool,
+    /// How far down the page the containers reached when last drawn, in page points.
+    content_bottom: Option<f32>,
 }
 
 impl Editor {
@@ -1396,6 +1398,7 @@ impl NoteCraftApp {
                 page_dir: page.dir,
                 boxes,
                 arranged,
+                content_bottom: None,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 justified: notecraft_store::page::justified(dir).unwrap_or_default(),
                 across: None,
@@ -1583,6 +1586,25 @@ impl NoteCraftApp {
         ed.dirty_since = Some(Instant::now());
     }
 
+    /// Adds the blocks of `text` to the page in a container of their own, below what is
+    /// already on the page, so each printout can be moved and sized apart from the others.
+    fn insert_in_own_container(&mut self, text: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let below = ed.content_bottom;
+        let (added, _) = notecraft_formats::boxes::read(ed.format, text);
+        if added.is_empty() {
+            return;
+        }
+        let width = ed.boxes.first().map_or(360.0, |c| c.width);
+        let before = ed.blocks.len();
+        ed.blocks.extend(added.iter().cloned());
+        let below = below.unwrap_or_else(|| ed.boxes.iter().map(|c| c.y + 60.0).fold(0.0, f32::max));
+        ed.boxes = notecraft_model::container::append(&ed.boxes, before, added.len(), width, below, 12.0);
+        ed.arranged = true;
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+    }
+
     fn insert(&mut self, text: &str) {
         let cursor = self.cursor;
         if let Some(ed) = self.editor.as_mut() {
@@ -1679,7 +1701,7 @@ impl NoteCraftApp {
             let image = format!("assets/{base}.printout-{:03}.png", index + 1);
             text.push_str(&snippets::printout_page(format, &image, index + 1));
         }
-        self.insert(&text);
+        self.insert_in_own_container(&text);
         self.say(crate::i18n::format_message_id(
             "ui.inserted_name_and_count_printout_pages",
             &[("name", &name), ("count", &generated.len().to_string())],
@@ -5323,6 +5345,7 @@ impl NoteCraftApp {
                                 ed.rebuild_body();
                                 *from_blocks = true;
                             }
+                            ed.content_bottom = Some(moved.bottom);
                             if moved.boxes {
                                 *boxes_moved = true;
                             }
