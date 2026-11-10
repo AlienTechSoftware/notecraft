@@ -60,6 +60,8 @@ pub enum Act {
     RuleLines(RuleLines),
     /// Show or hide the page's title line.
     ToggleTitle,
+    /// Snap boxes to the page's grid when they are moved or resized, or stop.
+    ToggleSnap,
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -348,13 +350,15 @@ pub fn paint_paper(painter: &egui::Painter, area: egui::Rect, rules: RuleLines, 
     }
 }
 
-/// Paints rule lines in a viewport while keeping their phase attached to the infinite canvas.
+/// Paints rule lines in a viewport, one of them through `anchor` and the rest a step apart, so
+/// they stay put on the page as it pans and a box snapped to the page's grid sits on a line.
+/// The window passes the page's origin, which is where box positions are counted from.
 pub fn paint_paper_canvas(
     painter: &egui::Painter,
     area: egui::Rect,
     rules: RuleLines,
     scale: f32,
-    offset: egui::Vec2,
+    anchor: egui::Pos2,
     line: egui::Color32,
     strong: egui::Color32,
 ) {
@@ -362,12 +366,8 @@ pub fn paint_paper_canvas(
         return;
     }
     let step = (rules.step() * scale).max(4.0);
-    let first_line = |min: f32, offset: f32| {
-        let phase = (offset - min).rem_euclid(step);
-        if phase < 0.01 { min + step } else { min + step - phase }
-    };
-    let index = |screen: f32, offset: f32| {
-        let line = ((screen - offset) / step).round();
+    let index = |screen: f32, anchor: f32| {
+        let line = ((screen - anchor) / step).round();
         #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
         {
             line.clamp(i64::MIN as f32, i64::MAX as f32) as i64
@@ -375,18 +375,23 @@ pub fn paint_paper_canvas(
     };
     let colour = |n: i64| if rules.fives() && n.rem_euclid(5) == 0 { strong } else { line };
 
-    let mut y = first_line(area.min.y, offset.y);
+    let mut y = first_grid_line(area.min.y, anchor.y, step);
     while y < area.max.y {
-        painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, colour(index(y, offset.y))));
+        painter.line_segment([egui::pos2(area.min.x, y), egui::pos2(area.max.x, y)], egui::Stroke::new(1.0, colour(index(y, anchor.y))));
         y += step;
     }
     if rules.squares() {
-        let mut x = first_line(area.min.x, offset.x);
+        let mut x = first_grid_line(area.min.x, anchor.x, step);
         while x < area.max.x {
-            painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, colour(index(x, offset.x))));
+            painter.line_segment([egui::pos2(x, area.min.y), egui::pos2(x, area.max.y)], egui::Stroke::new(1.0, colour(index(x, anchor.x))));
             x += step;
         }
     }
+}
+
+/// The first line at or after `min` on a grid `step` apart that has a line through `anchor`.
+fn first_grid_line(min: f32, anchor: f32, step: f32) -> f32 {
+    anchor + ((min - anchor) / step).ceil() * step
 }
 
 /// What the View tab shows about the window.
@@ -399,6 +404,8 @@ pub struct View<'a> {
     pub full_page: bool,
     pub rules: RuleLines,
     pub hide_title: bool,
+    /// Whether boxes snap to the page's grid when they are moved or resized.
+    pub snap: bool,
     pub zoom_percent: u32,
     /// What the pointer does on the page.
     pub pointer: Pointer,
@@ -2750,6 +2757,20 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             if small(ui, None, "T", crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
             }
+            if small(
+                ui,
+                None,
+                // i18n-exempt: # is the compact symbol on the snap-to-grid toggle.
+                "#",
+                crate::tl_id!("ui.snap_to_grid"),
+                crate::tl_id!("ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely"),
+                view.snap,
+                t,
+            )
+            .clicked()
+            {
+                acts.push(Act::ToggleSnap);
+            }
             not_built(ui, crate::tl_id!("ui.page_colour"), t);
             not_built(ui, crate::tl_id!("ui.paper_size"), t);
         });
@@ -2900,6 +2921,27 @@ fn big_mark(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
     resp.on_hover_text(tip)
+}
+
+#[cfg(test)]
+mod grid_line_tests {
+    use super::first_grid_line;
+
+    /// Issue #79: the paper's lines go through the anchor and every step from it, whichever side
+    /// of the viewport's edge the anchor is on, so they move with the page as it pans.
+    #[test]
+    fn grid_lines_go_through_the_anchor_and_move_with_it() {
+        for (min, anchor) in [(100.0, 100.0), (100.0, 107.0), (100.0, 40.0), (100.0, 400.0)] {
+            let first = first_grid_line(min, anchor, 18.0);
+            assert!(first >= min - 0.001 && first < min + 18.0, "the first line is in the viewport: min={min} anchor={anchor} first={first}");
+            let steps = (first - anchor) / 18.0;
+            assert!((steps - steps.round()).abs() < 0.001, "it is a whole number of steps from the anchor: {first} vs {anchor}");
+        }
+        // Panning the page by 3 points moves its lines by the same 3 points, the same way.
+        let before = first_grid_line(100.0, 107.0, 18.0);
+        let after = first_grid_line(100.0, 110.0, 18.0);
+        assert!((after - before - 3.0).abs() < 0.001, "lines follow the page: {before} -> {after}");
+    }
 }
 
 #[cfg(test)]

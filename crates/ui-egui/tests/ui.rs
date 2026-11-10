@@ -2978,117 +2978,55 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
     assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
 }
 
-/// Issue #65: open paper to the right of the page, which the canvas can be scrolled to, takes a
-/// click like the paper on the page does. Beside a box as wide as the page (a printout) and under
-/// it, the click starts a box of the usual width where it was made.
-#[test]
-fn a_click_on_open_paper_right_of_the_page_starts_a_box_there() {
-    let (_t, app, s) = sample_app("ui-click-beside-page");
-    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
-    settle(&mut h);
-    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
-    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\"><p>a box as wide as the page</p><p>and a second line</p></div>\n";
-    let made = ask(
-        &mut h,
-        "engine.execute",
-        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Wide", "format": "html"}}),
-    )
-    .expect("a page");
-    let dir = made.as_str().expect("its path").to_string();
-    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
-    for (what, dy) in [("beside the box", 24.0), ("under the box, right of the page", 300.0)] {
-        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("put the page back");
-        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
-        settle(&mut h);
-        let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-        assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
-        // Box coordinates start at the page's origin; the box ends 760 points across.
-        let origin = &before["origin"];
-        let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
-        let (x, y) = (ox + 760.0 + 80.0, oy + dy);
-        let canvas = h.state().page_rect().expect("the canvas");
-        assert!(canvas.contains(egui::pos2(x, y)), "the click lands on the canvas: ({x}, {y}) in {canvas:?}");
-        ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the page");
-        settle(&mut h);
-        let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-        let boxes = after["containers"].as_array().cloned().unwrap_or_default();
-        assert_eq!(boxes.len(), 2, "{what}: a click right of the page starts a box: {after}");
-        let new_box = &boxes[1];
-        assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "{what}: the box starts where the click was, past the page: {new_box}");
-        assert_eq!(new_box["width"].as_f64(), Some(360.0), "{what}: a box of the usual width, not squeezed to nothing: {new_box}");
-        assert!(after["caret"] != Value::Null, "{what}: the caret is in the new box: {after}");
-        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
-        settle(&mut h);
+/// Every rectangle painted in the last frame, nested shapes included.
+fn painted_rects(h: &Harness<'_, NoteCraftApp>) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push(r.rect),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
     }
-
-    // A page with nothing on it (only the box it keeps for its first words, which holds nothing).
-    let made = ask(
-        &mut h,
-        "engine.execute",
-        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Empty", "format": "html"}}),
-    )
-    .expect("an empty page");
-    let empty = made.as_str().expect("its path").to_string();
-    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": empty, "body": ""}})).expect("nothing on it");
-    ask(&mut h, "ui.open", json!({"path": empty})).expect("open it");
-    settle(&mut h);
-    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(before["blocks"].as_u64(), Some(0), "nothing on the page: {before}");
-    let had = before["containers"].as_array().map_or(0, Vec::len);
-    let origin = &before["origin"];
-    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
-    ask(&mut h, "ui.click", json!({"x": ox + 840.0, "y": oy + 60.0})).expect("click right of an empty page");
-    settle(&mut h);
-    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
-    let new_box = boxes.iter().find(|b| b["x"].as_f64().unwrap_or(0.0) > 760.0);
-    assert!(new_box.is_some() && boxes.len() >= had, "a click right of an empty page starts a box there: {after}");
-    assert!(after["caret"] != Value::Null, "the caret is in it: {after}");
+    let mut out = Vec::new();
+    for clipped in &h.output().shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
 }
 
-/// Issue #65, scrolled: once the page is scrolled down, open paper right of a tall box (a long
-/// printout) still takes a click. The click target used to be one view tall, counted from the
-/// top of the scrolled page, so it ran out partway down the window.
+/// A box shows its edges and its drag strip while the pointer is on the strip, not only while it
+/// is over the words under it. Moving up onto the strip to drag the box used to make both vanish.
 #[test]
-fn a_click_right_of_a_tall_box_still_starts_a_box_once_the_page_is_scrolled() {
-    let (_t, app, s) = sample_app("ui-click-beside-scrolled");
-    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
+    let (_t, app, s) = sample_app("ui-box-strip-hover");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
     settle(&mut h);
     let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
-    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
-    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n");
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"40\" data-width=\"300\"><p>a box to drag</p></div>\n";
     let made = ask(
         &mut h,
         "engine.execute",
-        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Tall", "format": "html"}}),
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Strip", "format": "html"}}),
     )
     .expect("a page");
     let dir = made.as_str().expect("its path").to_string();
     ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
     ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
     settle(&mut h);
-    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 400.0})).expect("pointer onto the page");
-    settle(&mut h);
-    for _ in 0..3 {
-        ask(&mut h, "ui.scroll", json!({"y": -300.0})).expect("scroll down");
-        settle(&mut h);
-    }
-    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
-    let origin = &before["origin"];
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(page["caret"], Value::Null, "nothing is being written in the box: {page}");
+    let origin = &page["origin"];
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
-    assert!(oy < 0.0, "the page is scrolled: its top is above the window ({oy})");
-    // Low in the window, beside the box: the box still runs on below.
-    let (x, y) = (ox + 760.0 + 80.0, 700.0);
-    ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the tall box");
-    settle(&mut h);
-    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
-    assert_eq!(boxes.len(), 2, "a click right of the scrolled box starts a box: {after}");
-    let new_box = &boxes[1];
-    let want_y = (y - oy) as f64;
-    assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "past the page, where the click was: {new_box}");
-    assert!((new_box["y"].as_f64().unwrap_or(0.0) - want_y).abs() < 40.0, "at the height of the click on the page ({want_y}): {new_box}");
+    // The strip runs along the top of the box, 14 points high, as wide as the box and its padding.
+    let strip = egui::Rect::from_min_size(egui::pos2(ox + 40.0, oy + 40.0), egui::vec2(300.0 + 12.0, 14.0));
+    let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 2.0 && (a.max - b.max).length() < 2.0;
+
+    for (what, at) in [("over the words", egui::pos2(strip.center().x, strip.max.y + 12.0)), ("on the drag strip", strip.center())] {
+        ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move the pointer");
+        settle(&mut h);
+        let rects = painted_rects(&h);
+        assert!(rects.iter().any(|r| near(*r, strip)), "{what}: the drag strip is drawn at {strip:?}; painted: {rects:?}");
+    }
 }
 
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
@@ -6714,4 +6652,331 @@ fn a_picture_in_each_of_two_stacked_boxes_can_be_selected_and_resized() {
         }
         assert!(grew, "picture block {block} did not resize: {}", look_at(&mut h));
     }
+}
+
+/// A sample app whose settings give the paper `rules` and say whether boxes snap to its grid.
+fn snapping_app(label: &str, rules: &str, snap: bool) -> (TempDir, NoteCraftApp, Sample) {
+    let t = TempDir::new(label);
+    let mut s = session(&t);
+    s.settings.set("rule_lines", rules).expect("paper setting");
+    s.settings.set("snap_to_grid", if snap { "true" } else { "false" }).expect("snap setting");
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    (t, app, sample)
+}
+
+/// The sample's Markdown page in one box at 40,20 and 320 wide, open in a window, with the
+/// page's origin on screen.
+fn one_box_page(app: NoteCraftApp, s: &Sample) -> (Harness<'static, NoteCraftApp>, egui::Pos2) {
+    let page = s.md_page.to_string_lossy().to_string();
+    let mut app = app;
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,{blocks}")}}))
+        .expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    (h, origin)
+}
+
+fn page_origin(h: &mut Harness<'_, NoteCraftApp>) -> egui::Pos2 {
+    let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let at = |i: usize| origin.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    egui::pos2(at(0), at(1))
+}
+
+/// The first box as the page keeps it: x, y, width.
+fn first_box(h: &mut Harness<'_, NoteCraftApp>) -> (f32, f32, f32) {
+    let b = ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    let n = |k: &str| b.get(k).and_then(Value::as_f64).unwrap_or(-1.0) as f32;
+    (n("x"), n("y"), n("width"))
+}
+
+/// Presses at `from`, moves by `by` in two steps, and lets go there.
+fn drag_by(h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, by: egui::Vec2) {
+    ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    pump(h);
+    let mid = from + by * 0.5;
+    ask(h, "ui.move", json!({"x": mid.x, "y": mid.y})).expect("move");
+    pump(h);
+    let to = from + by;
+    ask(h, "ui.move", json!({"x": to.x, "y": to.y})).expect("move");
+    pump(h);
+    ask(h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release");
+    pump(h);
+    settle(h);
+}
+
+fn on_grid(v: f32, step: f32) -> bool {
+    let r = (v / step).round() * step;
+    (v - r).abs() < 0.01
+}
+
+/// Where box 0's move strip is, for a box at `x, y` page points and zoom `z`.
+fn strip_at(origin: egui::Pos2, x: f32, y: f32, z: f32) -> egui::Pos2 {
+    origin + egui::vec2(x * z + 100.0 * z, y * z + 7.0 * z)
+}
+
+/// Issue #79: with snapping off, moving a box is free, exactly as before.
+#[test]
+fn with_snapping_off_a_moved_box_goes_where_it_was_let_go() {
+    let (_t, app, s) = snapping_app("ui-snap-off", "grid-medium", false);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!((x - 101.0).abs() < 0.5 && (y - 55.0).abs() < 0.5, "the box followed the pointer exactly: ({x}, {y})");
+}
+
+/// Issue #79: with snapping on and squared paper, a moved box lands on the paper's grid.
+#[test]
+fn with_snapping_on_a_moved_box_lands_on_the_paper_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-move", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 18.0) && on_grid(y, 18.0), "the box's corner is on the 18 pt grid: ({x}, {y})");
+    assert!((x - 101.0).abs() <= 9.0 && (y - 55.0).abs() <= 9.0, "on the grid line nearest where it was let go: ({x}, {y})");
+}
+
+/// Issue #79: holding Alt places the box freely, without turning snapping off.
+#[test]
+fn holding_alt_while_dragging_places_a_box_freely() {
+    let (_t, app, s) = snapping_app("ui-snap-alt", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    let alt = egui::Modifiers { alt: true, ..Default::default() };
+    h.input_mut().events.push(egui::Event::ModifiersChanged(alt));
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    h.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+    h.step();
+    let (x, y, _) = first_box(&mut h);
+    assert!((x - 101.0).abs() < 0.5 && (y - 55.0).abs() < 0.5, "with Alt the box is where it was let go: ({x}, {y})");
+}
+
+/// Issue #79: resizing snaps the box's right edge to the grid, and never below the narrowest box.
+#[test]
+fn with_snapping_on_resizing_puts_the_right_edge_on_the_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-resize", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    // The resize edge is the last 10 points of the box's frame, which starts under the strip.
+    let edge = origin + egui::vec2(40.0 + 320.0 + 12.0 - 4.0, 20.0 + 14.0 + 10.0);
+    drag_by(&mut h, edge, egui::vec2(53.0, 0.0));
+    let (x, _, width) = first_box(&mut h);
+    assert!(on_grid(x + width, 18.0), "the right edge is on the grid: x={x} width={width}");
+    assert!(width > 320.0, "it grew: {width}");
+}
+
+/// Issue #79: on plain paper the grid is 12 points.
+#[test]
+fn with_snapping_on_plain_paper_a_box_lands_on_a_12_point_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-plain", "none", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 12.0) && on_grid(y, 12.0), "the corner is on the 12 pt grid: ({x}, {y})");
+}
+
+/// Issue #79: the grid is in page points, so a box snaps to the same places when zoomed in.
+#[test]
+fn snapping_is_the_same_at_twice_the_zoom() {
+    let (_t, app, s) = snapping_app("ui-snap-zoom", "grid-medium", true);
+    let (mut h, _) = one_box_page(app, &s);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    for _ in 0..10 {
+        h.get_by_label("Zoom In").click();
+        settle(&mut h);
+    }
+    let zoom = h.state().zoom_percent() as f32 / 100.0;
+    assert!((zoom - 2.0).abs() < 0.01, "zoomed to 200 %: {zoom}");
+    let origin = page_origin(&mut h);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, zoom), egui::vec2(61.0 * zoom, 35.0 * zoom));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 18.0) && on_grid(y, 18.0), "on the same 18 pt grid at 200 %: ({x}, {y})");
+}
+
+/// Issue #79: the View tab's Snap to grid is a toggle, and the choice is kept for next time.
+#[test]
+fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
+    let (t, app, _s) = snapping_app("ui-snap-toggle", "grid-medium", false);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Snap to grid").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("snap_to_grid = \"true\""), "the choice is saved:\n{saved}");
+    h.get_by_label("Snap to grid").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
+}
+
+/// Every straight line painted in the last frame, as its two ends.
+fn painted_segments(h: &Harness<'_, NoteCraftApp>) -> Vec<[egui::Pos2; 2]> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<[egui::Pos2; 2]>) {
+        match shape {
+            egui::Shape::LineSegment { points, .. } => out.push(*points),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &h.output().shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// Issue #79: the paper's lines are drawn from the page's origin, so a box snapped to the grid
+/// has a line along its left edge and one along its top, in a narrow window and a wide one.
+#[test]
+fn a_snapped_box_sits_on_the_drawn_paper_lines_whatever_the_window_width() {
+    for width in [1000.0, 1600.0] {
+        let (_t, app, s) = snapping_app("ui-snap-lines", "grid-medium", true);
+        let page = s.md_page.to_string_lossy().to_string();
+        let mut app = app;
+        app.open_path(&page);
+        let mut h = sized_harness(app, LIGHT, egui::vec2(width, 800.0));
+        settle(&mut h);
+        let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+        ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,{blocks}")}}),
+        )
+        .expect("arrange");
+        ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+        settle(&mut h);
+        let origin = page_origin(&mut h);
+        drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+        // A frame drawn with the pointer away from the box, so only the paper's lines are at issue.
+        ask(&mut h, "ui.move", json!({"x": 5.0, "y": 795.0})).expect("move away");
+        settle(&mut h);
+        let (x, y, _) = first_box(&mut h);
+        let origin = page_origin(&mut h);
+        let (left, top) = (origin.x + x, origin.y + y);
+        let lines = painted_segments(&h);
+        let upright = lines.iter().any(|[a, b]| (a.x - b.x).abs() < 0.01 && (a.x - left).abs() < 0.6);
+        let across = lines.iter().any(|[a, b]| (a.y - b.y).abs() < 0.01 && (a.y - top).abs() < 0.6);
+        assert!(upright && across, "width {width}: a paper line runs along the box's left edge ({left}) and its top ({top})");
+    }
+}
+
+/// Issue #65: open paper to the right of the page, which the canvas can be scrolled to, takes a
+/// click like the paper on the page does. Beside a box as wide as the page (a printout) and under
+/// it, the click starts a box of the usual width where it was made.
+#[test]
+fn a_click_on_open_paper_right_of_the_page_starts_a_box_there() {
+    let (_t, app, s) = sample_app("ui-click-beside-page");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\"><p>a box as wide as the page</p><p>and a second line</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Wide", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    for (what, dy) in [("beside the box", 24.0), ("under the box, right of the page", 300.0)] {
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("put the page back");
+        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+        settle(&mut h);
+        let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
+        // Box coordinates start at the page's origin; the box ends 760 points across.
+        let origin = &before["origin"];
+        let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+        let (x, y) = (ox + 760.0 + 80.0, oy + dy);
+        let canvas = h.state().page_rect().expect("the canvas");
+        assert!(canvas.contains(egui::pos2(x, y)), "the click lands on the canvas: ({x}, {y}) in {canvas:?}");
+        ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the page");
+        settle(&mut h);
+        let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+        assert_eq!(boxes.len(), 2, "{what}: a click right of the page starts a box: {after}");
+        let new_box = &boxes[1];
+        assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "{what}: the box starts where the click was, past the page: {new_box}");
+        assert_eq!(new_box["width"].as_f64(), Some(360.0), "{what}: a box of the usual width, not squeezed to nothing: {new_box}");
+        assert!(after["caret"] != Value::Null, "{what}: the caret is in the new box: {after}");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+        settle(&mut h);
+    }
+
+    // A page with nothing on it (only the box it keeps for its first words, which holds nothing).
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Empty", "format": "html"}}),
+    )
+    .expect("an empty page");
+    let empty = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": empty, "body": ""}})).expect("nothing on it");
+    ask(&mut h, "ui.open", json!({"path": empty})).expect("open it");
+    settle(&mut h);
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(before["blocks"].as_u64(), Some(0), "nothing on the page: {before}");
+    let had = before["containers"].as_array().map_or(0, Vec::len);
+    let origin = &before["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    ask(&mut h, "ui.click", json!({"x": ox + 840.0, "y": oy + 60.0})).expect("click right of an empty page");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+    let new_box = boxes.iter().find(|b| b["x"].as_f64().unwrap_or(0.0) > 760.0);
+    assert!(new_box.is_some() && boxes.len() >= had, "a click right of an empty page starts a box there: {after}");
+    assert!(after["caret"] != Value::Null, "the caret is in it: {after}");
+}
+
+/// Issue #65, scrolled: once the page is scrolled down, open paper right of a tall box (a long
+/// printout) still takes a click. The click target used to be one view tall, counted from the
+/// top of the scrolled page, so it ran out partway down the window.
+#[test]
+fn a_click_right_of_a_tall_box_still_starts_a_box_once_the_page_is_scrolled() {
+    let (_t, app, s) = sample_app("ui-click-beside-scrolled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
+    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n");
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Tall", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 400.0})).expect("pointer onto the page");
+    settle(&mut h);
+    for _ in 0..3 {
+        ask(&mut h, "ui.scroll", json!({"y": -300.0})).expect("scroll down");
+        settle(&mut h);
+    }
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
+    let origin = &before["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    assert!(oy < 0.0, "the page is scrolled: its top is above the window ({oy})");
+    // Low in the window, beside the box: the box still runs on below.
+    let (x, y) = (ox + 760.0 + 80.0, 700.0);
+    ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the tall box");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), 2, "a click right of the scrolled box starts a box: {after}");
+    let new_box = &boxes[1];
+    let want_y = (y - oy) as f64;
+    assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "past the page, where the click was: {new_box}");
+    assert!((new_box["y"].as_f64().unwrap_or(0.0) - want_y).abs() < 40.0, "at the height of the click on the page ({want_y}): {new_box}");
 }
