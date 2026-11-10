@@ -282,6 +282,8 @@
 @id	ui.hide_page_title	$$$Hide page title@@@
 @id	ui.hide_the_page_source	$$$Hide the page source@@@
 @id	ui.hide_the_page_title	$$$Hide the page title@@@
+@id	ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely	$$$Snap boxes to the page's grid when you move or resize them. Hold Alt to place one freely.@@@
+@id	ui.snap_to_grid	$$$Snap to grid@@@
 @id	ui.highlight	$$$Highlight@@@
 @id	ui.highlighter	$$$Highlighter@@@
 @id	ui.history	$$$History@@@

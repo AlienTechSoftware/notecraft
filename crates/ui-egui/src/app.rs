@@ -33,6 +33,8 @@ use std::time::Duration;
 // same type everywhere else and performance.now()/Date.now() there.
 use web_time::Instant;
 
+/// The grid boxes snap to on plain paper, in page points: the smallest squared paper's step.
+const PLAIN_SNAP_STEP: f32 = 12.0;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
 const BARS: &str = "\u{2630}";
@@ -330,6 +332,9 @@ struct Editor {
     ink_files: Vec<String>,
     /// Where the page's area starts on screen, reported so a script can find a box.
     origin: egui::Pos2,
+    /// Where the page's origin sits in the panned canvas, from the last frame it was drawn. The
+    /// paper's lines are drawn through it, so they stay with the page and its boxes (issue #79).
+    origin_in_canvas: Option<egui::Vec2>,
     /// Whether the boxes are written into the page's text. A page nobody arranged stays plain
     /// text, one column; moving, resizing or adding a box arranges it, and from then on the
     /// boxes are elements around the blocks.
@@ -677,6 +682,8 @@ pub struct NoteCraftApp {
     gridcraft: Option<std::path::PathBuf>,
     /// The page title line is hidden (OneNote: View, Hide Page Title).
     hide_title: bool,
+    /// Boxes snap to the page's grid when moved or resized (View, Snap to grid; issue #79).
+    snap_to_grid: bool,
     /// The page's zoom. The ribbon and the rest of the window keep their own size.
     zoom_percent: u32,
     /// Recalculate the page zoom from the reading area's width on the next frame.
@@ -733,6 +740,7 @@ impl NoteCraftApp {
         let show_source = false;
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
+        let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         // A table has borders unless it was turned off: OneNote draws them, and a table
         // without them reads as loose columns of words.
         let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
@@ -803,6 +811,7 @@ impl NoteCraftApp {
             table_borders: session_borders,
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
+            snap_to_grid: session_snap,
             zoom_percent: 100,
             fit_page_width: false,
             theme_window: false,
@@ -1162,6 +1171,11 @@ impl NoteCraftApp {
         self.page_rect
     }
 
+    /// The page's zoom, in percent, as the View tab shows it.
+    pub fn zoom_percent(&self) -> u32 {
+        self.zoom_percent
+    }
+
     /// The text in the editor, if a page is open.
     pub fn body(&self) -> Option<&str> {
         self.editor.as_ref().map(|e| e.body.as_str())
@@ -1407,6 +1421,7 @@ impl NoteCraftApp {
                 colour: appearance.1,
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
+                origin_in_canvas: None,
             });
             if !self.icon_recovery_suppressed
                 && let Some(name) = first_missing_attachment_in_source(&page_body, dir).or_else(|| first_legacy_attachment_in_source(&page_body))
@@ -2806,6 +2821,7 @@ impl NoteCraftApp {
             full_page: self.full_page,
             rules: self.rules,
             hide_title: self.hide_title,
+            snap: self.snap_to_grid,
             zoom_percent: self.zoom_percent,
             pointer: self.pointer,
             rack: &self.rack,
@@ -3161,6 +3177,10 @@ impl NoteCraftApp {
             ribbon::Act::ToggleTitle => {
                 self.hide_title = !self.hide_title;
                 let _ = self.session.settings.set("hide_title", if self.hide_title { "true" } else { "false" });
+            }
+            ribbon::Act::ToggleSnap => {
+                self.snap_to_grid = !self.snap_to_grid;
+                let _ = self.session.settings.set("snap_to_grid", if self.snap_to_grid { "true" } else { "false" });
             }
             ribbon::Act::Zoom(step) => {
                 self.zoom_percent = match step {
@@ -5098,6 +5118,9 @@ impl NoteCraftApp {
         let show_source = self.show_source;
         let full_page = self.full_page;
         let (hide_title, rules) = (self.hide_title, self.paper_now());
+        // The grid a moved or resized box snaps to: the paper's own lines, or 12 points on plain
+        // paper. None while snapping is off (issue #79).
+        let snap = self.snap_to_grid.then(|| if rules.on() { rules.step() } else { PLAIN_SNAP_STEP });
         // The wash behind this page, if it carries a colour: a pale tint of it over the
         // page's own background, so the words keep their contrast whatever is chosen.
         let page_colour = self.editor.as_ref().and_then(|e| e.colour).map(|c| {
@@ -5216,7 +5239,9 @@ impl NoteCraftApp {
                         viewport,
                         rules,
                         zoom_scale,
-                        self.canvas_pan,
+                        // Through the page's origin, so a box on the grid sits on a line. A page
+                        // not yet drawn as boxes counts from the canvas's corner.
+                        viewport.translate(self.canvas_pan).min + ed.origin_in_canvas.unwrap_or_default(),
                         tokens.rule_line,
                         tokens.rule_line_strong,
                     );
@@ -5301,6 +5326,7 @@ impl NoteCraftApp {
                                     &mut ed.across,
                                     if hide_title { "" } else { &shown_title },
                                     zoom_scale,
+                                    snap,
                                 )
                             };
                             if moved.changed.blocks && ui.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Text(_)))) {
@@ -5359,6 +5385,7 @@ impl NoteCraftApp {
                                 *justified_moved = true;
                             }
                             ed.origin = moved.origin;
+                            ed.origin_in_canvas = Some(moved.origin - content_rect.min);
                             if moved.changed.link.is_some() {
                                 *follow = moved.changed.link;
                             }

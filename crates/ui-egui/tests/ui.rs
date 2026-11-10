@@ -6602,3 +6602,217 @@ fn a_picture_in_each_of_two_stacked_boxes_can_be_selected_and_resized() {
         assert!(grew, "picture block {block} did not resize: {}", look_at(&mut h));
     }
 }
+
+/// A sample app whose settings give the paper `rules` and say whether boxes snap to its grid.
+fn snapping_app(label: &str, rules: &str, snap: bool) -> (TempDir, NoteCraftApp, Sample) {
+    let t = TempDir::new(label);
+    let mut s = session(&t);
+    s.settings.set("rule_lines", rules).expect("paper setting");
+    s.settings.set("snap_to_grid", if snap { "true" } else { "false" }).expect("snap setting");
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    (t, app, sample)
+}
+
+/// The sample's Markdown page in one box at 40,20 and 320 wide, open in a window, with the
+/// page's origin on screen.
+fn one_box_page(app: NoteCraftApp, s: &Sample) -> (Harness<'static, NoteCraftApp>, egui::Pos2) {
+    let page = s.md_page.to_string_lossy().to_string();
+    let mut app = app;
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,{blocks}")}}))
+        .expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    (h, origin)
+}
+
+fn page_origin(h: &mut Harness<'_, NoteCraftApp>) -> egui::Pos2 {
+    let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+    let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let at = |i: usize| origin.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    egui::pos2(at(0), at(1))
+}
+
+/// The first box as the page keeps it: x, y, width.
+fn first_box(h: &mut Harness<'_, NoteCraftApp>) -> (f32, f32, f32) {
+    let b = ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    let n = |k: &str| b.get(k).and_then(Value::as_f64).unwrap_or(-1.0) as f32;
+    (n("x"), n("y"), n("width"))
+}
+
+/// Presses at `from`, moves by `by` in two steps, and lets go there.
+fn drag_by(h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, by: egui::Vec2) {
+    ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    pump(h);
+    let mid = from + by * 0.5;
+    ask(h, "ui.move", json!({"x": mid.x, "y": mid.y})).expect("move");
+    pump(h);
+    let to = from + by;
+    ask(h, "ui.move", json!({"x": to.x, "y": to.y})).expect("move");
+    pump(h);
+    ask(h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release");
+    pump(h);
+    settle(h);
+}
+
+fn on_grid(v: f32, step: f32) -> bool {
+    let r = (v / step).round() * step;
+    (v - r).abs() < 0.01
+}
+
+/// Where box 0's move strip is, for a box at `x, y` page points and zoom `z`.
+fn strip_at(origin: egui::Pos2, x: f32, y: f32, z: f32) -> egui::Pos2 {
+    origin + egui::vec2(x * z + 100.0 * z, y * z + 7.0 * z)
+}
+
+/// Issue #79: with snapping off, moving a box is free, exactly as before.
+#[test]
+fn with_snapping_off_a_moved_box_goes_where_it_was_let_go() {
+    let (_t, app, s) = snapping_app("ui-snap-off", "grid-medium", false);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!((x - 101.0).abs() < 0.5 && (y - 55.0).abs() < 0.5, "the box followed the pointer exactly: ({x}, {y})");
+}
+
+/// Issue #79: with snapping on and squared paper, a moved box lands on the paper's grid.
+#[test]
+fn with_snapping_on_a_moved_box_lands_on_the_paper_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-move", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 18.0) && on_grid(y, 18.0), "the box's corner is on the 18 pt grid: ({x}, {y})");
+    assert!((x - 101.0).abs() <= 9.0 && (y - 55.0).abs() <= 9.0, "on the grid line nearest where it was let go: ({x}, {y})");
+}
+
+/// Issue #79: holding Alt places the box freely, without turning snapping off.
+#[test]
+fn holding_alt_while_dragging_places_a_box_freely() {
+    let (_t, app, s) = snapping_app("ui-snap-alt", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    let alt = egui::Modifiers { alt: true, ..Default::default() };
+    h.input_mut().events.push(egui::Event::ModifiersChanged(alt));
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    h.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+    h.step();
+    let (x, y, _) = first_box(&mut h);
+    assert!((x - 101.0).abs() < 0.5 && (y - 55.0).abs() < 0.5, "with Alt the box is where it was let go: ({x}, {y})");
+}
+
+/// Issue #79: resizing snaps the box's right edge to the grid, and never below the narrowest box.
+#[test]
+fn with_snapping_on_resizing_puts_the_right_edge_on_the_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-resize", "grid-medium", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    // The resize edge is the last 10 points of the box's frame, which starts under the strip.
+    let edge = origin + egui::vec2(40.0 + 320.0 + 12.0 - 4.0, 20.0 + 14.0 + 10.0);
+    drag_by(&mut h, edge, egui::vec2(53.0, 0.0));
+    let (x, _, width) = first_box(&mut h);
+    assert!(on_grid(x + width, 18.0), "the right edge is on the grid: x={x} width={width}");
+    assert!(width > 320.0, "it grew: {width}");
+}
+
+/// Issue #79: on plain paper the grid is 12 points.
+#[test]
+fn with_snapping_on_plain_paper_a_box_lands_on_a_12_point_grid() {
+    let (_t, app, s) = snapping_app("ui-snap-plain", "none", true);
+    let (mut h, origin) = one_box_page(app, &s);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 12.0) && on_grid(y, 12.0), "the corner is on the 12 pt grid: ({x}, {y})");
+}
+
+/// Issue #79: the grid is in page points, so a box snaps to the same places when zoomed in.
+#[test]
+fn snapping_is_the_same_at_twice_the_zoom() {
+    let (_t, app, s) = snapping_app("ui-snap-zoom", "grid-medium", true);
+    let (mut h, _) = one_box_page(app, &s);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    for _ in 0..10 {
+        h.get_by_label("Zoom In").click();
+        settle(&mut h);
+    }
+    let zoom = h.state().zoom_percent() as f32 / 100.0;
+    assert!((zoom - 2.0).abs() < 0.01, "zoomed to 200 %: {zoom}");
+    let origin = page_origin(&mut h);
+    drag_by(&mut h, strip_at(origin, 40.0, 20.0, zoom), egui::vec2(61.0 * zoom, 35.0 * zoom));
+    let (x, y, _) = first_box(&mut h);
+    assert!(on_grid(x, 18.0) && on_grid(y, 18.0), "on the same 18 pt grid at 200 %: ({x}, {y})");
+}
+
+/// Issue #79: the View tab's Snap to grid is a toggle, and the choice is kept for next time.
+#[test]
+fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
+    let (t, app, _s) = snapping_app("ui-snap-toggle", "grid-medium", false);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Snap to grid").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("snap_to_grid = \"true\""), "the choice is saved:\n{saved}");
+    h.get_by_label("Snap to grid").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
+}
+
+/// Every straight line painted in the last frame, as its two ends.
+fn painted_segments(h: &Harness<'_, NoteCraftApp>) -> Vec<[egui::Pos2; 2]> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<[egui::Pos2; 2]>) {
+        match shape {
+            egui::Shape::LineSegment { points, .. } => out.push(*points),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &h.output().shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// Issue #79: the paper's lines are drawn from the page's origin, so a box snapped to the grid
+/// has a line along its left edge and one along its top, in a narrow window and a wide one.
+#[test]
+fn a_snapped_box_sits_on_the_drawn_paper_lines_whatever_the_window_width() {
+    for width in [1000.0, 1600.0] {
+        let (_t, app, s) = snapping_app("ui-snap-lines", "grid-medium", true);
+        let page = s.md_page.to_string_lossy().to_string();
+        let mut app = app;
+        app.open_path(&page);
+        let mut h = sized_harness(app, LIGHT, egui::vec2(width, 800.0));
+        settle(&mut h);
+        let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+        ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,{blocks}")}}),
+        )
+        .expect("arrange");
+        ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+        settle(&mut h);
+        let origin = page_origin(&mut h);
+        drag_by(&mut h, strip_at(origin, 40.0, 20.0, 1.0), egui::vec2(61.0, 35.0));
+        // A frame drawn with the pointer away from the box, so only the paper's lines are at issue.
+        ask(&mut h, "ui.move", json!({"x": 5.0, "y": 795.0})).expect("move away");
+        settle(&mut h);
+        let (x, y, _) = first_box(&mut h);
+        let origin = page_origin(&mut h);
+        let (left, top) = (origin.x + x, origin.y + y);
+        let lines = painted_segments(&h);
+        let upright = lines.iter().any(|[a, b]| (a.x - b.x).abs() < 0.01 && (a.x - left).abs() < 0.6);
+        let across = lines.iter().any(|[a, b]| (a.y - b.y).abs() < 0.01 && (a.y - top).abs() < 0.6);
+        assert!(upright && across, "width {width}: a paper line runs along the box's left edge ({left}) and its top ({top})");
+    }
+}
