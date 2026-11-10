@@ -277,17 +277,28 @@ pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pe
             }
         }
         Pointer::Draw => {
-            if down {
-                if pad.drawing_now.is_none() {
-                    pad.drawing_now = Some(Stroke::with_gain(pen.tool, pen.colour, pen.width, pen.gain));
+            if down && pad.drawing_now.is_none() {
+                pad.drawing_now = Some(Stroke::with_gain(pen.tool, pen.colour, pen.width, pen.gain));
+            }
+            if let Some(stroke) = pad.drawing_now.as_mut() {
+                // Every movement the pointer made this frame, not only where it ended: a pen
+                // reports far more often than the window draws, and one point a frame turned a
+                // quick curve into straight lines. Each keeps the force of the touch reported
+                // just before it (a pen's pressure), or the frame's pressure for a mouse. The
+                // frame the pen is lifted in still counts the movements made before it lifted.
+                let moves = frame_moves(ui, body, origin, zoom, pressure);
+                for (x, y, force) in &moves {
+                    stroke.add(Dab::new(*x, *y, *force));
                 }
-                if let (Some(stroke), Some((x, y))) = (pad.drawing_now.as_mut(), at) {
+                // A pen put down and held still moves nowhere: where it rests is the point.
+                if let Some((x, y)) = at.filter(|_| down && moves.is_empty()) {
                     stroke.add(Dab::new(x, y, pressure));
-                    // The stroke is painted as it grows, so the line follows the pen
-                    // rather than appearing when it is lifted.
-                    ui.ctx().request_repaint();
                 }
-            } else if let Some(stroke) = pad.drawing_now.take() {
+                // The stroke is painted as it grows, so the line follows the pen rather than
+                // appearing when it is lifted.
+                ui.ctx().request_repaint();
+            }
+            if !down && let Some(stroke) = pad.drawing_now.take() {
                 changed = pad.drawing.add(stroke);
             }
         }
@@ -447,6 +458,23 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
     }
 }
 
+/// The pointer's movements over `body` this frame, in page points, each with the force of the
+/// touch reported just before it, or `pressure` until one is (a mouse reports none).
+fn frame_moves(ui: &Ui, body: egui::Rect, origin: egui::Pos2, zoom: f32, pressure: f32) -> Vec<(f32, f32, f32)> {
+    ui.input(|i| {
+        let mut force = pressure;
+        let mut moves = Vec::new();
+        for event in &i.events {
+            match event {
+                egui::Event::Touch { force: Some(f), .. } if f.is_finite() => force = f.clamp(0.0, 1.0),
+                egui::Event::PointerMoved(p) if body.contains(*p) => moves.push(((p.x - origin.x) / zoom, (p.y - origin.y) / zoom, force)),
+                _ => {}
+            }
+        }
+        moves
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,6 +485,76 @@ mod tests {
         s.dabs.push(Dab::new(x, 40.0, 0.3));
         s.dabs.push(Dab::new(x + 30.0, 40.0, 1.0));
         s
+    }
+
+    /// Runs the ink layer for one frame of `events`, over a 800 x 600 page at the window's corner,
+    /// with a pen in hand and `pressure` as the frame's pressure.
+    fn frame(ctx: &egui::Context, pad: &mut Pad, events: Vec<egui::Event>, pressure: f32) {
+        let input =
+            egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+        let pen = Pen { pointer: crate::ribbon::Pointer::Draw, ..Pen::default() };
+        let tokens = crate::theme::Tokens::for_theme(crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default });
+        let mut out = ctx.run_ui(input, |ui| {
+            let body = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0));
+            show(ui, body, egui::Pos2::ZERO, pad, pen, pressure, &tokens, 1.0);
+        });
+        // egui insists the frame's texture changes are taken; a test has nowhere to put them.
+        out.textures_delta.clear();
+    }
+
+    fn button(x: f32, y: f32, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton { pos: egui::pos2(x, y), button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE }
+    }
+
+    /// A pen reports its movement far more often than the window draws. Every movement in a frame
+    /// is a point of the stroke, not just the last: one point a frame turned a quick curve into
+    /// straight lines.
+    #[test]
+    fn every_movement_in_a_frame_is_a_point_of_the_stroke() {
+        let t = TempDir::new("ink-every-move");
+        let mut pad = Pad::of_page(t.path());
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut pad, vec![egui::Event::PointerMoved(egui::pos2(100.0, 100.0))], 1.0);
+        frame(&ctx, &mut pad, vec![button(100.0, 100.0, true)], 1.0);
+        let moves: Vec<egui::Event> =
+            (1..=5).map(|n| egui::Event::PointerMoved(egui::pos2(100.0 + 10.0 * n as f32, 100.0 + (n * n) as f32))).collect();
+        frame(&ctx, &mut pad, moves, 1.0);
+        frame(&ctx, &mut pad, vec![button(150.0, 125.0, false)], 1.0);
+        let stroke = pad.drawing.strokes.last().expect("a stroke");
+        let xs: Vec<f32> = stroke.dabs.iter().map(|d| d.x).collect();
+        for x in [110.0, 120.0, 130.0, 140.0, 150.0] {
+            assert!(xs.iter().any(|got| (got - x).abs() < 0.5), "a point at x = {x}, from a movement inside one frame: {xs:?}");
+        }
+    }
+
+    /// A pen's pressure comes as touches between its movements (Windows today, Wayland with a
+    /// tablet-aware winit); each point keeps the pressure it was made at.
+    #[test]
+    fn each_point_keeps_the_pressure_of_its_own_movement() {
+        let t = TempDir::new("ink-every-move-pressure");
+        let mut pad = Pad::of_page(t.path());
+        let ctx = egui::Context::default();
+        let touch = |x: f32, force: f32| egui::Event::Touch {
+            device_id: egui::TouchDeviceId(1),
+            id: egui::TouchId(0),
+            phase: egui::TouchPhase::Move,
+            pos: egui::pos2(x, 100.0),
+            force: Some(force),
+        };
+        frame(&ctx, &mut pad, vec![egui::Event::PointerMoved(egui::pos2(100.0, 100.0))], 1.0);
+        frame(&ctx, &mut pad, vec![button(100.0, 100.0, true)], 0.5);
+        let events = vec![
+            touch(120.0, 0.2),
+            egui::Event::PointerMoved(egui::pos2(120.0, 100.0)),
+            touch(140.0, 0.8),
+            egui::Event::PointerMoved(egui::pos2(140.0, 100.0)),
+        ];
+        frame(&ctx, &mut pad, events, 0.8);
+        frame(&ctx, &mut pad, vec![button(140.0, 100.0, false)], 0.8);
+        let stroke = pad.drawing.strokes.last().expect("a stroke");
+        let at = |x: f32| stroke.dabs.iter().find(|d| (d.x - x).abs() < 0.5).map(|d| d.pressure);
+        assert_eq!(at(120.0), Some(0.2), "the light part of the stroke: {:?}", stroke.dabs);
+        assert_eq!(at(140.0), Some(0.8), "the hard part of the stroke: {:?}", stroke.dabs);
     }
 
     #[test]
