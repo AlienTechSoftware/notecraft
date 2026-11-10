@@ -294,13 +294,28 @@ NoteCraft uses **Model-View-Controller** architecture, not MVVM. This choice is 
 - **Rust-friendly:** Rust's ownership model and MVVM's two-way data binding don't mesh well. MVC sidesteps that complexity.
 
 ### MVC Boundaries in NoteCraft
-```
-Model (pure types)
-  ↓
-Controller (Session: routing, commands, MCP)
-  ↓
-View (UI rendering: egui, CLI output)
-```
+
+The layers map onto the existing crates. No `model/`, `view/` or `controller/` folders are
+added; the crate layout above stays as it is. Line numbers were checked on `origin/main`
+(78b8c39) on 2026-11-10.
+
+| Layer | Crate and module | What it owns | Must not |
+|---|---|---|---|
+| Model: vocabulary | `crates/model` (`lib.rs:1-6`, `kind.rs:4`, `format.rs:6`, `container.rs:17`) | Node kinds, `PageFormat`, `Container` (box geometry), ids, time. No page DOM here. | Read or write files. |
+| Model: page content (the page DOM) | `crates/formats/src/markdown.rs` (`Block` at :37, `Span` at :12) | The shared block and span model that the editor, live view and both writers use. Described in `docs/dom_serialization/page-model.md` section 1.1. | Know about egui or the window. |
+| Model: page file and folder | `crates/store/src/page.rs` (`Page` at :14, `load_page` at :45, `save_body` at :472, `set_containers` at :261) | Reading and writing the page folder and its files. The file boundary. | Interpret block layout for the view. |
+| Serialization | `crates/formats/src/html.rs` (`to_markdown` at :241), `markdown.rs` (`parse` at :520), `render.rs` (`blocks_to_markdown` at :12, `blocks_to_html` at :263), `boxes.rs` (`read` at :47, `write` at :85) | HTML and CMGFM body to and from `Block`. The HTML reader turns HTML into Markdown text, then parses it. | Draw anything or change the model's meaning. |
+| Controller | `crates/engine` (`Session` at `session.rs:9`, `Session::run` at :160, `CommandSpec` at `commands.rs:30`) | Commands, dispatch by id, autosave, the panic net. | Hold egui types. |
+| View | `crates/ui-egui` (`pageedit.rs`: `show` at :1396, `show_blocks` at :1425; `bidi.rs` for hit-testing) | Drawing, pointer and keyboard input, caret. Sends commands to the engine. | Decide what a page contains or how it is stored. |
+| Text layout (support for the view) | `crates/text` (`Caret` at `lib.rs:231`) | Shaping, bidi and line breaks, via parley. | Own page content. |
+
+The rule: a change to what a page means goes through the model and the serializers, and is
+tested there. A change to how it looks or where the pointer lands goes in the view. When one
+change crosses both, the design names the model type first.
+
+Open question (not yet traced): `html.rs:200` (`unsupported_tag`) reports an unsupported
+`<span style>` as an unknown tag. Which caller acts on that report is not yet traced. See
+`docs/gaps.md` before changing this.
 
 ### Anti-Patterns
 - **Do NOT:** Spread business logic across views. UI should never make Store or Engine decisions.

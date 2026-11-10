@@ -202,6 +202,12 @@ Present **2-3 approaches** before implementation when:
 
 Before coding, deliver artifacts for each MVC layer. Follow this order: **Model → Controller → View**.
 
+Map each layer to the existing crates first (table in [`nc-arch`](../nc-arch/SKILL.md#mvc-boundaries-in-notecraft)).
+Do not add `model/`, `view/` or `controller/` folders. In short:
+- Model (page content): `crates/formats/src/markdown.rs` `Block` and `Span`; page file and folder: `crates/store/src/page.rs`.
+- Controller: `crates/engine` `Session` and `CommandSpec`.
+- View: `crates/ui-egui` (`pageedit.rs`, `bidi.rs`).
+
 #### 4a. Model (Pure Data)
 
 Design your data types with zero I/O or side effects:
