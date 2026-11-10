@@ -339,6 +339,45 @@ struct Editor {
 }
 
 impl Editor {
+    /// `count` blocks were just put into the page at `at`. The box that holds the block before
+    /// them counts them too (the first box, for blocks put in at the top), so the boxes still
+    /// add up to the page's blocks and `container::fit` keeps the arrangement instead of
+    /// folding it into one box (issue #72). Call it before [`Editor::rebuild_body`].
+    fn count_inserted_in_boxes(&mut self, at: usize, count: usize) {
+        let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
+        if count == 0 || self.boxes.is_empty() || counted + count != self.blocks.len() {
+            return;
+        }
+        let owner = if at == 0 { Some(0) } else { notecraft_model::container::place(&self.boxes, at - 1).map(|(i, _)| i) };
+        if let Some(i) = owner {
+            self.boxes[i].blocks += count;
+        }
+    }
+
+    /// The block at `at` was just taken out of the page: its box counts one fewer.
+    fn count_removed_from_boxes(&mut self, at: usize) {
+        let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
+        if counted != self.blocks.len() + 1 {
+            return;
+        }
+        if let Some((i, _)) = notecraft_model::container::place(&self.boxes, at) {
+            self.boxes[i].blocks -= 1;
+        }
+    }
+
+    /// [`Editor::count_inserted_in_boxes`], and justified paragraphs and table widths after the
+    /// new blocks move down with their blocks. Returns whether the widths and the justified
+    /// paragraphs changed, for [`NoteCraftApp::save_block_marks`].
+    fn blocks_inserted(&mut self, at: usize, count: usize) -> (bool, bool) {
+        self.count_inserted_in_boxes(at, count);
+        let (mut cols, mut justified) = (false, false);
+        for offset in 0..count {
+            cols |= self.columns.insert_block(at + offset);
+            justified |= self.justified.insert_block(at + offset);
+        }
+        (cols, justified)
+    }
+
     /// Writes the page's text from its blocks, with the boxes around them when it is arranged.
     fn rebuild_body(&mut self) {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
@@ -1654,6 +1693,29 @@ impl NoteCraftApp {
         }
     }
 
+    /// Puts the blocks of a snippet (a file copied in or linked) after the caret's line, in the
+    /// caret's box, or on the end of the page. It works on the blocks rather than splicing the
+    /// page's text at `cursor`, which put the snippet wherever that old text position pointed
+    /// (the top of the page, in a box of its own) and read every box back from the text
+    /// (issue #72).
+    fn insert_snippet_blocks(&mut self, text: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let (added, _) = notecraft_formats::boxes::read(ed.format, text);
+        if added.is_empty() {
+            return;
+        }
+        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+        let count = added.len();
+        for (offset, block) in added.into_iter().enumerate() {
+            ed.blocks.insert(at + offset, block);
+        }
+        let marks = ed.blocks_inserted(at, count);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_step(ed);
+        self.save_block_marks(marks);
+    }
+
     /// A dropped file asks what to do with it, the way OneNote asks when you insert one.
     fn attach_dropped(&mut self, ctx: &Context) {
         let files: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -1679,7 +1741,7 @@ impl NoteCraftApp {
                     Some(Output::Text(link)) => {
                         log::debug!("file attach copied: name={name:?} link={link:?}");
                         let text = snippets::attachment(format, &link, &name);
-                        self.insert(&text);
+                        self.insert_snippet_blocks(&text);
                         self.say(crate::i18n::format_message_id("ui.name_is_now_a_file_in_this_page_s_folder", &[("name", &name)]));
                     }
                     Some(_) => self.complain(crate::tl_id!("ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0")),
@@ -1691,7 +1753,7 @@ impl NoteCraftApp {
             }
             FileChoice::Link => {
                 let text = snippets::file_link(format, &path_str(file), &name);
-                self.insert(&text);
+                self.insert_snippet_blocks(&text);
                 self.say(crate::i18n::format_message_id("ui.linked_name_where_it_is_the_file_was_not_copied", &[("name", &name)]));
             }
             FileChoice::Printout => self.insert_printout(dir, file, format),
@@ -3111,10 +3173,12 @@ impl NoteCraftApp {
                     let Some(ed) = self.editor.as_mut() else { return };
                     let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
                     ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new()));
+                    let marks = ed.blocks_inserted(at, 1);
                     ed.rebuild_body();
                     ed.caret =
                         Some(pageedit::Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
                     Self::mark_dirty_from_blocks(ed);
+                    self.save_block_marks(marks);
                 }
                 "link" => self.insert_in_page("[text](https://)"),
                 "equation" => self.insert_in_page("$E = mc^2$"),
@@ -3335,16 +3399,7 @@ impl NoteCraftApp {
         // links, emphasis, lists and tables survive a paste into NoteCraft.
         if let Some(html) = self.clipboard.html() {
             let new = pageedit::pasted_blocks(pageedit::pasted(&html));
-            if !new.is_empty()
-                && let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable)
-            {
-                let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
-                if ed.blocks.is_empty() {
-                    ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
-                }
-                pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
-                ed.rebuild_body();
-                Self::mark_dirty_from_blocks(ed);
+            if self.paste_blocks(new) {
                 self.say(crate::tl_id!("ui.pasted_formatted_content"));
                 return;
             }
@@ -3352,21 +3407,48 @@ impl NoteCraftApp {
         match self.clipboard.text() {
             Some(text) => {
                 let new = pageedit::blocks_to_paste(&text);
-                match self.editor.as_mut() {
-                    Some(ed) if !new.is_empty() && ed.writable => {
-                        let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
-                        if ed.blocks.is_empty() {
-                            ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
-                        }
-                        pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
-                        ed.rebuild_body();
-                        Self::mark_dirty_from_blocks(ed);
-                    }
-                    _ => self.insert_in_page(&text),
+                if !self.paste_blocks(new) {
+                    self.insert_in_page(&text);
                 }
                 self.say(crate::tl_id!("ui.pasted"));
             }
             None => self.say(crate::tl_id!("ui.there_is_nothing_on_the_clipboard_to_paste")),
+        }
+    }
+
+    /// Pastes `new` blocks at the caret, or after the last block. False, with nothing done,
+    /// when there is nothing to paste or the page cannot be written.
+    fn paste_blocks(&mut self, new: Vec<notecraft_formats::Block>) -> bool {
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable) else { return false };
+        if new.is_empty() {
+            return false;
+        }
+        let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
+        if ed.blocks.is_empty() {
+            ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
+        }
+        let before = ed.blocks.len();
+        pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
+        // The paste fills the caret's line and puts the rest after it, all in the caret's box.
+        let marks = ed.blocks_inserted(at + 1, ed.blocks.len().saturating_sub(before));
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        self.save_block_marks(marks);
+        true
+    }
+
+    /// Writes table widths and justified paragraphs that moved with inserted blocks, as
+    /// [`Editor::blocks_inserted`] reported them, into the page's own file.
+    fn save_block_marks(&mut self, (cols, justified): (bool, bool)) {
+        let Some(ed) = self.editor.as_ref() else { return };
+        let path = path_str(&ed.dir);
+        let cols = cols.then(|| notecraft_model::tablecols::write(&ed.columns));
+        let justified = justified.then(|| notecraft_model::justify::write(&ed.justified));
+        if let Some(line) = cols {
+            self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
+        }
+        if let Some(line) = justified {
+            self.run("page.justify", &params(&[("path", &path), ("blocks", &line)]));
         }
     }
 
@@ -3383,9 +3465,11 @@ impl NoteCraftApp {
                         at,
                         notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
                     );
+                    let marks = ed.blocks_inserted(at, 1);
                     ed.rebuild_body();
                     Self::mark_dirty_from_blocks(ed);
                     ed.attachments = notecraft_store::assets::list(dir);
+                    self.save_block_marks(marks);
                 }
                 self.say(crate::i18n::format_message_id(
                     "ui.pasted_a_picture_width_by_height",
@@ -3423,16 +3507,29 @@ impl NoteCraftApp {
         let files = ed.ink_files.clone();
         let mut changed = false;
         // A line that names an ink file that is no longer in the folder goes.
-        let before = ed.blocks.len();
-        ed.blocks.retain(|b| match b {
-            Block::Image { src, alt, .. } => !crate::inkpad::is_ink_line(src, alt) || files.iter().any(|f| f == src.trim()),
-            _ => true,
-        });
-        changed |= ed.blocks.len() != before;
-        // An ink file the page does not name is adopted: it is drawn, so it is named.
+        // One at a time, from the end, so each box that held one counts one fewer.
+        let gone: Vec<usize> = ed
+            .blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| match b {
+                Block::Image { src, alt, .. } => crate::inkpad::is_ink_line(src, alt) && !files.iter().any(|f| f == src.trim()),
+                _ => false,
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for &at in gone.iter().rev() {
+            ed.blocks.remove(at);
+            ed.count_removed_from_boxes(at);
+            changed = true;
+        }
+        // An ink file the page does not name is adopted: it is drawn, so it is named. The line
+        // goes on the end of the page, so it is counted in the last box.
         for file in &files {
             if !ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if src.trim() == file)) {
                 ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone(), width: None, height: None });
+                let at = ed.blocks.len() - 1;
+                ed.count_inserted_in_boxes(at, 1);
                 changed = true;
             }
         }
@@ -3705,8 +3802,10 @@ impl NoteCraftApp {
     /// A table of the picked size, where the caret is.
     fn insert_table(&mut self, rows: usize, columns: usize) {
         let Some(ed) = self.editor.as_mut() else { return };
-        let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len());
+        let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
+        let before = ed.blocks.len();
         pageedit::insert_table(&mut ed.blocks, at, rows, columns);
+        let marks = ed.blocks_inserted(at, ed.blocks.len().saturating_sub(before));
         ed.rebuild_body();
         ed.caret = Some(pageedit::Caret {
             block: at.min(ed.blocks.len() - 1),
@@ -3718,6 +3817,7 @@ impl NoteCraftApp {
             span: None,
         });
         Self::mark_dirty_from_blocks(ed);
+        self.save_block_marks(marks);
     }
 
     /// An empty spreadsheet beside the page, opened in GridCraft and linked from the page
@@ -4596,11 +4696,12 @@ impl NoteCraftApp {
     /// Puts a whole block (a table, a diagram) after the caret.
     fn insert_block(&mut self, what: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
-        let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len());
+        let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
         if !pageedit::insert_block(&mut ed.blocks, at, what) {
             self.say(crate::tl_id!("ui.that_is_not_something_a_page_can_hold"));
             return;
         }
+        let marks = ed.blocks_inserted(at, 1);
         ed.rebuild_body();
         ed.caret = ed.blocks.get(at).map(|b| pageedit::Caret {
             block: at,
@@ -4612,6 +4713,7 @@ impl NoteCraftApp {
             span: None,
         });
         Self::mark_dirty_from_blocks(ed);
+        self.save_block_marks(marks);
     }
 
     /// Puts a snippet where the caret is, or at the end of the page.
@@ -7692,6 +7794,182 @@ mod alert_tests {
             }
             let ed = h.state().editor.as_ref().expect("editor");
             assert_eq!((&ed.blocks, &ed.boxes), (&blocks_before, &before), "html={html}: one undo takes the printout back out of the box");
+        }
+    }
+}
+
+/// Blocks put into a page that has several boxes go into the box the caret is in, and every
+/// box keeps its place. Before, the box counts were left behind, `container::fit` saw the
+/// mismatch, and the whole arrangement collapsed into one box at the top-left.
+#[cfg(test)]
+mod keep_boxes_tests {
+    use super::*;
+
+    /// A sample page split into two boxes, the second moved to the right, with the caret on
+    /// its last line.
+    fn two_boxes(html: bool, name: &str) -> (notecraft_store::testing::TempDir, PathBuf, egui_kittest::Harness<'static, NoteCraftApp>) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        {
+            let ed = h.state_mut().editor.as_mut().expect("editor");
+            let n = ed.blocks.len();
+            assert!(n >= 4, "the sample page has blocks to split");
+            let first = n / 2;
+            ed.boxes = vec![notecraft_model::Container::new(0.0, 0.0, 600.0, first), notecraft_model::Container::new(900.0, 40.0, 300.0, n - first)];
+            ed.arranged = true;
+            let last = n - 1;
+            ed.caret = ed.blocks.get(last).map(|b| pageedit::Caret {
+                block: last,
+                text: pageedit::caret_text(b),
+                focus: false,
+                selection: (0, 0),
+                place: None,
+                cell: None,
+                span: None,
+            });
+            ed.rebuild_body();
+            NoteCraftApp::remember_step(ed);
+        }
+        for _ in 0..3 {
+            h.step();
+        }
+        (t, page, h)
+    }
+
+    /// How many blocks the right-hand box holds now.
+    fn right_box(h: &egui_kittest::Harness<'static, NoteCraftApp>) -> usize {
+        h.state().editor.as_ref().map(|e| e.boxes[1].blocks).expect("editor")
+    }
+
+    /// The arrangement after an insert: still two boxes, the right one where it was, every block
+    /// counted, and the right box holding at least `grew` more blocks than the `was` it held.
+    fn assert_kept(h: &mut egui_kittest::Harness<'static, NoteCraftApp>, what: &str, was: usize, grew: usize) {
+        for _ in 0..5 {
+            h.step();
+        }
+        let ed = h.state().editor.as_ref().expect("editor");
+        assert_eq!(ed.boxes.len(), 2, "{what}: both boxes are still there: {:?}", ed.boxes);
+        assert_eq!((ed.boxes[1].x, ed.boxes[1].y), (900.0, 40.0), "{what}: the right box stays put");
+        assert_eq!(ed.boxes.iter().map(|c| c.blocks).sum::<usize>(), ed.blocks.len(), "{what}: every block is in a box");
+        assert!(ed.boxes[1].blocks >= was + grew, "{what}: the new block went into the caret's box: {:?}", ed.boxes);
+    }
+
+    #[test]
+    fn a_pasted_picture_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, page, mut h) = two_boxes(html, "keep-boxes-picture");
+            // A 1x1 PNG; what matters is where the block goes, not what it shows.
+            let png = vec![
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f,
+                0x15, 0xc4, 0x89, 0, 0, 0, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0, 0x05, 0, 0x01, 0xff,
+                0x89, 0x99, 0x3d, 0x1d, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+            ];
+            let was = right_box(&h);
+            h.state_mut().paste_picture(&page, crate::clipboard::Picture { png, width: 1, height: 1 });
+            assert_kept(&mut h, &format!("html={html} picture"), was, 1);
+        }
+    }
+
+    #[test]
+    fn an_inserted_table_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "keep-boxes-table");
+            let was = right_box(&h);
+            h.state_mut().ribbon_act(ribbon::Act::Insert("table"));
+            assert_kept(&mut h, &format!("html={html} table"), was, 1);
+        }
+    }
+
+    #[test]
+    fn inserted_space_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "keep-boxes-space");
+            let was = right_box(&h);
+            h.state_mut().ribbon_act(ribbon::Act::Insert("space"));
+            assert_kept(&mut h, &format!("html={html} space"), was, 1);
+        }
+    }
+
+    #[test]
+    fn pasted_lines_go_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "keep-boxes-paste");
+            let was = right_box(&h);
+            h.state_mut().paste_blocks(pageedit::blocks_to_paste("one\n\ntwo\n\nthree"));
+            assert_kept(&mut h, &format!("html={html} paste"), was, 2);
+        }
+    }
+
+    #[test]
+    fn a_new_drawing_named_by_the_page_keeps_the_boxes() {
+        for html in [false, true] {
+            let (_t, page, mut h) = two_boxes(html, "keep-boxes-ink");
+            let was = right_box(&h);
+            let svg = notecraft_ink::svg::write(&notecraft_ink::Drawing::default(), notecraft_ink::svg::Flavour::Editable);
+            std::fs::write(page.join("ink.svg"), svg).expect("ink");
+            h.state_mut().sync_ink_reference();
+            assert_kept(&mut h, &format!("html={html} ink"), was, 1);
+        }
+    }
+
+    #[test]
+    fn a_table_of_a_chosen_size_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "keep-boxes-sized-table");
+            let was = right_box(&h);
+            h.state_mut().ribbon_act(ribbon::Act::InsertTable(2, 3));
+            assert_kept(&mut h, &format!("html={html} sized table"), was, 1);
+        }
+    }
+
+    #[test]
+    fn a_dropped_file_copied_in_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            // A picture and any other file: each kind has its own snippet.
+            for name in ["picture.png", "notes.txt"] {
+                let (t, page, mut h) = two_boxes(html, "keep-boxes-copy");
+                let file = t.path().join(name);
+                std::fs::write(&file, "not really a picture").expect("file");
+                let was = right_box(&h);
+                h.state_mut().add_file(&page, &file, FileChoice::Copy);
+                assert_kept(&mut h, &format!("html={html} copy {name}"), was, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_dropped_file_linked_goes_into_the_caret_box_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (t, page, mut h) = two_boxes(html, "keep-boxes-link");
+            let file = t.path().join("notes.txt");
+            std::fs::write(&file, "some notes").expect("file");
+            let was = right_box(&h);
+            h.state_mut().add_file(&page, &file, FileChoice::Link);
+            assert_kept(&mut h, &format!("html={html} link"), was, 1);
+        }
+    }
+
+    #[test]
+    fn a_snippet_with_no_caret_goes_on_the_end_and_the_boxes_stay() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "keep-boxes-no-caret");
+            h.state_mut().editor.as_mut().expect("editor").caret = None;
+            let was = right_box(&h);
+            h.state_mut().ribbon_act(ribbon::Act::Equation("x^2"));
+            assert_kept(&mut h, &format!("html={html} no caret"), was, 1);
         }
     }
 }
