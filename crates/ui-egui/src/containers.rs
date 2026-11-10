@@ -244,8 +244,17 @@ pub fn show(
     // The open paper: the whole page area, made first so that every box and every block, which
     // are made after it, sit on top of it and take their own clicks. A click that reaches it
     // landed on no box at all.
-    let paper =
-        ui.interact(Rect::from_min_size(area.min, vec2(area.width(), area.height().min(20_000.0))), ui.id().with("open-paper"), Sense::click());
+    //
+    // The paper goes on past the page's right edge, as far as the canvas shows (issue #65): boxes
+    // can be dragged out there, and since the canvas scrolls sideways a click there is as much a
+    // click on open paper as one on the page. Only the click target is wider; the page's own
+    // layout, which the space under the boxes is allocated in, keeps the page's width.
+    let open_right = ui.clip_rect().max.x.max(area.max.x);
+    // And down as far as the window shows: the page scrolls, and `area` is about one view tall
+    // from the top of the scrolled page, so once it was scrolled the paper beside a tall box ran
+    // out partway down the window.
+    let open_bottom = (area.min.y + area.height().min(20_000.0)).max(ui.clip_rect().max.y);
+    let paper = ui.interact(Rect::from_min_max(area.min, pos2(open_right, open_bottom)), ui.id().with("open-paper"), Sense::click());
     let selection_was_up = sel.is_some() || menu_at.is_some();
     // A page with nothing on it shows nothing, which looks like a page that did not load. Say what
     // to do: the paper takes a click, and the words start where it was made.
@@ -263,7 +272,9 @@ pub fn show(
     // create the first box, including on a page whose last box was deleted.
     if boxes.is_empty() {
         let empty_area = Rect::from_min_size(area.min, vec2(area.width(), area.height().max(260.0)));
-        let empty_paper = ui.allocate_rect(empty_area, Sense::click());
+        ui.allocate_rect(empty_area, Sense::hover());
+        let empty_paper =
+            ui.interact(Rect::from_min_max(empty_area.min, pos2(open_right, empty_area.max.y)), ui.id().with("open-paper-empty"), Sense::click());
         if empty_paper.clicked()
             && !selection_was_up
             && let Some(at) = empty_paper.interact_pointer_pos()
@@ -1031,7 +1042,11 @@ pub fn show(
     // OneNote treats a click on open paper - the words begin where you pointed, not at
     // the end of whatever was written last.
     let rest = (area.max.y - bottom).max(40.0);
-    let below = ui.allocate_rect(Rect::from_min_size(pos2(area.min.x, bottom), vec2(area.width(), rest.max(260.0))), Sense::click());
+    let under = Rect::from_min_size(pos2(area.min.x, bottom), vec2(area.width(), rest.max(260.0)));
+    // The room under the boxes is allocated at the page's width, so the page scrolls as it did,
+    // and takes clicks from there to the canvas's right edge.
+    ui.allocate_rect(under, Sense::hover());
+    let below = ui.interact(Rect::from_min_max(under.min, pos2(open_right, under.max.y)), ui.id().with("open-paper-below"), Sense::click());
     if below.clicked() {
         out.changed.caret = true;
         match below.interact_pointer_pos() {
@@ -1288,8 +1303,10 @@ fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
 /// the pointer was.
 fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, at: egui::Pos2, room: f32) {
     // A box of its own needs a width that leaves space to its right, so the page does not
-    // turn into one column the moment somebody clicks near the middle.
-    let width = (room - at.x).clamp(container::MIN_WIDTH, room).min(360.0_f32.max(container::MIN_WIDTH));
+    // turn into one column the moment somebody clicks near the middle. Past the page's right
+    // edge the paper goes on, so a box started there gets the usual width.
+    let usual = 360.0_f32.max(container::MIN_WIDTH);
+    let width = if at.x + container::MIN_WIDTH <= room { (room - at.x).clamp(container::MIN_WIDTH, room).min(usual) } else { usual };
     blocks.push(Block::Paragraph(Vec::new()));
     let block_idx = blocks.len() - 1;
     let box_idx = boxes.len();
