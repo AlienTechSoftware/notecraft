@@ -1,6 +1,6 @@
 # NoteCraft v0.0.9
 
-**Status:** Planning  
+**Status:** Closed (superseded by 0.0.10 as the current release; files kept, not deleted)
 **Base Branch:** `rc_0.0.9`
 **Theme:** reliable infinite-canvas interaction and durable UI quality
 
