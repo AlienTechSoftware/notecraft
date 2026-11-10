@@ -191,10 +191,13 @@ pub fn show(
     across: &mut Option<pageedit::Across>,
     shown_title: &str,
     zoom: f32,
+    snap: Option<f32>,
 ) -> Moved {
     let mut out = Moved::default();
     let area = ui.available_rect_before_wrap();
     out.origin = area.min;
+    // Held Alt places a box freely while snapping is on (issue #79).
+    let snap = snap.filter(|step| *step > 0.0 && !ui.input(|i| i.modifiers.alt));
     let fitted = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
     if fitted != *boxes {
         // Issue #18: the arrangement did not account for the blocks, so it was thrown away and
@@ -614,7 +617,8 @@ pub fn show(
         {
             let d = response.drag_delta();
             if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x + d.x / zoom, c.y + d.y / zoom, c.width, c.blocks);
+                let to = dragged_to(ui, ui.id().with(("snap-move", i)), (c.x, c.y), d / zoom, response.drag_started(), snap);
+                *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
             out.boxes = true;
             log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
@@ -630,8 +634,11 @@ pub fn show(
         }
 
         // Drawn only when the pointer is in the container, the caret is in it, or it is
-        // being dragged, the way a container shows its edges in OneNote.
+        // being dragged, the way a container shows its edges in OneNote. The drag strip sits
+        // above the frame, so the pointer on the strip counts as in the container: moving up
+        // onto it to drag the box used to make the edges and the strip itself vanish.
         let busy = drag.dragged() || grip.dragged();
+        let hovered = hovered || drag.hovered() || grip.hovered();
         if hovered || editing || busy || is_sel {
             log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
@@ -669,8 +676,7 @@ pub fn show(
             let d = drag.drag_delta();
             if let Some(c) = boxes.get_mut(i) {
                 let old = *c;
-                let requested_x = old.x + d.x / zoom;
-                let requested_y = old.y + d.y / zoom;
+                let (requested_x, requested_y) = dragged_to(ui, ui.id().with(("snap-move", i)), (old.x, old.y), d / zoom, drag.drag_started(), snap);
                 let moved = Container::new(requested_x, requested_y, old.width, old.blocks);
                 log::debug!(
                     "CONTAINER_MOVE: container={i} delta_screen=({:.2},{:.2}) delta_page=({:.2},{:.2}) old=({:.2},{:.2}) requested=({requested_x:.2},{requested_y:.2}) stored=({:.2},{:.2}) clamped_x={} clamped_y={}",
@@ -691,7 +697,16 @@ pub fn show(
         }
         if grip.dragged() {
             if let Some(c) = boxes.get_mut(i) {
-                *c = Container::new(c.x, c.y, c.width + grip.drag_delta().x / zoom, c.blocks);
+                // The right edge is what snaps, so the box's width lines up with the grid too.
+                let (right, _) = dragged_to(
+                    ui,
+                    ui.id().with(("snap-size", i)),
+                    (c.x + c.width, 0.0),
+                    egui::vec2(grip.drag_delta().x / zoom, 0.0),
+                    grip.drag_started(),
+                    snap,
+                );
+                *c = Container::new(c.x, c.y, right - c.x, c.blocks);
             }
             out.boxes = true;
         }
@@ -1074,6 +1089,7 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
+    out.bottom = page_points_below(area, bottom, zoom);
     out
 }
 
@@ -1133,7 +1149,14 @@ pub fn show_ink_view(
     // Child UIs do not advance the parent cursor; reserve their complete page-space extent
     // so scrolling and the following ink-layer allocation match the editable page.
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
+    out.bottom = page_points_below(area, bottom, zoom);
     out
+}
+
+/// How far down the page the boxes reach, in page points, from `bottom` on screen: what
+/// [`Moved::bottom`] reports, so a box added later (a printout) can be placed under them.
+fn page_points_below(area: Rect, bottom: f32, zoom: f32) -> f32 {
+    if zoom > 0.0 { ((bottom - area.min.y) / zoom).max(0.0) } else { 0.0 }
 }
 
 fn block_has_image(block: &Block) -> bool {
@@ -1228,6 +1251,29 @@ fn resize_image(width: f32, height: f32, delta: egui::Vec2, handle: usize, shift
     }
 
     ImageResize { offset, width: new_width, height: new_height }
+}
+
+/// Where a dragged point goes this frame, in page points: `at` moved by `delta`, or, with a grid
+/// `snap` step, the grid line nearest where the pointer has taken it. The pointer's own,
+/// unsnapped place is kept under `id` for the length of the drag, so the box steps from line to
+/// line as the pointer goes rather than sticking: a frame's movement is usually far less than a
+/// step, and rounding it each frame would throw it away. Without a grid the point just follows
+/// the pointer, as it always has.
+fn dragged_to(ui: &Ui, id: egui::Id, at: (f32, f32), delta: egui::Vec2, started: bool, snap: Option<f32>) -> (f32, f32) {
+    let Some(step) = snap else {
+        ui.data_mut(|d| d.remove::<(f32, f32)>(id));
+        return (at.0 + delta.x, at.1 + delta.y);
+    };
+    let free = if started { None } else { ui.data(|d| d.get_temp::<(f32, f32)>(id)) };
+    let free = free.unwrap_or(at);
+    let free = (free.0 + delta.x, free.1 + delta.y);
+    ui.data_mut(|d| d.insert_temp(id, free));
+    (to_grid(free.0, step), to_grid(free.1, step))
+}
+
+/// `value` on the nearest line of a grid `step` apart, counted from the page's origin.
+fn to_grid(value: f32, step: f32) -> f32 {
+    (value / step).round() * step
 }
 
 /// Whether the pointer is over open paper, not over a box.
@@ -1545,6 +1591,7 @@ more
                 &mut None,
                 "",
                 1.0,
+                None,
             );
             assert!(!out.boxes, "nothing was dragged");
         });
@@ -1576,6 +1623,7 @@ more
                 &mut None,
                 "",
                 1.0,
+                None,
             );
         });
         frame.textures_delta.clear();
@@ -1609,6 +1657,7 @@ more
                 &mut None,
                 "",
                 1.0,
+                None,
             );
         });
         frame.textures_delta.clear();
