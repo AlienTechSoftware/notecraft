@@ -247,11 +247,11 @@ pub fn show(
     // click on open paper as one on the page. Only the click target is wider; the page's own
     // layout, which the space under the boxes is allocated in, keeps the page's width.
     let open_right = ui.clip_rect().max.x.max(area.max.x);
-    let paper = ui.interact(
-        Rect::from_min_max(area.min, pos2(open_right, area.min.y + area.height().min(20_000.0))),
-        ui.id().with("open-paper"),
-        Sense::click(),
-    );
+    // And down as far as the window shows: the page scrolls, and `area` is about one view tall
+    // from the top of the scrolled page, so once it was scrolled the paper beside a tall box ran
+    // out partway down the window.
+    let open_bottom = (area.min.y + area.height().min(20_000.0)).max(ui.clip_rect().max.y);
+    let paper = ui.interact(Rect::from_min_max(area.min, pos2(open_right, open_bottom)), ui.id().with("open-paper"), Sense::click());
     let selection_was_up = sel.is_some() || menu_at.is_some();
     // A page with nothing on it shows nothing, which looks like a page that did not load. Say what
     // to do: the paper takes a click, and the words start where it was made.

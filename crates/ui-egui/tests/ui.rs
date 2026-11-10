@@ -3046,6 +3046,51 @@ fn a_click_on_open_paper_right_of_the_page_starts_a_box_there() {
     assert!(after["caret"] != Value::Null, "the caret is in it: {after}");
 }
 
+/// Issue #65, scrolled: once the page is scrolled down, open paper right of a tall box (a long
+/// printout) still takes a click. The click target used to be one view tall, counted from the
+/// top of the scrolled page, so it ran out partway down the window.
+#[test]
+fn a_click_right_of_a_tall_box_still_starts_a_box_once_the_page_is_scrolled() {
+    let (_t, app, s) = sample_app("ui-click-beside-scrolled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
+    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n");
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Tall", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 400.0})).expect("pointer onto the page");
+    settle(&mut h);
+    for _ in 0..3 {
+        ask(&mut h, "ui.scroll", json!({"y": -300.0})).expect("scroll down");
+        settle(&mut h);
+    }
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
+    let origin = &before["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    assert!(oy < 0.0, "the page is scrolled: its top is above the window ({oy})");
+    // Low in the window, beside the box: the box still runs on below.
+    let (x, y) = (ox + 760.0 + 80.0, 700.0);
+    ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the tall box");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), 2, "a click right of the scrolled box starts a box: {after}");
+    let new_box = &boxes[1];
+    let want_y = (y - oy) as f64;
+    assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "past the page, where the click was: {new_box}");
+    assert!((new_box["y"].as_f64().unwrap_or(0.0) - want_y).abs() < 40.0, "at the height of the click on the page ({want_y}): {new_box}");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
