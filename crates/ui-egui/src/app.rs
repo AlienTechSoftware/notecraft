@@ -341,6 +341,8 @@ struct Editor {
     arranged: bool,
     /// How far down the page the containers reached when last drawn, in page points.
     content_bottom: Option<f32>,
+    /// How wide each box was drawn last frame, in page points (`containers::Moved::shown_widths`).
+    shown_widths: Vec<f32>,
 }
 
 impl Editor {
@@ -1452,6 +1454,7 @@ impl NoteCraftApp {
                 boxes,
                 arranged,
                 content_bottom: None,
+                shown_widths: Vec::new(),
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 justified: notecraft_store::page::justified(dir).unwrap_or_default(),
                 across: None,
@@ -5513,6 +5516,7 @@ impl NoteCraftApp {
                                 *from_blocks = true;
                             }
                             ed.content_bottom = Some(moved.bottom);
+                            ed.shown_widths = std::mem::take(&mut moved.shown_widths);
                             if moved.boxes {
                                 *boxes_moved = true;
                             }
@@ -8173,6 +8177,30 @@ mod keep_boxes_tests {
             let was = right_box(&h);
             h.state_mut().ribbon_act(ribbon::Act::Equation("x^2"));
             assert_kept(&mut h, &format!("html={html} no caret"), was, 1);
+        }
+    }
+
+    /// A box grows to hold a table wider than it, the way it grows to hold a picture, so the
+    /// table does not stick out past its right edge. A box of words keeps its width.
+    #[test]
+    fn a_box_grows_to_hold_a_table_wider_than_it() {
+        for html in [false, true] {
+            let (_t, _page, mut h) = two_boxes(html, "box-fits-table");
+            // Four columns of the usual width, in a box 300 points wide.
+            h.state_mut().ribbon_act(ribbon::Act::InsertTable(2, 4));
+            for _ in 0..5 {
+                h.step();
+            }
+            let ed = h.state().editor.as_ref().expect("editor");
+            let table = 4.0 * 160.0;
+            assert_eq!(ed.shown_widths.len(), ed.boxes.len(), "html={html}: a drawn width for every box");
+            assert!(ed.shown_widths[1] >= table, "html={html}: the box is drawn wide enough for the whole table: {:?}", ed.shown_widths);
+            assert_eq!(ed.shown_widths[0], 600.0, "html={html}: a box of words is drawn at its own width");
+            assert_eq!(
+                (ed.boxes[1].x, ed.boxes[1].y, ed.boxes[1].width),
+                (900.0, 40.0, 300.0),
+                "html={html}: only the drawing grows; the page keeps the box as it was"
+            );
         }
     }
 }

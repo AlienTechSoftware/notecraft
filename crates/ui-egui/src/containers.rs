@@ -173,6 +173,9 @@ pub struct Moved {
     pub justified: bool,
     /// How far down the page, in page points, the containers reach.
     pub bottom: f32,
+    /// How wide each box was drawn, in page points: its own width, or more when what it holds
+    /// (a table) is wider than that. Drawn only; the page's arrangement is not changed by it.
+    pub shown_widths: Vec<f32>,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -362,9 +365,17 @@ pub fn show(
             out.changed.link = Some(href);
         }
         let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0));
+        // Words wrap to the box, but a table keeps its columns' widths. The box is drawn wide
+        // enough to hold what it has, so a table does not stick out past its edge; its border,
+        // move bar and resize edge follow. Only the drawing grows: writing the wider width into
+        // the page here would change a page just by opening it, and would fix the width of a page
+        // that has not been arranged yet, which follows the window instead.
+        let content_width = child.min_rect().width();
+        let width = if zoom > 0.0 && content_width > b.width * zoom + 0.5 { content_width / zoom } else { b.width };
+        out.shown_widths.push(width);
         // The move handle sits above the content frame, so it can never cover its top border.
         let frame_at = pos2(at.x, at.y + handle);
-        let frame = Rect::from_min_size(frame_at, vec2(b.width * zoom + 2.0 * pad, used + pad));
+        let frame = Rect::from_min_size(frame_at, vec2(width * zoom + 2.0 * pad, used + pad));
         frames.push(frame);
         bottom = bottom.max(frame.max.y);
 
