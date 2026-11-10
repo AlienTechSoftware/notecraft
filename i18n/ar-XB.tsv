@@ -282,6 +282,8 @@
 @id	ui.hide_page_title	[[RLI]]$$$Hide page title@@@[[PDI]]
 @id	ui.hide_the_page_source	[[RLI]]$$$Hide the page source@@@[[PDI]]
 @id	ui.hide_the_page_title	[[RLI]]$$$Hide the page title@@@[[PDI]]
+@id	ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely	[[RLI]]$$$Snap boxes to the page's grid when you move or resize them. Hold Alt to place one freely.@@@[[PDI]]
+@id	ui.snap_to_grid	[[RLI]]$$$Snap to grid@@@[[PDI]]
 @id	ui.highlight	[[RLI]]$$$Highlight@@@[[PDI]]
 @id	ui.highlighter	[[RLI]]$$$Highlighter@@@[[PDI]]
 @id	ui.history	[[RLI]]$$$History@@@[[PDI]]
