@@ -719,11 +719,12 @@ pub fn show(
         }
         if grip.dragged() {
             if let Some(c) = boxes.get_mut(i) {
-                // The right edge is what snaps, so the box's width lines up with the grid too.
+                // The right edge is what snaps. It starts from the edge as drawn, so a box drawn
+                // wider than its own width, to hold a table, follows the pointer from there.
                 let (right, _) = dragged_to(
                     ui,
                     ui.id().with(("snap-size", i)),
-                    (c.x + c.width, 0.0),
+                    (c.x + c.width.max(width), 0.0),
                     egui::vec2(grip.drag_delta().x / zoom, 0.0),
                     grip.drag_started(),
                     snap,
