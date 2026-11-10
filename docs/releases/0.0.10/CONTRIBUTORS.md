@@ -1,17 +1,10 @@
 # NoteCraft v0.0.10 contributors
 
-This draft will list contributors to changes included in the v0.0.10 release.
+These three contributors are acknowledged in the v0.0.10 planning record. Confirm
+release-scope inclusion before publishing the final credits.
 
-No release range has been selected, so credits are not yet compiled. Before release,
-review the commits and merged pull requests from the previous release through the
-chosen candidate. Confirm names, contribution descriptions, issue reports, and any
-requested attribution changes with public project records. Do not infer contribution
-credit from local agent assignments.
+## Contributors
 
-## Code, review, testing, design, and documentation
-
-_To be completed from the verified release range._
-
-## Issue reporters
-
-_To be completed from verified public issue history._
+- [Mathew-D](https://github.com/Mathew-D) added selected-text font sizing in [PR #57](https://github.com/AlienTechSoftware/notecraft/pull/57).
+- [masked8knights](https://github.com/masked8knights) shared the [notes-app-research repository](https://github.com/masked8knights/notes-app-research) for OCR research.
+- alouettogentille provided the `OneNote_Features_vs_Serialization.xlsx` test spreadsheet.
