@@ -33,8 +33,11 @@ notifications, paths, or installers.
    They call a boundary: a small trait or function that describes what the app needs.
 2. **Each platform is a branch behind the boundary.** Platform code lives in files named
    `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for macOS, `.lnx.*` for
-   Linux, `.droid.*` for Android, and `.ios.*` for iOS. Rust selects each file explicitly with
-   `cfg`-gated module wiring. The suffix alone selects nothing. For example, a module can expose
+   Linux. Code shared between desktop and Android uses `<feature>.android.<extension>`; code shared
+   with iOS uses `<feature>.ios.<extension>`. Code used only on Android lives in `android/` with no
+   suffix, and iOS-only code lives in `ios/` the same way. `.droid.*` is retired. Rust selects each
+   file explicitly with `cfg`-gated module wiring. The suffix alone selects nothing. For example, a
+   module can expose
    a shared contract and select the native implementation like this:
 
    ```rust
@@ -51,7 +54,7 @@ notifications, paths, or installers.
    mod platform;
 
    #[cfg(target_os = "android")]
-   #[path = "clipboard.droid.rs"]
+   #[path = "clipboard.android.rs"]
    mod platform;
 
    #[cfg(target_os = "ios")]
@@ -115,3 +118,8 @@ normal default and its tests must remain portable.
 6. For path changes, check both separator behavior and the semantic location on Windows and Linux;
    do not rely on a Windows-only local pass.
 7. Update the feature-parity table and the relevant `SKILLS/*` notes.
+
+## References
+
+- [`references/android-ios-goals.md`](references/android-ios-goals.md): Android and iOS goals
+  and layout (goals only; no folder move yet).

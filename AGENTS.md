@@ -37,6 +37,12 @@ Rules for AI agents working in this folder. The project-wide contract is one lev
   inspect and preserve that work, and report the path. Never force a checkout,
   delete a folder, reset, clean or stash unrelated changes. Stage only files
   changed for this task.
+- **Branch names.** Form `<type>/<name>[/<id>]`. `<type>` is one of `feat fix docs
+  test chore refactor perf ci build release`. `<name>` is short, lowercase and
+  hyphenated. `<id>` is optional: an agent ID such as `agent-1`, or a GitHub ID.
+  Examples: `release/0.0.10` (shared integration), `release/0.0.10/agent-1`,
+  `feat/ocr/agent-3`, `fix/attachment-caret/mameen`. The `check-branch` hook warns
+  on other prefixes; it does not refuse them.
 - **Keep repositories distinct.** Planning and discussion belong in the
   private host; NoteCraft implementation and its design docs belong here.
   Other repositories in the workspace remain separate projects.
@@ -77,7 +83,12 @@ NoteCraft is an open-source, clean-room recreation of the OneNote notebook exper
 - Keep shared contracts and behavior platform-neutral while using useful native
   platform support through isolated implementations. Name platform-specific
   files `<feature>.<platform>.<extension>`: `.win.*` for Windows, `.mac.*` for
-  macOS, `.lnx.*` for Linux, `.droid.*` for Android, and `.ios.*` for iOS. Rust
+  macOS, `.lnx.*` for Linux. Platform placement, in this order: code shared with
+  desktop uses `<feature>.android.<extension>` (or `<feature>.ios.<extension>` for
+  code shared with iOS) next to the shared module; code used only on Android lives
+  in `android/` with no suffix, and iOS-only code lives in `ios/` the same way.
+  `.droid.*` is retired. Shared code stays in `crates/`; there is no `shared/`
+  folder, and desktop code stays where it is until the owner approves a move. Rust
   must select these files explicitly through `cfg`-gated module wiring; the
   suffix alone does not select a file.
 - **Union, not intersection.** NoteCraft does not reduce every platform to what they

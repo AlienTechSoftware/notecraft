@@ -288,7 +288,7 @@ requirement. A merge commit can preserve
 the true integration point, the source branch provenance, and the conflict resolution that was
 reviewed.
 
-Consider allowing merge commits on `rc_*` or other integration branches when preserving that
+Consider allowing merge commits on `release/*` or other integration branches when preserving that
 provenance is more valuable than a straight-line log. If the rule is relaxed, keep the substantive
 gates unchanged: PII scanning, formatting, clippy, the complete test suite, static checks, demo
 parity, and release signoff. Do not bypass hooks or weaken those gates merely to preserve a merge
