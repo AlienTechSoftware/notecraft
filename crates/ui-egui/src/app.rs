@@ -341,6 +341,8 @@ struct Editor {
     arranged: bool,
     /// How far down the page the containers reached when last drawn, in page points.
     content_bottom: Option<f32>,
+    /// How wide each box was drawn last frame, in page points (`containers::Moved::shown_widths`).
+    shown_widths: Vec<f32>,
 }
 
 impl Editor {
@@ -1452,6 +1454,7 @@ impl NoteCraftApp {
                 boxes,
                 arranged,
                 content_bottom: None,
+                shown_widths: Vec::new(),
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 justified: notecraft_store::page::justified(dir).unwrap_or_default(),
                 across: None,
@@ -5513,6 +5516,7 @@ impl NoteCraftApp {
                                 *from_blocks = true;
                             }
                             ed.content_bottom = Some(moved.bottom);
+                            ed.shown_widths = std::mem::take(&mut moved.shown_widths);
                             if moved.boxes {
                                 *boxes_moved = true;
                             }

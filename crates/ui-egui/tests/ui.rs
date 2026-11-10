@@ -6762,8 +6762,9 @@ fn holding_alt_while_dragging_places_a_box_freely() {
 fn with_snapping_on_resizing_puts_the_right_edge_on_the_grid() {
     let (_t, app, s) = snapping_app("ui-snap-resize", "grid-medium", true);
     let (mut h, origin) = one_box_page(app, &s);
-    // The resize edge is the last 10 points of the box's frame, which starts under the strip.
-    let edge = origin + egui::vec2(40.0 + 320.0 + 12.0 - 4.0, 20.0 + 14.0 + 10.0);
+    // The resize edge is the last 10 points of the box's frame as drawn. The box is 320 wide,
+    // but the sample's three-column table is 480 points wide, so the box is drawn that wide.
+    let edge = origin + egui::vec2(40.0 + 480.0 + 12.0 - 4.0, 20.0 + 14.0 + 10.0);
     drag_by(&mut h, edge, egui::vec2(53.0, 0.0));
     let (x, _, width) = first_box(&mut h);
     assert!(on_grid(x + width, 18.0), "the right edge is on the grid: x={x} width={width}");
@@ -6979,4 +6980,40 @@ fn a_click_right_of_a_tall_box_still_starts_a_box_once_the_page_is_scrolled() {
     let want_y = (y - oy) as f64;
     assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "past the page, where the click was: {new_box}");
     assert!((new_box["y"].as_f64().unwrap_or(0.0) - want_y).abs() < 40.0, "at the height of the click on the page ({want_y}): {new_box}");
+}
+
+/// Issue #74: a box drawn wider than its own width, to hold a table, resizes from the edge as it is
+/// drawn. Dragging that edge used to start from the narrower stored width, so the box did not move
+/// until the pointer had gone past the table.
+#[test]
+fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
+    let (_t, mut app, s) = sample_app("ui-resize-drawn-edge");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let look = |h: &mut Harness<'_, NoteCraftApp>| -> Value { ask(h, "ui.inspect", json!({})).expect("inspect") };
+    let blocks = look(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    // 300 points wide, holding the sample's three-column table, which is 480 points wide.
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,300,{blocks}")}}))
+        .expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+    let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let at = |i: usize| origin.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    // The resize edge is the last 10 points of the frame as drawn: 480 points and the padding.
+    let edge = egui::pos2(at(0) + 40.0 + 480.0 + 12.0 - 4.0, at(1) + 20.0 + 14.0 + 10.0);
+
+    ask(&mut h, "ui.press", json!({"x": edge.x, "y": edge.y})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": edge.x + 15.0, "y": edge.y})).expect("move");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": edge.x + 30.0, "y": edge.y})).expect("move");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": edge.x + 30.0, "y": edge.y})).expect("release");
+    pump(&mut h);
+    settle(&mut h);
+
+    let width = look(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).unwrap_or(0.0);
+    assert!(width >= 500.0, "the box grew from its drawn edge, past the table, with the pointer: {width}");
 }
