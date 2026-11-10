@@ -27,7 +27,7 @@
 //! A page that was never arranged has no boxes in its text and is read as one column. Older pages
 //! kept their boxes in the head or front matter; the store still reads those.
 
-use crate::markdown::{self, Block};
+use crate::markdown::{self, Block, Span};
 use crate::{html, render};
 use notecraft_model::{Container, PageFormat};
 
@@ -280,6 +280,32 @@ fn markdown_pieces(body: &str) -> Vec<Piece> {
     pieces
 }
 
+/// What a page body holds against what its blocks read back: the raw `<span` tags in the text,
+/// and the spans the blocks carry a font size or family for. A reload that reads fewer styled
+/// spans than the text holds tags has lost formatting on the way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpanAudit {
+    pub raw_tags: usize,
+    pub styled: usize,
+}
+
+/// Counts the raw span tags in `body` and the styled spans in `blocks`.
+pub fn span_audit(body: &str, blocks: &[Block]) -> SpanAudit {
+    let raw_tags = body.to_ascii_lowercase().matches("<span").count();
+    let styled = blocks.iter().map(styled_spans_in).sum();
+    SpanAudit { raw_tags, styled }
+}
+
+fn styled_spans_in(block: &Block) -> usize {
+    let lines: Vec<&Vec<Span>> = match block {
+        Block::Heading { spans, .. } | Block::Item { spans, .. } => vec![spans],
+        Block::Paragraph(spans) | Block::Quote(spans) => vec![spans],
+        Block::Table { head, rows } => head.iter().chain(rows.iter().flatten()).collect(),
+        Block::Code { .. } | Block::MathBlock(_) | Block::Rule | Block::Image { .. } => Vec::new(),
+    };
+    lines.iter().flat_map(|spans| spans.iter()).filter(|span| span.font_size.is_some() || span.font_family.is_some()).count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,5 +459,29 @@ mod tests {
         // `<divider>` is not a div, and a div that is not a box is not one.
         assert_eq!(read(PageFormat::Html, "<divider class=\"nc-box\"></divider><p>x</p>").1, None);
         assert_eq!(read(PageFormat::Html, "<div class=\"other\"><p>x</p></div>").1, None);
+    }
+
+    // TE-002: a reload must read back every styled span the body holds. The audit gives the
+    // count of raw `<span` tags in the body and the count of styled spans the blocks read.
+    #[test]
+    fn span_audit_counts_the_raw_tags_and_the_styled_spans_read_back() {
+        let body =
+            "<p><span style=\"font-size: 10pt\">Sunday, 25 October 2026, </span><span style=\"font-family: Forte; font-size: 28pt\">03:16</span></p>";
+        let (blocks, _) = read(PageFormat::Html, body);
+        assert_eq!(span_audit(body, &blocks), SpanAudit { raw_tags: 2, styled: 2 });
+    }
+
+    #[test]
+    fn span_audit_counts_styled_spans_inside_headings_and_tables() {
+        let body = "<h2><span style=\"font-size: 14pt\">Head</span></h2><table><tr><th><span style=\"font-size: 9pt\">A</span></th></tr></table>";
+        let (blocks, _) = read(PageFormat::Html, body);
+        assert_eq!(span_audit(body, &blocks), SpanAudit { raw_tags: 2, styled: 2 });
+    }
+
+    #[test]
+    fn span_audit_shows_a_gap_when_a_tag_is_not_read_back() {
+        let body = "<p><span style=\"font-size: 10pt\">kept</span></p><p><span class=\"other\">lost</span></p>";
+        let (blocks, _) = read(PageFormat::Html, body);
+        assert_eq!(span_audit(body, &blocks), SpanAudit { raw_tags: 2, styled: 1 });
     }
 }

@@ -1399,6 +1399,8 @@ impl NoteCraftApp {
         self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
+            let audit = notecraft_formats::boxes::span_audit(&page.body, &blocks);
+            log::debug!("page read span audit: page={:?} raw_span_tags={} styled_spans={}", dir, audit.raw_tags, audit.styled);
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
             let arranged = in_the_text.is_some() || !older.is_empty();
             let mut boxes = in_the_text.unwrap_or(older);
@@ -3669,6 +3671,9 @@ impl NoteCraftApp {
             if let Some(ed) = self.editor.as_mut() {
                 ed.dirty_since = None;
                 ed.body = notecraft_store::page::load_page(&dir).map(|p| p.body).unwrap_or_else(|_| ed.body.clone());
+                let (blocks, _) = notecraft_formats::boxes::read(ed.format, &ed.body);
+                let audit = notecraft_formats::boxes::span_audit(&ed.body, &blocks);
+                log::debug!("code view commit span audit: page={:?} raw_span_tags={} styled_spans={}", dir, audit.raw_tags, audit.styled);
             }
             self.code.page_edited = true;
             return;
