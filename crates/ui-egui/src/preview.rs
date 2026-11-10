@@ -45,6 +45,20 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
 /// a page of printouts crawl, worst on a network or cloud folder. The name egui keys its
 /// picture by carries the file's full path and that size and time, so two pages' `a.png` stay
 /// apart and a replaced picture is drawn anew.
+/// A picture's last change, where the platform reports one. The browser build's file shim has no
+/// modification time, so there the stamp is the size alone.
+fn file_time(path: &Path) -> Option<std::time::SystemTime> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::metadata(path).ok()?.modified().ok()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        None
+    }
+}
+
 fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(String, egui::load::Bytes)> {
     let rel = src.strip_prefix("assets/")?;
     if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
@@ -52,7 +66,7 @@ fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(Strin
     }
     let path = page_dir.join("assets").join(rel);
     let meta = std::fs::metadata(&path).ok()?;
-    let stamp = (meta.len(), meta.modified().ok());
+    let stamp = (meta.len(), file_time(&path));
     let cache = ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone());
     let mut cache = cache.lock().ok()?;
     if let Some((had, uri, bytes)) = cache.get(&path)
