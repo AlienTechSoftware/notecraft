@@ -19,7 +19,7 @@ Version 0.0.10 introduces Android platform support, making NoteCraft available o
 - **Framework:** egui with native Android bindings
 - **Storage:** Android app directory + synced folder support
 - **File Sync:** Cloud sync via user's synced folders (Drive, OneDrive, Syncthing)
-- **Platform Code:** `.android.rs` files for Android-specific implementations
+- **Platform Code:** `<feature>.android.rs` only for code shared with desktop; Android-only code lives in `android/` with no suffix; `.droid.*` is retired. Desktop code stays where it is until the owner approves a move
 
 ## Phase 1: Foundation (v0.0.10a)
 - [ ] Android build pipeline
