@@ -39,14 +39,59 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
 /// notebooks in the Windows VM are exposed through a UNC path, and the generic file loader
 /// cannot reliably open the resulting `file:////server/share/...` URI even when the file is
 /// present and valid.
-fn image_bytes(page_dir: &Path, src: &str) -> Option<(String, Vec<u8>)> {
+///
+/// The bytes are kept in memory and the file is read again only when its size or time
+/// changes: the page is drawn many times a second, and reading every picture each time made
+/// a page of printouts crawl, worst on a network or cloud folder. The name egui keys its
+/// picture by carries the file's full path and that size and time, so two pages' `a.png` stay
+/// apart and a replaced picture is drawn anew.
+fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(String, egui::load::Bytes)> {
     let rel = src.strip_prefix("assets/")?;
     if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
         return None;
     }
     let path = page_dir.join("assets").join(rel);
-    let bytes = std::fs::read(&path).ok()?;
-    Some((format!("bytes://page-image/{rel}"), bytes))
+    let meta = std::fs::metadata(&path).ok()?;
+    let stamp = (meta.len(), meta.modified().ok());
+    let cache = ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone());
+    let mut cache = cache.lock().ok()?;
+    if let Some((had, uri, bytes)) = cache.get(&path)
+        && *had == stamp
+    {
+        return Some((uri.clone(), egui::load::Bytes::Shared(bytes.clone())));
+    }
+    let bytes: std::sync::Arc<[u8]> = std::fs::read(&path).ok()?.into();
+    #[cfg(test)]
+    IMAGE_READS.with(|n| n.set(n.get() + 1));
+    let nanos = stamp.1.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+    let uri = format!("bytes://page-image/{}#{}-{nanos}", path.display(), stamp.0);
+    // Pictures of pages no longer shown would pile up; past a generous size the store starts over.
+    let held: usize = cache.values().map(|(_, _, b)| b.len()).sum();
+    if held + bytes.len() > PAGE_IMAGES_MAX_BYTES {
+        cache.clear();
+    }
+    cache.insert(path, (stamp, uri.clone(), bytes.clone()));
+    Some((uri, egui::load::Bytes::Shared(bytes)))
+}
+
+/// The bytes of the page pictures drawn so far, by file, with the size and time they were read
+/// at and the name egui has them under.
+type PageImages = std::sync::Arc<
+    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, ((u64, Option<std::time::SystemTime>), String, std::sync::Arc<[u8]>)>>,
+>;
+
+/// How much picture data [`image_bytes`] keeps before it starts over.
+const PAGE_IMAGES_MAX_BYTES: usize = 512 * 1024 * 1024;
+
+#[cfg(test)]
+thread_local! {
+    static IMAGE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times [`image_bytes`] has read a picture from disk on this thread.
+#[cfg(test)]
+fn image_reads() -> usize {
+    IMAGE_READS.with(std::cell::Cell::get)
 }
 
 /// `file:///C:/dir/a%20b.png` or `file:///home/me/a%20b.png`: the form egui's file
@@ -362,7 +407,7 @@ fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
-            match image_bytes(page_dir, src) {
+            match image_bytes(ui.ctx(), page_dir, src) {
                 Some((uri, bytes)) => {
                     // A linked image is the attachment-card form used by NoteCraft. Keep its
                     // generated shell icon compact; standalone images still use the picture box.
@@ -623,7 +668,7 @@ pub(crate) fn show_block_zoomed(
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
             Block::Image { alt, src, width, height } => {
-                match image_bytes(page_dir, src) {
+                match image_bytes(ui.ctx(), page_dir, src) {
                     Some((uri, bytes)) => {
                         let image = egui::Image::from_bytes(uri, bytes).sense(egui::Sense::hover());
                         let response = match (width, height) {
@@ -809,6 +854,55 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 
 #[cfg(test)]
 mod tests {
+    /// Issue: the page read every picture from disk on every frame (a page of printouts on a
+    /// network or cloud folder made the window crawl). A picture is read once, and again only
+    /// when the file changes.
+    #[test]
+    fn an_unchanged_picture_is_read_from_disk_once() {
+        let t = notecraft_store::testing::TempDir::new("page-image-once");
+        std::fs::create_dir_all(t.path().join("assets")).expect("assets");
+        std::fs::write(t.path().join("assets").join("a.png"), b"first picture bytes").expect("picture");
+        let ctx = egui::Context::default();
+        let before = image_reads();
+        let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+        for _ in 0..4 {
+            let again = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+            assert_eq!(again.0, first.0, "the same name while the file is unchanged");
+        }
+        assert_eq!(image_reads() - before, 1, "five frames, one read");
+        assert_eq!(&*first.1, b"first picture bytes");
+    }
+
+    #[test]
+    fn a_changed_picture_is_read_again_under_a_new_name() {
+        let t = notecraft_store::testing::TempDir::new("page-image-changed");
+        std::fs::create_dir_all(t.path().join("assets")).expect("assets");
+        let file = t.path().join("assets").join("a.png");
+        std::fs::write(&file, b"first").expect("picture");
+        let ctx = egui::Context::default();
+        let before = image_reads();
+        let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+        std::fs::write(&file, b"a different, longer picture").expect("replaced");
+        let second = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+        assert_eq!(image_reads() - before, 2, "read again once it changed");
+        assert_ne!(first.0, second.0, "a new name, so egui does not keep showing the old picture");
+        assert_eq!(&*second.1, b"a different, longer picture");
+    }
+
+    #[test]
+    fn pictures_with_the_same_name_on_two_pages_are_kept_apart() {
+        let t = notecraft_store::testing::TempDir::new("page-image-two-pages");
+        for (page, bytes) in [("one", b"page one's picture".as_slice()), ("two", b"page two's picture".as_slice())] {
+            std::fs::create_dir_all(t.path().join(page).join("assets")).expect("assets");
+            std::fs::write(t.path().join(page).join("assets").join("a.png"), bytes).expect("picture");
+        }
+        let ctx = egui::Context::default();
+        let one = image_bytes(&ctx, &t.path().join("one"), "assets/a.png").expect("page one's");
+        let two = image_bytes(&ctx, &t.path().join("two"), "assets/a.png").expect("page two's");
+        assert_ne!(one.0, two.0, "each page's picture has a name of its own");
+        assert_eq!(&*two.1, b"page two's picture");
+    }
+
     use super::*;
 
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
