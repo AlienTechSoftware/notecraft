@@ -100,9 +100,42 @@ pub fn blocks_of(containers: &[Container], at: usize) -> std::ops::Range<usize> 
     first..first + count
 }
 
+/// Adds a container of its own for `added` new blocks that were appended to a page that had
+/// `blocks_before` blocks. It goes at the left edge, `gap` below `below` (how far down the
+/// existing containers reach), or at the top of an empty page.
+pub fn append(containers: &[Container], blocks_before: usize, added: usize, width: f32, below: f32, gap: f32) -> Vec<Container> {
+    let mut out = fit(containers, blocks_before, width);
+    let y = if out.is_empty() { 0.0 } else { below + gap };
+    out.push(Container::new(0.0, y, width, added));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_appended_container_sits_below_the_others_and_counts_every_block() {
+        let boxes = vec![Container::new(0.0, 0.0, 300.0, 2), Container::new(400.0, 50.0, 200.0, 1)];
+        let out = append(&boxes, 3, 4, 300.0, 180.0, 12.0);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[..2], boxes[..]);
+        assert_eq!((out[2].x, out[2].y, out[2].blocks), (0.0, 192.0, 4));
+        assert_eq!(out.iter().map(|c| c.blocks).sum::<usize>(), 7);
+    }
+
+    #[test]
+    fn appending_to_an_unarranged_page_keeps_its_words_in_one_container_first() {
+        let out = append(&[], 5, 2, 360.0, 0.0, 12.0);
+        assert_eq!(out.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![5, 2]);
+        assert!(out[1].y > 0.0);
+    }
+
+    #[test]
+    fn appending_to_an_empty_page_starts_at_the_top() {
+        let out = append(&[], 0, 3, 360.0, 0.0, 12.0);
+        assert_eq!(out, vec![Container::new(0.0, 0.0, 360.0, 3)]);
+    }
 
     #[test]
     fn a_line_of_containers_round_trips() {
