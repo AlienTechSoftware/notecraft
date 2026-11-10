@@ -630,8 +630,11 @@ pub fn show(
         }
 
         // Drawn only when the pointer is in the container, the caret is in it, or it is
-        // being dragged, the way a container shows its edges in OneNote.
+        // being dragged, the way a container shows its edges in OneNote. The drag strip sits
+        // above the frame, so the pointer on the strip counts as in the container: moving up
+        // onto it to drag the box used to make the edges and the strip itself vanish.
         let busy = drag.dragged() || grip.dragged();
+        let hovered = hovered || drag.hovered() || grip.hovered();
         if hovered || editing || busy || is_sel {
             log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
