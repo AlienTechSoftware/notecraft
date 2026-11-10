@@ -334,6 +334,8 @@ struct Editor {
     /// text, one column; moving, resizing or adding a box arranges it, and from then on the
     /// boxes are elements around the blocks.
     arranged: bool,
+    /// How far down the page the containers reached when last drawn, in page points.
+    content_bottom: Option<f32>,
 }
 
 impl Editor {
@@ -1396,6 +1398,7 @@ impl NoteCraftApp {
                 page_dir: page.dir,
                 boxes,
                 arranged,
+                content_bottom: None,
                 columns: notecraft_store::page::table_columns(dir).unwrap_or_default(),
                 justified: notecraft_store::page::justified(dir).unwrap_or_default(),
                 across: None,
@@ -1583,6 +1586,26 @@ impl NoteCraftApp {
         ed.dirty_since = Some(Instant::now());
     }
 
+    /// Adds the blocks of `text` to the page in a container of their own, below what is
+    /// already on the page, so each printout can be moved and sized apart from the others.
+    fn insert_in_own_container(&mut self, text: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let below = ed.content_bottom;
+        let (added, _) = notecraft_formats::boxes::read(ed.format, text);
+        if added.is_empty() {
+            return;
+        }
+        let width = ed.boxes.first().map_or(360.0, |c| c.width);
+        let before = ed.blocks.len();
+        ed.blocks.extend(added.iter().cloned());
+        let below = below.unwrap_or_else(|| ed.boxes.iter().map(|c| c.y + 60.0).fold(0.0, f32::max));
+        ed.boxes = notecraft_model::container::append(&ed.boxes, before, added.len(), width, below, 12.0);
+        ed.arranged = true;
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_step(ed);
+    }
+
     fn insert(&mut self, text: &str) {
         let cursor = self.cursor;
         if let Some(ed) = self.editor.as_mut() {
@@ -1679,7 +1702,7 @@ impl NoteCraftApp {
             let image = format!("assets/{base}.printout-{:03}.png", index + 1);
             text.push_str(&snippets::printout_page(format, &image, index + 1));
         }
-        self.insert(&text);
+        self.insert_in_own_container(&text);
         self.say(crate::i18n::format_message_id(
             "ui.inserted_name_and_count_printout_pages",
             &[("name", &name), ("count", &generated.len().to_string())],
@@ -5323,6 +5346,7 @@ impl NoteCraftApp {
                                 ed.rebuild_body();
                                 *from_blocks = true;
                             }
+                            ed.content_bottom = Some(moved.bottom);
                             if moved.boxes {
                                 *boxes_moved = true;
                             }
@@ -7447,5 +7471,78 @@ mod alert_tests {
         std::fs::write(assets.join("Chapter.docx.png"), b"png").expect("png");
         assert_eq!(first_missing_attachment_in_source(source, &page), None, "a PNG sidecar is healthy everywhere");
         assert!(attachment_icon_healthy(&page, "Chapter.docx"));
+    }
+
+    #[test]
+    fn a_printout_added_in_its_own_container_can_be_undone_and_redone() {
+        let t = notecraft_store::testing::TempDir::new("printout-undo");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.md_page.to_string_lossy());
+        let (blocks, boxes) = app.editor.as_ref().map(|e| (e.blocks.len(), e.boxes.len())).expect("a page is open");
+
+        app.insert_in_own_container("\n[![a.pdf](assets/a.pdf.svg)](assets/a.pdf)\n\n![Printout page 1](assets/a.pdf.printout-001.png)\n");
+        let ed = app.editor.as_ref().expect("editor");
+        assert_eq!((ed.blocks.len(), ed.boxes.len()), (blocks + 2, boxes.max(1) + 1));
+
+        app.undo();
+        let ed = app.editor.as_ref().expect("editor");
+        assert_eq!(ed.blocks.len(), blocks, "undo takes the printout's blocks back out");
+
+        app.redo();
+        let ed = app.editor.as_ref().expect("editor");
+        assert_eq!(ed.blocks.len(), blocks + 2, "redo puts them back");
+        assert_eq!(ed.boxes.last().map(|c| c.blocks), Some(2));
+    }
+
+    #[test]
+    fn undo_after_a_real_printout_insert_removes_all_of_it_even_after_frames_have_drawn() {
+        for html in [false, true] {
+            undo_after_a_printout_insert(html);
+        }
+    }
+
+    fn undo_after_a_printout_insert(html: bool) {
+        let t = notecraft_store::testing::TempDir::new("printout-undo-frames");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let pdf = t.path().join("sheet.pdf");
+        let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+        std::fs::write(
+            &pdf,
+            "%PDF-1.4\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<<>>>>\nendobj\n4 0 obj\n<</Length 33>>\nstream\n0.8 0.1 0.1 rg 20 20 100 100 re f\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000054 00000 n \n0000000105 00000 n \n0000000199 00000 n \ntrailer\n<</Root 1 0 R/Size 5>>\nstartxref\n280\n%%EOF\n",
+        )
+        .expect("pdf");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1200.0, 760.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        let shape =
+            |h: &egui_kittest::Harness<'_, NoteCraftApp>| h.state().editor.as_ref().map(|e| (e.blocks.clone(), e.boxes.clone())).expect("editor");
+        let before = shape(&h);
+        let dir = page.clone();
+        h.state_mut().add_file(&dir, &pdf, FileChoice::Printout);
+        // Long enough for the autosave to write the page and the window to settle.
+        for _ in 0..60 {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        let inserted = shape(&h);
+        assert!(inserted.0.len() > before.0.len(), "the printout added blocks: {}", h.state().status);
+        h.state_mut().undo();
+        for _ in 0..5 {
+            h.step();
+        }
+        assert_eq!(shape(&h), before, "one undo takes the whole printout away");
     }
 }
