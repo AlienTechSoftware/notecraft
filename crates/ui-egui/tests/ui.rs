@@ -2978,6 +2978,74 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
     assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
 }
 
+/// Issue #65: open paper to the right of the page, which the canvas can be scrolled to, takes a
+/// click like the paper on the page does. Beside a box as wide as the page (a printout) and under
+/// it, the click starts a box of the usual width where it was made.
+#[test]
+fn a_click_on_open_paper_right_of_the_page_starts_a_box_there() {
+    let (_t, app, s) = sample_app("ui-click-beside-page");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\"><p>a box as wide as the page</p><p>and a second line</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Wide", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    for (what, dy) in [("beside the box", 24.0), ("under the box, right of the page", 300.0)] {
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("put the page back");
+        ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+        settle(&mut h);
+        let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        assert_eq!(before["containers"].as_array().map_or(0, Vec::len), 1, "one box to begin with: {before}");
+        // Box coordinates start at the page's origin; the box ends 760 points across.
+        let origin = &before["origin"];
+        let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+        let (x, y) = (ox + 760.0 + 80.0, oy + dy);
+        let canvas = h.state().page_rect().expect("the canvas");
+        assert!(canvas.contains(egui::pos2(x, y)), "the click lands on the canvas: ({x}, {y}) in {canvas:?}");
+        ask(&mut h, "ui.click", json!({"x": x, "y": y})).expect("click right of the page");
+        settle(&mut h);
+        let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+        assert_eq!(boxes.len(), 2, "{what}: a click right of the page starts a box: {after}");
+        let new_box = &boxes[1];
+        assert!(new_box["x"].as_f64().unwrap_or(0.0) > 760.0, "{what}: the box starts where the click was, past the page: {new_box}");
+        assert_eq!(new_box["width"].as_f64(), Some(360.0), "{what}: a box of the usual width, not squeezed to nothing: {new_box}");
+        assert!(after["caret"] != Value::Null, "{what}: the caret is in the new box: {after}");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+        settle(&mut h);
+    }
+
+    // A page with nothing on it (only the box it keeps for its first words, which holds nothing).
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Empty", "format": "html"}}),
+    )
+    .expect("an empty page");
+    let empty = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": empty, "body": ""}})).expect("nothing on it");
+    ask(&mut h, "ui.open", json!({"path": empty})).expect("open it");
+    settle(&mut h);
+    let before = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(before["blocks"].as_u64(), Some(0), "nothing on the page: {before}");
+    let had = before["containers"].as_array().map_or(0, Vec::len);
+    let origin = &before["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    ask(&mut h, "ui.click", json!({"x": ox + 840.0, "y": oy + 60.0})).expect("click right of an empty page");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let boxes = after["containers"].as_array().cloned().unwrap_or_default();
+    let new_box = boxes.iter().find(|b| b["x"].as_f64().unwrap_or(0.0) > 760.0);
+    assert!(new_box.is_some() && boxes.len() >= had, "a click right of an empty page starts a box there: {after}");
+    assert!(after["caret"] != Value::Null, "the caret is in it: {after}");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
