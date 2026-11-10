@@ -1625,6 +1625,44 @@ impl NoteCraftApp {
         ed.dirty_since = Some(Instant::now());
     }
 
+    /// Puts a printout's blocks where the writer is: into the box that holds the caret, after
+    /// the caret's line, the way OneNote puts it where you are writing (issue #67). With no
+    /// caret in a box it gets a box of its own below the others.
+    fn insert_printout_blocks(&mut self, text: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((index, at)) =
+            ed.caret.as_ref().and_then(|c| notecraft_model::container::place(&ed.boxes, c.block).map(|(index, _)| (index, c.block + 1)))
+        else {
+            self.insert_in_own_container(text);
+            return;
+        };
+        let (added, _) = notecraft_formats::boxes::read(ed.format, text);
+        if added.is_empty() {
+            return;
+        }
+        let count = added.len();
+        let (mut cols_moved, mut justified_moved) = (false, false);
+        for (offset, block) in added.into_iter().enumerate() {
+            ed.blocks.insert(at + offset, block);
+            cols_moved |= ed.columns.insert_block(at + offset);
+            justified_moved |= ed.justified.insert_block(at + offset);
+        }
+        ed.boxes[index].blocks += count;
+        ed.arranged = true;
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_step(ed);
+        let path = path_str(&ed.dir);
+        let cols = cols_moved.then(|| notecraft_model::tablecols::write(&ed.columns));
+        let justified = justified_moved.then(|| notecraft_model::justify::write(&ed.justified));
+        if let Some(line) = cols {
+            self.run("page.columns", &params(&[("path", &path), ("widths", &line)]));
+        }
+        if let Some(line) = justified {
+            self.run("page.justify", &params(&[("path", &path), ("blocks", &line)]));
+        }
+    }
+
     /// Adds the blocks of `text` to the page in a container of their own, below what is
     /// already on the page, so each printout can be moved and sized apart from the others.
     fn insert_in_own_container(&mut self, text: &str) {
@@ -1764,7 +1802,7 @@ impl NoteCraftApp {
             let image = format!("assets/{base}.printout-{:03}.png", index + 1);
             text.push_str(&snippets::printout_page(format, &image, index + 1));
         }
-        self.insert_in_own_container(&text);
+        self.insert_printout_blocks(&text);
         self.say(crate::i18n::format_message_id(
             "ui.inserted_name_and_count_printout_pages",
             &[("name", &name), ("count", &generated.len().to_string())],
@@ -7646,6 +7684,117 @@ mod alert_tests {
             h.step();
         }
         assert_eq!(shape(&h), before, "one undo takes the whole printout away");
+    }
+
+    /// A page from the sample notebook, open in a window, and a one-page PDF to insert.
+    fn printout_harness(
+        html: bool,
+        name: &str,
+    ) -> (notecraft_store::testing::TempDir, PathBuf, PathBuf, egui_kittest::Harness<'static, NoteCraftApp>) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let pdf = t.path().join("sheet.pdf");
+        let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+        std::fs::write(
+            &pdf,
+            "%PDF-1.4\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<<>>>>\nendobj\n4 0 obj\n<</Length 33>>\nstream\n0.8 0.1 0.1 rg 20 20 100 100 re f\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000054 00000 n \n0000000105 00000 n \n0000000199 00000 n \ntrailer\n<</Root 1 0 R/Size 5>>\nstartxref\n280\n%%EOF\n",
+        )
+        .expect("pdf");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1200.0, 760.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        (t, page, pdf, h)
+    }
+
+    /// Issue #67: with no box holding the caret, a second printout goes below what is already
+    /// on the page, not over the first.
+    #[test]
+    fn a_second_printout_lands_below_the_boxes_already_on_the_page() {
+        for html in [false, true] {
+            let (_t, page, pdf, mut h) = printout_harness(html, "printout-below");
+            h.state_mut().editor.as_mut().expect("editor").caret = None;
+            for _ in 0..2 {
+                h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+                for _ in 0..5 {
+                    h.step();
+                }
+            }
+            let all = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
+            // The sample page's words, then one box for each printout, each one further down.
+            assert!(all.len() >= 3, "html={html}: each printout has a box of its own: {all:?}");
+            for pair in all.windows(2) {
+                assert!(pair[1].y > pair[0].y, "html={html}: each new box sits below the one before, not over it: {all:?}");
+            }
+        }
+    }
+
+    /// Issue #67: a printout goes into the box that holds the caret, after the caret's line,
+    /// and that box stays where it was put.
+    #[test]
+    fn a_printout_goes_into_the_box_that_holds_the_caret() {
+        for html in [false, true] {
+            let (_t, page, pdf, mut h) = printout_harness(html, "printout-caret-box");
+            // A box with a line in it, moved to the right of the page's words, with the caret in it.
+            let (index, line) = {
+                let ed = h.state_mut().editor.as_mut().expect("editor");
+                let (added, _) = notecraft_formats::boxes::read(ed.format, "Beside the words\n");
+                let line = ed.blocks.len();
+                ed.blocks.extend(added.iter().cloned());
+                ed.boxes = notecraft_model::container::append(&ed.boxes, line, added.len(), 300.0, 0.0, 0.0);
+                let index = ed.boxes.len() - 1;
+                (ed.boxes[index].x, ed.boxes[index].y) = (900.0, 40.0);
+                ed.arranged = true;
+                ed.rebuild_body();
+                ed.caret = Some(pageedit::Caret {
+                    block: line,
+                    text: "Beside the words".into(),
+                    focus: false,
+                    selection: (0, 0),
+                    place: None,
+                    cell: None,
+                    span: None,
+                });
+                // Made here rather than by clicks and typing, so it is remembered here too, the
+                // way the window remembers a box the writer made.
+                NoteCraftApp::remember_step(ed);
+                (index, line)
+            };
+            for _ in 0..3 {
+                h.step();
+            }
+            let before = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
+            let blocks_before = h.state().editor.as_ref().map(|e| e.blocks.clone()).expect("editor");
+            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+            for _ in 0..5 {
+                h.step();
+            }
+            let ed = h.state().editor.as_ref().expect("editor");
+            assert_eq!(ed.boxes.len(), before.len(), "html={html}: no new box was made: {:?}", ed.boxes);
+            let moved = &ed.boxes[index];
+            assert_eq!((moved.x, moved.y), (900.0, 40.0), "html={html}: the box stays where it was put");
+            assert!(moved.blocks > before[index].blocks, "html={html}: the printout is in the caret's box: {:?}", ed.boxes);
+            let range = notecraft_model::container::blocks_of(&ed.boxes, index);
+            assert_eq!(range.start, line, "html={html}: the box's own line is still first");
+            assert!(
+                ed.blocks[range].iter().any(|b| matches!(b, notecraft_formats::Block::Image { .. })),
+                "html={html}: the printout's pages are in that box"
+            );
+            h.state_mut().undo();
+            for _ in 0..3 {
+                h.step();
+            }
+            let ed = h.state().editor.as_ref().expect("editor");
+            assert_eq!((&ed.blocks, &ed.boxes), (&blocks_before, &before), "html={html}: one undo takes the printout back out of the box");
+        }
     }
 }
 

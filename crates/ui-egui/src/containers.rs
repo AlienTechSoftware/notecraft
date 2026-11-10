@@ -1074,6 +1074,7 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
+    out.bottom = page_points_below(area, bottom, zoom);
     out
 }
 
@@ -1133,7 +1134,14 @@ pub fn show_ink_view(
     // Child UIs do not advance the parent cursor; reserve their complete page-space extent
     // so scrolling and the following ink-layer allocation match the editable page.
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
+    out.bottom = page_points_below(area, bottom, zoom);
     out
+}
+
+/// How far down the page the boxes reach, in page points, from `bottom` on screen: what
+/// [`Moved::bottom`] reports, so a box added later (a printout) can be placed under them.
+fn page_points_below(area: Rect, bottom: f32, zoom: f32) -> f32 {
+    if zoom > 0.0 { ((bottom - area.min.y) / zoom).max(0.0) } else { 0.0 }
 }
 
 fn block_has_image(block: &Block) -> bool {
