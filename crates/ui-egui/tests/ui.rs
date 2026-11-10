@@ -2978,6 +2978,57 @@ fn a_click_on_open_paper_starts_a_new_box_where_it_was_made() {
     assert_eq!(inside["containers"].as_array().map_or(0, Vec::len), boxes_now, "no new box for a click on a box: {inside}");
 }
 
+/// Every rectangle painted in the last frame, nested shapes included.
+fn painted_rects(h: &Harness<'_, NoteCraftApp>) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push(r.rect),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &h.output().shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// A box shows its edges and its drag strip while the pointer is on the strip, not only while it
+/// is over the words under it. Moving up onto the strip to drag the box used to make both vanish.
+#[test]
+fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
+    let (_t, app, s) = sample_app("ui-box-strip-hover");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"40\" data-width=\"300\"><p>a box to drag</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Strip", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(page["caret"], Value::Null, "nothing is being written in the box: {page}");
+    let origin = &page["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    // The strip runs along the top of the box, 14 points high, as wide as the box and its padding.
+    let strip = egui::Rect::from_min_size(egui::pos2(ox + 40.0, oy + 40.0), egui::vec2(300.0 + 12.0, 14.0));
+    let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 2.0 && (a.max - b.max).length() < 2.0;
+
+    for (what, at) in [("over the words", egui::pos2(strip.center().x, strip.max.y + 12.0)), ("on the drag strip", strip.center())] {
+        ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move the pointer");
+        settle(&mut h);
+        let rects = painted_rects(&h);
+        assert!(rects.iter().any(|r| near(*r, strip)), "{what}: the drag strip is drawn at {strip:?}; painted: {rects:?}");
+    }
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
