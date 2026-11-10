@@ -1,6 +1,6 @@
 # ADR 0002: NoteCraft detects new releases itself, behind a source boundary
 
-Status: accepted for 0.0.10. Shared Craft libraries are deferred (see Decision).
+Status: deferred. Not implemented. Revisit when the owner asks for release detection.
 
 ## Context
 
