@@ -530,28 +530,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
             fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
             fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(3.0, 17.0), (7.0, 20.0), (3.0, 23.0)]),
+            path(&[(1.0, 9.0), (5.0, 13.0), (1.0, 17.0)]),
         ],
+        // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
             fill(
-                &[
-                    (17.0, 4.0),
-                    (15.0, 4.0),
-                    (12.0, 5.0),
-                    (10.0, 7.0),
-                    (9.0, 9.0),
-                    (9.0, 11.0),
-                    (10.0, 13.0),
-                    (12.0, 14.5),
-                    (15.0, 15.0),
-                    (17.0, 15.0),
-                ],
+                &[(10.0, 4.0), (8.0, 4.0), (5.0, 5.0), (3.0, 7.0), (2.0, 9.0), (2.0, 11.0), (3.0, 13.0), (5.0, 14.5), (8.0, 15.0), (10.0, 15.0)],
                 color,
             ),
-            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
-            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
-            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(7.0, 17.0), (3.0, 20.0), (7.0, 23.0)]),
+            fill(&[(9.0, 4.0), (16.0, 4.0), (16.0, 6.0), (9.0, 6.0)], color),
+            fill(&[(9.0, 14.0), (11.0, 14.0), (11.0, 22.0), (9.0, 22.0)], color),
+            fill(&[(14.0, 4.0), (16.0, 4.0), (16.0, 22.0), (14.0, 22.0)], color),
+            path(&[(23.0, 9.0), (19.0, 13.0), (23.0, 17.0)]),
         ],
         Icon::ParaAuto => vec![
             fill(
@@ -772,6 +762,110 @@ mod tests {
             paint_moon(&painter, Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(17.0, 17.0)), Color32::WHITE, Color32::BLACK);
         });
         out.textures_delta.clear();
+    }
+
+    /// The points of the filled shapes and of the open shapes `paint` draws for `icon` on a 24
+    /// point square.
+    fn painted(icon: Icon) -> (Vec<Vec<Pos2>>, Vec<Vec<Pos2>>) {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let painter = ui.painter().clone();
+            paint(&painter, Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(24.0, 24.0)), icon, Color32::WHITE);
+        });
+        out.textures_delta.clear();
+        let (mut filled, mut open) = (Vec::new(), Vec::new());
+        for clipped in out.shapes {
+            if let egui::Shape::Path(path) = clipped.shape {
+                if path.fill.a() > 0 {
+                    filled.push(path.points);
+                } else {
+                    open.push(path.points);
+                }
+            }
+        }
+        (filled, open)
+    }
+
+    /// SUP-005: the right-to-left paragraph icon has its arrow head to the right of the pilcrow,
+    /// pointing left, as in Word: `[ q< ]`. The pilcrow must not reach the arrow.
+    #[test]
+    fn the_rtl_paragraph_arrow_sits_right_of_the_pilcrow() {
+        let (filled, open) = painted(Icon::ParaRtl);
+        let pilcrow_right = filled.iter().flatten().map(|p| p.x).fold(f32::MIN, f32::max);
+        let arrow = open.iter().find(|pts| pts.len() == 3).expect("the arrow head is an open three-point path");
+        let arrow_left = arrow.iter().map(|p| p.x).fold(f32::MAX, f32::min);
+        assert!(arrow_left > pilcrow_right, "the arrow starts right of the pilcrow: arrow {arrow_left}, pilcrow {pilcrow_right}");
+        // The arrow head points left: its tip is the left-most point, and it sits on the middle line.
+        let tip = arrow.iter().min_by(|a, b| a.x.total_cmp(&b.x)).expect("a point");
+        assert!((tip.y - 13.0).abs() < 0.01, "the tip is on the middle of the head at 13: {tip:?}");
+        // A gap of at least 3 points between the pilcrow stem and the arrow tip, as Word has.
+        assert!(tip.x - pilcrow_right >= 3.0, "the arrow is spaced from the pilcrow: {tip:?}");
+    }
+
+    /// The LTR and RTL direction icons carry their arrow heads at the same height, so the pair
+    /// reads as one set.
+    #[test]
+    fn the_ltr_and_rtl_arrow_heads_sit_at_the_same_height() {
+        let centre = |icon: Icon| {
+            let (_, open) = painted(icon);
+            let arrow = open.iter().find(|pts| pts.len() == 3).expect("an arrow head").clone();
+            arrow.iter().map(|p| p.y).sum::<f32>() / 3.0
+        };
+        let (rtl, ltr) = (centre(Icon::ParaRtl), centre(Icon::ParaLtr));
+        assert!((rtl - ltr).abs() < 0.01, "the LTR arrow head is level with the RTL one: rtl {rtl}, ltr {ltr}");
+    }
+
+    /// The LTR and RTL direction icons carry arrow heads of the same size.
+    #[test]
+    fn the_ltr_and_rtl_arrow_heads_are_the_same_size() {
+        let size = |icon: Icon| {
+            let (_, open) = painted(icon);
+            let arrow = open.iter().find(|pts| pts.len() == 3).expect("an arrow head").clone();
+            let xs = arrow.iter().map(|p| p.x);
+            let ys = arrow.iter().map(|p| p.y);
+            let width = xs.clone().fold(f32::MIN, f32::max) - xs.fold(f32::MAX, f32::min);
+            let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+            (width, height)
+        };
+        let (rtl, ltr) = (size(Icon::ParaRtl), size(Icon::ParaLtr));
+        assert!((rtl.0 - ltr.0).abs() < 0.01 && (rtl.1 - ltr.1).abs() < 0.01, "the arrow heads match in size: rtl {rtl:?}, ltr {ltr:?}");
+        assert!((rtl.0 - 4.0).abs() < 0.01 && (rtl.1 - 8.0).abs() < 0.01, "the arrow head is 4 by 8 points: {rtl:?}");
+    }
+
+    /// The pilcrow keeps its original 18 point height: only the arrow shows the direction (owner, 2026-11-11).
+    #[test]
+    fn the_pilcrow_keeps_its_size() {
+        let (filled, _) = painted(Icon::ParaRtl);
+        let ys = filled.iter().flatten().map(|p| p.y);
+        let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+        assert!((height - 18.0).abs() < 0.01, "the pilcrow is 18 points tall: {height}");
+    }
+
+    /// The pilcrow keeps its normal shape in both direction icons: its stems stand on the right of
+    /// its bowl. A mirrored pilcrow is wrong (owner, 2026-11-11).
+    #[test]
+    fn the_pilcrow_is_not_mirrored_in_either_direction() {
+        let centre_x = |pts: &[Pos2]| {
+            let xs = pts.iter().map(|p| p.x);
+            (xs.clone().fold(f32::MAX, f32::min) + xs.fold(f32::MIN, f32::max)) / 2.0
+        };
+        for icon in [Icon::ParaRtl, Icon::ParaLtr] {
+            let (filled, _) = painted(icon);
+            let bowl = filled.iter().max_by_key(|pts| pts.len()).expect("the bowl").as_slice();
+            let stems: Vec<&Vec<Pos2>> = filled
+                .iter()
+                .filter(|pts| {
+                    pts.len() == 4 && {
+                        let ys = pts.iter().map(|p| p.y);
+                        ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min) > 10.0
+                    }
+                })
+                .collect();
+            assert!(!stems.is_empty(), "{icon:?} has its stems");
+            for stem in stems {
+                assert!(centre_x(stem.as_slice()) > centre_x(bowl), "{icon:?}: the stems stand right of the bowl");
+            }
+        }
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
