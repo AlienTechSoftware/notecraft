@@ -1756,6 +1756,10 @@ impl NoteCraftApp {
             justified_moved |= ed.justified.insert_block(at + offset);
         }
         ed.boxes[index].blocks += count;
+        // The pages come out as wide as the sheet, as they do in a box of their own: a narrow box
+        // (one started with a click) is widened for them rather than the pages shrunk to fit it.
+        let sheet = ed.boxes.first().map_or(360.0, |c| c.width);
+        ed.boxes[index].width = ed.boxes[index].width.max(sheet);
         ed.arranged = true;
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
@@ -7994,6 +7998,11 @@ mod alert_tests {
             let moved = &ed.boxes[index];
             assert_eq!((moved.x, moved.y), (900.0, 40.0), "html={html}: the box stays where it was put");
             assert!(moved.blocks > before[index].blocks, "html={html}: the printout is in the caret's box: {:?}", ed.boxes);
+            // A printout's pages are as wide as the sheet, as they are in a box of their own: a
+            // narrow box (one started with a click) is widened for them, not the pages shrunk.
+            let sheet = before[0].width;
+            assert!(sheet > 300.0, "html={html}: the page's first box is wider than the narrow one: {before:?}");
+            assert_eq!(moved.width, sheet, "html={html}: the box is widened to the sheet for the printout");
             let range = notecraft_model::container::blocks_of(&ed.boxes, index);
             assert_eq!(range.start, line, "html={html}: the box's own line is still first");
             assert!(
