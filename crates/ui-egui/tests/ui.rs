@@ -3029,6 +3029,86 @@ fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
     }
 }
 
+/// As in OneNote, pressing on open paper and dragging draws a selection box. Every box it touches
+/// is selected when the button is let go; dragging one of them by its strip moves them all
+/// together, and Delete takes them all away. Boxes it did not touch are left alone.
+#[test]
+fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
+    let (_t, app, s) = sample_app("ui-selection-box");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let boxed = |x: f32, y: f32, words: &str| {
+        format!(
+            "<div class=\"nc-box\" data-x=\"{x}\" data-y=\"{y}\" data-width=\"200\" style=\"position:absolute;left:{x}px;top:{y}px;width:200px\">\n<p>{words}</p>\n</div>\n"
+        )
+    };
+    let html = format!("{}{}{}", boxed(40.0, 60.0, "first"), boxed(400.0, 60.0, "second"), boxed(40.0, 400.0, "third"));
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Select", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let boxes = |p: &Value| p["containers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(boxes(&page).len(), 3, "three boxes to begin with: {page}");
+
+    // From open paper above and left of the first box, across it and the second, short of the third.
+    let (from, to) = (egui::pos2(ox + 10.0, oy + 10.0), egui::pos2(ox + 700.0, oy + 160.0));
+    ask(&mut h, "ui.move", json!({"x": from.x, "y": from.y})).expect("onto the paper");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+    pump(&mut h);
+    for step in 1..=8 {
+        let t = step as f32 / 8.0;
+        ask(&mut h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+        pump(&mut h);
+    }
+    let shown = egui::Rect::from_two_pos(from, to);
+    let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 4.0 && (a.max - b.max).length() < 4.0;
+    assert!(painted_rects(&h).iter().any(|r| near(*r, shown)), "the selection box is drawn from the press to the pointer: {:?}", painted_rects(&h));
+    ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("up");
+    settle(&mut h);
+    let picked = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(picked["selectedContainers"], json!([0, 1]), "the two boxes it touched are selected: {picked}");
+    assert_eq!(boxes(&picked).len(), 3, "and no box was started by it: {picked}");
+    assert_eq!(picked["caret"], Value::Null, "nor is the cursor placed: {picked}");
+
+    // Moving the first by its strip moves the second with it.
+    let strip = egui::pos2(ox + 40.0 + 100.0, oy + 60.0 + 7.0);
+    ask(&mut h, "ui.move", json!({"x": strip.x, "y": strip.y})).expect("onto the strip");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": strip.x, "y": strip.y})).expect("down");
+    pump(&mut h);
+    for step in 1..=5 {
+        ask(&mut h, "ui.move", json!({"x": strip.x + 10.0 * step as f32, "y": strip.y + 20.0 * step as f32})).expect("drag");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": strip.x + 50.0, "y": strip.y + 100.0})).expect("up");
+    settle(&mut h);
+    let moved = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let at = |p: &Value, i: usize| (boxes(p)[i]["x"].as_f64().unwrap_or(0.0), boxes(p)[i]["y"].as_f64().unwrap_or(0.0));
+    assert_eq!(at(&moved, 0), (90.0, 160.0), "the first box moved with the pointer: {moved}");
+    assert_eq!(at(&moved, 1), (450.0, 160.0), "the second moved with it: {moved}");
+    assert_eq!(at(&moved, 2), (40.0, 400.0), "the third stayed: {moved}");
+    assert_eq!(moved["selectedContainers"], json!([0, 1]), "and both are still selected: {moved}");
+
+    // Delete takes both away and leaves the third.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let left = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(boxes(&left).len(), 1, "the two selected boxes went: {left}");
+    assert_eq!(at(&left, 0), (40.0, 400.0), "the third is the one left: {left}");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("third") && !body.contains("first") && !body.contains("second"), "and so are the words:\n{body}");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The

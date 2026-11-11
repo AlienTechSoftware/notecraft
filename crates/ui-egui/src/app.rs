@@ -7080,6 +7080,7 @@ impl NoteCraftApp {
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
+                "selectedContainers": crate::containers::selected_boxes(ctx, &e.dir),
                 // The image block selected independently of its containing text box, or null.
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),

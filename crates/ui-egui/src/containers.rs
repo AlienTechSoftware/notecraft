@@ -98,6 +98,28 @@ pub fn selected(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
     ctx.data(|d| d.get_temp::<(usize, String)>(selected_id())).filter(|(_, on)| *on == key).map(|(i, _)| i)
 }
 
+/// The boxes a selection box picked on `page`, in order: more than one, moved and deleted
+/// together. One box picked that way is simply the selected box ([`selected`]).
+pub fn selected_group(ctx: &egui::Context, page: &std::path::Path) -> Vec<usize> {
+    let key = page.to_string_lossy();
+    ctx.data(|d| d.get_temp::<(Vec<usize>, String)>(group_id())).filter(|(_, on)| *on == key).map(|(g, _)| g).unwrap_or_default()
+}
+
+/// Every box selected on `page`: the group a selection box picked, or the one selected box.
+pub fn selected_boxes(ctx: &egui::Context, page: &std::path::Path) -> Vec<usize> {
+    let group = selected_group(ctx, page);
+    if group.is_empty() { selected(ctx, page).into_iter().collect() } else { group }
+}
+
+fn group_id() -> Id {
+    Id::new("containers-selected-group")
+}
+
+/// Where a selection box being dragged over open paper started, in page points, with its page.
+fn selection_box_id() -> Id {
+    Id::new("containers-selection-box")
+}
+
 /// True when a container took this frame's right click, so the page's own menu stays shut.
 pub fn took_right_click(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(claimed_id())) == Some(ctx.cumulative_pass_nr())
@@ -228,6 +250,10 @@ pub fn show(
     // was changed under it) cannot stay selected.
     let page_key = page_dir.to_string_lossy().into_owned();
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
+    // The boxes a selection box picked (more than one), and where their frames are drawn.
+    let mut group: Vec<usize> = selected_group(ui.ctx(), page_dir).into_iter().filter(|i| *i < boxes.len()).collect();
+    let mut group_frames: Vec<Rect> = Vec::new();
+    let mut group_shift: Option<(usize, f32, f32)> = None;
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
@@ -258,7 +284,7 @@ pub fn show(
     // out partway down the window.
     let open_bottom = (area.min.y + area.height().min(20_000.0)).max(ui.clip_rect().max.y);
     let paper = ui.interact(Rect::from_min_max(area.min, pos2(open_right, open_bottom)), ui.id().with("open-paper"), Sense::click());
-    let selection_was_up = sel.is_some() || menu_at.is_some();
+    let selection_was_up = sel.is_some() || menu_at.is_some() || !group.is_empty();
     // A page with nothing on it shows nothing, which looks like a page that did not load. Say what
     // to do: the paper takes a click, and the words start where it was made.
     if blocks.is_empty() && caret.is_none() {
@@ -484,6 +510,8 @@ pub fn show(
         let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
         let right_here = right_click && pointer.is_some_and(|p| bar.contains(p)) && !words_selected && !image_right_click;
         if drag.clicked() || right_here {
+            // One box picked by its strip is the selection, not the group it may have been in.
+            group.clear();
             sel = Some(i);
             *caret = None;
             out.changed.caret = true;
@@ -645,6 +673,11 @@ pub fn show(
             out.boxes = true;
             log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
         }
+        if group.contains(&i) {
+            group_frames.push(frame.union(Rect::from_min_size(at, vec2(frame.width(), HANDLE * zoom))));
+            ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
+            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+        }
         if is_sel {
             sel_frame = Some(frame);
             // Everything in the box is selected: shade it all, behind the words.
@@ -713,6 +746,9 @@ pub fn show(
                     moved.x != requested_x,
                     moved.y != requested_y
                 );
+                if group.contains(&i) {
+                    group_shift = Some((i, moved.x - old.x, moved.y - old.y));
+                }
                 *c = moved;
             }
             out.boxes = true;
@@ -1116,6 +1152,105 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
+
+    // The boxes of a group move together: one was dragged by its strip, the others follow it.
+    if let Some((moved, dx, dy)) = group_shift {
+        for &j in group.iter().filter(|j| **j != moved) {
+            if let Some(c) = boxes.get_mut(j) {
+                *c = Container::new(c.x + dx, c.y + dy, c.width, c.blocks);
+            }
+        }
+        out.boxes = true;
+    }
+    // Delete or Backspace takes the whole group away, last box first so the numbers hold.
+    if group.len() > 1
+        && caret.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
+        && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    {
+        let mut gone = group.clone();
+        gone.sort_unstable();
+        for &j in gone.iter().rev() {
+            remove_container(blocks, boxes, j);
+        }
+        group.clear();
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+    // A group is let go like a single box: Escape, the caret going into words, or a press on the
+    // page away from it.
+    if !group.is_empty() {
+        let pressed_away = ui.input(|i| i.pointer.primary_pressed())
+            && pointer.is_some_and(|p| area.contains(p) || paper.rect.contains(p) || below.rect.contains(p))
+            && !pointer.is_some_and(|p| group_frames.iter().any(|f| f.contains(p)));
+        if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
+            group.clear();
+        }
+    }
+
+    // The selection box, as in OneNote: a press on open paper and a drag draw it, from where the
+    // press was to the pointer. Let go, every box it touches is selected. It is followed from the
+    // pointer rather than by the paper sensing drags: the paper lies under the boxes, and sensing
+    // drags it would take them from the words and cells in the boxes.
+    let to_page = |p: Pos2| ((p.x - area.min.x) / zoom.max(0.01), (p.y - area.min.y) / zoom.max(0.01));
+    let to_screen = |(x, y): (f32, f32)| pos2(area.min.x + x * zoom, area.min.y + y * zoom);
+    let pressed_at = ui.input(|i| if i.pointer.primary_pressed() { i.pointer.press_origin() } else { None });
+    if let Some(from) = pressed_at
+        && (paper.hovered() || below.hovered())
+        && !frames.iter().any(|f| f.expand(3.0).contains(from))
+    {
+        ui.data_mut(|d| d.insert_temp(selection_box_id(), (to_page(from), page_key.clone())));
+    }
+    let started = ui.data(|d| d.get_temp::<((f32, f32), String)>(selection_box_id())).filter(|(_, on)| *on == page_key).map(|(at, _)| at);
+    if let Some(from) = started {
+        let down = ui.input(|i| i.pointer.primary_down());
+        let from_screen = to_screen(from);
+        // A click is a click: only a drag past a few points is a selection box.
+        if let Some(now) = pointer.filter(|now| (*now - from_screen).length() > 6.0) {
+            let shown = Rect::from_two_pos(from_screen, now);
+            if down {
+                if !group.is_empty() || sel.is_some() {
+                    group.clear();
+                    sel = None;
+                    // Already put away for the next frame above: a new selection box lets go of them.
+                    ui.data_mut(|d| {
+                        d.remove::<(usize, String)>(selected_id());
+                        d.remove::<Pos2>(menu_id());
+                    });
+                }
+                ui.painter().rect_filled(shown, 0.0, t.accent.gamma_multiply(0.12));
+                ui.painter().rect_stroke(shown, 0.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+                ui.ctx().request_repaint();
+            } else {
+                let picked: Vec<usize> = frames.iter().enumerate().filter(|(_, f)| f.intersects(shown)).map(|(i, _)| i).collect();
+                log::debug!("SELECTION_BOX: rect={shown:?} picked={picked:?}");
+                match picked.as_slice() {
+                    [] => {}
+                    [one] => sel = Some(*one),
+                    _ => group = picked.clone(),
+                }
+                if !picked.is_empty() {
+                    *caret = None;
+                    out.changed.caret = true;
+                }
+            }
+        }
+        if !down {
+            ui.data_mut(|d| d.remove::<((f32, f32), String)>(selection_box_id()));
+        }
+    }
+    ui.data_mut(|d| {
+        if group.len() > 1 {
+            d.insert_temp(group_id(), (group.clone(), page_key.clone()));
+        } else {
+            d.remove::<(Vec<usize>, String)>(group_id());
+        }
+        if let Some(i) = sel {
+            d.insert_temp(selected_id(), (i, page_key.clone()));
+        }
+    });
     out.bottom = page_points_below(area, bottom, zoom);
     out
 }
