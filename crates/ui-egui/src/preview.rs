@@ -413,9 +413,20 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir
 /// a box of no height: it drew nothing at all, and a picture low on a long page was a gap
 /// where a picture should be. Measured on 2026-10-19 on the Arabic showcase page, where the
 /// same picture drew at the top of one page and vanished at the bottom of another.
-fn picture_box(ui: &Ui, zoom: f32) -> egui::Vec2 {
+fn picture_box(ui: &Ui, src: &str, zoom: f32) -> egui::Vec2 {
     // Parent columns already carry the page zoom; the picture's height is its own size.
-    egui::vec2(ui.available_width(), 480.0 * zoom)
+    egui::vec2(ui.available_width(), picture_max_height(src, zoom))
+}
+
+/// How tall a picture without a size of its own may be drawn. A printout's page is a sheet of
+/// paper, so it fills its box's width however tall that makes it, as a page put on the sheet
+/// would; other pictures are kept to 480 points, so one photo does not fill the window.
+fn picture_max_height(src: &str, zoom: f32) -> f32 {
+    let name = src.rsplit(['/', '\\']).next().unwrap_or(src);
+    let printout = name
+        .rsplit_once(".printout-")
+        .is_some_and(|(_, page)| page.strip_suffix(".png").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
+    if printout { f32::INFINITY } else { 480.0 * zoom }
 }
 
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
@@ -425,7 +436,7 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, o
                 Some((uri, bytes)) => {
                     // A linked image is the attachment-card form used by NoteCraft. Keep its
                     // generated shell icon compact; standalone images still use the picture box.
-                    let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, zoom) };
+                    let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, src, zoom) };
                     let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     *object_rect = Some(response.rect);
                     if response.hovered() {
@@ -689,7 +700,9 @@ pub(crate) fn show_block_zoomed(
                             (Some(width), Some(height)) => {
                                 ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom)).maintain_aspect_ratio(false))
                             }
-                            _ => ui.add(image.max_width(ui.available_width()).max_height(480.0 * zoom).fit_to_original_size(1.0)),
+                            // At most its own size times the zoom, so it grows and shrinks with
+                            // the words, and never wider than its column.
+                            _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(zoom)),
                         };
                         rendered_object_rect = Some(response.rect);
                         if response.hovered() {
@@ -868,6 +881,17 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 
 #[cfg(test)]
 mod tests {
+    /// A printout's page is drawn as wide as its box, the way a sheet of paper fills the page
+    /// it is put on; other pictures stay no taller than 480 points.
+    #[test]
+    fn a_printout_page_is_not_held_to_a_picture_height() {
+        assert_eq!(super::picture_max_height("assets/Notes_13_Bloch-3l.pdf.printout-001.png", 1.0), f32::INFINITY);
+        assert_eq!(super::picture_max_height("assets/a.pdf.printout-012.png", 0.5), f32::INFINITY);
+        assert_eq!(super::picture_max_height("assets/photo.png", 1.0), 480.0);
+        assert_eq!(super::picture_max_height("assets/photo.png", 0.5), 240.0);
+        assert_eq!(super::picture_max_height("assets/printout.png", 1.0), 480.0);
+    }
+
     /// Issue: the page read every picture from disk on every frame (a page of printouts on a
     /// network or cloud folder made the window crawl). A picture is read once, and again only
     /// when the file changes.
@@ -1136,6 +1160,42 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         panic!("the picture came out {tall} points tall");
+    }
+
+    /// A picture grows with the page's zoom, also past its own pixel size: zoomed in on a printout,
+    /// its page grows with the words, rather than stopping at the size of the picture's pixels.
+    #[test]
+    fn a_picture_grows_with_the_zoom_past_its_own_size() {
+        let t = notecraft_store::testing::TempDir::new("picture-zoom");
+        let page = t.path().to_path_buf();
+        std::fs::create_dir_all(page.join("assets")).expect("assets");
+        std::fs::write(page.join("assets").join("logo.png"), crate::LOGO_PNG).expect("png");
+        let blocks = blocks_for(PageFormat::Cmgfm, "![logo](assets/logo.png)\n");
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let tokens = crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default }.tokens();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(8000.0, 8000.0));
+        let tall_at = |zoom: f32| {
+            let mut tall = 0.0;
+            for _ in 0..100 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let before = ui.cursor().min.y;
+                    let id = ui.id().with("zoomed");
+                    show_block_zoomed(ui, &blocks[0], 0, &page, &tokens, false, Some(Dir::Ltr), None, None, id, zoom);
+                    tall = ui.cursor().min.y - before;
+                });
+                out.textures_delta.clear();
+                if tall > 40.0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            tall
+        };
+        let (one, three) = (tall_at(1.0), tall_at(3.0));
+        assert!(one > 40.0, "the picture is drawn: {one}");
+        assert!(three > one * 2.5, "at 300% the picture is about three times as tall as at 100%: {one} -> {three}");
     }
 
     #[test]
