@@ -18,7 +18,7 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
-pub const FONT_SIZES: [u8; 14] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
+pub const FONT_SIZES: [u8; 16] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 /// Shown only while the caret is in a table, the way Office shows a tab for the thing in
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
 pub const TABLE_TAB: &str = "Table";
@@ -846,7 +846,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 let size_label = view.font_size.unwrap_or_else(|| crate::tl_id!("ui.font_size"));
                 let size_menu = ui.menu_button(size_label, |ui| {
                     for size in FONT_SIZES {
-                        if ui.button(format!("{size} pt")).clicked() {
+                        if ui.button(format!("{size}")).clicked() {
                             acts.push(Act::FontSize(size));
                             ui.close();
                         }
@@ -3026,5 +3026,12 @@ mod tests {
         assert_ne!(Act::Mark("bold"), Act::Mark("italic"));
         assert_ne!(Act::Block("h1"), Act::Insert("h1"));
         assert_eq!(Act::Tab("Insert".into()), Act::Tab("Insert".to_string()));
+    }
+
+    /// SUP-009: the font size list is OneNote's whole sizes (the page format stores whole
+    /// numbers, so 9.5 and 10.5 wait for a format change).
+    #[test]
+    fn the_font_size_list_is_onenotes_whole_sizes() {
+        assert_eq!(FONT_SIZES.as_slice(), [8u8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].as_slice());
     }
 }

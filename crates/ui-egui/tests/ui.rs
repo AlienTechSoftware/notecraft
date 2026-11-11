@@ -5830,7 +5830,7 @@ fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
     let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     assert_eq!(h.state().body().unwrap_or_default(), before, "unsupported cross-paragraph selection must not change an unrelated caret");
     let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
@@ -6160,7 +6160,7 @@ fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("24 pt").click();
+        h.get_by_label("24").click();
         settle(&mut h);
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24 pt"));
         assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
@@ -6181,7 +6181,7 @@ fn font_selectors_show_pending_size_without_editing_the_page() {
     let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"));
     assert_eq!(h.state().body().unwrap_or_default(), before);
@@ -6449,7 +6449,7 @@ fn font_size_replaces_only_the_partial_selection_inside_an_existing_size() {
     }
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("24 pt").click();
+    h.get_by_label("24").click();
     settle(&mut h);
     let body = h.state().body().unwrap_or_default();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
@@ -6477,7 +6477,7 @@ fn font_size_replaces_mixed_sizes_in_a_partial_selection() {
     pump(&mut h);
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("24 pt").click();
+    h.get_by_label("24").click();
     settle(&mut h);
     let body = h.state().body().unwrap_or_default();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
@@ -6549,7 +6549,7 @@ fn pending_marks_combine_with_size_for_unicode_typing_in_both_formats() {
         settle(&mut h);
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("18 pt").click();
+        h.get_by_label("18").click();
         settle(&mut h);
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the pending size is shown");
         assert_eq!(h.state().body().unwrap_or_default(), before);
@@ -6668,7 +6668,7 @@ fn selected_container_font_size_is_undoable_and_leaves_other_boxes_alone() {
     let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the selected container reports its size");
     let after = h.state().body().unwrap_or_default().to_string();
@@ -6836,7 +6836,7 @@ fn font_size_without_selection_formats_new_text() {
         let original = h.state().body().unwrap_or_default().to_string();
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("18 pt").click();
+        h.get_by_label("18").click();
         settle(&mut h);
         assert_eq!(h.state().body().unwrap_or_default(), original, "choosing a size alone does not change the page");
         let history = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"].clone();
@@ -6875,7 +6875,7 @@ fn pending_font_size_is_cleared_when_caret_moves() {
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("move caret");
     settle(&mut h);
@@ -6895,7 +6895,7 @@ fn pending_font_size_applies_to_unicode_typing() {
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     ask(&mut h, "ui.text", json!({"text": "مرحبا"})).expect("type unicode");
     settle(&mut h);
@@ -6914,13 +6914,13 @@ fn pending_font_size_can_change_in_a_typing_run() {
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     settle(&mut h);
     ask(&mut h, "ui.text", json!({"text": "first"})).expect("first size");
     settle(&mut h);
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("24 pt").click();
+    h.get_by_label("24").click();
     settle(&mut h);
     ask(&mut h, "ui.text", json!({"text": "second"})).expect("second size");
     settle(&mut h);
@@ -6948,7 +6948,7 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
 
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("18 pt").click();
+        h.get_by_label("18").click();
         settle(&mut h);
 
         let body = h.state().body().unwrap_or_default().to_string();
@@ -6978,7 +6978,7 @@ fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
 
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("18 pt").click();
+        h.get_by_label("18").click();
         settle(&mut h);
         let formatted = h.state().body().unwrap_or_default().to_string();
         assert!(formatted.contains("<span style=\"font-size: 18pt\">"), "the size was applied: {formatted}");
@@ -7000,7 +7000,7 @@ fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
         pump(&mut h);
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("24 pt").click();
+        h.get_by_label("24").click();
         settle(&mut h);
         let resized = h.state().body().unwrap_or_default().to_string();
         assert!(resized.contains("font-size: 24pt"), "the second size was applied for {path}: {resized}");
@@ -7028,7 +7028,7 @@ fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
         pump(&mut h);
         h.get_by_label("Font Size").click();
         h.run();
-        h.get_by_label("24 pt").click();
+        h.get_by_label("24").click();
         settle(&mut h);
         assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"], history, "same size is not an edit");
         ask(&mut h, "ui.undo", json!({})).expect("undo through the user action");
@@ -7063,7 +7063,7 @@ fn font_size_history_stays_separate_from_typing() {
     pump(&mut h);
     h.get_by_label("Font Size").click();
     h.run();
-    h.get_by_label("18 pt").click();
+    h.get_by_label("18").click();
     h.run();
     let formatted = h.state().body().unwrap_or_default().to_string();
     assert!(formatted.contains("font-size: 18pt"), "the size was applied: {formatted}");
