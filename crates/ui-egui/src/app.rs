@@ -1727,7 +1727,10 @@ impl NoteCraftApp {
     /// as they are. Reading them back from the text would throw away an empty new block and
     /// move the caret out from under the user.
     fn mark_dirty_from_blocks(ed: &mut Editor) {
-        ed.dirty_since = Some(Instant::now());
+        // A change that leaves the file as it is, or as it is being written (a click on open
+        // paper, which only places the cursor), is not a change to save.
+        let file_will_hold = ed.saving.as_ref().unwrap_or(&ed.saved_body);
+        ed.dirty_since = (ed.body_to_save() != *file_will_hold).then(Instant::now);
     }
 
     /// Puts a printout's blocks where the writer is: into the box that holds the caret, after
@@ -3839,6 +3842,11 @@ impl NoteCraftApp {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same {
             // Nothing really changed, or the page was just put back by undo itself.
+            return;
+        }
+        // Only the cursor's place on open paper came or went: the page is the one remembered.
+        let saved = ed.body_to_save();
+        if saved != ed.body && ed.history.here().is_some_and(|s| s.body == saved) {
             return;
         }
         let here = ed.caret.as_ref().map(|c| c.block);
