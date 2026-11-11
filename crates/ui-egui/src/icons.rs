@@ -532,26 +532,16 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
             path(&[(3.0, 17.0), (7.0, 20.0), (3.0, 23.0)]),
         ],
+        // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
             fill(
-                &[
-                    (17.0, 4.0),
-                    (15.0, 4.0),
-                    (12.0, 5.0),
-                    (10.0, 7.0),
-                    (9.0, 9.0),
-                    (9.0, 11.0),
-                    (10.0, 13.0),
-                    (12.0, 14.5),
-                    (15.0, 15.0),
-                    (17.0, 15.0),
-                ],
+                &[(11.0, 4.0), (9.0, 4.0), (6.0, 5.0), (4.0, 7.0), (3.0, 9.0), (3.0, 11.0), (4.0, 13.0), (6.0, 14.5), (9.0, 15.0), (11.0, 15.0)],
                 color,
             ),
-            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
-            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
-            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(7.0, 17.0), (3.0, 20.0), (7.0, 23.0)]),
+            fill(&[(10.0, 4.0), (17.0, 4.0), (17.0, 6.0), (10.0, 6.0)], color),
+            fill(&[(10.0, 14.0), (12.0, 14.0), (12.0, 22.0), (10.0, 22.0)], color),
+            fill(&[(15.0, 4.0), (17.0, 4.0), (17.0, 22.0), (15.0, 22.0)], color),
+            path(&[(23.0, 17.0), (19.0, 20.0), (23.0, 23.0)]),
         ],
         Icon::ParaAuto => vec![
             fill(
@@ -772,6 +762,42 @@ mod tests {
             paint_moon(&painter, Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(17.0, 17.0)), Color32::WHITE, Color32::BLACK);
         });
         out.textures_delta.clear();
+    }
+
+    /// The points of the filled shapes and of the open shapes `paint` draws for `icon` on a 24
+    /// point square.
+    fn painted(icon: Icon) -> (Vec<Vec<Pos2>>, Vec<Vec<Pos2>>) {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let painter = ui.painter().clone();
+            paint(&painter, Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(24.0, 24.0)), icon, Color32::WHITE);
+        });
+        out.textures_delta.clear();
+        let (mut filled, mut open) = (Vec::new(), Vec::new());
+        for clipped in out.shapes {
+            if let egui::Shape::Path(path) = clipped.shape {
+                if path.fill.a() > 0 {
+                    filled.push(path.points);
+                } else {
+                    open.push(path.points);
+                }
+            }
+        }
+        (filled, open)
+    }
+
+    /// SUP-005: the right-to-left paragraph icon has its arrow head to the right of the pilcrow,
+    /// pointing left, as in Word: `[ q< ]`. The pilcrow must not reach the arrow.
+    #[test]
+    fn the_rtl_paragraph_arrow_sits_right_of_the_pilcrow() {
+        let (filled, open) = painted(Icon::ParaRtl);
+        let pilcrow_right = filled.iter().flatten().map(|p| p.x).fold(f32::MIN, f32::max);
+        let arrow = open.iter().find(|pts| pts.len() == 3).expect("the arrow head is an open three-point path");
+        let arrow_left = arrow.iter().map(|p| p.x).fold(f32::MAX, f32::min);
+        assert!(arrow_left > pilcrow_right, "the arrow starts right of the pilcrow: arrow {arrow_left}, pilcrow {pilcrow_right}");
+        // The arrow head points left: its tip is the left-most point, and it sits on the middle line.
+        let tip = arrow.iter().min_by(|a, b| a.x.total_cmp(&b.x)).expect("a point");
+        assert!((tip.y - 20.0).abs() < 0.01, "the tip is on the middle of the head: {tip:?}");
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
