@@ -700,7 +700,9 @@ pub(crate) fn show_block_zoomed(
                             (Some(width), Some(height)) => {
                                 ui.add(image.fit_to_exact_size(vec2(*width * zoom, *height * zoom)).maintain_aspect_ratio(false))
                             }
-                            _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(1.0)),
+                            // At most its own size times the zoom, so it grows and shrinks with
+                            // the words, and never wider than its column.
+                            _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(zoom)),
                         };
                         rendered_object_rect = Some(response.rect);
                         if response.hovered() {
@@ -1158,6 +1160,42 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         panic!("the picture came out {tall} points tall");
+    }
+
+    /// A picture grows with the page's zoom, also past its own pixel size: zoomed in on a printout,
+    /// its page grows with the words, rather than stopping at the size of the picture's pixels.
+    #[test]
+    fn a_picture_grows_with_the_zoom_past_its_own_size() {
+        let t = notecraft_store::testing::TempDir::new("picture-zoom");
+        let page = t.path().to_path_buf();
+        std::fs::create_dir_all(page.join("assets")).expect("assets");
+        std::fs::write(page.join("assets").join("logo.png"), crate::LOGO_PNG).expect("png");
+        let blocks = blocks_for(PageFormat::Cmgfm, "![logo](assets/logo.png)\n");
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let tokens = crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default }.tokens();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(8000.0, 8000.0));
+        let tall_at = |zoom: f32| {
+            let mut tall = 0.0;
+            for _ in 0..100 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let before = ui.cursor().min.y;
+                    let id = ui.id().with("zoomed");
+                    show_block_zoomed(ui, &blocks[0], 0, &page, &tokens, false, Some(Dir::Ltr), None, None, id, zoom);
+                    tall = ui.cursor().min.y - before;
+                });
+                out.textures_delta.clear();
+                if tall > 40.0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            tall
+        };
+        let (one, three) = (tall_at(1.0), tall_at(3.0));
+        assert!(one > 40.0, "the picture is drawn: {one}");
+        assert!(three > one * 2.5, "at 300% the picture is about three times as tall as at 100%: {one} -> {three}");
     }
 
     #[test]
