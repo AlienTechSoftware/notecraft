@@ -530,7 +530,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
             fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
             fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(3.0, 17.0), (7.0, 20.0), (3.0, 23.0)]),
+            path(&[(3.0, 12.0), (7.0, 15.0), (3.0, 18.0)]),
         ],
         // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
@@ -800,6 +800,19 @@ mod tests {
         assert!((tip.y - 15.0).abs() < 0.01, "the tip is raised to the middle of the head at 15: {tip:?}");
         // A gap of at least 3 points between the pilcrow stem and the arrow tip, as Word has.
         assert!(tip.x - pilcrow_right >= 3.0, "the arrow is spaced from the pilcrow: {tip:?}");
+    }
+
+    /// The LTR and RTL direction icons carry their arrow heads at the same height, so the pair
+    /// reads as one set.
+    #[test]
+    fn the_ltr_and_rtl_arrow_heads_sit_at_the_same_height() {
+        let centre = |icon: Icon| {
+            let (_, open) = painted(icon);
+            let arrow = open.iter().find(|pts| pts.len() == 3).expect("an arrow head").clone();
+            arrow.iter().map(|p| p.y).sum::<f32>() / 3.0
+        };
+        let (rtl, ltr) = (centre(Icon::ParaRtl), centre(Icon::ParaLtr));
+        assert!((rtl - ltr).abs() < 0.01, "the LTR arrow head is level with the RTL one: rtl {rtl}, ltr {ltr}");
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
