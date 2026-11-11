@@ -638,8 +638,9 @@ pub fn show(
             && !resize_drag_active
         {
             let d = response.drag_delta();
+            let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
-                let to = dragged_to(ui, ui.id().with(("snap-move", i)), (c.x, c.y), d / zoom, response.drag_started(), snap);
+                let to = dragged_to(ui, ui.id().with(("snap-move", i)), (c.x, c.y), d / zoom + vec2(0.0, pull), response.drag_started(), snap);
                 *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
             out.boxes = true;
@@ -696,9 +697,11 @@ pub fn show(
         }
         if drag.dragged() {
             let d = drag.drag_delta();
+            let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
                 let old = *c;
-                let (requested_x, requested_y) = dragged_to(ui, ui.id().with(("snap-move", i)), (old.x, old.y), d / zoom, drag.drag_started(), snap);
+                let (requested_x, requested_y) =
+                    dragged_to(ui, ui.id().with(("snap-move", i)), (old.x, old.y), d / zoom + vec2(0.0, pull), drag.drag_started(), snap);
                 let moved = Container::new(requested_x, requested_y, old.width, old.blocks);
                 log::debug!(
                     "CONTAINER_MOVE: container={i} delta_screen=({:.2},{:.2}) delta_page=({:.2},{:.2}) old=({:.2},{:.2}) requested=({requested_x:.2},{requested_y:.2}) stored=({:.2},{:.2}) clamped_x={} clamped_y={}",
@@ -1296,6 +1299,33 @@ fn dragged_to(ui: &Ui, id: egui::Id, at: (f32, f32), delta: egui::Vec2, started:
     let free = (free.0 + delta.x, free.1 + delta.y);
     ui.data_mut(|d| d.insert_temp(id, free));
     (to_grid(free.0, step), to_grid(free.1, step))
+}
+
+/// While a box is dragged with the pointer near the top or bottom of the view, scrolls the page
+/// that way, faster the nearer the edge the pointer is, so a box can be taken further than the
+/// window shows. Gives how far the box moves on the page with the scroll, in page points, so it
+/// stays under the pointer. The page does not scroll up past its own top (`page_top`, on screen).
+fn scroll_at_edges(ui: &Ui, page_top: f32, zoom: f32) -> f32 {
+    /// How near the edge, in points, the pointer starts the page scrolling.
+    const BAND: f32 = 48.0;
+    /// Points a second, with the pointer at the edge or past it.
+    const FASTEST: f32 = 1200.0;
+    let view = ui.clip_rect();
+    let Some(p) = ui.ctx().pointer_latest_pos() else { return 0.0 };
+    let band = BAND.min(view.height() / 4.0);
+    let depth = if p.y > view.max.y - band {
+        ((p.y - (view.max.y - band)) / band).min(1.0)
+    } else if p.y < view.min.y + band && page_top < view.min.y - 0.5 {
+        -((view.min.y + band - p.y) / band).min(1.0)
+    } else {
+        return 0.0;
+    };
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    // Down without end, since the page grows under the box; up only as far as the page's top.
+    let step = (depth * FASTEST * dt).max(page_top - view.min.y);
+    ui.scroll_with_delta(vec2(0.0, -step));
+    ui.ctx().request_repaint();
+    step / zoom.max(0.01)
 }
 
 /// `value` on the nearest line of a grid `step` apart, counted from the page's origin.
