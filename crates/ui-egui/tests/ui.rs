@@ -5505,7 +5505,7 @@ fn a_selected_box_takes_the_ribbon_as_a_whole() {
     click(&mut h, row.center().x, row.center().y);
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains("```\nFormat ideas\n```"), "the blocks of the box became code:\n{body}");
+    assert!(body.contains("```123|\nFormat ideas\n```"), "the blocks of the box became numbered code:\n{body}");
     assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "still picked after the list");
 
     // Cut takes the whole box away with what is in it.

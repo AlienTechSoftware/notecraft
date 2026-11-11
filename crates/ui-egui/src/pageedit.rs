@@ -526,7 +526,8 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         "h5" => Block::Heading { level: 5, spans },
         "h6" => Block::Heading { level: 6, spans },
         "quote" => Block::Quote(spans),
-        "codeblock" => Block::Code { lang: String::new(), text: spans.iter().map(|s| s.text.as_str()).collect() },
+        // Code blocks number their lines by default (owner, 2026-11-11).
+        "codeblock" => Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() },
         "codenumbers" => {
             Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() }
         }
@@ -3506,6 +3507,14 @@ A note to self.
 
     /// The two code styles are one block with its lines numbered or not; changing between them keeps the words and the language.
     #[test]
+    fn a_new_code_block_numbers_its_lines_by_default() {
+        let mut b = blocks("plain words\n");
+        assert!(set_kind(&mut b, 0, "codeblock"));
+        assert!(matches!(&b[0], Block::Code { lang, .. } if lang == notecraft_formats::markdown::NUMBERED), "{:?}", b[0]);
+        assert_eq!(block_kind(&b[0]), "codenumbers");
+    }
+
+    #[test]
     fn code_changes_between_plain_and_numbered_and_keeps_its_words() {
         let mut b = blocks(
             "```rust
@@ -3642,7 +3651,8 @@ code
             ("h4", "h4"),
             ("h5", "h5"),
             ("h6", "h6"),
-            ("codeblock", "codeblock"),
+            ("codeblock", "codenumbers"),
+            ("p", "p"),
             ("codenumbers", "codenumbers"),
             ("p", "p"),
         ] {
