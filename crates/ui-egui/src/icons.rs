@@ -514,44 +514,33 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ParaLtr => vec![
             fill(
                 &[
-                    (14.2, 4.0),
-                    (15.9, 4.0),
-                    (18.45, 4.85),
-                    (20.15, 6.55),
-                    (21.0, 8.25),
-                    (21.0, 9.95),
-                    (20.15, 11.65),
-                    (18.45, 12.92),
-                    (15.9, 13.35),
-                    (14.2, 13.35),
+                    (17.0, 4.0),
+                    (15.0, 4.0),
+                    (12.0, 5.0),
+                    (10.0, 7.0),
+                    (9.0, 9.0),
+                    (9.0, 11.0),
+                    (10.0, 13.0),
+                    (12.0, 14.5),
+                    (15.0, 15.0),
+                    (17.0, 15.0),
                 ],
                 color,
             ),
-            fill(&[(15.05, 4.0), (9.1, 4.0), (9.1, 5.7), (15.05, 5.7)], color),
-            fill(&[(15.05, 12.5), (13.35, 12.5), (13.35, 19.3), (15.05, 19.3)], color),
-            fill(&[(10.8, 4.0), (9.1, 4.0), (9.1, 19.3), (10.8, 19.3)], color),
+            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
+            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
+            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
             path(&[(1.0, 9.0), (5.0, 13.0), (1.0, 17.0)]),
         ],
         // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
             fill(
-                &[
-                    (9.8, 4.0),
-                    (8.1, 4.0),
-                    (5.55, 4.85),
-                    (3.85, 6.55),
-                    (3.0, 8.25),
-                    (3.0, 9.95),
-                    (3.85, 11.65),
-                    (5.55, 12.92),
-                    (8.1, 13.35),
-                    (9.8, 13.35),
-                ],
+                &[(10.0, 4.0), (8.0, 4.0), (5.0, 5.0), (3.0, 7.0), (2.0, 9.0), (2.0, 11.0), (3.0, 13.0), (5.0, 14.5), (8.0, 15.0), (10.0, 15.0)],
                 color,
             ),
-            fill(&[(8.95, 4.0), (14.9, 4.0), (14.9, 5.7), (8.95, 5.7)], color),
-            fill(&[(8.95, 12.5), (10.65, 12.5), (10.65, 19.3), (8.95, 19.3)], color),
-            fill(&[(13.2, 4.0), (14.9, 4.0), (14.9, 19.3), (13.2, 19.3)], color),
+            fill(&[(9.0, 4.0), (16.0, 4.0), (16.0, 6.0), (9.0, 6.0)], color),
+            fill(&[(9.0, 14.0), (11.0, 14.0), (11.0, 22.0), (9.0, 22.0)], color),
+            fill(&[(14.0, 4.0), (16.0, 4.0), (16.0, 22.0), (14.0, 22.0)], color),
             path(&[(23.0, 9.0), (19.0, 13.0), (23.0, 17.0)]),
         ],
         Icon::ParaAuto => vec![
@@ -843,13 +832,40 @@ mod tests {
         assert!((rtl.0 - 4.0).abs() < 0.01 && (rtl.1 - 8.0).abs() < 0.01, "the arrow head is 4 by 8 points: {rtl:?}");
     }
 
-    /// The pilcrow is 15 points tall or less, so the arrow head has room (owner, 2026-11-11).
+    /// The pilcrow keeps its original 18 point height: only the arrow shows the direction (owner, 2026-11-11).
     #[test]
-    fn the_pilcrow_is_smaller_than_before() {
+    fn the_pilcrow_keeps_its_size() {
         let (filled, _) = painted(Icon::ParaRtl);
         let ys = filled.iter().flatten().map(|p| p.y);
         let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
-        assert!(height <= 16.0, "the pilcrow is at most 16 points tall: {height}");
+        assert!((height - 18.0).abs() < 0.01, "the pilcrow is 18 points tall: {height}");
+    }
+
+    /// The pilcrow keeps its normal shape in both direction icons: its stems stand on the right of
+    /// its bowl. A mirrored pilcrow is wrong (owner, 2026-11-11).
+    #[test]
+    fn the_pilcrow_is_not_mirrored_in_either_direction() {
+        let centre_x = |pts: &[Pos2]| {
+            let xs = pts.iter().map(|p| p.x);
+            (xs.clone().fold(f32::MAX, f32::min) + xs.fold(f32::MIN, f32::max)) / 2.0
+        };
+        for icon in [Icon::ParaRtl, Icon::ParaLtr] {
+            let (filled, _) = painted(icon);
+            let bowl = filled.iter().max_by_key(|pts| pts.len()).expect("the bowl").as_slice();
+            let stems: Vec<&Vec<Pos2>> = filled
+                .iter()
+                .filter(|pts| {
+                    pts.len() == 4 && {
+                        let ys = pts.iter().map(|p| p.y);
+                        ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min) > 10.0
+                    }
+                })
+                .collect();
+            assert!(!stems.is_empty(), "{icon:?} has its stems");
+            for stem in stems {
+                assert!(centre_x(stem.as_slice()) > centre_x(bowl), "{icon:?}: the stems stand right of the bowl");
+            }
+        }
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
