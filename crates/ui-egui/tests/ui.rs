@@ -3110,6 +3110,48 @@ fn dragging_a_box_to_the_bottom_edge_scrolls_the_page() {
     assert!(box_y < 30.0, "the box is back at the top of the page: {back}");
 }
 
+/// A box keeps the same place under the pointer for the whole drag, even when the pointer goes
+/// where the box cannot follow. Pulled past the page's left edge, the box stops at the edge; brought
+/// back, it is under the pointer where it was taken hold of, not left behind by the distance it
+/// could not go.
+#[test]
+fn a_dragged_box_stays_where_it_was_taken_hold_of_after_the_pointer_strays() {
+    let (_t, app, s) = sample_app("ui-drag-no-drift");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"40\" data-width=\"300\"><p>a box to drag</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Stray", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let (x, y) = (ox + 40.0 + 150.0, oy + 40.0 + 7.0);
+    ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("onto the strip");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
+    pump(&mut h);
+    // Far left, past the page's edge, where the box cannot go; then back, 100 right of the start.
+    let path = [(x - 100.0, y + 50.0), (x - 250.0, y + 100.0), (x - 400.0, y + 100.0), (x - 200.0, y + 100.0), (x + 100.0, y + 100.0)];
+    for (px, py) in path {
+        ask(&mut h, "ui.move", json!({"x": px, "y": py})).expect("drag");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": x + 100.0, "y": y + 100.0})).expect("up");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let moved = after["containers"].as_array().and_then(|b| b.first()).cloned().unwrap_or_default();
+    let (bx, by) = (moved["x"].as_f64().unwrap_or(0.0), moved["y"].as_f64().unwrap_or(0.0));
+    assert!((bx - 140.0).abs() < 2.0 && (by - 140.0).abs() < 2.0, "the box is 100 right and 100 down of where it was, under the pointer: {moved}");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The

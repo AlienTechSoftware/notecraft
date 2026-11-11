@@ -640,7 +640,7 @@ pub fn show(
             let d = response.drag_delta();
             let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
-                let to = dragged_to(ui, ui.id().with(("snap-move", i)), (c.x, c.y), d / zoom + vec2(0.0, pull), response.drag_started(), snap);
+                let to = moved_to(ui, ui.id().with(("grab", i)), area.min, (c.x, c.y), response.drag_started(), zoom, pull, snap);
                 *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
             out.boxes = true;
@@ -701,7 +701,7 @@ pub fn show(
             if let Some(c) = boxes.get_mut(i) {
                 let old = *c;
                 let (requested_x, requested_y) =
-                    dragged_to(ui, ui.id().with(("snap-move", i)), (old.x, old.y), d / zoom + vec2(0.0, pull), drag.drag_started(), snap);
+                    moved_to(ui, ui.id().with(("grab", i)), area.min, (old.x, old.y), drag.drag_started(), zoom, pull, snap);
                 let moved = Container::new(requested_x, requested_y, old.width, old.blocks);
                 log::debug!(
                     "CONTAINER_MOVE: container={i} delta_screen=({:.2},{:.2}) delta_page=({:.2},{:.2}) old=({:.2},{:.2}) requested=({requested_x:.2},{requested_y:.2}) stored=({:.2},{:.2}) clamped_x={} clamped_y={}",
@@ -1326,6 +1326,42 @@ fn scroll_at_edges(ui: &Ui, page_top: f32, zoom: f32) -> f32 {
     ui.scroll_with_delta(vec2(0.0, -step));
     ui.ctx().request_repaint();
     step / zoom.max(0.01)
+}
+
+/// How far ahead of where the page now is a dragged box must be put, in page points, given the
+/// scroll asked for this frame (`pull`). The page shows a scroll two frames after it is asked for,
+/// so last frame's is still to come as well.
+fn pull_to_come(ui: &Ui, id: egui::Id, pull: f32) -> f32 {
+    let last = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
+    ui.data_mut(|d| d.insert_temp(id, pull));
+    pull + last
+}
+
+/// Where a box being moved goes: under the pointer, held at the same place it was taken hold of.
+/// That place, relative to the box in page points, is kept under `id` for the length of the drag.
+/// Placing the box from the pointer, rather than adding up the pointer's movements, means a box
+/// that could not follow for a while (stopped at the page's edge, or at the end of the scroll)
+/// is back under the pointer as soon as the pointer comes back. `at` is where the box is now,
+/// `page_min` the page's corner on screen, and `pull` how far the page is being scrolled under it.
+#[allow(clippy::too_many_arguments)]
+fn moved_to(ui: &Ui, id: egui::Id, page_min: egui::Pos2, at: (f32, f32), started: bool, zoom: f32, pull: f32, snap: Option<f32>) -> (f32, f32) {
+    let zoom = zoom.max(0.01);
+    let on_page = |p: egui::Pos2| ((p.x - page_min.x) / zoom, (p.y - page_min.y) / zoom);
+    let Some(now) = ui.ctx().pointer_latest_pos() else { return at };
+    let kept = if started { None } else { ui.data(|d| d.get_temp::<(f32, f32)>(id)) };
+    let grab = kept.unwrap_or_else(|| {
+        let from = on_page(ui.input(|i| i.pointer.press_origin()).unwrap_or(now));
+        let grab = (from.0 - at.0, from.1 - at.1);
+        ui.data_mut(|d| d.insert_temp(id, grab));
+        grab
+    });
+    let pull = pull_to_come(ui, id.with("pull"), if started { 0.0 } else { pull });
+    let p = on_page(now);
+    let free = (p.0 - grab.0, p.1 + pull - grab.1);
+    match snap {
+        Some(step) => (to_grid(free.0, step), to_grid(free.1, step)),
+        None => free,
+    }
 }
 
 /// `value` on the nearest line of a grid `step` apart, counted from the page's origin.
