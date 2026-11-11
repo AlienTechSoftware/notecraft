@@ -7167,10 +7167,13 @@ impl NoteCraftApp {
         self.import_progress(ctx);
         self.frame_edges(ctx);
         if let Some(since) = self.editor.as_ref().and_then(|e| e.dirty_since) {
-            if since.elapsed() >= AUTOSAVE_AFTER {
+            // Read once: read twice, the second could be past the wait, and the subtraction
+            // below panicked (seen on a slow CI runner).
+            let waited = since.elapsed();
+            if waited >= AUTOSAVE_AFTER {
                 self.save_now();
             } else {
-                ctx.request_repaint_after(AUTOSAVE_AFTER - since.elapsed());
+                ctx.request_repaint_after(AUTOSAVE_AFTER.saturating_sub(waited));
             }
         }
     }
