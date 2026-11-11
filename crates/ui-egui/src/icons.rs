@@ -530,7 +530,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
             fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
             fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(3.0, 12.0), (7.0, 15.0), (3.0, 18.0)]),
+            path(&[(3.0, 12.0), (6.0, 15.0), (3.0, 18.0)]),
         ],
         // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
@@ -813,6 +813,22 @@ mod tests {
         };
         let (rtl, ltr) = (centre(Icon::ParaRtl), centre(Icon::ParaLtr));
         assert!((rtl - ltr).abs() < 0.01, "the LTR arrow head is level with the RTL one: rtl {rtl}, ltr {ltr}");
+    }
+
+    /// The LTR and RTL direction icons carry arrow heads of the same size.
+    #[test]
+    fn the_ltr_and_rtl_arrow_heads_are_the_same_size() {
+        let size = |icon: Icon| {
+            let (_, open) = painted(icon);
+            let arrow = open.iter().find(|pts| pts.len() == 3).expect("an arrow head").clone();
+            let xs = arrow.iter().map(|p| p.x);
+            let ys = arrow.iter().map(|p| p.y);
+            let width = xs.clone().fold(f32::MIN, f32::max) - xs.fold(f32::MAX, f32::min);
+            let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+            (width, height)
+        };
+        let (rtl, ltr) = (size(Icon::ParaRtl), size(Icon::ParaLtr));
+        assert!((rtl.0 - ltr.0).abs() < 0.01 && (rtl.1 - ltr.1).abs() < 0.01, "the arrow heads match in size: rtl {rtl:?}, ltr {ltr:?}");
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.

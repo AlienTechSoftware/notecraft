@@ -496,7 +496,7 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             poly(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
             poly(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
             poly(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            open(&[(3.0, 12.0), (7.0, 15.0), (3.0, 18.0)]),
+            open(&[(3.0, 12.0), (6.0, 15.0), (3.0, 18.0)]),
         ],
         // SUP-005: the arrow head is right of the pilcrow, pointing left: `[ q< ]`.
         Icon::ParaRtl => vec![
