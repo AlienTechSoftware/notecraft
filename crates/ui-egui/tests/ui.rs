@@ -3366,6 +3366,271 @@ fn a_dragged_box_stays_where_it_was_taken_hold_of_after_the_pointer_strays() {
     assert!((bx - 140.0).abs() < 2.0 && (by - 140.0).abs() < 2.0, "the box is 100 right and 100 down of where it was, under the pointer: {moved}");
 }
 
+/// As in OneNote, pressing on open paper and dragging draws a selection box. Every box it touches
+/// is selected when the button is let go; dragging one of them by its strip moves them all
+/// together, and Delete takes them all away. Boxes it did not touch are left alone.
+#[test]
+fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
+    let (_t, app, s) = sample_app("ui-selection-box");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let boxed = |x: f32, y: f32, words: &str| {
+        format!(
+            "<div class=\"nc-box\" data-x=\"{x}\" data-y=\"{y}\" data-width=\"200\" style=\"position:absolute;left:{x}px;top:{y}px;width:200px\">\n<p>{words}</p>\n</div>\n"
+        )
+    };
+    // A fourth box with nothing in it, in the selection box's way: nothing to select.
+    let html = format!("{}{}{}{}", boxed(40.0, 60.0, "first"), boxed(400.0, 60.0, "second"), boxed(40.0, 400.0, "third"), boxed(260.0, 100.0, ""));
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Select", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let boxes = |p: &Value| p["containers"].as_array().cloned().unwrap_or_default();
+    let count = boxes(&page).len();
+    assert!(count >= 3, "the three boxes with words, at least: {page}");
+
+    // From open paper above and left of the first box, across it and the second, short of the third.
+    let (from, to) = (egui::pos2(ox + 10.0, oy + 10.0), egui::pos2(ox + 700.0, oy + 160.0));
+    ask(&mut h, "ui.move", json!({"x": from.x, "y": from.y})).expect("onto the paper");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+    pump(&mut h);
+    for step in 1..=8 {
+        let t = step as f32 / 8.0;
+        ask(&mut h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+        pump(&mut h);
+    }
+    let shown = egui::Rect::from_two_pos(from, to);
+    let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 4.0 && (a.max - b.max).length() < 4.0;
+    assert!(painted_rects(&h).iter().any(|r| near(*r, shown)), "the selection box is drawn from the press to the pointer: {:?}", painted_rects(&h));
+    ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("up");
+    settle(&mut h);
+    let picked = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(picked["selectedContainers"], json!([0, 1]), "the two boxes it touched are selected: {picked}");
+    assert!(boxes(&picked).len() <= count, "and no box was started by it: {picked}");
+    assert_eq!(picked["caret"], Value::Null, "nor is the cursor placed: {picked}");
+
+    // Moving the first by its strip moves the second with it.
+    let strip = egui::pos2(ox + 40.0 + 100.0, oy + 60.0 + 7.0);
+    ask(&mut h, "ui.move", json!({"x": strip.x, "y": strip.y})).expect("onto the strip");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": strip.x, "y": strip.y})).expect("down");
+    pump(&mut h);
+    for step in 1..=5 {
+        ask(&mut h, "ui.move", json!({"x": strip.x + 10.0 * step as f32, "y": strip.y + 20.0 * step as f32})).expect("drag");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": strip.x + 50.0, "y": strip.y + 100.0})).expect("up");
+    settle(&mut h);
+    let moved = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let at = |p: &Value, i: usize| (boxes(p)[i]["x"].as_f64().unwrap_or(0.0), boxes(p)[i]["y"].as_f64().unwrap_or(0.0));
+    assert_eq!(at(&moved, 0), (90.0, 160.0), "the first box moved with the pointer: {moved}");
+    assert_eq!(at(&moved, 1), (450.0, 160.0), "the second moved with it: {moved}");
+    assert_eq!(at(&moved, 2), (40.0, 400.0), "the third stayed: {moved}");
+    assert_eq!(moved["selectedContainers"], json!([0, 1]), "and both are still selected: {moved}");
+
+    // Delete takes both away and leaves the third.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let left = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let places: Vec<(f64, f64)> = (0..boxes(&left).len()).map(|i| at(&left, i)).collect();
+    assert!(places.contains(&(40.0, 400.0)), "the third is left: {left}");
+    assert!(!places.contains(&(90.0, 160.0)) && !places.contains(&(450.0, 160.0)), "the two selected boxes went: {left}");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("third") && !body.contains("first") && !body.contains("second"), "and so are the words:\n{body}");
+}
+
+/// The selection box takes the writing it touches as well as the boxes, as in OneNote: ink drawn
+/// beside a box is picked up with it in the ordinary pointer, moves with the boxes whichever is
+/// dragged, and goes with them when Delete is pressed.
+#[test]
+fn a_selection_box_picks_up_ink_with_the_boxes_and_they_move_and_go_together() {
+    let (_t, app, s) = sample_app("ui-selection-box-ink");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"60\" data-width=\"200\" style=\"position:absolute;left:40px;top:60px;width:200px\">\n<p>words</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Select ink", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let drag = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, to: egui::Pos2| {
+        ask(h, "ui.move", json!({"x": from.x, "y": from.y})).expect("move");
+        settle(h);
+        ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+        pump(h);
+        for step in 1..=8 {
+            let t = step as f32 / 8.0;
+            ask(h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+            pump(h);
+        }
+        ask(h, "ui.release", json!({"x": to.x, "y": to.y})).expect("up");
+        settle(h);
+    };
+
+    // A line of writing right of the box, then back to the ordinary pointer.
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    drag(&mut h, egui::pos2(ox + 400.0, oy + 100.0), egui::pos2(ox + 500.0, oy + 100.0));
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    let before = ink(&mut h);
+    assert_eq!(before["ink"]["strokes"], json!(1), "one line of writing: {}", before["ink"]);
+    assert_eq!(before["ink"]["pointer"], json!("write"), "and the ordinary pointer again: {}", before["ink"]);
+    let bounds = |v: &Value| -> [f32; 4] {
+        let b = &v["ink"]["bounds"];
+        [0, 1, 2, 3].map(|i| b[i].as_f64().unwrap_or(f64::NAN) as f32)
+    };
+    let b0 = bounds(&before);
+
+    // The selection box over the box and the writing takes both.
+    drag(&mut h, egui::pos2(ox + 10.0, oy + 10.0), egui::pos2(ox + 600.0, oy + 150.0));
+    let picked = ink(&mut h);
+    assert_eq!(picked["page"]["selectedContainers"], json!([0]), "the box is selected: {}", picked["page"]);
+    assert_eq!(picked["ink"]["holding"], json!(1), "and the writing is picked up: {}", picked["ink"]);
+
+    // Dragging the box by its strip takes the writing with it.
+    drag(&mut h, egui::pos2(ox + 140.0, oy + 67.0), egui::pos2(ox + 140.0, oy + 167.0));
+    let moved = ink(&mut h);
+    let b1 = bounds(&moved);
+    assert_eq!(moved["page"]["containers"][0]["y"], json!(160.0), "the box moved down: {}", moved["page"]);
+    assert!((b1[1] - b0[1] - 100.0).abs() < 1.0, "the writing moved down with it: {b0:?} -> {b1:?}");
+    assert_eq!(moved["ink"]["holding"], json!(1), "and is still picked up: {}", moved["ink"]);
+
+    // Dragging the writing takes the box with it.
+    let middle = egui::pos2(ox + (b1[0] + b1[2]) / 2.0, oy + (b1[1] + b1[3]) / 2.0);
+    drag(&mut h, middle, middle + egui::vec2(60.0, 0.0));
+    let both = ink(&mut h);
+    let b2 = bounds(&both);
+    assert!((b2[0] - b1[0] - 60.0).abs() < 1.0, "the writing moved right: {b1:?} -> {b2:?}");
+    assert_eq!(both["page"]["containers"][0]["x"], json!(100.0), "and the box with it: {}", both["page"]);
+
+    // Delete takes them both away.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let gone = ink(&mut h);
+    assert_eq!(gone["ink"]["strokes"], json!(0), "the writing went: {}", gone["ink"]);
+    assert_eq!(gone["page"]["containers"].as_array().map_or(0, Vec::len), 0, "and the box: {}", gone["page"]);
+
+    // One undo brings them both back, as one Delete took them.
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    let back = ink(&mut h);
+    assert_eq!(
+        back["ink"]["strokes"],
+        json!(1),
+        "the writing is back: {} / page {} / history {}",
+        back["ink"],
+        back["page"]["containers"],
+        back["page"]["history"]
+    );
+    assert_eq!(back["page"]["containers"].as_array().map_or(0, Vec::len), 1, "and so is the box: {}", back["page"]);
+}
+
+/// While a selection box is being drawn, what it would pick up if let go now is shown, so it
+/// can be aimed. Ctrl and a click on something picked up takes it out of the selection, and
+/// Delete then leaves it alone; undo puts back what Delete took.
+#[test]
+fn a_selection_box_shows_what_it_takes_and_ctrl_click_leaves_a_box_out() {
+    let (_t, app, s) = sample_app("ui-selection-box-ctrl");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"60\" data-width=\"200\" style=\"position:absolute;left:40px;top:60px;width:200px\">\n<p>words</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Ctrl select", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let line = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, to: egui::Pos2| {
+        ask(h, "ui.move", json!({"x": from.x, "y": from.y})).expect("move");
+        settle(h);
+        ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+        pump(h);
+        for step in 1..=8 {
+            let t = step as f32 / 8.0;
+            ask(h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+            pump(h);
+        }
+    };
+    let up = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        ask(h, "ui.release", json!({"x": at.x, "y": at.y})).expect("up");
+        settle(h);
+    };
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    line(&mut h, egui::pos2(ox + 400.0, oy + 100.0), egui::pos2(ox + 500.0, oy + 100.0));
+    up(&mut h, egui::pos2(ox + 500.0, oy + 100.0));
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let b = [0, 1, 2, 3].map(|i| v["ink"]["bounds"][i].as_f64().unwrap_or(f64::NAN) as f32);
+    let ink_box = egui::Rect::from_min_max(egui::pos2(ox + b[0], oy + b[1]), egui::pos2(ox + b[2], oy + b[3]));
+
+    // Halfway through drawing the selection box, the writing it would take is outlined, and
+    // nothing is selected yet.
+    let to = egui::pos2(ox + 600.0, oy + 150.0);
+    line(&mut h, egui::pos2(ox + 10.0, oy + 10.0), to);
+    let outlined =
+        painted_rects(&h).iter().any(|r| r.contains_rect(ink_box) && r.width() < ink_box.width() + 40.0 && r.height() < ink_box.height() + 40.0);
+    assert!(outlined, "the writing it would take is outlined while it is drawn: {:?}", painted_rects(&h));
+    let during = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(during["ink"]["holding"], json!(0), "nothing is picked up until it is let go: {}", during["ink"]);
+    up(&mut h, to);
+    let picked = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(picked["page"]["selectedContainers"], json!([0]), "the box: {}", picked["page"]);
+    assert_eq!(picked["ink"]["holding"], json!(1), "and the writing: {}", picked["ink"]);
+
+    // Ctrl and a click on the box's words takes the box out, and puts no cursor in it.
+    ask(&mut h, "ui.click", json!({"x": ox + 80.0, "y": oy + 90.0, "ctrl": true})).expect("ctrl click the box");
+    settle(&mut h);
+    let left_out = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(left_out["page"]["selectedContainers"], json!([]), "the box is out of the selection: {}", left_out["page"]);
+    assert_eq!(left_out["page"]["caret"], Value::Null, "no cursor was put in it: {}", left_out["page"]);
+    assert_eq!(left_out["ink"]["holding"], json!(1), "the writing is still picked up: {}", left_out["ink"]);
+
+    // Delete takes the writing and leaves the box; undo puts the writing back.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(after["ink"]["strokes"], json!(0), "the writing went: {}", after["ink"]);
+    assert_eq!(after["page"]["containers"].as_array().map_or(0, Vec::len), 1, "the box stayed: {}", after["page"]);
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    let back = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(back["ink"]["strokes"], json!(1), "undo puts the writing back: {}", back["ink"]);
+    assert_eq!(back["page"]["containers"].as_array().map_or(0, Vec::len), 1, "and the box is as it was: {}", back["page"]);
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The

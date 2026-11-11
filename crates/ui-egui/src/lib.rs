@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![allow(deprecated)]
 //! NoteCraft egui front end (layer L6).

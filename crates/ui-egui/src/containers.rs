@@ -98,6 +98,38 @@ pub fn selected(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
     ctx.data(|d| d.get_temp::<(usize, String)>(selected_id())).filter(|(_, on)| *on == key).map(|(i, _)| i)
 }
 
+/// The boxes a selection box picked on `page`, in order: more than one, moved and deleted
+/// together. One box picked that way is simply the selected box ([`selected`]).
+pub fn selected_group(ctx: &egui::Context, page: &std::path::Path) -> Vec<usize> {
+    let key = page.to_string_lossy();
+    ctx.data(|d| d.get_temp::<(Vec<usize>, String)>(group_id())).filter(|(_, on)| *on == key).map(|(g, _)| g).unwrap_or_default()
+}
+
+/// Every box selected on `page`: the group a selection box picked, or the one selected box.
+pub fn selected_boxes(ctx: &egui::Context, page: &std::path::Path) -> Vec<usize> {
+    let group = selected_group(ctx, page);
+    if group.is_empty() { selected(ctx, page).into_iter().collect() } else { group }
+}
+
+/// The selection box being drawn, on screen, while it is drawn: the ink layer outlines the
+/// writing it would take.
+pub fn selection_preview(ctx: &egui::Context) -> Option<Rect> {
+    ctx.data(|d| d.get_temp::<Rect>(selection_preview_id()))
+}
+
+fn selection_preview_id() -> Id {
+    Id::new("containers-selection-preview")
+}
+
+fn group_id() -> Id {
+    Id::new("containers-selected-group")
+}
+
+/// Where a selection box being dragged over open paper started, in page points, with its page.
+fn selection_box_id() -> Id {
+    Id::new("containers-selection-box")
+}
+
 /// True when a container took this frame's right click, so the page's own menu stays shut.
 pub fn took_right_click(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(claimed_id())) == Some(ctx.cumulative_pass_nr())
@@ -182,6 +214,13 @@ pub struct Moved {
     /// How wide each box was drawn, in page points: its own width, or more when what it holds
     /// (a table) is wider than that. Drawn only; the page's arrangement is not changed by it.
     pub shown_widths: Vec<f32>,
+    /// A selection box let go this frame, on screen: the window picks up the ink it touches.
+    pub selection_box: Option<Rect>,
+    /// A selection box began this frame: the window lets go of the ink it held.
+    pub selection_started: bool,
+    /// How far, in page points, the selected boxes were dragged this frame: ink picked up with
+    /// them follows.
+    pub selected_shift: Option<(f32, f32)>,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -259,6 +298,10 @@ pub fn show(
     // The selection, and the menu that goes with it. A container that has gone (the page
     // was changed under it) cannot stay selected.
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
+    // The boxes a selection box picked (more than one), and where their frames are drawn.
+    let mut group: Vec<usize> = selected_group(ui.ctx(), page_dir).into_iter().filter(|i| *i < boxes.len()).collect();
+    let mut group_frames: Vec<Rect> = Vec::new();
+    let mut group_shift: Option<(usize, f32, f32)> = None;
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
     let mut delete_at: Option<usize> = None;
@@ -273,6 +316,25 @@ pub fn show(
     let object_double_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_double_clicked_id()));
     ui.data_mut(|d| d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()));
     let mut object_sel = selected_object(ui.ctx(), page_dir);
+    // Ctrl and a click, while something is selected, adds the box clicked or takes it out of the
+    // selection, as in OneNote: the click does not also put the caret in its words or pick up a
+    // picture in it. What the click would have done is undone once the boxes are drawn.
+    let ctrl_click = ui.input(|i| {
+        i.events.iter().find_map(|e| match e {
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers }
+                if modifiers.command || modifiers.ctrl =>
+            {
+                Some(*pos)
+            }
+            _ => None,
+        })
+    });
+    let ctrl_toggle = ctrl_click.filter(|_| sel.is_some() || !group.is_empty() || crate::inkpad::held_area(ui.ctx()).is_some());
+    let (sel_before, group_before, caret_before, object_before) = (sel, group.clone(), caret.clone(), object_sel.clone());
+    // The click finishes when the button comes up, a frame or more later: until then what it
+    // does to the caret and the pictures is undone too.
+    let ctrl_click_id = Id::new("containers-ctrl-click");
+    let ctrl_clicking = ctrl_toggle.is_some() || ui.data(|d| d.get_temp::<bool>(ctrl_click_id)).unwrap_or(false);
     // Selection must never rewrite the page arrangement. Image hit-testing is visual state;
     // the persisted container geometry changes only after an actual drag or resize.
     // The open paper: the whole page area, made first so that every box and every block, which
@@ -289,7 +351,7 @@ pub fn show(
     // out partway down the window.
     let open_bottom = (area.min.y + area.height().min(20_000.0)).max(ui.clip_rect().max.y);
     let paper = ui.interact(Rect::from_min_max(area.min, pos2(open_right, open_bottom)), ui.id().with("open-paper"), Sense::click());
-    let selection_was_up = sel.is_some() || menu_at.is_some();
+    let selection_was_up = sel.is_some() || menu_at.is_some() || !group.is_empty();
     // A page with nothing on it shows nothing, which looks like a page that did not load. Say what
     // to do: the paper takes a click, and the words start where it was made.
     if blocks.is_empty() && caret.is_none() {
@@ -524,6 +586,8 @@ pub fn show(
         let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
         let right_here = right_click && pointer.is_some_and(|p| bar.contains(p)) && !words_selected && !image_right_click;
         if drag.clicked() || right_here {
+            // One box picked by its strip is the selection, not the group it may have been in.
+            group.clear();
             sel = Some(i);
             *caret = None;
             out.changed.caret = true;
@@ -686,8 +750,14 @@ pub fn show(
             out.boxes = true;
             log::debug!("image moved: container={i} block={} delta={d:?}", range.start);
         }
+        if group.contains(&i) {
+            group_frames.push(frame.union(Rect::from_min_size(at, vec2(frame.width(), HANDLE * zoom))));
+            ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
+            ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+        }
         if is_sel {
-            sel_frame = Some(frame);
+            // Its strip is part of it: a press there drags the selection, it does not let go.
+            sel_frame = Some(frame.union(bar));
             // Everything in the box is selected: shade it all, behind the words.
             ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
@@ -758,6 +828,12 @@ pub fn show(
                     moved.x != requested_x,
                     moved.y != requested_y
                 );
+                if group.contains(&i) {
+                    group_shift = Some((i, moved.x - old.x, moved.y - old.y));
+                }
+                if group.contains(&i) || sel == Some(i) {
+                    out.selected_shift = Some((moved.x - old.x, moved.y - old.y));
+                }
                 *c = moved;
             }
             out.boxes = true;
@@ -877,7 +953,10 @@ pub fn show(
     // A press outside the selected container and its menu, or Escape, lets go of the selection.
     // So does the caret arriving in a container: the words are being edited, not the box.
     if sel.is_some() {
-        let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p));
+        // Ink picked up with the box is part of the selection: a press on it moves them, it does
+        // not let go of them.
+        let on_held_ink = |p: Pos2| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p));
+        let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p)) && !on_held_ink(p);
         // Only a press on the page lets go of it: the ribbon's buttons act on the selected box, so a
         // press there must leave it selected.
         // A list the ribbon has opened over the page (the styles) is not the page either: a press on one of
@@ -953,6 +1032,49 @@ pub fn show(
                 log::debug!("keyboard moved after embedded object: image_block={block} caret_block={target}");
             }
         }
+    }
+    if ctrl_clicking {
+        *caret = caret_before.clone();
+        object_sel = object_before.clone();
+        let still_down = ui.input(|i| i.pointer.primary_down());
+        ui.data_mut(|d| {
+            if still_down {
+                d.insert_temp(ctrl_click_id, true);
+            } else {
+                d.remove::<bool>(ctrl_click_id);
+            }
+        });
+    }
+    if let Some(at) = ctrl_toggle
+        && !crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(at))
+    {
+        let hit = frames.iter().position(|f| Rect::from_min_max(f.min - vec2(0.0, HANDLE * zoom), f.max).contains(at));
+        let mut members: Vec<usize> = if group_before.is_empty() { sel_before.into_iter().collect() } else { group_before.clone() };
+        if let Some(i) = hit {
+            match members.iter().position(|m| *m == i) {
+                Some(k) => {
+                    members.remove(k);
+                }
+                None => members.push(i),
+            }
+            members.sort_unstable();
+        }
+        match members.as_slice() {
+            [] => {
+                sel = None;
+                group.clear();
+            }
+            [one] => {
+                sel = Some(*one);
+                group.clear();
+            }
+            _ => {
+                sel = None;
+                group = members;
+            }
+        }
+        out.changed.caret = true;
+        log::debug!("SELECTION_CTRL_CLICK: at={at:?} box={hit:?} sel={sel:?} group={group:?}");
     }
     // Embedded objects have their own selection, separate from the containing box.
     // Both keys should remove the selected object, just as they remove selected text.
@@ -1187,6 +1309,132 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
+
+    // The boxes of a group move together: one was dragged by its strip, the others follow it.
+    if let Some((moved, dx, dy)) = group_shift {
+        for &j in group.iter().filter(|j| **j != moved) {
+            if let Some(c) = boxes.get_mut(j) {
+                *c = Container::new(c.x + dx, c.y + dy, c.width, c.blocks);
+            }
+        }
+        out.boxes = true;
+    }
+    // Delete or Backspace takes the whole group away, last box first so the numbers hold.
+    if group.len() > 1
+        && caret.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
+        && ui.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+    {
+        let mut gone = group.clone();
+        gone.sort_unstable();
+        for &j in gone.iter().rev() {
+            remove_container(blocks, boxes, j);
+        }
+        group.clear();
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+    // A group is let go like a single box: Escape, the caret going into words, or a press on the
+    // page away from it.
+    if !group.is_empty() {
+        let pressed_away = ui.input(|i| i.pointer.primary_pressed())
+            && pointer.is_some_and(|p| area.contains(p) || paper.rect.contains(p) || below.rect.contains(p))
+            && !pointer.is_some_and(|p| group_frames.iter().any(|f| f.contains(p)))
+            && !pointer.is_some_and(|p| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p)));
+        if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
+            group.clear();
+        }
+    }
+
+    // The selection box, as in OneNote: a press on open paper and a drag draw it, from where the
+    // press was to the pointer. Let go, every box it touches is selected. It is followed from the
+    // pointer rather than by the paper sensing drags: the paper lies under the boxes, and sensing
+    // drags it would take them from the words and cells in the boxes.
+    let to_page = |p: Pos2| ((p.x - area.min.x) / zoom.max(0.01), (p.y - area.min.y) / zoom.max(0.01));
+    let to_screen = |(x, y): (f32, f32)| pos2(area.min.x + x * zoom, area.min.y + y * zoom);
+    let pressed_at = ui.input(|i| if i.pointer.primary_pressed() { i.pointer.press_origin() } else { None });
+    if let Some(from) = pressed_at
+        && (paper.hovered() || below.hovered())
+        && !frames.iter().any(|f| f.expand(3.0).contains(from))
+    {
+        ui.data_mut(|d| d.insert_temp(selection_box_id(), (to_page(from), page_key.clone())));
+        out.selection_started = true;
+    }
+    let started = ui.data(|d| d.get_temp::<((f32, f32), String)>(selection_box_id())).filter(|(_, on)| *on == page_key).map(|(at, _)| at);
+    if let Some(from) = started {
+        let down = ui.input(|i| i.pointer.primary_down());
+        let from_screen = to_screen(from);
+        // A click is a click: only a drag past a few points is a selection box.
+        if let Some(now) = pointer.filter(|now| (*now - from_screen).length() > 6.0) {
+            let shown = Rect::from_two_pos(from_screen, now);
+            if down {
+                if !group.is_empty() || sel.is_some() {
+                    group.clear();
+                    sel = None;
+                    // Already put away for the next frame above: a new selection box lets go of them.
+                    ui.data_mut(|d| {
+                        d.remove::<(usize, String)>(selected_id());
+                        d.remove::<Pos2>(menu_id());
+                    });
+                }
+                ui.painter().rect_filled(shown, 0.0, t.accent.gamma_multiply(0.12));
+                ui.painter().rect_stroke(shown, 0.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+                // What it would take if let go now is shown, so it can be aimed: the boxes are
+                // shaded here, and the ink layer outlines the writing ([`selection_preview`]).
+                for (i, f) in frames.iter().enumerate() {
+                    let range = container::blocks_of(boxes, i);
+                    let something = blocks
+                        .get(range)
+                        .is_some_and(|held| held.iter().any(|b| !crate::preview::is_blank(b) || matches!(b, Block::Item { task: Some(_), .. })));
+                    if something && f.intersects(shown) {
+                        ui.painter().rect_filled(*f, 3.0, t.accent.gamma_multiply(0.10));
+                        ui.painter().rect_stroke(*f, 3.0 * zoom, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+                    }
+                }
+                ui.data_mut(|d| d.insert_temp(selection_preview_id(), shown));
+                ui.ctx().request_repaint();
+            } else {
+                // A box with nothing in it has nothing to select: it is only where a cursor was put.
+                let holds_something = |i: usize| {
+                    let range = container::blocks_of(boxes, i);
+                    blocks
+                        .get(range)
+                        .is_some_and(|held| held.iter().any(|b| !crate::preview::is_blank(b) || matches!(b, Block::Item { task: Some(_), .. })))
+                };
+                let picked: Vec<usize> =
+                    frames.iter().enumerate().filter(|(i, f)| f.intersects(shown) && holds_something(*i)).map(|(i, _)| i).collect();
+                log::debug!("SELECTION_BOX: rect={shown:?} picked={picked:?}");
+                out.selection_box = Some(shown);
+                match picked.as_slice() {
+                    [] => {}
+                    [one] => sel = Some(*one),
+                    _ => group = picked.clone(),
+                }
+                if !picked.is_empty() {
+                    *caret = None;
+                    out.changed.caret = true;
+                }
+            }
+        }
+        if !down {
+            ui.data_mut(|d| d.remove::<((f32, f32), String)>(selection_box_id()));
+        }
+    }
+    if started.is_none() || !ui.input(|i| i.pointer.primary_down()) {
+        ui.data_mut(|d| d.remove::<Rect>(selection_preview_id()));
+    }
+    ui.data_mut(|d| {
+        if group.len() > 1 {
+            d.insert_temp(group_id(), (group.clone(), page_key.clone()));
+        } else {
+            d.remove::<(Vec<usize>, String)>(group_id());
+        }
+        if let Some(i) = sel {
+            d.insert_temp(selected_id(), (i, page_key.clone()));
+        }
+    });
     out.bottom = page_points_below(area, filled_bottom, zoom);
     out
 }

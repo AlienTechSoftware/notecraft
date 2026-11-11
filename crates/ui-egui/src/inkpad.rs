@@ -95,7 +95,20 @@ pub struct Pad {
     shape_from: Option<(f32, f32)>,
     /// Where the pointer was when a move or a stretch began, and the box as it was then.
     grabbed: Option<(egui::Pos2, (f32, f32, f32, f32), Grab)>,
+    /// How far held ink was moved by hand in the ordinary pointer since the window last asked,
+    /// in page points: the boxes picked up with it follow ([`Pad::take_shift`]).
+    shift: (f32, f32),
+    /// The strokes as they were after the last finished change, and before each change the ones
+    /// undo can go back to, newest last, with when that change was made. Whatever the change (a
+    /// stroke drawn, rubbed out, deleted, moved or stretched), undo puts back what was there.
+    kept: Vec<Stroke>,
+    undo_steps: Vec<(Vec<Stroke>, std::time::Instant)>,
+    /// Changed since the last finished change was kept.
+    touched: bool,
 }
+
+/// How many changes to the ink undo can go back through.
+const INK_UNDO_STEPS: usize = 40;
 
 /// What a press on held ink began.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,7 +127,22 @@ impl Pad {
         let file = page_dir.join(FILE);
         let (drawing, flat) =
             std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok()).unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
-        Pad { file, drawing, dirty: false, flat, drawing_now: None, held: Vec::new(), loop_now: Vec::new(), shape_from: None, grabbed: None }
+        Pad {
+            file,
+            drawing,
+            dirty: false,
+            flat,
+            drawing_now: None,
+            held: Vec::new(),
+            loop_now: Vec::new(),
+            shape_from: None,
+            grabbed: None,
+            shift: (0.0, 0.0),
+            kept: Vec::new(),
+            undo_steps: Vec::new(),
+            touched: false,
+        }
+        .with_kept()
     }
 
     /// Writes the ink, with its readings, which is what the page keeps.
@@ -168,8 +196,19 @@ impl Pad {
     }
 
     /// Takes the last stroke back.
+    /// Takes the last change to the ink back, whatever it was. With nothing kept to go back to
+    /// (ink drawn before the page was opened), the last stroke goes, as it always did.
     pub fn undo(&mut self) -> bool {
-        let went = self.drawing.undo();
+        self.let_go();
+        self.settle();
+        let went = match self.undo_steps.pop() {
+            Some((before, _)) => {
+                self.drawing.strokes = before;
+                true
+            }
+            None => self.drawing.undo(),
+        };
+        self.kept = self.drawing.strokes.clone();
         self.dirty |= went;
         went
     }
@@ -195,13 +234,161 @@ impl Pad {
         self.grabbed = None;
     }
 
+    fn with_kept(mut self) -> Pad {
+        self.kept = self.drawing.strokes.clone();
+        self
+    }
+
+    /// Ends a change once the hand is off: what the ink was before it becomes a step undo can go
+    /// back to. Called by the window when no button is down, so a drag is one step, not one a frame.
+    pub fn settle(&mut self) {
+        if !self.touched || self.drawing_now.is_some() || self.grabbed.is_some() {
+            return;
+        }
+        self.touched = false;
+        if self.drawing.strokes == self.kept {
+            return;
+        }
+        let before = std::mem::replace(&mut self.kept, self.drawing.strokes.clone());
+        self.undo_steps.push((before, std::time::Instant::now()));
+        if self.undo_steps.len() > INK_UNDO_STEPS {
+            self.undo_steps.remove(0);
+        }
+    }
+
+    /// When the change undo would take back was made, if there is one.
+    pub fn newest_change(&self) -> Option<std::time::Instant> {
+        self.undo_steps.last().map(|(_, when)| *when)
+    }
+
+    /// Whether undo has anything to take back.
+    pub fn can_undo(&self) -> bool {
+        !self.undo_steps.is_empty() || !self.drawing.strokes.is_empty()
+    }
+
+    /// Picks up every stroke a selection box touches; `rect` is two corners in page points.
+    pub fn hold_touching(&mut self, rect: (f32, f32, f32, f32)) {
+        self.let_go();
+        self.held = pick::touching(&self.drawing, rect);
+    }
+
+    /// Moves the held ink by (`dx`, `dy`) page points: the boxes picked up with it were moved.
+    pub fn move_held(&mut self, dx: f32, dy: f32) {
+        if self.held.is_empty() || (dx == 0.0 && dy == 0.0) {
+            return;
+        }
+        pick::move_by(&mut self.drawing, &self.held, dx, dy);
+        self.dirty = true;
+        self.touched = true;
+    }
+
+    /// How far the held ink was moved by hand since this was last asked, if at all.
+    pub fn take_shift(&mut self) -> Option<(f32, f32)> {
+        let shift = std::mem::take(&mut self.shift);
+        (shift != (0.0, 0.0)).then_some(shift)
+    }
+
+    /// The box round all the ink on the page, in page points.
+    pub fn bounds(&self) -> Option<[f32; 4]> {
+        let all: Vec<usize> = (0..self.drawing.strokes.len()).collect();
+        pick::bounds(&self.drawing, &all).map(|(x0, y0, x1, y1)| [x0, y0, x1, y1])
+    }
+
     /// Throws away the held ink and says whether any went.
     pub fn delete_held(&mut self) -> bool {
         let went = pick::remove(&mut self.drawing, &self.held) > 0;
         self.let_go();
         self.dirty |= went;
+        self.touched |= went;
         went
     }
+}
+
+/// Where held ink can be taken hold of on screen this frame, for the boxes under it: a press
+/// there is on the ink, not away from what is selected.
+pub fn held_area(ctx: &egui::Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<egui::Rect>(held_area_id()))
+}
+
+fn held_area_id() -> egui::Id {
+    egui::Id::new("inkpad-held-area")
+}
+
+/// Held ink in the ordinary pointer (a selection box picked it up): a drag inside its box moves
+/// it, one on a corner stretches it, Delete throws it away and Escape lets go. Only the box
+/// takes the pointer, so the words and boxes around it are as they always are.
+fn held_in_write(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, zoom: f32) -> bool {
+    let Some(b) = pick::bounds(&pad.drawing, &pad.held) else {
+        pad.let_go();
+        ui.data_mut(|d| d.remove::<egui::Rect>(held_area_id()));
+        return false;
+    };
+    let held_box = egui::Rect::from_min_max(origin + vec2(b.0 * zoom, b.1 * zoom), origin + vec2(b.2 * zoom, b.3 * zoom)).expand(3.0);
+    let area = held_box.expand(HANDLE / 2.0).intersect(body);
+    ui.data_mut(|d| d.insert_temp(held_area_id(), area));
+    let resp = ui.interact(area, ui.id().with("ink-held"), Sense::drag());
+    let here = ui.ctx().pointer_interact_pos().unwrap_or(egui::Pos2::ZERO);
+    if resp.hovered() || resp.dragged() {
+        let corner = pad.grabbed.map(|(.., g)| g).or_else(|| grab_corner(held_box, here));
+        ui.ctx().set_cursor_icon(match corner {
+            Some(Grab::Corner(right, bottom)) if right == bottom => egui::CursorIcon::ResizeNwSe,
+            Some(Grab::Corner(..)) => egui::CursorIcon::ResizeNeSw,
+            _ => egui::CursorIcon::Move,
+        });
+    }
+    // Ctrl and a click on held ink takes the stroke under it out of what is held, or puts it in.
+    let ctrl = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+    if resp.clicked() && ctrl {
+        let (x, y) = ((here.x - origin.x) / zoom, (here.y - origin.y) / zoom);
+        if let Some(i) = pick::at(&pad.drawing, x, y, 3.0) {
+            match pad.held.iter().position(|h| *h == i) {
+                Some(k) => {
+                    pad.held.remove(k);
+                }
+                None => pad.held.push(i),
+            }
+        }
+        return false;
+    }
+    if resp.drag_started() {
+        let from = ui.input(|i| i.pointer.press_origin()).unwrap_or(here);
+        pad.grabbed = Some((from, b, grab_corner(held_box, from).unwrap_or(Grab::Move)));
+    }
+    let mut changed = false;
+    if let Some((from, was, grab)) = pad.grabbed {
+        let (dx, dy) = ((here.x - from.x) / zoom, (here.y - from.y) / zoom);
+        let (x0, y0, x1, y1) = was;
+        if resp.dragged() {
+            let now = pick::bounds(&pad.drawing, &pad.held).unwrap_or(was);
+            match grab {
+                Grab::Move => {
+                    let step = (x0 + dx - now.0, y0 + dy - now.1);
+                    pick::move_by(&mut pad.drawing, &pad.held, step.0, step.1);
+                    pad.shift = (pad.shift.0 + step.0, pad.shift.1 + step.1);
+                }
+                Grab::Corner(right, bottom) => {
+                    let (ox, oy) = (if right { x0 } else { x1 }, if bottom { y0 } else { y1 });
+                    let (w, h) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+                    let want_w = if right { w + dx } else { w - dx };
+                    let want_h = if bottom { h + dy } else { h - dy };
+                    let have_w = (now.2 - now.0).max(0.001);
+                    let have_h = (now.3 - now.1).max(0.001);
+                    pick::scale_about(&mut pad.drawing, &pad.held, ox, oy, want_w.max(4.0) / have_w, want_h.max(4.0) / have_h);
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+        if !resp.dragged() {
+            pad.grabbed = None;
+            changed = true;
+        }
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        pad.let_go();
+    } else if !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+        changed |= pad.delete_held();
+    }
+    changed
 }
 
 /// How near a corner of the box the pointer has to be to take hold of it.
@@ -248,14 +435,32 @@ pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pe
     }
 
     if pen.pointer == Pointer::Write {
-        pad.let_go();
-        // The tool was put down mid-stroke; keep what was drawn rather than losing it.
-        if let Some(stroke) = pad.drawing_now.take() {
-            let kept = pad.drawing.add(stroke);
-            pad.dirty |= kept;
-            return kept;
+        // A selection box being drawn: the writing it would take is outlined, so it can be aimed.
+        if let Some(shown) = crate::containers::selection_preview(ui.ctx()) {
+            let to_ink = |p: egui::Pos2| ((p.x - origin.x) / zoom.max(0.01), (p.y - origin.y) / zoom.max(0.01));
+            let (a, b) = (to_ink(shown.min), to_ink(shown.max));
+            for i in pick::touching(&pad.drawing, (a.0, a.1, b.0, b.1)) {
+                if let Some((x0, y0, x1, y1)) = pick::bounds(&pad.drawing, &[i]) {
+                    let r = egui::Rect::from_min_max(origin + vec2(x0 * zoom, y0 * zoom), origin + vec2(x1 * zoom, y1 * zoom)).expand(3.0);
+                    painter.rect_stroke(r, 2.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Outside);
+                }
+            }
         }
-        return false;
+        // The tool was put down mid-stroke; keep what was drawn rather than losing it.
+        let mut changed = false;
+        if let Some(stroke) = pad.drawing_now.take() {
+            changed = pad.drawing.add(stroke);
+        }
+        // Ink a selection box picked up can be moved, stretched and deleted in the ordinary
+        // pointer too.
+        if pad.held.is_empty() {
+            ui.data_mut(|d| d.remove::<egui::Rect>(held_area_id()));
+        } else {
+            changed |= held_in_write(ui, body, origin, pad, zoom);
+        }
+        pad.dirty |= changed;
+        pad.touched |= changed;
+        return changed;
     }
 
     // While a pen is in hand the whole page belongs to it, so this goes on last and over
@@ -400,6 +605,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pe
         changed |= pad.delete_held();
     }
     pad.dirty |= changed;
+    pad.touched |= changed;
     changed
 }
 
