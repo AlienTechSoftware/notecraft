@@ -739,6 +739,12 @@ pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (
 
 /// Makes the block at `at` a heading, a list item, a quote or ordinary text, keeping its
 /// words. Returns false when there is nothing to change.
+/// Applies `kind` to one line of a code block: the lines before and after stay code.
+pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &str) -> bool {
+    let _ = (blocks, at, line, kind);
+    false
+}
+
 pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     let Some(block) = blocks.get(at) else { return false };
     if !is_one_line_of_words(block) {
@@ -2136,6 +2142,15 @@ pub fn show_blocks(
                         i.key_pressed(Key::ArrowDown),
                     )
                 });
+                if up || down || enter || backspace || escape {
+                    let caret_at = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range().map(|r| r.primary.index.0));
+                    log::debug!(
+                        "caret keys (multiline path): block={i} kind={} focus={} caret_char={caret_at:?} lines={} up={up} down={down} enter={enter} backspace={backspace} escape={escape}",
+                        block_kind(&block),
+                        resp.has_focus(),
+                        c.text.lines().count(),
+                    );
+                }
                 if resp.has_focus() || resp.lost_focus() {
                     if enter {
                         action = Some(Action::Split(i));
@@ -2392,6 +2407,13 @@ pub fn show_blocks(
                 )
             });
             let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
+            if up || down || left || right || enter || backspace || escape {
+                log::debug!(
+                    "caret keys: block={i} kind={} multiline={multiline} focus={} up={up} down={down} left={left} right={right} enter={enter} backspace={backspace} escape={escape}",
+                    block_kind(&block),
+                    resp.has_focus(),
+                );
+            }
             if resp.has_focus() || resp.lost_focus() {
                 if enter && !multiline {
                     action = Some(Action::Split(i));
@@ -4525,6 +4547,26 @@ A note to self.
         assert!(set_kind(&mut b, 0, "codeblock"));
         assert!(matches!(&b[0], Block::Code { lang, .. } if lang == notecraft_formats::markdown::NUMBERED), "{:?}", b[0]);
         assert_eq!(block_kind(&b[0]), "codenumbers");
+    }
+
+    #[test]
+    fn applying_normal_to_one_code_line_splits_the_block_around_it() {
+        let mut b = blocks("```rust\nfirst\nsecond\nthird\n```\n");
+        assert!(split_code_line(&mut b, 0, 1, "p"));
+        assert_eq!(b.len(), 3, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "rust" && text == "first"), "{:?}", b[0]);
+        assert_eq!(block_kind(&b[1]), "p");
+        assert_eq!(block_text(&b[1]), "second");
+        assert!(matches!(&b[2], Block::Code { lang, text } if lang == "rust" && text == "third"), "{:?}", b[2]);
+    }
+
+    #[test]
+    fn applying_normal_to_the_first_code_line_leaves_no_code_before_it() {
+        let mut b = blocks("```rust\nfirst\nsecond\n```\n");
+        assert!(split_code_line(&mut b, 0, 0, "p"));
+        assert_eq!(b.len(), 2, "{b:?}");
+        assert_eq!(block_text(&b[0]), "first");
+        assert!(matches!(&b[1], Block::Code { text, .. } if text == "second"), "{:?}", b[1]);
     }
 
     #[test]
