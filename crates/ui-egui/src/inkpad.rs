@@ -439,16 +439,34 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
         }
         return;
     }
+    // egui smooths the edges of the shapes it builds itself, but not of a mesh: a ribbon of bare
+    // triangles has hard, stair-stepped edges. So each edge gets a fringe one screen pixel wide
+    // that fades from the ink to nothing, the way egui feathers its own lines: the ink edge sits
+    // half a pixel inside the outline and the faded edge half a pixel outside.
+    let feather = 1.0 / painter.ctx().pixels_per_point();
+    let clear = egui::Color32::TRANSPARENT;
     let mut mesh = egui::Mesh::default();
+    let mut across = egui::vec2(0.0, 1.0);
     for (l, r) in left.iter().zip(&right) {
-        mesh.colored_vertex(put(l.0, l.1), colour);
-        mesh.colored_vertex(put(r.0, r.1), colour);
+        let (l, r) = (put(l.0, l.1), put(r.0, r.1));
+        // From the right edge to the left; a point of no width keeps the last direction.
+        if let Some(d) = Some(l - r).filter(|d| d.length() > 1e-4) {
+            across = d.normalized();
+        }
+        let half = across * (feather / 2.0);
+        mesh.colored_vertex(l + half, clear);
+        mesh.colored_vertex(l - half, colour);
+        mesh.colored_vertex(r + half, colour);
+        mesh.colored_vertex(r - half, clear);
     }
     #[allow(clippy::cast_possible_truncation)]
     for i in 0..(left.len() as u32 - 1) {
-        let (a, b, c, d) = (i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 3);
-        mesh.add_triangle(a, b, c);
-        mesh.add_triangle(b, c, d);
+        let (a, b) = (i * 4, i * 4 + 4);
+        // Left fringe, the ink between the edges, right fringe.
+        for k in 0..3 {
+            mesh.add_triangle(a + k, a + k + 1, b + k);
+            mesh.add_triangle(a + k + 1, b + k, b + k + 1);
+        }
     }
     painter.add(egui::Shape::mesh(mesh));
     // Round the two ends, which is what the saved outline does with its half circles.
