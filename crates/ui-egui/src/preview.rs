@@ -1044,6 +1044,16 @@ mod tests {
         assert_eq!(super::line_numbers(3), "1 |\n2 |\n3 |");
     }
 
+    #[test]
+    fn the_bar_follows_every_number_including_two_digit_ones() {
+        let column = super::line_numbers(12);
+        let lines: Vec<&str> = column.split('\n').collect();
+        assert_eq!(lines.len(), 12);
+        assert!(lines.iter().all(|l| l.ends_with(" |")), "{column}");
+        assert_eq!(lines[9], "10 |");
+        assert_eq!(lines[11], "12 |");
+    }
+
     /// Issue: the page read every picture from disk on every frame (a page of printouts on a
     /// network or cloud folder made the window crawl). A picture is read once, and again only
     /// when the file changes.
