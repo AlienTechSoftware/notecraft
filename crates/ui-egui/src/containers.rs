@@ -395,7 +395,7 @@ pub fn show(
         {
             out.changed.link = Some(href);
         }
-        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0));
+        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0), zoom);
         // Words wrap to the box, but a table keeps its columns' widths. The box is drawn wide
         // enough to hold what it has, so a table does not stick out past its edge; its border,
         // move bar and resize edge follow. Only the drawing grows: writing the wider width into
@@ -678,8 +678,9 @@ pub fn show(
             && !resize_drag_active
         {
             let d = response.drag_delta();
+            let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
-                let to = dragged_to(ui, ui.id().with(("snap-move", i)), (c.x, c.y), d / zoom, response.drag_started(), snap);
+                let to = moved_to(ui, ui.id().with(("grab", i)), area.min, (c.x, c.y), response.drag_started(), zoom, pull, snap);
                 *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
             out.boxes = true;
@@ -738,9 +739,11 @@ pub fn show(
         }
         if drag.dragged() {
             let d = drag.drag_delta();
+            let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
                 let old = *c;
-                let (requested_x, requested_y) = dragged_to(ui, ui.id().with(("snap-move", i)), (old.x, old.y), d / zoom, drag.drag_started(), snap);
+                let (requested_x, requested_y) =
+                    moved_to(ui, ui.id().with(("grab", i)), area.min, (old.x, old.y), drag.drag_started(), zoom, pull, snap);
                 let moved = Container::new(requested_x, requested_y, old.width, old.blocks);
                 log::debug!(
                     "CONTAINER_MOVE: container={i} delta_screen=({:.2},{:.2}) delta_page=({:.2},{:.2}) old=({:.2},{:.2}) requested=({requested_x:.2},{requested_y:.2}) stored=({:.2},{:.2}) clamped_x={} clamped_y={}",
@@ -1267,9 +1270,11 @@ fn image_can_resize(kind: &str) -> bool {
 }
 
 /// Keep a date-only new page usable without serializing empty paragraphs into the file.
-fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32) -> f32 {
+/// The height a box is drawn, on screen, from the height `used` by what is in it (on screen too).
+/// The lines it adds are lines of the page, so they follow the `zoom` like the words.
+fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32, zoom: f32) -> f32 {
     let minimum = if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) { INITIAL_PAGE_LINES * EMPTY_LINE_HEIGHT } else { 0.0 };
-    used.max(minimum) + TRAILING_LINE_HEIGHT
+    used.max(minimum * zoom) + TRAILING_LINE_HEIGHT * zoom
 }
 
 fn resize_handle_rects(rect: Rect, size: f32) -> [Rect; 8] {
@@ -1366,6 +1371,69 @@ fn dragged_to(ui: &Ui, id: egui::Id, at: (f32, f32), delta: egui::Vec2, started:
     (to_grid(free.0, step), to_grid(free.1, step))
 }
 
+/// While a box is dragged with the pointer near the top or bottom of the view, scrolls the page
+/// that way, faster the nearer the edge the pointer is, so a box can be taken further than the
+/// window shows. Gives how far the box moves on the page with the scroll, in page points, so it
+/// stays under the pointer. The page does not scroll up past its own top (`page_top`, on screen).
+fn scroll_at_edges(ui: &Ui, page_top: f32, zoom: f32) -> f32 {
+    /// How near the edge, in points, the pointer starts the page scrolling.
+    const BAND: f32 = 48.0;
+    /// Points a second, with the pointer at the edge or past it.
+    const FASTEST: f32 = 1200.0;
+    let view = ui.clip_rect();
+    let Some(p) = ui.ctx().pointer_latest_pos() else { return 0.0 };
+    let band = BAND.min(view.height() / 4.0);
+    let depth = if p.y > view.max.y - band {
+        ((p.y - (view.max.y - band)) / band).min(1.0)
+    } else if p.y < view.min.y + band && page_top < view.min.y - 0.5 {
+        -((view.min.y + band - p.y) / band).min(1.0)
+    } else {
+        return 0.0;
+    };
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    // Down without end, since the page grows under the box; up only as far as the page's top.
+    let step = (depth * FASTEST * dt).max(page_top - view.min.y);
+    ui.scroll_with_delta(vec2(0.0, -step));
+    ui.ctx().request_repaint();
+    step / zoom.max(0.01)
+}
+
+/// How far ahead of where the page now is a dragged box must be put, in page points, given the
+/// scroll asked for this frame (`pull`). The page shows a scroll two frames after it is asked for,
+/// so last frame's is still to come as well.
+fn pull_to_come(ui: &Ui, id: egui::Id, pull: f32) -> f32 {
+    let last = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
+    ui.data_mut(|d| d.insert_temp(id, pull));
+    pull + last
+}
+
+/// Where a box being moved goes: under the pointer, held at the same place it was taken hold of.
+/// That place, relative to the box in page points, is kept under `id` for the length of the drag.
+/// Placing the box from the pointer, rather than adding up the pointer's movements, means a box
+/// that could not follow for a while (stopped at the page's edge, or at the end of the scroll)
+/// is back under the pointer as soon as the pointer comes back. `at` is where the box is now,
+/// `page_min` the page's corner on screen, and `pull` how far the page is being scrolled under it.
+#[allow(clippy::too_many_arguments)]
+fn moved_to(ui: &Ui, id: egui::Id, page_min: egui::Pos2, at: (f32, f32), started: bool, zoom: f32, pull: f32, snap: Option<f32>) -> (f32, f32) {
+    let zoom = zoom.max(0.01);
+    let on_page = |p: egui::Pos2| ((p.x - page_min.x) / zoom, (p.y - page_min.y) / zoom);
+    let Some(now) = ui.ctx().pointer_latest_pos() else { return at };
+    let kept = if started { None } else { ui.data(|d| d.get_temp::<(f32, f32)>(id)) };
+    let grab = kept.unwrap_or_else(|| {
+        let from = on_page(ui.input(|i| i.pointer.press_origin()).unwrap_or(now));
+        let grab = (from.0 - at.0, from.1 - at.1);
+        ui.data_mut(|d| d.insert_temp(id, grab));
+        grab
+    });
+    let pull = pull_to_come(ui, id.with("pull"), if started { 0.0 } else { pull });
+    let p = on_page(now);
+    let free = (p.0 - grab.0, p.1 + pull - grab.1);
+    match snap {
+        Some(step) => (to_grid(free.0, step), to_grid(free.1, step)),
+        None => free,
+    }
+}
+
 /// `value` on the nearest line of a grid `step` apart, counted from the page's origin.
 fn to_grid(value: f32, step: f32) -> f32 {
     (value / step).round() * step
@@ -1428,19 +1496,29 @@ mod tests {
     #[test]
     fn a_date_only_new_page_gets_a_twenty_line_writing_surface() {
         let blocks = page("Monday, 2 November 2026, 05:05\n");
-        assert_eq!(container_content_height(&blocks, &(0..1), 24.0), 462.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 24.0, 1.0), 462.0);
+    }
+
+    /// The writing surface is twenty lines of the page, so it shrinks and grows with the zoom
+    /// like the words do. It used to be the same height on screen at every zoom, so zoomed out it
+    /// reached far down the page and a printout added then landed far below it.
+    #[test]
+    fn a_new_page_writing_surface_follows_the_zoom() {
+        let blocks = page("Monday, 2 November 2026, 05:05\n");
+        assert_eq!(container_content_height(&blocks, &(0..1), 12.0, 0.5), 231.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 48.0, 2.0), 924.0);
     }
 
     #[test]
     fn an_existing_multi_block_page_keeps_its_content_height() {
         let blocks = page("Monday, 2 November 2026, 05:05\n\ntext\n");
-        assert_eq!(container_content_height(&blocks, &(0..2), 46.0), 68.0);
+        assert_eq!(container_content_height(&blocks, &(0..2), 46.0, 1.0), 68.0);
     }
 
     #[test]
     fn a_block_with_an_inline_image_keeps_one_line_below_the_object() {
         let blocks = page("text ![picture](assets/picture.png)\n");
-        assert_eq!(container_content_height(&blocks, &(0..1), 80.0), 102.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 80.0, 1.0), 102.0);
     }
 
     #[test]

@@ -213,8 +213,10 @@ const HANDLE: f32 = 9.0;
 pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pen: Pen, pressure: f32, t: &Tokens, zoom: f32) -> bool {
     use crate::ribbon::Pointer;
     let _ = t;
-    // Painting on the layer, not through the ui, so ink outside text remains visible.
-    let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(body);
+    // Painting on the layer, not through the ui, so ink outside text remains visible. Cut off
+    // where the view ends as well as the page: a scrolled page reaches above the view, and this
+    // layer sits above the ribbon.
+    let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(body.intersect(ui.clip_rect()));
     for stroke in pad.drawing.strokes.iter().chain(pad.drawing_now.iter()) {
         let mut scaled = stroke.clone();
         scaled.width *= zoom;
@@ -503,6 +505,32 @@ mod tests {
         s.dabs.push(Dab::new(x, 40.0, 0.3));
         s.dabs.push(Dab::new(x + 30.0, 40.0, 1.0));
         s
+    }
+
+    /// A scrolled page reaches above the part of the window it is shown in, and the ink layer
+    /// sits above the ribbon. Ink is cut off where the page's view ends, not where the page
+    /// does, or the ink above the view is drawn over the ribbon.
+    #[test]
+    fn ink_stays_inside_the_part_of_the_page_on_screen() {
+        let t = TempDir::new("ink-clipped-to-view");
+        let mut pad = Pad::of_page(t.path());
+        pad.drawing.add(stroke(100.0));
+        let ctx = egui::Context::default();
+        let pen = Pen { pointer: crate::ribbon::Pointer::Draw, ..Pen::default() };
+        let tokens = crate::theme::Tokens::for_theme(crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default });
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+        let view = egui::Rect::from_min_max(egui::pos2(0.0, 200.0), egui::pos2(800.0, 600.0));
+        let mut out = ctx.run_ui(input, |ui| {
+            ui.set_clip_rect(view);
+            // The page, scrolled so its top is 300 points above the view.
+            let body = egui::Rect::from_min_size(egui::pos2(0.0, -100.0), vec2(800.0, 2000.0));
+            show(ui, body, body.min, &mut pad, pen, 1.0, &tokens, 1.0);
+        });
+        out.textures_delta.clear();
+        assert!(!out.shapes.is_empty(), "the stroke is painted");
+        for shape in &out.shapes {
+            assert!(view.contains_rect(shape.clip_rect), "ink clipped to {:?}, beyond the view {view:?}", shape.clip_rect);
+        }
     }
 
     /// Runs the ink layer for one frame of `events`, over a 800 x 600 page at the window's corner,
