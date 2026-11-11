@@ -296,6 +296,9 @@ struct Editor {
     title: String,
     title_buf: String,
     body: String,
+    /// What the page's file holds, as last read or written, so a save that would not change it
+    /// is not made: a save rewrites the file, which on a synced folder can take a second.
+    saved_body: String,
     dirty_since: Option<Instant>,
     blocks: Vec<notecraft_formats::Block>,
     last_saved: Option<String>,
@@ -386,6 +389,24 @@ impl Editor {
     }
 
     /// Writes the page's text from its blocks, with the boxes around them when it is arranged.
+    /// The page as it is written to its file. A box with nothing in it, last in reading order
+    /// (a click on open paper adds its line at the end), is only where the cursor was put, not
+    /// something on the page, so it is left out.
+    fn body_to_save(&self) -> String {
+        if !self.arranged || self.boxes.len() < 2 || self.boxes.iter().map(|c| c.blocks).sum::<usize>() != self.blocks.len() {
+            return self.body.clone();
+        }
+        let last = (0..self.boxes.len()).max_by_key(|i| notecraft_model::container::blocks_of(&self.boxes, *i).end).unwrap_or(0);
+        let range = notecraft_model::container::blocks_of(&self.boxes, last);
+        let blank = |b: &notecraft_formats::Block| crate::preview::is_blank(b) && !matches!(b, notecraft_formats::Block::Item { task: Some(_), .. });
+        if range.end != self.blocks.len() || range.is_empty() || !self.blocks[range.clone()].iter().all(blank) {
+            return self.body.clone();
+        }
+        let mut boxes = self.boxes.clone();
+        boxes.remove(last);
+        notecraft_formats::boxes::write(self.format, &self.blocks[..range.start], Some(&boxes))
+    }
+
     fn rebuild_body(&mut self) {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
         self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
@@ -1441,6 +1462,7 @@ impl NoteCraftApp {
                 format: page.format,
                 title_buf,
                 title: page.title,
+                saved_body: page.body.clone(),
                 body: page.body,
                 dirty_since: None,
                 blocks,
@@ -1552,12 +1574,18 @@ impl NoteCraftApp {
         if ed.dirty_since.is_none() {
             return;
         }
-        let (dir, body) = (ed.dir.clone(), ed.body.clone());
+        let (dir, body) = (ed.dir.clone(), ed.body_to_save());
+        // Nothing to write: the file already says this.
+        if body == ed.saved_body {
+            ed.dirty_since = None;
+            return;
+        }
         match self.session.run("page.save", &params(&[("path", &path_str(&dir)), ("body", &body)])) {
             Ok(Output::Text(ts)) => {
                 if let Some(ed) = self.editor.as_mut() {
                     ed.dirty_since = None;
                     ed.last_saved = Some(ts);
+                    ed.saved_body = body;
                 }
                 self.say(crate::tl_id!("ui.saved"));
             }

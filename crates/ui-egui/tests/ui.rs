@@ -3084,6 +3084,71 @@ fn a_click_on_open_paper_shows_only_the_cursor_until_something_is_written() {
     assert!(box_drawn(&h), "the box appears with the first letters");
 }
 
+/// A click on open paper writes nothing to the page's file: the place it puts the cursor is not
+/// something on the page until something is written there. A save rewrites the file, which on a
+/// synced folder (a OneDrive mount) took about a second with the window frozen, so a click that
+/// saved held up the clicks after it. Pressing on that place does not drag it either.
+#[test]
+fn a_click_on_open_paper_saves_nothing_and_its_place_cannot_be_dragged() {
+    let (_t, app, s) = sample_app("ui-click-no-save");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    // As NoteCraft writes a page itself, so opening it and saving it again would not change it.
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"300\" style=\"position:absolute;left:0px;top:0px;width:300px\">\n<p>words</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "No save", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let file = std::fs::read_dir(s.md_page.parent().expect("section"))
+        .expect("the section")
+        .filter_map(Result::ok)
+        .map(|e| e.path().join("index.html"))
+        .find(|f| std::fs::read_to_string(f).is_ok_and(|t| t.contains("No save")))
+        .expect("the page's file");
+    let before = (std::fs::read_to_string(&file).expect("read"), std::fs::metadata(&file).and_then(|m| m.modified()).expect("mtime"));
+
+    let origin = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"].clone();
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    let at = egui::pos2(ox + 500.0, oy + 200.0);
+    ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the open paper");
+    settle(&mut h);
+    let placed = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert!(placed["caret"] != Value::Null, "the cursor is placed: {placed}");
+    let place = placed["containers"].as_array().and_then(|b| b.last()).cloned().unwrap_or_default();
+
+    // A press just above the cursor, where a box's drag strip would be, and a drag.
+    ask(&mut h, "ui.press", json!({"x": at.x + 20.0, "y": at.y - 10.0})).expect("down");
+    pump(&mut h);
+    for step in 1..=5 {
+        ask(&mut h, "ui.move", json!({"x": at.x + 20.0 + 30.0 * step as f32, "y": at.y - 10.0 + 30.0 * step as f32})).expect("drag");
+        pump(&mut h);
+    }
+    let dragging = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let now =
+        dragging["containers"].as_array().and_then(|b| b.iter().find(|c| c["blocks"] == place["blocks"] && c["width"] == place["width"]).cloned());
+    if let Some(now) = now {
+        assert_eq!((now["x"].clone(), now["y"].clone()), (place["x"].clone(), place["y"].clone()), "the cursor's place is not dragged: {dragging}");
+    }
+    ask(&mut h, "ui.release", json!({"x": at.x + 170.0, "y": at.y + 140.0})).expect("up");
+
+    // Long past the autosave's wait.
+    for _ in 0..4 {
+        settle(&mut h);
+    }
+    let after = (std::fs::read_to_string(&file).expect("read"), std::fs::metadata(&file).and_then(|m| m.modified()).expect("mtime"));
+    let body_of = |t: &str| t.split("<body>").nth(1).unwrap_or(t).to_string();
+    assert_eq!(body_of(&after.0), body_of(&before.0), "the page's words are as they were");
+    assert_eq!(after.0, before.0, "the page's file is as it was");
+    assert_eq!(after.1, before.1, "and its file was not written again");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The

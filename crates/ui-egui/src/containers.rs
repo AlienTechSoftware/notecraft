@@ -503,9 +503,14 @@ pub fn show(
         }
         let mut resize_drag_active = false;
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
-        let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
+        // A box with nothing in it is only where the cursor was put: it is not drawn, so it has no
+        // strip to move it by and no edge to size it from either.
+        let (move_sense, size_sense) = if holds_nothing { (Sense::hover(), Sense::hover()) } else { (Sense::click_and_drag(), Sense::drag()) };
+        let drag = ui.interact(bar, ui.id().with(("container-move", i)), move_sense);
+        let drag = if holds_nothing { drag } else { drag.on_hover_cursor(egui::CursorIcon::Move) };
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
-        let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        let grip = ui.interact(edge, ui.id().with(("container-size", i)), size_sense);
+        let grip = if holds_nothing { grip } else { grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal) };
 
         // A click or right click on the handle selects the container, as in OneNote. A right
         // click on the words belongs to the words: the page's menu opens and the box stays
