@@ -128,6 +128,17 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
 /// line leaves, goes too. The caret, if it is in a box after this one, moves up with its
 /// block. Returns the blocks that went (none, for a box that held none), so what is kept
 /// against block numbers can be moved up too.
+/// Whether every block in `range` is a blank line: a box clicked into with nothing written in it.
+/// A to-do box with nothing beside it yet is something, made on purpose.
+fn holds_nothing(blocks: &[Block], range: &std::ops::Range<usize>) -> bool {
+    blocks.get(range.clone()).is_some_and(|held| held.iter().all(|b| crate::preview::is_blank(b) && !matches!(b, Block::Item { task: Some(_), .. })))
+}
+
+/// Where the box the caret was in at the end of the last frame is kept, with its page.
+fn last_caret_box_id() -> egui::Id {
+    egui::Id::new("containers-last-caret-box")
+}
+
 pub fn drop_if_blank(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, left: usize) -> Option<std::ops::Range<usize>> {
     let range = container::blocks_of(boxes, left);
     if left >= boxes.len() || range.end > blocks.len() {
@@ -218,15 +229,40 @@ pub fn show(
         log::debug!("EMPTY_BOX: i={i} pos=({:.0},{:.0}) width={:.0} holds no block", c.x, c.y, c.width);
     }
 
+    // The caret may have been taken out of a box between frames, by something other than the
+    // page (an insert, a dialog, the ribbon). A box it left with nothing written in it goes then
+    // too, as it does when the page moves the caret (issue #21): it was only a place for the
+    // cursor, never something on the page.
+    let page_key = page_dir.to_string_lossy().into_owned();
+    let last_caret_box = ui.data(|d| d.get_temp::<(String, usize)>(last_caret_box_id())).filter(|(page, _)| *page == page_key).map(|(_, i)| i);
+    let caret_box_now = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+    if let Some(left) = last_caret_box
+        && caret_box_now != Some(left)
+        && left < boxes.len()
+        && selected(ui.ctx(), page_dir) != Some(left)
+        && let Some(gone) = drop_if_blank(blocks, boxes, caret, left)
+    {
+        log::debug!("BLANK_BOX_LEFT_BETWEEN_FRAMES: i={left} blocks={gone:?}");
+        ui.data_mut(|d| d.remove::<(usize, String)>(selected_id()));
+        out.changed.columns |= cols.remove_blocks(gone.clone());
+        out.justified |= justified.remove_blocks(gone);
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+
     // Which container the caret is in, so that a block added or removed inside it is
     // counted against the right one.
     let caret_box = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
     let before = blocks.len();
     let mut bottom = area.min.y;
+    // How far down the boxes with something in them reach: where "below everything" is. A blank
+    // box (the cursor's place on open paper) is not counted.
+    let mut filled_bottom = area.min.y;
 
     // The selection, and the menu that goes with it. A container that has gone (the page
     // was changed under it) cannot stay selected.
-    let page_key = page_dir.to_string_lossy().into_owned();
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
@@ -378,6 +414,10 @@ pub fn show(
         let frame = Rect::from_min_size(frame_at, vec2(width * zoom + 2.0 * pad, used + pad));
         frames.push(frame);
         bottom = bottom.max(frame.max.y);
+        let holds_nothing = holds_nothing(blocks, &range);
+        if !holds_nothing {
+            filled_bottom = filled_bottom.max(frame.max.y);
+        }
 
         let hovered = ui.rect_contains_pointer(frame);
         // A box with nothing in it has no block under the pointer, so a click inside it went
@@ -661,7 +701,9 @@ pub fn show(
         // onto it to drag the box used to make the edges and the strip itself vanish.
         let busy = drag.dragged() || grip.dragged();
         let hovered = hovered || drag.hovered() || grip.hovered();
-        if hovered || editing || busy || is_sel {
+        // A box with nothing in it is only where the cursor was put, as in OneNote: no edges and no
+        // strip until something is written in it.
+        if (hovered || editing || busy || is_sel) && !holds_nothing {
             log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
             if !image_object {
@@ -1116,7 +1158,16 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
-    out.bottom = page_points_below(area, bottom, zoom);
+    let caret_box_end = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+    ui.data_mut(|d| match caret_box_end {
+        Some(i) => {
+            d.insert_temp(last_caret_box_id(), (page_key.clone(), i));
+        }
+        None => {
+            d.remove::<(String, usize)>(last_caret_box_id());
+        }
+    });
+    out.bottom = page_points_below(area, filled_bottom, zoom);
     out
 }
 

@@ -7768,6 +7768,47 @@ mod alert_tests {
         }
     }
 
+    /// A box clicked into and left blank goes however the caret leaves it, not only when the page
+    /// itself moves the caret, and a printout added meanwhile is not put below it: the blank box
+    /// was never something on the page, only a place for the cursor.
+    #[test]
+    fn a_blank_box_the_caret_was_taken_from_goes_and_a_printout_is_not_put_below_it() {
+        for html in [false, true] {
+            let (_t, page, pdf, mut h) = printout_harness(html, "blank-box-printout");
+            let line = {
+                let ed = h.state_mut().editor.as_mut().expect("editor");
+                if ed.boxes.is_empty() {
+                    ed.boxes = vec![notecraft_model::container::Container::new(0.0, 0.0, 600.0, ed.blocks.len())];
+                }
+                let line = ed.blocks.len();
+                ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new()));
+                ed.boxes = notecraft_model::container::append(&ed.boxes, line, 1, 300.0, 0.0, 0.0);
+                let index = ed.boxes.len() - 1;
+                (ed.boxes[index].x, ed.boxes[index].y) = (400.0, 2000.0);
+                ed.arranged = true;
+                ed.rebuild_body();
+                ed.caret =
+                    Some(pageedit::Caret { block: line, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                line
+            };
+            for _ in 0..3 {
+                h.step();
+            }
+            let boxes_with_blank = h.state().editor.as_ref().map(|e| e.boxes.len()).expect("editor");
+            h.state_mut().editor.as_mut().expect("editor").caret = None;
+            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+            for _ in 0..5 {
+                h.step();
+            }
+            let ed = h.state().editor.as_ref().expect("editor");
+            assert!(!ed.boxes.iter().any(|c| c.y == 2000.0), "html={html}: the blank box went: {:?}", ed.boxes);
+            assert_eq!(ed.boxes.len(), boxes_with_blank, "html={html}: one box for the printout, none for the blank line: {:?}", ed.boxes);
+            let printout = ed.boxes.last().expect("the printout's box");
+            assert!(printout.y < 2000.0, "html={html}: the printout is not put below the blank box: {:?}", ed.boxes);
+            assert!(ed.blocks.len() > line, "html={html}: the printout is on the page");
+        }
+    }
+
     /// Issue #67: a printout goes into the box that holds the caret, after the caret's line,
     /// and that box stays where it was put.
     #[test]

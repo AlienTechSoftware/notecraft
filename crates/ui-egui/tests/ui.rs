@@ -3029,6 +3029,61 @@ fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
     }
 }
 
+/// As in OneNote, a click on open paper only places the cursor there: no box is drawn until
+/// something is written. The box appears with the first letter.
+#[test]
+fn a_click_on_open_paper_shows_only_the_cursor_until_something_is_written() {
+    let (_t, app, s) = sample_app("ui-click-cursor-only");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"300\"><p>words</p></div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Cursor only", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let origin = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"].clone();
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    let at = egui::pos2(ox + 500.0, oy + 200.0);
+    ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the open paper");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert!(page["caret"] != Value::Null, "the cursor is placed where the click was: {page}");
+    // A box's frame or drag strip around the click: anything visible drawn there narrower than the
+    // window. A line being written in shows its own faint field, so only rects taller than a line count.
+    let near = |h: &Harness<'_, NoteCraftApp>| {
+        fn walk(shape: &egui::Shape, out: &mut Vec<(egui::Rect, egui::Color32, egui::Stroke)>) {
+            match shape {
+                egui::Shape::Rect(r) => out.push((r.rect, r.fill, r.stroke)),
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let mut all = Vec::new();
+        for clipped in &h.output().shapes {
+            walk(&clipped.shape, &mut all);
+        }
+        all.into_iter()
+            .filter(|(r, fill, stroke)| {
+                let seen = fill.a() > 0 || (stroke.width > 0.0 && stroke.color.a() > 0);
+                seen && r.width() > 40.0 && r.width() < 900.0 && r.expand(16.0).contains(at) && (r.height() > 30.0 || r.height() < 16.0)
+            })
+            .map(|(r, ..)| r)
+            .collect::<Vec<_>>()
+    };
+    let box_drawn = |h: &Harness<'_, NoteCraftApp>| !near(h).is_empty();
+    assert!(!box_drawn(&h), "no box is drawn before anything is written: {:?}", near(&h));
+    ask(&mut h, "ui.text", json!({"text": "now a box"})).expect("type");
+    settle(&mut h);
+    assert!(box_drawn(&h), "the box appears with the first letters");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
