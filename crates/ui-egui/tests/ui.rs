@@ -553,7 +553,9 @@ fn pen_palette_owns_pointer_input_over_the_page_canvas() {
 fn clicking_a_page_opens_it_and_a_container_toggles() {
     let (_t, mut app, _s) = sample_app("ui-click");
     app.expand_all();
-    let mut h = harness(app, LIGHT);
+    // Taller than usual: with every level open, the page list is longer than the usual window,
+    // and "Format ideas" would be scrolled off and could not be clicked.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 1400.0));
     settle(&mut h);
     h.get_by_label("Project X").click();
     settle(&mut h);
@@ -1239,6 +1241,98 @@ fn deep_pages_expand_and_collapse_at_every_level() {
     h.run();
     assert_eq!(rows(&mut h), 2);
     review(&mut h, "tree_collapsed");
+}
+
+/// SUP-002: the "Add a page here" gap is offered between sub-pages as well as between top-level
+/// pages. Opening a page with sub-pages shows its children, and each child gets a gap.
+#[test]
+fn a_page_gap_is_offered_between_sub_pages() {
+    let (_t, mut app, s) = sample_app("ui-subpage-gap");
+    app.open_path(&s.deep_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    // Every level open, so the parent page shows its children in the pages list.
+    h.get_by_label("Expand all").click();
+    settle(&mut h);
+    // The two columns, so the pages have a column of their own, as the page-gap test does.
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    // Each list of pages gets a gap before every page and one after the last. The section's
+    // list is one; each open page with children adds one more list, for its sub-pages.
+    let rows = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let section = "my-notebook/work/projects/";
+    let in_section: Vec<&Value> = rows["rows"]
+        .as_array()
+        .map(|rows| rows.iter().filter(|r| r["path"].as_str().is_some_and(|p| p.starts_with(section))).collect())
+        .unwrap_or_default();
+    let pages = in_section.iter().filter(|r| r["kind"] == "page").count();
+    let open_parents = in_section.iter().filter(|r| r["kind"] == "page" && r["open"] == true && r["hasChildren"] == true).count();
+    let gaps = h.get_all_by_label("Add a page here").count();
+    assert_eq!(gaps, pages + 1 + open_parents, "a gap before every page and sub-page: {pages} pages, {open_parents} open parents, {gaps} gaps");
+}
+
+/// SUP-002: the page dropped on a gap lands at that gap, between the pages either side of it.
+#[test]
+fn a_page_dropped_on_a_gap_lands_between_its_neighbours() {
+    let (_t, mut app, _s) = sample_app("ui-gap-place");
+    app.expand_all();
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 1400.0));
+    settle(&mut h);
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    let section = "my-notebook/work/projects/";
+    let titles_here = |h: &mut Harness<'_, NoteCraftApp>| -> Vec<String> {
+        let rows = ask(h, "ui.inspect", json!({})).expect("inspect")["rows"].clone();
+        rows.as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter(|r| r["kind"] == "page" && r["depth"] == 3 && r["path"].as_str().is_some_and(|p| p.starts_with(section)))
+                    .filter_map(|r| r["title"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let before = titles_here(&mut h);
+    assert_eq!(before, vec!["Project X".to_string(), "Deep page".to_string()], "the two pages to start with");
+    // The gaps in the pages list, in order: above the first page, between the two, below the last.
+    h.get_all_by_label("Add a page here").nth(1).expect("the gap between the two pages").click();
+    settle(&mut h);
+    let after = titles_here(&mut h);
+    assert_eq!(after.len(), 3, "one page was added: {after:?}");
+    assert_eq!(after[0], "Project X", "the first page stays first: {after:?}");
+    assert_eq!(after[2], "Deep page", "the new page is not after the last page: {after:?}");
+}
+
+/// SUP-002: a page dropped on the gap above a page four levels down becomes its sibling, in
+/// the same parent, just above it.
+#[test]
+fn a_page_dropped_above_a_page_four_levels_down_is_its_sibling() {
+    let (_t, mut app, _s) = sample_app("ui-gap-nested");
+    app.expand_all();
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 1400.0));
+    settle(&mut h);
+    h.get_by_label("\u{2630}").click();
+    h.run();
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    // Level 3 is the sub-page of Level 2, which is the sub-page of Level 1, under Deep page.
+    let level3 = h.query_all_by_label("Level 3").next().expect("Level 3 is in the page list").rect();
+    ask(&mut h, "ui.click", json!({"x": level3.center().x, "y": level3.min.y - 3.0})).expect("the gap above Level 3");
+    settle(&mut h);
+    let rows = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["rows"].clone();
+    let rows = rows.as_array().cloned().unwrap_or_default();
+    let at = |title: &str| rows.iter().position(|r| r["title"] == title && r["kind"] == "page");
+    let new = rows
+        .iter()
+        .position(|r| r["title"] == "Untitled page" && r["depth"] == 6)
+        .expect("the new page is four levels down, as a sibling of Level 3");
+    assert_eq!(at("Level 3"), Some(new + 1), "the new page sits just above Level 3");
+    let parent = rows[new]["path"].as_str().unwrap_or_default().rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+    assert!(parent.ends_with("deep-page/level-1/level-2"), "its parent is Level 2, not {parent}");
 }
 
 /// The ribbon: its tabs change what is shown, and a button on the Insert tab puts a table in

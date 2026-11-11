@@ -645,6 +645,9 @@ enum Act {
     Add(PathBuf, NodeKind),
     /// A page in this section at this place in the order, from the line between two pages.
     AddPageAt(PathBuf, u32),
+    /// The same, when the two pages either side of the line are numbered next to each other:
+    /// the section is renumbered ten apart first, then the page goes halfway after the first one.
+    RenumberAndAddPage(PathBuf, u32),
     NewPage(PathBuf),
     /// Add a child of this kind, named in the menu rather than chosen in the dialog.
     AddKind(PathBuf, NodeKind, NodeKind),
@@ -2007,6 +2010,23 @@ impl NoteCraftApp {
                     self.say(crate::tl_id!("ui.new_page"));
                 }
             }
+            Act::RenumberAndAddPage(section, before) => {
+                // Where the page before the line sits among the pages now, before renumbering.
+                let position = notecraft_store::tree::child_dirs(&section)
+                    .into_iter()
+                    .filter_map(|c| notecraft_store::tree::read_node(&c))
+                    .filter(|n| n.kind == NodeKind::Page)
+                    .position(|n| n.order == before);
+                let path = path_str(&section);
+                if let (Some(position), Some(_)) = (position, self.run("node.renumber", &params(&[("path", &path)]))) {
+                    // Renumbered ten apart in the same order, so the line is halfway after that page.
+                    let order = ((position as u32 + 1) * 10 + 5).to_string();
+                    if let Some(Output::Path(dir)) = self.run("node.create", &params(&[("parent", &path), ("kind", "page"), ("order", &order)])) {
+                        self.open_page(&dir);
+                        self.say(crate::tl_id!("ui.new_page"));
+                    }
+                }
+            }
             Act::NewPage(parent) => self.create_page_in(&parent),
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
             Act::MakeSubpage(path) => self.reparent_page(&path, "node.demote"),
@@ -2285,8 +2305,21 @@ impl NoteCraftApp {
             }
         });
         if has_kids && open {
-            for c in node.children.iter().filter(|c| pages || c.info.kind != NodeKind::Page) {
-                self.draw_row(ui, c, depth + 1, acts, pages);
+            let kids: Vec<&Node> = node.children.iter().filter(|c| pages || c.info.kind != NodeKind::Page).collect();
+            if pages {
+                // Sub-pages get the same gaps as top-level pages: one before each, one after the
+                // last. A gap that is dropped here becomes a child of this page.
+                let mut last: Option<u32> = None;
+                for c in kids {
+                    self.page_gap(ui, &node.path, last, Some(c.info.order), acts);
+                    self.draw_row(ui, c, depth + 1, acts, pages);
+                    last = Some(c.info.order);
+                }
+                self.page_gap(ui, &node.path, last, None, acts);
+            } else {
+                for c in kids {
+                    self.draw_row(ui, c, depth + 1, acts, pages);
+                }
             }
         }
     }
@@ -5201,14 +5234,14 @@ impl NoteCraftApp {
         let resp = resp.on_hover_text(crate::tl_id!("ui.a_page_here"));
         if resp.clicked() {
             // Halfway between the two, or ten past the last one.
-            let order = match (before, after) {
-                (Some(b), Some(a)) if a > b + 1 => b + (a - b) / 2,
-                (Some(b), Some(_)) => b.saturating_add(1),
-                (Some(b), None) => b.saturating_add(10),
-                (None, Some(a)) => a / 2,
-                (None, None) => 10,
-            };
-            acts.push(Act::AddPageAt(section.to_path_buf(), order));
+            match (before, after) {
+                // No number between them: renumber first, so the page can go between.
+                (Some(b), Some(a)) if a <= b + 1 => acts.push(Act::RenumberAndAddPage(section.to_path_buf(), b)),
+                (Some(b), Some(a)) => acts.push(Act::AddPageAt(section.to_path_buf(), b + (a - b) / 2)),
+                (Some(b), None) => acts.push(Act::AddPageAt(section.to_path_buf(), b.saturating_add(10))),
+                (None, Some(a)) => acts.push(Act::AddPageAt(section.to_path_buf(), a / 2)),
+                (None, None) => acts.push(Act::AddPageAt(section.to_path_buf(), 10)),
+            }
         }
     }
 
