@@ -1224,7 +1224,15 @@ pub fn show(
                 ui.painter().rect_stroke(shown, 0.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
                 ui.ctx().request_repaint();
             } else {
-                let picked: Vec<usize> = frames.iter().enumerate().filter(|(_, f)| f.intersects(shown)).map(|(i, _)| i).collect();
+                // A box with nothing in it has nothing to select: it is only where a cursor was put.
+                let holds_something = |i: usize| {
+                    let range = container::blocks_of(boxes, i);
+                    blocks
+                        .get(range)
+                        .is_some_and(|held| held.iter().any(|b| !crate::preview::is_blank(b) || matches!(b, Block::Item { task: Some(_), .. })))
+                };
+                let picked: Vec<usize> =
+                    frames.iter().enumerate().filter(|(i, f)| f.intersects(shown) && holds_something(*i)).map(|(i, _)| i).collect();
                 log::debug!("SELECTION_BOX: rect={shown:?} picked={picked:?}");
                 match picked.as_slice() {
                     [] => {}

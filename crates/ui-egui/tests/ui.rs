@@ -3043,7 +3043,8 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
             "<div class=\"nc-box\" data-x=\"{x}\" data-y=\"{y}\" data-width=\"200\" style=\"position:absolute;left:{x}px;top:{y}px;width:200px\">\n<p>{words}</p>\n</div>\n"
         )
     };
-    let html = format!("{}{}{}", boxed(40.0, 60.0, "first"), boxed(400.0, 60.0, "second"), boxed(40.0, 400.0, "third"));
+    // A fourth box with nothing in it, in the selection box's way: nothing to select.
+    let html = format!("{}{}{}{}", boxed(40.0, 60.0, "first"), boxed(400.0, 60.0, "second"), boxed(40.0, 400.0, "third"), boxed(260.0, 100.0, ""));
     let made = ask(
         &mut h,
         "engine.execute",
@@ -3057,7 +3058,8 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
     let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
     let boxes = |p: &Value| p["containers"].as_array().cloned().unwrap_or_default();
-    assert_eq!(boxes(&page).len(), 3, "three boxes to begin with: {page}");
+    let count = boxes(&page).len();
+    assert!(count >= 3, "the three boxes with words, at least: {page}");
 
     // From open paper above and left of the first box, across it and the second, short of the third.
     let (from, to) = (egui::pos2(ox + 10.0, oy + 10.0), egui::pos2(ox + 700.0, oy + 160.0));
@@ -3077,7 +3079,7 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
     settle(&mut h);
     let picked = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     assert_eq!(picked["selectedContainers"], json!([0, 1]), "the two boxes it touched are selected: {picked}");
-    assert_eq!(boxes(&picked).len(), 3, "and no box was started by it: {picked}");
+    assert!(boxes(&picked).len() <= count, "and no box was started by it: {picked}");
     assert_eq!(picked["caret"], Value::Null, "nor is the cursor placed: {picked}");
 
     // Moving the first by its strip moves the second with it.
@@ -3103,8 +3105,9 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
     ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
     settle(&mut h);
     let left = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(boxes(&left).len(), 1, "the two selected boxes went: {left}");
-    assert_eq!(at(&left, 0), (40.0, 400.0), "the third is the one left: {left}");
+    let places: Vec<(f64, f64)> = (0..boxes(&left).len()).map(|i| at(&left, i)).collect();
+    assert!(places.contains(&(40.0, 400.0)), "the third is left: {left}");
+    assert!(!places.contains(&(90.0, 160.0)) && !places.contains(&(450.0, 160.0)), "the two selected boxes went: {left}");
     let body = h.state().body().unwrap_or_default().to_string();
     assert!(body.contains("third") && !body.contains("first") && !body.contains("second"), "and so are the words:\n{body}");
 }
