@@ -15,6 +15,12 @@ pub fn commands_json() -> Value {
 /// A command's result as JSON.
 pub fn output_json(o: &Output) -> Value {
     match o {
+        Output::Voice(effect) => match effect {
+            crate::VoiceEffect::Status { session, state, revision } => {
+                json!({"kind": "status", "session": session, "state": state.name(), "revision": revision})
+            }
+            _ => json!({"kind": effect.kind(), "session": effect.session()}),
+        },
         Output::None => Value::Null,
         Output::Path(p) => json!(display_path(p)),
         Output::Text(t) => json!(t),

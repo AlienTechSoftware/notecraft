@@ -16,6 +16,7 @@ pub type Params = BTreeMap<String, String>;
 
 #[derive(Debug)]
 pub enum Output {
+    Voice(crate::VoiceEffect),
     None,
     Path(PathBuf),
     Text(String),
@@ -552,6 +553,13 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: tree_read,
     },
     CommandSpec { id: "tree.refresh", label: "Reload the tree from disk", params: "", changes_tree: false, run: tree_refresh },
+    CommandSpec { id: "voice.start", label: "Start local reviewed dictation", params: "target (required): opaque insertion ticket", changes_tree: false, run: crate::voice::start },
+    CommandSpec { id: "voice.stop", label: "Stop capture and finalize dictation", params: "session (required): voice session id", changes_tree: false, run: crate::voice::stop },
+    CommandSpec { id: "voice.cancel", label: "Discard the voice session", params: "session (required): voice session id", changes_tree: false, run: crate::voice::cancel },
+    CommandSpec { id: "voice.status", label: "Read voice lifecycle status without transcript content", params: "", changes_tree: false, run: crate::voice::status },
+    CommandSpec { id: "voice.draft.set", label: "Review and edit the local transcript", params: "session (required): voice session id\nrevision (required): expected transcript revision\ntext (required): reviewed transcript, at most 64 KiB", changes_tree: false, run: crate::voice::draft },
+    CommandSpec { id: "voice.retarget", label: "Choose a new insertion position", params: "session (required): voice session id\ntarget (required): opaque insertion ticket", changes_tree: false, run: crate::voice::retarget },
+    CommandSpec { id: "voice.commit", label: "Insert the reviewed local transcript", params: "session (required): voice session id\nrevision (required): approved transcript revision", changes_tree: false, run: crate::voice::commit },
 ];
 
 pub fn registry() -> &'static [CommandSpec] {

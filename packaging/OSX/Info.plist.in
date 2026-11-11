@@ -16,6 +16,7 @@
   <key>NoteCraftBuildCommit</key><string>@BUILD_SHA@</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSMicrophoneUsageDescription</key><string>Dictation uses your microphone to transcribe speech locally into a page.</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
   <key>NSHumanReadableCopyright</key><string>NoteCraft contributors. MIT or Apache-2.0.</string>

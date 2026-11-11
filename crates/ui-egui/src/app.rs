@@ -36,6 +36,8 @@ use web_time::Instant;
 /// The grid boxes snap to on plain paper, in page points: the smallest squared paper's step.
 const PLAIN_SNAP_STEP: f32 = 12.0;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
+#[cfg(feature = "voice")]
+mod voice;
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
 const BARS: &str = "\u{2630}";
 /// The ArtCraft community chat. Opened in the browser, never fetched by the app.
@@ -291,6 +293,7 @@ struct PendingFormat {
 }
 
 struct Editor {
+    generation: u64,
     dir: PathBuf,
     format: PageFormat,
     title: String,
@@ -301,6 +304,11 @@ struct Editor {
     saved_body: String,
     /// The text an autosave is writing in the background, until it is written.
     saving: Option<String>,
+    /// The body as read back from the page's file after the last load or save. Dictation
+    /// compares the file with it to see whether another program changed the page. It can
+    /// differ from `saved_body`, because the store may tidy the body as it writes it.
+    #[cfg(feature = "voice")]
+    disk_body: String,
     dirty_since: Option<Instant>,
     blocks: Vec<notecraft_formats::Block>,
     last_saved: Option<String>,
@@ -671,6 +679,8 @@ enum Act {
 }
 
 pub struct NoteCraftApp {
+    #[cfg(feature = "voice")]
+    voice: voice::VoiceUi,
     session: Session,
     /// Writes autosaves off the window's thread (see [`crate::saver`]).
     saver: crate::saver::Saver,
@@ -801,6 +811,8 @@ impl NoteCraftApp {
         // The installed fonts are read in the background, so the window opens at once.
         #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
         crate::fonts::start_catalog();
+        #[cfg(feature = "voice")]
+        let voice = voice::VoiceUi::new(&session.settings);
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let ui_language =
             session.settings.get("ui_language").map(|value| crate::i18n::normalize_preference(&value)).unwrap_or_else(|| crate::i18n::AUTO.into());
@@ -898,6 +910,8 @@ impl NoteCraftApp {
             queued_alerts: VecDeque::new(),
             clipboard: Box::new(crate::clipboard::System),
             open_attachment_warning_suppressed: false,
+            #[cfg(feature = "voice")]
+            voice,
             welcome_notebook_setup: None,
         }
     }
@@ -1433,6 +1447,10 @@ impl NoteCraftApp {
 
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
+        #[cfg(feature = "voice")]
+        {
+            self.voice.editor_epoch = self.voice.editor_epoch.wrapping_add(1);
+        }
         self.save_now();
         self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
@@ -1475,6 +1493,9 @@ impl NoteCraftApp {
             // change" rather than a rename to the fallback word itself.
             let title_buf = if page.has_title { page.title.clone() } else { String::new() };
             self.editor = Some(Editor {
+                generation: 0,
+                #[cfg(feature = "voice")]
+                disk_body: page_body.clone(),
                 dir: dir.to_path_buf(),
                 format: page.format,
                 title_buf,
@@ -1606,6 +1627,10 @@ impl NoteCraftApp {
                 if let Some(ed) = self.editor.as_mut() {
                     ed.dirty_since = None;
                     ed.last_saved = Some(ts);
+                    #[cfg(feature = "voice")]
+                    {
+                        ed.disk_body = notecraft_store::page::load_page(&dir).map(|page| page.body).unwrap_or_else(|_| body.clone());
+                    }
                     ed.saved_body = body;
                 }
                 self.say(crate::tl_id!("ui.saved"));
@@ -1646,6 +1671,10 @@ impl NoteCraftApp {
                         ed.last_saved = Some(ts);
                         if ed.saving.as_ref() == Some(&saved.body) {
                             ed.saving = None;
+                        }
+                        #[cfg(feature = "voice")]
+                        {
+                            ed.disk_body = notecraft_store::page::load_page(&ed.dir).map(|page| page.body).unwrap_or_else(|_| saved.body.clone());
                         }
                         ed.saved_body = saved.body;
                     }
@@ -1725,6 +1754,7 @@ impl NoteCraftApp {
 
     /// The page text changed: remember to save it, and read the blocks from it again.
     fn mark_dirty(ed: &mut Editor) {
+        ed.generation = ed.generation.wrapping_add(1);
         ed.dirty_since = Some(Instant::now());
         let (blocks, in_the_text) = notecraft_formats::boxes::read(ed.format, &ed.body);
         ed.blocks = blocks;
@@ -1737,6 +1767,7 @@ impl NoteCraftApp {
     /// as they are. Reading them back from the text would throw away an empty new block and
     /// move the caret out from under the user.
     fn mark_dirty_from_blocks(ed: &mut Editor) {
+        ed.generation = ed.generation.wrapping_add(1);
         // A change that leaves the file as it is, or as it is being written (a click on open
         // paper, which only places the cursor), is not a change to save.
         let file_will_hold = ed.saving.as_ref().unwrap_or(&ed.saved_body);
@@ -2352,13 +2383,17 @@ impl NoteCraftApp {
     fn title_band(&mut self, ui: &mut Ui, with_tabs: bool) {
         let t = self.tokens;
         let (tab, source, in_table) = (self.ribbon_tab.clone(), self.show_source, self.caret_in_table());
+        #[cfg(feature = "voice")]
+        let mic = self.dictation_mic();
+        #[cfg(not(feature = "voice"))]
+        let mic = ribbon::Mic::Hidden;
         let title = self.editor.as_ref().map(|e| e.title.trim().to_owned()).filter(|s| !s.is_empty());
         let mut acts = Vec::new();
         egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
             self.title_row(ui, title.as_deref());
             if with_tabs {
-                ribbon::tab_strip(ui, &tab, source, in_table, &t, &mut acts);
+                ribbon::tab_strip(ui, &tab, source, in_table, mic, &t, &mut acts);
             }
         });
         for a in acts {
@@ -2614,6 +2649,11 @@ impl NoteCraftApp {
                 }
                 backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
                 backstage::Act::ResetPreferences => self.dialog = Some(Dialog::ResetPreferences),
+                #[cfg(feature = "voice")]
+                backstage::Act::DictationSetup => {
+                    self.backstage = None;
+                    self.open_dictation_setup();
+                }
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
                         .ok()
@@ -3268,6 +3308,10 @@ impl NoteCraftApp {
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
+            #[cfg(feature = "voice")]
+            ribbon::Act::Dictate => self.toggle_dictation(),
+            #[cfg(feature = "voice")]
+            ribbon::Act::DictationSettings => self.open_dictation_setup(),
             ribbon::Act::File => self.backstage = Some("Info"),
             ribbon::Act::PageVersions => {
                 self.save_now();
@@ -3839,6 +3883,7 @@ impl NoteCraftApp {
                 let step = if back { ed.history.undo().cloned() } else { ed.history.redo().cloned() };
                 match step {
                     Some(step) => {
+                        ed.generation = ed.generation.wrapping_add(1);
                         ed.body = step.body;
                         ed.blocks = step.blocks;
                         ed.boxes = step.boxes;
@@ -7333,6 +7378,8 @@ impl NoteCraftApp {
         self.clipboard_keys(ctx);
         self.poll_control(ctx);
         self.poll_import(ctx);
+        #[cfg(feature = "voice")]
+        self.poll_voice(ctx);
         if !self.event_frames.is_empty() {
             ctx.request_repaint();
         }
@@ -7365,6 +7412,8 @@ impl NoteCraftApp {
             self.dialogs(ctx);
             self.import_progress(ctx);
             self.frame_edges(ctx);
+            #[cfg(feature = "voice")]
+            self.show_voice(ctx);
             return;
         }
         self.top_bar(ui);
@@ -7384,6 +7433,8 @@ impl NoteCraftApp {
         if self.saver.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
+        #[cfg(feature = "voice")]
+        self.show_voice(ctx);
         if let Some(since) = self.editor.as_ref().and_then(|e| e.dirty_since) {
             // Read once: read twice, the second could be past the wait, and the subtraction
             // below panicked (seen on a slow CI runner).

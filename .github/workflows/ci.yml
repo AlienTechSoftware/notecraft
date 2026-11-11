@@ -104,6 +104,42 @@ jobs:
         if: matrix.platform != 'linux'
         run: cargo test --workspace --locked
 
+  voice:
+    # The optional dictation feature is off in default builds, so the workspace jobs above never
+    # compile it. Build, lint and test it here, with the ALSA headers the microphone needs.
+    name: voice (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-24.04
+          - platform: windows
+            runner: windows-2025
+          - platform: macos
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev libfontconfig1-dev libfreetype-dev libvulkan1 mesa-vulkan-drivers
+      - name: Install Rust
+        run: rustup install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: voice
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check macOS microphone metadata
+        if: matrix.platform == 'macos'
+        run: plutil -lint packaging/OSX/Info.plist.in packaging/OSX/entitlements.plist
+      - run: cargo clippy -p craft-voice-core -p craft-voice-runtime -p notecraft-ui-egui -p notecraft --all-targets --locked --features craft-voice-runtime/microphone,notecraft/voice -- -D warnings
+      - run: cargo test -p craft-voice-core -p craft-voice-runtime --locked --features craft-voice-runtime/microphone
+      - run: cargo test -p notecraft-ui-egui --locked --features voice --lib app::voice
+
   static:
     name: static checks
     runs-on: ubuntu-24.04
@@ -157,12 +193,12 @@ jobs:
   ci-status:
     name: CI
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, platform-build-test, static, coverage]
+    needs: [fmt, clippy, platform-build-test, voice, static, coverage]
     if: always()
     steps:
       - name: Check CI result
         run: |
-          if [[ "${{ needs.fmt.result }}" == "failure" || "${{ needs.clippy.result }}" == "failure" || "${{ needs.platform-build-test.result }}" == "failure" || "${{ needs.static.result }}" == "failure" ]]; then
+          if [[ "${{ needs.fmt.result }}" == "failure" || "${{ needs.clippy.result }}" == "failure" || "${{ needs.platform-build-test.result }}" == "failure" || "${{ needs.voice.result }}" == "failure" || "${{ needs.static.result }}" == "failure" ]]; then
             echo "Quality checks failed"
             exit 1
           fi

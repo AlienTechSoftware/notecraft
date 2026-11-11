@@ -4,6 +4,7 @@ Short guides for getting work done. Each one is a page; none is longer than a sc
 
 | Guide | What it covers |
 |---|---|
+| [Dictate into a page](dictate.md) | Optional local speech, transcript review, supported targets and verification limits |
 | [Start a notebook](start-a-notebook.md) | The first notebook, sections, pages and sub-pages |
 | [Arrange a page in boxes](arrange-a-page.md) | Containers: moving and resizing them, and where the arrangement is kept |
 | [Draw diagrams and charts](draw-diagrams.md) | Mermaid diagrams and charts: where they are kept, how to see them drawn, and what happens when one cannot be |
