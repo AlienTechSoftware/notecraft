@@ -1174,14 +1174,21 @@ impl NoteCraftApp {
     /// or when the page has nothing left to take back but the drawing has.
     fn undo(&mut self) {
         let edited = self.editor.as_ref().and_then(|e| e.history.when());
-        let ink_newer = match (self.last_ink_change, edited) {
+        // The ink's own last change if it keeps one, else when ink last changed at all.
+        let inked = self.pad.as_ref().and_then(crate::inkpad::Pad::newest_change).or(self.last_ink_change);
+        let ink_newer = match (inked, edited) {
             (Some(i), Some(e)) => i > e,
             (Some(_), None) => true,
             _ => false,
         };
-        let has_strokes = self.pad.as_ref().is_some_and(|p| p.strokes() > 0);
+        // One press that changed both (Delete on boxes and ink picked up together) is one step.
+        let together = matches!((inked, edited), (Some(i), Some(e)) if i.max(e).duration_since(i.min(e)) < Duration::from_millis(300));
+        let ink_can = self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo);
         let page_can = self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo());
-        if has_strokes && (ink_newer || !page_can) {
+        if ink_can && page_can && together {
+            self.ink_undo();
+            self.step_back(true);
+        } else if ink_can && (ink_newer || !page_can) {
             self.ink_undo();
         } else {
             self.step_back(true);
@@ -3431,7 +3438,7 @@ impl NoteCraftApp {
                     None => crate::tl_id!("ui.the_page_is_the_theme_s_own_colour").to_string(),
                 });
             }
-            ribbon::Act::Undo => self.step_back(true),
+            ribbon::Act::Undo => self.undo(),
             ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
             ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
@@ -5585,6 +5592,50 @@ impl NoteCraftApp {
                                 ed.pending_format = None;
                             }
                             page_acts.append(&mut moved.acts);
+                            // The selection box takes ink as well as boxes, as in OneNote, and what
+                            // it took moves together: boxes dragged take the ink with them, ink
+                            // dragged takes the boxes.
+                            if let Some(pad) = pad.as_mut()
+                                && !ink_owns_canvas
+                            {
+                                if moved.selection_started {
+                                    pad.let_go();
+                                }
+                                if let Some(shown) = moved.selection_box {
+                                    let to_ink = |p: egui::Pos2| ((p.x - top.x) / zoom_scale.max(0.01), (p.y - top.y) / zoom_scale.max(0.01));
+                                    let (a, b) = (to_ink(shown.min), to_ink(shown.max));
+                                    pad.hold_touching((a.0, a.1, b.0, b.1));
+                                }
+                                if let Some((dx, dy)) = moved.selected_shift {
+                                    pad.move_held(dx, dy);
+                                    ink_changed |= pad.holding() > 0;
+                                }
+                                if let Some((dx, dy)) = pad.take_shift() {
+                                    for i in crate::containers::selected_boxes(ui.ctx(), &ed.dir) {
+                                        if let Some(c) = ed.boxes.get_mut(i) {
+                                            *c = notecraft_model::container::Container::new(c.x + dx, c.y + dy, c.width, c.blocks);
+                                            moved.boxes = true;
+                                        }
+                                    }
+                                }
+                                // A press anywhere else on the page lets go of the ink, unless it
+                                // went on something still selected.
+                                let on_held = pressed.is_some_and(|p| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p)));
+                                let ctrl_press = ui.input(|i| {
+                                    i.events.iter().any(|e| {
+                                        matches!(e, egui::Event::PointerButton { pressed: true, modifiers, .. } if modifiers.command || modifiers.ctrl)
+                                    })
+                                });
+                                if press_in_page
+                                    && !on_held
+                                    && !ctrl_press
+                                    && moved.selection_box.is_none()
+                                    && pad.holding() > 0
+                                    && crate::containers::selected_boxes(ui.ctx(), &ed.dir).is_empty()
+                                {
+                                    pad.let_go();
+                                }
+                            }
                             if let Some((html, text)) = moved.copy.take()
                                 && self.clipboard.set_html(&html, &text).is_err()
                             {
@@ -5792,6 +5843,13 @@ impl NoteCraftApp {
         }
         if ink_changed {
             self.last_ink_change = Some(Instant::now());
+        }
+        // A change to the ink is finished once no button is down: what it was before becomes a
+        // step undo can go back to.
+        if let Some(pad) = self.pad.as_mut()
+            && !ui.input(|i| i.pointer.any_down())
+        {
+            pad.settle();
         }
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
@@ -7126,6 +7184,7 @@ impl NoteCraftApp {
                 "nib": self.nib,
                 "sensitivity": self.sensitivity,
                 "holding": self.pad.as_ref().map_or(0, crate::inkpad::Pad::holding),
+                "bounds": self.pad.as_ref().and_then(crate::inkpad::Pad::bounds),
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
@@ -7185,6 +7244,7 @@ impl NoteCraftApp {
                 "containers": e.boxes.iter().map(|b| json!({"x": b.x, "y": b.y, "width": b.width, "blocks": b.blocks})).collect::<Vec<_>>(),
                 // The container that is selected, with everything in it, or null.
                 "selectedContainer": crate::containers::selected(ctx, &e.dir),
+                "selectedContainers": crate::containers::selected_boxes(ctx, &e.dir),
                 // The image block selected independently of its containing text box, or null.
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),
@@ -7247,7 +7307,9 @@ impl NoteCraftApp {
         if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             self.step_back(false);
         } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
-            self.step_back(true);
+            // The ink's changes as well as the page's: whichever was last, or both when one
+            // press made them together.
+            self.undo();
         }
         self.nav_keys(ctx);
         self.direction_keys(ctx);

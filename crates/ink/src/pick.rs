@@ -38,7 +38,46 @@ pub fn inside(drawing: &Drawing, loop_: &[(f32, f32)]) -> Vec<usize> {
         .collect()
 }
 
-/// Whether a closed path goes round a point, by counting the times a ray leaving the point
+/// Every stroke a rectangle (two corners, in any order) touches: a reading inside it, or the
+/// line between two readings crossing it. A selection box takes ink this way, as it takes the
+/// containers it touches.
+pub fn touching(drawing: &Drawing, rect: (f32, f32, f32, f32)) -> Vec<usize> {
+    let (x0, x1) = (rect.0.min(rect.2), rect.0.max(rect.2));
+    let (y0, y1) = (rect.1.min(rect.3), rect.1.max(rect.3));
+    let inside = |x: f32, y: f32| x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    // Liang-Barsky: whether the segment from a to b passes through the rectangle.
+    let crosses = |(ax, ay): (f32, f32), (bx, by): (f32, f32)| {
+        let (dx, dy) = (bx - ax, by - ay);
+        let (mut t0, mut t1) = (0.0_f32, 1.0_f32);
+        for (p, q) in [(-dx, ax - x0), (dx, x1 - ax), (-dy, ay - y0), (dy, y1 - ay)] {
+            if p == 0.0 {
+                if q < 0.0 {
+                    return false;
+                }
+            } else {
+                let r = q / p;
+                if p < 0.0 {
+                    t0 = t0.max(r);
+                } else {
+                    t1 = t1.min(r);
+                }
+                if t0 > t1 {
+                    return false;
+                }
+            }
+        }
+        true
+    };
+    drawing
+        .strokes
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.dabs.iter().any(|d| inside(d.x, d.y)) || s.dabs.windows(2).any(|w| crosses((w[0].x, w[0].y), (w[1].x, w[1].y))))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Whether a closed path goes round a point,/// Whether a closed path goes round a point, by counting the times a ray leaving the point
 /// crosses it: an odd number means inside. The path is treated as closed whether or not its
 /// last point meets its first, because a hand drawing a loop rarely closes it exactly.
 pub fn encloses(loop_: &[(f32, f32)], x: f32, y: f32) -> bool {
@@ -118,6 +157,18 @@ mod tests {
         d.add(line(10.0, 60.0, 50.0));
         d.add(line(200.0, 300.0, 200.0));
         d
+    }
+
+    /// A selection box takes every stroke it touches, as it takes every container it touches:
+    /// any part inside, or a line passing right through it between two readings.
+    #[test]
+    fn a_rectangle_takes_every_stroke_it_touches() {
+        let d = sheet();
+        assert_eq!(touching(&d, (0.0, 0.0, 30.0, 30.0)), vec![0], "the end of the first line is inside");
+        assert_eq!(touching(&d, (0.0, 10.0, 100.0, 60.0)), vec![0, 1], "both short lines");
+        assert_eq!(touching(&d, (240.0, 190.0, 260.0, 210.0)), vec![2], "the long line passes through, no reading inside");
+        assert_eq!(touching(&d, (100.0, 100.0, 150.0, 150.0)), Vec::<usize>::new(), "nothing there");
+        assert_eq!(touching(&d, (30.0, 60.0, 0.0, 0.0)), vec![0, 1], "corners in any order");
     }
 
     #[test]
