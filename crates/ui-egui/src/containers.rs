@@ -364,7 +364,7 @@ pub fn show(
         {
             out.changed.link = Some(href);
         }
-        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0));
+        let used = container_content_height(blocks, &range, child.min_rect().height().max(18.0), zoom);
         // Words wrap to the box, but a table keeps its columns' widths. The box is drawn wide
         // enough to hold what it has, so a table does not stick out past its edge; its border,
         // move bar and resize edge follow. Only the drawing grows: writing the wider width into
@@ -1199,9 +1199,11 @@ fn image_can_resize(kind: &str) -> bool {
 }
 
 /// Keep a date-only new page usable without serializing empty paragraphs into the file.
-fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32) -> f32 {
+/// The height a box is drawn, on screen, from the height `used` by what is in it (on screen too).
+/// The lines it adds are lines of the page, so they follow the `zoom` like the words.
+fn container_content_height(blocks: &[Block], range: &std::ops::Range<usize>, used: f32, zoom: f32) -> f32 {
     let minimum = if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) { INITIAL_PAGE_LINES * EMPTY_LINE_HEIGHT } else { 0.0 };
-    used.max(minimum) + TRAILING_LINE_HEIGHT
+    used.max(minimum * zoom) + TRAILING_LINE_HEIGHT * zoom
 }
 
 fn resize_handle_rects(rect: Rect, size: f32) -> [Rect; 8] {
@@ -1351,19 +1353,29 @@ mod tests {
     #[test]
     fn a_date_only_new_page_gets_a_twenty_line_writing_surface() {
         let blocks = page("Monday, 2 November 2026, 05:05\n");
-        assert_eq!(container_content_height(&blocks, &(0..1), 24.0), 462.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 24.0, 1.0), 462.0);
+    }
+
+    /// The writing surface is twenty lines of the page, so it shrinks and grows with the zoom
+    /// like the words do. It used to be the same height on screen at every zoom, so zoomed out it
+    /// reached far down the page and a printout added then landed far below it.
+    #[test]
+    fn a_new_page_writing_surface_follows_the_zoom() {
+        let blocks = page("Monday, 2 November 2026, 05:05\n");
+        assert_eq!(container_content_height(&blocks, &(0..1), 12.0, 0.5), 231.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 48.0, 2.0), 924.0);
     }
 
     #[test]
     fn an_existing_multi_block_page_keeps_its_content_height() {
         let blocks = page("Monday, 2 November 2026, 05:05\n\ntext\n");
-        assert_eq!(container_content_height(&blocks, &(0..2), 46.0), 68.0);
+        assert_eq!(container_content_height(&blocks, &(0..2), 46.0, 1.0), 68.0);
     }
 
     #[test]
     fn a_block_with_an_inline_image_keeps_one_line_below_the_object() {
         let blocks = page("text ![picture](assets/picture.png)\n");
-        assert_eq!(container_content_height(&blocks, &(0..1), 80.0), 102.0);
+        assert_eq!(container_content_height(&blocks, &(0..1), 80.0, 1.0), 102.0);
     }
 
     #[test]
