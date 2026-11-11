@@ -134,11 +134,6 @@ fn holds_nothing(blocks: &[Block], range: &std::ops::Range<usize>) -> bool {
     blocks.get(range.clone()).is_some_and(|held| held.iter().all(|b| crate::preview::is_blank(b) && !matches!(b, Block::Item { task: Some(_), .. })))
 }
 
-/// Where the box the caret was in at the end of the last frame is kept, with its page.
-fn last_caret_box_id() -> egui::Id {
-    egui::Id::new("containers-last-caret-box")
-}
-
 pub fn drop_if_blank(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, left: usize) -> Option<std::ops::Range<usize>> {
     let range = container::blocks_of(boxes, left);
     if left >= boxes.len() || range.end > blocks.len() {
@@ -229,27 +224,27 @@ pub fn show(
         log::debug!("EMPTY_BOX: i={i} pos=({:.0},{:.0}) width={:.0} holds no block", c.x, c.y, c.width);
     }
 
-    // The caret may have been taken out of a box between frames, by something other than the
-    // page (an insert, a dialog, the ribbon). A box it left with nothing written in it goes then
-    // too, as it does when the page moves the caret (issue #21): it was only a place for the
-    // cursor, never something on the page.
+    // A box with nothing in it is only ever the cursor's place (issue #21, and a click on open
+    // paper): one the cursor is not in goes, however that came about. Something may have taken the
+    // cursor away in the very frame its place was noted (an insert, a dialog, a selection box), or
+    // an older build saved one into the page. Left, it was an invisible box that could still be
+    // picked and saved. Last first, so the numbers of the ones still to look at hold.
     let page_key = page_dir.to_string_lossy().into_owned();
-    let last_caret_box = ui.data(|d| d.get_temp::<(String, usize)>(last_caret_box_id())).filter(|(page, _)| *page == page_key).map(|(_, i)| i);
     let caret_box_now = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
-    if let Some(left) = last_caret_box
-        && caret_box_now != Some(left)
-        && left < boxes.len()
-        && selected(ui.ctx(), page_dir) != Some(left)
-        && let Some(gone) = drop_if_blank(blocks, boxes, caret, left)
-    {
-        log::debug!("BLANK_BOX_LEFT_BETWEEN_FRAMES: i={left} blocks={gone:?}");
-        ui.data_mut(|d| d.remove::<(usize, String)>(selected_id()));
-        out.changed.columns |= cols.remove_blocks(gone.clone());
-        out.justified |= justified.remove_blocks(gone);
-        out.changed.blocks = true;
-        out.changed.caret = true;
-        out.boxes = true;
-        ui.ctx().request_repaint();
+    let picked = selected(ui.ctx(), page_dir);
+    for left in (0..boxes.len()).rev() {
+        if caret_box_now == Some(left) || picked == Some(left) {
+            continue;
+        }
+        if let Some(gone) = drop_if_blank(blocks, boxes, caret, left) {
+            log::debug!("BLANK_BOX_GONE: i={left} blocks={gone:?}");
+            out.changed.columns |= cols.remove_blocks(gone.clone());
+            out.justified |= justified.remove_blocks(gone);
+            out.changed.blocks = true;
+            out.changed.caret = true;
+            out.boxes = true;
+            ui.ctx().request_repaint();
+        }
     }
 
     // Which container the caret is in, so that a block added or removed inside it is
@@ -1163,15 +1158,6 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
-    let caret_box_end = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
-    ui.data_mut(|d| match caret_box_end {
-        Some(i) => {
-            d.insert_temp(last_caret_box_id(), (page_key.clone(), i));
-        }
-        None => {
-            d.remove::<(String, usize)>(last_caret_box_id());
-        }
-    });
     out.bottom = page_points_below(area, filled_bottom, zoom);
     out
 }

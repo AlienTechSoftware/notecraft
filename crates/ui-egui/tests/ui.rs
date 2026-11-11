@@ -3149,6 +3149,39 @@ fn a_click_on_open_paper_saves_nothing_and_its_place_cannot_be_dragged() {
     assert_eq!(after.1, before.1, "and its file was not written again");
 }
 
+/// A box with nothing in it that the cursor is not in goes, however it came to be there: left
+/// by something that took the cursor away in the same frame, or saved into the page by an older
+/// build. Such boxes are drawn as nothing, so left on the page they were invisible boxes that
+/// could still be picked and saved. Opening the page takes them away, and its file follows.
+#[test]
+fn blank_boxes_the_cursor_is_not_in_go_even_from_the_file() {
+    let (_t, app, s) = sample_app("ui-blank-boxes-go");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"300\" style=\"position:absolute;left:0px;top:0px;width:300px\">\n<p>words</p>\n</div>\n\
+                <div class=\"nc-box\" data-x=\"600\" data-y=\"200\" data-width=\"360\" style=\"position:absolute;left:600px;top:200px;width:360px\">\n<p></p>\n</div>\n\
+                <div class=\"nc-box\" data-x=\"900\" data-y=\"0\" data-width=\"360\" style=\"position:absolute;left:900px;top:0px;width:360px\">\n<p></p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Blank boxes", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    assert_eq!(page["containers"].as_array().map_or(0, Vec::len), 1, "only the box with words is left: {page}");
+    // Another page opened saves this one: its file has the one box.
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open another page");
+    settle(&mut h);
+    let saved = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": dir}})).expect("load it").to_string();
+    assert_eq!(saved.matches("nc-box").count(), 1, "one box in the file:\n{saved}");
+    assert!(saved.contains("words"), "and it is the one with words:\n{saved}");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
@@ -3225,9 +3258,9 @@ fn a_box_left_with_nothing_in_it_goes() {
     assert_eq!(text.matches("nc-box").count(), 3, "three boxes in the file:\n{text}");
     review(&mut h, "blank_box");
 
-    // An empty box between two boxes of words, saved that way, the second box justified. A
-    // click in it gives it a line to write in, ahead of the justified paragraph, which moves
-    // down one block and keeps its mark. Left blank, the box goes, and the mark comes back up.
+    // An empty box between two boxes of words, saved that way, the second box justified. A box
+    // with nothing in it is only the cursor's place, so with the cursor elsewhere it goes as the
+    // page opens, and the justified paragraph keeps its mark.
     let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"200\"><p>left box</p></div>\n<div class=\"nc-box\" data-x=\"220\" data-y=\"0\" data-width=\"120\"></div>\n<div class=\"nc-box\" data-x=\"360\" data-y=\"0\" data-width=\"200\"><p>right box</p></div>\n";
     let made = ask(
         &mut h,
@@ -3244,20 +3277,9 @@ fn a_box_left_with_nothing_in_it_goes() {
         ask(h, "engine.execute", json!({"command": "page.justify", "params": {"path": dir}})).expect("read the marks")
     };
     let opened = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(opened["containers"].as_array().map_or(0, Vec::len), 3, "three boxes, the middle one empty: {opened}");
-    assert_eq!(opened["blocks"], json!(2), "the empty box holds no block: {opened}");
-    ask(&mut h, "ui.click", json!({"x": ox + 260.0, "y": oy + 24.0})).expect("click in the empty box");
-    settle(&mut h);
-    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(now["blocks"], json!(3), "the click gave it a line: {now}");
-    assert_eq!(now["caret"]["block"], json!(1), "and the caret is on it: {now}");
-    assert_eq!(marks(&mut h), json!("2"), "\"right box\" is block 2 now, and still justified");
-    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 24.0})).expect("click in the left box");
-    settle(&mut h);
-    let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert_eq!(now["containers"].as_array().map_or(0, Vec::len), 2, "the empty box went: {now}");
-    assert_eq!(now["blocks"], json!(2), "and its line with it: {now}");
-    assert_eq!(marks(&mut h), json!("1"), "\"right box\" is block 1 again, and still justified");
+    assert_eq!(opened["containers"].as_array().map_or(0, Vec::len), 2, "the empty box went as the page opened: {opened}");
+    assert_eq!(opened["blocks"], json!(2), "it held no block: {opened}");
+    assert_eq!(marks(&mut h), json!("1"), "\"right box\" is block 1, and still justified");
 }
 
 /// A box copied with Ctrl+C and pasted into another comes back as it was: its heading a heading, its link a
@@ -4733,15 +4755,17 @@ fn blank_page(label: &str, body: &str) -> (TempDir, Harness<'static, NoteCraftAp
     (t, h, at)
 }
 
-/// Clicking inside an empty box puts the caret there, and what is typed goes in. It used to do
-/// nothing at all: a box with no blocks has nothing under the pointer to answer the click.
+/// Clicking where an empty box was saved puts the caret there, and what is typed goes in. It used
+/// to do nothing at all: a box with no blocks has nothing under the pointer to answer the click.
+/// A box with nothing in it is only the cursor's place, so it goes as the page opens, and the
+/// click is a click on open paper.
 #[test]
 fn clicking_in_an_empty_box_puts_the_caret_there_and_typing_works() {
     for (label, body) in [("empty-p", "<p></p>"), ("nothing", "")] {
         let (_t, mut h, (ox, oy)) = blank_page(&format!("ui-empty-box-{label}"), body);
         let v = look_at(&mut h);
-        assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(0), "{label}: the page has no blocks, only an empty box");
-        assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(1), "{label}: and one box");
+        assert_eq!(v.pointer("/page/blocks").and_then(Value::as_u64), Some(0), "{label}: the page has no blocks");
+        assert_eq!(v.pointer("/page/containers").and_then(Value::as_array).map(Vec::len), Some(0), "{label}: and the empty box went: {v}");
         // Below the handle, well inside the box.
         ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in the box");
         for _ in 0..6 {
