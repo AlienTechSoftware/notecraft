@@ -988,12 +988,15 @@ fn table(
                             if here == Some(cell) && picked.is_none() {
                                 let Some(caret) = caret.as_mut() else { return };
                                 let id = ui.make_persistent_id(("table-cell", i, r, c));
-                                let out = egui::TextEdit::singleline(&mut caret.text)
-                                    .id(id)
-                                    .frame(egui::Frame::NONE)
-                                    .desired_width(inner)
-                                    .font(egui::FontId::proportional(14.5 * zoom))
-                                    .show(ui);
+                                let at = (i, caret.text.clone(), caret.selection);
+                                let out = steady_blink(ui, (at.0, &at.1, at.2), |ui| {
+                                    egui::TextEdit::singleline(&mut caret.text)
+                                        .id(id)
+                                        .frame(egui::Frame::NONE)
+                                        .desired_width(inner)
+                                        .font(egui::FontId::proportional(14.5 * zoom))
+                                        .show(ui)
+                                });
                                 if caret.focus {
                                     out.response.request_focus();
                                     caret.focus = false;
@@ -1134,6 +1137,51 @@ fn table(
 
     ui.add_space(6.0);
     action
+}
+
+/// egui blinks a text cursor from the last time the field itself was clicked or typed in. A field
+/// NoteCraft puts the caret in (a click on open paper starting a box, an arrow from the line
+/// above) has no such time, so its cursor could stay dark for up to half a blink after the click,
+/// and the click seemed slow to take. The blink is kept here instead, from when the caret came to
+/// where it is (`at`: its block, words and selection) or last changed there.
+fn steady_blink<R>(ui: &mut Ui, at: (usize, &str, (usize, usize)), show: impl FnOnce(&mut Ui) -> R) -> R {
+    use std::hash::{Hash, Hasher};
+    let cursor = ui.visuals().text_cursor.clone();
+    if !cursor.blink {
+        return show(ui);
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    at.hash(&mut hasher);
+    let key = hasher.finish();
+    let id = egui::Id::new("caret-blink");
+    let now = ui.input(|i| i.time);
+    let since = match ui.data(|d| d.get_temp::<(u64, f64)>(id)) {
+        Some((k, from)) if k == key => now - from,
+        _ => {
+            ui.data_mut(|d| d.insert_temp(id, (key, now)));
+            0.0
+        }
+    };
+    let (lit, wake) = blink_phase(since, cursor.on_duration, cursor.off_duration);
+    {
+        let own = &mut ui.visuals_mut().text_cursor;
+        own.blink = false;
+        if !lit {
+            own.stroke.color = egui::Color32::TRANSPARENT;
+        }
+    }
+    ui.ctx().request_repaint_after_secs(wake);
+    let out = show(ui);
+    ui.visuals_mut().text_cursor = cursor;
+    out
+}
+
+/// Whether a cursor placed `since` seconds ago is lit, blinking `on` seconds lit and `off` dark,
+/// and how long until that changes.
+fn blink_phase(since: f64, on: f32, off: f32) -> (bool, f32) {
+    let total = (on + off).max(0.01);
+    let t = (since.max(0.0) % f64::from(total)) as f32;
+    if t < on { (true, on - t) } else { (false, total - t) }
 }
 
 /// A light frame around the block the caret is in, the way a container is outlined in
@@ -1491,6 +1539,9 @@ pub fn show_blocks(
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
+        // Except the one blank line of a box just clicked into: there the cursor alone shows
+        // where the words will go, until the first is written.
+        let outlined = !(range.len() == 1 && crate::preview::is_blank(&block) && caret.as_ref().is_some_and(|c| c.block == i && c.text.is_empty()));
         if matches!(block, Block::Table { .. }) {
             if let Some(what) = table(ui, &block, i, caret, t, page, borders, cols, &mut changed, zoom) {
                 action = Some(what);
@@ -1580,7 +1631,7 @@ pub fn show_blocks(
                         }
                     }
                 }
-                frame_block(ui, top, true, t, zoom);
+                frame_block(ui, top, outlined, t, zoom);
                 if let Some(a) = action.take() {
                     apply(a, blocks, caret, &mut changed);
                 }
@@ -1614,13 +1665,16 @@ pub fn show_blocks(
                                 {
                                     ui.label(egui::RichText::new(notecraft_formats::markdown::code_lang(lang).1).size(12.0 * zoom).color(t.muted));
                                 }
-                                egui::TextEdit::multiline(&mut c.text)
-                                    .id(id)
-                                    .frame(egui::Frame::NONE)
-                                    .desired_width(ui.available_width())
-                                    .horizontal_align(align)
-                                    .font(egui::FontId::monospace(size))
-                                    .show(ui)
+                                let at = (i, c.text.clone(), c.selection);
+                                steady_blink(ui, (at.0, &at.1, at.2), |ui| {
+                                    egui::TextEdit::multiline(&mut c.text)
+                                        .id(id)
+                                        .frame(egui::Frame::NONE)
+                                        .desired_width(ui.available_width())
+                                        .horizontal_align(align)
+                                        .font(egui::FontId::monospace(size))
+                                        .show(ui)
+                                })
                             })
                             .inner
                     } else {
@@ -1674,13 +1728,16 @@ pub fn show_blocks(
                                 });
                             }
                         }
-                        egui::TextEdit::singleline(&mut c.text)
-                            .id(id)
-                            .frame(egui::Frame::NONE)
-                            .desired_width(ui.available_width())
-                            .horizontal_align(align)
-                            .layouter(&mut layouter)
-                            .show(ui)
+                        let at = (i, c.text.clone(), c.selection);
+                        steady_blink(ui, (at.0, &at.1, at.2), |ui| {
+                            egui::TextEdit::singleline(&mut c.text)
+                                .id(id)
+                                .frame(egui::Frame::NONE)
+                                .desired_width(ui.available_width())
+                                .horizontal_align(align)
+                                .layouter(&mut layouter)
+                                .show(ui)
+                        })
                     };
                     let mut cursor_range = out.cursor_range;
                     let (left, right, shift) = ui.input(|input| {
@@ -1844,7 +1901,7 @@ pub fn show_blocks(
                     }
                 }
             }
-            frame_block(ui, top, true, t, zoom);
+            frame_block(ui, top, outlined, t, zoom);
         } else {
             // A finished block. Clicking it puts the caret in it, under the pointer, and a
             // to-do box on it can be ticked without putting the caret anywhere.
@@ -2842,6 +2899,16 @@ pub fn round_trips(format: notecraft_model::PageFormat, body: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// The cursor is lit from the moment the caret is put somewhere, for the first half of each
+    /// blink, and the window is woken when that changes.
+    #[test]
+    fn a_placed_cursor_is_lit_at_once_and_blinks_from_then() {
+        assert_eq!(super::blink_phase(0.0, 0.5, 0.5), (true, 0.5));
+        assert_eq!(super::blink_phase(0.25, 0.5, 0.5), (true, 0.25));
+        assert_eq!(super::blink_phase(0.75, 0.5, 0.5), (false, 0.25));
+        assert_eq!(super::blink_phase(1.0, 0.5, 0.5), (true, 0.5));
+    }
+
     use super::*;
     use notecraft_model::PageFormat;
 
