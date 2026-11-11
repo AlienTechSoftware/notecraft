@@ -3112,6 +3112,90 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
     assert!(body.contains("third") && !body.contains("first") && !body.contains("second"), "and so are the words:\n{body}");
 }
 
+/// The selection box takes the writing it touches as well as the boxes, as in OneNote: ink drawn
+/// beside a box is picked up with it in the ordinary pointer, moves with the boxes whichever is
+/// dragged, and goes with them when Delete is pressed.
+#[test]
+fn a_selection_box_picks_up_ink_with_the_boxes_and_they_move_and_go_together() {
+    let (_t, app, s) = sample_app("ui-selection-box-ink");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"60\" data-width=\"200\" style=\"position:absolute;left:40px;top:60px;width:200px\">\n<p>words</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Select ink", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let drag = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, to: egui::Pos2| {
+        ask(h, "ui.move", json!({"x": from.x, "y": from.y})).expect("move");
+        settle(h);
+        ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+        pump(h);
+        for step in 1..=8 {
+            let t = step as f32 / 8.0;
+            ask(h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+            pump(h);
+        }
+        ask(h, "ui.release", json!({"x": to.x, "y": to.y})).expect("up");
+        settle(h);
+    };
+
+    // A line of writing right of the box, then back to the ordinary pointer.
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    drag(&mut h, egui::pos2(ox + 400.0, oy + 100.0), egui::pos2(ox + 500.0, oy + 100.0));
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    let before = ink(&mut h);
+    assert_eq!(before["ink"]["strokes"], json!(1), "one line of writing: {}", before["ink"]);
+    assert_eq!(before["ink"]["pointer"], json!("write"), "and the ordinary pointer again: {}", before["ink"]);
+    let bounds = |v: &Value| -> [f32; 4] {
+        let b = &v["ink"]["bounds"];
+        [0, 1, 2, 3].map(|i| b[i].as_f64().unwrap_or(f64::NAN) as f32)
+    };
+    let b0 = bounds(&before);
+
+    // The selection box over the box and the writing takes both.
+    drag(&mut h, egui::pos2(ox + 10.0, oy + 10.0), egui::pos2(ox + 600.0, oy + 150.0));
+    let picked = ink(&mut h);
+    assert_eq!(picked["page"]["selectedContainers"], json!([0]), "the box is selected: {}", picked["page"]);
+    assert_eq!(picked["ink"]["holding"], json!(1), "and the writing is picked up: {}", picked["ink"]);
+
+    // Dragging the box by its strip takes the writing with it.
+    drag(&mut h, egui::pos2(ox + 140.0, oy + 67.0), egui::pos2(ox + 140.0, oy + 167.0));
+    let moved = ink(&mut h);
+    let b1 = bounds(&moved);
+    assert_eq!(moved["page"]["containers"][0]["y"], json!(160.0), "the box moved down: {}", moved["page"]);
+    assert!((b1[1] - b0[1] - 100.0).abs() < 1.0, "the writing moved down with it: {b0:?} -> {b1:?}");
+    assert_eq!(moved["ink"]["holding"], json!(1), "and is still picked up: {}", moved["ink"]);
+
+    // Dragging the writing takes the box with it.
+    let middle = egui::pos2(ox + (b1[0] + b1[2]) / 2.0, oy + (b1[1] + b1[3]) / 2.0);
+    drag(&mut h, middle, middle + egui::vec2(60.0, 0.0));
+    let both = ink(&mut h);
+    let b2 = bounds(&both);
+    assert!((b2[0] - b1[0] - 60.0).abs() < 1.0, "the writing moved right: {b1:?} -> {b2:?}");
+    assert_eq!(both["page"]["containers"][0]["x"], json!(100.0), "and the box with it: {}", both["page"]);
+
+    // Delete takes them both away.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let gone = ink(&mut h);
+    assert_eq!(gone["ink"]["strokes"], json!(0), "the writing went: {}", gone["ink"]);
+    assert_eq!(gone["page"]["containers"].as_array().map_or(0, Vec::len), 0, "and the box: {}", gone["page"]);
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The

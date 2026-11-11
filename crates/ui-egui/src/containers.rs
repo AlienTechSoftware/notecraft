@@ -198,6 +198,13 @@ pub struct Moved {
     /// How wide each box was drawn, in page points: its own width, or more when what it holds
     /// (a table) is wider than that. Drawn only; the page's arrangement is not changed by it.
     pub shown_widths: Vec<f32>,
+    /// A selection box let go this frame, on screen: the window picks up the ink it touches.
+    pub selection_box: Option<Rect>,
+    /// A selection box began this frame: the window lets go of the ink it held.
+    pub selection_started: bool,
+    /// How far, in page points, the selected boxes were dragged this frame: ink picked up with
+    /// them follows.
+    pub selected_shift: Option<(f32, f32)>,
 }
 
 /// Draws the page as containers. `boxes` is adjusted in place when one is dragged, resized
@@ -679,7 +686,8 @@ pub fn show(
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
         }
         if is_sel {
-            sel_frame = Some(frame);
+            // Its strip is part of it: a press there drags the selection, it does not let go.
+            sel_frame = Some(frame.union(bar));
             // Everything in the box is selected: shade it all, behind the words.
             ui.painter().set(shading, egui::Shape::rect_filled(frame, 3.0, t.row_selected));
             ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
@@ -748,6 +756,9 @@ pub fn show(
                 );
                 if group.contains(&i) {
                     group_shift = Some((i, moved.x - old.x, moved.y - old.y));
+                }
+                if group.contains(&i) || sel == Some(i) {
+                    out.selected_shift = Some((moved.x - old.x, moved.y - old.y));
                 }
                 *c = moved;
             }
@@ -868,7 +879,10 @@ pub fn show(
     // A press outside the selected container and its menu, or Escape, lets go of the selection.
     // So does the caret arriving in a container: the words are being edited, not the box.
     if sel.is_some() {
-        let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p));
+        // Ink picked up with the box is part of the selection: a press on it moves them, it does
+        // not let go of them.
+        let on_held_ink = |p: Pos2| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p));
+        let away = |p: Pos2| !sel_frame.is_some_and(|f| f.contains(p)) && !menu_rect.is_some_and(|m| m.contains(p)) && !on_held_ink(p);
         // Only a press on the page lets go of it: the ribbon's buttons act on the selected box, so a
         // press there must leave it selected.
         // A list the ribbon has opened over the page (the styles) is not the page either: a press on one of
@@ -1184,7 +1198,8 @@ pub fn show(
     if !group.is_empty() {
         let pressed_away = ui.input(|i| i.pointer.primary_pressed())
             && pointer.is_some_and(|p| area.contains(p) || paper.rect.contains(p) || below.rect.contains(p))
-            && !pointer.is_some_and(|p| group_frames.iter().any(|f| f.contains(p)));
+            && !pointer.is_some_and(|p| group_frames.iter().any(|f| f.contains(p)))
+            && !pointer.is_some_and(|p| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p)));
         if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
             group.clear();
         }
@@ -1202,6 +1217,7 @@ pub fn show(
         && !frames.iter().any(|f| f.expand(3.0).contains(from))
     {
         ui.data_mut(|d| d.insert_temp(selection_box_id(), (to_page(from), page_key.clone())));
+        out.selection_started = true;
     }
     let started = ui.data(|d| d.get_temp::<((f32, f32), String)>(selection_box_id())).filter(|(_, on)| *on == page_key).map(|(at, _)| at);
     if let Some(from) = started {
@@ -1234,6 +1250,7 @@ pub fn show(
                 let picked: Vec<usize> =
                     frames.iter().enumerate().filter(|(i, f)| f.intersects(shown) && holds_something(*i)).map(|(i, _)| i).collect();
                 log::debug!("SELECTION_BOX: rect={shown:?} picked={picked:?}");
+                out.selection_box = Some(shown);
                 match picked.as_slice() {
                     [] => {}
                     [one] => sel = Some(*one),

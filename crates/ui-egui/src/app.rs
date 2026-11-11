@@ -5480,6 +5480,44 @@ impl NoteCraftApp {
                                 ed.pending_format = None;
                             }
                             page_acts.append(&mut moved.acts);
+                            // The selection box takes ink as well as boxes, as in OneNote, and what
+                            // it took moves together: boxes dragged take the ink with them, ink
+                            // dragged takes the boxes.
+                            if let Some(pad) = pad.as_mut()
+                                && !ink_owns_canvas
+                            {
+                                if moved.selection_started {
+                                    pad.let_go();
+                                }
+                                if let Some(shown) = moved.selection_box {
+                                    let to_ink = |p: egui::Pos2| ((p.x - top.x) / zoom_scale.max(0.01), (p.y - top.y) / zoom_scale.max(0.01));
+                                    let (a, b) = (to_ink(shown.min), to_ink(shown.max));
+                                    pad.hold_touching((a.0, a.1, b.0, b.1));
+                                }
+                                if let Some((dx, dy)) = moved.selected_shift {
+                                    pad.move_held(dx, dy);
+                                    ink_changed |= pad.holding() > 0;
+                                }
+                                if let Some((dx, dy)) = pad.take_shift() {
+                                    for i in crate::containers::selected_boxes(ui.ctx(), &ed.dir) {
+                                        if let Some(c) = ed.boxes.get_mut(i) {
+                                            *c = notecraft_model::container::Container::new(c.x + dx, c.y + dy, c.width, c.blocks);
+                                            moved.boxes = true;
+                                        }
+                                    }
+                                }
+                                // A press anywhere else on the page lets go of the ink, unless it
+                                // went on something still selected.
+                                let on_held = pressed.is_some_and(|p| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p)));
+                                if press_in_page
+                                    && !on_held
+                                    && moved.selection_box.is_none()
+                                    && pad.holding() > 0
+                                    && crate::containers::selected_boxes(ui.ctx(), &ed.dir).is_empty()
+                                {
+                                    pad.let_go();
+                                }
+                            }
                             if let Some((html, text)) = moved.copy.take()
                                 && self.clipboard.set_html(&html, &text).is_err()
                             {
@@ -7021,6 +7059,7 @@ impl NoteCraftApp {
                 "nib": self.nib,
                 "sensitivity": self.sensitivity,
                 "holding": self.pad.as_ref().map_or(0, crate::inkpad::Pad::holding),
+                "bounds": self.pad.as_ref().and_then(crate::inkpad::Pad::bounds),
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
