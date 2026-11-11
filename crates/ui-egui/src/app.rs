@@ -5418,8 +5418,12 @@ impl NoteCraftApp {
                                 // pen palettes. A foreground ink layer registered after the ribbon
                                 // paints across its menus when a stroke is already in progress.
                                 let layer = egui::LayerId::new(egui::Order::Middle, ui.id().with("ink-overlay"));
-                                let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(viewport));
-                                ink_changed |= crate::inkpad::show(&mut ink_ui, viewport, top, pad, pen, pressure, &tokens, zoom_scale);
+                                // The viewport is one view tall from the top of the page, which a
+                                // scrolled page has left behind: the ink reaches down to the
+                                // bottom of what the window shows.
+                                let ink_area = viewport.with_max_y(viewport.max.y.max(ui.clip_rect().max.y));
+                                let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(ink_area));
+                                ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, top, pad, pen, pressure, &tokens, zoom_scale);
                             }
                             // A press lets go of whatever was selected: the drag that may
                             // follow it builds a new one. Done here, once a frame, rather
