@@ -1148,14 +1148,21 @@ impl NoteCraftApp {
     /// or when the page has nothing left to take back but the drawing has.
     fn undo(&mut self) {
         let edited = self.editor.as_ref().and_then(|e| e.history.when());
-        let ink_newer = match (self.last_ink_change, edited) {
+        // The ink's own last change if it keeps one, else when ink last changed at all.
+        let inked = self.pad.as_ref().and_then(crate::inkpad::Pad::newest_change).or(self.last_ink_change);
+        let ink_newer = match (inked, edited) {
             (Some(i), Some(e)) => i > e,
             (Some(_), None) => true,
             _ => false,
         };
-        let has_strokes = self.pad.as_ref().is_some_and(|p| p.strokes() > 0);
+        // One press that changed both (Delete on boxes and ink picked up together) is one step.
+        let together = matches!((inked, edited), (Some(i), Some(e)) if i.max(e).duration_since(i.min(e)) < Duration::from_millis(300));
+        let ink_can = self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo);
         let page_can = self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo());
-        if has_strokes && (ink_newer || !page_can) {
+        if ink_can && page_can && together {
+            self.ink_undo();
+            self.step_back(true);
+        } else if ink_can && (ink_newer || !page_can) {
             self.ink_undo();
         } else {
             self.step_back(true);
@@ -3337,7 +3344,7 @@ impl NoteCraftApp {
                     None => crate::tl_id!("ui.the_page_is_the_theme_s_own_colour").to_string(),
                 });
             }
-            ribbon::Act::Undo => self.step_back(true),
+            ribbon::Act::Undo => self.undo(),
             ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
             ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
@@ -5509,8 +5516,14 @@ impl NoteCraftApp {
                                 // A press anywhere else on the page lets go of the ink, unless it
                                 // went on something still selected.
                                 let on_held = pressed.is_some_and(|p| crate::inkpad::held_area(ui.ctx()).is_some_and(|r| r.contains(p)));
+                                let ctrl_press = ui.input(|i| {
+                                    i.events.iter().any(|e| {
+                                        matches!(e, egui::Event::PointerButton { pressed: true, modifiers, .. } if modifiers.command || modifiers.ctrl)
+                                    })
+                                });
                                 if press_in_page
                                     && !on_held
+                                    && !ctrl_press
                                     && moved.selection_box.is_none()
                                     && pad.holding() > 0
                                     && crate::containers::selected_boxes(ui.ctx(), &ed.dir).is_empty()
@@ -5725,6 +5738,13 @@ impl NoteCraftApp {
         }
         if ink_changed {
             self.last_ink_change = Some(Instant::now());
+        }
+        // A change to the ink is finished once no button is down: what it was before becomes a
+        // step undo can go back to.
+        if let Some(pad) = self.pad.as_mut()
+            && !ui.input(|i| i.pointer.any_down())
+        {
+            pad.settle();
         }
         if ink_changed && let Some(pad) = self.pad.as_mut() {
             let strokes = pad.strokes();
@@ -7182,7 +7202,9 @@ impl NoteCraftApp {
         if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             self.step_back(false);
         } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
-            self.step_back(true);
+            // The ink's changes as well as the page's: whichever was last, or both when one
+            // press made them together.
+            self.undo();
         }
         self.nav_keys(ctx);
         self.direction_keys(ctx);

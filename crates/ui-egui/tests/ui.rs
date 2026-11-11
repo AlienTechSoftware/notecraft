@@ -3194,6 +3194,104 @@ fn a_selection_box_picks_up_ink_with_the_boxes_and_they_move_and_go_together() {
     let gone = ink(&mut h);
     assert_eq!(gone["ink"]["strokes"], json!(0), "the writing went: {}", gone["ink"]);
     assert_eq!(gone["page"]["containers"].as_array().map_or(0, Vec::len), 0, "and the box: {}", gone["page"]);
+
+    // One undo brings them both back, as one Delete took them.
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    let back = ink(&mut h);
+    assert_eq!(
+        back["ink"]["strokes"],
+        json!(1),
+        "the writing is back: {} / page {} / history {}",
+        back["ink"],
+        back["page"]["containers"],
+        back["page"]["history"]
+    );
+    assert_eq!(back["page"]["containers"].as_array().map_or(0, Vec::len), 1, "and so is the box: {}", back["page"]);
+}
+
+/// While a selection box is being drawn, what it would pick up if let go now is shown, so it
+/// can be aimed. Ctrl and a click on something picked up takes it out of the selection, and
+/// Delete then leaves it alone; undo puts back what Delete took.
+#[test]
+fn a_selection_box_shows_what_it_takes_and_ctrl_click_leaves_a_box_out() {
+    let (_t, app, s) = sample_app("ui-selection-box-ctrl");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"40\" data-y=\"60\" data-width=\"200\" style=\"position:absolute;left:40px;top:60px;width:200px\">\n<p>words</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Ctrl select", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let line = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, to: egui::Pos2| {
+        ask(h, "ui.move", json!({"x": from.x, "y": from.y})).expect("move");
+        settle(h);
+        ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("down");
+        pump(h);
+        for step in 1..=8 {
+            let t = step as f32 / 8.0;
+            ask(h, "ui.move", json!({"x": from.x + (to.x - from.x) * t, "y": from.y + (to.y - from.y) * t})).expect("drag");
+            pump(h);
+        }
+    };
+    let up = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        ask(h, "ui.release", json!({"x": at.x, "y": at.y})).expect("up");
+        settle(h);
+    };
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    line(&mut h, egui::pos2(ox + 400.0, oy + 100.0), egui::pos2(ox + 500.0, oy + 100.0));
+    up(&mut h, egui::pos2(ox + 500.0, oy + 100.0));
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let b = [0, 1, 2, 3].map(|i| v["ink"]["bounds"][i].as_f64().unwrap_or(f64::NAN) as f32);
+    let ink_box = egui::Rect::from_min_max(egui::pos2(ox + b[0], oy + b[1]), egui::pos2(ox + b[2], oy + b[3]));
+
+    // Halfway through drawing the selection box, the writing it would take is outlined, and
+    // nothing is selected yet.
+    let to = egui::pos2(ox + 600.0, oy + 150.0);
+    line(&mut h, egui::pos2(ox + 10.0, oy + 10.0), to);
+    let outlined =
+        painted_rects(&h).iter().any(|r| r.contains_rect(ink_box) && r.width() < ink_box.width() + 40.0 && r.height() < ink_box.height() + 40.0);
+    assert!(outlined, "the writing it would take is outlined while it is drawn: {:?}", painted_rects(&h));
+    let during = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(during["ink"]["holding"], json!(0), "nothing is picked up until it is let go: {}", during["ink"]);
+    up(&mut h, to);
+    let picked = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(picked["page"]["selectedContainers"], json!([0]), "the box: {}", picked["page"]);
+    assert_eq!(picked["ink"]["holding"], json!(1), "and the writing: {}", picked["ink"]);
+
+    // Ctrl and a click on the box's words takes the box out, and puts no cursor in it.
+    ask(&mut h, "ui.click", json!({"x": ox + 80.0, "y": oy + 90.0, "ctrl": true})).expect("ctrl click the box");
+    settle(&mut h);
+    let left_out = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(left_out["page"]["selectedContainers"], json!([]), "the box is out of the selection: {}", left_out["page"]);
+    assert_eq!(left_out["page"]["caret"], Value::Null, "no cursor was put in it: {}", left_out["page"]);
+    assert_eq!(left_out["ink"]["holding"], json!(1), "the writing is still picked up: {}", left_out["ink"]);
+
+    // Delete takes the writing and leaves the box; undo puts the writing back.
+    ask(&mut h, "ui.key", json!({"key": "Delete"})).expect("delete");
+    settle(&mut h);
+    let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(after["ink"]["strokes"], json!(0), "the writing went: {}", after["ink"]);
+    assert_eq!(after["page"]["containers"].as_array().map_or(0, Vec::len), 1, "the box stayed: {}", after["page"]);
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    let back = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(back["ink"]["strokes"], json!(1), "undo puts the writing back: {}", back["ink"]);
+    assert_eq!(back["page"]["containers"].as_array().map_or(0, Vec::len), 1, "and the box is as it was: {}", back["page"]);
 }
 
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
