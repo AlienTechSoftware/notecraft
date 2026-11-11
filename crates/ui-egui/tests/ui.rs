@@ -6535,14 +6535,14 @@ fn numbered_code_shows_its_numbers_in_view_and_hides_them_in_edit() {
     app.open_path(&s.md_page.to_string_lossy());
     let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
     settle(&mut h);
-    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 1, "the numbers are drawn beside the code");
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 1, "the numbers are drawn beside the code");
     assert!(h.query_all_by_label("123|rust").count() == 0 && h.query_all_by_label("rust").count() >= 1, "the label is the language alone");
     let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
     ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret");
     for _ in 0..4 {
         pump(&mut h);
     }
-    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 0, "no numbers while it is written in");
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 0, "no numbers while it is written in");
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("```123|rust"), "the page keeps saying so");
 }

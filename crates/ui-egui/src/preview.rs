@@ -47,6 +47,12 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
 /// apart and a replaced picture is drawn anew.
 /// A picture's last change, where the platform reports one. The browser build's file shim has no
 /// modification time, so there the stamp is the size alone.
+/// The number column of a numbered code block: each line's number and a bar after it, one line per
+/// line of code. The bar is the separator the owner asked for (SUP-004).
+pub(crate) fn line_numbers(lines: usize) -> String {
+    (1..=lines).map(|n| format!("{n} |")).collect::<Vec<_>>().join("\n")
+}
+
 fn file_time(path: &Path) -> Option<std::time::SystemTime> {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -640,7 +646,7 @@ pub(crate) fn show_block_zoomed(
                     if numbered {
                         // Numbers are for reading: the block being written in shows none (pageedit.rs).
                         let lines = text.trim_end_matches('\n').split('\n').count();
-                        let numbers = (1..=lines).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
+                        let numbers = line_numbers(lines);
                         ui.horizontal_top(|ui| {
                             ui.label(RichText::new(numbers).monospace().size(14.5 * zoom).color(tokens.muted));
                             ui.label(RichText::new(text.trim_end_matches('\n')).monospace().size(14.5 * zoom));
@@ -868,6 +874,11 @@ fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numbered_lines_have_a_bar_after_each_number() {
+        assert_eq!(super::line_numbers(3), "1 |\n2 |\n3 |");
+    }
+
     /// Issue: the page read every picture from disk on every frame (a page of printouts on a
     /// network or cloud folder made the window crawl). A picture is read once, and again only
     /// when the file changes.
