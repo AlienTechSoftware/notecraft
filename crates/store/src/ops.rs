@@ -225,6 +225,11 @@ fn canonical_page(path: &Path) -> Result<PathBuf> {
     Ok(page)
 }
 
+/// Renumbers the pages of `parent` ten apart, keeping their order, so there is room to put a page between any two.
+pub fn renumber_children(parent: &Path) -> Result<()> {
+    compact_orders(parent)
+}
+
 fn compact_orders(parent: &Path) -> Result<()> {
     let children = node_children(parent);
     for (index, child) in children.iter().enumerate() {

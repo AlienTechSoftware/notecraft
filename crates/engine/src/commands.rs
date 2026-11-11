@@ -94,6 +94,12 @@ fn node_move_up(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::move_page(&s.resolve(req(p, "path")?)?, true)?))
 }
 
+fn node_renumber(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let section = s.resolve(req(p, "path")?)?;
+    ops::renumber_children(&section)?;
+    Ok(Output::Path(section))
+}
+
 fn node_move_down(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::move_page(&s.resolve(req(p, "path")?)?, false)?))
 }
@@ -368,6 +374,13 @@ static REGISTRY: &[CommandSpec] = &[
         params: "path (required): the page to move up",
         changes_tree: true,
         run: node_move_up,
+    },
+    CommandSpec {
+        id: "node.renumber",
+        label: "Renumber the pages of a section or page ten apart, keeping their order",
+        params: "path (required): the section or page whose child pages are renumbered",
+        changes_tree: true,
+        run: node_renumber,
     },
     CommandSpec {
         id: "node.move_down",
@@ -792,6 +805,24 @@ mod tests {
         assert!(s.run("notebook.open", &p(&[("path", &ordinary.to_string_lossy())])).is_err());
         assert_eq!(std::fs::read_to_string(&keep).expect("preserved file"), "leave this file alone");
         assert!(!ordinary.join("_node.toml").exists(), "an ordinary nonempty folder stays untouched");
+    }
+
+    /// SUP-002: pages that sit next to each other in their numbers can be renumbered ten apart,
+    /// which makes room for a page between them.
+    #[test]
+    fn renumbering_a_section_makes_room_between_adjacent_pages() {
+        let t = TempDir::new("engine-renumber");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work")])).expect("notebook");
+        let section = "work/new-section-1";
+        for (title, order) in [("First", "11"), ("Second", "12")] {
+            s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", title), ("order", order)])).expect("page");
+        }
+        s.run("node.renumber", &p(&[("path", section)])).expect("renumber the section");
+        s.run("node.create", &p(&[("parent", section), ("kind", "page"), ("title", "Middle"), ("order", "25")])).expect("between");
+        let tree = text_of(s.run("tree.read", &p(&[("path", section)])).expect("tree"));
+        let titles: Vec<&str> = tree.lines().filter_map(|l| l.trim().split("  [").next()).skip(1).collect();
+        assert_eq!(titles, vec!["Untitled page", "First", "Middle", "Second"], "the page lands between its neighbours:\n{tree}");
     }
 
     #[test]

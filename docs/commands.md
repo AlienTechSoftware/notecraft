@@ -49,6 +49,14 @@ Parameters:
 
 - path (required): the page to move up
 
+## `node.renumber`
+
+Renumber the pages of a section or page ten apart, keeping their order (changes the tree).
+
+Parameters:
+
+- path (required): the section or page whose child pages are renumbered
+
 ## `node.move_down`
 
 Move a page down among its siblings (changes the tree).
