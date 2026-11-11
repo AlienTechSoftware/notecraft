@@ -178,3 +178,28 @@ fn every_page_model_block_round_trips_through_both_formats_and_boxes() {
     assert_eq!(cross_format, expected, "HTML content converted to CMGFM maps to the same semantic model");
     assert_eq!(cross_layout, Some(containers), "layout survives conversion between formats");
 }
+
+#[test]
+fn all_demo_pages_keep_their_model_across_repeated_saves() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
+    for notebook in ["html", "cmgfm"] {
+        for (path, (format, source)) in pages(&root.join(notebook)) {
+            let body = match format {
+                PageFormat::Html => notecraft_formats::html::inner(&source),
+                PageFormat::Cmgfm => notecraft_formats::frontmatter::split_front(&source).1,
+            };
+            let original = boxes::read(format, &body);
+            let mut current = original.clone();
+            let mut previous = None;
+            for _ in 0..3 {
+                let body = boxes::write(format, &current.0, current.1.as_deref());
+                if let Some(previous) = previous {
+                    assert_eq!(body, previous, "{notebook}/{} serialization", path.display());
+                }
+                current = boxes::read(format, &body);
+                assert_eq!(current, original, "{notebook}/{} semantics", path.display());
+                previous = Some(body);
+            }
+        }
+    }
+}

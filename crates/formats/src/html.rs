@@ -322,6 +322,7 @@ struct Writer {
     out: String,
     lists: Vec<(bool, usize)>, // (ordered, counter)
     in_pre: bool,
+    in_code: bool,
     pre_diagram: bool,
     /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
     div_diagram: bool,
@@ -402,11 +403,13 @@ impl Writer {
                 last_space = false;
             }
         }
-        if self.in_math {
+        if self.in_math || self.in_code {
             // Keep the TeX as written between dollar signs.
             self.push(&s);
         } else {
-            self.push(&s);
+            let quoted = crate::render::escape_markdown(&s);
+            let quoted = if self.out.is_empty() || self.out.ends_with('\n') { crate::render::escape_block_start(&quoted) } else { quoted };
+            self.push(&quoted);
         }
     }
 
@@ -508,7 +511,10 @@ impl Writer {
             ("i" | "em", _) => self.push("*"),
             ("s" | "del" | "strike", _) => self.push("~~"),
             ("u" | "sub" | "sup", closing) => self.push(&format!("<{}{name}>", if closing { "/" } else { "" })),
-            ("code", _) if !self.in_pre => self.push("`"),
+            ("code", closing) if !self.in_pre => {
+                self.in_code = !closing;
+                self.push("`");
+            }
             ("pre", false) => {
                 self.block_break();
                 // `diagram` is how NoteCraft has always written one; `mermaid` is how Mermaid's own
@@ -611,7 +617,7 @@ impl Writer {
                 self.in_cell = false;
                 let cell = self.cell.trim().to_string();
                 if let Some(row) = self.row.as_mut() {
-                    row.push(cell);
+                    row.push(crate::render::escape_table_cell(&cell));
                 }
             }
             _ => {}

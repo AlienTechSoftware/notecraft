@@ -26,7 +26,7 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 out.push('\n');
             }
             Block::Paragraph(spans) => {
-                out.push_str(&spans_to_markdown(spans));
+                out.push_str(&escape_block_start(&spans_to_markdown(spans)));
                 out.push('\n');
             }
             Block::Item { ordered, number, task, depth, spans } => {
@@ -39,7 +39,7 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 if let Some(done) = task {
                     out.push_str(if *done { "[x] " } else { "[ ] " });
                 }
-                out.push_str(&spans_to_markdown(spans));
+                out.push_str(&escape_task_box(&spans_to_markdown(spans)));
                 out.push('\n');
             }
             Block::Quote(spans) => {
@@ -144,7 +144,7 @@ fn row_to_markdown(cells: &[Vec<Span>]) -> String {
     let mut s = String::from("|");
     for c in cells {
         s.push(' ');
-        s.push_str(&spans_to_markdown(c).replace('|', "\\|"));
+        s.push_str(&escape_table_cell(&spans_to_markdown(c)));
         s.push_str(" |");
     }
     s.push('\n');
@@ -153,7 +153,28 @@ fn row_to_markdown(cells: &[Vec<Span>]) -> String {
 
 /// Inline spans as Markdown. The order of the marks matches what the parser reads back.
 pub fn spans_to_markdown(spans: &[Span]) -> String {
-    marked(spans, 0)
+    marked(spans, 0, &Literal::for_spans(spans))
+}
+
+/// Quotes the table's delimiters around an already serialized inline source.
+pub(crate) fn escape_table_cell(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('|', "\\|")
+}
+
+/// Live-editor text and a character mask identifying literal punctuation. Formatting marks
+/// remain editable, while persistence-only backslashes never enter the text widget.
+pub fn editable_spans(spans: &[Span]) -> (String, Vec<bool>) {
+    let literal = Literal { editor: true, ..Literal::default() };
+    let text = marked(spans, 0, &literal);
+    let mut masked = spans.to_vec();
+    for span in &mut masked {
+        if plain_text(span) {
+            span.text = span.text.chars().map(|c| if matches!(c, '\\' | '*' | '~' | '$' | '`' | '[' | ']' | '<') { '\0' } else { c }).collect();
+        }
+    }
+    let masked = marked(&masked, 0, &literal);
+    let mask = text.chars().zip(masked.chars()).map(|(a, b)| a != b).collect();
+    (text, mask)
 }
 
 /// The marks in the order they are opened: bold outermost, so `***x***` reads back the same way.
@@ -171,9 +192,9 @@ fn plain_text(s: &Span) -> bool {
 /// Writes `spans` with the marks from `level` on. Neighbours that share a mark are written under one
 /// pair of it (`**a *b* c**`, not `**a **` `***b***` `** c**`), and the white space at the edge of a
 /// run goes outside its marks, which is what CommonMark needs for them to open and close.
-fn marked(spans: &[Span], level: usize) -> String {
+fn marked(spans: &[Span], level: usize, literal: &Literal) -> String {
     let Some((marks, has, clear)) = MARKS.get(level) else {
-        return spans.iter().map(leaf).collect();
+        return spans.iter().map(|s| leaf(s, literal)).collect();
     };
     let mut out = String::new();
     let mut i = 0;
@@ -193,7 +214,7 @@ fn marked(spans: &[Span], level: usize) -> String {
                     s
                 })
                 .collect();
-            let text = marked(&inner, level + 1);
+            let text = marked(&inner, level + 1, literal);
             let core = text.trim();
             if core.is_empty() {
                 out.push_str(&text);
@@ -205,7 +226,7 @@ fn marked(spans: &[Span], level: usize) -> String {
                 out.push_str(text.get(text.len() - trail..).unwrap_or_default());
             }
         } else {
-            out.push_str(&marked(run, level + 1));
+            out.push_str(&marked(run, level + 1, literal));
         }
         i = j;
     }
@@ -213,7 +234,7 @@ fn marked(spans: &[Span], level: usize) -> String {
 }
 
 /// One span with nothing but its code, picture, maths or link written round it.
-fn leaf(s: &Span) -> String {
+fn leaf(s: &Span, literal: &Literal) -> String {
     let styled = |text: String| inline_style(s, inline_marks(s, text));
     if let Some(src) = &s.image {
         let image = format!("![{}]({src})", s.text);
@@ -226,12 +247,132 @@ fn leaf(s: &Span) -> String {
     if s.math {
         return styled(format!("${}$", s.text));
     }
-    let text = if s.code { format!("`{}`", s.text) } else { s.text.clone() };
+    let text = if s.code { format!("`{}`", s.text) } else { literal.escape(&s.text) };
     let text = match &s.link {
         Some(target) => format!("[{text}]({target})"),
         None => text,
     };
     styled(text)
+}
+
+/// Which delimiters a run of spans must quote so its words read back as words.
+///
+/// The inline parser only treats `\\` before punctuation, `` ` ``, `*`, `~~`, `$`, `[`/`]` and `![`
+/// as syntax, and each of those only forms markup when it has a partner (a second `$`, a closing
+/// `*`, a mark written for a styled neighbour, a link's `](`). A delimiter with no possible
+/// partner in the run is left alone, so ordinary text (`a_b`, `x < y`, `$5`, `2*3`) is written
+/// and edited exactly as typed, and only text that would otherwise turn into markup gains a
+/// backslash.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Literal {
+    star: bool,
+    tilde: bool,
+    dollar: bool,
+    tick: bool,
+    bracket: bool,
+    tag: bool,
+    editor: bool,
+}
+
+impl Literal {
+    /// Quote every delimiter: for text whose neighbours are not known, such as words inserted
+    /// into the middle of a line that is written already.
+    const ALL: Literal = Literal { star: true, tilde: true, dollar: true, tick: true, bracket: true, tag: true, editor: false };
+
+    /// The quoting needed by `spans` written together as one line.
+    fn for_spans(spans: &[Span]) -> Literal {
+        let words = || spans.iter().filter(|s| plain_text(s)).flat_map(|s| s.text.chars());
+        let count = |c: char| words().filter(|&x| x == c).count();
+        let emphasis = spans.iter().any(|s| plain_text(s) && (s.bold || s.italic));
+        let strike = spans.iter().any(|s| plain_text(s) && s.strike);
+        let brackets = count('[') + count(']');
+        let linked = spans.iter().any(|s| s.link.is_some() || s.image.is_some());
+        // A bracket only starts a link when a `](` follows it; marks never fall between the two.
+        let joined: String = words().collect();
+        Literal {
+            star: count('*') >= 2 || (count('*') >= 1 && emphasis),
+            tilde: count('~') >= 2 || (count('~') >= 1 && strike),
+            dollar: count('$') >= 2 || (count('$') >= 1 && spans.iter().any(|s| s.math)),
+            tick: count('`') >= 2 || (count('`') >= 1 && spans.iter().any(|s| s.code)),
+            editor: false,
+            tag: ["<u>", "</u>", "<sub>", "</sub>", "<sup>", "</sup>", "<span ", "</span>"]
+                .iter()
+                .any(|tag| joined.to_ascii_lowercase().contains(tag)),
+            bracket: (count('[') >= 1 && joined.contains("](")) || (brackets >= 1 && linked),
+        }
+    }
+
+    /// How many characters each character of `text` takes when written: 2 if it is quoted.
+    fn widths(&self, text: &str) -> Vec<usize> {
+        let chars: Vec<char> = text.chars().collect();
+        chars
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| {
+                let quoted = match c {
+                    // A backslash escapes the punctuation after it. One at the end of a run could
+                    // meet a mark or a neighbour's punctuation, so it is quoted too.
+                    '\\' => chars.get(i + 1).is_none_or(|n| n.is_ascii_punctuation()),
+                    '<' => self.tag,
+                    '*' => self.star,
+                    '~' => self.tilde,
+                    '$' => self.dollar,
+                    '`' => self.tick,
+                    '[' | ']' => self.bracket,
+                    _ => false,
+                };
+                1 + usize::from(quoted)
+            })
+            .collect()
+    }
+
+    /// `text` with the delimiters this run needs quoted.
+    fn escape(&self, text: &str) -> String {
+        if self.editor {
+            return text.to_string();
+        }
+        let mut out = String::with_capacity(text.len());
+        for (c, width) in text.chars().zip(self.widths(text)) {
+            if width == 2 {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out
+    }
+}
+
+/// Quote literal inline text whose neighbours are not known, so none of it reads as markup.
+pub(crate) fn escape_markdown(text: &str) -> String {
+    Literal::ALL.escape(text)
+}
+
+/// Words at the start of a list item that read like a task box (`[x] shipped`) stay words.
+pub(crate) fn escape_task_box(text: &str) -> String {
+    if ["[ ] ", "[x] ", "[X] "].iter().any(|m| text.starts_with(m)) { format!("\\{text}") } else { text.into() }
+}
+
+/// A paragraph must not turn into a heading, list, quote, rule or picture when serialized.
+pub(crate) fn escape_block_start(text: &str) -> String {
+    let t = text.trim_start();
+    let rule = t.trim_end();
+    let hashes = t.bytes().take_while(|c| *c == b'#').count();
+    let heading = (1..=6).contains(&hashes) && t.as_bytes().get(hashes) == Some(&b' ');
+    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
+    let ordered = digits > 0 && t.get(digits..).is_some_and(|s| s.starts_with(". ") || s.starts_with(") "));
+    let bullet = ["- ", "+ ", "* "].iter().any(|m| t.starts_with(m));
+    let ruled = rule.len() >= 3 && b"-_*".iter().any(|m| rule.bytes().all(|c| c == *m));
+    let picture = rule.starts_with("<img ") && rule.ends_with('>');
+    // A line that is a `div` tag would open or close a box around the page's blocks.
+    let tag = rule.starts_with("<div") || rule.starts_with("</div");
+    if heading || bullet || ordered || ruled || picture || tag || t.starts_with('>') {
+        let at = text.len() - t.len() + if ordered { digits } else { 0 };
+        let mut out = text.to_owned();
+        out.insert(at, '\\');
+        out
+    } else {
+        text.into()
+    }
 }
 
 fn inline_marks(s: &Span, mut text: String) -> String {
