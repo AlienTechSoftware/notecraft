@@ -3117,11 +3117,16 @@ fn a_click_on_open_paper_saves_nothing_and_its_place_cannot_be_dragged() {
     let origin = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"].clone();
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
     let at = egui::pos2(ox + 500.0, oy + 200.0);
+    let before_click = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the open paper");
     settle(&mut h);
     let placed = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     assert!(placed["caret"] != Value::Null, "the cursor is placed: {placed}");
     let place = placed["containers"].as_array().and_then(|b| b.last()).cloned().unwrap_or_default();
+    // Nothing to save, and nothing for Undo to take back: the page is as it was.
+    assert_eq!(placed["dirty"], json!(false), "a click does not count as a change: {placed}");
+    let steps = |p: &Value| p["history"]["steps"].clone();
+    assert_eq!(steps(&placed), steps(&before_click), "a click adds no step to undo: {placed}");
 
     // A press just above the cursor, where a box's drag strip would be, and a drag.
     ask(&mut h, "ui.press", json!({"x": at.x + 20.0, "y": at.y - 10.0})).expect("down");
@@ -3180,6 +3185,62 @@ fn blank_boxes_the_cursor_is_not_in_go_even_from_the_file() {
     let saved = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": dir}})).expect("load it").to_string();
     assert_eq!(saved.matches("nc-box").count(), 1, "one box in the file:\n{saved}");
     assert!(saved.contains("words"), "and it is the one with words:\n{saved}");
+}
+
+/// Once a tall page is scrolled down, the pen still writes low in the window, and that ink is
+/// drawn. The ink layer was given an area one view tall, counted from the top of the scrolled
+/// page, so ink further down than that was neither taken nor shown.
+#[test]
+fn the_pen_writes_low_in_the_window_once_a_tall_page_is_scrolled() {
+    let (_t, app, s) = sample_app("ui-ink-scrolled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
+    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n");
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Tall ink", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 400.0})).expect("pointer onto the page");
+    settle(&mut h);
+    for _ in 0..3 {
+        ask(&mut h, "ui.scroll", json!({"y": -300.0})).expect("scroll down");
+        settle(&mut h);
+    }
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let oy = page["origin"][1].as_f64().unwrap_or(0.0);
+    assert!(oy < -300.0, "the page is scrolled well down: its top is at {oy}");
+
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    // Low in the window, right of the tall box.
+    let (x, y) = (1000.0_f32, 700.0_f32);
+    ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
+    pump(&mut h);
+    for step in 1..=6 {
+        ask(&mut h, "ui.move", json!({"x": x + step as f32 * 30.0, "y": y})).expect("move");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": x + 180.0, "y": y})).expect("up");
+    pump(&mut h);
+    let mut ink = Value::Null;
+    for _ in 0..20 {
+        settle(&mut h);
+        ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+        if ink["strokes"].as_u64() == Some(1) {
+            break;
+        }
+    }
+    assert_eq!(ink["strokes"].as_u64(), Some(1), "the stroke low in the scrolled window is taken: {ink}");
 }
 
 /// As in OneNote, pressing on open paper and dragging draws a selection box. Every box it touches

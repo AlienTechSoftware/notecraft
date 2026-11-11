@@ -40,6 +40,7 @@ pub(crate) mod printout;
 pub mod quickaccess;
 pub mod ribbon;
 pub mod ribbon_icons;
+pub mod saver;
 pub mod snippets;
 pub mod stylus;
 pub mod telemetry_export;
