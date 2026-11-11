@@ -128,6 +128,12 @@ pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at:
 /// line leaves, goes too. The caret, if it is in a box after this one, moves up with its
 /// block. Returns the blocks that went (none, for a box that held none), so what is kept
 /// against block numbers can be moved up too.
+/// Whether every block in `range` is a blank line: a box clicked into with nothing written in it.
+/// A to-do box with nothing beside it yet is something, made on purpose.
+fn holds_nothing(blocks: &[Block], range: &std::ops::Range<usize>) -> bool {
+    blocks.get(range.clone()).is_some_and(|held| held.iter().all(|b| crate::preview::is_blank(b) && !matches!(b, Block::Item { task: Some(_), .. })))
+}
+
 pub fn drop_if_blank(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut Option<Caret>, left: usize) -> Option<std::ops::Range<usize>> {
     let range = container::blocks_of(boxes, left);
     if left >= boxes.len() || range.end > blocks.len() {
@@ -218,15 +224,40 @@ pub fn show(
         log::debug!("EMPTY_BOX: i={i} pos=({:.0},{:.0}) width={:.0} holds no block", c.x, c.y, c.width);
     }
 
+    // A box with nothing in it is only ever the cursor's place (issue #21, and a click on open
+    // paper): one the cursor is not in goes, however that came about. Something may have taken the
+    // cursor away in the very frame its place was noted (an insert, a dialog, a selection box), or
+    // an older build saved one into the page. Left, it was an invisible box that could still be
+    // picked and saved. Last first, so the numbers of the ones still to look at hold.
+    let page_key = page_dir.to_string_lossy().into_owned();
+    let caret_box_now = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
+    let picked = selected(ui.ctx(), page_dir);
+    for left in (0..boxes.len()).rev() {
+        if caret_box_now == Some(left) || picked == Some(left) {
+            continue;
+        }
+        if let Some(gone) = drop_if_blank(blocks, boxes, caret, left) {
+            log::debug!("BLANK_BOX_GONE: i={left} blocks={gone:?}");
+            out.changed.columns |= cols.remove_blocks(gone.clone());
+            out.justified |= justified.remove_blocks(gone);
+            out.changed.blocks = true;
+            out.changed.caret = true;
+            out.boxes = true;
+            ui.ctx().request_repaint();
+        }
+    }
+
     // Which container the caret is in, so that a block added or removed inside it is
     // counted against the right one.
     let caret_box = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
     let before = blocks.len();
     let mut bottom = area.min.y;
+    // How far down the boxes with something in them reach: where "below everything" is. A blank
+    // box (the cursor's place on open paper) is not counted.
+    let mut filled_bottom = area.min.y;
 
     // The selection, and the menu that goes with it. A container that has gone (the page
     // was changed under it) cannot stay selected.
-    let page_key = page_dir.to_string_lossy().into_owned();
     let mut sel = selected(ui.ctx(), page_dir).filter(|i| *i < boxes.len());
     let mut menu_at = ui.data(|d| d.get_temp::<Pos2>(menu_id()));
     let mut sel_frame: Option<Rect> = None;
@@ -378,6 +409,10 @@ pub fn show(
         let frame = Rect::from_min_size(frame_at, vec2(width * zoom + 2.0 * pad, used + pad));
         frames.push(frame);
         bottom = bottom.max(frame.max.y);
+        let holds_nothing = holds_nothing(blocks, &range);
+        if !holds_nothing {
+            filled_bottom = filled_bottom.max(frame.max.y);
+        }
 
         let hovered = ui.rect_contains_pointer(frame);
         // A box with nothing in it has no block under the pointer, so a click inside it went
@@ -463,9 +498,14 @@ pub fn show(
         }
         let mut resize_drag_active = false;
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
-        let drag = ui.interact(bar, ui.id().with(("container-move", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
+        // A box with nothing in it is only where the cursor was put: it is not drawn, so it has no
+        // strip to move it by and no edge to size it from either.
+        let (move_sense, size_sense) = if holds_nothing { (Sense::hover(), Sense::hover()) } else { (Sense::click_and_drag(), Sense::drag()) };
+        let drag = ui.interact(bar, ui.id().with(("container-move", i)), move_sense);
+        let drag = if holds_nothing { drag } else { drag.on_hover_cursor(egui::CursorIcon::Move) };
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
-        let grip = ui.interact(edge, ui.id().with(("container-size", i)), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        let grip = ui.interact(edge, ui.id().with(("container-size", i)), size_sense);
+        let grip = if holds_nothing { grip } else { grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal) };
 
         // A click or right click on the handle selects the container, as in OneNote. A right
         // click on the words belongs to the words: the page's menu opens and the box stays
@@ -661,7 +701,9 @@ pub fn show(
         // onto it to drag the box used to make the edges and the strip itself vanish.
         let busy = drag.dragged() || grip.dragged();
         let hovered = hovered || drag.hovered() || grip.hovered();
-        if hovered || editing || busy || is_sel {
+        // A box with nothing in it is only where the cursor was put, as in OneNote: no edges and no
+        // strip until something is written in it.
+        if (hovered || editing || busy || is_sel) && !holds_nothing {
             log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
             if !image_object {
@@ -1142,7 +1184,7 @@ pub fn show(
         out.boxes = true;
         ui.ctx().request_repaint();
     }
-    out.bottom = page_points_below(area, bottom, zoom);
+    out.bottom = page_points_below(area, filled_bottom, zoom);
     out
 }
 

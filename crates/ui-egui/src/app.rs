@@ -296,6 +296,9 @@ struct Editor {
     title: String,
     title_buf: String,
     body: String,
+    /// What the page's file holds, as last read or written, so a save that would not change it
+    /// is not made: a save rewrites the file, which on a synced folder can take a second.
+    saved_body: String,
     dirty_since: Option<Instant>,
     blocks: Vec<notecraft_formats::Block>,
     last_saved: Option<String>,
@@ -386,6 +389,24 @@ impl Editor {
     }
 
     /// Writes the page's text from its blocks, with the boxes around them when it is arranged.
+    /// The page as it is written to its file. A box with nothing in it, last in reading order
+    /// (a click on open paper adds its line at the end), is only where the cursor was put, not
+    /// something on the page, so it is left out.
+    fn body_to_save(&self) -> String {
+        if !self.arranged || self.boxes.len() < 2 || self.boxes.iter().map(|c| c.blocks).sum::<usize>() != self.blocks.len() {
+            return self.body.clone();
+        }
+        let last = (0..self.boxes.len()).max_by_key(|i| notecraft_model::container::blocks_of(&self.boxes, *i).end).unwrap_or(0);
+        let range = notecraft_model::container::blocks_of(&self.boxes, last);
+        let blank = |b: &notecraft_formats::Block| crate::preview::is_blank(b) && !matches!(b, notecraft_formats::Block::Item { task: Some(_), .. });
+        if range.end != self.blocks.len() || range.is_empty() || !self.blocks[range.clone()].iter().all(blank) {
+            return self.body.clone();
+        }
+        let mut boxes = self.boxes.clone();
+        boxes.remove(last);
+        notecraft_formats::boxes::write(self.format, &self.blocks[..range.start], Some(&boxes))
+    }
+
     fn rebuild_body(&mut self) {
         let arrangement = (self.arranged && !self.boxes.is_empty()).then_some(self.boxes.as_slice());
         self.body = notecraft_formats::boxes::write(self.format, &self.blocks, arrangement);
@@ -1441,6 +1462,7 @@ impl NoteCraftApp {
                 format: page.format,
                 title_buf,
                 title: page.title,
+                saved_body: page.body.clone(),
                 body: page.body,
                 dirty_since: None,
                 blocks,
@@ -1552,12 +1574,18 @@ impl NoteCraftApp {
         if ed.dirty_since.is_none() {
             return;
         }
-        let (dir, body) = (ed.dir.clone(), ed.body.clone());
+        let (dir, body) = (ed.dir.clone(), ed.body_to_save());
+        // Nothing to write: the file already says this.
+        if body == ed.saved_body {
+            ed.dirty_since = None;
+            return;
+        }
         match self.session.run("page.save", &params(&[("path", &path_str(&dir)), ("body", &body)])) {
             Ok(Output::Text(ts)) => {
                 if let Some(ed) = self.editor.as_mut() {
                     ed.dirty_since = None;
                     ed.last_saved = Some(ts);
+                    ed.saved_body = body;
                 }
                 self.say(crate::tl_id!("ui.saved"));
             }
@@ -1666,6 +1694,10 @@ impl NoteCraftApp {
             justified_moved |= ed.justified.insert_block(at + offset);
         }
         ed.boxes[index].blocks += count;
+        // The pages come out as wide as the sheet, as they do in a box of their own: a narrow box
+        // (one started with a click) is widened for them rather than the pages shrunk to fit it.
+        let sheet = ed.boxes.first().map_or(360.0, |c| c.width);
+        ed.boxes[index].width = ed.boxes[index].width.max(sheet);
         ed.arranged = true;
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
@@ -7789,6 +7821,47 @@ mod alert_tests {
         }
     }
 
+    /// A box clicked into and left blank goes however the caret leaves it, not only when the page
+    /// itself moves the caret, and a printout added meanwhile is not put below it: the blank box
+    /// was never something on the page, only a place for the cursor.
+    #[test]
+    fn a_blank_box_the_caret_was_taken_from_goes_and_a_printout_is_not_put_below_it() {
+        for html in [false, true] {
+            let (_t, page, pdf, mut h) = printout_harness(html, "blank-box-printout");
+            let line = {
+                let ed = h.state_mut().editor.as_mut().expect("editor");
+                if ed.boxes.is_empty() {
+                    ed.boxes = vec![notecraft_model::container::Container::new(0.0, 0.0, 600.0, ed.blocks.len())];
+                }
+                let line = ed.blocks.len();
+                ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new()));
+                ed.boxes = notecraft_model::container::append(&ed.boxes, line, 1, 300.0, 0.0, 0.0);
+                let index = ed.boxes.len() - 1;
+                (ed.boxes[index].x, ed.boxes[index].y) = (400.0, 2000.0);
+                ed.arranged = true;
+                ed.rebuild_body();
+                ed.caret =
+                    Some(pageedit::Caret { block: line, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                line
+            };
+            for _ in 0..3 {
+                h.step();
+            }
+            let boxes_with_blank = h.state().editor.as_ref().map(|e| e.boxes.len()).expect("editor");
+            h.state_mut().editor.as_mut().expect("editor").caret = None;
+            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+            for _ in 0..5 {
+                h.step();
+            }
+            let ed = h.state().editor.as_ref().expect("editor");
+            assert!(!ed.boxes.iter().any(|c| c.y == 2000.0), "html={html}: the blank box went: {:?}", ed.boxes);
+            assert_eq!(ed.boxes.len(), boxes_with_blank, "html={html}: one box for the printout, none for the blank line: {:?}", ed.boxes);
+            let printout = ed.boxes.last().expect("the printout's box");
+            assert!(printout.y < 2000.0, "html={html}: the printout is not put below the blank box: {:?}", ed.boxes);
+            assert!(ed.blocks.len() > line, "html={html}: the printout is on the page");
+        }
+    }
+
     /// Issue #67: a printout goes into the box that holds the caret, after the caret's line,
     /// and that box stays where it was put.
     #[test]
@@ -7835,6 +7908,11 @@ mod alert_tests {
             let moved = &ed.boxes[index];
             assert_eq!((moved.x, moved.y), (900.0, 40.0), "html={html}: the box stays where it was put");
             assert!(moved.blocks > before[index].blocks, "html={html}: the printout is in the caret's box: {:?}", ed.boxes);
+            // A printout's pages are as wide as the sheet, as they are in a box of their own: a
+            // narrow box (one started with a click) is widened for them, not the pages shrunk.
+            let sheet = before[0].width;
+            assert!(sheet > 300.0, "html={html}: the page's first box is wider than the narrow one: {before:?}");
+            assert_eq!(moved.width, sheet, "html={html}: the box is widened to the sheet for the printout");
             let range = notecraft_model::container::blocks_of(&ed.boxes, index);
             assert_eq!(range.start, line, "html={html}: the box's own line is still first");
             assert!(
