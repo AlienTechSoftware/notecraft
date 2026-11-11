@@ -3055,8 +3055,8 @@ fn a_click_on_open_paper_shows_only_the_cursor_until_something_is_written() {
     settle(&mut h);
     let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     assert!(page["caret"] != Value::Null, "the cursor is placed where the click was: {page}");
-    // A box's frame or drag strip around the click: anything visible drawn there narrower than the
-    // window. A line being written in shows its own faint field, so only rects taller than a line count.
+    // A box's frame, drag strip or the outline of the line being written in, around the click:
+    // anything visible drawn there narrower than the window.
     let near = |h: &Harness<'_, NoteCraftApp>| {
         fn walk(shape: &egui::Shape, out: &mut Vec<(egui::Rect, egui::Color32, egui::Stroke)>) {
             match shape {
@@ -3072,7 +3072,7 @@ fn a_click_on_open_paper_shows_only_the_cursor_until_something_is_written() {
         all.into_iter()
             .filter(|(r, fill, stroke)| {
                 let seen = fill.a() > 0 || (stroke.width > 0.0 && stroke.color.a() > 0);
-                seen && r.width() > 40.0 && r.width() < 900.0 && r.expand(16.0).contains(at) && (r.height() > 30.0 || r.height() < 16.0)
+                seen && r.width() > 40.0 && r.width() < 900.0 && r.expand(16.0).contains(at)
             })
             .map(|(r, ..)| r)
             .collect::<Vec<_>>()
