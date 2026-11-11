@@ -541,7 +541,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             fill(&[(10.0, 4.0), (17.0, 4.0), (17.0, 6.0), (10.0, 6.0)], color),
             fill(&[(10.0, 14.0), (12.0, 14.0), (12.0, 22.0), (10.0, 22.0)], color),
             fill(&[(15.0, 4.0), (17.0, 4.0), (17.0, 22.0), (15.0, 22.0)], color),
-            path(&[(23.0, 17.0), (19.0, 20.0), (23.0, 23.0)]),
+            path(&[(23.0, 12.0), (20.0, 15.0), (23.0, 18.0)]),
         ],
         Icon::ParaAuto => vec![
             fill(
@@ -797,7 +797,9 @@ mod tests {
         assert!(arrow_left > pilcrow_right, "the arrow starts right of the pilcrow: arrow {arrow_left}, pilcrow {pilcrow_right}");
         // The arrow head points left: its tip is the left-most point, and it sits on the middle line.
         let tip = arrow.iter().min_by(|a, b| a.x.total_cmp(&b.x)).expect("a point");
-        assert!((tip.y - 20.0).abs() < 0.01, "the tip is on the middle of the head: {tip:?}");
+        assert!((tip.y - 15.0).abs() < 0.01, "the tip is raised to the middle of the head at 15: {tip:?}");
+        // A gap of at least 3 points between the pilcrow stem and the arrow tip, as Word has.
+        assert!(tip.x - pilcrow_right >= 3.0, "the arrow is spaced from the pilcrow: {tip:?}");
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
