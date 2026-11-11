@@ -299,6 +299,8 @@ struct Editor {
     /// What the page's file holds, as last read or written, so a save that would not change it
     /// is not made: a save rewrites the file, which on a synced folder can take a second.
     saved_body: String,
+    /// The text an autosave is writing in the background, until it is written.
+    saving: Option<String>,
     dirty_since: Option<Instant>,
     blocks: Vec<notecraft_formats::Block>,
     last_saved: Option<String>,
@@ -670,6 +672,8 @@ enum Act {
 
 pub struct NoteCraftApp {
     session: Session,
+    /// Writes autosaves off the window's thread (see [`crate::saver`]).
+    saver: crate::saver::Saver,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     /// The pages visited, for Back and Forward.
@@ -823,6 +827,7 @@ impl NoteCraftApp {
         let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
+            saver: crate::saver::Saver::default(),
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
@@ -1224,7 +1229,7 @@ impl NoteCraftApp {
 
     /// Whether the page being edited has unsaved changes.
     pub fn is_dirty(&self) -> bool {
-        self.editor.as_ref().is_some_and(|e| e.dirty_since.is_some())
+        self.editor.as_ref().is_some_and(|e| e.dirty_since.is_some() || e.saving.is_some())
     }
 
     /// Where the page's words were drawn last frame. Its ink is measured from the top
@@ -1309,6 +1314,8 @@ impl NoteCraftApp {
     }
 
     fn run(&mut self, id: &str, p: &Params) -> Option<Output> {
+        // A command may read or write the page an autosave is still writing.
+        self.take_saves(true);
         match self.session.run(id, p) {
             Ok(o) => Some(o),
             Err(e) => {
@@ -1463,6 +1470,7 @@ impl NoteCraftApp {
                 title_buf,
                 title: page.title,
                 saved_body: page.body.clone(),
+                saving: None,
                 body: page.body,
                 dirty_since: None,
                 blocks,
@@ -1569,7 +1577,10 @@ impl NoteCraftApp {
         self.say(&message);
     }
 
+    /// Writes the page now and returns once it is on disk, after any autosave still being
+    /// written: what comes next (another page, closing, a command) may read the file.
     fn save_now(&mut self) {
+        self.take_saves(true);
         let Some(ed) = self.editor.as_mut() else { return };
         if ed.dirty_since.is_none() {
             return;
@@ -1591,6 +1602,54 @@ impl NoteCraftApp {
             }
             Ok(_) => {}
             Err(e) => self.fail(&e),
+        }
+    }
+
+    /// The autosave: hands the page to the saver and carries on, so the window is not held up
+    /// while a slow folder writes it.
+    fn save_in_background(&mut self) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.dirty_since.is_none() {
+            return;
+        }
+        let body = ed.body_to_save();
+        ed.dirty_since = None;
+        if body == ed.saved_body || ed.saving.as_ref() == Some(&body) {
+            return;
+        }
+        self.saver.submit(&ed.dir, &body);
+        ed.saving = Some(body);
+    }
+
+    /// Takes in the autosaves that have finished, waiting for all of them if `wait`. A save that
+    /// failed says why and leaves the page unsaved, so the autosave tries again.
+    fn take_saves(&mut self, wait: bool) {
+        if !self.saver.busy() {
+            return;
+        }
+        let done = if wait { self.saver.wait() } else { self.saver.finished() };
+        for saved in done {
+            let here = self.editor.as_mut().filter(|ed| ed.dir == saved.dir);
+            match saved.result {
+                Ok(ts) => {
+                    if let Some(ed) = here {
+                        ed.last_saved = Some(ts);
+                        if ed.saving.as_ref() == Some(&saved.body) {
+                            ed.saving = None;
+                        }
+                        ed.saved_body = saved.body;
+                    }
+                    self.say(crate::tl_id!("ui.saved"));
+                }
+                Err(e) => {
+                    if let Some(ed) = here {
+                        ed.saving = None;
+                        ed.dirty_since.get_or_insert_with(Instant::now);
+                    }
+                    self.status = crate::i18n::format_message_id("ui.could_not_complete_the_action_error", &[("error", &e)]);
+                    self.status_is_error = true;
+                }
+            }
         }
     }
 
@@ -1668,7 +1727,10 @@ impl NoteCraftApp {
     /// as they are. Reading them back from the text would throw away an empty new block and
     /// move the caret out from under the user.
     fn mark_dirty_from_blocks(ed: &mut Editor) {
-        ed.dirty_since = Some(Instant::now());
+        // A change that leaves the file as it is, or as it is being written (a click on open
+        // paper, which only places the cursor), is not a change to save.
+        let file_will_hold = ed.saving.as_ref().unwrap_or(&ed.saved_body);
+        ed.dirty_since = (ed.body_to_save() != *file_will_hold).then(Instant::now);
     }
 
     /// Puts a printout's blocks where the writer is: into the box that holds the caret, after
@@ -3690,6 +3752,8 @@ impl NoteCraftApp {
             self.complain(crate::tl_id!("ui.that_file_is_not_in_this_page_s_folder"));
             return;
         }
+        // The page file may be the one an autosave is still writing.
+        self.take_saves(true);
         if let Err(e) = notecraft_store::page::write_atomic(&path, text) {
             self.complain(&crate::i18n::format_message_id("ui.cannot_write_name_error", &[("name", name), ("error", &e.to_string())]));
             return;
@@ -3782,6 +3846,11 @@ impl NoteCraftApp {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same {
             // Nothing really changed, or the page was just put back by undo itself.
+            return;
+        }
+        // Only the cursor's place on open paper came or went: the page is the one remembered.
+        let saved = ed.body_to_save();
+        if saved != ed.body && ed.history.here().is_some_and(|s| s.body == saved) {
             return;
         }
         let here = ed.caret.as_ref().map(|c| c.block);
@@ -5345,7 +5414,7 @@ impl NoteCraftApp {
                 // left in this strip is the things that are about the file rather than in
                 // it, and they stay out of the page.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let state = if ed.dirty_since.is_some() {
+                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
                         crate::tl_id!("ui.editing").to_string()
                     } else {
                         ed.last_saved
@@ -5450,8 +5519,12 @@ impl NoteCraftApp {
                                 // pen palettes. A foreground ink layer registered after the ribbon
                                 // paints across its menus when a stroke is already in progress.
                                 let layer = egui::LayerId::new(egui::Order::Middle, ui.id().with("ink-overlay"));
-                                let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(viewport));
-                                ink_changed |= crate::inkpad::show(&mut ink_ui, viewport, top, pad, pen, pressure, &tokens, zoom_scale);
+                                // The viewport is one view tall from the top of the page, which a
+                                // scrolled page has left behind: the ink reaches down to the
+                                // bottom of what the window shows.
+                                let ink_area = viewport.with_max_y(viewport.max.y.max(ui.clip_rect().max.y));
+                                let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(ink_area));
+                                ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, top, pad, pen, pressure, &tokens, zoom_scale);
                             }
                             // A press lets go of whatever was selected: the drag that may
                             // follow it builds a new one. Done here, once a frame, rather
@@ -7097,7 +7170,7 @@ impl NoteCraftApp {
                 // own, unlike `title`, which is always at least the "Untitled page" fallback.
                 "titleArea": e.title_buf,
                 "format": e.format.id(),
-                "dirty": e.dirty_since.is_some(),
+                "dirty": e.dirty_since.is_some() || e.saving.is_some(),
                 "bodyCharacters": e.body.chars().count(),
                 "blocks": e.blocks.len(),
                 "attachments": e.attachments.len(),
@@ -7198,9 +7271,18 @@ impl NoteCraftApp {
         self.dialogs(ctx);
         self.import_progress(ctx);
         self.frame_edges(ctx);
+        // Closing the window writes the page first, and waits for an autosave still being
+        // written: what was typed in the moment before closing is not lost.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.save_now();
+        }
+        self.take_saves(false);
+        if self.saver.busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
         if let Some(since) = self.editor.as_ref().and_then(|e| e.dirty_since) {
             if since.elapsed() >= AUTOSAVE_AFTER {
-                self.save_now();
+                self.save_in_background();
             } else {
                 ctx.request_repaint_after(AUTOSAVE_AFTER - since.elapsed());
             }
@@ -7839,6 +7921,40 @@ mod alert_tests {
             assert!(printout.y < 2000.0, "html={html}: the printout is not put below the blank box: {:?}", ed.boxes);
             assert!(ed.blocks.len() > line, "html={html}: the printout is on the page");
         }
+    }
+
+    /// The autosave hands the page to a writer of its own and the window carries on: on a synced
+    /// folder a save takes about a second, and every frame it held up was a click or a letter
+    /// held up. The words still reach the file, and anything that needs them there waits for them.
+    #[test]
+    fn the_autosave_does_not_hold_up_the_window() {
+        let (_t, page, _pdf, mut h) = printout_harness(true, "autosave-background");
+        h.state_mut().saver = crate::saver::Saver::with_writer(|dir, body| {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            notecraft_store::page::save_body(dir, body).map_err(|e| e.to_string())
+        });
+        {
+            let ed = h.state_mut().editor.as_mut().expect("editor");
+            let (added, _) = notecraft_formats::boxes::read(ed.format, "Written in the background\n");
+            let at = ed.blocks.len();
+            ed.blocks.extend(added.iter().cloned());
+            if ed.boxes.is_empty() {
+                ed.arranged = false;
+            } else {
+                ed.boxes = notecraft_model::container::append(&ed.boxes, at, added.len(), 300.0, 0.0, 0.0);
+            }
+            ed.rebuild_body();
+            ed.dirty_since = Some(Instant::now() - AUTOSAVE_AFTER - std::time::Duration::from_millis(10));
+        }
+        let frame = Instant::now();
+        h.step();
+        assert!(frame.elapsed() < std::time::Duration::from_millis(250), "the frame the autosave fired in took {:?}", frame.elapsed());
+        assert!(h.state().is_dirty(), "until it is written the page counts as unsaved");
+        h.state_mut().save_now();
+        let file = notecraft_store::tree::page_file(&page).expect("the page's file").1;
+        let text = std::fs::read_to_string(file).expect("read");
+        assert!(text.contains("Written in the background"), "the words reached the file:\n{text}");
+        assert!(!h.state().is_dirty(), "and the page is saved");
     }
 
     /// Issue #67: a printout goes into the box that holds the caret, after the caret's line,
