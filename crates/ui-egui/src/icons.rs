@@ -514,34 +514,45 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ParaLtr => vec![
             fill(
                 &[
-                    (17.0, 4.0),
-                    (15.0, 4.0),
-                    (12.0, 5.0),
-                    (10.0, 7.0),
-                    (9.0, 9.0),
-                    (9.0, 11.0),
-                    (10.0, 13.0),
-                    (12.0, 14.5),
-                    (15.0, 15.0),
-                    (17.0, 15.0),
+                    (14.2, 4.0),
+                    (15.9, 4.0),
+                    (18.45, 4.85),
+                    (20.15, 6.55),
+                    (21.0, 8.25),
+                    (21.0, 9.95),
+                    (20.15, 11.65),
+                    (18.45, 12.92),
+                    (15.9, 13.35),
+                    (14.2, 13.35),
                 ],
                 color,
             ),
-            fill(&[(16.0, 4.0), (23.0, 4.0), (23.0, 6.0), (16.0, 6.0)], color),
-            fill(&[(16.0, 14.0), (18.0, 14.0), (18.0, 22.0), (16.0, 22.0)], color),
-            fill(&[(21.0, 4.0), (23.0, 4.0), (23.0, 22.0), (21.0, 22.0)], color),
-            path(&[(3.0, 12.0), (6.0, 15.0), (3.0, 18.0)]),
+            fill(&[(15.05, 4.0), (9.1, 4.0), (9.1, 5.7), (15.05, 5.7)], color),
+            fill(&[(15.05, 12.5), (13.35, 12.5), (13.35, 19.3), (15.05, 19.3)], color),
+            fill(&[(10.8, 4.0), (9.1, 4.0), (9.1, 19.3), (10.8, 19.3)], color),
+            path(&[(1.0, 9.0), (5.0, 13.0), (1.0, 17.0)]),
         ],
         // The pilcrow sits left of the arrow head, which points left at the right edge: `[ q< ]`.
         Icon::ParaRtl => vec![
             fill(
-                &[(11.0, 4.0), (9.0, 4.0), (6.0, 5.0), (4.0, 7.0), (3.0, 9.0), (3.0, 11.0), (4.0, 13.0), (6.0, 14.5), (9.0, 15.0), (11.0, 15.0)],
+                &[
+                    (9.8, 4.0),
+                    (8.1, 4.0),
+                    (5.55, 4.85),
+                    (3.85, 6.55),
+                    (3.0, 8.25),
+                    (3.0, 9.95),
+                    (3.85, 11.65),
+                    (5.55, 12.92),
+                    (8.1, 13.35),
+                    (9.8, 13.35),
+                ],
                 color,
             ),
-            fill(&[(10.0, 4.0), (17.0, 4.0), (17.0, 6.0), (10.0, 6.0)], color),
-            fill(&[(10.0, 14.0), (12.0, 14.0), (12.0, 22.0), (10.0, 22.0)], color),
-            fill(&[(15.0, 4.0), (17.0, 4.0), (17.0, 22.0), (15.0, 22.0)], color),
-            path(&[(23.0, 12.0), (20.0, 15.0), (23.0, 18.0)]),
+            fill(&[(8.95, 4.0), (14.9, 4.0), (14.9, 5.7), (8.95, 5.7)], color),
+            fill(&[(8.95, 12.5), (10.65, 12.5), (10.65, 19.3), (8.95, 19.3)], color),
+            fill(&[(13.2, 4.0), (14.9, 4.0), (14.9, 19.3), (13.2, 19.3)], color),
+            path(&[(23.0, 9.0), (19.0, 13.0), (23.0, 17.0)]),
         ],
         Icon::ParaAuto => vec![
             fill(
@@ -797,7 +808,7 @@ mod tests {
         assert!(arrow_left > pilcrow_right, "the arrow starts right of the pilcrow: arrow {arrow_left}, pilcrow {pilcrow_right}");
         // The arrow head points left: its tip is the left-most point, and it sits on the middle line.
         let tip = arrow.iter().min_by(|a, b| a.x.total_cmp(&b.x)).expect("a point");
-        assert!((tip.y - 15.0).abs() < 0.01, "the tip is raised to the middle of the head at 15: {tip:?}");
+        assert!((tip.y - 13.0).abs() < 0.01, "the tip is on the middle of the head at 13: {tip:?}");
         // A gap of at least 3 points between the pilcrow stem and the arrow tip, as Word has.
         assert!(tip.x - pilcrow_right >= 3.0, "the arrow is spaced from the pilcrow: {tip:?}");
     }
@@ -829,6 +840,16 @@ mod tests {
         };
         let (rtl, ltr) = (size(Icon::ParaRtl), size(Icon::ParaLtr));
         assert!((rtl.0 - ltr.0).abs() < 0.01 && (rtl.1 - ltr.1).abs() < 0.01, "the arrow heads match in size: rtl {rtl:?}, ltr {ltr:?}");
+        assert!((rtl.0 - 4.0).abs() < 0.01 && (rtl.1 - 8.0).abs() < 0.01, "the arrow head is 4 by 8 points: {rtl:?}");
+    }
+
+    /// The pilcrow is 15 points tall or less, so the arrow head has room (owner, 2026-11-11).
+    #[test]
+    fn the_pilcrow_is_smaller_than_before() {
+        let (filled, _) = painted(Icon::ParaRtl);
+        let ys = filled.iter().flatten().map(|p| p.y);
+        let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+        assert!(height <= 16.0, "the pilcrow is at most 16 points tall: {height}");
     }
 
     /// The shading keeps a spine visible on a light colour and on a dark one.
