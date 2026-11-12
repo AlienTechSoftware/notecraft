@@ -24,14 +24,23 @@ fn collect_pages(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Pages whose title or text contains `needle` (ignoring case). At most `limit` hits.
 pub fn search(root: &Path, needle: &str, limit: usize) -> Vec<Hit> {
+    search_in(root, &[], needle, limit)
+}
+
+/// [`search`] over the notebooks folder and the notebooks opened from elsewhere, each of which
+/// is a notebook folder in its own right. Searched as one: a page is found once however it is
+/// reached, and `limit` is for all of them together (issue #127).
+pub fn search_in(root: &Path, elsewhere: &[PathBuf], needle: &str, limit: usize) -> Vec<Hit> {
     let needle = needle.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
     if needle.is_empty() || limit == 0 {
         return Vec::new();
     }
     let mut pages = Vec::new();
-    for nb in child_dirs(root) {
+    for nb in child_dirs(root).into_iter().chain(elsewhere.iter().cloned()) {
         collect_pages(&nb, &mut pages);
     }
+    let mut seen = std::collections::HashSet::new();
+    pages.retain(|page| seen.insert(std::fs::canonicalize(page).unwrap_or_else(|_| page.clone())));
     let mut hits = Vec::new();
     for dir in pages {
         let Ok(page) = load_page(&dir) else { continue };
