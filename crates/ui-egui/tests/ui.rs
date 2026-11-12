@@ -10563,6 +10563,40 @@ fn left_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
     assert!(file.contains("Para two.Y"), "Left did not land at the end of the paragraph above:\n{file}");
 }
 
+/// Normal on the current (last) line of a numbered code block closes the block before it: the line
+/// becomes ordinary text (owner, 2026-11-12).
+#[test]
+fn normal_on_the_current_code_line_closes_the_block_before_it() {
+    let (_t, app, s) = sample_app("ui-code-split-normal");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.block", json!({"kind": "p"})).expect("normal");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(
+        file.contains("```123|rust\nline one\nline two\n```\n\nline three"),
+        "Normal did not turn the current line into text and close the block before it:\n{file}"
+    );
+}
+
 /// Up inside a numbered code block moves the caret one line up and keeps the block in edit mode.
 /// It leaves the block only from its first line (owner, 2026-11-11).
 #[test]

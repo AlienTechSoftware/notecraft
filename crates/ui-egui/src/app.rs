@@ -9932,6 +9932,11 @@ impl NoteCraftApp {
                 if self.status_is_error { Err(self.status.clone()) } else { Ok(self.inspect(ctx)) }
             }
             // Put the caret in a block of the open page, the way a click does.
+            "ui.block" => {
+                let kind = p.get("kind").and_then(Value::as_str).ok_or("missing kind")?.to_string();
+                self.apply_block_kind(&kind);
+                Ok(json!({"kind": kind}))
+            }
             "ui.caret" => {
                 let Some(ed) = self.editor.as_mut() else { return Err("no page is open".into()) };
                 if !ed.writable {
