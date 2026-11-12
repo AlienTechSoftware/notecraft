@@ -915,7 +915,8 @@ pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
     match block {
         Block::Image { .. } => Some("image"),
         Block::Code { lang, .. } if lang == "mermaid" => Some("diagram"),
-        Block::Code { .. } => Some("code"),
+        // Code is page text like a paragraph: a click places the caret in it (owner, 2026-11-11).
+        Block::Code { .. } => None,
         Block::MathBlock(_) => Some("math"),
         Block::Table { .. } => Some("table"),
         Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans)
@@ -1230,7 +1231,7 @@ mod tests {
     fn rich_blocks_share_object_selection_kinds() {
         assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None }), Some("image"));
         assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
-        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), Some("code"));
+        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), None, "a code block is page text, not an object");
         assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));
         assert_eq!(object_kind(&Block::Table { head: vec![], rows: vec![] }), Some("table"));
         assert_eq!(object_kind(&Block::Paragraph(vec![Span { image: Some("assets/a.png".into()), ..Span::default() }])), Some("image"));

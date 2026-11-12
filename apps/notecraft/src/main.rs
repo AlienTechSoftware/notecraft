@@ -26,6 +26,12 @@ struct Shell {
 impl eframe::App for Shell {
     /// Puts the clicks, keys and text that control requests queued into the next frame.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        // Every key press in the app, for debugging (debug log level).
+        for event in &raw_input.events {
+            if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
+                log::debug!("key press: {key:?} shift={} ctrl={} alt={}", modifiers.shift, modifiers.command, modifiers.alt);
+            }
+        }
         let mut keyboard_paste = false;
         raw_input.events.retain(|event| {
             let is_paste = matches!(
