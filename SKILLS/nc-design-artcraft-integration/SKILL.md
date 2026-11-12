@@ -128,3 +128,7 @@ For substantial work, route through `nc-arch` and `nc-hl-design`, then the relev
 - Are missing capabilities stated in the UI and in `docs/gaps.md`?
 - Are license, attribution, build, and test implications recorded?
 - Are directory listings kept distinct from implementation evidence?
+
+## Reference: WordCraft and NoteCraft document models
+
+See `references/wordcraft_x_notecraft_dom.md` for the comparison of the two document models and what it means for caret, runs and inline objects.

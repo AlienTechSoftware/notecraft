@@ -122,3 +122,15 @@ fn md_round_trip() {
 ---
 
 **Last updated:** 2026-10-24 | **Blocking requirement:** Yes
+
+## Reference: WordCraft and NoteCraft document models
+
+See `references/wordcraft_x_notecraft_dom.md` for the comparison of the two document models and what it means for caret, runs and inline objects.
+
+## Reference: object types
+
+See `references/object-types.md` for the object identifiers, Rust names, WordCraft and OneNote equivalents, and the room for future object kinds.
+
+See `references/naming-convention.md` for the rules that the identifiers, Rust names, HTML classes and data attributes follow.
+
+RFC 0001, the proposed NoteCraft document model with its integration appendix: `references/rfc-0001-notecraft-dom.md`.
