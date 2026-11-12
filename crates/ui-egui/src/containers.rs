@@ -682,6 +682,9 @@ pub fn show(
                             })
                             .unwrap_or(image_rect.height() / zoom);
                         if let (Some(container), Some(pointer)) = (boxes.get(i), pointer) {
+                            // Drag detection can begin on the first moved frame. Keep the
+                            // original press so that even a single motion resizes the picture.
+                            let pointer = ui.input(|input| input.pointer.press_origin()).unwrap_or(pointer);
                             ui.data_mut(|data| {
                                 data.insert_temp(resize_state_id, ImageResizeStart { x: container.x, y: container.y, width, height, pointer });
                             });
