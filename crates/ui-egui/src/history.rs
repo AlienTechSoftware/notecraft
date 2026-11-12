@@ -78,8 +78,13 @@ impl History {
     /// Takes a change. Anything undone and not redone is dropped first, the way every
     /// editor does it: once you type after undoing, there is no going forward again.
     pub fn record(&mut self, step: Step) {
+        // A change made after an Undo starts a new branch. The step undo went back to is
+        // somewhere the user chose to return to, so the new typing is a step of its own
+        // after it, however soon and in whichever block; folded into it, the state undo had
+        // restored was lost (issue #160).
+        let branched = self.at + 1 < self.steps.len();
         self.steps.truncate(self.at + 1);
-        if self.folds_into_last(&step) {
+        if !branched && self.folds_into_last(&step) {
             let when = self.steps[self.at].when;
             self.steps[self.at] = Step { when, ..step };
             return;
@@ -211,6 +216,29 @@ mod tests {
         h.record(step("one else", Kind::Edit));
         assert!(!h.can_redo(), "the other way forward is gone, as in every editor");
         assert_eq!(h.undo().map(|s| s.body.as_str()), Some("one"));
+    }
+
+    /// Issue #160: typing after an Undo is a new step, even in the same block and within the
+    /// pause that joins a run of typing. Undo then goes back to what Undo had restored.
+    #[test]
+    fn typing_after_an_undo_is_a_step_of_its_own() {
+        let mut h = History::new(step("", Kind::Edit));
+        h.record(step("abc", Kind::Typing(0)));
+        h.record(step("**abc**", Kind::Edit));
+        assert_eq!(h.undo().map(|s| s.body.as_str()), Some("abc"));
+        h.record(step("abcX", Kind::Typing(0)));
+        assert_eq!(h.undo().map(|s| s.body.as_str()), Some("abc"), "back to the state undo restored");
+        assert_eq!(h.undo().map(|s| s.body.as_str()), Some(""));
+        assert_eq!(h.redo().map(|s| s.body.as_str()), Some("abc"));
+        assert_eq!(h.redo().map(|s| s.body.as_str()), Some("abcX"), "the new branch, not the one it replaced");
+        assert_eq!(h.redo().map(|s| s.body.as_str()), None);
+
+        // Ordinary typing with no undo between still makes one step of a run.
+        let mut h = History::new(step("", Kind::Edit));
+        h.record(step("a", Kind::Typing(0)));
+        h.record(step("ab", Kind::Typing(0)));
+        h.record(step("abc", Kind::Typing(0)));
+        assert_eq!(h.undo().map(|s| s.body.as_str()), Some(""), "one run, one step");
     }
 
     #[test]
