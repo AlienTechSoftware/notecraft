@@ -573,6 +573,18 @@ fn try_parse_img_block(line: &str) -> Option<Block> {
     Some(Block::Image { alt, src, width, height })
 }
 
+/// How many backticks `text` starts with.
+fn backtick_run(text: &str) -> usize {
+    text.bytes().take_while(|&b| b == b'`').count()
+}
+
+/// The fence to write round `code`: three backticks, or one more than the longest run that
+/// starts a line of the code, so no line of it can close the block early (issue #106).
+pub(crate) fn code_fence(code: &str) -> String {
+    let longest = code.lines().map(|line| backtick_run(line.trim_start())).max().unwrap_or(0);
+    "`".repeat(longest.max(2) + 1)
+}
+
 /// Parses a Markdown page body into blocks. Never panics.
 pub fn parse(src: &str) -> Vec<Block> {
     let text = src.replace("\r\n", "\n");
@@ -584,11 +596,19 @@ pub fn parse(src: &str) -> Vec<Block> {
         let t = line.trim();
         if t.is_empty() {
             i += 1;
-        } else if let Some(fence) = t.strip_prefix("```") {
-            let lang = fence.trim().to_string();
+        } else if t.starts_with("```") {
+            // The fence is as long as its run of backticks, and only a run at least as long,
+            // with nothing after it, closes it: a shorter fence inside is part of the code.
+            let open = backtick_run(t);
+            let lang = t[open..].trim().to_string();
+            let closes = |l: &str| {
+                let l = l.trim();
+                let run = backtick_run(l);
+                run >= open && l[run..].is_empty()
+            };
             let mut body = Vec::new();
             i += 1;
-            while i < lines.len() && !lines.get(i).is_some_and(|l| l.trim_start().starts_with("```")) {
+            while i < lines.len() && !lines.get(i).is_some_and(|l| closes(l)) {
                 body.push(lines.get(i).copied().unwrap_or(""));
                 i += 1;
             }
