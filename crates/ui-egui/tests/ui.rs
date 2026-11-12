@@ -607,6 +607,34 @@ fn clicking_a_page_opens_it_and_a_container_toggles() {
     review(&mut h, "markdown_page");
 }
 
+/// Issue #134: Ctrl+F with the caret in the page goes to the search box, and what is typed
+/// next is looked for, not written into the note. Ctrl+E, OneNote's key for it, does too.
+#[test]
+fn ctrl_f_in_the_page_goes_to_search_and_writes_nothing() {
+    for key in ["F", "E"] {
+        let (_t, mut app, s) = sample_app("ui-ctrl-f");
+        app.open_path(&s.html_page.to_string_lossy());
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret in the words");
+        settle(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": true})).expect("Ctrl+key");
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "findneedle"})).expect("type a query");
+        settle(&mut h);
+
+        let after = h.state().body().unwrap_or_default().to_string();
+        assert!(!after.contains("findneedle"), "Ctrl+{key}: nothing typed went into the note:\n{after}");
+        assert_eq!(after, before, "Ctrl+{key}: the page is as it was");
+        assert!(
+            h.get_all_by_role(egui::accesskit::Role::TextInput).any(|node| node.value().as_deref() == Some("findneedle")),
+            "Ctrl+{key}: the query is in the search box"
+        );
+    }
+}
+
 /// The caret lives in the page: clicking a block and typing changes that block, and the page
 /// is written back in its own format. This is the editor the owner asked for, so it is tested
 /// for both formats.
