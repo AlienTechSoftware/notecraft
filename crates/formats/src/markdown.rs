@@ -490,13 +490,33 @@ fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
     if chars.get(close + 1) != Some(&'(') {
         return None;
     }
-    let end = find_raw(chars, close + 2, &[')'])?;
+    let end = destination_end(chars, close + 2)?;
     let label: String = slice(chars, start + 1, close).iter().collect();
     let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
     if url.contains(char::is_whitespace) {
         return None;
     }
-    Some((label, url, end + 1))
+    Some((label, url.replace("\\(", "(").replace("\\)", ")"), end + 1))
+}
+
+/// The `)` that ends a link's destination starting at `from`. Parentheses inside it nest, as
+/// in `a(b).pdf`, and `\(` or `\)` is a parenthesis that does not count, so the first `)`
+/// is not taken for the end (issue #108).
+fn destination_end(chars: &[char], from: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = from;
+    while let Some(&c) = chars.get(i) {
+        match c {
+            '\\' if matches!(chars.get(i + 1), Some('(' | ')')) => i += 1,
+            '(' if depth < 32 => depth += 1,
+            '(' => return None,
+            ')' if depth == 0 => return Some(i),
+            ')' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 fn is_table_separator(line: &str) -> bool {
