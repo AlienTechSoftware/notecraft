@@ -5118,6 +5118,140 @@ fn dragging_a_picture_right_edge_resizes_it() {
     assert!(after > before + 30.0, "right edge drag did not resize the picture: before={before}, after={after}, state={}", look_at(&mut h));
 }
 
+/// Issue #18: use the visible picture handle, not the container's resize edge. A browser
+/// may deliver the whole pointer movement in one frame, including on a mixed-content page.
+fn rendered_picture_rect(h: &Harness<'_, NoteCraftApp>, block: usize) -> egui::Rect {
+    h.ctx
+        .data(|d| d.get_temp::<Vec<(usize, egui::Rect, String)>>(egui::Id::unique("embedded-object-hits")))
+        .expect("rendered objects")
+        .into_iter()
+        .find(|(at, _, kind)| *at == block && kind == "image")
+        .expect("rendered picture")
+        .1
+}
+
+#[test]
+fn a_picture_handle_keeps_the_first_drag_movement_in_both_formats() {
+    use notecraft_formats::Block;
+    use notecraft_model::PageFormat;
+
+    for format in [PageFormat::Html, PageFormat::Cmgfm] {
+        for (handle, delta, expected) in [
+            (0, (-40.0, -20.0), (240.0, 120.0)),
+            (1, (0.0, -20.0), (200.0, 120.0)),
+            (2, (40.0, -20.0), (240.0, 120.0)),
+            (3, (-40.0, 0.0), (240.0, 100.0)),
+            (4, (40.0, 0.0), (240.0, 100.0)),
+            (5, (-40.0, 20.0), (240.0, 120.0)),
+            (6, (0.0, 20.0), (200.0, 120.0)),
+            (7, (40.0, 20.0), (240.0, 120.0)),
+        ] {
+            let t = TempDir::new("ui-picture-handle-first-movement");
+            let mut s = session(&t);
+            let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+            let page = if format == PageFormat::Html { sample.html_page } else { sample.md_page };
+            let path = page.to_string_lossy().into_owned();
+            s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+            let body = match format {
+                PageFormat::Html => "<p>Before</p><img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\"><p>After</p>",
+                PageFormat::Cmgfm => "Before\n\n<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">\n\nAfter\n",
+            };
+            s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+            s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,3")])).expect("mixed container");
+            let mut app = NoteCraftApp::new(s);
+            app.open_path(&path);
+            let mut h = harness(app, if handle % 2 == 0 { LIGHT } else { DARK });
+            settle(&mut h);
+            let rect = rendered_picture_rect(&h, 1);
+            ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("select picture");
+            settle(&mut h);
+            assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(1));
+            let from = [
+                rect.left_top(),
+                rect.center_top(),
+                rect.right_top(),
+                rect.left_center(),
+                rect.right_center(),
+                rect.left_bottom(),
+                rect.center_bottom(),
+                rect.right_bottom(),
+            ][handle];
+            let to = from + egui::vec2(delta.0, delta.1);
+            review(&mut h, &format!("picture-handle-before-{format:?}-{handle}"));
+            ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press corner");
+            ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("single drag movement");
+            ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release corner");
+            settle(&mut h);
+            review(&mut h, &format!("picture-handle-after-{format:?}-{handle}"));
+            let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().expect("open page"));
+            match &blocks[1] {
+                Block::Image { width, height, .. } => {
+                    assert_eq!((*width, *height), (Some(expected.0), Some(expected.1)), "the first motion must resize handle {handle} in {format:?}");
+                }
+                other => panic!("picture changed kind: {other:?}"),
+            }
+            let (original, _) = notecraft_formats::boxes::read(format, body);
+            assert_eq!(blocks[0], original[0]);
+            assert_eq!(blocks[2], original[2]);
+            let state = look_at(&mut h);
+            assert_eq!(state.pointer("/page/containers/0/x").and_then(Value::as_f64), Some(0.0));
+            assert_eq!(state.pointer("/page/containers/0/y").and_then(Value::as_f64), Some(0.0));
+            assert_eq!(state.pointer("/page/containers/0/width").and_then(Value::as_f64), Some(400.0));
+            if handle == 7 {
+                ask(&mut h, "ui.undo", json!({})).expect("undo resize");
+                let (undone, _) = notecraft_formats::boxes::read(format, h.state().body().expect("undone page"));
+                assert_eq!(undone, original, "undo restores picture and surrounding words");
+                ask(&mut h, "ui.redo", json!({})).expect("redo resize");
+                let (redone, _) = notecraft_formats::boxes::read(format, h.state().body().expect("redone page"));
+                assert_eq!(redone, blocks, "redo restores the resized picture");
+            }
+            ask(&mut h, "ui.open", json!({"path": sample.deep_page.to_string_lossy()})).expect("save and leave");
+            ask(&mut h, "ui.open", json!({"path": path})).expect("reopen resized page");
+            let (reopened, _) = notecraft_formats::boxes::read(format, h.state().body().expect("reopened page"));
+            assert_eq!(reopened, blocks, "the actual picture dimensions persist in {format:?}");
+            if handle == 7 {
+                // Independently positioned pictures must still move by their body, while
+                // their resize handles change dimensions and keep the opposite corner fixed.
+                ask(
+                    &mut h,
+                    "engine.execute",
+                    json!({"command": "page.containers", "params": {
+                        "path": path, "boxes": "0,0,400,1; 80,80,240,1; 0,260,400,1"
+                    }}),
+                )
+                .expect("independent picture");
+                ask(&mut h, "ui.open", json!({"path": path})).expect("open arranged page");
+                settle(&mut h);
+                let from = rendered_picture_rect(&h, 1).center();
+                let to = from + egui::vec2(60.0, 30.0);
+                ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press picture body");
+                ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("move picture");
+                ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release picture");
+                settle(&mut h);
+                let moved = look_at(&mut h);
+                assert_eq!(moved.pointer("/page/containers/1/x").and_then(Value::as_f64), Some(140.0));
+                assert_eq!(moved.pointer("/page/containers/1/y").and_then(Value::as_f64), Some(110.0));
+                let from = rendered_picture_rect(&h, 1).left_top();
+                let to = from - egui::vec2(40.0, 20.0);
+                ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press top left handle");
+                ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("resize independent picture");
+                ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release handle");
+                settle(&mut h);
+                ask(&mut h, "ui.open", json!({"path": sample.deep_page.to_string_lossy()})).expect("save independent picture");
+                ask(&mut h, "ui.open", json!({"path": path})).expect("reopen independent picture");
+                let resized = look_at(&mut h);
+                assert_eq!(resized.pointer("/page/containers/1/x").and_then(Value::as_f64), Some(100.0));
+                assert_eq!(resized.pointer("/page/containers/1/y").and_then(Value::as_f64), Some(90.0));
+                assert_eq!(resized.pointer("/page/containers/1/width").and_then(Value::as_f64), Some(280.0));
+                let (saved, _) = notecraft_formats::boxes::read(format, h.state().body().expect("saved picture"));
+                assert!(matches!(saved[1], Block::Image { width: Some(280.0), height: Some(140.0), .. }));
+                assert_eq!(saved[0], original[0]);
+                assert_eq!(saved[2], original[2]);
+            }
+        }
+    }
+}
+
 // The native attachment-card double-click path is manually verified on Windows. The Linux
 // headless WGPU runner does not deliver the rendered attachment hit target consistently: the
 // same test stalls for the full suite timeout there while passing locally.
