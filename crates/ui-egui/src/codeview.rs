@@ -80,6 +80,10 @@ pub struct State {
     pub loaded: Option<String>,
     /// The picked file has been typed in and not yet written.
     pub dirty: bool,
+    /// `text` is only the start of the picked file, cut to [`MAX_SHOWN`]. It is then shown and
+    /// never typed in: what was typed would be written over the whole file, and everything
+    /// after the cut lost with it (issue #124).
+    pub cut: bool,
     /// The page's own file was typed in, so the page has to be read again when the view
     /// closes.
     pub page_edited: bool,
@@ -560,7 +564,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 if !entry.used {
                     ui.label(egui::RichText::new(crate::tl_id!("ui.not_used_by_the_page")).small().color(t.warn));
                 }
-                if !entry.kind.editable() {
+                if !entry.kind.editable() || (state.cut && state.loaded.as_deref() == Some(entry.name.as_str())) {
                     ui.label(egui::RichText::new(crate::tl_id!("ui.read_only")).small().color(t.muted));
                 }
                 if entry.kind != Kind::PageFile && ui.small_button(crate::tl_id!("ui.delete_file")).clicked() {
@@ -622,6 +626,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         state.text = text;
                         state.loaded = Some(entry.name.clone());
                         state.dirty = false;
+                        state.cut = cut;
                         if cut {
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
@@ -695,6 +700,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         state.text = text;
                         state.loaded = Some(entry.name.clone());
                         state.dirty = false;
+                        state.cut = cut;
                         if cut {
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
@@ -792,7 +798,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let jump = std::mem::take(&mut state.find.jump);
                     let select = std::mem::take(&mut state.find.select);
                     let target = state.find.matches.get(state.find.current).copied();
-                    let editable = entry.kind.editable();
+                    let editable = entry.kind.editable() && !state.cut;
                     egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0 - bar_room).max(120.0)).show(
                         ui,
                         |ui| {
@@ -928,6 +934,56 @@ mod tests {
         assert!(cut, "the view says the text was cut");
         assert!(text.contains(&"a".repeat(1000)), "and shows the start of it");
         assert!(!text.contains('\u{e9}'), "the character across the limit is left out whole");
+    }
+
+    /// Shows the code view for the page file `index.md` in `dir`, types `typed` into its editor,
+    /// and gives what the view asked to be written.
+    fn type_into_page_file(dir: &Path, typed: &str) -> (State, Option<(String, String)>) {
+        let ctx = egui::Context::default();
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let entries = files(dir, "index.md", &[]);
+        let mut state = State::default();
+        let mut wrote = None;
+        let text_id = egui::Id::new(("code-text-edit", "index.md"));
+        for frame in 0..4 {
+            let mut input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 900.0))), ..Default::default() };
+            if frame == 2 {
+                input.events.push(egui::Event::Text(typed.to_string()));
+            }
+            if frame == 1 {
+                ctx.memory_mut(|m| m.request_focus(text_id));
+            }
+            let mut output = ctx.run_ui(input, |ui| {
+                let out = show(ui, &mut state, &entries, dir, &tokens, 800.0);
+                if out.wrote.is_some() {
+                    wrote = out.wrote;
+                }
+            });
+            output.textures_delta.clear();
+        }
+        (state, wrote)
+    }
+
+    /// Issue #124: a file longer than the view shows is read-only. Typing in its cut text used to
+    /// write that text over the whole file, losing everything after the cut, notice and all.
+    #[test]
+    fn a_file_cut_for_the_view_is_not_written_back() {
+        let t = notecraft_store::testing::TempDir::new("codeview-cut-read-only");
+        let dir = t.path().join("page");
+        std::fs::create_dir_all(&dir).expect("page folder");
+        let whole = format!("# Long\n\n{}\n\nEND_SENTINEL\n", "words ".repeat(MAX_SHOWN / 5));
+        std::fs::write(dir.join("index.md"), &whole).expect("page file");
+        let (state, wrote) = type_into_page_file(&dir, "Z");
+        assert!(state.cut, "the file is longer than the view shows");
+        assert_eq!(wrote, None, "nothing typed in a cut file is written");
+        assert_eq!(std::fs::read_to_string(dir.join("index.md")).expect("page file"), whole, "the file is whole");
+
+        // The same steps on a file that fits do type into it, so the steps themselves work.
+        std::fs::write(dir.join("index.md"), "# Short\n").expect("page file");
+        let (state, wrote) = type_into_page_file(&dir, "Z");
+        assert!(!state.cut);
+        assert!(wrote.is_some_and(|(name, text)| name == "index.md" && text.contains('Z')), "a whole file can be typed in");
     }
 
     #[test]
