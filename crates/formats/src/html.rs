@@ -347,6 +347,9 @@ struct Writer {
     pre_diagram: bool,
     /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
     div_diagram: bool,
+    /// Where the open code block's fence starts in `out`, so it can be made longer when the
+    /// code turns out to hold a fence of its own.
+    fence_at: Option<usize>,
     in_math: bool,
     in_math_block: bool,
     span_sizes: Vec<bool>,
@@ -359,6 +362,26 @@ struct Writer {
 }
 
 impl Writer {
+    /// Remembers where the fence of a code block about to be written starts.
+    fn open_fence(&mut self) {
+        self.fence_at = (!self.in_cell).then_some(self.out.len());
+    }
+
+    /// Writes the fence that closes the open code block. When a line of the code starts with
+    /// three or more backticks, both fences are made longer than that run, so the code stays
+    /// one block when it is read again (issue #106).
+    fn close_fence(&mut self) {
+        let mut fence = "```".to_string();
+        if let Some(at) = self.fence_at.take().filter(|&at| self.out.is_char_boundary(at)) {
+            let code_from = self.out[at..].find('\n').map_or(self.out.len(), |n| at + n + 1);
+            fence = crate::markdown::code_fence(&self.out[code_from..]);
+            if fence.len() > 3 {
+                self.out.insert_str(at, &fence[3..]);
+            }
+        }
+        self.out.push_str(&fence);
+    }
+
     fn push(&mut self, s: &str) {
         if self.in_cell {
             self.cell.push_str(s);
@@ -444,6 +467,7 @@ impl Writer {
             // A div with the class `mermaid` holds a diagram, as a pre does. Its text is the source.
             ("div", false) if !self.in_pre && attrs.to_lowercase().contains("mermaid") => {
                 self.block_break();
+                self.open_fence();
                 self.push("```mermaid\n");
                 self.in_pre = true;
                 self.pre_diagram = true;
@@ -455,7 +479,7 @@ impl Writer {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
-                self.out.push_str("```");
+                self.close_fence();
                 self.block_break();
             }
             ("p", true) if self.in_math_block => {
@@ -543,6 +567,7 @@ impl Writer {
                 let class = attr(attrs, "class").unwrap_or_default();
                 self.pre_diagram = class.eq_ignore_ascii_case("diagram") || class.eq_ignore_ascii_case("mermaid");
                 let language = if self.pre_diagram { "mermaid" } else { class.as_str() };
+                self.open_fence();
                 self.push(&format!("```{language}\n"));
                 self.in_pre = true;
             }
@@ -551,7 +576,7 @@ impl Writer {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
-                self.out.push_str("```");
+                self.close_fence();
                 self.block_break();
             }
             ("span", false) => {

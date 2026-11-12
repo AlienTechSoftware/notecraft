@@ -48,14 +48,16 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 out.push('\n');
             }
             Block::Code { lang, text } => {
-                out.push_str("```");
+                let fence = crate::markdown::code_fence(text);
+                out.push_str(&fence);
                 out.push_str(lang);
                 out.push('\n');
                 out.push_str(text);
                 if !text.ends_with('\n') {
                     out.push('\n');
                 }
-                out.push_str("```\n");
+                out.push_str(&fence);
+                out.push('\n');
             }
             Block::MathBlock(tex) => {
                 out.push_str("$$\n");
@@ -643,6 +645,40 @@ fn b() {}"
             let again = parse(&html::to_markdown(&written));
             assert_eq!(blocks, again, "\n--- body ---\n{body}\n--- written ---\n{written}");
         }
+    }
+
+    /// Issue #106: code that holds a fence line of its own stays one block, in both formats.
+    /// The fence written round it is longer than any run of backticks starting one of its
+    /// lines, and only a fence at least as long as the opening one closes the block.
+    #[test]
+    fn code_holding_a_fence_stays_one_block() {
+        let tick = "`";
+        for text in [
+            format!("before\n{}\nafter", tick.repeat(3)),
+            format!("{}md\nnested\n{}", tick.repeat(3), tick.repeat(3)),
+            format!("  {}\n{}python\nx\n{}", tick.repeat(5), tick.repeat(4), tick.repeat(4)),
+            format!("inline {} only", tick.repeat(3)),
+        ] {
+            let original = vec![Block::Code { lang: "markdown".into(), text: text.clone() }];
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM:\n{saved}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML:\n{html}\n--- read as ---\n{reread}");
+        }
+        // A plain block keeps the three backticks it always had.
+        assert_eq!(
+            blocks_to_markdown(&[Block::Code { lang: "rust".into(), text: "let x = 1;".into() }]),
+            format!("{0}rust\nlet x = 1;\n{0}\n", tick.repeat(3))
+        );
+        // A shorter fence inside a longer one is code, and a closing fence with words after
+        // it is not a closing fence.
+        let four = tick.repeat(4);
+        let three = tick.repeat(3);
+        assert_eq!(
+            parse(&format!("{four}\n{three}\n{three}js\n{four}\n")),
+            vec![Block::Code { lang: String::new(), text: format!("{three}\n{three}js") }]
+        );
     }
 
     #[test]
