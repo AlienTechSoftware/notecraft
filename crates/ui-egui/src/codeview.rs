@@ -433,7 +433,9 @@ fn office_text(path: &Path) -> (String, bool) {
         }
         text.push_str("\n\n");
         if text.len() >= MAX_SHOWN {
-            text.truncate(MAX_SHOWN);
+            // Cut at a character's edge: a character across the limit panicked the cut, and
+            // opening the document in the code view took the window down (issue #125).
+            text.truncate(text.floor_char_boundary(MAX_SHOWN));
             return (format!("Package parts: {}\n\n{}", names.join(", "), text), true);
         }
     }
@@ -904,6 +906,29 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #125: the text of a Word document with a character across the shown limit is
+    /// cut before that character and said to be cut, rather than panicking.
+    #[test]
+    fn office_text_is_cut_at_a_characters_edge() {
+        use std::io::Write;
+        let t = notecraft_store::testing::TempDir::new("codeview-office-unicode");
+        let path = t.path().join("long.docx");
+        let words = "a".repeat(MAX_SHOWN - 1) + "\u{e9}";
+        let xml = format!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:body></w:document>"
+        );
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).expect("docx"));
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("word/document.xml", options).expect("part");
+        zip.write_all(xml.as_bytes()).expect("write");
+        zip.finish().expect("finish");
+
+        let (text, cut) = office_text(&path);
+        assert!(cut, "the view says the text was cut");
+        assert!(text.contains(&"a".repeat(1000)), "and shows the start of it");
+        assert!(!text.contains('\u{e9}'), "the character across the limit is left out whole");
+    }
 
     #[test]
     fn sizes_read_like_words_not_bytes() {
