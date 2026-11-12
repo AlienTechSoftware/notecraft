@@ -110,18 +110,39 @@ pub fn unescape(s: &str) -> String {
     out.replace("&amp;", "&")
 }
 
-/// Plain text of an HTML fragment: tags removed, entities decoded.
+/// Tags that mark words inside a line. They join what is on either side of them, so the
+/// letters of `for<b>mat</b>` stay one word; every other tag ends a word.
+const INLINE_TAGS: &[&str] = &[
+    "a", "abbr", "b", "bdi", "bdo", "big", "cite", "code", "del", "dfn", "em", "font", "i", "ins", "kbd", "mark", "q", "s", "samp", "small", "span",
+    "strike", "strong", "sub", "sup", "time", "tt", "u", "var", "wbr",
+];
+
+/// Plain text of an HTML fragment: tags removed, entities decoded. A tag that starts or ends
+/// a block, a line break or a cell leaves a space behind; formatting inside a line leaves
+/// nothing, so a word that is partly bold is still one word (issue #105).
 pub fn strip_tags(html: &str) -> String {
-    let (mut out, mut in_tag) = (String::new(), false);
+    let (mut out, mut tag, mut in_tag) = (String::new(), String::new(), false);
     for c in html.chars() {
         match c {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                out.push(' ');
+            '<' => {
+                in_tag = true;
+                tag.clear();
             }
-            c if !in_tag => out.push(c),
-            _ => {}
+            '>' if in_tag => {
+                in_tag = false;
+                let name: String = tag
+                    .trim_start()
+                    .trim_start_matches('/')
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if !INLINE_TAGS.contains(&name.as_str()) {
+                    out.push(' ');
+                }
+            }
+            c if in_tag => tag.push(c),
+            c => out.push(c),
         }
     }
     unescape(&out)
@@ -721,6 +742,19 @@ mod tests {
     #[test]
     fn strips_tags() {
         assert_eq!(strip_tags("<p>Hello <b>big</b> world</p>").split_whitespace().collect::<Vec<_>>().join(" "), "Hello big world");
+    }
+
+    /// Issue #105: formatting inside a word keeps the word whole, and blocks, line breaks
+    /// and cells still keep their words apart.
+    #[test]
+    fn stripping_tags_keeps_a_partly_formatted_word_whole() {
+        let words = |html: &str| strip_tags(html).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(words("<p>for<b>mat</b></p>"), "format");
+        assert_eq!(words("<p>co<B>op</B>er<span style=\"color: red\">ate</span> <a href=\"x\">li</a>nk</p>"), "cooperate link");
+        assert_eq!(words("<p>one</p><p>two</p>"), "one two");
+        assert_eq!(words("<p>one<br>two<br/>three</p>"), "one two three");
+        assert_eq!(words("<ul><li>a</li><li>b</li></ul><table><tr><td>c</td><td>d</td></tr></table>"), "a b c d");
+        assert_eq!(words("<h1>Title</h1>Body &amp; more"), "Title Body & more");
     }
 
     #[test]
