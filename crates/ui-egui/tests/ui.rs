@@ -5129,6 +5129,14 @@ fn right_click_on_selected_words_keeps_them_selected_and_shows_the_mini_toolbar(
     }
 }
 
+/// The floating toolbar has the same font name and font size boxes as the ribbon (owner, 2026-11-12).
+#[test]
+fn the_floating_toolbar_has_the_font_boxes() {
+    let (_t, h) = right_click_on_selected_words("ui-floating-fonts");
+    assert!(h.query_all_by_label("Font size").count() >= 2, "the size box is on the ribbon and on the floating toolbar");
+    assert!(h.query_all_by_label("Font name").count() >= 2, "the font name box is on the ribbon and on the floating toolbar");
+}
+
 /// A button on the toolbar acts on the words that were selected when the menu was opened.
 #[test]
 fn bold_on_the_mini_toolbar_wraps_the_selected_words() {
