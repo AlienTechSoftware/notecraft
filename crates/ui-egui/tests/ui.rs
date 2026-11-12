@@ -1623,6 +1623,40 @@ fn declining_the_welcome_notebook_prompt_does_not_create_it() {
     assert_eq!(h.state().session().settings.get("privacy_welcome_seen").as_deref(), Some("true"), "finishing the wizard marks it seen");
 }
 
+/// Issue #98: a click on the dimmed backdrop outside the wizard used to raise the backdrop
+/// above the wizard, so Next and Finish stopped responding and the app could not be used.
+#[test]
+fn clicking_outside_the_first_use_wizard_keeps_its_buttons_working() {
+    let t = TempDir::new("ui-welcome-backdrop-click");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    s.settings.set("privacy_welcome_seen", "").expect("first use: the wizard opens");
+    let app = NoteCraftApp::new(s).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+
+    // A click in a corner of the window lands on the backdrop, not on the wizard.
+    let outside = egui::pos2(12.0, 740.0);
+    h.drag_at(outside);
+    pump(&mut h);
+    h.drop_at(outside);
+    settle(&mut h);
+
+    // Welcome, logging, format, demo, thank you: every step still answers its buttons.
+    for _ in 0..3 {
+        h.get_by_label("Next").click();
+        settle(&mut h);
+    }
+    h.get_by_label("No, not now").click();
+    h.get_by_label("Next").click();
+    settle(&mut h);
+    h.get_by_label("Finish").click();
+    settle(&mut h);
+
+    assert_eq!(h.query_all_by_label("Finish").count(), 0, "Finish closes the wizard after a click outside it");
+    assert_eq!(h.state().session().settings.get("privacy_welcome_seen").as_deref(), Some("true"), "finishing the wizard marks it seen");
+}
+
 #[test]
 fn failed_welcome_notebook_generation_keeps_the_prompt_open() {
     let t = TempDir::new("ui-welcome-prompt-error");
