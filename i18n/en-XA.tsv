@@ -167,6 +167,7 @@
 @id	ui.could_not_reset_app_preferences_error	$$$Could not reset app preferences: {error}@@@
 @id	ui.could_not_restore_the_link_for_name_error	$$$Could not restore the link for {name}: {error}@@@
 @id	ui.could_not_save_the_interface_language_error	$$$Could not save the interface language: {error}@@@
+@id	ui.could_not_save_the_interface_size_error	$$$Could not save the interface size: {error}@@@
 @id	ui.could_not_store_printout_page_page_error	$$$Could not store printout page {page}: {error}@@@
 @id	ui.count_deleted	$$${count} · {deleted}@@@
 @id	ui.count_items_colour_colour	$$${count} items, {colour} colour@@@
@@ -324,6 +325,9 @@
 @id	ui.inserted_name_and_count_printout_pages	$$$Inserted {name} and {count} printout pages@@@
 @id	ui.interface_language	$$$Interface language@@@
 @id	ui.interface_language_language	$$$Interface language: {language}@@@
+@id	ui.interface_size	$$$Interface size@@@
+@id	ui.interface_size_hint	$$$Makes the ribbon, the menus and the page larger or smaller on this screen.@@@
+@id	ui.interface_size_percent	$$${percent}%@@@
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	$$$Issues, the roadmap and the documentation are all there. Nothing in NoteCraft talks to it, or to any other service, by itself.@@@
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	$$$It is listed so the page's folder is not a secret.@@@
 @id	ui.italic	$$$Italic@@@

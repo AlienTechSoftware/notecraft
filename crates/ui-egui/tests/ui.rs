@@ -185,6 +185,47 @@ fn interface_language_choice_is_saved_and_restored_in_a_new_app() {
     let _ = restored.get_by_label("Langue de l\u{2019}interface");
 }
 
+/// Issue #63: on a high-resolution screen the ribbon and the menus can come out too small to
+/// read. File > Options has an interface size that draws the whole window larger, and it is
+/// there again when the app starts.
+#[test]
+fn interface_size_choice_scales_the_window_and_is_restored_in_a_new_app() {
+    let t = TempDir::new("ui-interface-size");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("set English UI");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    let mut h = harness(app, LIGHT);
+    pump(&mut h);
+    assert_eq!(h.state().ui_scale(), 100, "the system's own scale until something else is chosen");
+    assert!((h.ctx.zoom_factor() - 1.0).abs() < f32::EPSILON, "and the window is not scaled");
+
+    h.state_mut().open_backstage_page("Options");
+    pump(&mut h);
+    h.get_by_label("Interface size").click();
+    h.run();
+    h.get_by_label("150%").click();
+    settle(&mut h);
+    assert_eq!(h.state().ui_scale(), 150);
+    assert!((h.ctx.zoom_factor() - 1.5).abs() < f32::EPSILON, "the whole window is drawn at 150%: {}", h.ctx.zoom_factor());
+    review(&mut h, "options_interface_size_150");
+    drop(h);
+
+    let settings = Settings::at(t.path().join("settings.toml"));
+    assert_eq!(settings.get("ui_scale").as_deref(), Some("150"), "the choice is saved");
+    let mut restored = NoteCraftApp::new(Session::new(&t.path().join("notebooks"), settings.clone()).expect("reopen session"));
+    restored.set_redact_paths(true);
+    let mut restored = harness(restored, LIGHT);
+    pump(&mut restored);
+    assert_eq!(restored.state().ui_scale(), 150, "the size is read back at start");
+    assert!((restored.ctx.zoom_factor() - 1.5).abs() < f32::EPSILON, "and applied: {}", restored.ctx.zoom_factor());
+
+    // A value the list does not offer, written by hand, falls back to the system's scale.
+    settings.set("ui_scale", "900").expect("hand-edited setting");
+    let odd = NoteCraftApp::new(Session::new(&t.path().join("notebooks"), settings).expect("reopen session"));
+    assert_eq!(odd.ui_scale(), 100, "an unknown size is not applied");
+}
+
 #[test]
 fn french_screen_strings_from_the_localization_screenshots_are_rendered() {
     let t = TempDir::new("ui-french-ribbon");

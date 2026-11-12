@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	アプリ設定をリセットできません: {error}
 @id	ui.could_not_restore_the_link_for_name_error	{name}のリンクを復元できません: {error}
 @id	ui.could_not_save_the_interface_language_error	インターフェース言語を保存できません: {error}
+@id	ui.could_not_save_the_interface_size_error	インターフェイスのサイズを保存できませんでした: {error}
 @id	ui.could_not_store_printout_page_page_error	印刷ページ{page}を保存できません: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} アイテム、{colour} 色
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	{name} と {count} の印刷ページを挿入しました
 @id	ui.interface_language	インターフェースの言語
 @id	ui.interface_language_language	インターフェースの言語: {language}
+@id	ui.interface_size	インターフェイスのサイズ
+@id	ui.interface_size_hint	この画面でリボン、メニュー、ページを拡大または縮小します。
+@id	ui.interface_size_percent	{percent}%
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	課題、ロードマップ、ドキュメントがすべて揃っています。NoteCraft はそれ自体でこれらや他のサービスにアクセスすることはありません。
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	ページのフォルダーが秘密でないようにリストされています。
 @id	ui.italic	斜体
