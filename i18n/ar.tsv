@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	التبرير ينطبق على فقرة نصية
 @id	ui.keep_this_window_above_the_others	إبقاء هذه النافذة فوق النوافذ الأخرى
+@id	ui.kept_the_original_drawing_file_path	احتوى ملف الرسم في هذه الصفحة على خطوط لا يستطيع NoteCraft تحريرها. تم الاحتفاظ بالملف الأصلي باسم {path}.
 @id	ui.label	تسمية
 @id	ui.label_not_built	{label} (غير مبنٍ)
 @id	ui.label_not_built_yet	{label}: لم يُبنَ بعد

@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	पंक्तिबद्धता पाठ के पैराग्राफ पर लागू होती है
 @id	ui.keep_this_window_above_the_others	इस विंडो को अन्य विंडोओं से ऊपर रखें
+@id	ui.kept_the_original_drawing_file_path	इस पेज की ड्रॉइंग फ़ाइल में ऐसी रेखाएँ थीं जिन्हें NoteCraft संपादित नहीं कर सकता। मूल फ़ाइल {path} के रूप में रखी गई है।
 @id	ui.label	लेबल
 @id	ui.label_not_built	{label} (बिल्ड नहीं हुआ)
 @id	ui.label_not_built_yet	{label}: अभी तक बिल्ड नहीं हुआ

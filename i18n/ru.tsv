@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	Выравнивание применяется к абзацу текста
 @id	ui.keep_this_window_above_the_others	Держать это окно поверх остальных
+@id	ui.kept_the_original_drawing_file_path	Файл рисунка этой страницы содержал линии, которые NoteCraft не может изменить. Исходный файл сохранён как {path}.
 @id	ui.label	метка
 @id	ui.label_not_built	{label} (не реализовано)
 @id	ui.label_not_built_yet	{label}: ещё не реализовано

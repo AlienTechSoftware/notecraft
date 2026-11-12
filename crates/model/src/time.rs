@@ -33,6 +33,21 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 const WEEKDAYS: [&str; 7] = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
 const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/// How far the user's clock is ahead of UTC, in seconds. Timestamps are kept in UTC; this is
+/// only for showing them (issue #133). Zero until the app sets it, so tests and the command
+/// line read the same everywhere.
+static LOCAL_OFFSET: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Sets how far the user's clock is ahead of UTC, in seconds, for showing timestamps.
+pub fn set_local_offset(seconds: i32) {
+    LOCAL_OFFSET.store(seconds, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How far the user's clock is ahead of UTC, in seconds, as set with [`set_local_offset`].
+pub fn local_offset() -> i32 {
+    LOCAL_OFFSET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The day alone, as a note writes it: "Saturday, 17 October 2026".
 pub fn date_from_iso(iso: &str) -> Option<String> {
     let whole = long_from_iso(iso)?;
@@ -45,8 +60,15 @@ pub fn clock_from_iso(iso: &str) -> Option<String> {
 }
 
 /// A timestamp the way a note shows it, under the page title: "Saturday, 17 October 2026,
-/// 18:29". English only for now, and the clock is UTC, like the stored timestamp.
+/// 18:29". English only for now. A UTC timestamp (one ending in `Z`, as every one NoteCraft
+/// writes does) is shown on the user's clock; one written with no zone is shown as written.
 pub fn long_from_iso(iso: &str) -> Option<String> {
+    long_from_iso_at(iso, local_offset())
+}
+
+/// [`long_from_iso`] for a clock `offset` seconds ahead of UTC.
+pub fn long_from_iso_at(iso: &str, offset: i32) -> Option<String> {
+    let utc = iso.trim_end().ends_with('Z');
     let (date, time) = iso.split_once('T')?;
     let mut parts = date.split('-');
     let y: i64 = parts.next()?.parse().ok()?;
@@ -59,11 +81,20 @@ pub fn long_from_iso(iso: &str) -> Option<String> {
         let b = s.as_bytes();
         b.get(2) == Some(&b':') && b.iter().enumerate().all(|(i, c)| i == 2 || c.is_ascii_digit())
     })?;
+    let (hours, minutes): (i64, i64) = (hm[..2].parse().ok()?, hm[3..].parse().ok()?);
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    // Moved onto the user's clock, which can also move the day, the month or the year.
+    let shift = if utc { i64::from(offset) } else { 0 };
+    let at = days_from_civil(y, m, d) * 86_400 + hours * 3_600 + minutes * 60 + shift;
+    let days = at.div_euclid(86_400);
+    let (y, m, d) = civil_from_days(days);
+    let rem = at.rem_euclid(86_400);
     // 1970-01-01 was a Thursday, so the weekday follows from the day count.
-    let days = days_from_civil(y, m, d);
     let weekday = WEEKDAYS.get(days.rem_euclid(7) as usize)?;
     let month = MONTHS.get((m - 1) as usize)?;
-    Some(format!("{weekday}, {d} {month} {y}, {hm}"))
+    Some(format!("{weekday}, {d} {month} {y}, {:02}:{:02}", rem / 3_600, rem % 3_600 / 60))
 }
 
 /// The inverse of [`civil_from_days`].
@@ -113,6 +144,22 @@ mod tests {
             assert_eq!(date_from_iso(bad), None, "{bad}");
             assert_eq!(clock_from_iso(bad), None, "{bad}");
         }
+    }
+
+    /// Issue #133: a UTC timestamp is shown on the user's clock, which can move the day, the
+    /// month and the year, and one written with no zone is shown as written.
+    #[test]
+    fn a_timestamp_is_shown_on_the_users_clock() {
+        let iso = "2026-11-12T17:18:00Z";
+        assert_eq!(long_from_iso_at(iso, 0).as_deref(), Some("Thursday, 12 November 2026, 17:18"));
+        assert_eq!(long_from_iso_at(iso, -7 * 3_600).as_deref(), Some("Thursday, 12 November 2026, 10:18"), "Denver in November");
+        assert_eq!(long_from_iso_at(iso, 5 * 3_600 + 30 * 60).as_deref(), Some("Thursday, 12 November 2026, 22:48"), "a half hour zone");
+        assert_eq!(long_from_iso_at("2026-11-12T02:00:00Z", -7 * 3_600).as_deref(), Some("Wednesday, 11 November 2026, 19:00"), "the day before");
+        assert_eq!(long_from_iso_at("2026-12-31T23:30:00Z", 3_600).as_deref(), Some("Friday, 1 January 2027, 00:30"), "the next year");
+        assert_eq!(long_from_iso_at("2024-03-01T00:30:00Z", -3_600).as_deref(), Some("Thursday, 29 February 2024, 23:30"), "a leap day");
+        assert_eq!(long_from_iso_at("2026-11-12T17:18:00", -7 * 3_600).as_deref(), Some("Thursday, 12 November 2026, 17:18"), "no zone: as written");
+        assert_eq!(long_from_iso_at("2026-11-12T25:00:00Z", 0), None, "an hour that is not one");
+        assert_eq!(long_from_iso("2026-11-12T17:18:00Z"), long_from_iso_at("2026-11-12T17:18:00Z", local_offset()));
     }
 
     #[test]
