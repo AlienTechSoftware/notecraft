@@ -308,6 +308,8 @@ pub fn show(
     let mut delete_object: Option<usize> = None;
     // An empty box that was clicked: it has no words to answer a click, so the click starts some.
     let mut start_in: Option<usize> = None;
+    // A new page's box clicked below its date: the words start on a line under the date.
+    let mut start_under_date: Option<usize> = None;
     let right_click = ui.input(|i| i.pointer.secondary_clicked());
     let pointer = ui.ctx().pointer_latest_pos();
     let mut opened_now = false;
@@ -476,6 +478,22 @@ pub fn show(
             filled_bottom = filled_bottom.max(frame.max.y);
         }
 
+        // A new page's box holds only its date and is drawn tall, as OneNote's first note area is.
+        // Below the date there was no block to take a click, so the space looked ready for
+        // writing and swallowed what was typed (issue #148). A click there starts a line under
+        // the date.
+        if range.len() == 1 && pageedit::is_page_stamp(blocks, range.start) {
+            let under_date = Rect::from_min_max(pos2(frame.min.x, child.min_rect().max.y), frame.max);
+            if under_date.height() > 0.0 {
+                let start = ui.interact(under_date, ui.id().with(("container-under-date", i)), Sense::click());
+                if start.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+                if start.clicked() {
+                    start_under_date = Some(i);
+                }
+            }
+        }
         let hovered = ui.rect_contains_pointer(frame);
         // A box with nothing in it has no block under the pointer, so a click inside it went
         // nowhere and no caret appeared. The whole of it, below the handle, is a place to start
@@ -1121,6 +1139,34 @@ pub fn show(
         log::debug!("FILL_EMPTY_BOX: i={i} inserts empty paragraph at block {at} (triggered by click)");
         blocks.insert(at, Block::Paragraph(Vec::new()));
         // The blocks after it are one further down the page: what is kept against them follows.
+        out.changed.columns |= cols.insert_block(at);
+        out.justified |= justified.insert_block(at);
+        if let Some(c) = boxes.get_mut(i) {
+            c.blocks += 1;
+        }
+        *caret = Some(pageedit::Caret {
+            block: at,
+            text: String::new(),
+            focus: true,
+            selection: (0, 0),
+            place: None,
+            cell: None,
+            span: None,
+            inline: None,
+        });
+        out.changed.blocks = true;
+        out.changed.caret = true;
+        out.boxes = true;
+        ui.ctx().request_repaint();
+    }
+
+    if let Some(i) = start_under_date
+        && start_in.is_none()
+        && delete_at.is_none()
+        && container::blocks_of(boxes, i).len() == 1
+    {
+        let at = container::blocks_of(boxes, i).end.min(blocks.len());
+        blocks.insert(at, Block::Paragraph(Vec::new()));
         out.changed.columns |= cols.insert_block(at);
         out.justified |= justified.insert_block(at);
         if let Some(c) = boxes.get_mut(i) {
