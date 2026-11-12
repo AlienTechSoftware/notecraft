@@ -331,6 +331,7 @@
 @id	ui.json	$$$JSON@@@
 @id	ui.justification_goes_on_a_paragraph_of_text	$$$Justification goes on a paragraph of text@@@
 @id	ui.keep_this_window_above_the_others	$$$Keep this window above the others@@@
+@id	ui.kept_the_original_drawing_file_path	$$$This page's drawing file held lines NoteCraft cannot edit. The file as it was is kept as {path}.@@@
 @id	ui.label	$$$label@@@
 @id	ui.label_not_built	$$${label} (not built)@@@
 @id	ui.label_not_built_yet	$$${label}: not built yet@@@

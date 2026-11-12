@@ -1560,6 +1560,7 @@ impl NoteCraftApp {
                 return;
             }
         }
+        self.tell_kept_ink();
         if let Some(ed) = self.editor.as_mut() {
             ed.blocks.retain(|b| !matches!(b, Block::Image { src, .. } if crate::inkpad::is_old_sheet(src)));
             ed.rebuild_body();
@@ -3732,6 +3733,7 @@ impl NoteCraftApp {
             Ok(()) => self.say(crate::i18n::format_message_id("ui.took_the_last_stroke_back_count_left", &[("count", &left.to_string())])),
             Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
         }
+        self.tell_kept_ink();
         // The page stops naming ink it no longer has.
         self.sync_ink_reference();
     }
@@ -4064,6 +4066,15 @@ impl NoteCraftApp {
         self.pointer = ribbon::Pointer::Draw;
         self.ribbon_tab = "Draw".to_string();
         self.say(crate::tl_id!("ui.write_anywhere_on_the_page"));
+    }
+
+    /// Says where the page's ink file was kept, when writing the ink kept it first because it
+    /// held more than could be read back as strokes (issue #157).
+    fn tell_kept_ink(&mut self) {
+        let Some(kept) = self.pad.as_mut().and_then(|pad| pad.kept_original.take()) else { return };
+        let shown = self.shown(&kept);
+        log::warn!("the page's ink file held more than its strokes; the original was kept: {kept:?}");
+        self.say(crate::i18n::format_message_id("ui.kept_the_original_drawing_file_path", &[("path", &shown)]));
     }
 
     /// Writes the drawing again with no pen readings in it, for sending somewhere else.
@@ -5898,6 +5909,7 @@ impl NoteCraftApp {
                 Ok(()) => self.say(crate::i18n::format_message_id("ui.drawing_saved_count_strokes", &[("count", &strokes.to_string())])),
                 Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
             }
+            self.tell_kept_ink();
             self.sync_ink_reference();
         }
         if let Some(href) = follow {

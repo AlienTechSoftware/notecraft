@@ -318,6 +318,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	Der Textausrichtung bezieht sich auf einen Absatz
 @id	ui.keep_this_window_above_the_others	Dieses Fenster immer im Vordergrund halten
+@id	ui.kept_the_original_drawing_file_path	Die Zeichnungsdatei dieser Seite enthielt Linien, die NoteCraft nicht bearbeiten kann. Die ursprüngliche Datei ist als {path} aufbewahrt.
 @id	ui.label	Beschriftung
 @id	ui.label_not_built	{label} (nicht implementiert)
 @id	ui.label_not_built_yet	{label}: noch nicht implementiert

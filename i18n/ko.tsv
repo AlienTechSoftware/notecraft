@@ -318,6 +318,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	정렬은 텍스트 단락에 적용됩니다
 @id	ui.keep_this_window_above_the_others	이 창을 다른 창 위에 고정
+@id	ui.kept_the_original_drawing_file_path	이 페이지의 그리기 파일에 NoteCraft에서 편집할 수 없는 선이 있었습니다. 원래 파일은 {path}(으)로 보관되었습니다.
 @id	ui.label	레이블
 @id	ui.label_not_built	{label} (미구현)
 @id	ui.label_not_built_yet	{label}: 아직 구현되지 않음

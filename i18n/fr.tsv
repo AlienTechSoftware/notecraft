@@ -318,6 +318,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	La justification s'applique à un paragraphe de texte
 @id	ui.keep_this_window_above_the_others	Garder cette fenêtre au-dessus des autres
+@id	ui.kept_the_original_drawing_file_path	Le fichier de dessin de cette page contenait des traits que NoteCraft ne peut pas modifier. Le fichier d’origine est conservé sous {path}.
 @id	ui.label	label
 @id	ui.label_not_built	{label} (non implémenté)
 @id	ui.label_not_built_yet	{label} : pas encore implémenté

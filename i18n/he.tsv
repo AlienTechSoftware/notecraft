@@ -318,6 +318,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	יישור מתייחס לפסקת טקסט
 @id	ui.keep_this_window_above_the_others	החזק חלון זה מעל האחרים
+@id	ui.kept_the_original_drawing_file_path	קובץ הציור של דף זה הכיל קווים ש-NoteCraft אינו יכול לערוך. הקובץ המקורי נשמר בשם {path}.
 @id	ui.label	תווית
 @id	ui.label_not_built	{label} (לא בנוי)
 @id	ui.label_not_built_yet	{label}: טרם נבנה

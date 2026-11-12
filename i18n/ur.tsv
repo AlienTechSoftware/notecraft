@@ -318,6 +318,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	جسٹیفیکیشن متن کے ایک پیراگراف پر لاگو ہوتی ہے
 @id	ui.keep_this_window_above_the_others	اس ونڈو کو دوسروں کے اوپر رکھیں
+@id	ui.kept_the_original_drawing_file_path	اس صفحے کی ڈرائنگ فائل میں ایسی لکیریں تھیں جنہیں NoteCraft مدون نہیں کر سکتا۔ اصل فائل {path} کے نام سے محفوظ رکھی گئی ہے۔
 @id	ui.label	لیبل
 @id	ui.label_not_built	{label} (بنایا نہیں گیا)
 @id	ui.label_not_built_yet	{label}: ابھی تک نہیں بنایا گیا

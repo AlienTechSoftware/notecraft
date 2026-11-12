@@ -331,6 +331,7 @@
 @id	ui.json	[[RLI]]$$$JSON@@@[[PDI]]
 @id	ui.justification_goes_on_a_paragraph_of_text	[[RLI]]$$$Justification goes on a paragraph of text@@@[[PDI]]
 @id	ui.keep_this_window_above_the_others	[[RLI]]$$$Keep this window above the others@@@[[PDI]]
+@id	ui.kept_the_original_drawing_file_path	[[RLI]]$$$This page's drawing file held lines NoteCraft cannot edit. The file as it was is kept as {path}.@@@[[PDI]]
 @id	ui.label	[[RLI]]$$$label@@@[[PDI]]
 @id	ui.label_not_built	[[RLI]]$$${label} (not built)@@@[[PDI]]
 @id	ui.label_not_built_yet	[[RLI]]$$${label}: not built yet@@@[[PDI]]
