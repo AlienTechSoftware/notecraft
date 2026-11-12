@@ -106,9 +106,25 @@ pub struct BarButton {
     pub act: Act,
 }
 
+/// The font name and font size boxes shown on a mini toolbar, as on the ribbon. The ribbon keeps
+/// these up to date in egui memory under [`FONT_BOXES_KEY`], and the page menu reads them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FontBoxes {
+    pub family: String,
+    pub size: String,
+    pub families: Vec<String>,
+    pub families_note: Option<String>,
+    pub sizes: Vec<String>,
+}
+
+/// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
+pub const FONT_BOXES_KEY: &str = "notecraft-font-boxes";
+
 /// A mini toolbar: rows of buttons. Plain data, so any place can build its own.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Bar {
+    /// The font boxes, drawn in a row above the buttons, when there are any.
+    pub fonts: Option<FontBoxes>,
     pub rows: Vec<Vec<BarButton>>,
 }
 
@@ -124,6 +140,7 @@ pub fn text_bar() -> Bar {
     let m = Glyph::Mark;
     let i = Glyph::Icon;
     Bar {
+        fonts: None,
         rows: vec![
             vec![
                 button(m(Mark::Bold), "Bold", "Bold (Ctrl+B)", Act::Mark("bold")),
@@ -145,6 +162,11 @@ pub fn text_bar() -> Bar {
     }
 }
 
+/// The mini toolbar with the font boxes on top, as on the ribbon.
+pub fn text_bar_with_fonts(fonts: FontBoxes) -> Bar {
+    Bar { fonts: Some(fonts), ..text_bar() }
+}
+
 const BTN: f32 = 26.0;
 
 /// What drawing a bar did.
@@ -159,7 +181,7 @@ pub struct BarOut {
 /// above, and pushes the act of a pressed button into `acts`. `id` must differ between bars that
 /// can be open at once.
 pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts: &mut Vec<Act>) -> BarOut {
-    let rows = bar.rows.len() as f32;
+    let rows = bar.rows.len() as f32 + if bar.fonts.is_some() { 1.0 } else { 0.0 };
     let room_above = anchor.min.y - ctx.content_rect().min.y;
     let want = rows * (BTN + 2.0) + 14.0;
     let (pivot, at) = if room_above >= want + 4.0 {
@@ -171,6 +193,46 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
     let area = Area::new(id).order(Order::Foreground).pivot(pivot).fixed_pos(at).constrain(true).show(ctx, |ui| {
         Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+            if let Some(fonts) = &bar.fonts {
+                ui.horizontal(|ui| {
+                    let families = crate::combo::show(
+                        ui,
+                        t.text,
+                        crate::combo::Spec {
+                            id: id.with("font-family"),
+                            box_label: crate::tl_id!("ui.font_family_box"),
+                            arrow_label: crate::tl_id!("ui.font_family"),
+                            shown: &fonts.family,
+                            width: 96.0,
+                            items: &fonts.families,
+                            empty_note: fonts.families_note.as_deref(),
+                            accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                        },
+                    );
+                    if let Some(name) = families.chosen {
+                        acts.push(Act::FontFamily(name));
+                        picked = true;
+                    }
+                    let size = crate::combo::show(
+                        ui,
+                        t.text,
+                        crate::combo::Spec {
+                            id: id.with("font-size"),
+                            box_label: crate::tl_id!("ui.font_size_box"),
+                            arrow_label: crate::tl_id!("ui.font_size"),
+                            shown: &fonts.size,
+                            width: 38.0,
+                            items: &fonts.sizes,
+                            empty_note: None,
+                            accept: &|typed| typed.parse::<u8>().is_ok_and(|size| crate::ribbon::FONT_SIZES.contains(&size)),
+                        },
+                    );
+                    if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
+                        acts.push(Act::FontSize(chosen));
+                        picked = true;
+                    }
+                });
+            }
             for row in &bar.rows {
                 ui.horizontal(|ui| {
                     for b in row {
@@ -224,7 +286,7 @@ mod tests {
     #[test]
     fn a_bar_can_be_built_from_data_and_drawn_anywhere() {
         let t = Theme::DEFAULT.tokens();
-        let bar = Bar { rows: vec![vec![button(Glyph::Mark(Mark::Cut), "Cut", "Cut", Act::Clipboard("cut"))]] };
+        let bar = Bar { fonts: None, rows: vec![vec![button(Glyph::Mark(Mark::Cut), "Cut", "Cut", Act::Clipboard("cut"))]] };
         let ctx = Context::default();
         let mut acts = Vec::new();
         let mut out = None;

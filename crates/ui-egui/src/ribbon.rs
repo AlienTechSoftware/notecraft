@@ -910,6 +910,14 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         accept: &|typed| typed.parse::<u8>().is_ok_and(|size| FONT_SIZES.contains(&size)),
                     },
                 );
+                let boxes = crate::floating::FontBoxes {
+                    family: view.font_family.unwrap_or("").to_owned(),
+                    size: shown.to_owned(),
+                    families: families.clone(),
+                    families_note: families_note.clone(),
+                    sizes: sizes.clone(),
+                };
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
                     acts.push(Act::FontSize(size));
                 }

@@ -56,7 +56,8 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
         })
         .response;
     // The mini toolbar floats over the menu, as it does in OneNote.
-    let bar = floating::show_bar(ui.ctx(), id().with("bar"), area.rect, &floating::text_bar(), t, acts);
+    let fonts = ui.ctx().data(|d| d.get_temp::<floating::FontBoxes>(egui::Id::new(floating::FONT_BOXES_KEY))).unwrap_or_default();
+    let bar = floating::show_bar(ui.ctx(), id().with("bar"), area.rect, &floating::text_bar_with_fonts(fonts), t, acts);
     picked |= bar.picked;
 
     let away = |p: egui::Pos2| !area.rect.contains(p) && !bar.rect.contains(p);
