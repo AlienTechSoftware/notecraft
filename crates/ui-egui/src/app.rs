@@ -5015,6 +5015,10 @@ impl NoteCraftApp {
     /// Puts a snippet where the caret is, or at the end of the page.
     fn insert_in_page(&mut self, text: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
+        // An insert is an edit: it is recorded for undo before the page changes.
+        if ed.caret.is_some() {
+            Self::remember_step(ed);
+        }
         match ed.caret.as_mut() {
             Some(caret) => {
                 // Where the caret is, not at the end of the block.

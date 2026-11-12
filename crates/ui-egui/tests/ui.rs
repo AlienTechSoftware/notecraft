@@ -2959,6 +2959,28 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
 
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
 /// a row taken out of a table.
+/// Inserting the date is an edit like any other: Ctrl+Z takes it back (owner, 2026-11-12).
+#[test]
+fn undo_takes_back_an_inserted_date() {
+    let (_t, app, s) = sample_app("ui-undo-insert-date");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    notecraft_store::page::save_body(&s.md_page, "plain text").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Insert").click();
+    h.run();
+    h.get_by_label("Date").click();
+    h.run();
+    settle(&mut h);
+    assert_ne!(h.state().body().unwrap_or_default().to_string(), before, "the date was inserted");
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default().to_string(), before, "undo takes the inserted date back");
+}
+
 #[test]
 fn undo_takes_back_a_change_to_the_page_and_redo_puts_it_back() {
     let (_t, app, s) = sample_app("ui-undo");
