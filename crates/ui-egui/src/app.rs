@@ -7462,6 +7462,16 @@ impl NoteCraftApp {
             // press made them together.
             self.undo();
         }
+        // Ctrl+F, and OneNote's Ctrl+E, go to the search box. Taken before the page sees
+        // them: with the caret in the page, the key went nowhere and the words typed to find
+        // something were written into the note (issue #134). The code view has a Find of its
+        // own for the file it shows, so it keeps Ctrl+F while it is open.
+        if !self.show_source && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F) || i.consume_key(Modifiers::COMMAND, Key::E)) {
+            if let Some(caret) = self.editor.as_mut().and_then(|ed| ed.caret.as_mut()) {
+                caret.focus = false;
+            }
+            self.focus_search = true;
+        }
         self.nav_keys(ctx);
         self.direction_keys(ctx);
         self.hierarchy_keys(ctx);
