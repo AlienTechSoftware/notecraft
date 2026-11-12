@@ -73,6 +73,9 @@
 @id	ui.basic_text	$$$Basic Text@@@
 @id	ui.font_size	$$$Font Size@@@
 @id	ui.font_family	$$$Font Family@@@
+@id	ui.loading_fonts	$$$Loading fonts...@@@
+@id	ui.font_family_box	$$$Font name@@@
+@id	ui.font_size_box	$$$Font size@@@
 @id	ui.mixed	$$$Mixed@@@
 @id	ui.font_catalog_unavailable	$$$Installed fonts could not be listed on this device.@@@
 @id	ui.underline	$$$Underline@@@

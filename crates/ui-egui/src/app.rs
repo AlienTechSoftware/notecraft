@@ -798,6 +798,9 @@ impl NoteCraftApp {
     }
 
     pub fn new(session: Session) -> NoteCraftApp {
+        // The installed fonts are read in the background, so the window opens at once.
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        crate::fonts::start_catalog();
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let ui_language =
             session.settings.get("ui_language").map(|value| crate::i18n::normalize_preference(&value)).unwrap_or_else(|| crate::i18n::AUTO.into());
@@ -3011,13 +3014,16 @@ impl NoteCraftApp {
             pageedit::FontValue::Value(Some(name)) => Some(name.clone()),
             pageedit::FontValue::Value(None) => Some(crate::tl_id!("ui.default").to_string()),
             pageedit::FontValue::Mixed => Some(crate::tl_id!("ui.mixed").to_string()),
-            pageedit::FontValue::Unavailable => None,
+            // With no caret in the page the box shows the default font, as the size box shows its base size.
+            pageedit::FontValue::Unavailable => Some(crate::tl_id!("ui.default").to_string()),
         };
         let size = match font_selection.size {
-            pageedit::FontValue::Value(Some(size)) => Some(format!("{size} pt")),
-            pageedit::FontValue::Value(None) => Some(crate::tl_id!("ui.default").to_string()),
+            pageedit::FontValue::Value(Some(size)) => Some(size.to_string()),
+            // The page's base size is 11 points, so the box shows that number, not the word Default.
+            pageedit::FontValue::Value(None) => Some("11".to_owned()),
             pageedit::FontValue::Mixed => Some(crate::tl_id!("ui.mixed").to_string()),
-            pageedit::FontValue::Unavailable => None,
+            // With no caret in the page the box shows the base size, as OneNote does.
+            pageedit::FontValue::Unavailable => Some("11".to_owned()),
         };
         let view = ribbon::View {
             split_panes: self.split_panes,
@@ -4306,12 +4312,26 @@ impl NoteCraftApp {
         self.status_is_error = false;
     }
 
+    /// With no caret in the page, a font or size choice goes to the end of the last writable
+    /// block, so it applies to the next text typed there, as OneNote does.
+    fn place_caret_for_format(ed: &mut Editor) {
+        if ed.caret.is_some() {
+            return;
+        }
+        let Some(index) = ed.blocks.iter().rposition(pageedit::is_writable) else { return };
+        let text = pageedit::caret_text(&ed.blocks[index]);
+        let end = text.chars().count();
+        ed.caret =
+            Some(pageedit::Caret { block: index, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None, inline: None });
+    }
+
     fn apply_font_family(&mut self, family: &str) {
         if !notecraft_formats::markdown::valid_font_family(family) {
             log::warn!("ribbon requested an invalid font family");
             return;
         }
         let Some(ed) = self.editor.as_mut() else { return };
+        Self::place_caret_for_format(ed);
         if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
             self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
             self.status_is_error = false;
@@ -4400,6 +4420,7 @@ impl NoteCraftApp {
             return;
         }
         let Some(ed) = self.editor.as_mut() else { return };
+        Self::place_caret_for_format(ed);
         if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
             self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
             self.status_is_error = false;

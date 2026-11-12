@@ -50,8 +50,27 @@ pub fn page_families(blocks: &[notecraft_formats::Block]) -> BTreeSet<String> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+static CATALOG: std::sync::OnceLock<Result<system::Catalog, String>> = std::sync::OnceLock::new();
+
+/// Reads the installed fonts on a background thread, so the window never waits for it. Listing
+/// every font takes a while on some machines.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub fn start_catalog() {
+    std::thread::spawn(|| {
+        let _ = CATALOG.get_or_init(system::Catalog::discover);
+    });
+}
+
+/// The installed fonts, or `None` while they are still being read. Never blocks.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub fn catalog_if_ready() -> Option<Result<&'static system::Catalog, &'static str>> {
+    CATALOG.get().map(|result| result.as_ref().map_err(String::as_str))
+}
+
+/// The installed fonts. Waits for the background read if it is not finished (used when a font is
+/// installed, which is rare).
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn system_catalog() -> Result<&'static system::Catalog, &'static str> {
-    static CATALOG: std::sync::OnceLock<Result<system::Catalog, String>> = std::sync::OnceLock::new();
     CATALOG.get_or_init(system::Catalog::discover).as_ref().map_err(String::as_str)
 }
 

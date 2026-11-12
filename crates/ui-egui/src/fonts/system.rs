@@ -40,6 +40,15 @@ impl Catalog {
         Self { database, families }
     }
 
+    /// Adds every font file in `folder` to `database`. Windows keeps per-user fonts in a folder the
+    /// system scan does not read, so the catalog reads it as well.
+    #[cfg(any(test, target_os = "windows"))]
+    pub(crate) fn load_fonts_folder(database: &mut fontdb::Database, folder: &std::path::Path) {
+        if folder.is_dir() {
+            database.load_fonts_dir(folder);
+        }
+    }
+
     pub fn families(&self) -> &[String] {
         &self.families
     }
@@ -66,5 +75,24 @@ impl Catalog {
         definitions.font_data.insert(name, Arc::new(data));
         definitions.families.insert(key.clone(), chain);
         Ok(key)
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::Catalog;
+
+    /// A font folder the catalog reads: the real Noto Sans Hebrew file, copied into a fresh folder.
+    #[test]
+    fn a_fonts_folder_adds_its_families_to_the_catalog() {
+        let folder = std::env::temp_dir().join(format!("notecraft-fonts-folder-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts/NotoSansHebrew.ttf");
+        std::fs::copy(&source, folder.join("NotoSansHebrew.ttf")).expect("the font file");
+        let mut database = fontdb::Database::new();
+        Catalog::load_fonts_folder(&mut database, &folder);
+        let catalog = Catalog::from_database(database);
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(catalog.families().iter().any(|name| name == "Noto Sans Hebrew"), "the family is listed: {:?}", catalog.families());
     }
 }
