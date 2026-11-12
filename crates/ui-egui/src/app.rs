@@ -4321,7 +4321,8 @@ impl NoteCraftApp {
         let Some(index) = ed.blocks.iter().rposition(pageedit::is_writable) else { return };
         let text = pageedit::caret_text(&ed.blocks[index]);
         let end = text.chars().count();
-        ed.caret = Some(pageedit::Caret { block: index, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None });
+        ed.caret =
+            Some(pageedit::Caret { block: index, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None, inline: None });
     }
 
     fn apply_font_family(&mut self, family: &str) {
