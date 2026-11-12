@@ -455,6 +455,22 @@ fn pdf_text(path: &Path) -> (String, bool) {
     (format!("PDF source inspection (embedded text may be compressed):\n\n{printable}"), cut)
 }
 
+/// The name egui keeps a picture of the code view under. egui keeps a picture by this name
+/// and draws the kept one when the name comes again, so it carries the file's whole path and
+/// its size and time: two pages' `assets/a.png` are two pictures, and a picture that changed
+/// is drawn anew. Named by its file name alone, the last page's picture was shown for the
+/// next page's (issue #135).
+fn picture_uri(path: &Path) -> String {
+    let meta = std::fs::metadata(path).ok();
+    let bytes = meta.as_ref().map_or(0, std::fs::Metadata::len);
+    // The browser build's file shim has no modification time; there the size alone tells.
+    #[cfg(not(target_arch = "wasm32"))]
+    let nanos = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+    #[cfg(target_arch = "wasm32")]
+    let nanos = 0u128;
+    format!("bytes://source-view/{}#{bytes}-{nanos}", path.display())
+}
+
 fn attachment_icon_name(name: &str) -> String {
     #[cfg(target_os = "windows")]
     let extension = ".png";
@@ -579,8 +595,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     match std::fs::read(&path) {
                         Ok(bytes) => {
                             egui::ScrollArea::both().id_salt("code-picture").max_height(height - 40.0).show(ui, |ui| {
-                                let uri = format!("bytes://source-view/{}", entry.name);
-                                ui.add(egui::Image::from_bytes(uri, bytes).max_width(ui.available_width()).fit_to_original_size(1.0));
+                                ui.add(egui::Image::from_bytes(picture_uri(&path), bytes).max_width(ui.available_width()).fit_to_original_size(1.0));
                             });
                         }
                         Err(_) => {
@@ -599,8 +614,8 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let icon_path = dir.join(icon.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let fallback_path = dir.join(format!("{}.svg", entry.name).replace('/', std::path::MAIN_SEPARATOR_STR));
                     if let Ok((uri, bytes)) = std::fs::read(&icon_path)
-                        .map(|bytes| (format!("bytes://source-view/{}", icon), bytes))
-                        .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (format!("bytes://source-view/{}.svg", entry.name), bytes)))
+                        .map(|bytes| (picture_uri(&icon_path), bytes))
+                        .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (picture_uri(&fallback_path), bytes)))
                     {
                         ui.horizontal(|ui| {
                             ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(vec2(72.0, 84.0)));
@@ -984,6 +999,26 @@ mod tests {
         let (state, wrote) = type_into_page_file(&dir, "Z");
         assert!(!state.cut);
         assert!(wrote.is_some_and(|(name, text)| name == "index.md" && text.contains('Z')), "a whole file can be typed in");
+    }
+
+    /// Issue #135: two pages' pictures of the same name are kept as two pictures, and a
+    /// picture that is replaced is drawn anew. The code view named each picture by its file
+    /// name alone, so egui drew the first page's `assets/a.png` for the second page's.
+    #[test]
+    fn pictures_of_the_same_name_on_two_pages_are_two_pictures() {
+        let t = notecraft_store::testing::TempDir::new("codeview-picture-names");
+        let red = t.path().join("red").join("assets").join("a.png");
+        let lime = t.path().join("lime").join("assets").join("a.png");
+        for (path, bytes) in [(&red, b"red picture".as_slice()), (&lime, b"lime picture".as_slice())] {
+            std::fs::create_dir_all(path.parent().expect("assets")).expect("folders");
+            std::fs::write(path, bytes).expect("picture");
+        }
+        assert_ne!(picture_uri(&red), picture_uri(&lime), "the page's folder is part of the name");
+        assert_eq!(picture_uri(&red), picture_uri(&red), "the same picture keeps its name between frames");
+
+        let before = picture_uri(&red);
+        std::fs::write(&red, b"a replaced, longer picture").expect("replace");
+        assert_ne!(picture_uri(&red), before, "a replaced picture is a new one");
     }
 
     #[test]
