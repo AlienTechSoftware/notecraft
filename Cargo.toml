@@ -57,6 +57,9 @@ hayro = { version = "=0.5.0", default-features = false, features = ["embed-fonts
 # platform" on wasm32-unknown-unknown, which has no clock. This is std's types everywhere
 # else and Date.now() there, with no wasm-bindgen glue needed in notecraft-model itself.
 web-time = "1.1"
+# The user's UTC offset, read once when the desktop app starts, so timestamps are shown on
+# the user's clock. Already in the tree through zip; only the app names it.
+time = { version = "0.3", default-features = false, features = ["std", "local-offset"] }
 
 # Mermaid 0.3.1 uses std::time::Instant in its layout metrics on the ordinary render path.
 # Those metrics are discarded by NoteCraft, but Instant::now() panics on wasm32-unknown-unknown.
