@@ -133,14 +133,13 @@ fn unique_name(dir: &Path, name: &str) -> String {
         Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_lowercase()).collect(),
         Err(_) => HashSet::new(),
     };
-    let (stem, ext) = match name.rsplit_once('.') {
-        Some((s, e)) => (s.to_string(), format!(".{e}")),
-        None => (name.to_string(), String::new()),
-    };
+    // The suffix goes in before the extension and within the name's length limit, so the name
+    // made is one `remove` accepts as a safe name (issue #131).
+    let (stem, ext) = names::split_extension(name);
     let mut candidate = name.to_string();
     let mut n = 2;
     while taken.contains(&candidate.to_lowercase()) {
-        candidate = format!("{stem}-{n}{ext}");
+        candidate = names::fit_file_name(stem, ext, &format!("-{n}"));
         n += 1;
     }
     candidate
@@ -296,6 +295,29 @@ mod tests {
             assert!(remove(&page, name).is_err(), "refused: {name:?}");
         }
         assert_eq!(list(&page).len(), 1, "and nothing was deleted trying");
+    }
+
+    /// Issues #130 and #131: a long name keeps its file type, and every copy made of it, however
+    /// many, has a name that can be taken out again.
+    #[test]
+    fn long_names_keep_their_type_and_every_copy_can_be_removed() {
+        let t = TempDir::new("assets-long-names");
+        let p = page(&t);
+        for extension in ["pdf", "png", "docx"] {
+            let link = attach_bytes(&p, &format!("{}.{extension}", "x".repeat(90)), b"owned file").expect("attach");
+            assert!(link.ends_with(&format!(".{extension}")), "{link}");
+        }
+        assert_eq!(media_kind(&attach_bytes(&p, &format!("{}.png", "y".repeat(90)), b"png").expect("attach")), MediaKind::Image);
+
+        let name = format!("{}.txt", "z".repeat(76));
+        let copies: Vec<String> = (0..12)
+            .map(|i| attach_bytes(&p, &name, format!("copy {i}").as_bytes()).expect("attach").trim_start_matches("assets/").to_string())
+            .collect();
+        assert_eq!(copies.iter().collect::<HashSet<_>>().len(), 12, "every copy has a name of its own");
+        for copy in &copies {
+            assert!(copy.ends_with(".txt") && copy.chars().count() <= names::MAX_FILE_NAME, "{copy}");
+            remove(&p, copy).unwrap_or_else(|e| panic!("{copy} can be removed: {e}"));
+        }
     }
 
     /// Issue #103: a picture the user attached is not taken for the icon of the attachment its

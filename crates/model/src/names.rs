@@ -69,17 +69,46 @@ pub fn collides_by_case(a: &str, b: &str) -> bool {
     a != b && a.to_lowercase() == b.to_lowercase()
 }
 
-/// A file name for an attachment: no path parts, only safe characters, never reserved.
+/// The longest an attachment's file name is made, in characters.
+pub const MAX_FILE_NAME: usize = 80;
+
+/// A file name for an attachment: no path parts, only safe characters, never reserved, and at
+/// most [`MAX_FILE_NAME`] characters. A name that is too long loses the end of its stem, not
+/// its extension, so `report.pdf` stays a PDF however long it is (issue #130). Applying it
+/// again changes nothing.
 pub fn safe_file_name(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let cleaned: String = base.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' }).collect();
-    let trimmed: String = cleaned.trim_matches(|c| c == '.' || c == '-').chars().take(80).collect();
-    let mut out = if trimmed.is_empty() { "file".to_string() } else { trimmed };
+    let trimmed = cleaned.trim_matches(|c| c == '.' || c == '-');
+    let mut out = if trimmed.is_empty() { "file".to_string() } else { trimmed.to_string() };
     let stem = out.split('.').next().unwrap_or("").to_string();
     if is_reserved_name(&stem) {
         out = format!("file-{out}");
     }
-    out
+    let (stem, extension) = split_extension(&out);
+    fit_file_name(stem, extension, "")
+}
+
+/// `name` split before its extension (the dot included), when it has one worth keeping: a
+/// short run of letters and digits after the last dot.
+pub fn split_extension(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && (2..=17).contains(&(name.len() - dot)) && name[dot + 1..].chars().all(|c| c.is_ascii_alphanumeric()) => {
+            name.split_at(dot)
+        }
+        _ => (name, ""),
+    }
+}
+
+/// `stem`, `suffix` and `extension` joined into a name of at most [`MAX_FILE_NAME`] characters,
+/// cutting the stem when they do not fit. The uniqueness suffix of a second copy, `-2`, goes
+/// in through here too, so the name it makes is still a safe name (issue #131).
+pub fn fit_file_name(stem: &str, extension: &str, suffix: &str) -> String {
+    let room = MAX_FILE_NAME.saturating_sub(extension.chars().count() + suffix.chars().count());
+    let stem: String = stem.chars().take(room).collect();
+    let stem = stem.trim_end_matches(['.', '-']);
+    let stem = if stem.is_empty() { "file" } else { stem };
+    format!("{stem}{suffix}{extension}")
 }
 
 /// A file in a page or container folder that looks like a sync conflict copy of
@@ -133,6 +162,40 @@ mod tests {
         assert_eq!(safe_file_name("../evil name.txt"), "evil-name.txt");
         assert_eq!(safe_file_name("CON.png"), "file-CON.png");
         assert_eq!(safe_file_name("..."), "file");
+    }
+
+    /// Issue #130: a long name keeps its extension, and is never longer than the limit.
+    #[test]
+    fn a_long_attachment_name_keeps_its_extension() {
+        for extension in ["pdf", "png", "docx", "tar.gz"] {
+            let name = safe_file_name(&format!("{}.{extension}", "x".repeat(90)));
+            assert!(name.ends_with(&format!(".{}", extension.rsplit('.').next().expect("ext"))), "{name}");
+            assert_eq!(name.chars().count(), MAX_FILE_NAME, "{name}");
+        }
+        assert_eq!(safe_file_name(&format!("{}.txt", "x".repeat(76))), format!("{}.txt", "x".repeat(76)), "a name at the limit is kept");
+        assert_eq!(safe_file_name(&"x".repeat(90)), "x".repeat(80), "a name with no extension is cut as before");
+        assert_eq!(safe_file_name(&format!("{}.not an extension at all", "x".repeat(90))).chars().count(), MAX_FILE_NAME);
+        assert_eq!(safe_file_name(&format!("CON.{}.png", "y".repeat(90))).chars().count(), MAX_FILE_NAME, "a reserved stem made safe still fits");
+        for name in ["../evil name.txt", "CON.png", "...", &format!("{}.pdf", "z".repeat(200)), &format!("é{}.docx", "ü".repeat(100))] {
+            let once = safe_file_name(name);
+            assert_eq!(safe_file_name(&once), once, "applying it again changes nothing: {name}");
+        }
+    }
+
+    /// Issue #131: the suffix of a second copy fits inside the limit with the extension kept, so
+    /// the name made is a safe name in its own right.
+    #[test]
+    fn a_suffixed_name_fits_and_stays_safe() {
+        let original = format!("{}.txt", "x".repeat(76));
+        let (stem, extension) = split_extension(&original);
+        for n in [2, 10, 1234] {
+            let name = fit_file_name(stem, extension, &format!("-{n}"));
+            assert!(name.ends_with(&format!("-{n}.txt")) && name.chars().count() == MAX_FILE_NAME, "{name}");
+            assert_eq!(safe_file_name(&name), name);
+        }
+        assert_eq!(fit_file_name("pic", ".png", "-2"), "pic-2.png");
+        assert_eq!(split_extension("archive"), ("archive", ""));
+        assert_eq!(split_extension(".hidden"), (".hidden", ""));
     }
 
     #[test]
