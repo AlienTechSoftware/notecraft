@@ -160,6 +160,14 @@ impl History {
     pub fn here(&self) -> Option<&Step> {
         self.steps.get(self.at)
     }
+
+    /// Keep the selection before an explicit transaction, without inventing an edit.
+    #[cfg(feature = "voice")]
+    pub fn remember_caret(&mut self, caret: Option<crate::pageedit::Caret>) {
+        if let Some(step) = self.steps.get_mut(self.at) {
+            step.caret = caret;
+        }
+    }
 }
 
 #[cfg(test)]

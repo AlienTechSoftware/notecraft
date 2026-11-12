@@ -12,6 +12,8 @@ repository = "https://github.com/AlienTechSoftware/notecraft"
 publish = false
 
 [workspace.dependencies]
+craft-voice-core = { path = "crates/voice-core" }
+craft-voice-runtime = { path = "crates/voice-runtime" }
 notecraft-model = { path = "crates/model" }
 notecraft-math = { path = "crates/math" }
 notecraft-diagram = { path = "crates/diagram" }

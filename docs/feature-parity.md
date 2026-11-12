@@ -36,6 +36,7 @@ side by side. Status words:
 | Collaboration | Sharing | By design | A shared folder. Live co-authoring is Later. |
 | Output | Export | Later | Export scope is undecided. |
 | Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). `notecraft-cli import onenote` reads `.one` sections and optional `.onetoc2` color metadata, then writes notebook folders in either page format. Still missing: TOC section order, ink, tags, `.onepkg`, and an import command in the window. |
+| Input | Local dictation | Partial | Optional `voice` build, reviewed text insert, Undo and save. See [dictation](how-to/dictate.md) for format and hardware acceptance limits. |
 | Output | Add-ins, AI | Later | |
 | Look | Themes | Done | 14 themes, contrast checked. `themes.md`. |
 | Look | Ruled and grid page backgrounds | Done | View, Rule Lines: none, lines or squares behind the page, in colours each theme checks for contrast. Remembered between runs. |

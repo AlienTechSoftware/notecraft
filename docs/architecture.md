@@ -173,3 +173,22 @@ folder rules it proved are now in `crates/store`.
 `docs/research/` holds the notes this design rests on: Microsoft's published `.one` file
 format specifications, paraphrased. They are notes, not Microsoft text. The feature list this
 project was designed against is kept out of this repository.
+
+## Optional reusable voice libraries
+
+`craft-voice-core` (layer 1) owns pure session transitions, full-replacement
+transcript revisions, bounds and provider capabilities. It has no dependencies.
+`craft-voice-runtime` (layer 3) owns bounded audio conversion, optional CPAL capture,
+background decoding, private job files and the local whisper-cli adapter. Neither
+library depends on NoteCraft or egui. Its `transcribe` example is a second consumer.
+
+The engine owns pure voice state and emits typed effects. Voice commands require a
+code-only LocalUi origin, except metadata-only status. CLI and MCP parameters cannot
+select that context. Provider updates enter through a native controller method.
+
+The optional host controller validates an opaque insertion ticket against editor
+identity/generation, selected text, original body and source fingerprint. Insert
+uses existing Block/Span editing, history and normal page.save/autosave. Failed
+validation retains the draft for review or explicit retargeting. Candidates must round-trip
+semantically through the existing page format before reaching editor history. No page
+serializer changes are required. See [dictation](how-to/dictate.md).

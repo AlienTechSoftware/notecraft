@@ -23,9 +23,45 @@ pub const FONT_SIZES: [u8; 16] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
 pub const TABLE_TAB: &str = "Table";
 
+/// The dictation button in the tab strip, and how it should look.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mic {
+    /// Built without dictation.
+    #[default]
+    Hidden,
+    /// Ready to start dictating.
+    Ready,
+    /// Words are finishing or waiting for review; the button waits too.
+    Busy,
+    /// Listening now: the button finishes.
+    Live,
+}
+
+/// A microphone: a capsule on a stand.
+fn paint_mic(painter: &egui::Painter, center: egui::Pos2, colour: egui::Color32) {
+    let capsule = Rect::from_center_size(center + vec2(0.0, -3.0), vec2(6.0, 10.0));
+    painter.rect_filled(capsule, 3.0, colour);
+    let stroke = egui::Stroke::new(1.5, colour);
+    let cup: Vec<egui::Pos2> = (0..=12)
+        .map(|k| {
+            let a = std::f32::consts::PI * k as f32 / 12.0;
+            center + vec2(5.5 * a.cos(), -1.0 + 5.5 * a.sin())
+        })
+        .collect();
+    painter.add(egui::Shape::line(cup, stroke));
+    painter.line_segment([center + vec2(0.0, 4.5), center + vec2(0.0, 7.5)], stroke);
+    painter.line_segment([center + vec2(-3.0, 7.5), center + vec2(3.0, 7.5)], stroke);
+}
+
 /// What a ribbon control asks the window to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
+    /// Start dictating at the caret, or finish.
+    #[cfg(feature = "voice")]
+    Dictate,
+    /// Open the dictation setup screen.
+    #[cfg(feature = "voice")]
+    DictationSettings,
     /// The File tab: open the File screen.
     File,
     /// Show the saved versions of the open page.
@@ -526,7 +562,7 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
 /// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
 /// ribbon below it; the others are white writing on the band, lit when the pointer is over
 /// one.
-pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
+pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, mic: Mic, t: &Tokens, acts: &mut Vec<Act>) {
     let chosen = resolve_tab(tab, source, in_table);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -554,6 +590,51 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
             if resp.clicked() {
                 acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
             }
+        }
+        if mic != Mic::Hidden {
+            ui.add_space(12.0);
+            let live = mic == Mic::Live;
+            let label = if live { crate::tl_id!("voice.finish_dictating_0f7d9f4b") } else { crate::tl_id!("voice.dictate_3eaff69c") };
+            let font = egui::FontId::proportional(12.5);
+            let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.band_text);
+            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 40.0, TAB_STRIP_H), Sense::click());
+            let painter = ui.painter_at(rect);
+            let pill = rect.shrink2(vec2(2.0, 4.0));
+            if live || (resp.hovered() && mic == Mic::Ready) {
+                painter.rect_filled(pill, 10.0, t.band_hover);
+            }
+            let ink = if mic == Mic::Busy { t.band_text.gamma_multiply(0.5) } else { t.band_text };
+            paint_mic(&painter, egui::pos2(rect.min.x + 16.0, rect.center().y), ink);
+            painter.text(egui::pos2(rect.min.x + 28.0, rect.center().y + 1.0), Align2::LEFT_CENTER, label, font, ink);
+            let enabled = mic != Mic::Busy;
+            resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+            let tip = match mic {
+                Mic::Live => crate::tl_id!("voice.finish_dictating_enter_esc_cancels_2151a686"),
+                Mic::Busy => crate::tl_id!("voice.insert_or_discard_the_dictated_words_first_df8983ce"),
+                _ => crate::tl_id!("voice.dictate_at_the_cursor_or_at_the_end_of_the_page_12635b46"),
+            };
+            let resp = resp.on_hover_text(tip);
+            #[cfg(feature = "voice")]
+            {
+                if resp.clicked() && enabled {
+                    acts.push(Act::Dictate);
+                }
+                let (gear, settings) = ui.allocate_exact_size(vec2(22.0, TAB_STRIP_H), Sense::click());
+                let hover = settings.hovered();
+                ui.painter().text(
+                    gear.center(),
+                    Align2::CENTER_CENTER,
+                    "\u{22ef}",
+                    egui::FontId::proportional(14.0),
+                    if hover { t.band_text } else { t.band_text.gamma_multiply(0.7) },
+                );
+                settings.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("voice.dictation_setup_b70a0aa8")));
+                if settings.on_hover_text(crate::tl_id!("voice.dictation_setup_b70a0aa8")).clicked() {
+                    acts.push(Act::DictationSettings);
+                }
+            }
+            #[cfg(not(feature = "voice"))]
+            let _ = (resp, acts.len());
         }
     });
 }

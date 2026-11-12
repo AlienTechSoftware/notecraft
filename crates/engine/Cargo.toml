@@ -11,6 +11,7 @@ description = "NoteCraft engine: the session and the command registry. Every use
 workspace = true
 
 [dependencies]
+craft-voice-core = { workspace = true }
 notecraft-model = { workspace = true }
 notecraft-formats = { workspace = true }
 notecraft-store = { workspace = true }

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 /// A notebooks folder, the settings, and a cached copy of the tree.
 pub struct Session {
+    pub(crate) voice: craft_voice_core::VoiceSession,
+    pub(crate) invocation_origin: crate::InvocationOrigin,
     root: PathBuf,
     /// Notebooks kept somewhere else and opened anyway. A notebook is a folder, so one can
     /// live outside the notebooks folder; opening it must not put away the others, which is
@@ -33,7 +35,7 @@ impl Session {
             settings.get(OPEN_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
         let closed =
             settings.get(CLOSED_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
-        let mut s = Session { root, extra, closed, settings, tree: Vec::new() };
+        let mut s = Session { root, extra, closed, settings, tree: Vec::new(), voice: Default::default(), invocation_origin: Default::default() };
         s.refresh();
         Ok(s)
     }
@@ -158,6 +160,18 @@ impl Session {
 
     /// Runs a command by id. A panic inside the command becomes `EngineError::Panicked`.
     pub fn run(&mut self, id: &str, params: &Params) -> Result<Output, EngineError> {
+        self.run_with_origin(id, params, crate::InvocationOrigin::Headless)
+    }
+
+    /// The origin is supplied by trusted native code, never by serialized command parameters.
+    pub fn run_with_origin(&mut self, id: &str, params: &Params, origin: crate::InvocationOrigin) -> Result<Output, EngineError> {
+        let previous = std::mem::replace(&mut self.invocation_origin, origin);
+        let result = self.run_inner(id, params);
+        self.invocation_origin = previous;
+        result
+    }
+
+    fn run_inner(&mut self, id: &str, params: &Params) -> Result<Output, EngineError> {
         let spec = commands::registry().iter().find(|c| c.id == id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         let result = guarded(|| (spec.run)(self, params))?;
         if spec.changes_tree && result.is_ok() {

@@ -5,6 +5,18 @@ it is fixed and tested, not when it is promised.
 
 ## Product
 
+- **Optional dictation needs real speech and device acceptance.** The `voice` build
+  supports reviewed text insertion through a local whisper-cli/model.
+  Real recognition, device permissions/disconnects, and Windows/macOS voice paths
+  remain unverified. Inline code/math targets, tables, source view, and cross-block
+  selections are unsupported. Model language capability and transcript language
+  metadata are not detected. Literal punctuation that the format cannot preserve
+  is rejected without changing the page, retaining the draft. New dictation messages
+  fall back to English in real locales. Faulty recognizer output can grow on disk until timeout;
+  memory reads are bounded. Crash leftovers are cleaned on the next job, not launch.
+  Conversation, hosted providers, synthesis and browser capture are later work.
+  See [dictation](how-to/dictate.md).
+
 - **Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V reach the words**, from 2026-10-19. None of them was
   bound anywhere in the window before that: a left-to-right paragraph is an egui text box
   and egui answered them by itself, so the gap only showed where egui was not drawing. That

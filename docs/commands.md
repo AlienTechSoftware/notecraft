@@ -276,3 +276,61 @@ Reload the tree from disk.
 
 No parameters.
 
+## `voice.start`
+
+Start local reviewed dictation.
+
+Parameters:
+
+- target (required): opaque insertion ticket
+
+## `voice.stop`
+
+Stop capture and finalize dictation.
+
+Parameters:
+
+- session (required): voice session id
+
+## `voice.cancel`
+
+Discard the voice session.
+
+Parameters:
+
+- session (required): voice session id
+
+## `voice.status`
+
+Read voice lifecycle status without transcript content.
+
+No parameters.
+
+## `voice.draft.set`
+
+Review and edit the local transcript.
+
+Parameters:
+
+- session (required): voice session id
+- revision (required): expected transcript revision
+- text (required): reviewed transcript, at most 64 KiB
+
+## `voice.retarget`
+
+Choose a new insertion position.
+
+Parameters:
+
+- session (required): voice session id
+- target (required): opaque insertion ticket
+
+## `voice.commit`
+
+Insert the reviewed local transcript.
+
+Parameters:
+
+- session (required): voice session id
+- revision (required): approved transcript revision
+

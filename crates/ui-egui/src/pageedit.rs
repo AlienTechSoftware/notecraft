@@ -30,6 +30,26 @@ fn spans_of(block: &Block) -> Option<&[Span]> {
 
 use notecraft_model::Tag;
 
+/// Where the caret was drawn this frame: its rectangle, line rectangle, pass and block.
+#[cfg(feature = "voice")]
+pub fn caret_anchor_id() -> egui::Id {
+    egui::Id::new("notecraft-caret-anchor")
+}
+
+/// The room under the page and pass: where appended dictation will appear.
+#[cfg(feature = "voice")]
+pub fn page_end_anchor_id() -> egui::Id {
+    egui::Id::new("notecraft-page-end-anchor")
+}
+
+#[cfg(feature = "voice")]
+fn remember_caret_anchor(ui: &Ui, out: &egui::text_edit::TextEditOutput, caret: &Caret) {
+    let at = caret.selection.0.max(caret.selection.1).min(caret.text.chars().count());
+    let spot = out.galley.pos_from_cursor(egui::text::CCursor::new(at)).translate(out.galley_pos.to_vec2());
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(caret_anchor_id(), (spot, out.response.rect, pass, caret.block)));
+}
+
 /// Where a selection that a right click collapsed is to be put back: `(block, primary, secondary)`.
 /// Set by the container, taken by the block's text box on the next frame. A text box moves its
 /// selection to the pointer the moment any button goes down, so a menu that acts on the words
@@ -1532,6 +1552,11 @@ pub fn show(
     let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title, 1.0);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
+    #[cfg(feature = "voice")]
+    {
+        let pass = ui.ctx().cumulative_pass_nr();
+        ui.ctx().data_mut(|d| d.insert_temp(page_end_anchor_id(), (_rect, pass)));
+    }
     if below.clicked() {
         apply(Action::ClickBelow, blocks, caret, &mut changed);
     }
@@ -1818,6 +1843,8 @@ pub fn show_blocks(
                                 .show(ui)
                         })
                     };
+                    #[cfg(feature = "voice")]
+                    remember_caret_anchor(ui, &out, c);
                     let mut cursor_range = out.cursor_range;
                     let (left, right, shift) = ui.input(|input| {
                         let mut left = false;

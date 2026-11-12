@@ -194,6 +194,7 @@ fn import_officeimo(root: &Path, mut args: Vec<String>) -> Result<(String, bool)
 
 fn describe(o: &Output) -> String {
     match o {
+        Output::Voice(_) => notecraft_engine::output_json(o).to_string(),
         Output::None => "ok".to_string(),
         Output::Path(p) => display_path(p),
         Output::Text(t) => t.clone(),

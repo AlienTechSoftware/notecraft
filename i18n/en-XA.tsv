@@ -804,3 +804,118 @@
 @id	ui.welcome_wizard_finish	$$$Finish@@@
 @id	ui.welcome_wizard_done_title	$$$Thank you@@@
 @id	ui.welcome_wizard_done_body	$$$NoteCraft is ready to use. Your choices are saved. This setup appears again only after you reset the preferences.@@@
+@id	voice.another_program_changed_this_page_reload_it_then_d_cc71cb4e	$$$Another program changed this page. Reload it, then dictate again.@@@
+@id	voice.at_the_end_of_the_page_24302b0e	$$$at the end of the page@@@
+@id	voice.at_your_cursor_e3b613bb	$$$at your cursor@@@
+@id	voice.browse_c1b20f52	$$$Browse…@@@
+@id	voice.cannot_create_the_voice_cache_error_05777284	$$$Cannot create the voice cache: {error}@@@
+@id	voice.cannot_locate_the_local_settings_folder_6346b636	$$$Cannot locate the local settings folder.@@@
+@id	voice.cannot_open_the_microphone_settings_error_b3a9cb13	$$$Cannot open the microphone settings: {error}@@@
+@id	voice.cannot_read_the_page_from_disk_reload_it_then_dict_b17aa77a	$$$Cannot read the page from disk. Reload it, then dictate again.@@@
+@id	voice.cannot_read_the_page_source_error_3c53fd4d	$$$Cannot read the page source: {error}@@@
+@id	voice.cannot_resolve_the_voice_cache_error_902cca25	$$$Cannot resolve the voice cache: {error}@@@
+@id	voice.cannot_save_dictation_settings_error_fa8703c7	$$$Cannot save dictation settings: {error}@@@
+@id	voice.check_your_setup_b61b421a	$$$Check your setup@@@
+@id	voice.chinese_15dc1886	$$$Chinese@@@
+@id	voice.choose_a_cursor_position_in_the_paragraph_s_words_6538d9ab	$$$Choose a cursor position in the paragraph's words, outside formatting marks.@@@
+@id	voice.choose_a_cursor_position_outside_formatting_marks_54a40d44	$$$Choose a cursor position outside formatting marks.@@@
+@id	voice.choose_a_paragraph_before_inserting_3f802b0c	$$$Choose a paragraph before inserting.@@@
+@id	voice.choose_a_paragraph_without_inline_code_or_equation_bf91894f	$$$Choose a paragraph without inline code or equations before dictating.@@@
+@id	voice.choose_a_program_and_a_model_to_finish_82dc257d	$$$Choose a program and a model to finish.@@@
+@id	voice.choose_a_speech_model_f18c2ce5	$$$Choose a speech model@@@
+@id	voice.choose_the_speech_recognizer_and_a_model_to_start_4a44889b	$$$Choose the speech recognizer and a model to start dictating.@@@
+@id	voice.choose_whisper_cli_db09c1c2	$$$Choose whisper-cli@@@
+@id	voice.click_where_the_words_should_go_and_choose_insert_473a713a	$$$Click where the words should go and choose Insert again.@@@
+@id	voice.detect_automatically_25a36033	$$$Detect automatically@@@
+@id	voice.dictate_3eaff69c	$$$Dictate@@@
+@id	voice.dictate_at_the_cursor_or_at_the_end_of_the_page_12635b46	$$$Dictate at the cursor, or at the end of the page@@@
+@id	voice.dictated_words_8c96e44a	$$$Dictated words@@@
+@id	voice.dictation_2a7fe421	$$$Dictation@@@
+@id	voice.dictation_currently_supports_paragraphs_headings_q_4db15ad2	$$$Dictation currently supports paragraphs, headings, quotes, and list text.@@@
+@id	voice.dictation_discarded_2159761f	$$$Dictation discarded.@@@
+@id	voice.dictation_inserted_ctrl_z_takes_it_back_a6eb393d	$$$Dictation inserted. Ctrl+Z takes it back.@@@
+@id	voice.dictation_runs_on_this_computer_with_whisper_cpp_c_fe751c46	$$$Dictation runs on this computer with whisper.cpp. Choose its whisper-cli program and a speech model you have downloaded. NoteCraft never downloads them and never sends audio anywhere.@@@
+@id	voice.dictation_setup_6be1e51d	$$$Dictation setup…@@@
+@id	voice.dictation_setup_b70a0aa8	$$$Dictation setup@@@
+@id	voice.discard_36fff63c	$$$Discard@@@
+@id	voice.dismiss_70afe9ef	$$$Dismiss@@@
+@id	voice.done_e9b450d1	$$$Done@@@
+@id	voice.done_editing_b4938456	$$$Done editing@@@
+@id	voice.dutch_334a85f1	$$$Dutch@@@
+@id	voice.enter_or_shortcut_25ef81f2	$$$Enter or {shortcut}@@@
+@id	voice.esc_1f7a4f9e	$$$Esc@@@
+@id	voice.finish_dictating_0f7d9f4b	$$$Finish dictating@@@
+@id	voice.finish_dictating_enter_esc_cancels_2151a686	$$$Finish dictating (Enter). Esc cancels.@@@
+@id	voice.finishing_90218af7	$$$Finishing…@@@
+@id	voice.found_bbba8413	$$$Found@@@
+@id	voice.french_44389f6a	$$$French@@@
+@id	voice.german_da91388c	$$$German@@@
+@id	voice.heard_you_loudest_sound_decibels_db_ce75d644	$$$Heard you. Loudest sound: {decibels} dB.@@@
+@id	voice.insert_here_1fe34d33	$$$Insert here@@@
+@id	voice.insert_on_this_page_f7f93d5b	$$$Insert on this page@@@
+@id	voice.insert_or_discard_the_dictated_words_first_df8983ce	$$$Insert or discard the dictated words first@@@
+@id	voice.italian_485b57ad	$$$Italian@@@
+@id	voice.japanese_9239c22d	$$$Japanese@@@
+@id	voice.keep_the_settings_folder_outside_notebooks_before_a55ba6bc	$$$Keep the settings folder outside notebooks before enabling dictation.@@@
+@id	voice.korean_dec66c5b	$$$Korean@@@
+@id	voice.language_89b86ab0	$$$Language@@@
+@id	voice.listening_dc353487	$$$Listening@@@
+@id	voice.loading_the_model_45a4f448	$$$Loading the model…@@@
+@id	voice.microphone_24280537	$$$Microphone@@@
+@id	voice.microphone_level_7b9bf79a	$$$Microphone level@@@
+@id	voice.microphone_settings_2a04af24	$$$Microphone settings@@@
+@id	voice.models_whose_name_ends_in_en_understand_english_on_41b266d0	$$$Models whose name ends in .en understand English only.@@@
+@id	voice.no_audio_arrived_from_the_microphone_check_the_sel_68498934	$$$No audio arrived from the microphone. Check the selected microphone and the system's microphone permission.@@@
+@id	voice.no_sound_from_the_microphone_yet_check_that_the_ri_84320e7b	$$$No sound from the microphone yet. Check that the right microphone is selected and not muted.@@@
+@id	voice.no_speech_was_recognized_7ff9a913	$$$No speech was recognized.@@@
+@id	voice.not_found_475c8486	$$$Not found@@@
+@id	voice.notecraft_can_t_hear_your_microphone_check_that_it_5f82d9f8	$$$NoteCraft can't hear your microphone. Check that it is connected and not muted, that the right one is chosen in Dictation setup, and that {system} lets desktop apps use it.@@@
+@id	voice.notecraft_couldn_t_save_the_page_so_it_won_t_add_d_5c189933	$$$NoteCraft couldn't save the page, so it won't add dictated words to it yet.@@@
+@id	voice.open_a_page_to_dictate_into_0300e9a6	$$$Open a page to dictate into.@@@
+@id	voice.open_system_microphone_settings_11e3ebb5	$$$Open {system} microphone settings@@@
+@id	voice.page_view_6a49efac	$$$Page view@@@
+@id	voice.portuguese_23882c57	$$$Portuguese@@@
+@id	voice.preview_going_place_2eeaa180	$$$Preview, going {place}@@@
+@id	voice.ready_to_insert_place_7f3f4d09	$$$Ready to insert {place}@@@
+@id	voice.recognition_took_too_long_a_smaller_model_such_as_fff73af3	$$$Recognition took too long. A smaller model, such as base or tiny, is faster.@@@
+@id	voice.recognizer_program_whisper_cli_eb53d9da	$$$Recognizer program (whisper-cli)@@@
+@id	voice.refresh_56e3badc	$$$Refresh@@@
+@id	voice.reopen_the_app_to_start_a_new_target_sequence_907696fc	$$$Reopen the app to start a new target sequence.@@@
+@id	voice.return_to_the_page_view_before_dictating_2c363339	$$$Return to the page view before dictating.@@@
+@id	voice.say_something_9aa1505d	$$$Say something…@@@
+@id	voice.shortcut_e2012dea	$$$Shortcut@@@
+@id	voice.show_the_words_for_review_before_inserting_them_d313939a	$$$Show the words for review before inserting them@@@
+@id	voice.spanish_8df7f1b3	$$$Spanish@@@
+@id	voice.speech_model_3c5f0bfe	$$$Speech model@@@
+@id	voice.starting_the_microphone_26a22bd2	$$$Starting the microphone…@@@
+@id	voice.switch_back_to_the_page_view_to_dictate_e3deb7f8	$$$Switch back to the page view to dictate.@@@
+@id	voice.system_default_9d8d3808	$$$System default@@@
+@id	voice.tap_shortcut_to_start_and_again_to_finish_or_hold_6f592a2d	$$$Tap {shortcut} to start and again to finish, or hold it while you talk.@@@
+@id	voice.test_microphone_49e76fed	$$$Test microphone@@@
+@id	voice.test_recognizer_f042c45f	$$$Test recognizer@@@
+@id	voice.the_computer_fell_behind_while_recording_try_again_e30d7359	$$$The computer fell behind while recording. Try again; closing busy apps helps if it keeps happening.@@@
+@id	voice.the_displayed_draft_is_not_the_accepted_revision_r_3002e242	$$$The displayed draft is not the accepted revision. Review it again before inserting.@@@
+@id	voice.the_microphone_sends_audio_but_it_is_silent_check_d7cf0faa	$$$The microphone sends audio, but it is silent. Check mute switches and that the right microphone is chosen.@@@
+@id	voice.the_page_changed_while_you_were_talking_click_wher_2d22a184	$$$The page changed while you were talking. Click where the words should go and choose Insert again.@@@
+@id	voice.the_page_changed_while_you_were_talking_so_the_wor_41829e1a	$$$The page or cursor changed, so the words went where your cursor is now. Ctrl+Z takes them back.@@@
+@id	voice.the_page_closed_fc708395	$$$The page closed.@@@
+@id	voice.the_paragraph_closed_868b6d17	$$$The paragraph closed.@@@
+@id	voice.the_recognizer_and_the_model_work_11e481ee	$$$The recognizer and the model work.@@@
+@id	voice.the_speech_recognizer_isn_t_set_up_correctly_open_57ac2283	$$$The speech recognizer isn't set up correctly. Open Dictation setup to check the program and the model.@@@
+@id	voice.the_speech_recognizer_model_language_microphone_an_3fece2c0	$$$The speech recognizer, model, language, microphone and shortcut used to dictate into pages.@@@
+@id	voice.the_voice_cache_resolves_into_a_notebook_choose_a_1f9a56e8	$$$The voice cache resolves into a notebook. Choose a local settings folder outside notebooks.@@@
+@id	voice.the_words_are_longer_than_64_kib_shorten_them_befo_74a29916	$$$The words are longer than 64 KiB. Shorten them before inserting.@@@
+@id	voice.there_are_no_words_to_insert_d397d6a5	$$$There are no words to insert.@@@
+@id	voice.these_words_were_for_the_page_title_c7a50f95	$$$These words were for the page "{title}"@@@
+@id	voice.these_words_were_for_the_page_title_choose_insert_27760264	$$$These words were for the page "{title}". Choose Insert on this page to put them here instead.@@@
+@id	voice.these_words_would_become_a_page_tag_edit_the_tag_m_bfed5fa8	$$$These words would become a page tag. Edit the tag marker before inserting.@@@
+@id	voice.this_cursor_position_cannot_preserve_the_existing_ccbd81ed	$$$This cursor position cannot preserve the existing text. Click below the page to append the words instead.@@@
+@id	voice.this_page_format_cannot_preserve_these_literal_wor_fc42673c	$$$This page format cannot preserve these literal words yet. Edit punctuation in the draft, or copy the draft before discarding it.@@@
+@id	voice.this_page_is_read_only_here_so_dictation_can_t_wri_47a8e613	$$$This page is read-only here, so dictation can't write in it.@@@
+@id	voice.try_again_042c862e	$$$Try again@@@
+@id	voice.try_again_a_little_closer_to_the_microphone_30f96ada	$$$Try again, a little closer to the microphone.@@@
+@id	voice.where_to_get_whisper_cli_and_a_model_3b6c0fcb	$$$Where to get whisper-cli and a model@@@
+@id	voice.your_system_3a1356ff	$$$your system@@@
+@id	voice.layout_would_shift	$$$This insertion would move paragraph or table layout. Insert one line, or click below the page to append the words.@@@
+@id	voice.target_changed_review_required	$$$The page or cursor changed. Review the words and choose Insert to use the current position.@@@
+@id	voice.multiline_needs_line_end	$$$Multiple lines need the cursor at the end of a paragraph. Move there, or click below the page to append the words.@@@
