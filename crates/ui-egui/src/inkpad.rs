@@ -211,13 +211,30 @@ impl Pad {
 
     /// Writes it again as a plain picture, beside the ink, for sending somewhere else.
     /// Returns where it was written.
+    ///
+    /// The picture goes into a file of its own, `ink-picture.svg` or the first of
+    /// `ink-picture-2.svg`, `ink-picture-3.svg` … that is free. A file already there may be a
+    /// picture saved earlier and kept on purpose, or something else of the owner's under that
+    /// name, and is never written over (issue #158).
     pub fn save_plain(&self) -> std::io::Result<PathBuf> {
-        let plain = self.file.with_file_name("ink-picture.svg");
-        if let Some(parent) = plain.parent() {
-            std::fs::create_dir_all(parent)?;
+        let folder = self.file.parent().map(Path::to_path_buf).unwrap_or_default();
+        std::fs::create_dir_all(&folder)?;
+        let text = svg::write(&self.drawing, svg::Flavour::Plain);
+        for n in 1usize..=10_000 {
+            let name = if n == 1 { "ink-picture.svg".to_string() } else { format!("ink-picture-{n}.svg") };
+            let plain = folder.join(name);
+            // `create_new` refuses a name that is taken, even one taken a moment ago.
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&plain) {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    file.write_all(text.as_bytes())?;
+                    return Ok(plain);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
         }
-        std::fs::write(&plain, svg::write(&self.drawing, svg::Flavour::Plain))?;
-        Ok(plain)
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "every ink-picture name in this folder is taken"))
     }
 
     /// Moves the strokes of an old inserted sheet onto the page, and says how many came.
@@ -941,6 +958,15 @@ mod tests {
         let text = std::fs::read_to_string(&plain).expect("read");
         assert!(text.contains("<path"), "the picture is there");
         assert!(!text.contains("nc:dabs"), "but the readings are not");
+
+        // Issue #158: saved again, the picture goes into a file of its own, and whatever was
+        // already under the usual name is kept as it was.
+        std::fs::write(&plain, "OWNER'S UNRELATED FILE").expect("the owner's file");
+        let second = again.save_plain().expect("plain again");
+        assert!(second.ends_with("ink-picture-2.svg"), "{}", second.display());
+        assert_eq!(std::fs::read_to_string(&plain).expect("kept"), "OWNER'S UNRELATED FILE");
+        assert!(std::fs::read_to_string(&second).expect("read").contains("<path"));
+        assert!(again.save_plain().expect("third").ends_with("ink-picture-3.svg"));
     }
 
     #[test]
