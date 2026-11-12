@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	段落のテキストに対して適用されます
 @id	ui.keep_this_window_above_the_others	このウィンドウを他のウィンドウの上に固定する
+@id	ui.kept_the_original_drawing_file_path	このページの描画ファイルには NoteCraft で編集できない線が含まれていました。元のファイルは {path} として保存されています。
 @id	ui.label	ラベル
 @id	ui.label_not_built	{label} (未実装)
 @id	ui.label_not_built_yet	{label}: まだ実装されていません

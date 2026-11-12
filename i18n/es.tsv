@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	La justificación se aplica a un párrafo de texto
 @id	ui.keep_this_window_above_the_others	Mantener esta ventana por encima de las demás
+@id	ui.kept_the_original_drawing_file_path	El archivo de dibujo de esta página tenía trazos que NoteCraft no puede editar. El archivo original se conserva como {path}.
 @id	ui.label	label
 @id	ui.label_not_built	{label} (no compilado)
 @id	ui.label_not_built_yet	{label}: aún no compilado
