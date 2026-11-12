@@ -549,6 +549,25 @@ mod tests {
         assert_eq!(ink_files(&page), vec!["ink-2.svg".to_string(), "ink.svg".to_string()], "named in order, and only ours");
     }
 
+    /// Issue #126: an ordinary SVG with a character across byte 4096 is read as a picture.
+    /// The head the scan reads is cut at 4096 bytes, which split the character, and looking
+    /// for the namespace in it panicked while the page was being opened.
+    #[test]
+    fn a_character_across_the_head_of_an_svg_does_not_stop_the_page_opening() {
+        let t = crate::testing::TempDir::new("ink-files-unicode");
+        let s = crate::settings::Settings::at(t.path().join("s.toml"));
+        let nb = crate::ops::create_notebook(&t.path().join("nb"), "NB", None, &s).expect("nb");
+        let page = crate::ops::create_node(&nb, "P", notecraft_model::NodeKind::Page, None, &s).expect("page");
+        let mut svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><!--".to_string();
+        svg.push_str(&"a".repeat(4095 - svg.len()));
+        svg.push_str("\u{e9}--><rect width=\"1\" height=\"1\"/></svg>");
+        assert!(!svg.is_char_boundary(4096), "the character crosses byte 4096");
+        fs::write(page.join("ordinary.svg"), &svg).expect("write");
+
+        assert!(ink_files(&page).is_empty(), "an ordinary picture, not ink");
+        assert!(load_page(&page).is_ok());
+    }
+
     use super::*;
     use crate::ops;
     use crate::settings::Settings;
