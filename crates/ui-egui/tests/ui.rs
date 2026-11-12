@@ -2114,6 +2114,52 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
 }
 
+/// Issues #155 and #156: Redo puts back a stroke Undo took, and Undo on a page just opened
+/// does not take away the ink it was opened with.
+#[test]
+fn undo_and_redo_of_ink_follow_what_was_done_this_session() {
+    let (_t, mut app, s) = sample_app("ui-ink-undo-redo");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Pen red").click();
+    pump(&mut h);
+    let info = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let origin = info.pointer("/page/origin").and_then(Value::as_array).expect("page origin");
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+    let y = oy + 160.0;
+    ask(&mut h, "ui.press", json!({"x": ox + 60.0, "y": y})).expect("press");
+    pump(&mut h);
+    for x in [ox + 120.0, ox + 180.0, ox + 240.0] {
+        ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("draw");
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.release", json!({"x": ox + 240.0, "y": y})).expect("release");
+    settle(&mut h);
+    let strokes = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64();
+    assert_eq!(strokes(&mut h), Some(1), "one stroke drawn");
+
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(0), "undo took it back");
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(1), "redo put it back");
+    assert_ne!(h.state().status(), "Nothing to redo");
+
+    // Away and back: the stroke is on the page it was saved with, and nothing was done since.
+    ask(&mut h, "ui.open", json!({"path": &s.md_page.to_string_lossy()})).expect("another page");
+    settle(&mut h);
+    ask(&mut h, "ui.open", json!({"path": &s.html_page.to_string_lossy()})).expect("back");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(1));
+    ask(&mut h, "ui.undo", json!({})).expect("undo with nothing done");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(1), "the saved stroke is not taken away");
+}
+
 /// Every tool on the rack can be picked up. This is the test that was missing when a
 /// second interact was laid over each pen for its right-click menu: later widgets win in
 /// egui, so the left click was swallowed and only the eraser, which had no such overlay,
