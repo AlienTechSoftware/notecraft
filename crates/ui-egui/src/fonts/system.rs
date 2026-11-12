@@ -42,6 +42,7 @@ impl Catalog {
 
     /// Adds every font file in `folder` to `database`. Windows keeps per-user fonts in a folder the
     /// system scan does not read, so the catalog reads it as well.
+    #[cfg(any(test, target_os = "windows"))]
     pub(crate) fn load_fonts_folder(database: &mut fontdb::Database, folder: &std::path::Path) {
         if folder.is_dir() {
             database.load_fonts_dir(folder);
