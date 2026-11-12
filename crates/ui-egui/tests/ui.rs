@@ -98,7 +98,11 @@ fn harness(app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
 /// be clicked.
 fn sized_harness(mut app: NoteCraftApp, theme: Theme, size: egui::Vec2) -> Harness<'static, NoteCraftApp> {
     app.set_theme(theme);
-    Harness::builder().with_size(size).with_accessibility_check(false).wgpu().build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
+    Harness::builder()
+        .with_size(size)
+        .with_accessibility_check(false)
+        .renderer(support::gpu::renderer())
+        .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
 }
 
 /// Feeds the clicks, keys and text that control requests queued into the next frame, then runs it.
@@ -115,10 +119,26 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
 /// that until its autosave fires, so any test that had typed, drawn or inserted anything
 /// tripped over `run` - four of them did, on four separate days, each looking like a
 /// flake because it passed when run alone. Not calling `run` here is what stops the fifth.
+///
+/// Background work gets half a second of wall-clock time, measured with a clock, and the window
+/// steps 26 frames. It used to sleep 20 ms twenty-five times instead, which is the same half
+/// second only where a sleep lasts as long as it was asked to. On the hosted macOS runners a
+/// 20 ms sleep lasts about 100 ms, so every call took two and a half seconds, and the UI suite
+/// spent 98% of its macOS time asleep. Now no sleep runs past the half second; the frames that
+/// are left are stepped at once.
 fn settle(h: &mut Harness<'_, NoteCraftApp>) {
+    const BACKGROUND: Duration = Duration::from_millis(500);
+    let deadline = std::time::Instant::now() + BACKGROUND;
     for _ in 0..25 {
         pump(h);
-        std::thread::sleep(Duration::from_millis(20));
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if !left.is_zero() {
+            std::thread::sleep(left.min(Duration::from_millis(20)));
+        }
+    }
+    let left = deadline.saturating_duration_since(std::time::Instant::now());
+    if !left.is_zero() {
+        std::thread::sleep(left);
     }
     pump(h);
 }
@@ -1892,7 +1912,7 @@ fn the_control_port_works_end_to_end() {
 
 #[test]
 fn display_math_paints_ink_inside_its_box() {
-    let mut h = Harness::builder().with_size(egui::vec2(400.0, 160.0)).wgpu().build_ui(|ui| {
+    let mut h = Harness::builder().with_size(egui::vec2(400.0, 160.0)).renderer(support::gpu::renderer()).build_ui(|ui| {
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, egui::Color32::WHITE);
         notecraft_ui_egui::fonts::install_once(ui.ctx());
@@ -1949,7 +1969,7 @@ fn picking_a_swatch_changes_the_theme_and_is_remembered() {
     let mut h2 = Harness::builder()
         .with_size(egui::vec2(1200.0, 760.0))
         .with_accessibility_check(false)
-        .wgpu()
+        .renderer(support::gpu::renderer())
         .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     assert_eq!(h2.state().theme(), Theme { mode: Mode::Dark, accent: Accent::Purple });
@@ -2401,7 +2421,7 @@ fn the_rack_can_be_arranged_and_is_remembered() {
     let mut h2 = Harness::builder()
         .with_size(egui::vec2(1200.0, 760.0))
         .with_accessibility_check(false)
-        .wgpu()
+        .renderer(support::gpu::renderer())
         .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     let reopened = ask(&mut h2, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();

@@ -84,6 +84,11 @@ pub struct Pad {
     pub dirty: bool,
     /// How many strokes in the file were a picture only, with no readings to give back.
     pub flat: usize,
+    /// The file holds more than `drawing` does: it could not be read, or some of its lines are
+    /// a picture only. Before the file is first written over, it is kept beside the ink.
+    pub incomplete: bool,
+    /// Where that file was kept, once it has been, for the window to say so.
+    pub kept_original: Option<PathBuf>,
     /// The stroke being drawn now, if the pen is down.
     drawing_now: Option<Stroke>,
     /// The strokes being held, by their place in the drawing. Never written to the file:
@@ -128,13 +133,21 @@ impl Pad {
     /// drawn on, so a page nobody has drawn on stays as clean as it was.
     pub fn of_page(page_dir: &Path) -> Pad {
         let file = page_dir.join(FILE);
-        let (drawing, flat) =
-            std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok()).unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
+        let read = std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok());
+        // A file that is there but could not be read, or that holds lines with no readings,
+        // would lose them the first time the ink is written (issue #157).
+        let incomplete = match &read {
+            Some((_, flat)) => *flat > 0,
+            None => file.exists(),
+        };
+        let (drawing, flat) = read.unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
         Pad {
             file,
             drawing,
             dirty: false,
             flat,
+            incomplete,
+            kept_original: None,
             drawing_now: None,
             held: Vec::new(),
             loop_now: Vec::new(),
@@ -154,6 +167,13 @@ impl Pad {
         if let Some(parent) = self.file.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // The file holds what this drawing does not: it is kept, as it was, before it is
+        // written over or taken away, and only then (issue #157).
+        if self.incomplete && self.file.is_file() {
+            let kept = self.keep_original()?;
+            self.kept_original = Some(kept);
+        }
+        self.incomplete = false;
         // A page drawn on and then rubbed clean loses its file rather than keeping an
         // empty one, so a page with no ink has no ink in its folder either.
         if self.drawing.is_empty() {
@@ -169,15 +189,52 @@ impl Pad {
         Ok(())
     }
 
+    /// Copies the ink file as it is to `ink.svg.bak`, or the first free `ink-N.svg.bak`, beside
+    /// it. Not an `.svg`, so nothing takes the copy for the page's ink or for a picture of it.
+    fn keep_original(&self) -> std::io::Result<PathBuf> {
+        let folder = self.file.parent().map(Path::to_path_buf).unwrap_or_default();
+        for n in 1usize..=10_000 {
+            let name = if n == 1 { format!("{FILE}.bak") } else { format!("ink-{n}.svg.bak") };
+            let kept = folder.join(name);
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&kept) {
+                Ok(mut out) => {
+                    let mut original = std::fs::File::open(&self.file)?;
+                    std::io::copy(&mut original, &mut out)?;
+                    return Ok(kept);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "every name for keeping the original ink file is taken"))
+    }
+
     /// Writes it again as a plain picture, beside the ink, for sending somewhere else.
     /// Returns where it was written.
+    ///
+    /// The picture goes into a file of its own, `ink-picture.svg` or the first of
+    /// `ink-picture-2.svg`, `ink-picture-3.svg` … that is free. A file already there may be a
+    /// picture saved earlier and kept on purpose, or something else of the owner's under that
+    /// name, and is never written over (issue #158).
     pub fn save_plain(&self) -> std::io::Result<PathBuf> {
-        let plain = self.file.with_file_name("ink-picture.svg");
-        if let Some(parent) = plain.parent() {
-            std::fs::create_dir_all(parent)?;
+        let folder = self.file.parent().map(Path::to_path_buf).unwrap_or_default();
+        std::fs::create_dir_all(&folder)?;
+        let text = svg::write(&self.drawing, svg::Flavour::Plain);
+        for n in 1usize..=10_000 {
+            let name = if n == 1 { "ink-picture.svg".to_string() } else { format!("ink-picture-{n}.svg") };
+            let plain = folder.join(name);
+            // `create_new` refuses a name that is taken, even one taken a moment ago.
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&plain) {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    file.write_all(text.as_bytes())?;
+                    return Ok(plain);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
         }
-        std::fs::write(&plain, svg::write(&self.drawing, svg::Flavour::Plain))?;
-        Ok(plain)
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "every ink-picture name in this folder is taken"))
     }
 
     /// Moves the strokes of an old inserted sheet onto the page, and says how many came.
@@ -836,6 +893,47 @@ mod tests {
         assert!(pad.file.ends_with(FILE), "the ink sits beside the page: {}", pad.file.display());
     }
 
+    /// Issue #157: an ink file that holds lines with no readings, or that cannot be read at all,
+    /// is kept as it was before new ink is written over it, and only once.
+    #[test]
+    fn ink_that_cannot_all_be_read_is_kept_before_it_is_written_over() {
+        let original = "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M10 10 L50 50\" stroke=\"red\"/></svg>";
+        for (label, text) in [("a picture's path", original), ("not an SVG at all", "this is not a drawing")] {
+            let t = TempDir::new("ink-keep-original");
+            let page = t.path().to_path_buf();
+            std::fs::write(page.join(FILE), text).expect("an ink file of someone else's");
+            let mut pad = Pad::of_page(&page);
+            assert!(pad.incomplete, "{label}: the file holds more than the strokes read from it");
+
+            assert!(pad.drawing.add(stroke(10.0)));
+            pad.dirty = true;
+            pad.save().expect("saved");
+            let kept = pad.kept_original.take().expect("the original was kept");
+            assert_eq!(kept, page.join("ink.svg.bak"), "{label}");
+            assert_eq!(std::fs::read_to_string(&kept).expect("kept"), text, "{label}: kept as it was");
+            assert!(!crate::inkpad::is_old_sheet("ink.svg.bak"));
+
+            // Saving again does not keep another copy: the file is NoteCraft's own now.
+            assert!(pad.drawing.add(stroke(20.0)));
+            pad.save().expect("saved again");
+            assert_eq!(pad.kept_original, None, "{label}");
+            assert!(!page.join("ink-2.svg.bak").exists(), "{label}");
+        }
+
+        // A file of NoteCraft's own, read whole, is written over as before, with nothing kept.
+        let t = TempDir::new("ink-keep-own");
+        let page = t.path().to_path_buf();
+        let mut pad = Pad::of_page(&page);
+        assert!(pad.drawing.add(stroke(10.0)));
+        pad.save().expect("saved");
+        let mut again = Pad::of_page(&page);
+        assert!(!again.incomplete);
+        assert!(again.drawing.add(stroke(30.0)));
+        again.save().expect("saved");
+        assert_eq!(again.kept_original, None);
+        assert!(!page.join("ink.svg.bak").exists());
+    }
+
     #[test]
     fn ink_is_written_beside_the_page_and_comes_back_as_strokes() {
         let t = TempDir::new("ink-layer-save");
@@ -860,6 +958,15 @@ mod tests {
         let text = std::fs::read_to_string(&plain).expect("read");
         assert!(text.contains("<path"), "the picture is there");
         assert!(!text.contains("nc:dabs"), "but the readings are not");
+
+        // Issue #158: saved again, the picture goes into a file of its own, and whatever was
+        // already under the usual name is kept as it was.
+        std::fs::write(&plain, "OWNER'S UNRELATED FILE").expect("the owner's file");
+        let second = again.save_plain().expect("plain again");
+        assert!(second.ends_with("ink-picture-2.svg"), "{}", second.display());
+        assert_eq!(std::fs::read_to_string(&plain).expect("kept"), "OWNER'S UNRELATED FILE");
+        assert!(std::fs::read_to_string(&second).expect("read").contains("<path"));
+        assert!(again.save_plain().expect("third").ends_with("ink-picture-3.svg"));
     }
 
     #[test]

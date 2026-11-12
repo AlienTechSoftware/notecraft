@@ -322,6 +322,7 @@
 @id	ui.json	JSON
 @id	ui.justification_goes_on_a_paragraph_of_text	对齐方式应用于一段文本
 @id	ui.keep_this_window_above_the_others	保持此窗口位于其他窗口之上
+@id	ui.kept_the_original_drawing_file_path	此页面的绘图文件包含 NoteCraft 无法编辑的线条。原始文件已保存为 {path}。
 @id	ui.label	标签
 @id	ui.label_not_built	{label}（未构建）
 @id	ui.label_not_built_yet	{label}：尚未构建

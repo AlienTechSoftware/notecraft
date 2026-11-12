@@ -1,6 +1,6 @@
 # Testing NoteCraft
 
-Last reviewed: 2026-11-07.
+Last reviewed: 2026-11-12.
 
 Quality is not negotiable here, so the project is tested on several levels. The UI testing
 follows the method of the other Craft apps: no committed golden pictures, paired comparisons
@@ -101,6 +101,24 @@ not part of `cargo xtask ci` or the pre-push hook, because a coverage run rebuil
 
 When a change raises coverage, run `--update` in the same pull request, so the new figure
 lands with the code that earned it and git keeps the history.
+
+## Continuous integration
+
+[`ci.yml`](../.github/workflows/ci.yml) runs the same gates on every pull request and on main:
+fmt, clippy, the static checks, coverage, and a build and test on Linux, Windows and macOS.
+
+- **Prose-only pull requests skip the Rust jobs.** When every changed path is top-level
+  Markdown, `SKILLS/`, `work/`, or `docs/` other than the files tests read (`docs/demo/`,
+  `docs/commands.md`, `docs/coverage.json`), the build, test, clippy and coverage jobs are
+  skipped. fmt and the static checks (links, text style, PII) still run. Pushes to main always
+  run everything. The `CI` status job fails if the change filter itself fails, so a skip can
+  never pass by accident.
+- **UI tests wait by the clock, not by counting sleeps.** `settle` in
+  `crates/ui-egui/tests/ui.rs` gives background work half a second measured with a clock. The
+  hosted macOS runners oversleep about five times, so counting twenty-five 20 ms sleeps made the
+  UI suite take 14 minutes there instead of 3.
+- **UI tests share one offscreen GPU device per test binary** (`tests/support/gpu.rs`), as the
+  icon tests do. Each window still gets its own renderer and textures.
 
 ## Clipboard in tests
 
