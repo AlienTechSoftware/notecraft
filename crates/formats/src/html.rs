@@ -638,7 +638,9 @@ impl Writer {
                 // Block-level img with size: output as HTML. Inline or no size: use markdown.
                 if (width.is_some() || height.is_some()) && self.href.is_empty() && !self.in_cell {
                     self.block_break();
-                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    // `attr` gave the values unescaped; they are escaped again for the tag, so a quote
+                    // in the text cannot end the attribute (issue #109).
+                    let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(&src), escape(&alt));
                     if let Some(w) = width {
                         img_tag.push_str(&format!(" width=\"{}\"", w as i32));
                     }
