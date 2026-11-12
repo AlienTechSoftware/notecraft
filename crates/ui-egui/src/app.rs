@@ -7455,7 +7455,8 @@ impl NoteCraftApp {
         // one that answers, or Ctrl+Z would mean two different things on one page.
         let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
         if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
-            self.step_back(false);
+            // The ink's as well as the page's, whichever Undo took back.
+            self.redo();
         } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
             // The ink's changes as well as the page's: whichever was last, or both when one
             // press made them together.
