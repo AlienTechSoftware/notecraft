@@ -98,14 +98,6 @@ fn find(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
     None
 }
 
-// Backslashes stay literal inside code and legacy link destinations.
-fn find_raw(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
-    if pat.is_empty() || chars.len() < pat.len() {
-        return None;
-    }
-    (from..=chars.len() - pat.len()).find(|&i| chars.get(i..i + pat.len()) == Some(pat))
-}
-
 /// Where the run of exactly `run` backticks that closes a code span starts, looking from
 /// `from`. A longer or shorter run is part of the code.
 fn closing_ticks(chars: &[char], from: usize, run: usize) -> Option<usize> {
