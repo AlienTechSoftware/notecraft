@@ -74,9 +74,11 @@ fn num(v: f32) -> String {
 /// the same strokes without the pen's readings - is not an ink file either, which is what
 /// keeps it from being adopted back as one.
 ///
-/// Only the opening tag is read, so this can be asked of a large file cheaply.
+/// Only the opening tag is read, so this can be asked of a large file cheaply. The first
+/// 4096 bytes are cut at a character's edge: a character across that byte panicked the slice
+/// and took down the page that held the file (issue #126).
 pub fn is_ink(text: &str) -> bool {
-    let head = &text[..text.len().min(4096)];
+    let head = &text[..text.floor_char_boundary(4096)];
     match find_tag(head, "<svg") {
         Some(open) => open.contains(NS),
         None => false,
@@ -288,6 +290,22 @@ mod tests {
         assert!(!super::is_ink(&super::write(&drawing, super::Flavour::Plain)), "the plain copy is a picture, not ink");
         assert!(!super::is_ink("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"), "someone else's picture");
         assert!(!super::is_ink("not svg at all"));
+    }
+
+    /// Issue #126: a character across byte 4096 does not panic the look at the head, whether
+    /// the text is whole or a head read lossily, which can end in a replacement character.
+    #[test]
+    fn a_character_across_byte_4096_is_not_split() {
+        let mut svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><!--".to_string();
+        svg.push_str(&"a".repeat(4095 - svg.len()));
+        svg.push_str("\u{e9}--><rect width=\"1\" height=\"1\"/></svg>");
+        assert!(!svg.is_char_boundary(4096));
+        assert!(!super::is_ink(&svg));
+        let lossy = String::from_utf8_lossy(&svg.as_bytes()[..4096]).into_owned();
+        assert!(lossy.ends_with('\u{fffd}') && !lossy.is_char_boundary(4096));
+        assert!(!super::is_ink(&lossy));
+        let ours = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"{}\">{}\u{e9}", super::NS, "a".repeat(4096));
+        assert!(super::is_ink(&ours), "ink is still known with long text after its tag");
     }
 
     use super::*;

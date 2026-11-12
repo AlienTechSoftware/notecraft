@@ -492,10 +492,17 @@ pub fn save_body(dir: &Path, body: &str) -> Result<String> {
 
 /// Writes a file by writing a temporary file next to it and renaming it over the
 /// target, so a crash cannot leave half a page.
+///
+/// A page file larger than [`MAX_PAGE_BYTES`] is refused before anything is written: it could
+/// not be opened again, and the page on disk is kept as it was. The limit is on the whole
+/// file, head and all, because that is what [`load_page`] measures (issue #113).
 pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent()
         && crate::tree::page_file(parent).is_some_and(|(_, page)| page == path)
     {
+        if text.len() > MAX_PAGE_BYTES {
+            return Err(StoreError::invalid("this page is too large to save"));
+        }
         snapshot_current(parent, path, false)?;
     }
     write_atomic_file(path, text)
@@ -512,6 +519,32 @@ fn write_atomic_file(path: &Path, text: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Issue #113: a body at the limit was saved, but the page file round it was larger than
+    /// the limit, so the page could not be opened again. A save that would make the file too
+    /// large is refused and the page is left as it was; one that fits opens again.
+    #[test]
+    fn every_page_that_saves_opens_again() {
+        let t = crate::testing::TempDir::new("page-size-limit");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        for format in [notecraft_model::PageFormat::Html, notecraft_model::PageFormat::Cmgfm] {
+            let page = crate::ops::create_node(&notebook, &format!("Page {}", format.id()), notecraft_model::NodeKind::Page, Some(format), &settings)
+                .expect("page");
+            save_body(&page, "kept").expect("a small save");
+            let (_, file) = crate::tree::page_file(&page).expect("the page file");
+            let before = fs::read_to_string(&file).expect("the page file");
+
+            let full = "a".repeat(MAX_PAGE_BYTES);
+            assert!(save_body(&page, &full).is_err(), "{format:?}: a body at the limit leaves no room for the page round it");
+            assert_eq!(fs::read_to_string(&file).expect("the page file"), before, "{format:?}: the refused save changed nothing");
+            assert_eq!(load_page(&page).expect("the kept page opens").body.trim(), "kept");
+
+            let fits = "a".repeat(MAX_PAGE_BYTES - 64 * 1024);
+            save_body(&page, &fits).expect("a body that fits with its head");
+            assert_eq!(load_page(&page).expect("the saved page opens again").body.trim().len(), fits.len(), "{format:?}");
+        }
+    }
+
     #[test]
     fn page_versions_restore_the_saved_page_file() {
         let t = crate::testing::TempDir::new("page-versions");
@@ -547,6 +580,25 @@ mod tests {
         fs::write(page.join("notes.txt"), "words").expect("write");
 
         assert_eq!(ink_files(&page), vec!["ink-2.svg".to_string(), "ink.svg".to_string()], "named in order, and only ours");
+    }
+
+    /// Issue #126: an ordinary SVG with a character across byte 4096 is read as a picture.
+    /// The head the scan reads is cut at 4096 bytes, which split the character, and looking
+    /// for the namespace in it panicked while the page was being opened.
+    #[test]
+    fn a_character_across_the_head_of_an_svg_does_not_stop_the_page_opening() {
+        let t = crate::testing::TempDir::new("ink-files-unicode");
+        let s = crate::settings::Settings::at(t.path().join("s.toml"));
+        let nb = crate::ops::create_notebook(&t.path().join("nb"), "NB", None, &s).expect("nb");
+        let page = crate::ops::create_node(&nb, "P", notecraft_model::NodeKind::Page, None, &s).expect("page");
+        let mut svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><!--".to_string();
+        svg.push_str(&"a".repeat(4095 - svg.len()));
+        svg.push_str("\u{e9}--><rect width=\"1\" height=\"1\"/></svg>");
+        assert!(!svg.is_char_boundary(4096), "the character crosses byte 4096");
+        fs::write(page.join("ordinary.svg"), &svg).expect("write");
+
+        assert!(ink_files(&page).is_empty(), "an ordinary picture, not ink");
+        assert!(load_page(&page).is_ok());
     }
 
     use super::*;

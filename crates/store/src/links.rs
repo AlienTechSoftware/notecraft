@@ -67,8 +67,10 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
     }
     // A link of our own: the path after the scheme is read from each open notebook's
     // folder, so the same link works from any page and in any notebook that holds it.
-    if href.len() >= SCHEME.len() && href[..SCHEME.len()].eq_ignore_ascii_case(SCHEME) {
-        let rest = href[SCHEME.len()..].trim_start_matches('/');
+    // `get` rather than slicing: the first bytes of a link such as `../日本語.txt` end inside a
+    // character, and a slice there panics (issue #102).
+    if let Some(rest) = href.get(..SCHEME.len()).filter(|head| head.eq_ignore_ascii_case(SCHEME)).map(|_| &href[SCHEME.len()..]) {
+        let rest = rest.trim_start_matches('/');
         let rest = rest.split(['#', '?']).next().unwrap_or("");
         let decoded = percent_decode(rest);
         if decoded.is_empty() || decoded.contains('\\') || decoded.contains('\0') {
@@ -323,6 +325,20 @@ mod tests {
         assert_eq!(resolve(&root, &a, "https://example.test/x?y#z"), Link::Web("https://example.test/x?y#z".into()));
         assert_eq!(resolve(&root, &a, " mailto:someone@example.test "), Link::Web("mailto:someone@example.test".into()));
         assert_eq!(resolve(&root, &a, ""), Link::Missing(a));
+    }
+
+    /// Issue #102: a link whose first bytes end inside a character panicked on the check for
+    /// `notecraft:`. Each of these has a character across byte 10, the length of the scheme.
+    #[test]
+    fn a_link_with_characters_across_the_scheme_length_does_not_panic() {
+        let (_t, root, a, _b) = fixture("links-unicode");
+        for href in ["../日本語.txt", "日本語語.txt", "aééééé.txt", "notecraf日本"] {
+            assert!(href.len() > SCHEME.len() && !href.is_char_boundary(SCHEME.len()), "{href} must straddle the scheme length");
+            assert!(matches!(resolve(&root, &a, href), Link::Missing(_) | Link::Outside), "{href}");
+            assert!(matches!(resolve_in(std::slice::from_ref(&root), &a, href), Link::Missing(_) | Link::Outside), "{href}");
+        }
+        std::fs::write(a.join("assets").join("日本語.txt"), b"text").expect("a file with a Japanese name");
+        assert_eq!(resolve(&root, &a, "assets/日本語.txt"), Link::File(a.join("assets").join("日本語.txt")));
     }
 
     #[test]

@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	ایپ کی ترجیحات ری سیٹ نہیں کی جا سکیں: {error}
 @id	ui.could_not_restore_the_link_for_name_error	{name} کے لنک کو بحال نہیں کیا جا سکا: {error}
 @id	ui.could_not_save_the_interface_language_error	انٹرفیس کی زبان محفوظ نہیں کی جا سکی: {error}
+@id	ui.could_not_save_the_interface_size_error	انٹرفیس کا سائز محفوظ نہیں ہو سکا: {error}
 @id	ui.could_not_store_printout_page_page_error	پرنٹ آؤٹ صفحہ {page} محفوظ نہیں کیا جا سکا: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} اشیاء، {colour} رنگ
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	{name} اور {count} پرنٹ آؤٹ صفحات شامل کر دیے گئے
 @id	ui.interface_language	انٹرفیس کی زبان
 @id	ui.interface_language_language	انٹرفیس کی زبان: {language}
+@id	ui.interface_size	انٹرفیس کا سائز
+@id	ui.interface_size_hint	اس اسکرین پر ربن، مینو اور صفحے کو بڑا یا چھوٹا کرتا ہے۔
+@id	ui.interface_size_percent	{percent}%
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	مسائل، روڈ میپ اور دستاویزات سب وہاں موجود ہیں۔ NoteCraft خود بخود اس یا کسی اور سروس سے بات نہیں کرتا۔
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	یہ اس لیے درج ہے تاکہ صفحے کا فولڈر خفیہ نہ ہو۔
 @id	ui.italic	ترچھا

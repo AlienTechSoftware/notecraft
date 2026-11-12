@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	앱 기본 설정을 초기화할 수 없음: {error}
 @id	ui.could_not_restore_the_link_for_name_error	{name}의 링크를 복원할 수 없음: {error}
 @id	ui.could_not_save_the_interface_language_error	인터페이스 언어를 저장할 수 없음: {error}
+@id	ui.could_not_save_the_interface_size_error	인터페이스 크기를 저장할 수 없습니다: {error}
 @id	ui.could_not_store_printout_page_page_error	인쇄 페이지 {page}를 저장할 수 없음: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count}개 항목, {colour}색상
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	{count} 및 {name} 인쇄물 페이지 삽됨
 @id	ui.interface_language	인터페이스 언어
 @id	ui.interface_language_language	인터페이스 언어: {language}
+@id	ui.interface_size	인터페이스 크기
+@id	ui.interface_size_hint	이 화면에서 리본, 메뉴, 페이지를 크게 또는 작게 표시합니다.
+@id	ui.interface_size_percent	{percent}%
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	이슈, 로드맵 및 문서가 모두 여기에 있습니다. NoteCraft는 자체적으로 이 서비스나 다른 어떤 서비스와도 통신하지 않습니다.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	페이지 폴더가 비밀이 아니도록 목록에 표시됩니다.
 @id	ui.italic	기울임

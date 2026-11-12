@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	No se ha podido restablecer las preferencias de la aplicación: {error}
 @id	ui.could_not_restore_the_link_for_name_error	No se ha podido restaurar el vínculo de {name}: {error}
 @id	ui.could_not_save_the_interface_language_error	No se ha podido guardar el idioma de la interfaz: {error}
+@id	ui.could_not_save_the_interface_size_error	No se pudo guardar el tamaño de la interfaz: {error}
 @id	ui.could_not_store_printout_page_page_error	No se ha podido almacenar la página de impresión {page}: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} elementos, color {colour}
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	Se han insertado {name} y {count} páginas de impresión
 @id	ui.interface_language	Idioma de la interfaz
 @id	ui.interface_language_language	Idioma de la interfaz: {language}
+@id	ui.interface_size	Tamaño de la interfaz
+@id	ui.interface_size_hint	Agranda o reduce la cinta, los menús y la página en esta pantalla.
+@id	ui.interface_size_percent	{percent} %
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Los problemas, la hoja de ruta y la documentación están todos ahí. Nada en NoteCraft se comunica con ello ni con ningún otro servicio por sí mismo.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Está listado para que la carpeta de la página no sea un secreto.
 @id	ui.italic	Cursiva
