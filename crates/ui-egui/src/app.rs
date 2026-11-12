@@ -320,6 +320,8 @@ struct Editor {
     format: PageFormat,
     title: String,
     title_buf: String,
+    /// The page has a title of its own; `title` is only the fallback name when it has not.
+    titled: bool,
     body: String,
     /// What the page's file holds, as last read or written, so a save that would not change it
     /// is not made: a save rewrites the file, which on a synced folder can take a second.
@@ -539,8 +541,17 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, &name));
         egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
-    if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
-        *rename = Some(ed.title_buf.trim().to_string());
+    if r.lost_focus() {
+        let typed = ed.title_buf.trim();
+        if typed.is_empty() {
+            // Clearing the title of a page that had one makes it untitled, as the blank title
+            // area shows; it used to be dropped, and the old title came back on reopen (#132).
+            if ed.titled {
+                *rename = Some(String::new());
+            }
+        } else if !ed.titled || typed != ed.title {
+            *rename = Some(typed.to_string());
+        }
     }
     // The rule under the name, as OneNote draws one. The date the page carries sits under
     // it already, as the first block of the page.
@@ -1568,6 +1579,7 @@ impl NoteCraftApp {
                 dir: dir.to_path_buf(),
                 format: page.format,
                 title_buf,
+                titled: page.has_title,
                 title: page.title,
                 saved_body: page.body.clone(),
                 saving: None,
@@ -6020,7 +6032,8 @@ impl NoteCraftApp {
             && self.run("node.title", &params(&[("path", &path_str(&dir)), ("title", &t)])).is_some()
         {
             if let Some(ed) = self.editor.as_mut() {
-                ed.title = t;
+                ed.titled = !t.is_empty();
+                ed.title = if t.is_empty() { notecraft_store::tree::UNTITLED_PAGE.to_string() } else { t };
             }
             self.say(crate::tl_id!("ui.title_saved"));
         }
