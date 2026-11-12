@@ -344,6 +344,8 @@ struct Writer {
     lists: Vec<(bool, usize)>, // (ordered, counter)
     in_pre: bool,
     in_code: bool,
+    /// Where the open inline code's text starts, in `cell` inside a table and `out` elsewhere.
+    code_at: Option<usize>,
     pre_diagram: bool,
     /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
     div_diagram: bool,
@@ -556,9 +558,23 @@ impl Writer {
             ("i" | "em", _) => self.push("*"),
             ("s" | "del" | "strike", _) => self.push("~~"),
             ("u" | "sub" | "sup", closing) => self.push(&format!("<{}{name}>", if closing { "/" } else { "" })),
-            ("code", closing) if !self.in_pre => {
-                self.in_code = !closing;
-                self.push("`");
+            ("code", false) if !self.in_pre => {
+                self.in_code = true;
+                self.code_at = Some(if self.in_cell { self.cell.len() } else { self.out.len() });
+            }
+            ("code", true) if !self.in_pre => {
+                self.in_code = false;
+                // The code is written with the delimiters it needs once all of it is known: a
+                // backtick inside it would otherwise end it early (issue #107).
+                if let Some(at) = self.code_at.take() {
+                    let buffer = if self.in_cell { &mut self.cell } else { &mut self.out };
+                    if buffer.is_char_boundary(at) {
+                        let code = buffer.split_off(at);
+                        if !code.is_empty() {
+                            buffer.push_str(&crate::render::code_span(&code));
+                        }
+                    }
+                }
             }
             ("pre", false) => {
                 self.block_break();
