@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	无法重置应用偏好设置：{error}
 @id	ui.could_not_restore_the_link_for_name_error	无法恢复 {name} 的链接：{error}
 @id	ui.could_not_save_the_interface_language_error	无法保存界面语言：{error}
+@id	ui.could_not_save_the_interface_size_error	无法保存界面大小：{error}
 @id	ui.could_not_store_printout_page_page_error	无法存储打印页面 {page}：{error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} 个项目，{colour} 种颜色
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	已插入 {name} 和 {count} 打印页
 @id	ui.interface_language	界面语言
 @id	ui.interface_language_language	界面语言：{language}
+@id	ui.interface_size	界面大小
+@id	ui.interface_size_hint	在此屏幕上放大或缩小功能区、菜单和页面。
+@id	ui.interface_size_percent	{percent}%
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	问题、路线图和文档都在那里。NoteCraft 不会主动与其或任何其他服务通信。
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	列出此项是为了让页面文件夹不成为秘密。
 @id	ui.italic	斜体
