@@ -635,6 +635,38 @@ fn ctrl_f_in_the_page_goes_to_search_and_writes_nothing() {
     }
 }
 
+/// Issue #148: on a new page, a click in the blank space under the date line puts a caret
+/// there, and what is typed is kept, in both formats.
+#[test]
+fn a_click_under_a_new_pages_date_starts_writing() {
+    for format in ["html", "cmgfm"] {
+        let (_t, app, s) = sample_app("ui-new-page-click");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let section = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+        let made = ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "format": format}}))
+            .expect("page");
+        let page = made.as_str().expect("a path").to_string();
+        ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+        settle(&mut h);
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        let origin = state.pointer("/page/origin").and_then(Value::as_array).expect("page origin");
+        let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+
+        for (dx, dy) in [(60.0, 90.0), (200.0, 180.0)] {
+            ask(&mut h, "ui.click", json!({"x": ox + dx, "y": oy + dy})).expect("click under the date");
+            settle(&mut h);
+            let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["caret"].clone();
+            assert!(!caret.is_null(), "{format}: a click at +{dx},+{dy} under the date puts a caret: {state}");
+        }
+        ask(&mut h, "ui.text", json!({"text": "TEST EMPTY AREA"})).expect("type");
+        settle(&mut h);
+        h.state_mut().save_page_now();
+        let saved = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": page}})).expect("load");
+        assert!(saved["body"].as_str().is_some_and(|b| b.contains("TEST EMPTY AREA")), "{format}: what was typed is kept: {saved}");
+    }
+}
+
 /// The caret lives in the page: clicking a block and typing changes that block, and the page
 /// is written back in its own format. This is the editor the owner asked for, so it is tested
 /// for both formats.
