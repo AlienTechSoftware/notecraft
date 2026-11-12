@@ -2147,6 +2147,13 @@ fn undo_and_redo_of_ink_follow_what_was_done_this_session() {
     ask(&mut h, "ui.redo", json!({})).expect("redo");
     settle(&mut h);
     assert_eq!(strokes(&mut h), Some(1), "redo put it back");
+    // The keys do the same as the buttons: Ctrl+Z takes the stroke back, Ctrl+Y puts it back.
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("Ctrl+Z");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(0), "Ctrl+Z took it back");
+    ask(&mut h, "ui.key", json!({"key": "Y", "ctrl": true})).expect("Ctrl+Y");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(1), "Ctrl+Y put it back");
     assert_ne!(h.state().status(), "Nothing to redo");
 
     // Away and back: the stroke is on the page it was saved with, and nothing was done since.
