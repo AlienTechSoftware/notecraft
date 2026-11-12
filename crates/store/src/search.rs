@@ -107,4 +107,17 @@ mod tests {
     fn a_missing_root_is_empty_not_an_error() {
         assert!(search(Path::new("/definitely/not/here"), "x", 5).is_empty());
     }
+
+    /// Issue #105: a word that is partly bold on an HTML page is found as the word it reads as.
+    #[test]
+    fn a_partly_formatted_word_on_an_html_page_is_found() {
+        let t = TempDir::new("search-html-inline");
+        let s = Settings::at(t.path().join("s.toml"));
+        let root = t.path().join("nb");
+        let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
+        let page = ops::create_node(&nb, "Plain", NodeKind::Page, Some(PageFormat::Html), &s).expect("page");
+        save_body(&page, "<p>The for<b>mat</b> of co<i>op</i>eration</p>").expect("save");
+        assert_eq!(search(&root, "format", 10).len(), 1);
+        assert_eq!(search(&root, "the format of cooperation", 10).len(), 1);
+    }
 }
