@@ -1118,6 +1118,49 @@ fn a_page_can_be_added_between_two_others() {
     );
 }
 
+/// Issue #132: clearing a page's title and clicking away makes the page untitled. The title
+/// area, the tree and the page as it is opened again all agree; before, the blank area was
+/// never saved and the old title came back.
+#[test]
+fn clearing_a_page_title_makes_it_untitled() {
+    let (_t, mut app, s) = sample_app("ui-clear-title");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let title =
+        h.get_all_by_role(egui::accesskit::Role::TextInput).find(|node| node.value().as_deref() == Some("Project X")).expect("the title box").rect();
+    ask(&mut h, "ui.click", json!({"x": title.center().x, "y": title.center().y})).expect("click the title");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("clear");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state.pointer("/page/titleArea").and_then(Value::as_str), Some(""), "the title area was cleared");
+    let origin = state.pointer("/page/origin").and_then(Value::as_array).expect("page origin");
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0), origin[1].as_f64().unwrap_or(0.0));
+    ask(&mut h, "ui.click", json!({"x": ox + 80.0, "y": oy + 120.0})).expect("click into the page");
+    settle(&mut h);
+
+    let page = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": s.html_page.to_string_lossy()}})).expect("load");
+    assert_eq!(page.pointer("/title").and_then(Value::as_str), Some("Untitled page"), "saved untitled: {page}");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let rows = state.pointer("/rows").and_then(Value::as_array).expect("tree rows");
+    let path = s.html_page.to_string_lossy().into_owned();
+    assert!(
+        rows.iter().any(|row| row.get("title").and_then(Value::as_str) == Some("Untitled page")),
+        "the tree shows the page as untitled: {rows:?}"
+    );
+    assert!(!rows.iter().any(|row| row.get("title").and_then(Value::as_str) == Some("Project X")), "and no longer by its old title");
+
+    ask(&mut h, "ui.open", json!({"path": &s.md_page.to_string_lossy()})).expect("another page");
+    settle(&mut h);
+    ask(&mut h, "ui.open", json!({"path": path})).expect("back");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state.pointer("/page/titleArea").and_then(Value::as_str), Some(""), "still untitled when opened again");
+}
+
 /// The "+" between two pages is a circle. It is wider than the thin gap it sits in, so it
 /// is only round if the painter is given room for it; clipped to the gap it comes out a
 /// lozenge, flat at the top and the bottom. Measured in the pixels, since that is the only

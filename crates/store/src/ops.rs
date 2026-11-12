@@ -396,14 +396,17 @@ pub fn set_color(dir: &Path, color: Option<NodeColor>) -> Result<()> {
 /// says what the title said: a heading someone has edited themselves is theirs, and is
 /// left alone.
 pub fn set_title(dir: &Path, title: &str) -> Result<()> {
-    let title = clean_title(title)?;
     if let Some((format, file)) = page_file(dir) {
+        // A page may have no title: an empty one is written as an empty title key, which is
+        // how a page reads as untitled, and its heading is left as it is (issue #132).
+        let title = if title.trim().is_empty() { String::new() } else { clean_title(title)? };
         let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
         let was = tree::raw_title(format, &text).unwrap_or_default();
         let renamed = write_page_title(format, &text, &title);
-        let out = retitle_heading(&renamed, &was, &title, format);
+        let out = if title.is_empty() { renamed } else { retitle_heading(&renamed, &was, &title, format) };
         write_atomic(&file, &out)
     } else {
+        let title = clean_title(title)?;
         let file = dir.join("_node.toml");
         let text = fs::read_to_string(&file).map_err(|_| StoreError::NotFound(format!("{} is not a NoteCraft folder", dir.display())))?;
         write_atomic(&file, &kv::replace_line(&text, "title =", &format!("title = {}", kv::quote(&title))))
@@ -686,7 +689,27 @@ mod tests {
         assert_eq!(read_node(&html_page).map(|i| i.title).as_deref(), Some("A & B"));
         assert_eq!(read_node(&md_page).map(|i| i.title).as_deref(), Some("Say \"hi\""));
         assert_eq!(read_node(&nb).map(|i| i.title).as_deref(), Some("Renamed"));
-        assert!(set_title(&md_page, "  ").is_err());
+        assert!(set_title(&nb, "  ").is_err(), "a notebook or section needs a title");
+    }
+
+    /// Issue #132: a page's title can be cleared, in both formats. The page is then untitled,
+    /// as a new page is, and stays so when it is opened again; its heading is left alone.
+    #[test]
+    fn a_page_title_can_be_cleared() {
+        let t = TempDir::new("ops-clear-title");
+        let s = settings(&t);
+        let nb = create_notebook(&root(&t), "NB", None, &s).expect("nb");
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let page = create_node(&nb, "Named Page", NodeKind::Page, Some(format), &s).expect("page");
+            crate::page::save_body(&page, if format == PageFormat::Html { "<p>words</p>" } else { "words\n" }).expect("body");
+            set_title(&page, "  ").expect("cleared");
+            let loaded = crate::page::load_page(&page).expect("load");
+            assert!(!loaded.has_title, "{format:?}: the page is untitled");
+            assert_eq!(read_node(&page).map(|i| i.title).as_deref(), Some(crate::tree::UNTITLED_PAGE), "{format:?}");
+            assert!(loaded.body.contains("words"), "{format:?}: the body is as it was");
+            set_title(&page, "Named again").expect("titled again");
+            assert_eq!(read_node(&page).map(|i| i.title).as_deref(), Some("Named again"), "{format:?}");
+        }
     }
 
     #[test]
