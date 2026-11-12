@@ -43,6 +43,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 
 /// Where the pen rack and the tool in hand are remembered between runs.
 const RACK_KEY: &str = "pen_rack";
+/// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
+const UI_SCALE_KEY: &str = "ui_scale";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
@@ -728,6 +730,10 @@ pub struct NoteCraftApp {
     tokens: Tokens,
     mode_pref: ModePref,
     ui_language: String,
+    /// The size the whole window is drawn at, in percent of the system's own scale, and
+    /// whether it still has to be handed to egui.
+    ui_scale: u16,
+    ui_scale_pending: bool,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -850,6 +856,12 @@ impl NoteCraftApp {
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         let wizard_format = session.settings.global_format().0;
+        let ui_scale = session
+            .settings
+            .get(UI_SCALE_KEY)
+            .and_then(|v| v.trim().parse::<u16>().ok())
+            .filter(|percent| backstage::UI_SCALES.contains(percent))
+            .unwrap_or(100);
         let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
@@ -880,6 +892,8 @@ impl NoteCraftApp {
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
             ui_language,
+            ui_scale,
+            ui_scale_pending: ui_scale != 100,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -1100,6 +1114,24 @@ impl NoteCraftApp {
             self.status = crate::tl_id!("ui.ready_2").to_string();
             self.status_is_error = false;
         }
+    }
+
+    /// The size the whole window is drawn at, in percent of the system's own scale.
+    pub fn ui_scale(&self) -> u16 {
+        self.ui_scale
+    }
+
+    /// Draws the whole window larger or smaller, for a screen where the system's own scale
+    /// leaves the ribbon and the menus too small to read, and remembers the choice.
+    pub fn set_ui_scale(&mut self, percent: u16) {
+        if let Err(error) = self.session.settings.set(UI_SCALE_KEY, &percent.to_string()) {
+            let error = error.to_string();
+            let message = crate::i18n::format_message_id("ui.could_not_save_the_interface_size_error", &[("error", &error)]);
+            self.complain(&message);
+            return;
+        }
+        self.ui_scale = percent;
+        self.ui_scale_pending = true;
     }
 
     /// Applies the chosen theme to egui when it changed, and refreshes the tokens.
@@ -2586,6 +2618,7 @@ impl NoteCraftApp {
                 session_id.as_deref(),
                 &ui_language,
                 &languages,
+                self.ui_scale,
                 &tokens,
             );
         });
@@ -2623,6 +2656,7 @@ impl NoteCraftApp {
                 backstage::Act::SetUiLanguage(language) => {
                     self.set_ui_language(language);
                 }
+                backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
                 backstage::Act::OpenTelemetryFolder(path) => {
                     // The folder is made on first use: it does not exist until a session has
                     // written to it, and Explorer opens Documents for a folder it cannot find.
@@ -6196,7 +6230,11 @@ impl NoteCraftApp {
                     });
                 if reset {
                     match self.session.settings.reset() {
-                        Ok(()) => self.dialog = Some(self.first_use_wizard()),
+                        Ok(()) => {
+                            self.ui_scale = 100;
+                            self.ui_scale_pending = true;
+                            self.dialog = Some(self.first_use_wizard());
+                        }
                         Err(e) => {
                             self.complain(&crate::i18n::format_message_id("ui.could_not_reset_app_preferences_error", &[("error", &e.to_string())]))
                         }
@@ -7307,6 +7345,12 @@ impl NoteCraftApp {
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
         self.apply_theme(ctx);
+        // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
+        // change the same factor, and are left alone in between.
+        if self.ui_scale_pending {
+            ctx.set_zoom_factor(f32::from(self.ui_scale) / 100.0);
+            self.ui_scale_pending = false;
+        }
         if self.window_level_pending {
             let level = if self.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
