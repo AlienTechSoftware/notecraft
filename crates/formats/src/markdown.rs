@@ -106,6 +106,24 @@ fn find_raw(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
     (from..=chars.len() - pat.len()).find(|&i| chars.get(i..i + pat.len()) == Some(pat))
 }
 
+/// Where the run of exactly `run` backticks that closes a code span starts, looking from
+/// `from`. A longer or shorter run is part of the code.
+fn closing_ticks(chars: &[char], from: usize, run: usize) -> Option<usize> {
+    let mut i = from;
+    while i < chars.len() {
+        if chars[i] == '`' {
+            let len = chars[i..].iter().take_while(|&&c| c == '`').count();
+            if len == run {
+                return Some(i);
+            }
+            i += len;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 fn slice(chars: &[char], a: usize, b: usize) -> &[char] {
     chars.get(a..b).unwrap_or(&[])
 }
@@ -327,9 +345,19 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 i += 2;
             }
             '`' => {
-                if let Some(end) = find_raw(chars, i + 1, &['`']) {
+                // A code span opens with a run of backticks and closes at the next run of
+                // exactly as many, so a backtick inside it is code (issue #107). A run with no
+                // partner is literal text.
+                let run = chars[i..].iter().take_while(|&&c| c == '`').count();
+                if let Some(end) = closing_ticks(chars, i + run, run) {
                     push_text(&mut out, &mut buf, &st, &link);
-                    let code: String = slice(chars, i + 1, end).iter().collect();
+                    let code: String = slice(chars, i + run, end).iter().collect();
+                    // One space each side is padding when both are there, as CommonMark has it,
+                    // so a span can start or end with a backtick.
+                    let code = match code.strip_prefix(' ').and_then(|c| c.strip_suffix(' ')) {
+                        Some(inner) if !code.chars().all(|c| c == ' ') => inner.to_string(),
+                        _ => code,
+                    };
                     out.push(Span {
                         text: code,
                         code: true,
@@ -343,10 +371,10 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                         link: link.clone(),
                         ..Span::default()
                     });
-                    i = end + 1;
+                    i = end + run;
                 } else {
-                    buf.push(c);
-                    i += 1;
+                    buf.extend(std::iter::repeat_n('`', run));
+                    i += run;
                 }
             }
             // `***x***` is bold and italic together, which is how both marks on one run are written.

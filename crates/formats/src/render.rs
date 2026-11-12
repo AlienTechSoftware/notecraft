@@ -234,6 +234,22 @@ fn marked(spans: &[Span], level: usize, literal: &Literal) -> String {
 }
 
 /// One span with nothing but its code, picture, maths or link written round it.
+/// Inline code written so it reads back as the same text (issue #107). The delimiter is one
+/// backtick more than the longest run inside, and a space pads each side when the code starts
+/// or ends with a backtick, or starts and ends with a space, which the reader takes off again.
+pub(crate) fn code_span(text: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in text.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let ticks = "`".repeat(longest + 1);
+    let pad = text.starts_with('`') || text.ends_with('`') || (text.starts_with(' ') && text.ends_with(' ') && text.trim() != "");
+    let pad = if pad { " " } else { "" };
+    format!("{ticks}{pad}{text}{pad}{ticks}")
+}
+
 fn leaf(s: &Span, literal: &Literal) -> String {
     let styled = |text: String| inline_style(s, inline_marks(s, text));
     if let Some(src) = &s.image {
@@ -247,7 +263,7 @@ fn leaf(s: &Span, literal: &Literal) -> String {
     if s.math {
         return styled(format!("${}$", s.text));
     }
-    let text = if s.code { format!("`{}`", s.text) } else { literal.escape(&s.text) };
+    let text = if s.code { code_span(&s.text) } else { literal.escape(&s.text) };
     let text = match &s.link {
         Some(target) => format!("[{text}]({target})"),
         None => text,
@@ -643,6 +659,48 @@ fn b() {}"
             let again = parse(&html::to_markdown(&written));
             assert_eq!(blocks, again, "\n--- body ---\n{body}\n--- written ---\n{written}");
         }
+    }
+
+    /// Issue #107: inline code holding backticks, or starting or ending with one or with a
+    /// space, comes back as the same single span in both formats.
+    #[test]
+    fn inline_code_holding_backticks_stays_one_span() {
+        let tick = "`";
+        for text in [
+            format!("a{tick}b"),
+            format!("a{0}{0}b{0}c", tick),
+            format!("{tick}start"),
+            format!("end{tick}"),
+            tick.to_string(),
+            " padded ".to_string(),
+            "  two  ".to_string(),
+            " ".to_string(),
+            "plain".to_string(),
+        ] {
+            let original = vec![Block::Paragraph(vec![
+                Span { text: "see ".into(), ..Span::default() },
+                Span { text: text.clone(), code: true, ..Span::default() },
+                Span { text: " here".into(), ..Span::default() },
+            ])];
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM {text:?}:\n{saved}");
+            // HTML folds a space at the edge of the code into the space before or after it, as a
+            // browser shows it, so those are only kept in CMGFM.
+            if text.starts_with(' ') || text.ends_with(' ') {
+                continue;
+            }
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML {text:?}:\n{html}\n--- read as ---\n{reread}");
+        }
+        // Plain code keeps its one backtick each side.
+        assert_eq!(
+            blocks_to_markdown(&[Block::Paragraph(vec![Span { text: "x".into(), code: true, ..Span::default() }])]),
+            format!("{tick}x{tick}\n")
+        );
+        // A run with no partner of the same length is text.
+        let lone = parse(&format!("a {0}{0} b {0} c\n", tick));
+        assert!(matches!(&lone[..], [Block::Paragraph(spans)] if spans.iter().all(|s| !s.code)), "{lone:?}");
     }
 
     #[test]
