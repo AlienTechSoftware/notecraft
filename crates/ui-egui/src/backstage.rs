@@ -37,6 +37,8 @@ pub enum Act {
     DeleteRecent(std::path::PathBuf, String),
     SetTelemetryLevel(String),
     SetUiLanguage(String),
+    /// Draw the whole window at this size, in percent of the system's own scale.
+    SetUiScale(u16),
     OpenTelemetryFolder(std::path::PathBuf),
     ClearTelemetry(std::path::PathBuf),
     ExportTelemetry(std::path::PathBuf),
@@ -79,6 +81,7 @@ pub fn show(
     session_id: Option<&str>,
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
+    ui_scale: u16,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -92,7 +95,7 @@ pub fn show(
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
                     "About" => about_page(ui, telemetry_root, session_id, t),
-                    "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, ui_language, languages, t, &mut acts),
+                    "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, ui_language, languages, ui_scale, t, &mut acts),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
             });
@@ -399,6 +402,16 @@ fn about_page(ui: &mut Ui, telemetry_root: &std::path::Path, session_id: Option<
     ui.label(egui::RichText::new(label).strong().size(11.5).color(t.text));
 }
 
+/// The sizes the whole window can be drawn at, in percent of the system's own scale. 100 leaves
+/// the system's scale as it is; the larger ones are for a high-resolution screen where the
+/// ribbon and the menus come out too small to read (issue #63).
+pub const UI_SCALES: [u16; 5] = [100, 125, 150, 175, 200];
+
+/// The interface size as it is shown in the Options list.
+fn scale_label(percent: u16) -> String {
+    crate::i18n::format_message_id("ui.interface_size_percent", &[("percent", &percent.to_string())])
+}
+
 fn options_page(
     ui: &mut Ui,
     root: &std::path::Path,
@@ -406,6 +419,7 @@ fn options_page(
     session_id: Option<&str>,
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
+    ui_scale: u16,
     t: &Tokens,
     acts: &mut Vec<Act>,
 ) {
@@ -439,6 +453,19 @@ fn options_page(
                 }
             }
         });
+    ui.add_space(8.0);
+    egui::ComboBox::from_label(crate::tl_id!("ui.interface_size"))
+        .selected_text(scale_label(ui_scale))
+        .popup_style(crate::theme::picker_popup_style(*t))
+        .show_ui(ui, |ui| {
+            for percent in UI_SCALES {
+                if ui.selectable_label(ui_scale == percent, scale_label(percent)).clicked() {
+                    acts.push(Act::SetUiScale(percent));
+                    ui.close();
+                }
+            }
+        });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.interface_size_hint")).size(11.5).color(t.muted));
     ui.add_space(12.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0")).strong().color(t.strong));
     ui.add_space(12.0);
@@ -535,6 +562,7 @@ mod tests {
                 None,
                 crate::i18n::AUTO,
                 &crate::i18n::available_languages(),
+                100,
                 &t,
             );
         });

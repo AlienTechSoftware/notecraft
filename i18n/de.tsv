@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	Die App-Einstellungen konnten nicht zurückgesetzt werden: {error}
 @id	ui.could_not_restore_the_link_for_name_error	Der Link für {name} konnte nicht wiederhergestellt werden: {error}
 @id	ui.could_not_save_the_interface_language_error	Die Schnittstellensprache konnte nicht gespeichert werden: {error}
+@id	ui.could_not_save_the_interface_size_error	Die Oberflächengröße konnte nicht gespeichert werden: {error}
 @id	ui.could_not_store_printout_page_page_error	Die Druckausgabeseite {page} konnte nicht gespeichert werden: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} Elemente, {colour} Farbe
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	{name} und {count} Druckausgabeseiten eingefügt
 @id	ui.interface_language	Oberflächensprache
 @id	ui.interface_language_language	Oberflächensprache: {language}
+@id	ui.interface_size	Oberflächengröße
+@id	ui.interface_size_hint	Vergrößert oder verkleinert Menüband, Menüs und Seite auf diesem Bildschirm.
+@id	ui.interface_size_percent	{percent} %
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Probleme, die Roadmap und die Dokumentation sind hier zu finden. NoteCraft kommuniziert nicht automatisch mit diesem oder anderen Diensten.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Es wird aufgeführt, damit der Ordner der Seite kein Geheimnis bleibt.
 @id	ui.italic	Kursiv

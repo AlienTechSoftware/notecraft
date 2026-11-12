@@ -43,6 +43,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 
 /// Where the pen rack and the tool in hand are remembered between runs.
 const RACK_KEY: &str = "pen_rack";
+/// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
+const UI_SCALE_KEY: &str = "ui_scale";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
@@ -67,6 +69,29 @@ fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
         ui.label(egui::RichText::new(crate::tl!(title)).strong().size(17.0).color(tokens.band_text));
     });
     ui.add_space(10.0);
+}
+
+/// Dims the window behind a modal dialog and takes the clicks that miss the dialog, so they do
+/// not reach the page underneath. Returns the backdrop's layer: the dialog's window keeps itself
+/// above it with [`stay_above`].
+fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
+    let screen = ctx.viewport_rect();
+    egui::Area::new(egui::Id::new(id))
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
+            ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
+        })
+        .response
+        .layer_id
+}
+
+/// Keeps a modal dialog's window directly above its backdrop. Both are foreground areas, and egui
+/// raises an area that is clicked to the top of its order: a click on the dimmed backdrop used to
+/// lift it over the dialog, whose buttons could then never be reached again (issue #98).
+fn stay_above(ui: &Ui, backdrop: egui::LayerId) {
+    ui.ctx().set_sublayer(backdrop, ui.layer_id());
 }
 
 /// Modal actions use a readable size based on their label instead of egui's compact default.
@@ -705,6 +730,10 @@ pub struct NoteCraftApp {
     tokens: Tokens,
     mode_pref: ModePref,
     ui_language: String,
+    /// The size the whole window is drawn at, in percent of the system's own scale, and
+    /// whether it still has to be handed to egui.
+    ui_scale: u16,
+    ui_scale_pending: bool,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -827,6 +856,12 @@ impl NoteCraftApp {
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         let wizard_format = session.settings.global_format().0;
+        let ui_scale = session
+            .settings
+            .get(UI_SCALE_KEY)
+            .and_then(|v| v.trim().parse::<u16>().ok())
+            .filter(|percent| backstage::UI_SCALES.contains(percent))
+            .unwrap_or(100);
         let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
@@ -857,6 +892,8 @@ impl NoteCraftApp {
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
             ui_language,
+            ui_scale,
+            ui_scale_pending: ui_scale != 100,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -1077,6 +1114,24 @@ impl NoteCraftApp {
             self.status = crate::tl_id!("ui.ready_2").to_string();
             self.status_is_error = false;
         }
+    }
+
+    /// The size the whole window is drawn at, in percent of the system's own scale.
+    pub fn ui_scale(&self) -> u16 {
+        self.ui_scale
+    }
+
+    /// Draws the whole window larger or smaller, for a screen where the system's own scale
+    /// leaves the ribbon and the menus too small to read, and remembers the choice.
+    pub fn set_ui_scale(&mut self, percent: u16) {
+        if let Err(error) = self.session.settings.set(UI_SCALE_KEY, &percent.to_string()) {
+            let error = error.to_string();
+            let message = crate::i18n::format_message_id("ui.could_not_save_the_interface_size_error", &[("error", &error)]);
+            self.complain(&message);
+            return;
+        }
+        self.ui_scale = percent;
+        self.ui_scale_pending = true;
     }
 
     /// Applies the chosen theme to egui when it changed, and refreshes the tokens.
@@ -2563,6 +2618,7 @@ impl NoteCraftApp {
                 session_id.as_deref(),
                 &ui_language,
                 &languages,
+                self.ui_scale,
                 &tokens,
             );
         });
@@ -2600,6 +2656,7 @@ impl NoteCraftApp {
                 backstage::Act::SetUiLanguage(language) => {
                     self.set_ui_language(language);
                 }
+                backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
                 backstage::Act::OpenTelemetryFolder(path) => {
                     // The folder is made on first use: it does not exist until a session has
                     // written to it, and Explorer opens Documents for a folder it cannot find.
@@ -6009,14 +6066,7 @@ impl NoteCraftApp {
                 let mut finish = false;
                 let last_step: u8 = 4;
                 let escape = ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape));
-                let screen = ctx.viewport_rect();
-                egui::Area::new(egui::Id::new("first-use-wizard-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(
-                    ctx,
-                    |ui| {
-                        let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
-                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    },
-                );
+                let backdrop = modal_backdrop(ctx, "first-use-wizard-modal-backdrop");
                 let panel = self.tokens.panel;
                 let dark = (u32::from(panel.r()) + u32::from(panel.g()) + u32::from(panel.b())) < 384;
                 let (banner_uri, banner_bytes) = if dark {
@@ -6040,6 +6090,7 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         ui.set_min_width(520.0);
                         if *step == 0 {
                             ui.add(egui::Image::from_bytes(banner_uri, banner_bytes).fit_to_exact_size(vec2(480.0, 240.0)));
@@ -6179,7 +6230,11 @@ impl NoteCraftApp {
                     });
                 if reset {
                     match self.session.settings.reset() {
-                        Ok(()) => self.dialog = Some(self.first_use_wizard()),
+                        Ok(()) => {
+                            self.ui_scale = 100;
+                            self.ui_scale_pending = true;
+                            self.dialog = Some(self.first_use_wizard());
+                        }
                         Err(e) => {
                             self.complain(&crate::i18n::format_message_id("ui.could_not_reset_app_preferences_error", &[("error", &e.to_string())]))
                         }
@@ -6193,14 +6248,7 @@ impl NoteCraftApp {
                 let mut repair = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new(egui::Id::new("missing-attachment-icon-backdrop"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(ctx.viewport_rect().min)
-                    .show(ctx, |ui| {
-                        let response =
-                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
-                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    });
+                let backdrop = modal_backdrop(ctx, "missing-attachment-icon-backdrop");
                 egui::Window::new(crate::tl_id!("ui.attachment_recovery"))
                     .title_bar(false)
                     .collapsible(false)
@@ -6209,6 +6257,7 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.attachment_icon_missing"));
                         ui.set_min_width(520.0);
                         let message =
@@ -6262,14 +6311,7 @@ impl NoteCraftApp {
                 let mut restore = false;
                 let mut leave = false;
                 let mut suppress = self.icon_recovery_suppressed;
-                egui::Area::new(egui::Id::new("unreferenced-attachment-backdrop"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(ctx.viewport_rect().min)
-                    .show(ctx, |ui| {
-                        let response =
-                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
-                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    });
+                let backdrop = modal_backdrop(ctx, "unreferenced-attachment-backdrop");
                 egui::Window::new(crate::tl_id!("ui.attachment_recovery"))
                     .title_bar(false)
                     .collapsible(false)
@@ -6278,6 +6320,7 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.attachment_not_linked"));
                         ui.set_min_width(520.0);
                         let message =
@@ -6326,14 +6369,7 @@ impl NoteCraftApp {
                 let mut open = false;
                 let mut cancel = false;
                 let mut suppress = self.open_attachment_warning_suppressed;
-                egui::Area::new(egui::Id::new("open-attachment-warning-backdrop"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(ctx.viewport_rect().min)
-                    .show(ctx, |ui| {
-                        let response =
-                            ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, ctx.viewport_rect().size()), egui::Sense::click());
-                        ui.painter().rect_filled(response.rect, 0.0, egui::Color32::from_black_alpha(150));
-                    });
+                let backdrop = modal_backdrop(ctx, "open-attachment-warning-backdrop");
                 egui::Window::new(crate::tl_id!("ui.open_attachment"))
                     .title_bar(false)
                     .collapsible(false)
@@ -6342,6 +6378,7 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.open_attachment"));
                         ui.set_min_width(520.0);
                         ui.label(egui::RichText::new(crate::tl_id!("ui.this_file_will_be_opened_by_its_associated_application")).strong());
@@ -6598,11 +6635,7 @@ impl NoteCraftApp {
             Dialog::DeleteFile { page, name } => {
                 let mut go = false;
                 let mut cancel = false;
-                let screen = ctx.viewport_rect();
-                egui::Area::new(egui::Id::new("delete-file-modal-backdrop")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
-                    let response = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, screen.size()), egui::Sense::click());
-                    ui.painter().rect_filled(response.rect, 0.0, Color32::from_black_alpha(150));
-                });
+                let backdrop = modal_backdrop(ctx, "delete-file-modal-backdrop");
                 egui::Window::new(crate::tl_id!("ui.delete_file"))
                     .title_bar(false)
                     .collapsible(false)
@@ -6611,6 +6644,7 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_file"));
                         ui.set_min_width(420.0);
                         ui.label(crate::i18n::format_message_id("ui.delete_assets_name_from_this_page_s_folder", &[("name", name)]));
@@ -7311,6 +7345,12 @@ impl NoteCraftApp {
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
         self.apply_theme(ctx);
+        // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
+        // change the same factor, and are left alone in between.
+        if self.ui_scale_pending {
+            ctx.set_zoom_factor(f32::from(self.ui_scale) / 100.0);
+            self.ui_scale_pending = false;
+        }
         if self.window_level_pending {
             let level = if self.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));

@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	ऐप प्राथमिकताएं रीसेट नहीं कर सका: {error}
 @id	ui.could_not_restore_the_link_for_name_error	{name} के लिए लिंक पुनर्स्थापित नहीं कर सका: {error}
 @id	ui.could_not_save_the_interface_language_error	इंटरफ़ेस भाषा सहेजने में असमर्थ: {error}
+@id	ui.could_not_save_the_interface_size_error	इंटरफ़ेस का आकार सहेजा नहीं जा सका: {error}
 @id	ui.could_not_store_printout_page_page_error	मुद्रण पृष्ठ {page} संग्रहीत नहीं कर सका: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} आइटम, {colour} रंग
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	{name} और {count} प्रिंटआउट पृष्ठ सम्मिलित किए गए
 @id	ui.interface_language	इंटरफ़ेस भाषा
 @id	ui.interface_language_language	इंटरफ़ेस भाषा: {language}
+@id	ui.interface_size	इंटरफ़ेस का आकार
+@id	ui.interface_size_hint	इस स्क्रीन पर रिबन, मेनू और पेज को बड़ा या छोटा करता है।
+@id	ui.interface_size_percent	{percent}%
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	समस्याएं, रोडमैप और दस्तावेज़ीकरण सब उपलब्ध हैं। NoteCraft स्वतः किसी भी सेवा से बात नहीं करता है।
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	इसे सूचीबद्ध किया गया है ताकि पृष्ठ का फ़ोल्डर गुप्त न रहे।
 @id	ui.italic	तिरछा
