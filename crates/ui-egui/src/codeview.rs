@@ -80,6 +80,10 @@ pub struct State {
     pub loaded: Option<String>,
     /// The picked file has been typed in and not yet written.
     pub dirty: bool,
+    /// `text` is only the start of the picked file, cut to [`MAX_SHOWN`]. It is then shown and
+    /// never typed in: what was typed would be written over the whole file, and everything
+    /// after the cut lost with it (issue #124).
+    pub cut: bool,
     /// The page's own file was typed in, so the page has to be read again when the view
     /// closes.
     pub page_edited: bool,
@@ -433,7 +437,9 @@ fn office_text(path: &Path) -> (String, bool) {
         }
         text.push_str("\n\n");
         if text.len() >= MAX_SHOWN {
-            text.truncate(MAX_SHOWN);
+            // Cut at a character's edge: a character across the limit panicked the cut, and
+            // opening the document in the code view took the window down (issue #125).
+            text.truncate(text.floor_char_boundary(MAX_SHOWN));
             return (format!("Package parts: {}\n\n{}", names.join(", "), text), true);
         }
     }
@@ -447,6 +453,22 @@ fn pdf_text(path: &Path) -> (String, bool) {
     let (raw, cut) = read_for_view(path);
     let printable: String = raw.chars().map(|c| if c.is_control() && c != '\n' && c != '\r' && c != '\t' { ' ' } else { c }).collect();
     (format!("PDF source inspection (embedded text may be compressed):\n\n{printable}"), cut)
+}
+
+/// The name egui keeps a picture of the code view under. egui keeps a picture by this name
+/// and draws the kept one when the name comes again, so it carries the file's whole path and
+/// its size and time: two pages' `assets/a.png` are two pictures, and a picture that changed
+/// is drawn anew. Named by its file name alone, the last page's picture was shown for the
+/// next page's (issue #135).
+fn picture_uri(path: &Path) -> String {
+    let meta = std::fs::metadata(path).ok();
+    let bytes = meta.as_ref().map_or(0, std::fs::Metadata::len);
+    // The browser build's file shim has no modification time; there the size alone tells.
+    #[cfg(not(target_arch = "wasm32"))]
+    let nanos = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+    #[cfg(target_arch = "wasm32")]
+    let nanos = 0u128;
+    format!("bytes://source-view/{}#{bytes}-{nanos}", path.display())
 }
 
 fn attachment_icon_name(name: &str) -> String {
@@ -558,7 +580,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 if !entry.used {
                     ui.label(egui::RichText::new(crate::tl_id!("ui.not_used_by_the_page")).small().color(t.warn));
                 }
-                if !entry.kind.editable() {
+                if !entry.kind.editable() || (state.cut && state.loaded.as_deref() == Some(entry.name.as_str())) {
                     ui.label(egui::RichText::new(crate::tl_id!("ui.read_only")).small().color(t.muted));
                 }
                 if entry.kind != Kind::PageFile && ui.small_button(crate::tl_id!("ui.delete_file")).clicked() {
@@ -573,8 +595,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     match std::fs::read(&path) {
                         Ok(bytes) => {
                             egui::ScrollArea::both().id_salt("code-picture").max_height(height - 40.0).show(ui, |ui| {
-                                let uri = format!("bytes://source-view/{}", entry.name);
-                                ui.add(egui::Image::from_bytes(uri, bytes).max_width(ui.available_width()).fit_to_original_size(1.0));
+                                ui.add(egui::Image::from_bytes(picture_uri(&path), bytes).max_width(ui.available_width()).fit_to_original_size(1.0));
                             });
                         }
                         Err(_) => {
@@ -593,8 +614,8 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let icon_path = dir.join(icon.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let fallback_path = dir.join(format!("{}.svg", entry.name).replace('/', std::path::MAIN_SEPARATOR_STR));
                     if let Ok((uri, bytes)) = std::fs::read(&icon_path)
-                        .map(|bytes| (format!("bytes://source-view/{}", icon), bytes))
-                        .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (format!("bytes://source-view/{}.svg", entry.name), bytes)))
+                        .map(|bytes| (picture_uri(&icon_path), bytes))
+                        .or_else(|_| std::fs::read(&fallback_path).map(|bytes| (picture_uri(&fallback_path), bytes)))
                     {
                         ui.horizontal(|ui| {
                             ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(vec2(72.0, 84.0)));
@@ -620,6 +641,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         state.text = text;
                         state.loaded = Some(entry.name.clone());
                         state.dirty = false;
+                        state.cut = cut;
                         if cut {
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
@@ -693,6 +715,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         state.text = text;
                         state.loaded = Some(entry.name.clone());
                         state.dirty = false;
+                        state.cut = cut;
                         if cut {
                             state.text.push_str("\n\n... the rest of this file is not shown here.");
                         }
@@ -790,7 +813,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let jump = std::mem::take(&mut state.find.jump);
                     let select = std::mem::take(&mut state.find.select);
                     let target = state.find.matches.get(state.find.current).copied();
-                    let editable = entry.kind.editable();
+                    let editable = entry.kind.editable() && !state.cut;
                     egui::ScrollArea::vertical().id_salt("code-text").max_height((ui.available_height() - 6.0 - bar_room).max(120.0)).show(
                         ui,
                         |ui| {
@@ -904,6 +927,99 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #125: the text of a Word document with a character across the shown limit is
+    /// cut before that character and said to be cut, rather than panicking.
+    #[test]
+    fn office_text_is_cut_at_a_characters_edge() {
+        use std::io::Write;
+        let t = notecraft_store::testing::TempDir::new("codeview-office-unicode");
+        let path = t.path().join("long.docx");
+        let words = "a".repeat(MAX_SHOWN - 1) + "\u{e9}";
+        let xml = format!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:body></w:document>"
+        );
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).expect("docx"));
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("word/document.xml", options).expect("part");
+        zip.write_all(xml.as_bytes()).expect("write");
+        zip.finish().expect("finish");
+
+        let (text, cut) = office_text(&path);
+        assert!(cut, "the view says the text was cut");
+        assert!(text.contains(&"a".repeat(1000)), "and shows the start of it");
+        assert!(!text.contains('\u{e9}'), "the character across the limit is left out whole");
+    }
+
+    /// Shows the code view for the page file `index.md` in `dir`, types `typed` into its editor,
+    /// and gives what the view asked to be written.
+    fn type_into_page_file(dir: &Path, typed: &str) -> (State, Option<(String, String)>) {
+        let ctx = egui::Context::default();
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let entries = files(dir, "index.md", &[]);
+        let mut state = State::default();
+        let mut wrote = None;
+        let text_id = egui::Id::new(("code-text-edit", "index.md"));
+        for frame in 0..4 {
+            let mut input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 900.0))), ..Default::default() };
+            if frame == 2 {
+                input.events.push(egui::Event::Text(typed.to_string()));
+            }
+            if frame == 1 {
+                ctx.memory_mut(|m| m.request_focus(text_id));
+            }
+            let mut output = ctx.run_ui(input, |ui| {
+                let out = show(ui, &mut state, &entries, dir, &tokens, 800.0);
+                if out.wrote.is_some() {
+                    wrote = out.wrote;
+                }
+            });
+            output.textures_delta.clear();
+        }
+        (state, wrote)
+    }
+
+    /// Issue #124: a file longer than the view shows is read-only. Typing in its cut text used to
+    /// write that text over the whole file, losing everything after the cut, notice and all.
+    #[test]
+    fn a_file_cut_for_the_view_is_not_written_back() {
+        let t = notecraft_store::testing::TempDir::new("codeview-cut-read-only");
+        let dir = t.path().join("page");
+        std::fs::create_dir_all(&dir).expect("page folder");
+        let whole = format!("# Long\n\n{}\n\nEND_SENTINEL\n", "words ".repeat(MAX_SHOWN / 5));
+        std::fs::write(dir.join("index.md"), &whole).expect("page file");
+        let (state, wrote) = type_into_page_file(&dir, "Z");
+        assert!(state.cut, "the file is longer than the view shows");
+        assert_eq!(wrote, None, "nothing typed in a cut file is written");
+        assert_eq!(std::fs::read_to_string(dir.join("index.md")).expect("page file"), whole, "the file is whole");
+
+        // The same steps on a file that fits do type into it, so the steps themselves work.
+        std::fs::write(dir.join("index.md"), "# Short\n").expect("page file");
+        let (state, wrote) = type_into_page_file(&dir, "Z");
+        assert!(!state.cut);
+        assert!(wrote.is_some_and(|(name, text)| name == "index.md" && text.contains('Z')), "a whole file can be typed in");
+    }
+
+    /// Issue #135: two pages' pictures of the same name are kept as two pictures, and a
+    /// picture that is replaced is drawn anew. The code view named each picture by its file
+    /// name alone, so egui drew the first page's `assets/a.png` for the second page's.
+    #[test]
+    fn pictures_of_the_same_name_on_two_pages_are_two_pictures() {
+        let t = notecraft_store::testing::TempDir::new("codeview-picture-names");
+        let red = t.path().join("red").join("assets").join("a.png");
+        let lime = t.path().join("lime").join("assets").join("a.png");
+        for (path, bytes) in [(&red, b"red picture".as_slice()), (&lime, b"lime picture".as_slice())] {
+            std::fs::create_dir_all(path.parent().expect("assets")).expect("folders");
+            std::fs::write(path, bytes).expect("picture");
+        }
+        assert_ne!(picture_uri(&red), picture_uri(&lime), "the page's folder is part of the name");
+        assert_eq!(picture_uri(&red), picture_uri(&red), "the same picture keeps its name between frames");
+
+        let before = picture_uri(&red);
+        std::fs::write(&red, b"a replaced, longer picture").expect("replace");
+        assert_ne!(picture_uri(&red), before, "a replaced picture is a new one");
+    }
 
     #[test]
     fn sizes_read_like_words_not_bytes() {

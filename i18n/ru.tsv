@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	Не удалось сбросить настройки приложения: {error}
 @id	ui.could_not_restore_the_link_for_name_error	Не удалось восстановить ссылку для {name}: {error}
 @id	ui.could_not_save_the_interface_language_error	Не удалось сохранить язык интерфейса: {error}
+@id	ui.could_not_save_the_interface_size_error	Не удалось сохранить размер интерфейса: {error}
 @id	ui.could_not_store_printout_page_page_error	Не удалось сохранить страницу печати {page}: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} элементов, {colour} цвет
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	Вставлены {name} и {count} страниц распечатки
 @id	ui.interface_language	Язык интерфейса
 @id	ui.interface_language_language	Язык интерфейса: {language}
+@id	ui.interface_size	Размер интерфейса
+@id	ui.interface_size_hint	Увеличивает или уменьшает ленту, меню и страницу на этом экране.
+@id	ui.interface_size_percent	{percent} %
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Здесь есть проблемы, дорожная карта и документация. NoteCraft не связывается с ней или другими сервисами самостоятельно.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Она указана, чтобы папка страницы не была секретом.
 @id	ui.italic	Курсив

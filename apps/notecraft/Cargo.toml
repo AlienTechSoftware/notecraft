@@ -23,6 +23,8 @@ rfd = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
 web-time = { workspace = true }
+time = { workspace = true }
+notecraft-model = { workspace = true }
 raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.build-dependencies]

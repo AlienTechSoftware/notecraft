@@ -154,6 +154,13 @@ fn fail(message: &str) -> ! {
 }
 
 fn main() -> eframe::Result {
+    // First, while this is the only thread: on Linux and macOS the offset can only be read
+    // safely then. Timestamps are kept in UTC and shown on the user's clock (issue #133); if
+    // the offset cannot be read they are shown in UTC, as before.
+    let local_offset = time::UtcOffset::current_local_offset();
+    if let Ok(offset) = local_offset {
+        notecraft_model::time::set_local_offset(offset.whole_seconds());
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let settings_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let telemetry_level =
@@ -172,6 +179,10 @@ fn main() -> eframe::Result {
         std::env::current_exe().ok(),
         Settings::default_location().path()
     ));
+    match local_offset {
+        Ok(offset) => applog::info(&format!("local time is UTC{offset}")),
+        Err(error) => applog::info(&format!("local time offset unknown, timestamps are shown in UTC: {error}")),
+    }
     if args.iter().any(|a| a == "--version") {
         println!("notecraft {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
