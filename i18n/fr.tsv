@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	Impossible de réinitialiser les préférences de l'application : {error}
 @id	ui.could_not_restore_the_link_for_name_error	Impossible de restaurer le lien pour {name} : {error}
 @id	ui.could_not_save_the_interface_language_error	Impossible d’enregistrer la langue de l’interface : {error}
+@id	ui.could_not_save_the_interface_size_error	Impossible d’enregistrer la taille de l’interface : {error}
 @id	ui.could_not_store_printout_page_page_error	Impossible de stocker la page d'impression {page} : {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	{count} éléments, couleur {colour}
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	Pages d'impression {name} et {count} insérées
 @id	ui.interface_language	Langue de l’interface
 @id	ui.interface_language_language	Langue de l’interface : {language}
+@id	ui.interface_size	Taille de l’interface
+@id	ui.interface_size_hint	Agrandit ou réduit le ruban, les menus et la page sur cet écran.
+@id	ui.interface_size_percent	{percent} %
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Les tickets, la feuille de route et la documentation s’y trouvent. NoteCraft ne communique de lui-même ni avec ce dépôt ni avec aucun autre service.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Il est répertorié afin que le dossier de la page ne soit pas un secret.
 @id	ui.italic	Italique

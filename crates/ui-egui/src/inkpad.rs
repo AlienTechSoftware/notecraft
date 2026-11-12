@@ -103,6 +103,9 @@ pub struct Pad {
     /// stroke drawn, rubbed out, deleted, moved or stretched), undo puts back what was there.
     kept: Vec<Stroke>,
     undo_steps: Vec<(Vec<Stroke>, std::time::Instant)>,
+    /// The strokes as they were before each undo, newest last, for redo to put back. A new
+    /// change starts a new branch and empties it (issue #155).
+    redo_steps: Vec<Vec<Stroke>>,
     /// Changed since the last finished change was kept.
     touched: bool,
 }
@@ -140,6 +143,7 @@ impl Pad {
             shift: (0.0, 0.0),
             kept: Vec::new(),
             undo_steps: Vec::new(),
+            redo_steps: Vec::new(),
             touched: false,
         }
         .with_kept()
@@ -212,22 +216,34 @@ impl Pad {
         came
     }
 
-    /// Takes the last stroke back.
-    /// Takes the last change to the ink back, whatever it was. With nothing kept to go back to
-    /// (ink drawn before the page was opened), the last stroke goes, as it always did.
+    /// Takes the last change to the ink back, whatever it was, and keeps it for redo. Only a
+    /// change made since the page was opened is taken back: ink that was already on the page
+    /// is where the page starts, not a change, and undo used to delete it (issue #156).
     pub fn undo(&mut self) -> bool {
         self.let_go();
         self.settle();
-        let went = match self.undo_steps.pop() {
-            Some((before, _)) => {
-                self.drawing.strokes = before;
-                true
-            }
-            None => self.drawing.undo(),
-        };
+        let Some((before, _)) = self.undo_steps.pop() else { return false };
+        self.redo_steps.push(std::mem::replace(&mut self.drawing.strokes, before));
         self.kept = self.drawing.strokes.clone();
-        self.dirty |= went;
-        went
+        self.dirty = true;
+        true
+    }
+
+    /// Puts back the change undo last took back, while nothing new has been done since.
+    pub fn redo(&mut self) -> bool {
+        self.let_go();
+        self.settle();
+        let Some(after) = self.redo_steps.pop() else { return false };
+        let before = std::mem::replace(&mut self.drawing.strokes, after);
+        self.undo_steps.push((before, std::time::Instant::now()));
+        self.kept = self.drawing.strokes.clone();
+        self.dirty = true;
+        true
+    }
+
+    /// Whether redo has anything to put back.
+    pub fn can_redo(&self) -> bool {
+        !self.redo_steps.is_empty()
     }
 
     pub fn strokes(&self) -> usize {
@@ -268,6 +284,7 @@ impl Pad {
         }
         let before = std::mem::replace(&mut self.kept, self.drawing.strokes.clone());
         self.undo_steps.push((before, std::time::Instant::now()));
+        self.redo_steps.clear();
         if self.undo_steps.len() > INK_UNDO_STEPS {
             self.undo_steps.remove(0);
         }
@@ -278,9 +295,9 @@ impl Pad {
         self.undo_steps.last().map(|(_, when)| *when)
     }
 
-    /// Whether undo has anything to take back.
+    /// Whether undo has anything to take back: a change made since the page was opened.
     pub fn can_undo(&self) -> bool {
-        !self.undo_steps.is_empty() || !self.drawing.strokes.is_empty()
+        !self.undo_steps.is_empty()
     }
 
     /// Picks up every stroke a selection box touches; `rect` is two corners in page points.
@@ -897,12 +914,68 @@ mod tests {
         assert_eq!(reloaded.drawing.strokes[0].dabs[1].y, 1240.0);
     }
 
+    /// A stroke added as the pen adds one: a change, which undo can take back once it settles.
+    fn draw(pad: &mut Pad, s: Stroke) {
+        assert!(pad.drawing.add(s));
+        pad.touched = true;
+        pad.dirty = true;
+        pad.settle();
+    }
+
+    /// Issue #156: ink that was on the page when it was opened is where the page starts. Undo
+    /// with nothing done since has nothing to take back, and leaves it alone.
+    #[test]
+    fn undo_after_opening_a_page_leaves_its_ink_alone() {
+        let t = TempDir::new("ink-undo-baseline");
+        let page = t.path().to_path_buf();
+        let mut first = Pad::of_page(&page);
+        draw(&mut first, stroke(10.0));
+        first.save().expect("saved");
+
+        let mut reopened = Pad::of_page(&page);
+        assert_eq!(reopened.strokes(), 1);
+        assert!(!reopened.can_undo(), "nothing has been done since the page was opened");
+        assert!(!reopened.undo());
+        assert_eq!(reopened.strokes(), 1, "the saved stroke is still there");
+
+        draw(&mut reopened, stroke(30.0));
+        assert!(reopened.undo(), "a stroke drawn now can be taken back");
+        assert_eq!(reopened.strokes(), 1, "back to the stroke the page was opened with, and no further");
+        assert!(!reopened.undo());
+    }
+
+    /// Issue #155: what undo took back, redo puts back, until something new is done.
+    #[test]
+    fn redo_puts_back_what_undo_took() {
+        let t = TempDir::new("ink-redo");
+        let mut pad = Pad::of_page(t.path());
+        draw(&mut pad, stroke(10.0));
+        draw(&mut pad, stroke(20.0));
+        assert!(!pad.can_redo());
+
+        assert!(pad.undo() && pad.undo());
+        assert_eq!(pad.strokes(), 0);
+        assert!(pad.can_redo());
+        assert!(pad.redo());
+        assert_eq!(pad.strokes(), 1);
+        assert!(pad.redo());
+        assert_eq!(pad.strokes(), 2, "both strokes are back, in order");
+        assert!(!pad.redo(), "and nothing more");
+        assert!(pad.undo(), "what redo put back can be taken back again");
+        assert_eq!(pad.strokes(), 1);
+
+        draw(&mut pad, stroke(40.0));
+        assert!(!pad.can_redo(), "a new stroke starts a new branch");
+        assert!(!pad.redo());
+        assert_eq!(pad.strokes(), 2);
+    }
+
     #[test]
     fn rubbing_a_page_clean_takes_the_file_away_again() {
         let t = TempDir::new("ink-layer-clean");
         let page = t.path().to_path_buf();
         let mut pad = Pad::of_page(&page);
-        pad.drawing.add(stroke(10.0));
+        draw(&mut pad, stroke(10.0));
         pad.save().expect("saved");
         assert!(page.join(FILE).exists());
 

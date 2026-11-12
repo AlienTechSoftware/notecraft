@@ -151,17 +151,35 @@ mod tests {
     }
 
     /// Saves of one page asked for while it is being written become one, of the newest text.
+    ///
+    /// The first write says when it has begun and then holds until the later saves have been
+    /// asked for, so the order is certain. A fixed sleep did not promise that the worker had
+    /// picked up the first save yet; when it had not, all three were rightly made as one and
+    /// the test failed (issue #116).
     #[test]
     fn saves_asked_for_meanwhile_write_only_the_newest_text() {
         let wrote = Arc::new(Mutex::new(Vec::new()));
-        let mut saver = Saver::with_writer(slow(wrote.clone()));
+        let (began, writing) = std::sync::mpsc::channel::<()>();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let gate = Mutex::new(Some((began, held)));
+        let slow = slow(wrote.clone());
+        let mut saver = Saver::with_writer(move |dir, body| {
+            if let Some((began, held)) = gate.lock().expect("lock").take() {
+                let _ = began.send(());
+                let _ = held.recv_timeout(Duration::from_secs(10));
+            }
+            slow(dir, body)
+        });
         saver.submit(Path::new("page"), "one");
-        std::thread::sleep(Duration::from_millis(50));
+        writing.recv_timeout(Duration::from_secs(10)).expect("the first save began");
         saver.submit(Path::new("page"), "two");
         saver.submit(Path::new("page"), "three");
-        saver.wait();
+        release.send(()).expect("let the first save finish");
+        let done = saver.wait();
         let wrote = wrote.lock().expect("lock").clone();
         assert_eq!(wrote, vec!["one".to_string(), "three".to_string()], "the newest text is written last, and only once");
+        assert_eq!(done.iter().map(|saved| saved.jobs).collect::<Vec<_>>(), vec![1, 2], "the second write answers for both saves");
+        assert!(!saver.busy(), "and nothing is left to write");
     }
 
     /// A save that fails says why.
