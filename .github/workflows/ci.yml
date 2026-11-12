@@ -22,6 +22,53 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
+  # Decides whether the Rust jobs need to run at all. A pull request that only touches prose
+  # (Markdown at the top level, `docs/` apart from the files tests read, `SKILLS/`, `work/`)
+  # cannot change a build or a test result, so it skips the build, test, clippy and coverage
+  # jobs; fmt and the static checks (links, text style, PII) still run on it. Pushes to main
+  # and manual runs always run everything.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "pull_request" ]]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Both sides of a rename count: moving code into docs/ is a code change.
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          count=$(printf '%s\n' "$files" | grep -c . || true)
+          code=false
+          # The files API stops at 3000 entries; a list that long or an empty one is not trusted.
+          if [[ "$count" -eq 0 || "$count" -ge 3000 ]]; then code=true; fi
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            case "$f" in
+              # Read by tests: the demo notebooks, the generated command list, the coverage baseline.
+              docs/demo/* | docs/commands.md | docs/coverage.json) code=true ;;
+              docs/* | SKILLS/* | work/*) ;;
+              */*) code=true ;;
+              *.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "$count changed paths; Rust jobs needed: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   fmt:
     name: fmt
     runs-on: ubuntu-24.04
@@ -34,6 +81,8 @@ jobs:
 
   clippy:
     name: clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -51,18 +100,28 @@ jobs:
 
   platform-build-test:
     name: build/test (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Linux stays at two compile jobs: more ran the runner out of disk and memory
+          # (see the infrastructure retry below). The macOS (3 cores) and Windows (4 cores)
+          # runners have no such trouble, and two jobs left a core idle for every build.
           - platform: linux
             runner: ubuntu-24.04
+            build-jobs: "2"
           - platform: windows
             runner: windows-2025
+            build-jobs: "4"
           - platform: macos
             runner: macos-15
+            build-jobs: "3"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: ${{ matrix.build-jobs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Linux build dependencies
@@ -129,6 +188,8 @@ jobs:
 
   coverage:
     name: coverage (warns, never blocks)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     continue-on-error: true
@@ -157,13 +218,32 @@ jobs:
   ci-status:
     name: CI
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, platform-build-test, static, coverage]
+    needs: [changes, fmt, clippy, platform-build-test, static, coverage]
     if: always()
     steps:
       - name: Check CI result
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          BUILD_TEST: ${{ needs.platform-build-test.result }}
+          STATIC: ${{ needs.static.result }}
         run: |
-          if [[ "${{ needs.fmt.result }}" == "failure" || "${{ needs.clippy.result }}" == "failure" || "${{ needs.platform-build-test.result }}" == "failure" || "${{ needs.static.result }}" == "failure" ]]; then
-            echo "Quality checks failed"
+          # The change filter must have succeeded: if it failed, the jobs it gates were skipped,
+          # and a skip must never pass as a green run.
+          if [[ "$CHANGES" != "success" ]]; then
+            echo "The change filter did not succeed ($CHANGES)"
             exit 1
           fi
+          for result in "$FMT" "$STATIC"; do
+            if [[ "$result" != "success" ]]; then echo "Quality checks failed"; exit 1; fi
+          done
+          for result in "$CLIPPY" "$BUILD_TEST"; do
+            if [[ "$CODE" == "true" && "$result" != "success" ]] || [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "Quality checks failed"
+              exit 1
+            fi
+          done
+          if [[ "$CODE" != "true" ]]; then echo "Only prose changed: build, test, clippy and coverage were skipped"; fi
           echo "CI checks passed"
