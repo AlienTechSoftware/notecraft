@@ -14,7 +14,7 @@ pub fn from_table(block: &Block) -> Option<String> {
     let Block::Table { head, rows } = block else { return None };
     let mut out = String::new();
     for row in std::iter::once(head).chain(rows.iter()) {
-        let line: Vec<String> = row.iter().map(|cell| quote(&plain(cell))).collect();
+        let line: Vec<String> = row.iter().map(|cell| quote(&plain(cell), row.len() == 1)).collect();
         out.push_str(&line.join(","));
         out.push('\n');
     }
@@ -26,8 +26,14 @@ fn plain(spans: &[Span]) -> String {
     spans.iter().map(|s| s.text.as_str()).collect()
 }
 
-fn quote(cell: &str) -> String {
-    if cell.contains([',', '"', '\n', '\r']) { format!("\"{}\"", cell.replace('"', "\"\"")) } else { cell.to_string() }
+/// The cell as CSV. The only cell of a row is wrapped when it is blank too: written bare, its
+/// line would be a blank line, which a reader skips, and the rows under it would move up.
+fn quote(cell: &str, alone: bool) -> String {
+    if cell.contains([',', '"', '\n', '\r']) || (alone && cell.trim().is_empty()) {
+        format!("\"{}\"", cell.replace('"', "\"\""))
+    } else {
+        cell.to_string()
+    }
 }
 
 /// A table read back from CSV: the first row is the heading, as it was written out.
@@ -36,9 +42,12 @@ fn quote(cell: &str) -> String {
 /// doubled quote inside one is a quote, and a wrapped cell may hold commas and line
 /// breaks. Anything else is taken as it stands rather than refused, because a spreadsheet
 /// that wrote it is not going to be argued with.
+///
+/// A line with nothing on it is skipped, but a row whose one cell was written as `""` is a
+/// blank row of the table and is kept, so the rows under it stay where they were.
 pub fn to_table(text: &str) -> Option<Block> {
     let rows = rows_of(text);
-    let mut rows = rows.into_iter().filter(|r| !(r.len() == 1 && r[0].trim().is_empty()));
+    let mut rows = rows.into_iter().filter(|(r, quoted)| *quoted || !(r.len() == 1 && r[0].trim().is_empty())).map(|(r, _)| r);
     let head: Vec<Vec<Span>> = rows.next()?.iter().map(|c| literal(c)).collect();
     let body: Vec<Vec<Vec<Span>>> = rows.map(|r| r.iter().map(|c| literal(c)).collect()).collect();
     Some(Block::Table { head, rows: body })
@@ -50,12 +59,13 @@ fn literal(cell: &str) -> Vec<Span> {
     if cell.is_empty() { Vec::new() } else { vec![Span { text: cell.to_string(), ..Span::default() }] }
 }
 
-/// The cells of each line, with quotes undone.
-fn rows_of(text: &str) -> Vec<Vec<String>> {
+/// The cells of each line, with quotes undone, and whether any cell on the line was quoted.
+fn rows_of(text: &str) -> Vec<(Vec<String>, bool)> {
     let mut rows = Vec::new();
     let mut row: Vec<String> = Vec::new();
     let mut cell = String::new();
     let mut quoted = false;
+    let mut any_quoted = false;
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
@@ -70,19 +80,20 @@ fn rows_of(text: &str) -> Vec<Vec<String>> {
             '"' if cell.trim().is_empty() => {
                 cell.clear();
                 quoted = true;
+                any_quoted = true;
             }
             ',' if !quoted => row.push(std::mem::take(&mut cell)),
             '\r' if !quoted => {}
             '\n' if !quoted => {
                 row.push(std::mem::take(&mut cell));
-                rows.push(std::mem::take(&mut row));
+                rows.push((std::mem::take(&mut row), std::mem::take(&mut any_quoted)));
             }
             other => cell.push(other),
         }
     }
-    if !cell.is_empty() || !row.is_empty() {
+    if !cell.is_empty() || !row.is_empty() || any_quoted {
         row.push(cell);
-        rows.push(row);
+        rows.push((row, any_quoted));
     }
     rows
 }
@@ -151,6 +162,22 @@ lines",
             assert!(plain_only, "{input:?} is read without marks");
             assert_eq!(from_table(&table).as_deref(), Some(input), "{input:?} comes back character for character");
         }
+    }
+
+    /// Issue #112: a blank row of a one-column table survives the trip through CSV, and so
+    /// do the rows under it.
+    #[test]
+    fn a_blank_row_of_a_one_column_table_is_kept() {
+        let cell = |text: &str| if text.is_empty() { Vec::new() } else { vec![Span { text: text.into(), ..Span::default() }] };
+        let table = Block::Table { head: vec![cell("Value")], rows: vec![vec![cell("")], vec![cell("value")], vec![cell("  ")]] };
+        let csv = from_table(&table).expect("a table");
+        assert_eq!(csv, "Value\n\"\"\nvalue\n\"  \"\n", "a blank only cell is written quoted");
+        assert_eq!(to_table(&csv), Some(table), "and read back as a row");
+
+        // What a spreadsheet writes for a blank row, with blank lines between the rows that
+        // are not rows.
+        let Some(Block::Table { rows, .. }) = to_table("Value\n\"\"\n\nvalue\n\n") else { panic!("a table") };
+        assert_eq!(rows, vec![vec![cell("")], vec![cell("value")]]);
     }
 
     #[test]
