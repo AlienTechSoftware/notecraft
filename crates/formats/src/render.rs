@@ -84,7 +84,7 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                     img_tag.push_str(">\n");
                     out.push_str(&img_tag);
                 } else {
-                    out.push_str(&format!("![{alt}]({src})\n"));
+                    out.push_str(&format!("![{alt}]({})\n", destination(src)));
                 }
             }
         }
@@ -255,9 +255,9 @@ pub(crate) fn code_span(text: &str) -> String {
 fn leaf(s: &Span, literal: &Literal) -> String {
     let styled = |text: String| inline_style(s, inline_marks(s, text));
     if let Some(src) = &s.image {
-        let image = format!("![{}]({src})", s.text);
+        let image = format!("![{}]({})", s.text, destination(src));
         let image = match &s.link {
-            Some(target) => format!("[{image}]({target})"),
+            Some(target) => format!("[{image}]({})", destination(target)),
             None => image,
         };
         return styled(image);
@@ -267,10 +267,26 @@ fn leaf(s: &Span, literal: &Literal) -> String {
     }
     let text = if s.code { code_span(&s.text) } else { literal.escape(&s.text) };
     let text = match &s.link {
-        Some(target) => format!("[{text}]({target})"),
+        Some(target) => format!("[{text}]({})", destination(target)),
         None => text,
     };
     styled(text)
+}
+
+/// A link or picture address as it is written between `(` and `)`. Balanced parentheses are
+/// left as they are, as in `a(b).pdf`; when they do not pair up, each is written `\(` or `\)`
+/// so the reader does not end the address at the wrong one (issue #108).
+pub(crate) fn destination(target: &str) -> String {
+    let mut depth = 0i32;
+    let balanced = target.chars().all(|c| {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        depth >= 0
+    }) && depth == 0;
+    if balanced { target.to_string() } else { target.replace('(', "\\(").replace(')', "\\)") }
 }
 
 /// Which delimiters a run of spans must quote so its words read back as words.
@@ -739,6 +755,48 @@ fn b() {}"
         assert!(matches!(&lone[..], [Block::Paragraph(spans)] if spans.iter().all(|s| !s.code)), "{lone:?}");
     }
 
+    /// Issue #108: a link or picture address with parentheses in it is kept whole, in both
+    /// formats, whether its parentheses pair up or not.
+    #[test]
+    fn link_addresses_with_parentheses_are_kept_whole() {
+        let parsed = parse("[file](https://example.test/a(b).pdf)\n");
+        let link = |target: &str| vec![Block::Paragraph(vec![Span { text: "file".into(), link: Some(target.into()), ..Span::default() }])];
+        assert_eq!(parsed, link("https://example.test/a(b).pdf"), "a balanced pair stays in the address");
+        assert_eq!(
+            parse("[file](a\\(b.pdf) after\n")[0],
+            Block::Paragraph(vec![
+                Span { text: "file".into(), link: Some("a(b.pdf".into()), ..Span::default() },
+                Span { text: " after".into(), ..Span::default() },
+            ]),
+            "an escaped parenthesis does not count"
+        );
+
+        for target in ["https://example.test/a(b).pdf", "assets/a(b).pdf", "x/(a(b)c).md", "open(.pdf", "close).pdf", ")(", "w/Foo_(bar)"] {
+            let original = link(target);
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM {target:?}:\n{saved}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML {target:?}:\n{html}\n--- read as ---\n{reread}");
+
+            let picture = vec![Block::Image { alt: "pic".into(), src: target.into(), width: None, height: None }];
+            assert_eq!(parse(&blocks_to_markdown(&picture)), picture, "picture {target:?}");
+            assert_eq!(parse(&html::to_markdown(&blocks_to_html(&picture))), picture, "HTML picture {target:?}");
+        }
+        assert_eq!(blocks_to_markdown(&link("a(b).pdf")), "[file](a(b).pdf)\n", "balanced parentheses are written as they are");
+
+        // A link written before quoting existed, to a Windows folder, keeps its last backslash,
+        // even with a parenthesis later in the line.
+        assert_eq!(parse("[file](C:\\Notes\\)\n"), link("C:\\Notes\\"));
+        assert_eq!(
+            parse("[file](C:\\Notes\\) and (more) text\n")[0],
+            Block::Paragraph(vec![
+                Span { text: "file".into(), link: Some("C:\\Notes\\".into()), ..Span::default() },
+                Span { text: " and (more) text".into(), ..Span::default() },
+            ])
+        );
+    }
+
     #[test]
     fn html_escapes_everything_that_matters() {
         let blocks = parse("A <script> & \"quotes\" in **bold**\n");
@@ -746,8 +804,10 @@ fn b() {}"
         assert!(html.contains("&lt;script&gt;"), "{html}");
         assert!(html.contains("&amp;"));
         assert!(!html.contains("<script>"));
-        let link = parse("[x](\"onerror=alert(1))\n");
-        assert!(!blocks_to_html(&link).contains("onerror=alert(1)\""));
+        // A quote in an address is escaped, so it cannot end the attribute and start another.
+        let link = blocks_to_html(&parse("[x](\"onerror=alert(1))\n"));
+        assert!(link.contains("href=\"&quot;onerror=alert(1)\""), "{link}");
+        assert!(!link.contains("\"onerror"), "{link}");
     }
 
     #[test]

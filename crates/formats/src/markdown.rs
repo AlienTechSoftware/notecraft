@@ -518,13 +518,41 @@ fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
     if chars.get(close + 1) != Some(&'(') {
         return None;
     }
-    let end = find_raw(chars, close + 2, &[')'])?;
     let label: String = slice(chars, start + 1, close).iter().collect();
-    let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
-    if url.contains(char::is_whitespace) {
-        return None;
+    // Read first with `\(` and `\)` as quoted parentheses. A link written before quoting
+    // existed may end in a Windows folder, `C:\Notes\)`, whose last backslash is part of the
+    // path: when the quoted reading finds no end, or one that takes in words after the link,
+    // the backslashes are read as they stand.
+    for quoted in [true, false] {
+        let Some(end) = destination_end(chars, close + 2, quoted) else { continue };
+        let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
+        if url.contains(char::is_whitespace) {
+            continue;
+        }
+        let url = if quoted { url.replace("\\(", "(").replace("\\)", ")") } else { url };
+        return Some((label, url, end + 1));
     }
-    Some((label, url, end + 1))
+    None
+}
+
+/// The `)` that ends a link's destination starting at `from`. Parentheses inside it nest, as
+/// in `a(b).pdf`, and with `quoted`, `\(` or `\)` is a parenthesis that does not count, so
+/// the first `)` is not taken for the end (issue #108).
+fn destination_end(chars: &[char], from: usize, quoted: bool) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = from;
+    while let Some(&c) = chars.get(i) {
+        match c {
+            '\\' if quoted && matches!(chars.get(i + 1), Some('(' | ')')) => i += 1,
+            '(' if depth < 32 => depth += 1,
+            '(' => return None,
+            ')' if depth == 0 => return Some(i),
+            ')' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 fn is_table_separator(line: &str) -> bool {

@@ -627,7 +627,7 @@ impl Writer {
             }
             ("a", true) => {
                 let href = self.href.pop().flatten().unwrap_or_default();
-                self.push(&format!("]({href})"));
+                self.push(&format!("]({})", crate::render::destination(&href)));
             }
             ("img", _) => {
                 let alt = attr(attrs, "alt").unwrap_or_default();
@@ -649,12 +649,12 @@ impl Writer {
                     self.push(&img_tag);
                     self.block_break();
                 } else {
-                    self.push(&format!("![{alt}]({src})"));
+                    self.push(&format!("![{alt}]({})", crate::render::destination(&src)));
                 }
             }
             ("video" | "audio", false) => {
                 let src = attr(attrs, "src").unwrap_or_default();
-                self.push(&format!("![{name}]({src})"));
+                self.push(&format!("![{name}]({})", crate::render::destination(&src)));
             }
             ("table", false) => {
                 self.block_break();
