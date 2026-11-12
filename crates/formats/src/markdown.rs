@@ -558,7 +558,8 @@ fn parse_attr(tag: &str, name: &str) -> Option<String> {
     let marker = format!("{name}=\"");
     let start = lower.find(&marker)? + marker.len();
     let end = tag.get(start..)?.find('"')?;
-    tag.get(start..start + end).map(str::to_string)
+    // The value as it was before it was escaped for the tag: `&quot;` is a quote in the text.
+    tag.get(start..start + end).map(crate::html::unescape)
 }
 
 fn try_parse_img_block(line: &str) -> Option<Block> {

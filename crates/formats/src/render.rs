@@ -72,7 +72,8 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
             Block::Rule => out.push_str("---\n"),
             Block::Image { alt, src, width, height } => {
                 if width.is_some() || height.is_some() {
-                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    // Escaped, so a quote in the text cannot end the attribute (issue #109).
+                    let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(src), escape(alt));
                     if let Some(w) = width {
                         img_tag.push_str(&format!(" width=\"{}\"", *w as i32));
                     }
@@ -643,6 +644,24 @@ fn b() {}"
             let again = parse(&html::to_markdown(&written));
             assert_eq!(blocks, again, "\n--- body ---\n{body}\n--- written ---\n{written}");
         }
+    }
+
+    /// Issue #109: a resized picture whose alt text or address holds a quote, an ampersand or
+    /// an angle bracket keeps all of it, in both formats.
+    #[test]
+    fn a_resized_picture_keeps_quotes_in_its_alt_text() {
+        for (alt, src) in
+            [("a\"b", "assets/a.png"), ("Tom & \"Jerry\" <3", "assets/t&j.png"), ("it's", "assets/q\"uote.png"), ("&amp; literal", "assets/a.png")]
+        {
+            let original = vec![Block::Image { alt: alt.into(), src: src.into(), width: Some(100.0), height: Some(80.0) }];
+            let md = blocks_to_markdown(&original);
+            assert_eq!(parse(&md), original, "CMGFM:\n{md}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML:\n{html}\n--- read as ---\n{reread}");
+        }
+        let md = blocks_to_markdown(&[Block::Image { alt: "a\"b".into(), src: "assets/a.png".into(), width: Some(100.0), height: None }]);
+        assert_eq!(md, "<img src=\"assets/a.png\" alt=\"a&quot;b\" width=\"100\">\n");
     }
 
     #[test]
