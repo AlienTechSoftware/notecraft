@@ -110,18 +110,39 @@ pub fn unescape(s: &str) -> String {
     out.replace("&amp;", "&")
 }
 
-/// Plain text of an HTML fragment: tags removed, entities decoded.
+/// Tags that mark words inside a line. They join what is on either side of them, so the
+/// letters of `for<b>mat</b>` stay one word; every other tag ends a word.
+const INLINE_TAGS: &[&str] = &[
+    "a", "abbr", "b", "bdi", "bdo", "big", "cite", "code", "del", "dfn", "em", "font", "i", "ins", "kbd", "mark", "q", "s", "samp", "small", "span",
+    "strike", "strong", "sub", "sup", "time", "tt", "u", "var", "wbr",
+];
+
+/// Plain text of an HTML fragment: tags removed, entities decoded. A tag that starts or ends
+/// a block, a line break or a cell leaves a space behind; formatting inside a line leaves
+/// nothing, so a word that is partly bold is still one word (issue #105).
 pub fn strip_tags(html: &str) -> String {
-    let (mut out, mut in_tag) = (String::new(), false);
+    let (mut out, mut tag, mut in_tag) = (String::new(), String::new(), false);
     for c in html.chars() {
         match c {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                out.push(' ');
+            '<' => {
+                in_tag = true;
+                tag.clear();
             }
-            c if !in_tag => out.push(c),
-            _ => {}
+            '>' if in_tag => {
+                in_tag = false;
+                let name: String = tag
+                    .trim_start()
+                    .trim_start_matches('/')
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if !INLINE_TAGS.contains(&name.as_str()) {
+                    out.push(' ');
+                }
+            }
+            c if in_tag => tag.push(c),
+            c => out.push(c),
         }
     }
     unescape(&out)
@@ -323,9 +344,14 @@ struct Writer {
     lists: Vec<(bool, usize)>, // (ordered, counter)
     in_pre: bool,
     in_code: bool,
+    /// Where the open inline code's text starts, in `cell` inside a table and `out` elsewhere.
+    code_at: Option<usize>,
     pre_diagram: bool,
     /// Inside a `<div class="mermaid">`, which Mermaid's own pages use instead of a `pre`.
     div_diagram: bool,
+    /// Where the open code block's fence starts in `out`, so it can be made longer when the
+    /// code turns out to hold a fence of its own.
+    fence_at: Option<usize>,
     in_math: bool,
     in_math_block: bool,
     span_sizes: Vec<bool>,
@@ -338,6 +364,26 @@ struct Writer {
 }
 
 impl Writer {
+    /// Remembers where the fence of a code block about to be written starts.
+    fn open_fence(&mut self) {
+        self.fence_at = (!self.in_cell).then_some(self.out.len());
+    }
+
+    /// Writes the fence that closes the open code block. When a line of the code starts with
+    /// three or more backticks, both fences are made longer than that run, so the code stays
+    /// one block when it is read again (issue #106).
+    fn close_fence(&mut self) {
+        let mut fence = "```".to_string();
+        if let Some(at) = self.fence_at.take().filter(|&at| self.out.is_char_boundary(at)) {
+            let code_from = self.out[at..].find('\n').map_or(self.out.len(), |n| at + n + 1);
+            fence = crate::markdown::code_fence(&self.out[code_from..]);
+            if fence.len() > 3 {
+                self.out.insert_str(at, &fence[3..]);
+            }
+        }
+        self.out.push_str(&fence);
+    }
+
     fn push(&mut self, s: &str) {
         if self.in_cell {
             self.cell.push_str(s);
@@ -423,6 +469,7 @@ impl Writer {
             // A div with the class `mermaid` holds a diagram, as a pre does. Its text is the source.
             ("div", false) if !self.in_pre && attrs.to_lowercase().contains("mermaid") => {
                 self.block_break();
+                self.open_fence();
                 self.push("```mermaid\n");
                 self.in_pre = true;
                 self.pre_diagram = true;
@@ -434,7 +481,7 @@ impl Writer {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
-                self.out.push_str("```");
+                self.close_fence();
                 self.block_break();
             }
             ("p", true) if self.in_math_block => {
@@ -511,9 +558,23 @@ impl Writer {
             ("i" | "em", _) => self.push("*"),
             ("s" | "del" | "strike", _) => self.push("~~"),
             ("u" | "sub" | "sup", closing) => self.push(&format!("<{}{name}>", if closing { "/" } else { "" })),
-            ("code", closing) if !self.in_pre => {
-                self.in_code = !closing;
-                self.push("`");
+            ("code", false) if !self.in_pre => {
+                self.in_code = true;
+                self.code_at = Some(if self.in_cell { self.cell.len() } else { self.out.len() });
+            }
+            ("code", true) if !self.in_pre => {
+                self.in_code = false;
+                // The code is written with the delimiters it needs once all of it is known: a
+                // backtick inside it would otherwise end it early (issue #107).
+                if let Some(at) = self.code_at.take() {
+                    let buffer = if self.in_cell { &mut self.cell } else { &mut self.out };
+                    if buffer.is_char_boundary(at) {
+                        let code = buffer.split_off(at);
+                        if !code.is_empty() {
+                            buffer.push_str(&crate::render::code_span(&code));
+                        }
+                    }
+                }
             }
             ("pre", false) => {
                 self.block_break();
@@ -522,6 +583,7 @@ impl Writer {
                 let class = attr(attrs, "class").unwrap_or_default();
                 self.pre_diagram = class.eq_ignore_ascii_case("diagram") || class.eq_ignore_ascii_case("mermaid");
                 let language = if self.pre_diagram { "mermaid" } else { class.as_str() };
+                self.open_fence();
                 self.push(&format!("```{language}\n"));
                 self.in_pre = true;
             }
@@ -530,7 +592,7 @@ impl Writer {
                 if !self.out.ends_with('\n') {
                     self.out.push('\n');
                 }
-                self.out.push_str("```");
+                self.close_fence();
                 self.block_break();
             }
             ("span", false) => {
@@ -565,7 +627,7 @@ impl Writer {
             }
             ("a", true) => {
                 let href = self.href.pop().flatten().unwrap_or_default();
-                self.push(&format!("]({href})"));
+                self.push(&format!("]({})", crate::render::destination(&href)));
             }
             ("img", _) => {
                 let alt = attr(attrs, "alt").unwrap_or_default();
@@ -576,7 +638,9 @@ impl Writer {
                 // Block-level img with size: output as HTML. Inline or no size: use markdown.
                 if (width.is_some() || height.is_some()) && self.href.is_empty() && !self.in_cell {
                     self.block_break();
-                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    // `attr` gave the values unescaped; they are escaped again for the tag, so a quote
+                    // in the text cannot end the attribute (issue #109).
+                    let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(&src), escape(&alt));
                     if let Some(w) = width {
                         img_tag.push_str(&format!(" width=\"{}\"", w as i32));
                     }
@@ -587,12 +651,12 @@ impl Writer {
                     self.push(&img_tag);
                     self.block_break();
                 } else {
-                    self.push(&format!("![{alt}]({src})"));
+                    self.push(&format!("![{alt}]({})", crate::render::destination(&src)));
                 }
             }
             ("video" | "audio", false) => {
                 let src = attr(attrs, "src").unwrap_or_default();
-                self.push(&format!("![{name}]({src})"));
+                self.push(&format!("![{name}]({})", crate::render::destination(&src)));
             }
             ("table", false) => {
                 self.block_break();
@@ -721,6 +785,19 @@ mod tests {
     #[test]
     fn strips_tags() {
         assert_eq!(strip_tags("<p>Hello <b>big</b> world</p>").split_whitespace().collect::<Vec<_>>().join(" "), "Hello big world");
+    }
+
+    /// Issue #105: formatting inside a word keeps the word whole, and blocks, line breaks
+    /// and cells still keep their words apart.
+    #[test]
+    fn stripping_tags_keeps_a_partly_formatted_word_whole() {
+        let words = |html: &str| strip_tags(html).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(words("<p>for<b>mat</b></p>"), "format");
+        assert_eq!(words("<p>co<B>op</B>er<span style=\"color: red\">ate</span> <a href=\"x\">li</a>nk</p>"), "cooperate link");
+        assert_eq!(words("<p>one</p><p>two</p>"), "one two");
+        assert_eq!(words("<p>one<br>two<br/>three</p>"), "one two three");
+        assert_eq!(words("<ul><li>a</li><li>b</li></ul><table><tr><td>c</td><td>d</td></tr></table>"), "a b c d");
+        assert_eq!(words("<h1>Title</h1>Body &amp; more"), "Title Body & more");
     }
 
     #[test]

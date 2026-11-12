@@ -98,12 +98,22 @@ fn find(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
     None
 }
 
-// Backslashes stay literal inside code and legacy link destinations.
-fn find_raw(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
-    if pat.is_empty() || chars.len() < pat.len() {
-        return None;
+/// Where the run of exactly `run` backticks that closes a code span starts, looking from
+/// `from`. A longer or shorter run is part of the code.
+fn closing_ticks(chars: &[char], from: usize, run: usize) -> Option<usize> {
+    let mut i = from;
+    while i < chars.len() {
+        if chars[i] == '`' {
+            let len = chars[i..].iter().take_while(|&&c| c == '`').count();
+            if len == run {
+                return Some(i);
+            }
+            i += len;
+        } else {
+            i += 1;
+        }
     }
-    (from..=chars.len() - pat.len()).find(|&i| chars.get(i..i + pat.len()) == Some(pat))
+    None
 }
 
 fn slice(chars: &[char], a: usize, b: usize) -> &[char] {
@@ -327,9 +337,19 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 i += 2;
             }
             '`' => {
-                if let Some(end) = find_raw(chars, i + 1, &['`']) {
+                // A code span opens with a run of backticks and closes at the next run of
+                // exactly as many, so a backtick inside it is code (issue #107). A run with no
+                // partner is literal text.
+                let run = chars[i..].iter().take_while(|&&c| c == '`').count();
+                if let Some(end) = closing_ticks(chars, i + run, run) {
                     push_text(&mut out, &mut buf, &st, &link);
-                    let code: String = slice(chars, i + 1, end).iter().collect();
+                    let code: String = slice(chars, i + run, end).iter().collect();
+                    // One space each side is padding when both are there, as CommonMark has it,
+                    // so a span can start or end with a backtick.
+                    let code = match code.strip_prefix(' ').and_then(|c| c.strip_suffix(' ')) {
+                        Some(inner) if !code.chars().all(|c| c == ' ') => inner.to_string(),
+                        _ => code,
+                    };
                     out.push(Span {
                         text: code,
                         code: true,
@@ -343,10 +363,10 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                         link: link.clone(),
                         ..Span::default()
                     });
-                    i = end + 1;
+                    i = end + run;
                 } else {
-                    buf.push(c);
-                    i += 1;
+                    buf.extend(std::iter::repeat_n('`', run));
+                    i += run;
                 }
             }
             // `***x***` is bold and italic together, which is how both marks on one run are written.
@@ -490,13 +510,41 @@ fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
     if chars.get(close + 1) != Some(&'(') {
         return None;
     }
-    let end = find_raw(chars, close + 2, &[')'])?;
     let label: String = slice(chars, start + 1, close).iter().collect();
-    let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
-    if url.contains(char::is_whitespace) {
-        return None;
+    // Read first with `\(` and `\)` as quoted parentheses. A link written before quoting
+    // existed may end in a Windows folder, `C:\Notes\)`, whose last backslash is part of the
+    // path: when the quoted reading finds no end, or one that takes in words after the link,
+    // the backslashes are read as they stand.
+    for quoted in [true, false] {
+        let Some(end) = destination_end(chars, close + 2, quoted) else { continue };
+        let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
+        if url.contains(char::is_whitespace) {
+            continue;
+        }
+        let url = if quoted { url.replace("\\(", "(").replace("\\)", ")") } else { url };
+        return Some((label, url, end + 1));
     }
-    Some((label, url, end + 1))
+    None
+}
+
+/// The `)` that ends a link's destination starting at `from`. Parentheses inside it nest, as
+/// in `a(b).pdf`, and with `quoted`, `\(` or `\)` is a parenthesis that does not count, so
+/// the first `)` is not taken for the end (issue #108).
+fn destination_end(chars: &[char], from: usize, quoted: bool) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = from;
+    while let Some(&c) = chars.get(i) {
+        match c {
+            '\\' if quoted && matches!(chars.get(i + 1), Some('(' | ')')) => i += 1,
+            '(' if depth < 32 => depth += 1,
+            '(' => return None,
+            ')' if depth == 0 => return Some(i),
+            ')' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 fn is_table_separator(line: &str) -> bool {
@@ -558,7 +606,8 @@ fn parse_attr(tag: &str, name: &str) -> Option<String> {
     let marker = format!("{name}=\"");
     let start = lower.find(&marker)? + marker.len();
     let end = tag.get(start..)?.find('"')?;
-    tag.get(start..start + end).map(str::to_string)
+    // The value as it was before it was escaped for the tag: `&quot;` is a quote in the text.
+    tag.get(start..start + end).map(crate::html::unescape)
 }
 
 fn try_parse_img_block(line: &str) -> Option<Block> {
@@ -573,6 +622,18 @@ fn try_parse_img_block(line: &str) -> Option<Block> {
     Some(Block::Image { alt, src, width, height })
 }
 
+/// How many backticks `text` starts with.
+fn backtick_run(text: &str) -> usize {
+    text.bytes().take_while(|&b| b == b'`').count()
+}
+
+/// The fence to write round `code`: three backticks, or one more than the longest run that
+/// starts a line of the code, so no line of it can close the block early (issue #106).
+pub(crate) fn code_fence(code: &str) -> String {
+    let longest = code.lines().map(|line| backtick_run(line.trim_start())).max().unwrap_or(0);
+    "`".repeat(longest.max(2) + 1)
+}
+
 /// Parses a Markdown page body into blocks. Never panics.
 pub fn parse(src: &str) -> Vec<Block> {
     let text = src.replace("\r\n", "\n");
@@ -584,11 +645,19 @@ pub fn parse(src: &str) -> Vec<Block> {
         let t = line.trim();
         if t.is_empty() {
             i += 1;
-        } else if let Some(fence) = t.strip_prefix("```") {
-            let lang = fence.trim().to_string();
+        } else if t.starts_with("```") {
+            // The fence is as long as its run of backticks, and only a run at least as long,
+            // with nothing after it, closes it: a shorter fence inside is part of the code.
+            let open = backtick_run(t);
+            let lang = t[open..].trim().to_string();
+            let closes = |l: &str| {
+                let l = l.trim();
+                let run = backtick_run(l);
+                run >= open && l[run..].is_empty()
+            };
             let mut body = Vec::new();
             i += 1;
-            while i < lines.len() && !lines.get(i).is_some_and(|l| l.trim_start().starts_with("```")) {
+            while i < lines.len() && !lines.get(i).is_some_and(|l| closes(l)) {
                 body.push(lines.get(i).copied().unwrap_or(""));
                 i += 1;
             }

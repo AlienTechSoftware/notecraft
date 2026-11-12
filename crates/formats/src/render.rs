@@ -48,14 +48,16 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 out.push('\n');
             }
             Block::Code { lang, text } => {
-                out.push_str("```");
+                let fence = crate::markdown::code_fence(text);
+                out.push_str(&fence);
                 out.push_str(lang);
                 out.push('\n');
                 out.push_str(text);
                 if !text.ends_with('\n') {
                     out.push('\n');
                 }
-                out.push_str("```\n");
+                out.push_str(&fence);
+                out.push('\n');
             }
             Block::MathBlock(tex) => {
                 out.push_str("$$\n");
@@ -72,7 +74,8 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
             Block::Rule => out.push_str("---\n"),
             Block::Image { alt, src, width, height } => {
                 if width.is_some() || height.is_some() {
-                    let mut img_tag = format!("<img src=\"{src}\" alt=\"{alt}\"");
+                    // Escaped, so a quote in the text cannot end the attribute (issue #109).
+                    let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(src), escape(alt));
                     if let Some(w) = width {
                         img_tag.push_str(&format!(" width=\"{}\"", *w as i32));
                     }
@@ -82,7 +85,7 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                     img_tag.push_str(">\n");
                     out.push_str(&img_tag);
                 } else {
-                    out.push_str(&format!("![{alt}]({src})\n"));
+                    out.push_str(&format!("![{alt}]({})\n", destination(src)));
                 }
             }
         }
@@ -234,12 +237,28 @@ fn marked(spans: &[Span], level: usize, literal: &Literal) -> String {
 }
 
 /// One span with nothing but its code, picture, maths or link written round it.
+/// Inline code written so it reads back as the same text (issue #107). The delimiter is one
+/// backtick more than the longest run inside, and a space pads each side when the code starts
+/// or ends with a backtick, or starts and ends with a space, which the reader takes off again.
+pub(crate) fn code_span(text: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in text.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let ticks = "`".repeat(longest + 1);
+    let pad = text.starts_with('`') || text.ends_with('`') || (text.starts_with(' ') && text.ends_with(' ') && text.trim() != "");
+    let pad = if pad { " " } else { "" };
+    format!("{ticks}{pad}{text}{pad}{ticks}")
+}
+
 fn leaf(s: &Span, literal: &Literal) -> String {
     let styled = |text: String| inline_style(s, inline_marks(s, text));
     if let Some(src) = &s.image {
-        let image = format!("![{}]({src})", s.text);
+        let image = format!("![{}]({})", s.text, destination(src));
         let image = match &s.link {
-            Some(target) => format!("[{image}]({target})"),
+            Some(target) => format!("[{image}]({})", destination(target)),
             None => image,
         };
         return styled(image);
@@ -247,12 +266,28 @@ fn leaf(s: &Span, literal: &Literal) -> String {
     if s.math {
         return styled(format!("${}$", s.text));
     }
-    let text = if s.code { format!("`{}`", s.text) } else { literal.escape(&s.text) };
+    let text = if s.code { code_span(&s.text) } else { literal.escape(&s.text) };
     let text = match &s.link {
-        Some(target) => format!("[{text}]({target})"),
+        Some(target) => format!("[{text}]({})", destination(target)),
         None => text,
     };
     styled(text)
+}
+
+/// A link or picture address as it is written between `(` and `)`. Balanced parentheses are
+/// left as they are, as in `a(b).pdf`; when they do not pair up, each is written `\(` or `\)`
+/// so the reader does not end the address at the wrong one (issue #108).
+pub(crate) fn destination(target: &str) -> String {
+    let mut depth = 0i32;
+    let balanced = target.chars().all(|c| {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        depth >= 0
+    }) && depth == 0;
+    if balanced { target.to_string() } else { target.replace('(', "\\(").replace(')', "\\)") }
 }
 
 /// Which delimiters a run of spans must quote so its words read back as words.
@@ -645,6 +680,142 @@ fn b() {}"
         }
     }
 
+    /// Issue #106: code that holds a fence line of its own stays one block, in both formats.
+    /// The fence written round it is longer than any run of backticks starting one of its
+    /// lines, and only a fence at least as long as the opening one closes the block.
+    #[test]
+    fn code_holding_a_fence_stays_one_block() {
+        let tick = "`";
+        for text in [
+            format!("before\n{}\nafter", tick.repeat(3)),
+            format!("{}md\nnested\n{}", tick.repeat(3), tick.repeat(3)),
+            format!("  {}\n{}python\nx\n{}", tick.repeat(5), tick.repeat(4), tick.repeat(4)),
+            format!("inline {} only", tick.repeat(3)),
+        ] {
+            let original = vec![Block::Code { lang: "markdown".into(), text: text.clone() }];
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM:\n{saved}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML:\n{html}\n--- read as ---\n{reread}");
+        }
+        // A plain block keeps the three backticks it always had.
+        assert_eq!(
+            blocks_to_markdown(&[Block::Code { lang: "rust".into(), text: "let x = 1;".into() }]),
+            format!("{0}rust\nlet x = 1;\n{0}\n", tick.repeat(3))
+        );
+        // A shorter fence inside a longer one is code, and a closing fence with words after
+        // it is not a closing fence.
+        let four = tick.repeat(4);
+        let three = tick.repeat(3);
+        assert_eq!(
+            parse(&format!("{four}\n{three}\n{three}js\n{four}\n")),
+            vec![Block::Code { lang: String::new(), text: format!("{three}\n{three}js") }]
+        );
+    }
+
+    /// Issue #107: inline code holding backticks, or starting or ending with one or with a
+    /// space, comes back as the same single span in both formats.
+    #[test]
+    fn inline_code_holding_backticks_stays_one_span() {
+        let tick = "`";
+        for text in [
+            format!("a{tick}b"),
+            format!("a{0}{0}b{0}c", tick),
+            format!("{tick}start"),
+            format!("end{tick}"),
+            tick.to_string(),
+            " padded ".to_string(),
+            "  two  ".to_string(),
+            " ".to_string(),
+            "plain".to_string(),
+        ] {
+            let original = vec![Block::Paragraph(vec![
+                Span { text: "see ".into(), ..Span::default() },
+                Span { text: text.clone(), code: true, ..Span::default() },
+                Span { text: " here".into(), ..Span::default() },
+            ])];
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM {text:?}:\n{saved}");
+            // HTML folds a space at the edge of the code into the space before or after it, as a
+            // browser shows it, so those are only kept in CMGFM.
+            if text.starts_with(' ') || text.ends_with(' ') {
+                continue;
+            }
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML {text:?}:\n{html}\n--- read as ---\n{reread}");
+        }
+        // Plain code keeps its one backtick each side.
+        assert_eq!(
+            blocks_to_markdown(&[Block::Paragraph(vec![Span { text: "x".into(), code: true, ..Span::default() }])]),
+            format!("{tick}x{tick}\n")
+        );
+        // A run with no partner of the same length is text.
+        let lone = parse(&format!("a {0}{0} b {0} c\n", tick));
+        assert!(matches!(&lone[..], [Block::Paragraph(spans)] if spans.iter().all(|s| !s.code)), "{lone:?}");
+    }
+
+    /// Issue #108: a link or picture address with parentheses in it is kept whole, in both
+    /// formats, whether its parentheses pair up or not.
+    #[test]
+    fn link_addresses_with_parentheses_are_kept_whole() {
+        let parsed = parse("[file](https://example.test/a(b).pdf)\n");
+        let link = |target: &str| vec![Block::Paragraph(vec![Span { text: "file".into(), link: Some(target.into()), ..Span::default() }])];
+        assert_eq!(parsed, link("https://example.test/a(b).pdf"), "a balanced pair stays in the address");
+        assert_eq!(
+            parse("[file](a\\(b.pdf) after\n")[0],
+            Block::Paragraph(vec![
+                Span { text: "file".into(), link: Some("a(b.pdf".into()), ..Span::default() },
+                Span { text: " after".into(), ..Span::default() },
+            ]),
+            "an escaped parenthesis does not count"
+        );
+
+        for target in ["https://example.test/a(b).pdf", "assets/a(b).pdf", "x/(a(b)c).md", "open(.pdf", "close).pdf", ")(", "w/Foo_(bar)"] {
+            let original = link(target);
+            let saved = blocks_to_markdown(&original);
+            assert_eq!(parse(&saved), original, "CMGFM {target:?}:\n{saved}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML {target:?}:\n{html}\n--- read as ---\n{reread}");
+
+            let picture = vec![Block::Image { alt: "pic".into(), src: target.into(), width: None, height: None }];
+            assert_eq!(parse(&blocks_to_markdown(&picture)), picture, "picture {target:?}");
+            assert_eq!(parse(&html::to_markdown(&blocks_to_html(&picture))), picture, "HTML picture {target:?}");
+        }
+        assert_eq!(blocks_to_markdown(&link("a(b).pdf")), "[file](a(b).pdf)\n", "balanced parentheses are written as they are");
+
+        // A link written before quoting existed, to a Windows folder, keeps its last backslash,
+        // even with a parenthesis later in the line.
+        assert_eq!(parse("[file](C:\\Notes\\)\n"), link("C:\\Notes\\"));
+        assert_eq!(
+            parse("[file](C:\\Notes\\) and (more) text\n")[0],
+            Block::Paragraph(vec![
+                Span { text: "file".into(), link: Some("C:\\Notes\\".into()), ..Span::default() },
+                Span { text: " and (more) text".into(), ..Span::default() },
+            ])
+        );
+    }
+
+    /// Issue #109: a resized picture whose alt text or address holds a quote, an ampersand or
+    /// an angle bracket keeps all of it, in both formats.
+    #[test]
+    fn a_resized_picture_keeps_quotes_in_its_alt_text() {
+        for (alt, src) in
+            [("a\"b", "assets/a.png"), ("Tom & \"Jerry\" <3", "assets/t&j.png"), ("it's", "assets/q\"uote.png"), ("&amp; literal", "assets/a.png")]
+        {
+            let original = vec![Block::Image { alt: alt.into(), src: src.into(), width: Some(100.0), height: Some(80.0) }];
+            let md = blocks_to_markdown(&original);
+            assert_eq!(parse(&md), original, "CMGFM:\n{md}");
+            let html = blocks_to_html(&original);
+            let reread = html::to_markdown(&html);
+            assert_eq!(parse(&reread), original, "HTML:\n{html}\n--- read as ---\n{reread}");
+        }
+        let md = blocks_to_markdown(&[Block::Image { alt: "a\"b".into(), src: "assets/a.png".into(), width: Some(100.0), height: None }]);
+        assert_eq!(md, "<img src=\"assets/a.png\" alt=\"a&quot;b\" width=\"100\">\n");
+    }
+
     #[test]
     fn html_escapes_everything_that_matters() {
         let blocks = parse("A <script> & \"quotes\" in **bold**\n");
@@ -652,8 +823,10 @@ fn b() {}"
         assert!(html.contains("&lt;script&gt;"), "{html}");
         assert!(html.contains("&amp;"));
         assert!(!html.contains("<script>"));
-        let link = parse("[x](\"onerror=alert(1))\n");
-        assert!(!blocks_to_html(&link).contains("onerror=alert(1)\""));
+        // A quote in an address is escaped, so it cannot end the attribute and start another.
+        let link = blocks_to_html(&parse("[x](\"onerror=alert(1))\n"));
+        assert!(link.contains("href=\"&quot;onerror=alert(1)\""), "{link}");
+        assert!(!link.contains("\"onerror"), "{link}");
     }
 
     #[test]
