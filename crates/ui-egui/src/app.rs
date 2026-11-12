@@ -7987,8 +7987,16 @@ mod alert_tests {
                 (ed.boxes[index].x, ed.boxes[index].y) = (400.0, 2000.0);
                 ed.arranged = true;
                 ed.rebuild_body();
-                ed.caret =
-                    Some(pageedit::Caret { block: line, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                ed.caret = Some(pageedit::Caret {
+                    block: line,
+                    text: String::new(),
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: None,
+                    span: None,
+                    inline: None,
+                });
                 line
             };
             for _ in 0..3 {
