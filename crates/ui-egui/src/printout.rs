@@ -40,11 +40,9 @@ pub(crate) fn supports(source: &Path) -> bool {
     extension == "pdf" || OFFICE_EXTENSIONS.contains(&extension.as_str())
 }
 
-pub(crate) fn render(source: &Path) -> Result<Rendered, String> {
-    render_with(source, &|_, _| {})
-}
-
-/// [`render`], telling `progress` how many pages of how many are done as they finish.
+/// Renders `source` (a PDF, or an Office document by way of a PDF) to one picture a page, in a
+/// workspace of its own that goes with the result, telling `progress` how many pages of how many
+/// are done as they finish.
 pub(crate) fn render_with(source: &Path, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<Rendered, String> {
     if !supports(source) {
         return Err("Printout is supported for PDF and Office documents only".into());
@@ -158,6 +156,98 @@ fn office_renderers() -> Vec<OsString> {
     {
         vec![OsString::from("soffice"), OsString::from("libreoffice")]
     }
+}
+
+/// A printout being made off the window's thread: rendered, its document attached to the page,
+/// and its pages copied into the page's folder. On a synced folder the copying alone took over a
+/// second for fifteen pages, and the whole of it froze the page until it was done.
+pub(crate) struct Job {
+    /// The page it is for, and the name of the document.
+    pub dir: PathBuf,
+    pub name: String,
+    /// How many pages are rendered, of how many, as last heard.
+    pub pages: (usize, usize),
+    news: std::sync::mpsc::Receiver<News>,
+}
+
+/// What a printout job is done with: the document's link in the page's folder and the links of
+/// its pages, in order.
+pub(crate) struct Made {
+    pub link: String,
+    pub images: Vec<String>,
+}
+
+enum News {
+    Pages(usize, usize),
+    Done(Result<Made, String>),
+}
+
+impl Job {
+    /// Starts making a printout of `file` for the page in `dir`.
+    pub(crate) fn start(dir: &Path, file: &Path) -> Job {
+        let (tell, news) = std::sync::mpsc::channel();
+        let (page, source) = (dir.to_path_buf(), file.to_path_buf());
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let job_name = name.clone();
+        let spawned = std::thread::Builder::new().name("notecraft-printout".into()).spawn({
+            let tell = tell.clone();
+            move || {
+                let progress = std::sync::Mutex::new(tell.clone());
+                let made = make(&page, &source, &job_name, &|done, total| {
+                    if let Ok(tell) = progress.lock() {
+                        let _ = tell.send(News::Pages(done, total));
+                    }
+                });
+                let _ = tell.send(News::Done(made));
+            }
+        });
+        if let Err(e) = spawned {
+            let _ = tell.send(News::Done(Err(format!("cannot start making the printout: {e}"))));
+        }
+        Job { dir: dir.to_path_buf(), name, pages: (0, 0), news }
+    }
+
+    /// What has happened since this was last asked: `Some` once the job is done.
+    pub(crate) fn poll(&mut self) -> Option<Result<Made, String>> {
+        loop {
+            match self.news.try_recv() {
+                Ok(News::Pages(done, total)) => self.pages = (done, total),
+                Ok(News::Done(made)) => return Some(made),
+                Err(std::sync::mpsc::TryRecvError::Empty) => return None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Some(Err("the printout stopped before it was done".into())),
+            }
+        }
+    }
+}
+
+/// Renders `source`, attaches it to the page in `dir`, and copies its pages into the page's
+/// folder, taking them back out again if any could not be stored.
+fn make(dir: &Path, source: &Path, name: &str, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<Made, String> {
+    let rendered = render_with(source, progress)?;
+    let link = notecraft_store::assets::attach_file(dir, source)
+        .map_err(|_| crate::i18n::format_message_id("ui.could_not_attach_name_before_rendering_its_pages", &[("name", name)]))?;
+    let base = link
+        .strip_prefix("assets/")
+        .and_then(|link| Path::new(link).file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .ok_or_else(|| crate::tl_id!("ui.the_attachment_returned_an_invalid_page_link").to_string())?;
+    let assets = dir.join("assets");
+    let mut stored: Vec<PathBuf> = Vec::with_capacity(rendered.pages().len());
+    for (index, page) in rendered.pages().iter().enumerate() {
+        let target = assets.join(format!("{base}.printout-{:03}.png", index + 1));
+        if let Err(error) = fs::copy(page, &target) {
+            for path in &stored {
+                let _ = fs::remove_file(path);
+            }
+            return Err(crate::i18n::format_message_id(
+                "ui.could_not_store_printout_page_page_error",
+                &[("page", &(index + 1).to_string()), ("error", &error.to_string())],
+            ));
+        }
+        stored.push(target);
+    }
+    let images = (1..=stored.len()).map(|n| format!("assets/{base}.printout-{n:03}.png")).collect();
+    Ok(Made { link, images })
 }
 
 fn temporary_workspace() -> Result<PathBuf, String> {

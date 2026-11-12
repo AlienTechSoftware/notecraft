@@ -1096,6 +1096,8 @@ pub struct NoteCraftApp {
     /// History > Hide Authors: who changed a page is not shown under its title. What the page
     /// keeps is not touched (issue #292).
     hide_authors: bool,
+    /// Printouts being made off the window's thread, with the format of the page each is for.
+    printouts: Vec<(crate::printout::Job, PageFormat)>,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     /// The pages visited, for Back and Forward.
@@ -1337,6 +1339,7 @@ impl NoteCraftApp {
             saver,
             author_name,
             hide_authors,
+            printouts: Vec::new(),
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
@@ -2150,6 +2153,11 @@ impl NoteCraftApp {
     /// Opens every level of the tree.
     pub fn expand_all(&mut self) {
         self.open = self.collect_branches().into_iter().collect();
+    }
+
+    /// How many printouts are still being made.
+    pub fn printouts_pending(&self) -> usize {
+        self.printouts.len()
     }
 
     /// Whether the page being edited has unsaved changes.
@@ -3195,50 +3203,94 @@ impl NoteCraftApp {
         }
     }
 
+    /// Starts making a printout of `file` for the page in `dir`, off the window's thread: the
+    /// page goes on being written in while it is made ([`crate::printout::Job`]), and it goes in
+    /// once it is ready ([`Self::poll_printouts`]).
     fn insert_printout(&mut self, dir: &Path, file: &Path, format: PageFormat) {
-        let rendered = match printout::render(file) {
-            Ok(rendered) => rendered,
+        let job = crate::printout::Job::start(dir, file);
+        self.say(crate::i18n::format_message_id("ui.making_a_printout_of_name", &[("name", &job.name)]));
+        self.printouts.push((job, format));
+    }
+
+    /// Takes in the printouts that are ready, and says how far along the others are.
+    fn poll_printouts(&mut self, ctx: &Context) {
+        let mut i = 0;
+        while i < self.printouts.len() {
+            match self.printouts[i].0.poll() {
+                None => {
+                    let (done, total) = self.printouts[i].0.pages;
+                    if total > 0 {
+                        let name = self.printouts[i].0.name.clone();
+                        self.say(crate::i18n::format_message_id(
+                            "ui.making_a_printout_of_name_page_done_of_total",
+                            &[("name", &name), ("done", &done.to_string()), ("total", &total.to_string())],
+                        ));
+                    }
+                    i += 1;
+                }
+                Some(made) => {
+                    let (job, format) = self.printouts.remove(i);
+                    self.finish_printout(&job, format, made);
+                }
+            }
+        }
+        if !self.printouts.is_empty() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+    }
+
+    /// Puts a printout that is ready into its page: the open one where the writer is, as
+    /// [`Self::insert_printout_blocks`] does, or, when another page was opened meanwhile, into
+    /// that page's file, in a box of its own below what is there.
+    fn finish_printout(&mut self, job: &crate::printout::Job, format: PageFormat, made: Result<crate::printout::Made, String>) {
+        let made = match made {
+            Ok(made) => made,
             Err(error) => {
                 self.complain(&error);
                 return;
             }
         };
-        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) else {
-            self.complain(&crate::i18n::format_message_id("ui.could_not_attach_name_before_rendering_its_pages", &[("name", &name)]));
-            return;
-        };
-        let Some(base) = link.strip_prefix("assets/").and_then(|link| Path::new(link).file_name()).map(|name| name.to_string_lossy().into_owned())
-        else {
-            self.complain(crate::tl_id!("ui.the_attachment_returned_an_invalid_page_link"));
-            return;
-        };
-        let assets = dir.join("assets");
-        let mut generated = Vec::with_capacity(rendered.pages().len());
-        for (index, page) in rendered.pages().iter().enumerate() {
-            let target = assets.join(format!("{base}.printout-{:03}.png", index + 1));
-            if let Err(error) = std::fs::copy(page, &target) {
-                for path in &generated {
-                    let _ = std::fs::remove_file(path);
-                }
-                self.complain(&crate::i18n::format_message_id(
-                    "ui.could_not_store_printout_page_page_error",
-                    &[("page", &(index + 1).to_string()), ("error", &error.to_string())],
-                ));
-                return;
+        let mut text = snippets::attachment(format, &made.link, &job.name);
+        for (index, image) in made.images.iter().enumerate() {
+            text.push_str(&snippets::printout_page(format, image, index + 1));
+        }
+        if self.editor.as_ref().is_some_and(|ed| ed.dir == job.dir) {
+            self.insert_printout_blocks(&text);
+            if let Some(ed) = self.editor.as_mut() {
+                ed.attachments = notecraft_store::assets::list(&ed.dir);
             }
-            generated.push(target);
+        } else if !self.add_to_page_file(&job.dir, &text) {
+            return;
         }
-        let mut text = snippets::attachment(format, &link, &name);
-        for (index, _) in generated.iter().enumerate() {
-            let image = format!("assets/{base}.printout-{:03}.png", index + 1);
-            text.push_str(&snippets::printout_page(format, &image, index + 1));
-        }
-        self.insert_printout_blocks(&text);
         self.say(crate::i18n::format_message_id(
             "ui.inserted_name_and_count_printout_pages",
-            &[("name", &name), ("count", &generated.len().to_string())],
+            &[("name", &job.name), ("count", &made.images.len().to_string())],
         ));
+    }
+
+    /// Adds `text` to the page in `dir`, which is not the one open, in a box of its own below its
+    /// boxes, and writes it. Says why when it cannot, and returns whether it did.
+    fn add_to_page_file(&mut self, dir: &Path, text: &str) -> bool {
+        let page = match notecraft_store::page::load_page(dir) {
+            Ok(page) => page,
+            Err(e) => {
+                self.complain(&e.to_string());
+                return false;
+            }
+        };
+        let (mut blocks, arranged) = notecraft_formats::boxes::read(page.format, &page.body);
+        let (added, _) = notecraft_formats::boxes::read(page.format, text);
+        let body = match arranged {
+            Some(boxes) if !boxes.is_empty() => {
+                let width = boxes.first().map_or(360.0, |c| c.width);
+                let below = boxes.iter().map(|c| c.y + 60.0).fold(0.0, f32::max);
+                let boxes = notecraft_model::container::append(&boxes, blocks.len(), added.len(), width, below, 12.0);
+                blocks.extend(added);
+                notecraft_formats::boxes::write(page.format, &blocks, Some(&boxes))
+            }
+            _ => format!("{}\n{text}", page.body.trim_end()),
+        };
+        self.run("page.save", &params(&[("path", &path_str(dir)), ("body", &body)])).is_some()
     }
 
     // ---------- tree ----------
@@ -11542,6 +11594,7 @@ impl NoteCraftApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
+        self.poll_printouts(ctx);
         self.take_saves(false);
         if self.saver.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
@@ -12274,7 +12327,7 @@ mod alert_tests {
             |h: &egui_kittest::Harness<'_, NoteCraftApp>| h.state().editor.as_ref().map(|e| (e.blocks.clone(), e.boxes.clone())).expect("editor");
         let before = shape(&h);
         let dir = page.clone();
-        h.state_mut().add_file(&dir, &pdf, FileChoice::Printout);
+        add_printout(&mut h, &dir, &pdf);
         // Long enough for the autosave to write the page and the window to settle.
         for _ in 0..60 {
             h.step();
@@ -12318,6 +12371,79 @@ mod alert_tests {
         (t, page, pdf, h)
     }
 
+    /// Asks for a printout of `pdf` in `page` and waits for it: it is made in the background.
+    fn add_printout(h: &mut egui_kittest::Harness<'_, NoteCraftApp>, page: &Path, pdf: &Path) {
+        h.state_mut().add_file(page, pdf, FileChoice::Printout);
+        for _ in 0..500 {
+            h.step();
+            if h.state().printouts_pending() == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(h.state().printouts_pending(), 0, "the printout was made");
+        for _ in 0..3 {
+            h.step();
+        }
+    }
+
+    /// A printout is made off the window's thread: asking for one returns at once, the window
+    /// carries on drawing, and the pages go in once they are ready. Making one froze the page
+    /// for seconds (rendering, then copying every page into the page's folder).
+    #[test]
+    fn a_printout_is_made_in_the_background_and_goes_in_when_ready() {
+        let (_t, page, pdf, mut h) = printout_harness(true, "printout-background");
+        let before = h.state().editor.as_ref().map(|e| e.blocks.len()).expect("editor");
+        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        assert_eq!(h.state().printouts_pending(), 1, "the printout is being made");
+        assert_eq!(h.state().editor.as_ref().map(|e| e.blocks.len()), Some(before), "and the page is not waiting for it");
+        h.step();
+        for _ in 0..500 {
+            h.step();
+            if h.state().printouts_pending() == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let ed = h.state().editor.as_ref().expect("editor");
+        assert!(ed.blocks.len() > before, "the printout went in once it was ready");
+        assert!(
+            ed.blocks.iter().any(|b| matches!(b, notecraft_formats::Block::Image { src, .. } if src.contains(".printout-001.png"))),
+            "its page is a picture in the page"
+        );
+    }
+
+    /// A printout asked for on one page goes into that page, even when another page was opened
+    /// while it was being made.
+    #[test]
+    fn a_printout_goes_into_its_own_page_when_another_was_opened_meanwhile() {
+        let (_t, page, pdf, mut h) = printout_harness(true, "printout-other-page");
+        let other = {
+            let parent = page.parent().expect("section").to_path_buf();
+            std::fs::read_dir(&parent)
+                .expect("section")
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.is_dir() && *p != page)
+                .expect("another page")
+        };
+        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        h.state_mut().open_path(&other.to_string_lossy());
+        for _ in 0..500 {
+            h.step();
+            if h.state().printouts_pending() == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(h.state().editor.as_ref().map(|e| e.dir.clone()), Some(other.clone()), "the other page is the one open");
+        let file = notecraft_store::tree::page_file(&page).expect("the first page's file").1;
+        let text = std::fs::read_to_string(file).expect("read");
+        assert!(text.contains(".printout-001.png"), "the printout is in the page it was asked for:\n{text}");
+        let other_file = notecraft_store::tree::page_file(&other).expect("the other page's file").1;
+        assert!(!std::fs::read_to_string(other_file).expect("read").contains(".printout-001.png"), "and not in the other one");
+    }
+
     /// Issue #67: with no box holding the caret, a second printout goes below what is already
     /// on the page, not over the first.
     #[test]
@@ -12326,10 +12452,7 @@ mod alert_tests {
             let (_t, page, pdf, mut h) = printout_harness(html, "printout-below");
             h.state_mut().editor.as_mut().expect("editor").caret = None;
             for _ in 0..2 {
-                h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-                for _ in 0..5 {
-                    h.step();
-                }
+                add_printout(&mut h, &page, &pdf);
             }
             let all = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
             // The sample page's words, then one box for each printout, each one further down.
@@ -12376,10 +12499,7 @@ mod alert_tests {
             }
             let boxes_with_blank = h.state().editor.as_ref().map(|e| e.boxes.len()).expect("editor");
             h.state_mut().editor.as_mut().expect("editor").caret = None;
-            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-            for _ in 0..5 {
-                h.step();
-            }
+            add_printout(&mut h, &page, &pdf);
             let ed = h.state().editor.as_ref().expect("editor");
             assert!(!ed.boxes.iter().any(|c| c.y == 2000.0), "html={html}: the blank box went: {:?}", ed.boxes);
             assert_eq!(ed.boxes.len(), boxes_with_blank, "html={html}: one box for the printout, none for the blank line: {:?}", ed.boxes);
@@ -12460,10 +12580,7 @@ mod alert_tests {
             }
             let before = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
             let blocks_before = h.state().editor.as_ref().map(|e| e.blocks.clone()).expect("editor");
-            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-            for _ in 0..5 {
-                h.step();
-            }
+            add_printout(&mut h, &page, &pdf);
             let ed = h.state().editor.as_ref().expect("editor");
             assert_eq!(ed.boxes.len(), before.len(), "html={html}: no new box was made: {:?}", ed.boxes);
             let moved = &ed.boxes[index];
