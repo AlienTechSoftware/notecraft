@@ -690,6 +690,17 @@ fn b() {}"
             assert_eq!(parse(&html::to_markdown(&blocks_to_html(&picture))), picture, "HTML picture {target:?}");
         }
         assert_eq!(blocks_to_markdown(&link("a(b).pdf")), "[file](a(b).pdf)\n", "balanced parentheses are written as they are");
+
+        // A link written before quoting existed, to a Windows folder, keeps its last backslash,
+        // even with a parenthesis later in the line.
+        assert_eq!(parse("[file](C:\\Notes\\)\n"), link("C:\\Notes\\"));
+        assert_eq!(
+            parse("[file](C:\\Notes\\) and (more) text\n")[0],
+            Block::Paragraph(vec![
+                Span { text: "file".into(), link: Some("C:\\Notes\\".into()), ..Span::default() },
+                Span { text: " and (more) text".into(), ..Span::default() },
+            ])
+        );
     }
 
     #[test]
