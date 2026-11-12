@@ -3,6 +3,9 @@
 //! The marks inside a cell are dropped, because a spreadsheet cell holds a value, not a
 //! marked-up line. Quotes are doubled and a cell is wrapped when it holds a comma, a
 //! quote or a line break, which is the rule everything that reads CSV agrees on.
+//!
+//! Read back, a cell is its value as written: `*literal*` in a spreadsheet is those nine
+//! characters, not a word in italics.
 
 use crate::markdown::{Block, Span};
 
@@ -36,9 +39,15 @@ fn quote(cell: &str) -> String {
 pub fn to_table(text: &str) -> Option<Block> {
     let rows = rows_of(text);
     let mut rows = rows.into_iter().filter(|r| !(r.len() == 1 && r[0].trim().is_empty()));
-    let head: Vec<Vec<Span>> = rows.next()?.iter().map(|c| crate::markdown::parse_inline(c)).collect();
-    let body: Vec<Vec<Vec<Span>>> = rows.map(|r| r.iter().map(|c| crate::markdown::parse_inline(c)).collect()).collect();
+    let head: Vec<Vec<Span>> = rows.next()?.iter().map(|c| literal(c)).collect();
+    let body: Vec<Vec<Vec<Span>>> = rows.map(|r| r.iter().map(|c| literal(c)).collect()).collect();
     Some(Block::Table { head, rows: body })
+}
+
+/// A cell's value as plain text. A spreadsheet cell holds a value, so its asterisks,
+/// brackets and backticks are characters of that value, not marks for the page.
+fn literal(cell: &str) -> Vec<Span> {
+    if cell.is_empty() { Vec::new() } else { vec![Span { text: cell.to_string(), ..Span::default() }] }
 }
 
 /// The cells of each line, with quotes undone.
@@ -127,6 +136,21 @@ lines",
             "a cell may hold a line break"
         );
         assert_eq!(text(&rows[1][1]), "last");
+    }
+
+    /// Issue #110: a cell is read as the value it holds. Read as Markdown, `*literal*` came
+    /// back as an italic `literal` and `[a](b)` as a link, and writing the table out again
+    /// lost the characters.
+    #[test]
+    fn a_cell_that_looks_like_markdown_is_read_as_it_is_written() {
+        for input in ["Value\n*literal*\n", "Value\n[a](b)\n", "Value\n`x` **y** _z_ <b>w</b>\n", "# Heading,- item\n> quote,1. one\n"] {
+            let table = to_table(input).expect("a table");
+            let Block::Table { head, rows } = &table else { panic!("a table") };
+            let plain_only =
+                std::iter::once(head).chain(rows).flatten().flatten().all(|span| span == &Span { text: span.text.clone(), ..Span::default() });
+            assert!(plain_only, "{input:?} is read without marks");
+            assert_eq!(from_table(&table).as_deref(), Some(input), "{input:?} comes back character for character");
+        }
     }
 
     #[test]
