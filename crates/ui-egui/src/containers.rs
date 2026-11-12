@@ -990,8 +990,16 @@ pub fn show(
             };
             if let Some(target) = target {
                 let text = pageedit::text_for_caret(blocks, target);
-                *caret =
-                    Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: down.then_some(0), cell: None, span: None });
+                *caret = Some(pageedit::Caret {
+                    block: target,
+                    text,
+                    focus: true,
+                    selection: (0, 0),
+                    place: down.then_some(0),
+                    cell: None,
+                    span: None,
+                    inline: None,
+                });
                 object_sel = None;
                 out.changed.caret = true;
                 log::debug!(
@@ -1009,7 +1017,16 @@ pub fn show(
             });
             if let Some(target) = target {
                 let text = pageedit::text_for_caret(blocks, target);
-                *caret = Some(pageedit::Caret { block: target, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None });
+                *caret = Some(pageedit::Caret {
+                    block: target,
+                    text,
+                    focus: true,
+                    selection: (0, 0),
+                    place: Some(0),
+                    cell: None,
+                    span: None,
+                    inline: None,
+                });
                 object_sel = None;
                 out.changed.caret = true;
                 log::debug!("keyboard moved after embedded object: image_block={block} caret_block={target}");
@@ -1109,7 +1126,16 @@ pub fn show(
         if let Some(c) = boxes.get_mut(i) {
             c.blocks += 1;
         }
-        *caret = Some(pageedit::Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+        *caret = Some(pageedit::Caret {
+            block: at,
+            text: String::new(),
+            focus: true,
+            selection: (0, 0),
+            place: None,
+            cell: None,
+            span: None,
+            inline: None,
+        });
         out.changed.blocks = true;
         out.changed.caret = true;
         out.boxes = true;
@@ -1682,7 +1708,16 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     let box_idx = boxes.len();
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
     log::debug!("CREATE_BOX: i={} at_pos=({:.0},{:.0}) width={:.0} holds_block={} (triggered by click)", box_idx, at.x, at.y, width, block_idx);
-    *caret = Some(pageedit::Caret { block: block_idx, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+    *caret = Some(pageedit::Caret {
+        block: block_idx,
+        text: String::new(),
+        focus: true,
+        selection: (0, 0),
+        place: None,
+        cell: None,
+        span: None,
+        inline: None,
+    });
 }
 
 #[cfg(test)]
@@ -1879,7 +1914,7 @@ more
     }
 
     fn caret_at(block: usize) -> Option<Caret> {
-        Some(Caret { block, text: String::new(), focus: false, selection: (0, 0), place: None, cell: None, span: None })
+        Some(Caret { block, text: String::new(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None })
     }
 
     /// Issue #21: a box clicked into and left with nothing written in it goes, and the caret,

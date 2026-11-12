@@ -14,7 +14,20 @@ use crate::preview;
 use crate::theme::Tokens;
 use egui::{Key, Sense, Ui, vec2};
 use notecraft_formats::markdown::{Block, Span, parse_inline};
-use notecraft_formats::render::spans_to_markdown;
+mod inline_edit;
+pub use inline_edit::InlineEdit;
+
+fn spans_to_editor(spans: &[Span]) -> String {
+    notecraft_formats::render::editable_spans(spans).0
+}
+
+fn spans_of(block: &Block) -> Option<&[Span]> {
+    match block {
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => Some(spans),
+        _ => None,
+    }
+}
+
 use notecraft_model::Tag;
 
 /// Where a selection that a right click collapsed is to be put back: `(block, primary, secondary)`.
@@ -46,6 +59,75 @@ pub struct Caret {
     /// The far corner of a block of cells dragged across, with `cell` as the near one.
     /// `None` while one cell is being written in, which is the ordinary case.
     pub span: Option<(usize, usize)>,
+    /// Literal/image identity for this visit to the editor, independent of storage quoting.
+    pub inline: Option<InlineEdit>,
+}
+
+impl Caret {
+    fn ensure_inline(&mut self, block: &Block) -> &mut InlineEdit {
+        self.inline.get_or_insert_with(|| {
+            self.cell.and_then(|cell| cell_spans(block, cell)).map(InlineEdit::from_spans).unwrap_or_else(|| InlineEdit::new(block, true))
+        })
+    }
+
+    pub fn write(&mut self, block: &mut Block) {
+        let text = self.text.clone();
+        if let Some(cell) = self.cell {
+            let spans = self.ensure_inline(block).parse(&text);
+            if let Some(value) = cell_spans_mut(block, cell) {
+                *value = spans;
+            }
+        } else {
+            self.ensure_inline(block).write(block, &text);
+        }
+    }
+
+    pub fn parse(&self, block: &Block, text: &str) -> Vec<Span> {
+        self.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true)).parse(text)
+    }
+
+    /// A clipboard fragment from the semantic line, including literal/image identity.
+    pub fn copied_blocks(&self, block: &Block) -> Option<Vec<Block>> {
+        let a = self.selection.0.min(self.selection.1);
+        let b = self.selection.0.max(self.selection.1);
+        if a == b {
+            return None;
+        }
+        match block {
+            Block::Code { lang, .. } => Some(vec![Block::Code { lang: lang.clone(), text: self.text.chars().skip(a).take(b - a).collect() }]),
+            Block::MathBlock(_) => Some(vec![Block::MathBlock(self.text.chars().skip(a).take(b - a).collect())]),
+            _ => {
+                let mut caret = self.clone();
+                let spans = caret.ensure_inline(block).selected(&self.text, a..b)?;
+                Some(vec![Block::Paragraph(spans)])
+            }
+        }
+    }
+
+    /// Clear only the active text/cell and hydrate the same editing target afterwards.
+    pub fn clear_marks(&mut self, block: &mut Block) {
+        self.write(block);
+        if let Some(cell) = self.cell {
+            if let Some(spans) = cell_spans_mut(block, cell) {
+                clear_span_marks(spans);
+            }
+            self.text = cell_text(block, cell).unwrap_or_default();
+        } else {
+            clear_marks(block);
+            self.text = caret_text(block);
+        }
+        self.inline = None;
+        self.selection = (0, self.text.chars().count());
+    }
+
+    pub fn format(&mut self, block: &Block, format: InlineFormat) -> Option<(String, (usize, usize))> {
+        let (text, selection) = (self.text.clone(), self.selection);
+        self.ensure_inline(block).format(&text, selection, format)
+    }
+
+    pub fn fonts(&self, block: &Block) -> Option<FontSelection> {
+        self.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true)).fonts(&self.text, self.selection)
+    }
 }
 
 /// The block of cells a caret covers, as (top-left, bottom-right), or `None` when it is
@@ -321,11 +403,11 @@ pub fn selection_fonts(text: &str, selection: (usize, usize)) -> Option<FontSele
     Some(FontSelection::from_spans(&selected))
 }
 
-fn insert_span_marker(spans: &mut [Span], offset: usize, marker: char) -> Option<()> {
+fn insert_span_marker(spans: &mut [Span], offset: usize, marker: char, after_boundary: bool) -> Option<()> {
     let mut at = 0;
     for span in spans {
         let len = span.text.chars().count();
-        if offset <= at + len {
+        if offset < at + len || (offset == at + len && !after_boundary) {
             let byte = span.text.char_indices().nth(offset - at).map_or(span.text.len(), |(byte, _)| byte);
             span.text.insert(byte, marker);
             return Some(());
@@ -354,9 +436,9 @@ pub fn format_source_selection(text: &str, selection: (usize, usize), format: In
     }
     let wanted = span_characters(&spans)?;
     let end_marker = ('\u{e000}'..='\u{f8ff}').find(|c| *c != marker && !text.contains(*c))?;
-    insert_span_marker(&mut spans, b, end_marker)?;
-    insert_span_marker(&mut spans, a, marker)?;
-    let serialized = spans_to_markdown(&spans);
+    insert_span_marker(&mut spans, b, end_marker, false)?;
+    insert_span_marker(&mut spans, a, marker, true)?;
+    let serialized = spans_to_editor(&spans);
     let start_byte = serialized.find(marker)?;
     let end_byte = serialized.find(end_marker)?;
     if end_byte < start_byte {
@@ -516,7 +598,7 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     }
     let spans = match block {
         Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans.clone(),
-        _ => parse_inline(&block_text(block)),
+        _ => vec![Span { text: block_text(block), ..Default::default() }],
     };
     let new = match kind {
         "h1" => Block::Heading { level: 1, spans },
@@ -538,7 +620,11 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     // Asking for what it already is turns it back into ordinary text, like a toggle.
     let same = std::mem::discriminant(&new) == std::mem::discriminant(block) && block_kind(block) == kind;
     if let Some(b) = blocks.get_mut(at) {
-        *b = if same { Block::Paragraph(parse_inline(&block_text(&new))) } else { new };
+        *b = if same {
+            Block::Paragraph(spans_of(&new).map(<[Span]>::to_vec).unwrap_or_else(|| vec![Span { text: block_text(&new), ..Default::default() }]))
+        } else {
+            new
+        };
     }
     renumber(blocks);
     true
@@ -554,8 +640,9 @@ pub fn set_tag(blocks: &mut [Block], at: usize, tag: Tag) -> bool {
     }
     if tag == Tag::ToDo {
         let already = matches!(block, Block::Item { task: Some(_), .. });
-        let text = Tag::set(&block_text(block), None);
-        let spans = parse_inline(&text);
+        let mut inline = InlineEdit::new(block, true);
+        let text = inline.text().to_owned();
+        let spans = inline.parse(&text);
         if let Some(b) = blocks.get_mut(at) {
             *b = if already { Block::Paragraph(spans) } else { Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans } };
         }
@@ -624,6 +711,29 @@ pub fn indent(blocks: &mut [Block], at: usize, deeper: bool) -> bool {
     *depth = if deeper { (*depth + 1).min(8) } else { depth.saturating_sub(1) };
     renumber(blocks);
     true
+}
+
+/// Removes inline formatting without interpreting literal text as Markdown source.
+pub fn clear_marks(block: &mut Block) {
+    let spans = match block {
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        _ => return,
+    };
+    clear_span_marks(spans);
+}
+
+fn clear_span_marks(spans: &mut Vec<Span>) {
+    let mut cleared: Vec<Span> = Vec::new();
+    for span in std::mem::take(spans) {
+        if span.image.is_some() || span.math {
+            cleared.push(span);
+        } else if let Some(last) = cleared.last_mut().filter(|last| last.image.is_none() && !last.math) {
+            last.text.push_str(&span.text);
+        } else {
+            cleared.push(Span { text: span.text, ..Default::default() });
+        }
+    }
+    *spans = cleared;
 }
 
 /// The same words without their marks: no bold, italic, strikethrough or code.
@@ -806,7 +916,7 @@ pub struct Changed {
 /// The text of a block as it is edited: the inline marks only.
 pub fn block_text(block: &Block) -> String {
     match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans_to_markdown(spans),
+        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans_to_editor(spans),
         Block::Code { text, .. } => text.clone(),
         Block::MathBlock(tex) => tex.clone(),
         Block::Image { alt, .. } => alt.clone(),
@@ -833,45 +943,6 @@ fn inline_image_navigation_edge(text: &str, range: egui::text::CCursorRange, rig
     let a = range.primary.index.0.min(range.secondary.index.0);
     let b = range.primary.index.0.max(range.secondary.index.0);
     if b == a + 1 && text.chars().nth(a) == Some(INLINE_IMAGE_CHAR) { Some(if right { b } else { a }) } else { None }
-}
-
-fn logical_inline_text(text: &str) -> String {
-    let spans = parse_inline(text);
-    let mut logical = String::new();
-    let mut source_at = 0;
-    for span in spans {
-        let source = spans_to_markdown(std::slice::from_ref(&span));
-        let Some(relative) = text.get(source_at..).and_then(|rest| rest.find(&source)) else {
-            return text.to_string();
-        };
-        let start = source_at + relative;
-        logical.push_str(&text[source_at..start]);
-        if span.image.is_some() {
-            logical.push(INLINE_IMAGE_CHAR);
-        } else {
-            logical.push_str(&text[start..start + source.len()]);
-        }
-        source_at = start + source.len();
-    }
-    logical.push_str(&text[source_at..]);
-    logical
-}
-
-fn markdown_from_logical_text(original: &str, logical: &str) -> String {
-    let images: Vec<String> =
-        parse_inline(original).into_iter().filter(|span| span.image.is_some()).map(|span| spans_to_markdown(std::slice::from_ref(&span))).collect();
-    let mut image = images.into_iter();
-    let mut markdown = String::new();
-    for character in logical.chars() {
-        if character == INLINE_IMAGE_CHAR {
-            if let Some(value) = image.next() {
-                markdown.push_str(&value);
-            }
-        } else {
-            markdown.push(character);
-        }
-    }
-    markdown
 }
 
 /// Clicking under the page writes at its end: in the last empty block if there is one,
@@ -975,7 +1046,6 @@ fn table(
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for (c, &w) in screen_widths.iter().enumerate() {
                     let cell = (r, c);
-                    let text = cell_text(block, cell).unwrap_or_default();
                     ui.allocate_ui_with_layout(vec2(w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                         ui.set_min_width(w);
                         ui.set_max_width(w);
@@ -987,6 +1057,8 @@ fn table(
                             ui.set_max_width(inner);
                             if here == Some(cell) && picked.is_none() {
                                 let Some(caret) = caret.as_mut() else { return };
+                                caret.ensure_inline(block);
+                                let previous_selection = caret.selection;
                                 let id = ui.make_persistent_id(("table-cell", i, r, c));
                                 let at = (i, caret.text.clone(), caret.selection);
                                 let out = steady_blink(ui, (at.0, &at.1, at.2), |ui| {
@@ -1001,14 +1073,20 @@ fn table(
                                     out.response.request_focus();
                                     caret.focus = false;
                                 }
+                                if let Some(range) = out.cursor_range {
+                                    caret.selection = (range.primary.index.0, range.secondary.index.0);
+                                }
                                 if out.response.changed() {
+                                    if let Some(inline) = caret.inline.as_mut() {
+                                        inline.update_at(&caret.text, previous_selection, caret.selection);
+                                    }
                                     action = Some(Action::SetCell(i, cell, caret.text.clone()));
                                 }
                             } else {
                                 let strong = r == 0;
                                 let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
-                                let spans = notecraft_formats::markdown::parse_inline(&text);
-                                let job = preview::job(ui, &spans, 14.5 * zoom, colour, t, page);
+                                let spans = cell_spans(block, cell).unwrap_or_default();
+                                let job = preview::job(ui, spans, 14.5 * zoom, colour, t, page);
                                 let resp = ui.add(egui::Label::new(job).sense(Sense::click()).selectable(false).wrap());
                                 if resp.hovered() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -1203,24 +1281,17 @@ fn frame_block(ui: &Ui, top: f32, editing: bool, t: &Tokens, zoom: f32) {
 /// the marker is drawn as a mark beside the line and showing it as words again the moment
 /// the caret arrives makes the line jump.
 pub fn caret_text(block: &Block) -> String {
-    logical_inline_text(Tag::split(&block_text(block)).1)
+    InlineEdit::new(block, true).text().to_owned()
 }
 
 /// Puts the caret's text back into a block, keeping the tag the block already carries.
 pub fn set_caret_text(block: &mut Block, text: &str) {
-    let current = block_text(block);
-    let (tag, body) = Tag::split(&current);
-    let text = markdown_from_logical_text(body, text);
-    let whole = match tag {
-        Some(t) => Tag::set(&text, Some(t)),
-        None => text.to_string(),
-    };
-    set_block_text(block, &whole);
+    InlineEdit::new(block, true).write(block, text);
 }
 
 /// Puts edited text back into a block, keeping what the block is.
 pub fn set_block_text(block: &mut Block, text: &str) {
-    let spans = parse_inline(text);
+    let spans = InlineEdit::new(block, false).parse(text);
     match block {
         Block::Heading { spans: s, .. } | Block::Paragraph(s) | Block::Quote(s) | Block::Item { spans: s, .. } => *s = spans,
         Block::Code { text: t, .. } => *t = text.to_string(),
@@ -1291,20 +1362,23 @@ pub fn is_one_line_of_words(block: &Block) -> bool {
 }
 
 /// The words of one cell, as they are written: (0, c) is a heading cell.
-pub fn cell_text(block: &Block, cell: (usize, usize)) -> Option<String> {
+fn cell_spans(block: &Block, (row, column): (usize, usize)) -> Option<&[Span]> {
     let Block::Table { head, rows } = block else { return None };
-    let (r, c) = cell;
-    let spans = if r == 0 { head.get(c)? } else { rows.get(r - 1)?.get(c)? };
-    Some(spans_to_markdown(spans))
+    if row == 0 { head.get(column).map(Vec::as_slice) } else { rows.get(row - 1)?.get(column).map(Vec::as_slice) }
 }
 
-/// Puts words back into one cell.
+fn cell_spans_mut(block: &mut Block, (row, column): (usize, usize)) -> Option<&mut Vec<Span>> {
+    let Block::Table { head, rows } = block else { return None };
+    if row == 0 { head.get_mut(column) } else { rows.get_mut(row - 1)?.get_mut(column) }
+}
+
+pub fn cell_text(block: &Block, cell: (usize, usize)) -> Option<String> {
+    Some(spans_to_editor(cell_spans(block, cell)?))
+}
+
 pub fn set_cell_text(block: &mut Block, cell: (usize, usize), text: &str) {
-    let Block::Table { head, rows } = block else { return };
-    let (r, c) = cell;
-    let spans = if r == 0 { head.get_mut(c) } else { rows.get_mut(r - 1).and_then(|row| row.get_mut(c)) };
-    if let Some(spans) = spans {
-        *spans = parse_inline(text);
+    if let Some(spans) = cell_spans_mut(block, cell) {
+        *spans = InlineEdit::from_spans(spans).parse(text);
     }
 }
 
@@ -1519,7 +1593,7 @@ pub fn show_blocks(
     {
         let (block, at) = delete_span(blocks, open);
         let text = blocks.get(block).map(caret_text).unwrap_or_default();
-        *caret = Some(Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+        *caret = Some(Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
         *across = None;
         changed.blocks = true;
         changed.caret = true;
@@ -1553,8 +1627,11 @@ pub fn show_blocks(
             let (size, strong) = size_of(&block);
             let size = size * zoom;
             let Some(c) = caret.as_mut() else { continue };
+            c.ensure_inline(&block);
+            let previous_selection = c.selection;
+            let inline = c.inline.clone().unwrap_or_default();
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
-                let job = pagetext::inline_job_with_fonts(ui.ctx(), text.as_str(), size, strong, t, width, page);
+                let job = inline.layout(text.as_str(), |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width, page));
                 ui.fonts_mut(|f| f.layout_job(job))
             };
             let mut at_start = false;
@@ -1593,7 +1670,9 @@ pub fn show_blocks(
                 if wrote_changed {
                     let typed = c.text.clone();
                     if let Some(b) = blocks.get_mut(i) {
-                        set_caret_text(b, &typed);
+                        let selection = c.selection;
+                        c.ensure_inline(b).update_at(&typed, previous_selection, selection);
+                        c.write(b);
                     }
                     changed.blocks = true;
                 }
@@ -1844,7 +1923,9 @@ pub fn show_blocks(
                 // follow the caret without waiting for it to leave the block.
                 let typed = c.text.clone();
                 if let Some(b) = blocks.get_mut(i) {
-                    set_caret_text(b, &typed);
+                    let selection = c.selection;
+                    c.ensure_inline(b).update_at(&typed, previous_selection, selection);
+                    c.write(b);
                 }
                 changed.blocks = true;
             }
@@ -2072,6 +2153,29 @@ pub fn span_text(blocks: &[Block], across: Across) -> String {
         .join("\n\n")
 }
 
+/// A multi-block clipboard fragment without reparsing literal editor text as markup.
+/// Across positions are UTF-8 byte boundaries, while InlineEdit uses character offsets.
+pub fn copied_span(blocks: &[Block], across: Across) -> Option<Vec<Block>> {
+    let mut result = Vec::new();
+    for index in across.blocks() {
+        let block = blocks.get(index)?;
+        let text = block_text(block);
+        let Some((a, b)) = across.covering(index, text.len()) else { continue };
+        let picked = text.get(a..b)?;
+        let fragment = match block {
+            Block::Code { lang, .. } => Block::Code { lang: lang.clone(), text: picked.to_owned() },
+            Block::MathBlock(_) => Block::MathBlock(picked.to_owned()),
+            _ => {
+                let a = text.get(..a)?.chars().count();
+                let b = text.get(..b)?.chars().count();
+                Block::Paragraph(InlineEdit::new(block, false).selected(&text, a..b)?)
+            }
+        };
+        result.push(fragment);
+    }
+    (!result.is_empty()).then_some(result)
+}
+
 /// Takes out everything a selection across blocks covers and joins what is left.
 ///
 /// What is left of the first block and what is left of the last become one paragraph, the
@@ -2085,8 +2189,13 @@ pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
     let kept_head = head.get(..from.min(head.len())).unwrap_or("").to_string();
     let kept_tail = tail.get(to.min(tail.len())..).unwrap_or("").to_string();
     let at = kept_head.chars().count();
+    let mut kept = blocks.get(first).map(|b| InlineEdit::new(b, false)).unwrap_or_default().slice(0..at);
+    let tail_start = tail.chars().count().saturating_sub(kept_tail.chars().count());
+    let end = blocks.get(last).map(|b| InlineEdit::new(b, false)).unwrap_or_default();
+    kept.join(end.slice(tail_start..tail.chars().count()));
     if let Some(b) = blocks.get_mut(first) {
-        set_block_text(b, &format!("{kept_head}{kept_tail}"));
+        let text = kept.text().to_owned();
+        kept.write(b, &text);
     }
     if last > first {
         let end = last.min(blocks.len().saturating_sub(1));
@@ -2334,7 +2443,8 @@ pub struct Wrote {
 /// line reads in when it has no mark of its own, the same as when it is not being written in.
 pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id, page: Option<notecraft_model::Dir>) -> Wrote {
     let width = ui.available_width().max(32.0);
-    let job = pagetext::inline_job_with_fonts(ui.ctx(), &c.text, size, false, t, width, page);
+    let inline = c.inline.clone().unwrap_or_default();
+    let job = inline.layout(&c.text, |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, false, t, width, page));
     let pieces = job.sections.into_iter().map(|section| (section.byte_range.start.0..section.byte_range.end.0, section.format)).collect::<Vec<_>>();
     let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width, page);
     // The block's own id, the same one the egui text box uses for a line without
@@ -2528,11 +2638,11 @@ pub(crate) fn paint_rtl_input_marker(ui: &Ui, caret: egui::Rect) {
     ui.painter().add(egui::Shape::convex_polygon(points, ui.visuals().text_color(), egui::Stroke::NONE));
 }
 
-fn commit(blocks: &mut [Block], caret: &Option<Caret>) {
+fn commit(blocks: &mut [Block], caret: &mut Option<Caret>) {
     if let Some(c) = caret
         && let Some(b) = blocks.get_mut(c.block)
     {
-        set_caret_text(b, &c.text);
+        c.write(b);
     }
 }
 
@@ -2541,7 +2651,8 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
     match action {
         Action::Move(to) => {
             let text = text_for_caret(blocks, to);
-            *caret = blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: None, cell: None, span: None });
+            *caret =
+                blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
             changed.caret = true;
         }
         Action::SetTask(at, done) => {
@@ -2551,7 +2662,8 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         }
         Action::MoveTo(to, at) => {
             let text = text_for_caret(blocks, to);
-            *caret = blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: at, cell: None, span: None });
+            *caret =
+                blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: at, cell: None, span: None, inline: None });
             changed.caret = true;
         }
         Action::Leave => {
@@ -2578,7 +2690,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             let land = (start + n).saturating_sub(1).min(blocks.len().saturating_sub(1));
             let text = blocks.get(land).map(block_text).unwrap_or_default();
             let end = text.chars().count();
-            *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None });
+            *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None, inline: None });
             changed.blocks = true;
             changed.caret = true;
         }
@@ -2588,7 +2700,8 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 if let Some(b) = blocks.get_mut(at) {
                     *b = Block::Paragraph(Vec::new());
                 }
-                *caret = Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                *caret =
+                    Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
                 renumber(blocks);
                 changed.blocks = true;
                 changed.caret = true;
@@ -2599,18 +2712,34 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             let cut = cut.min(text.chars().count());
             let before: String = text.chars().take(cut).collect();
             let after: String = text.chars().skip(cut).collect();
+            let source = caret
+                .as_ref()
+                .and_then(|caret| caret.inline.clone())
+                .or_else(|| blocks.get(at).map(|block| InlineEdit::new(block, true)))
+                .unwrap_or_default();
+            let mut left = source.slice(0..cut);
+            let mut right = source.slice(cut..text.chars().count());
             let mut new = blocks.get(at).map(next_block).unwrap_or(Block::Paragraph(Vec::new()));
             if let Some(b) = blocks.get_mut(at) {
-                set_block_text(b, &before);
+                left.write(b, &before);
                 // A heading splits into a heading and a paragraph, as it does in Word.
                 if matches!(b, Block::Heading { .. }) {
                     new = Block::Paragraph(Vec::new());
                 }
             }
-            set_block_text(&mut new, &after);
+            right.write(&mut new, &after);
             blocks.insert(at + 1, new);
             renumber(blocks);
-            *caret = Some(Caret { block: at + 1, text: after, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None });
+            *caret = Some(Caret {
+                block: at + 1,
+                text: after,
+                focus: true,
+                selection: (0, 0),
+                place: Some(0),
+                cell: None,
+                span: None,
+                inline: Some(right),
+            });
             changed.blocks = true;
             changed.caret = true;
         }
@@ -2620,9 +2749,9 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 // The first block: a heading becomes a paragraph, nothing is lost.
                 if let Some(Block::Heading { .. }) = blocks.first() {
                     if let Some(b) = blocks.get_mut(0) {
-                        *b = Block::Paragraph(parse_inline(&text));
+                        *b = Block::Paragraph(spans_of(b).unwrap_or_default().to_vec());
                     }
-                    *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                    *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
                     changed.blocks = true;
                 }
                 return;
@@ -2630,15 +2759,30 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             let previous = blocks.get(at - 1).cloned();
             match previous {
                 Some(p) if is_writable(&p) => {
-                    let mut joined = block_text(&p);
-                    let at_end = joined.chars().count();
-                    joined.push_str(&text);
+                    let mut source = InlineEdit::new(&p, true);
+                    let at_end = source.text().chars().count();
+                    let current = caret
+                        .as_ref()
+                        .and_then(|caret| caret.inline.clone())
+                        .or_else(|| blocks.get(at).map(|block| InlineEdit::new(block, true)))
+                        .unwrap_or_default();
+                    source.join(current);
+                    let joined = source.text().to_owned();
                     if let Some(b) = blocks.get_mut(at - 1) {
-                        set_block_text(b, &joined);
+                        source.write(b, &joined);
                     }
                     blocks.remove(at);
                     renumber(blocks);
-                    *caret = Some(Caret { block: at - 1, text: joined, focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                    *caret = Some(Caret {
+                        block: at - 1,
+                        text: joined,
+                        focus: true,
+                        selection: (0, 0),
+                        place: None,
+                        cell: None,
+                        span: None,
+                        inline: Some(source),
+                    });
                     let _ = at_end;
                     changed.blocks = true;
                     changed.caret = true;
@@ -2655,13 +2799,13 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         }
         Action::EnterCell(i, cell) => {
             let text = blocks.get(i).and_then(|b| cell_text(b, cell)).unwrap_or_default();
-            *caret = Some(Caret { block: i, text, focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None });
+            *caret = Some(Caret { block: i, text, focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None, inline: None });
             changed.caret = true;
         }
         Action::Select(i, from, to) => {
             let text = blocks.get(i).and_then(|b| cell_text(b, from)).unwrap_or_default();
             // No focus asked for: a block of cells is picked, not written in.
-            *caret = Some(Caret { block: i, text, focus: false, selection: (0, 0), place: None, cell: Some(from), span: Some(to) });
+            *caret = Some(Caret { block: i, text, focus: false, selection: (0, 0), place: None, cell: Some(from), span: Some(to), inline: None });
             changed.caret = true;
         }
         Action::ClearCells(i) => {
@@ -2683,13 +2827,27 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 rows.push(vec![Vec::new(); columns]);
                 changed.blocks = true;
                 let cell = (rows.len(), 0);
-                *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None });
+                *caret = Some(Caret {
+                    block: i,
+                    text: String::new(),
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: Some(cell),
+                    span: None,
+                    inline: None,
+                });
                 changed.caret = true;
             }
         }
         Action::SetCell(i, cell, text) => {
             if let Some(b) = blocks.get_mut(i) {
-                set_cell_text(b, cell, &text);
+                if let Some(caret) = caret.as_mut().filter(|caret| caret.block == i && caret.cell == Some(cell)) {
+                    caret.text = text;
+                    caret.write(b);
+                } else {
+                    set_cell_text(b, cell, &text);
+                }
                 changed.blocks = true;
             }
         }
@@ -2698,7 +2856,16 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             match last_writable {
                 // An empty last block is where the caret goes; otherwise a new one is added.
                 Some(i) if blocks.get(i).map(block_text).unwrap_or_default().is_empty() => {
-                    *caret = Some(Caret { block: i, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                    *caret = Some(Caret {
+                        block: i,
+                        text: String::new(),
+                        focus: true,
+                        selection: (0, 0),
+                        place: None,
+                        cell: None,
+                        span: None,
+                        inline: None,
+                    });
                 }
                 _ => {
                     blocks.push(Block::Paragraph(Vec::new()));
@@ -2710,6 +2877,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                         place: None,
                         cell: None,
                         span: None,
+                        inline: None,
                     });
                     changed.blocks = true;
                 }
@@ -2751,7 +2919,7 @@ fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Po
     };
     // The walk below counts the marks span by span. That count is only right when the marks
     // it counts are the ones the caret's text really has, so the two are compared first.
-    if spans_to_markdown(&spans) != caret_text(block) {
+    if spans_to_editor(&spans) != caret_text(block) {
         return None;
     }
     let drawn: String = spans.iter().map(|s| s.text.as_str()).collect();
@@ -2774,6 +2942,21 @@ fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Po
 
 /// A character of the drawn words, as a character of the same line written with its marks.
 fn over_marks(spans: &[Span], drawn: usize) -> usize {
+    let source = spans_to_editor(spans);
+    if drawn >= spans.iter().map(|span| span.text.chars().count()).sum() {
+        return source.chars().count();
+    }
+    if let Some(marker) = ('\u{e000}'..='\u{f8ff}').find(|c| !source.contains(*c)) {
+        let mut marked = spans.to_vec();
+        if insert_span_marker(&mut marked, drawn, marker, true).is_some() {
+            let probe = spans_to_editor(&marked);
+            if probe.replace(marker, "") == source
+                && let Some(at) = probe.find(marker)
+            {
+                return probe[..at].chars().count();
+            }
+        }
+    }
     let mut seen = 0usize;
     let mut marked = 0usize;
     for s in spans {
@@ -3079,7 +3262,7 @@ mod tests {
         let spans = parse_inline(line);
         let drawn: String = spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(drawn, "see the format page and this too", "what the page shows");
-        assert_eq!(spans_to_markdown(&spans), line, "and what the caret writes in");
+        assert_eq!(spans_to_editor(&spans), line, "and what the caret writes in");
 
         // Every drawn character comes back as the same character in the marked line.
         let marked: Vec<char> = line.chars().collect();
@@ -3365,7 +3548,7 @@ A note to self.
 
     #[test]
     fn a_block_of_cells_is_the_same_block_whichever_way_it_was_dragged() {
-        let caret = |cell, span| Caret { block: 0, text: String::new(), focus: false, selection: (0, 0), place: None, cell, span };
+        let caret = |cell, span| Caret { block: 0, text: String::new(), focus: false, selection: (0, 0), place: None, cell, span, inline: None };
         assert_eq!(cell_range(&caret(Some((1, 0)), Some((2, 3)))), Some(((1, 0), (2, 3))));
         assert_eq!(cell_range(&caret(Some((2, 3)), Some((1, 0)))), Some(((1, 0), (2, 3))), "dragged back the other way");
         assert_eq!(cell_range(&caret(Some((2, 0)), Some((1, 3)))), Some(((1, 0), (2, 3))), "and across the diagonal");
@@ -3482,7 +3665,8 @@ A note to self.
     #[test]
     fn splitting_joining_and_indenting() {
         let mut b = blocks("- one\n- two\n");
-        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         let mut changed = Changed::default();
         apply(Action::Split(0), &mut b, &mut caret, &mut changed);
         assert_eq!(b.len(), 3, "a new item after the first");
@@ -3491,7 +3675,8 @@ A note to self.
 
         // Enter in the middle of a line splits it; the caret goes with the second half.
         let mut split = blocks("one two\n");
-        let mut caret = Some(Caret { block: 0, text: "one two".into(), focus: false, selection: (3, 3), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "one two".into(), focus: false, selection: (3, 3), place: None, cell: None, span: None, inline: None });
         apply(Action::Split(0), &mut split, &mut caret, &mut changed);
         assert_eq!(block_text(split.first().expect("first")), "one");
         assert_eq!(block_text(split.get(1).expect("second")), " two");
@@ -3499,7 +3684,8 @@ A note to self.
 
         // Enter at the very start pushes the words down and leaves an empty line above.
         let mut start = blocks("words\n");
-        let mut caret = Some(Caret { block: 0, text: "words".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "words".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         apply(Action::Split(0), &mut start, &mut caret, &mut changed);
         assert_eq!(start.len(), 2);
         assert_eq!(block_text(start.first().expect("first")), "", "an empty line above");
@@ -3508,7 +3694,8 @@ A note to self.
 
         // Enter at the end of a heading starts a paragraph, not another heading.
         let mut head = blocks("# Title\n");
-        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (5, 5), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (5, 5), place: None, cell: None, span: None, inline: None });
         apply(Action::Split(0), &mut head, &mut caret, &mut changed);
         assert!(matches!(head.first(), Some(Block::Heading { .. })));
         assert!(matches!(head.get(1), Some(Block::Paragraph(_))), "{:?}", head.get(1));
@@ -3524,7 +3711,8 @@ A note to self.
 
         // Backspace at the start joins the text onto the block above.
         let mut two = blocks("first\n\nsecond\n");
-        let mut caret = Some(Caret { block: 1, text: "second".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 1, text: "second".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         apply(Action::JoinBack(1), &mut two, &mut caret, &mut changed);
         assert_eq!(two.len(), 1);
         assert_eq!(block_text(two.first().expect("one")), "firstsecond");
@@ -3532,7 +3720,8 @@ A note to self.
 
         // Backspace at the start of the first block turns a heading into a paragraph.
         let mut head = blocks("# Title\n");
-        let mut caret = Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         apply(Action::JoinBack(0), &mut head, &mut caret, &mut changed);
         assert!(matches!(head.first(), Some(Block::Paragraph(_))));
         assert_eq!(block_text(head.first().expect("one")), "Title");
@@ -3793,11 +3982,13 @@ code
     #[test]
     fn the_caret_never_points_outside_the_page() {
         let mut b = blocks("one\n");
-        let mut caret = Some(Caret { block: 9, text: "junk".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 9, text: "junk".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         let mut changed = Changed::default();
         apply(Action::Move(5), &mut b, &mut caret, &mut changed);
         assert_eq!(caret, None, "a move to a block that is not there leaves no caret");
-        let mut caret = Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None });
+        let mut caret =
+            Some(Caret { block: 0, text: "one".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         apply(Action::JoinBack(0), &mut b, &mut caret, &mut changed);
         assert_eq!(b.len(), 1);
     }
@@ -3838,3 +4029,6 @@ code
         assert!(matches!(blocks[1], Block::Heading { .. }));
     }
 }
+
+#[cfg(test)]
+mod regression_tests;

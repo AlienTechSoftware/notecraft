@@ -116,3 +116,5 @@ No test reads or writes the system clipboard. The app takes its clipboard as a b
 - macOS and Linux: the code avoids OS features, but it has only been built and run on Windows.
 - Real cloud sync, beyond the one OneDrive test recorded in the prototype's README.
 - Long documents and very large attachments.
+
+For focused serialization and editor checks, see [Literal text regression checks](testing-literal-text.md).

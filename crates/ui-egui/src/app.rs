@@ -460,7 +460,7 @@ impl Editor {
         caret.focus = true;
         caret.place = Some(selection.1);
         if let Some(target) = self.blocks.get_mut(block) {
-            pageedit::set_caret_text(target, &caret.text);
+            caret.write(target);
         }
     }
 }
@@ -3096,7 +3096,7 @@ impl NoteCraftApp {
             return result.unwrap_or_default();
         }
         let Some(caret) = ed.caret.as_ref() else { return pageedit::FontSelection::default() };
-        let mut result = pageedit::selection_fonts(&caret.text, caret.selection).unwrap_or_default();
+        let mut result = ed.blocks.get(caret.block).and_then(|block| caret.fonts(block)).unwrap_or_default();
         if caret.selection.0 == caret.selection.1
             && let Some(pending) = ed.pending_format.as_ref().filter(|p| p.block == caret.block && p.at == caret.selection.0)
         {
@@ -3249,8 +3249,7 @@ impl NoteCraftApp {
             _ => {
                 for i in range {
                     if let Some(b) = ed.blocks.get_mut(i).filter(|b| words(b)) {
-                        let text = pageedit::without_marks(&pageedit::block_text(b));
-                        pageedit::set_block_text(b, &text);
+                        pageedit::clear_marks(b);
                     }
                 }
             }
@@ -3295,8 +3294,16 @@ impl NoteCraftApp {
                     ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new()));
                     let marks = ed.blocks_inserted(at, 1);
                     ed.rebuild_body();
-                    ed.caret =
-                        Some(pageedit::Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                    ed.caret = Some(pageedit::Caret {
+                        block: at,
+                        text: String::new(),
+                        focus: true,
+                        selection: (0, 0),
+                        place: None,
+                        cell: None,
+                        span: None,
+                        inline: None,
+                    });
                     Self::mark_dirty_from_blocks(ed);
                     self.save_block_marks(marks);
                 }
@@ -3946,6 +3953,7 @@ impl NoteCraftApp {
             place: None,
             cell: Some((0, 0)),
             span: None,
+            inline: None,
         });
         Self::mark_dirty_from_blocks(ed);
         self.save_block_marks(marks);
@@ -4036,7 +4044,7 @@ impl NoteCraftApp {
         };
         let text = pageedit::cell_text(block, to).unwrap_or_default();
         ed.rebuild_body();
-        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None });
+        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None, inline: None });
         Self::mark_dirty_from_blocks(ed);
     }
 
@@ -4119,6 +4127,7 @@ impl NoteCraftApp {
         if len > 0 && lo == 0 && hi == len && pageedit::toggle_mark(&mut ed.blocks, caret.block..caret.block + 1, mark) {
             if let Some(b) = ed.blocks.get(caret.block) {
                 caret.text = pageedit::caret_text(b);
+                caret.inline = None;
                 caret.selection = (0, caret.text.chars().count());
             }
             ed.rebuild_body();
@@ -4128,7 +4137,7 @@ impl NoteCraftApp {
         let (text, _) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
         caret.text = text;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
-            pageedit::set_block_text(b, &caret.text);
+            caret.write(b);
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
@@ -4162,7 +4171,13 @@ impl NoteCraftApp {
                 marker.push('X');
             }
             let (probe, _) = pageedit::insert_at_caret(&caret.text, (lo, lo), &marker);
-            let inherited = notecraft_formats::markdown::parse_inline(&probe).into_iter().find(|span| span.text.contains(&marker));
+            let inherited = ed
+                .blocks
+                .get(caret.block)
+                .map(|block| caret.parse(block, &probe))
+                .unwrap_or_default()
+                .into_iter()
+                .find(|span| span.text.contains(&marker));
             let unsafe_context = inherited.is_none_or(|span| {
                 span.code
                     || span.math
@@ -4230,6 +4245,7 @@ impl NoteCraftApp {
         ed.pending_format = None;
         if let (Some(caret), Some(block)) = (ed.caret.as_mut(), ed.blocks.get(block)) {
             caret.text = pageedit::caret_text(block);
+            caret.inline = None;
             caret.selection = (0, caret.text.chars().count());
             caret.focus = true;
             ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
@@ -4262,7 +4278,9 @@ impl NoteCraftApp {
             self.status_is_error = false;
             return;
         }
-        let Some((text, selection)) = pageedit::format_source_selection(&caret.text, caret.selection, format) else {
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let Some(block) = ed.blocks.get(caret.block) else { return };
+        let Some((text, selection)) = caret.format(block, format) else {
             self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
             self.status_is_error = false;
             return;
@@ -4277,7 +4295,7 @@ impl NoteCraftApp {
         caret.focus = true;
         ed.restore_format_selection = Some((caret.block, selection.0, selection.1));
         if let Some(block) = ed.blocks.get_mut(caret.block) {
-            pageedit::set_caret_text(block, &caret.text);
+            caret.write(block);
         }
         ed.pending_format = None;
         ed.rebuild_body();
@@ -4363,6 +4381,7 @@ impl NoteCraftApp {
         ed.pending_format = None;
         if let (Some(caret), Some(block)) = (ed.caret.as_mut(), ed.blocks.get(block)) {
             caret.text = pageedit::caret_text(block);
+            caret.inline = None;
             caret.selection = (0, caret.text.chars().count());
             caret.focus = true;
             ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
@@ -4446,6 +4465,7 @@ impl NoteCraftApp {
             }
             if let Some(block) = ed.blocks.get(caret.block) {
                 caret.text = pageedit::caret_text(block);
+                caret.inline = None;
                 caret.selection = (0, caret.text.chars().count());
                 caret.focus = true;
                 ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
@@ -4456,7 +4476,7 @@ impl NoteCraftApp {
             caret.text = text;
             caret.selection = selection;
             if let Some(block) = ed.blocks.get_mut(caret.block) {
-                pageedit::set_block_text(block, &caret.text);
+                caret.write(block);
             }
         }
         ed.rebuild_body();
@@ -4589,7 +4609,7 @@ impl NoteCraftApp {
         caret.selection = selection;
         caret.place = Some(selection.1);
         if let Some(b) = ed.blocks.get_mut(caret.block) {
-            pageedit::set_block_text(b, &caret.text);
+            caret.write(b);
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
@@ -4751,13 +4771,14 @@ impl NoteCraftApp {
                 self.say(crate::tl_id!("ui.select_some_words_first"));
                 return;
             }
-            let copied = pageedit::blocks_to_paste(&picked);
+            let Some(copied) = pageedit::copied_span(&ed.blocks, open) else { return };
             self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
             self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
                 let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
-                ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None });
+                ed.caret =
+                    Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
                 ed.across = None;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
@@ -4777,7 +4798,7 @@ impl NoteCraftApp {
             self.status_is_error = false;
             return;
         }
-        let copied = pageedit::blocks_to_paste(&picked);
+        let Some(copied) = ed.blocks.get(caret.block).and_then(|block| caret.copied_blocks(block)) else { return };
         self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
         self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
         if which == "cut" {
@@ -4787,7 +4808,7 @@ impl NoteCraftApp {
             caret.place = Some(at);
             caret.focus = true;
             if let Some(b) = ed.blocks.get_mut(caret.block) {
-                pageedit::set_block_text(b, &caret.text);
+                caret.write(b);
             }
             ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
@@ -4815,10 +4836,8 @@ impl NoteCraftApp {
     fn clear_formatting(&mut self) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else { return };
-        caret.text = pageedit::without_marks(&caret.text);
-        caret.selection = (0, caret.text.chars().count());
         if let Some(b) = ed.blocks.get_mut(caret.block) {
-            pageedit::set_block_text(b, &caret.text);
+            caret.clear_marks(b);
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
@@ -4842,6 +4861,7 @@ impl NoteCraftApp {
             place: None,
             cell: None,
             span: None,
+            inline: None,
         });
         Self::mark_dirty_from_blocks(ed);
         self.save_block_marks(marks);
@@ -4859,7 +4879,7 @@ impl NoteCraftApp {
                 caret.place = Some(at);
                 caret.focus = true;
                 if let Some(b) = ed.blocks.get_mut(caret.block) {
-                    pageedit::set_block_text(b, &caret.text);
+                    caret.write(b);
                 }
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
@@ -6996,6 +7016,7 @@ impl NoteCraftApp {
                     place: None,
                     cell: None,
                     span: None,
+                    inline: None,
                 });
                 ctx.request_repaint();
                 Ok(json!({"block": n, "text": ed.caret.as_ref().map(|c| c.text.clone())}))
@@ -7966,8 +7987,16 @@ mod alert_tests {
                 (ed.boxes[index].x, ed.boxes[index].y) = (400.0, 2000.0);
                 ed.arranged = true;
                 ed.rebuild_body();
-                ed.caret =
-                    Some(pageedit::Caret { block: line, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None });
+                ed.caret = Some(pageedit::Caret {
+                    block: line,
+                    text: String::new(),
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: None,
+                    span: None,
+                    inline: None,
+                });
                 line
             };
             for _ in 0..3 {
@@ -8047,6 +8076,7 @@ mod alert_tests {
                     place: None,
                     cell: None,
                     span: None,
+                    inline: None,
                 });
                 // Made here rather than by clicks and typing, so it is remembered here too, the
                 // way the window remembers a box the writer made.
@@ -8129,6 +8159,7 @@ mod keep_boxes_tests {
                 place: None,
                 cell: None,
                 span: None,
+                inline: None,
             });
             ed.rebuild_body();
             NoteCraftApp::remember_step(ed);
@@ -8261,5 +8292,116 @@ mod keep_boxes_tests {
             h.state_mut().ribbon_act(ribbon::Act::Equation("x^2"));
             assert_kept(&mut h, &format!("html={html} no caret"), was, 1);
         }
+    }
+}
+
+#[cfg(test)]
+mod literal_formatting_tests {
+    use super::*;
+    use notecraft_formats::{Block, Span};
+
+    #[test]
+    fn clear_formatting_keeps_literal_punctuation_through_save_and_reopen() {
+        let temp = notecraft_store::testing::TempDir::new("clear-literal-formatting");
+        let settings = notecraft_store::Settings::at(temp.path().join("settings.toml"));
+        let mut session = Session::new(temp.path(), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let text = r"*literal* $5 or $6 [x](y) C:\Users\name";
+        let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }])];
+        let body = notecraft_formats::blocks_to_html(&original);
+        session.run("page.save", &params(&[("path", &sample.html_page.to_string_lossy()), ("body", &body)])).expect("save");
+        let mut app = NoteCraftApp::new(session);
+        app.open_page(&sample.html_page);
+        let editor = app.editor.as_mut().expect("opened page");
+        editor.caret = Some(pageedit::Caret { text: pageedit::caret_text(&editor.blocks[0]), ..Default::default() });
+        app.clear_formatting();
+        app.save_now();
+        let page = notecraft_store::page::load_page(&sample.html_page).expect("reopen");
+        let blocks = notecraft_formats::boxes::read(page.format, &page.body).0;
+        assert_eq!(blocks, vec![Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }])]);
+    }
+
+    fn opened_literal_page(blocks: &[Block], format: notecraft_model::PageFormat) -> (notecraft_store::testing::TempDir, NoteCraftApp, PathBuf) {
+        let temp = notecraft_store::testing::TempDir::new("literal-command-regression");
+        let settings = notecraft_store::Settings::at(temp.path().join("settings.toml"));
+        let mut session = Session::new(temp.path(), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let path = match format {
+            notecraft_model::PageFormat::Html => sample.html_page,
+            notecraft_model::PageFormat::Cmgfm => sample.md_page,
+        };
+        let body = notecraft_formats::boxes::write(format, blocks, None);
+        session.run("page.save", &params(&[("path", &path.to_string_lossy()), ("body", &body)])).expect("save");
+        let mut app = NoteCraftApp::new(session);
+        app.open_page(&path);
+        (temp, app, path)
+    }
+
+    #[test]
+    fn clearing_cell_formatting_then_leaving_preserves_the_cell_text() {
+        for format in notecraft_model::PageFormat::ALL {
+            let text = "*literal* $5 or $6";
+            let original = vec![Block::Table {
+                head: vec![
+                    vec![Span { text: text.into(), bold: true, ..Default::default() }],
+                    vec![Span { text: "keep".into(), italic: true, ..Default::default() }],
+                ],
+                rows: Vec::new(),
+            }];
+            let (_temp, mut app, path) = opened_literal_page(&original, format);
+            let ed = app.editor.as_mut().expect("editor");
+            ed.caret =
+                Some(pageedit::Caret { text: pageedit::cell_text(&ed.blocks[0], (0, 0)).expect("cell"), cell: Some((0, 0)), ..Default::default() });
+            app.clear_formatting();
+            let ed = app.editor.as_mut().expect("editor");
+            ed.caret.as_mut().expect("caret").write(&mut ed.blocks[0]);
+            assert_eq!(pageedit::cell_text(&ed.blocks[0], (0, 0)).as_deref(), Some(text));
+            app.save_now();
+            let page = notecraft_store::page::load_page(&path).expect("reopen");
+            let blocks = notecraft_formats::boxes::read(format, &page.body).0;
+            let Block::Table { head, .. } = &blocks[0] else { panic!("table") };
+            assert_eq!(head[0], vec![Span { text: text.into(), ..Default::default() }]);
+            let Block::Table { head: before, .. } = &original[0] else { panic!("table") };
+            assert_eq!(head[1], before[1]);
+        }
+    }
+
+    #[test]
+    fn copy_and_cut_keep_one_line_literal_text_and_rich_styles() {
+        for format in notecraft_model::PageFormat::ALL {
+            let text = "*literal* $5 or $6";
+            let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }])];
+            let (_temp, mut app, _path) = opened_literal_page(&original, format);
+            let ed = app.editor.as_mut().expect("editor");
+            let source = pageedit::caret_text(&ed.blocks[0]);
+            ed.caret = Some(pageedit::Caret { selection: (0, source.chars().count()), text: source, ..Default::default() });
+            app.clipboard("copy");
+            assert_eq!(app.pending_copy.as_deref(), Some(text));
+            assert_eq!(
+                notecraft_formats::markdown::parse(&notecraft_formats::html::to_markdown(app.pending_copy_html.as_deref().expect("html"))),
+                original
+            );
+            assert_eq!(app.editor.as_ref().expect("editor").blocks, original);
+            app.clipboard("cut");
+            assert_eq!(app.pending_copy.as_deref(), Some(text));
+            assert_eq!(pageedit::block_text(&app.editor.as_ref().expect("editor").blocks[0]), "");
+        }
+    }
+
+    #[test]
+    fn copying_across_blocks_keeps_literal_delimiters() {
+        let blocks = vec![
+            Block::Paragraph(vec![Span { text: "*left*".into(), ..Default::default() }]),
+            Block::Paragraph(vec![Span { text: "$5 or $6".into(), ..Default::default() }]),
+        ];
+        let (_temp, mut app, _path) = opened_literal_page(&blocks, notecraft_model::PageFormat::Html);
+        let ed = app.editor.as_mut().expect("editor");
+        ed.across = Some(pageedit::Across { from: (0, 0), to: (1, pageedit::block_text(&ed.blocks[1]).len()) });
+        app.clipboard("copy");
+        assert_eq!(app.pending_copy.as_deref(), Some("*left*\n$5 or $6"));
+        assert_eq!(
+            notecraft_formats::markdown::parse(&notecraft_formats::html::to_markdown(app.pending_copy_html.as_deref().expect("html"))),
+            blocks
+        );
     }
 }

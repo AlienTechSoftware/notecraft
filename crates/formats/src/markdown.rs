@@ -79,7 +79,27 @@ pub fn parse_inline(text: &str) -> Vec<Span> {
 
 const MAX_DEPTH: usize = 8;
 
+// CommonMark consumes a backslash only before ASCII punctuation.
+fn escapes(chars: &[char], at: usize) -> bool {
+    chars.get(at) == Some(&'\\') && chars.get(at + 1).is_some_and(char::is_ascii_punctuation)
+}
+
 fn find(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
+    let mut at = from;
+    while !pat.is_empty() && at + pat.len() <= chars.len() {
+        if escapes(chars, at) {
+            at += 2;
+        } else if chars.get(at..at + pat.len()) == Some(pat) {
+            return Some(at);
+        } else {
+            at += 1;
+        }
+    }
+    None
+}
+
+// Backslashes stay literal inside code and legacy link destinations.
+fn find_raw(chars: &[char], from: usize, pat: &[char]) -> Option<usize> {
     if pat.is_empty() || chars.len() < pat.len() {
         return None;
     }
@@ -208,6 +228,10 @@ fn font_size_close(chars: &[char], start: usize) -> Option<usize> {
     let mut depth = 1usize;
     let mut at = start;
     while at < chars.len() {
+        if escapes(chars, at) {
+            at += 2;
+            continue;
+        }
         if chars.get(at..at + close.len()) == Some(close.as_slice()) {
             depth = depth.saturating_sub(1);
             if depth == 0 {
@@ -228,6 +252,10 @@ fn inline_tag_close(chars: &[char], start: usize, open: &[char], close: &[char])
     let mut depth = 1usize;
     let mut at = start;
     while at < chars.len() {
+        if escapes(chars, at) {
+            at += 2;
+            continue;
+        }
         if chars.get(at..at + close.len()) == Some(close) {
             depth -= 1;
             if depth == 0 {
@@ -292,14 +320,14 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             }
         }
         match c {
-            '\\' if next.is_some() => {
+            '\\' if escapes(chars, i) => {
                 if let Some(n) = next {
                     buf.push(n);
                 }
                 i += 2;
             }
             '`' => {
-                if let Some(end) = find(chars, i + 1, &['`']) {
+                if let Some(end) = find_raw(chars, i + 1, &['`']) {
                     push_text(&mut out, &mut buf, &st, &link);
                     let code: String = slice(chars, i + 1, end).iter().collect();
                     out.push(Span {
@@ -436,22 +464,33 @@ fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
     // Find the matching label bracket, not the `]` belonging to an image nested
     // inside the label (`[![icon](icon) name](file)`).
     let mut depth = 0usize;
-    let close = (start + 1..chars.len()).find(|&i| match chars.get(i) {
-        Some('[') => {
-            depth += 1;
-            false
+    let mut escaped = false;
+    let close = (start + 1..chars.len()).find(|&i| {
+        if escaped {
+            escaped = false;
+            return false;
         }
-        Some(']') if depth > 0 => {
-            depth -= 1;
-            false
+        if escapes(chars, i) {
+            escaped = true;
+            return false;
         }
-        Some(']') => true,
-        _ => false,
+        match chars.get(i) {
+            Some('[') => {
+                depth += 1;
+                false
+            }
+            Some(']') if depth > 0 => {
+                depth -= 1;
+                false
+            }
+            Some(']') => true,
+            _ => false,
+        }
     })?;
     if chars.get(close + 1) != Some(&'(') {
         return None;
     }
-    let end = find(chars, close + 2, &[')'])?;
+    let end = find_raw(chars, close + 2, &[')'])?;
     let label: String = slice(chars, start + 1, close).iter().collect();
     let url: String = slice(chars, close + 2, end).iter().collect::<String>().trim().to_string();
     if url.contains(char::is_whitespace) {
@@ -468,8 +507,26 @@ fn is_table_separator(line: &str) -> bool {
 fn cells(line: &str) -> Vec<String> {
     let t = line.trim();
     let t = t.strip_prefix('|').unwrap_or(t);
-    let t = t.strip_suffix('|').unwrap_or(t);
-    t.split('|').map(|c| c.trim().to_string()).collect()
+    let border = t.ends_with('|') && t[..t.len() - 1].chars().rev().take_while(|c| *c == '\\').count() % 2 == 0;
+    let t = if border { &t[..t.len() - 1] } else { t };
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut chars = t.chars().peekable();
+    while let Some(c) = chars.next() {
+        // Table quoting is an outer layer, including inside code, maths and destinations.
+        if c == '\\' && chars.peek().is_some_and(|c| matches!(c, '\\' | '|')) {
+            if let Some(next) = chars.next() {
+                cell.push(next);
+            }
+        } else if c == '|' {
+            cells.push(cell.trim().to_string());
+            cell.clear();
+        } else {
+            cell.push(c);
+        }
+    }
+    cells.push(cell.trim().to_string());
+    cells
 }
 
 fn list_marker(line: &str) -> Option<(bool, usize, usize, &str)> {
