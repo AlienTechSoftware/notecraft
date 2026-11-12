@@ -156,6 +156,7 @@
 @id	ui.could_not_reset_app_preferences_error	تعذر إعادة تعيين تفضيلات التطبيق: {error}
 @id	ui.could_not_restore_the_link_for_name_error	تعذر استعادة الرابط لـ {name}: {error}
 @id	ui.could_not_save_the_interface_language_error	تعذر حفظ لغة الواجهة: {error}
+@id	ui.could_not_save_the_interface_size_error	تعذر حفظ حجم الواجهة: {error}
 @id	ui.could_not_store_printout_page_page_error	تعذر تخزين صفحة الطباعة {page}: {error}
 @id	ui.count_deleted	{count} · {deleted}
 @id	ui.count_items_colour_colour	عناصر {count}، لون {colour}
@@ -311,6 +312,9 @@
 @id	ui.inserted_name_and_count_printout_pages	تم إدراج {name} و{count} صفحات طباعة
 @id	ui.interface_language	لغة الواجهة
 @id	ui.interface_language_language	لغة الواجهة: {language}
+@id	ui.interface_size	حجم الواجهة
+@id	ui.interface_size_hint	يكبّر الشريط والقوائم والصفحة أو يصغّرها على هذه الشاشة.
+@id	ui.interface_size_percent	{percent}٪
 @id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	المشاكل، خارطة الطريق والتوثيق كلها موجودة. لا تتحدث NoteCraft معها أو مع أي خدمة أخرى بشكل مستقل.
 @id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	إنه مدرج لذا فإن مجلد الصفحة ليس سريًا.
 @id	ui.italic	مائل

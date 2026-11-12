@@ -43,6 +43,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 
 /// Where the pen rack and the tool in hand are remembered between runs.
 const RACK_KEY: &str = "pen_rack";
+/// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
+const UI_SCALE_KEY: &str = "ui_scale";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
@@ -318,6 +320,8 @@ struct Editor {
     format: PageFormat,
     title: String,
     title_buf: String,
+    /// The page has a title of its own; `title` is only the fallback name when it has not.
+    titled: bool,
     body: String,
     /// What the page's file holds, as last read or written, so a save that would not change it
     /// is not made: a save rewrites the file, which on a synced folder can take a second.
@@ -537,8 +541,17 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, &name));
         egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
-    if r.lost_focus() && ed.title_buf.trim() != ed.title && !ed.title_buf.trim().is_empty() {
-        *rename = Some(ed.title_buf.trim().to_string());
+    if r.lost_focus() {
+        let typed = ed.title_buf.trim();
+        if typed.is_empty() {
+            // Clearing the title of a page that had one makes it untitled, as the blank title
+            // area shows; it used to be dropped, and the old title came back on reopen (#132).
+            if ed.titled {
+                *rename = Some(String::new());
+            }
+        } else if !ed.titled || typed != ed.title {
+            *rename = Some(typed.to_string());
+        }
     }
     // The rule under the name, as OneNote draws one. The date the page carries sits under
     // it already, as the first block of the page.
@@ -549,6 +562,14 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
 }
 
 /// What to do with a file the user dropped on a page.
+/// What one Undo took back: the drawing, the page's words and boxes, or both at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Undone {
+    Ink,
+    Page,
+    Both,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FileChoice {
     /// Copy it into the page's folder, so the notebook carries it. OneNote: "Attach File".
@@ -705,6 +726,8 @@ pub struct NoteCraftApp {
     qat: quickaccess::Config,
     /// When the pen last changed the page, to tell which Undo should take back.
     last_ink_change: Option<Instant>,
+    /// What each Undo took back, newest last, so Redo puts it back the same way.
+    undone: Vec<Undone>,
     /// Two columns in the side panel (organisers, then pages) instead of one tree.
     split_panes: bool,
     /// Whether the organisers column is showing, which the three-bar button toggles.
@@ -728,6 +751,10 @@ pub struct NoteCraftApp {
     tokens: Tokens,
     mode_pref: ModePref,
     ui_language: String,
+    /// The size the whole window is drawn at, in percent of the system's own scale, and
+    /// whether it still has to be handed to egui.
+    ui_scale: u16,
+    ui_scale_pending: bool,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -850,6 +877,12 @@ impl NoteCraftApp {
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         let wizard_format = session.settings.global_format().0;
+        let ui_scale = session
+            .settings
+            .get(UI_SCALE_KEY)
+            .and_then(|v| v.trim().parse::<u16>().ok())
+            .filter(|percent| backstage::UI_SCALES.contains(percent))
+            .unwrap_or(100);
         let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
         NoteCraftApp {
             session,
@@ -857,6 +890,7 @@ impl NoteCraftApp {
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
+            undone: Vec::new(),
             open: HashSet::new(),
             selected: None,
             split_panes: session_split,
@@ -880,6 +914,8 @@ impl NoteCraftApp {
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
             ui_language,
+            ui_scale,
+            ui_scale_pending: ui_scale != 100,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -1102,6 +1138,24 @@ impl NoteCraftApp {
         }
     }
 
+    /// The size the whole window is drawn at, in percent of the system's own scale.
+    pub fn ui_scale(&self) -> u16 {
+        self.ui_scale
+    }
+
+    /// Draws the whole window larger or smaller, for a screen where the system's own scale
+    /// leaves the ribbon and the menus too small to read, and remembers the choice.
+    pub fn set_ui_scale(&mut self, percent: u16) {
+        if let Err(error) = self.session.settings.set(UI_SCALE_KEY, &percent.to_string()) {
+            let error = error.to_string();
+            let message = crate::i18n::format_message_id("ui.could_not_save_the_interface_size_error", &[("error", &error)]);
+            self.complain(&message);
+            return;
+        }
+        self.ui_scale = percent;
+        self.ui_scale_pending = true;
+    }
+
     /// Applies the chosen theme to egui when it changed, and refreshes the tokens.
     fn apply_theme(&mut self, ctx: &Context) {
         let key = (self.mode_pref, self.accent);
@@ -1188,11 +1242,11 @@ impl NoteCraftApp {
     }
 
     fn can_undo(&self) -> bool {
-        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo()) || self.pad.as_ref().is_some_and(|p| p.strokes() > 0)
+        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo)
     }
 
     fn can_redo(&self) -> bool {
-        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_redo())
+        self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo)
     }
 
     /// Undo for the Quick Access Toolbar: the page's words and boxes (the page history in
@@ -1211,18 +1265,42 @@ impl NoteCraftApp {
         let together = matches!((inked, edited), (Some(i), Some(e)) if i.max(e).duration_since(i.min(e)) < Duration::from_millis(300));
         let ink_can = self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo);
         let page_can = self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_undo());
-        if ink_can && page_can && together {
+        let what = if ink_can && page_can && together {
             self.ink_undo();
             self.step_back(true);
+            Undone::Both
         } else if ink_can && (ink_newer || !page_can) {
             self.ink_undo();
+            Undone::Ink
         } else {
             self.step_back(true);
-        }
+            Undone::Page
+        };
+        self.undone.push(what);
     }
 
+    /// Puts back what Undo last took back, from the ink, the page or both, the way it was taken
+    /// (issue #155). When the record of which no longer fits what either can put back, the page
+    /// goes first, then the ink.
     fn redo(&mut self) {
-        self.step_back(false);
+        let ink_can = self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo);
+        let page_can = self.editor.as_ref().is_some_and(|e| e.writable && e.history.can_redo());
+        match self.undone.pop() {
+            Some(Undone::Both) if ink_can && page_can => {
+                self.ink_redo();
+                self.step_back(false);
+            }
+            Some(Undone::Ink) if ink_can => self.ink_redo(),
+            Some(Undone::Page) if page_can => self.step_back(false),
+            _ if !page_can && ink_can => {
+                self.undone.clear();
+                self.ink_redo();
+            }
+            _ => {
+                self.undone.clear();
+                self.step_back(false);
+            }
+        }
     }
 
     /// The keys and buttons that move through the pages that were opened. Undo and Redo keys
@@ -1501,6 +1579,7 @@ impl NoteCraftApp {
                 dir: dir.to_path_buf(),
                 format: page.format,
                 title_buf,
+                titled: page.has_title,
                 title: page.title,
                 saved_body: page.body.clone(),
                 saving: None,
@@ -1542,6 +1621,8 @@ impl NoteCraftApp {
                 log::debug!("attachment recovery scan found no missing icons: page={:?} attachments={}", dir, attachments.len());
             }
             self.pad = Some(crate::inkpad::Pad::of_page(dir));
+            // Another page, another history: nothing undone on the last one is redone here.
+            self.undone.clear();
             self.absorb_old_sheets(dir);
             self.sync_ink_reference();
             self.selected = Some(dir.to_path_buf());
@@ -2586,6 +2667,7 @@ impl NoteCraftApp {
                 session_id.as_deref(),
                 &ui_language,
                 &languages,
+                self.ui_scale,
                 &tokens,
             );
         });
@@ -2623,6 +2705,7 @@ impl NoteCraftApp {
                 backstage::Act::SetUiLanguage(language) => {
                     self.set_ui_language(language);
                 }
+                backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
                 backstage::Act::OpenTelemetryFolder(path) => {
                     // The folder is made on first use: it does not exist until a session has
                     // written to it, and Explorer opens Documents for a folder it cannot find.
@@ -3063,8 +3146,8 @@ impl NoteCraftApp {
             table_borders: self.table_borders,
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
-            can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()),
-            can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()),
+            can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
+            can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
@@ -3738,6 +3821,24 @@ impl NoteCraftApp {
         } else {
             1.0 + (notecraft_ink::MAX_GAIN - 1.0) * (share - 1.0)
         }
+    }
+
+    /// Puts back the change to the drawing that undo last took back.
+    fn ink_redo(&mut self) {
+        let Some(pad) = self.pad.as_mut() else {
+            self.say(crate::tl_id!("ui.nothing_to_redo"));
+            return;
+        };
+        if !pad.redo() {
+            self.say(crate::tl_id!("ui.nothing_to_redo"));
+            return;
+        }
+        let strokes = pad.strokes();
+        match pad.save() {
+            Ok(()) => self.say(crate::i18n::format_message_id("ui.drawing_saved_count_strokes", &[("count", &strokes.to_string())])),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
+        }
+        self.sync_ink_reference();
     }
 
     /// Takes the last stroke back out of the drawing on this page.
@@ -4914,6 +5015,10 @@ impl NoteCraftApp {
     /// Puts a snippet where the caret is, or at the end of the page.
     fn insert_in_page(&mut self, text: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
+        // An insert is an edit: it is recorded for undo before the page changes.
+        if ed.caret.is_some() {
+            Self::remember_step(ed);
+        }
         match ed.caret.as_mut() {
             Some(caret) => {
                 // Where the caret is, not at the end of the block.
@@ -5931,7 +6036,8 @@ impl NoteCraftApp {
             && self.run("node.title", &params(&[("path", &path_str(&dir)), ("title", &t)])).is_some()
         {
             if let Some(ed) = self.editor.as_mut() {
-                ed.title = t;
+                ed.titled = !t.is_empty();
+                ed.title = if t.is_empty() { notecraft_store::tree::UNTITLED_PAGE.to_string() } else { t };
             }
             self.say(crate::tl_id!("ui.title_saved"));
         }
@@ -6196,7 +6302,11 @@ impl NoteCraftApp {
                     });
                 if reset {
                     match self.session.settings.reset() {
-                        Ok(()) => self.dialog = Some(self.first_use_wizard()),
+                        Ok(()) => {
+                            self.ui_scale = 100;
+                            self.ui_scale_pending = true;
+                            self.dialog = Some(self.first_use_wizard());
+                        }
                         Err(e) => {
                             self.complain(&crate::i18n::format_message_id("ui.could_not_reset_app_preferences_error", &[("error", &e.to_string())]))
                         }
@@ -7307,6 +7417,12 @@ impl NoteCraftApp {
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
         self.apply_theme(ctx);
+        // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
+        // change the same factor, and are left alone in between.
+        if self.ui_scale_pending {
+            ctx.set_zoom_factor(f32::from(self.ui_scale) / 100.0);
+            self.ui_scale_pending = false;
+        }
         if self.window_level_pending {
             let level = if self.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
@@ -7343,11 +7459,22 @@ impl NoteCraftApp {
         // one that answers, or Ctrl+Z would mean two different things on one page.
         let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
         if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
-            self.step_back(false);
+            // The ink's as well as the page's, whichever Undo took back.
+            self.redo();
         } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
             // The ink's changes as well as the page's: whichever was last, or both when one
             // press made them together.
             self.undo();
+        }
+        // Ctrl+F, and OneNote's Ctrl+E, go to the search box. Taken before the page sees
+        // them: with the caret in the page, the key went nowhere and the words typed to find
+        // something were written into the note (issue #134). The code view has a Find of its
+        // own for the file it shows, so it keeps Ctrl+F while it is open.
+        if !self.show_source && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F) || i.consume_key(Modifiers::COMMAND, Key::E)) {
+            if let Some(caret) = self.editor.as_mut().and_then(|ed| ed.caret.as_mut()) {
+                caret.focus = false;
+            }
+            self.focus_search = true;
         }
         self.nav_keys(ctx);
         self.direction_keys(ctx);

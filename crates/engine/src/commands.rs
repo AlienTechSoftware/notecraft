@@ -194,7 +194,9 @@ fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         Some(l) => l.trim().parse::<usize>().map_err(|_| EngineError::BadParam("limit must be a number".into()))?.min(500),
         None => 40,
     };
-    Ok(Output::Hits(search::search(s.root(), req(p, "q")?, limit)))
+    // Every open notebook, the ones opened from another folder too: the window calls this
+    // Search all pages (issue #127).
+    Ok(Output::Hits(search::search_in(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
 }
 
 fn notebook_check(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -670,6 +672,37 @@ mod tests {
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
+    }
+
+    /// Issue #127: Search all pages finds pages in a notebook opened from another folder, once
+    /// each, with the limit applied to every notebook together.
+    #[test]
+    fn search_finds_pages_in_a_notebook_opened_from_elsewhere() {
+        let t = TempDir::new("engine-search-elsewhere");
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let mut s = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let here = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        let here_page = here.join("new-section-1").join("untitled-page");
+        s.run("page.save", &p(&[("path", &here_page.to_string_lossy()), ("body", "<p>shared_token here</p>")])).expect("save");
+
+        let away = t.path().join("away");
+        std::fs::create_dir_all(&away).expect("dir");
+        let mut other = Session::new(&away, settings.clone()).expect("other session");
+        let made = path_of(other.run("notebook.create", &p(&[("name", "Elsewhere")])).expect("notebook"));
+        let away_page = made.join("new-section-1").join("untitled-page");
+        other
+            .run("page.save", &p(&[("path", &away_page.to_string_lossy()), ("body", "<p>external_unique_token and shared_token</p>")]))
+            .expect("save");
+        s.run("notebook.open", &p(&[("path", &made.to_string_lossy())])).expect("open");
+
+        let hits = |s: &mut Session, q: &str, limit: &str| match s.run("search.query", &p(&[("q", q), ("limit", limit)])).expect("search") {
+            Output::Hits(h) => h,
+            other => panic!("{other:?}"),
+        };
+        let found = hits(&mut s, "external_unique_token", "10");
+        assert_eq!(found.len(), 1, "the page in the notebook opened from elsewhere is found: {found:?}");
+        assert_eq!(hits(&mut s, "shared_token", "10").len(), 2, "a page in each notebook, each once");
+        assert_eq!(hits(&mut s, "shared_token", "1").len(), 1, "the limit is for all the notebooks together");
     }
 
     #[test]
