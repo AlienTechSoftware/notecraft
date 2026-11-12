@@ -843,21 +843,76 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                let size_label = view.font_size.unwrap_or_else(|| crate::tl_id!("ui.font_size"));
-                let size_menu = ui.menu_button(size_label, |ui| {
-                    for size in FONT_SIZES {
-                        if ui.button(format!("{size}")).clicked() {
-                            acts.push(Act::FontSize(size));
-                            ui.close();
+                // The font name: the same combo box as the size, listing the installed fonts.
+                // The font list is read in the background. While it is not ready the list says so,
+                // and the window asks to be drawn again until it is.
+                let (families, families_note): (Vec<String>, Option<String>) = {
+                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                    {
+                        match crate::fonts::catalog_if_ready() {
+                            Some(Ok(catalog)) => (
+                                catalog.families().iter().filter(|name| notecraft_formats::markdown::valid_font_family(name)).cloned().collect(),
+                                None,
+                            ),
+                            Some(Err(error)) => {
+                                log::warn!("Could not discover installed fonts: {error}");
+                                (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
+                            }
+                            None => {
+                                ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+                                (Vec::new(), Some(crate::tl_id!("ui.loading_fonts").to_string()))
+                            }
                         }
                     }
-                });
-                size_menu.response.widget_info(|| {
-                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.font_size"));
-                    info.current_text_value = view.font_size.map(str::to_owned);
-                    info
-                });
-                size_menu.response.on_hover_text(crate::tl_id!("ui.font_size"));
+                    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+                    {
+                        (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
+                    }
+                };
+                let family_out = crate::combo::show(
+                    ui,
+                    t.text,
+                    crate::combo::Spec {
+                        id: ui.id().with("font-family"),
+                        box_label: crate::tl_id!("ui.font_family_box"),
+                        arrow_label: crate::tl_id!("ui.font_family"),
+                        shown: view.font_family.unwrap_or(""),
+                        width: 96.0,
+                        items: &families,
+                        empty_note: families_note.as_deref(),
+                        accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                    },
+                );
+                if let Some(name) = family_out.chosen {
+                    acts.push(Act::FontFamily(name));
+                }
+                // OneNote's size control: an editable box showing the size, and a drop-down arrow.
+                // The box shows the selected size; with no selection it keeps the last size seen.
+                let last_id = ui.id().with("font-size-last");
+                if let Some(now) = view.font_size.filter(|s| s.parse::<u8>().is_ok()) {
+                    ui.data_mut(|d| d.insert_temp(last_id, now.to_owned()));
+                }
+                let shown_owned: String =
+                    view.font_size.map(str::to_owned).or_else(|| ui.data(|d| d.get_temp::<String>(last_id))).unwrap_or_default();
+                let shown = shown_owned.as_str();
+                let sizes: Vec<String> = FONT_SIZES.iter().map(|size| size.to_string()).collect();
+                let size_out = crate::combo::show(
+                    ui,
+                    t.text,
+                    crate::combo::Spec {
+                        id: ui.id().with("font-size"),
+                        box_label: crate::tl_id!("ui.font_size_box"),
+                        arrow_label: crate::tl_id!("ui.font_size"),
+                        shown,
+                        width: 38.0,
+                        items: &sizes,
+                        empty_note: None,
+                        accept: &|typed| typed.parse::<u8>().is_ok_and(|size| FONT_SIZES.contains(&size)),
+                    },
+                );
+                if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
+                    acts.push(Act::FontSize(size));
+                }
                 if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
@@ -909,39 +964,6 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             });
             ui.horizontal(|ui| {
-                let family_label = view.font_family.unwrap_or_else(|| crate::tl_id!("ui.font_family"));
-                let shown_family = if family_label.chars().count() > 14 {
-                    format!("{}...", family_label.chars().take(11).collect::<String>())
-                } else {
-                    family_label.to_string()
-                };
-                let family_menu = ui.menu_button(shown_family, |ui| {
-                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-                    match crate::fonts::system_catalog() {
-                        Ok(catalog) => {
-                            egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
-                                for family in catalog.families().iter().filter(|name| notecraft_formats::markdown::valid_font_family(name)) {
-                                    if ui.button(family).clicked() {
-                                        acts.push(Act::FontFamily(family.clone()));
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        }
-                        Err(error) => {
-                            log::warn!("Could not discover installed fonts: {error}");
-                            ui.label(crate::tl_id!("ui.font_catalog_unavailable"));
-                        }
-                    }
-                    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-                    ui.label(crate::tl_id!("ui.font_catalog_unavailable"));
-                });
-                family_menu.response.widget_info(|| {
-                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.font_family"));
-                    info.current_text_value = view.font_family.map(str::to_owned);
-                    info
-                });
-                family_menu.response.on_hover_text(format!("{}: {family_label}", crate::tl_id!("ui.font_family")));
                 if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), false, t).clicked() {
                     acts.push(Act::Mark("underline"));
                 }

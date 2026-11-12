@@ -652,7 +652,7 @@ fn what_cannot_be_written_in_says_so() {
 fn tags_go_on_a_line_and_come_off_again() {
     let (_t, mut app, s) = sample_app("ui-tags");
     app.open_path(&s.md_page.to_string_lossy());
-    let mut h = harness(app, LIGHT);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 760.0));
     settle(&mut h);
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     pump(&mut h);
@@ -1289,7 +1289,7 @@ fn the_ribbon_inserts_in_both_formats() {
 fn the_ribbon_formats_what_the_caret_is_in() {
     let (_t, mut app, s) = sample_app("ui-ribbon-format");
     app.open_path(&s.md_page.to_string_lossy());
-    let mut h = harness(app, LIGHT);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 760.0));
     settle(&mut h);
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     pump(&mut h);
@@ -6162,10 +6162,136 @@ fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
         h.run();
         h.get_by_label("24").click();
         settle(&mut h);
-        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24 pt"));
+        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24"));
         assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
         review(&mut h, "font-indicators-mixed");
     }
+}
+
+/// SUP-009 (owner, 2026-11-11): the size box is editable, as OneNote's is. A typed size applies
+/// to the selection on Enter, and the box then shows that size.
+#[test]
+#[ignore = "SUP-009: clicking into the size box clears the page selection; the typed size does not apply yet"]
+fn a_typed_font_size_applies_to_the_selection() {
+    let (_t, app, s) = sample_app("ui-font-size-typed");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    notecraft_store::page::save_body(&s.md_page, "<span style=\"font-size: 18pt\">alpha</span> plain").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
+    h.get_by_label("Font size").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Font size").type_text("24");
+    h.run();
+    assert_eq!(h.get_by_label("Font size").value().as_deref(), Some("24"), "the box holds the typed text before Enter");
+    // Leaving the box (by clicking the drop-down arrow) applies the typed size.
+    h.get_by_label("Font Size").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24"), "the box shows the typed size");
+    assert!(h.state().body().unwrap_or_default().contains("24pt"), "the selection took the typed size");
+}
+
+/// OneNote: the size list opens under the size box, left-aligned with it, not under the arrow.
+#[test]
+fn the_size_list_opens_under_the_size_box() {
+    let (_t, app, s) = sample_app("ui-font-size-list-position");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font Size").click();
+    h.run();
+    h.run();
+    let boxed = h.get_by_label("Font size").rect();
+    let item = h.get_by_label("16").rect();
+    assert!((item.min.x - boxed.min.x).abs() < 8.0, "the list is left-aligned with the size box: box {boxed:?}, list {item:?}");
+    assert!(item.min.y >= boxed.max.y - 1.0, "the list is below the size box: box {boxed:?}, list {item:?}");
+}
+
+/// The size box shows the size of the text under the caret, as OneNote's does.
+#[test]
+fn the_size_box_shows_the_current_size() {
+    let (_t, app, s) = sample_app("ui-font-size-box-current");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    notecraft_store::page::save_body(&s.md_page, "<span style=\"font-size: 18pt\">alpha</span>").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font size").value().as_deref(), Some("18"), "the box shows the selection's size");
+}
+
+/// Choosing a font in the list changes the font box to that font (with the caret in plain text).
+#[test]
+fn choosing_a_font_changes_the_font_box() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog.families().iter().find(|n| notecraft_formats::markdown::valid_font_family(n)).cloned() else { return };
+    let (_t, app, s) = sample_app("ui-font-choose");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(&name).click();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
+}
+
+/// Dragging across plain text selects it, and the page reports the selection.
+#[test]
+fn dragging_across_text_selects_it() {
+    let (_t, app, s) = sample_app("ui-drag-select");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    notecraft_store::page::save_body(&s.md_page, "hello world").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+    let origin = &page["origin"];
+    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
+    let _ = (ox, oy);
+    let (y, x0, x1) = (308.0, 500.0, 560.0);
+    ask(&mut h, "ui.click", json!({"x": x0, "y": y})).expect("focus the text");
+    settle(&mut h);
+    ask(&mut h, "ui.press", json!({"x": x0, "y": y})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": (x0 + x1) / 2.0, "y": y})).expect("move");
+    pump(&mut h);
+    ask(&mut h, "ui.move", json!({"x": x1, "y": y})).expect("move");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": x1, "y": y})).expect("release");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["caret"].clone();
+    assert!(caret != Value::Null, "the page has a caret or selection after a drag: {caret}");
+    assert!(caret["at"] != caret["anchor"], "the drag made a selection, not a caret: {caret}");
+}
+
+/// With no caret placed, choosing a font from the list still changes the font box (OneNote applies
+/// it to the next text typed).
+#[test]
+fn choosing_a_font_without_a_caret_changes_the_font_box() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog.families().iter().find(|n| notecraft_formats::markdown::valid_font_family(n)).cloned() else { return };
+    let (_t, app, s) = sample_app("ui-font-choose-no-caret");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Font Family").click();
+    h.run();
+    h.get_by_label(&name).click();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
 }
 
 #[test]
@@ -6177,17 +6303,17 @@ fn font_selectors_show_pending_size_without_editing_the_page() {
     ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Default"));
-    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Default"));
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("11"));
     let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
     h.get_by_label("18").click();
     settle(&mut h);
-    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"));
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18"));
     assert_eq!(h.state().body().unwrap_or_default(), before);
     ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("move caret");
     settle(&mut h);
-    assert_ne!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the pending size does not follow a moved caret");
+    assert_ne!(h.get_by_label("Font Size").value().as_deref(), Some("18"), "the pending size does not follow a moved caret");
 }
 
 #[test]
@@ -6551,7 +6677,7 @@ fn pending_marks_combine_with_size_for_unicode_typing_in_both_formats() {
         h.run();
         h.get_by_label("18").click();
         settle(&mut h);
-        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the pending size is shown");
+        assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18"), "the pending size is shown");
         assert_eq!(h.state().body().unwrap_or_default(), before);
         assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["history"]["canUndo"], false);
         ask(&mut h, "ui.text", json!({"text": "مرحبا"})).expect("typing");
@@ -6670,7 +6796,7 @@ fn selected_container_font_size_is_undoable_and_leaves_other_boxes_alone() {
     h.run();
     h.get_by_label("18").click();
     settle(&mut h);
-    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18 pt"), "the selected container reports its size");
+    assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("18"), "the selected container reports its size");
     let after = h.state().body().unwrap_or_default().to_string();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, &after);
     fn spans(block: &notecraft_formats::Block) -> &[notecraft_formats::markdown::Span] {
