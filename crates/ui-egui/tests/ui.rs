@@ -2237,6 +2237,40 @@ fn page_ink_crosses_a_diagram_container_edge() {
     assert!(visible_red(ox + 150.0, y2), "ink remains visible when a stroke starts on open paper and enters the container");
 }
 
+/// Issue #22: the pen drew only over a text block; on the open canvas around and below the
+/// writing nothing was laid down. Strokes far from any text, to the right of the page column
+/// and below the last line, are strokes of the page's ink like any other.
+#[test]
+fn the_pen_draws_on_open_canvas_away_from_any_text() {
+    for html in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-draw-open-canvas");
+        let page = if html { &s.html_page } else { &s.md_page };
+        app.open_path(&page.to_string_lossy());
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        pump(&mut h);
+        h.get_by_label("Pen red").click();
+        pump(&mut h);
+        let area = h.state().page_rect().expect("the page is on the screen");
+        // Each stroke starts and stays on open canvas: beside the page column, and under the writing.
+        let strokes = [(area.max.x - 140.0, area.min.y + 120.0), (area.min.x + 60.0, area.max.y - 90.0)];
+        for (n, (x, y)) in strokes.into_iter().enumerate() {
+            ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
+            pump(&mut h);
+            for step in 1..=4 {
+                ask(&mut h, "ui.move", json!({"x": x + step as f32 * 20.0, "y": y + step as f32 * 6.0})).expect("move");
+                pump(&mut h);
+            }
+            ask(&mut h, "ui.release", json!({"x": x + 80.0, "y": y + 24.0})).expect("up");
+            settle(&mut h);
+            let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+            assert_eq!(ink["strokes"].as_u64(), Some(n as u64 + 1), "html={html}: stroke {n} at ({x},{y}) was laid down: {ink}");
+        }
+        assert!(page.join("ink.svg").exists(), "html={html}: and written beside the page");
+    }
+}
+
 /// The same on an HTML page, and the ink comes back when the page is opened again.
 #[test]
 fn ink_comes_back_when_the_page_is_opened_again() {
