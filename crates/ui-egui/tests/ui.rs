@@ -4313,6 +4313,59 @@ fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
     assert!(text.contains("N300[Node 300]"), "the source is untouched");
 }
 
+/// Issue #55: after the page file was changed in the source view, closing the view left the
+/// page unable to take a caret, so it could only be changed as HTML from then on.
+#[test]
+fn the_page_can_be_written_in_after_its_source_was_changed() {
+    let (_t, app, s) = sample_app("ui-source-then-edit");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    // A change in the source: a word in the first paragraph.
+    let editor = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|n| n.value().is_some_and(|v| v.contains("Kickoff notes")))
+        .expect("the page file in the code view")
+        .rect();
+    ask(&mut h, "ui.click", json!({"x": editor.center().x, "y": editor.min.y + 4.0})).expect("into the source");
+    settle(&mut h);
+    // Down to the line inside <body> that holds the page, and to its end.
+    let file = std::fs::read_to_string(s.html_page.join("index.html")).expect("page file");
+    let line = file.lines().position(|l| l.contains("Kickoff notes")).expect("the body line");
+    ask(&mut h, "ui.key", json!({"key": "Home", "ctrl": true})).expect("top");
+    settle(&mut h);
+    for _ in 0..line {
+        ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
+        settle(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end of the line");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "<p>Typed in the source</p>"})).expect("type in the source");
+    settle(&mut h);
+    let file = std::fs::read_to_string(s.html_page.join("index.html")).expect("page file");
+    assert!(file.contains("Typed in the source"), "the source change was written:\n{file}");
+
+    // Back to the page, as the toolbar button does.
+    h.get_by_label("Page source").click();
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["page"]["writable"], json!(true), "the page can still be written in: {}", state["page"]);
+    assert!(h.state().body().unwrap_or_default().contains("Typed in the source"), "the page shows the source change");
+
+    let para = h.get_by_label("Typed in the source").rect();
+    ask(&mut h, "ui.click", json!({"x": para.max.x - 2.0, "y": para.center().y})).expect("into the page");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert!(!caret.is_null(), "a click puts the caret in the page");
+    ask(&mut h, "ui.text", json!({"text": " and in the page"})).expect("type in the page");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("and in the page"), "what was typed in the page went in:\n{body}");
+}
+
 /// The code view names the language of the file it shows and colours it, and a Find bar under the
 /// editor looks in that file: Ctrl+F opens it, typing finds, Enter and Shift+Enter step through the
 /// matches, and Escape closes it with the match selected in the text.

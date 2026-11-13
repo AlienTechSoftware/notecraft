@@ -46,13 +46,16 @@ pub struct Step {
     pub boxes: Vec<Container>,
     /// Where the caret was, so undo puts it back where the writer left it.
     pub caret: Option<crate::pageedit::Caret>,
+    /// The table widths the page kept at this step, so undoing a column put into a table
+    /// puts the widths back with it (issue #154). `None` where the step did not note them.
+    pub columns: Option<notecraft_model::tablecols::Widths>,
     pub kind: Kind,
     when: Instant,
 }
 
 impl Step {
     pub fn new(body: String, blocks: Vec<Block>, boxes: Vec<Container>, caret: Option<crate::pageedit::Caret>, kind: Kind) -> Step {
-        Step { body, blocks, boxes, caret, kind, when: Instant::now() }
+        Step { body, blocks, boxes, caret, columns: None, kind, when: Instant::now() }
     }
 
     /// Roughly what this step weighs, for the cap. The text is most of it.
@@ -164,6 +167,11 @@ impl History {
     /// The step the page is showing now.
     pub fn here(&self) -> Option<&Step> {
         self.steps.get(self.at)
+    }
+
+    /// The step the page is showing now, to bring what it notes up to date.
+    pub fn here_mut(&mut self) -> Option<&mut Step> {
+        self.steps.get_mut(self.at)
     }
 }
 
