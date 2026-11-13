@@ -74,7 +74,7 @@ struct Style {
 /// Parses inline Markdown into styled spans.
 pub fn parse_inline(text: &str) -> Vec<Span> {
     let chars: Vec<char> = text.chars().collect();
-    inline(&chars, Style::default(), None, 0)
+    inline(&chars, Style::default(), None, 0, false)
 }
 
 const MAX_DEPTH: usize = 8;
@@ -282,13 +282,22 @@ fn inline_tag_close(chars: &[char], start: usize, open: &[char], close: &[char])
     None
 }
 
-fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<Span> {
+fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize, cell_breaks: bool) -> Vec<Span> {
     let mut out = Vec::new();
     let mut buf = String::new();
     let mut i = 0;
     while i < chars.len() {
         let c = chars.get(i).copied().unwrap_or(' ');
         let next = chars.get(i + 1).copied();
+        // A table row stays on one source line; an explicit break is part of its cell.
+        if cell_breaks
+            && c == '<'
+            && let Some((len, newline)) = table_break(chars, i)
+        {
+            buf.push_str(newline);
+            i += len;
+            continue;
+        }
         if c == '<'
             && depth < MAX_DEPTH
             && let Some((font_size, font_family, content_start)) = font_style_open(chars, i)
@@ -302,7 +311,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
             if font_family.is_some() {
                 sized.font_family = font_family;
             }
-            out.extend(inline(slice(chars, content_start, content_end), sized, link.clone(), depth + 1));
+            out.extend(inline(slice(chars, content_start, content_end), sized, link.clone(), depth + 1, cell_breaks));
             i = content_end + "</span>".chars().count();
             continue;
         }
@@ -323,7 +332,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                     } else {
                         inner.underline = true;
                     }
-                    out.extend(inline(slice(chars, i + open_len, end), inner, link.clone(), depth + 1));
+                    out.extend(inline(slice(chars, i + open_len, end), inner, link.clone(), depth + 1, cell_breaks));
                     i = end + closing.len();
                     continue;
                 }
@@ -378,7 +387,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 if let Some(end) = find(chars, i + 3, &['*', '*', '*']) {
                     push_text(&mut out, &mut buf, &st, &link);
                     let inner = Style { bold: true, italic: true, ..st.clone() };
-                    out.extend(inline(slice(chars, i + 3, end), inner, link.clone(), depth + 1));
+                    out.extend(inline(slice(chars, i + 3, end), inner, link.clone(), depth + 1, cell_breaks));
                     i = end + 3;
                 }
             }
@@ -393,7 +402,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                         } else {
                             inner.strike = true;
                         }
-                        out.extend(inline(slice(chars, i + 2, end), inner, link.clone(), depth + 1));
+                        out.extend(inline(slice(chars, i + 2, end), inner, link.clone(), depth + 1, cell_breaks));
                         i = end + 2;
                     }
                     _ => {
@@ -407,7 +416,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                     push_text(&mut out, &mut buf, &st, &link);
                     let mut inner = st.clone();
                     inner.italic = true;
-                    out.extend(inline(slice(chars, i + 1, end), inner, link.clone(), depth + 1));
+                    out.extend(inline(slice(chars, i + 1, end), inner, link.clone(), depth + 1, cell_breaks));
                     i = end + 1;
                 }
                 _ => {
@@ -461,7 +470,7 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize) -> Vec<
                 Some((label, url, after)) => {
                     push_text(&mut out, &mut buf, &st, &link);
                     let label_chars: Vec<char> = label.chars().collect();
-                    out.extend(inline(&label_chars, st.clone(), Some(url), depth + 1));
+                    out.extend(inline(&label_chars, st.clone(), Some(url), depth + 1, cell_breaks));
                     i = after;
                 }
                 None => {
@@ -550,6 +559,16 @@ fn destination_end(chars: &[char], from: usize, quoted: bool) -> Option<usize> {
 fn is_table_separator(line: &str) -> bool {
     let t = line.trim();
     t.contains('-') && t.contains('|') && t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
+}
+
+fn table_break(chars: &[char], at: usize) -> Option<(usize, &'static str)> {
+    crate::render::TABLE_BREAKS
+        .iter()
+        .find_map(|&(newline, tag)| chars.get(at..at + tag.len()).filter(|slice| slice.iter().copied().eq(tag.chars())).map(|_| (tag.len(), newline)))
+}
+
+fn parse_table_cell(text: &str) -> Vec<Span> {
+    inline(&text.chars().collect::<Vec<_>>(), Style::default(), None, 0, true)
 }
 
 fn cells(line: &str) -> Vec<String> {
@@ -691,11 +710,11 @@ pub fn parse(src: &str) -> Vec<Block> {
             }
             out.push(Block::Quote(parse_inline(&parts.join(" "))));
         } else if line.contains('|') && lines.get(i + 1).is_some_and(|l| is_table_separator(l)) {
-            let head: Vec<Vec<Span>> = cells(line).iter().map(|c| parse_inline(c)).collect();
+            let head: Vec<Vec<Span>> = cells(line).iter().map(|c| parse_table_cell(c)).collect();
             i += 2;
             let mut rows = Vec::new();
             while i < lines.len() && lines.get(i).is_some_and(|l| l.contains('|') && !l.trim().is_empty()) {
-                rows.push(cells(lines.get(i).copied().unwrap_or("")).iter().map(|c| parse_inline(c)).collect());
+                rows.push(cells(lines.get(i).copied().unwrap_or("")).iter().map(|c| parse_table_cell(c)).collect());
                 i += 1;
             }
             out.push(Block::Table { head, rows });
