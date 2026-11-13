@@ -41,6 +41,24 @@ Parameters:
 
 - path (required): the subpage to promote
 
+## `node.move`
+
+Move a page, section or section group into another notebook, section group, section or page (changes the tree).
+
+Parameters:
+
+- path (required): the page, section or section group to move
+- to (required): where it goes; it is put last there
+
+## `node.copy`
+
+Copy a page, section or section group into another notebook, section group, section or page (changes the tree).
+
+Parameters:
+
+- path (required): the page, section or section group to copy
+- to (required): where the copy goes; it is put last there, and every node in it gets a new id
+
 ## `node.move_up`
 
 Move a page up among its siblings (changes the tree).

@@ -198,6 +198,120 @@ pub fn promote_subpage(path: &Path) -> Result<PathBuf> {
     Ok(target_name)
 }
 
+/// Whether a node of `kind` may go into `dest`, as Move or Copy puts it (issue #167): a page
+/// into a section (or under a page, as a subpage), a section into a notebook or a section group,
+/// a section group into a notebook or another group. Never into itself or anything inside it.
+fn check_destination(path: &Path, dest: &Path) -> Result<NodeKind> {
+    let kind = read_node(path).map(|n| n.kind).ok_or_else(|| StoreError::invalid("only a page, section or section group can be moved or copied"))?;
+    if kind == NodeKind::Notebook {
+        return Err(StoreError::invalid("a notebook cannot be moved into another one"));
+    }
+    let into =
+        read_node(dest).map(|n| n.kind).ok_or_else(|| StoreError::invalid("the destination is not a notebook, section group, section or page"))?;
+    if !into.may_contain().contains(&kind) {
+        return Err(StoreError::invalid(format!("a {} cannot hold a {}", into.label().to_lowercase(), kind.label().to_lowercase())));
+    }
+    if dest.starts_with(path) {
+        return Err(StoreError::invalid("a page or section cannot go inside itself"));
+    }
+    Ok(kind)
+}
+
+/// Moves a page (with its subpages, files and ink), a section or a section group into another
+/// parent, last among the nodes there, as OneNote's Move does (issue #167). A folder of the same
+/// name there is not overwritten: the moved one gets the next free name. Returns its new place.
+pub fn move_node(path: &Path, dest: &Path) -> Result<PathBuf> {
+    let path = fs::canonicalize(path).map_err(|e| StoreError::io("open", path, e))?;
+    let dest = fs::canonicalize(dest).map_err(|e| StoreError::io("open", dest, e))?;
+    check_destination(&path, &dest)?;
+    let from = path.parent().map(Path::to_path_buf);
+    if from.as_deref() == Some(dest.as_path()) {
+        return Ok(path);
+    }
+    let order = next_order(&dest);
+    let target = unique_child(&dest, &tree::folder_name(&path));
+    if fs::rename(&path, &target).is_err() {
+        // Another drive, for a notebook opened from elsewhere: copied over, then the old one
+        // taken away once the copy is whole.
+        copy_tree(&path, &target).map_err(|e| StoreError::io("copy", &target, e))?;
+        remove_tree(&path).map_err(|e| StoreError::io("delete", &path, e))?;
+    }
+    set_node_order(&target, order)?;
+    if let Some(from) = from {
+        compact_orders(&from)?;
+    }
+    Ok(target)
+}
+
+/// Copies a page (with its subpages, files and ink), a section or a section group into another
+/// parent, last among the nodes there, as OneNote's Copy does (issue #167). Every node in the
+/// copy gets an id of its own, so a link to the original still finds the original.
+pub fn copy_node(path: &Path, dest: &Path) -> Result<PathBuf> {
+    let path = fs::canonicalize(path).map_err(|e| StoreError::io("open", path, e))?;
+    let dest = fs::canonicalize(dest).map_err(|e| StoreError::io("open", dest, e))?;
+    check_destination(&path, &dest)?;
+    let order = next_order(&dest);
+    let target = unique_child(&dest, &tree::folder_name(&path));
+    if let Err(e) = copy_tree(&path, &target) {
+        let _ = fs::remove_dir_all(&target);
+        return Err(StoreError::io("copy", &target, e));
+    }
+    renew_ids(&target)?;
+    set_node_order(&target, order)?;
+    Ok(target)
+}
+
+/// The order that puts a node last among `parent`'s children.
+fn next_order(parent: &Path) -> u32 {
+    node_children(parent).iter().filter_map(|c| read_node(c).map(|n| n.order)).max().unwrap_or(0).saturating_add(10)
+}
+
+/// Copies a folder and everything in it.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Gives the node at `dir` and every node inside it a new id.
+fn renew_ids(dir: &Path) -> Result<()> {
+    if let Some((format, file)) = page_file(dir) {
+        let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        let id = new_id();
+        let updated = match format {
+            PageFormat::Html => html::set_meta(&text, "notecraft:id", &id),
+            PageFormat::Cmgfm => {
+                let (front, body) = frontmatter::split_front(&text);
+                format!("{}{body}", frontmatter::set_value(&front, "id", &id))
+            }
+        };
+        write_atomic(&file, &updated)?;
+    } else if dir.join("_node.toml").is_file() {
+        let file = dir.join("_node.toml");
+        let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        let line = format!("id = {}", kv::quote(&new_id()));
+        let updated = if text.lines().any(|l| l.trim_start().starts_with("id =")) {
+            kv::replace_line(&text, "id =", &line)
+        } else {
+            format!("{}\n{line}\n", text.trim_end())
+        };
+        write_atomic(&file, &updated)?;
+    }
+    for child in node_children(dir) {
+        renew_ids(&child)?;
+    }
+    Ok(())
+}
+
 /// Moves a page one place among its siblings. Crossing a non-page sibling is refused so a
 /// page cannot jump over a section or group.
 pub fn move_page(path: &Path, up: bool) -> Result<PathBuf> {
@@ -587,6 +701,63 @@ mod tests {
         let plain = t.path().join("plain");
         fs::create_dir_all(&plain).expect("dir");
         assert!(create_node(&plain, "X", NodeKind::Page, None, &s).is_err(), "not inside a notebook");
+    }
+
+    /// Issue #167: Move puts a page, with its subpages and files, into another section, last
+    /// there; Copy leaves the original and gives every copied node an id of its own.
+    #[test]
+    fn a_page_moves_and_copies_into_another_section_with_everything_in_it() {
+        let t = TempDir::new("ops-move-copy");
+        let s = settings(&t);
+        let nb = create_notebook(&root(&t), "NB", None, &s).expect("nb");
+        let a = create_node(&nb, "Section A", NodeKind::Section, None, &s).expect("a");
+        let b = create_node(&nb, "Section B", NodeKind::Section, None, &s).expect("b");
+        let page = create_node(&a, "Plan", NodeKind::Page, None, &s).expect("page");
+        let sub = create_node(&page, "Detail", NodeKind::Page, None, &s).expect("subpage");
+        fs::write(page.join("assets").join("note.txt"), "kept").expect("a file");
+        fs::write(page.join("ink.svg"), "<svg/>").expect("ink");
+        let there = create_node(&b, "Already", NodeKind::Page, None, &s).expect("a page already there");
+        let id_of = |p: &Path| read_node(p).map(|n| n.id).expect("an id");
+        let (page_id, sub_id) = (id_of(&page), id_of(&sub));
+
+        // Copy: the original stays, the copy has everything and new ids, and goes last.
+        let copy = copy_node(&page, &b).expect("copy");
+        assert!(page.is_dir(), "the original is still there");
+        assert_eq!(fs::read_to_string(copy.join("assets").join("note.txt")).expect("the file came along"), "kept");
+        assert!(copy.join("ink.svg").is_file(), "and the ink");
+        let copied_sub = node_children(&copy).into_iter().next().expect("the subpage came along");
+        assert_ne!(id_of(&copy), page_id, "the copy has an id of its own");
+        assert_ne!(id_of(&copied_sub), sub_id, "and so does its subpage");
+        let order = |p: &Path| read_node(p).map(|n| n.order).expect("order");
+        assert!(order(&copy) > order(&there), "the copy goes last");
+
+        // Move: into B again, where its folder name is taken now, so it gets the next free one.
+        let moved = move_node(&page, &b).expect("move");
+        assert!(!page.exists(), "it left section A");
+        assert_ne!(moved, copy, "the copy is not overwritten");
+        assert_eq!(id_of(&moved), page_id, "a moved page is the same page");
+        assert!(moved.join("assets").join("note.txt").is_file(), "with its files");
+        assert_eq!(node_children(&moved).len(), 1, "and its subpage");
+        assert!(order(&moved) > order(&copy), "last again");
+    }
+
+    #[test]
+    fn move_and_copy_refuse_a_place_that_cannot_hold_the_node() {
+        let t = TempDir::new("ops-move-refuse");
+        let s = settings(&t);
+        let nb = create_notebook(&root(&t), "NB", None, &s).expect("nb");
+        let other = create_notebook(&root(&t), "Other", None, &s).expect("other");
+        let section = create_node(&nb, "Section", NodeKind::Section, None, &s).expect("section");
+        let page = create_node(&section, "Page", NodeKind::Page, None, &s).expect("page");
+        let sub = create_node(&page, "Sub", NodeKind::Page, None, &s).expect("sub");
+        assert!(move_node(&section, &page).is_err(), "a section cannot go into a page");
+        assert!(move_node(&page, &sub).is_err(), "a page cannot go inside itself");
+        assert!(copy_node(&page, &page).is_err(), "nor be copied into itself");
+        assert!(move_node(&nb, &other).is_err(), "a notebook is not moved into another");
+        // A section into another notebook is fine, and keeps its pages.
+        let moved = move_node(&section, &other).expect("a section into another notebook");
+        assert!(moved.starts_with(fs::canonicalize(&other).expect("other")));
+        assert_eq!(node_children(&moved).len(), 1);
     }
 
     #[test]
