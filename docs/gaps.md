@@ -46,12 +46,13 @@ it is fixed and tested, not when it is promised.
   regular installed faces. Fonts named by a page are registered for the editor and preview;
   missing fonts are reported and fall back. The desktop ribbon can apply a family to a whole
   selected line, selected container, safely mapped partial selection, or text typed at the
-  caret. Selections that cannot be mapped without losing formatting are refused.
+  caret, including safely mapped selections across paragraphs. Selections that cannot be
+  mapped without losing formatting are refused.
   Bold and italic faces are not loaded. Windows and macOS discovery have not been tested on
   those platforms. Browser local-font permission and access are not implemented.
 - **Font size is in progress.** The ribbon can size a selected line, text in a selected
-  container, a safely mapped partial selection, or text typed at a plain caret. Across-line
-  and ambiguous selections are not supported and are reported rather than changed.
+  container, safely mapped selections within or across paragraphs, or text typed at a plain
+  caret. Ambiguous selections are not supported and are reported rather than changed.
   The font controls show the current explicit value, `Default` for inherited defaults, and
   `Mixed` when a selection has different values. Ambiguous selections show the control name.
 - **Underline, subscript and superscript are in progress.** The ribbon can toggle them on

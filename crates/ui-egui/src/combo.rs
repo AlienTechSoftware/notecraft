@@ -43,17 +43,24 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let scroll_id = spec.id.with("scroll");
 
     let mut typed = ui.data(|d| d.get_temp::<String>(typed_id)).unwrap_or_else(|| spec.shown.to_owned());
+    let cancelled = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    let entered = ui.input(|i| i.key_pressed(egui::Key::Enter));
     let value_box = ui.add(egui::TextEdit::singleline(&mut typed).id(typed_id).desired_width(spec.width));
     value_box.widget_info(|| WidgetInfo::labeled(WidgetType::TextInput, true, spec.box_label));
-    if !value_box.has_focus() {
-        typed = spec.shown.to_owned();
-    }
-    // The typed value is applied when the box loses focus, as in OneNote.
+    // Read the entry before resetting an unfocused box. Enter also loses focus;
+    // Escape cancels rather than applying the unfinished entry.
     if value_box.lost_focus() {
+        // Formatting may return focus to the page in this same frame. The key
+        // belongs to this field, not to the editor which happens to run next.
+        if entered || cancelled {
+            ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, if cancelled { egui::Key::Escape } else { egui::Key::Enter }));
+        }
         let value = typed.trim();
-        if value != spec.shown && (spec.accept)(value) {
+        if !cancelled && value != spec.shown && (spec.accept)(value) {
             outcome.chosen = Some(value.to_owned());
         }
+    }
+    if !value_box.has_focus() {
         typed = spec.shown.to_owned();
     }
     ui.data_mut(|d| d.insert_temp(typed_id, typed));
