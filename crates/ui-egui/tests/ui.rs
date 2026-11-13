@@ -6866,6 +6866,180 @@ fn underline_and_scripts_toggle_and_undo_for_a_selected_line_in_both_formats() {
 }
 
 #[test]
+fn formatting_shortcuts_match_existing_table_cell_actions() {
+    let (_t, app, s) = sample_app("ui-formatting-table-shortcuts");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+        for key in ["B", "I", "U"] {
+            notecraft_store::page::save_body(
+                page,
+                if format == notecraft_model::PageFormat::Html {
+                    "<table><tr><th>Head</th></tr><tr><td>bravo</td></tr></table>"
+                } else {
+                    "| Head |\n| --- |\n| bravo |\n"
+                },
+            )
+            .expect("fixture");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let before = h.state().body().unwrap_or_default().to_string();
+            h.get_by_label("bravo").click();
+            settle(&mut h);
+            ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+            pump(&mut h);
+            ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select cell text");
+            pump(&mut h);
+            ask(&mut h, "ui.key", json!({"key": key, "ctrl": true})).expect("format cell");
+            settle(&mut h);
+            if key == "U" {
+                // The existing Underline action does not support table cells yet.
+                // The binding must report that same limitation, without TextEdit deleting text.
+                assert_eq!(h.state().body().unwrap_or_default(), before);
+                let status = h.state().status().to_string();
+                assert!(status.contains("not available"), "shortcut dispatches the existing action: {status}");
+                h.get_by_label("Home").click();
+                settle(&mut h);
+                h.get_by_label("Underline").click();
+                settle(&mut h);
+                assert_eq!(h.state().status(), status, "ribbon has the same existing limitation");
+                assert_eq!(h.state().body().unwrap_or_default(), before);
+                continue;
+            }
+            let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().unwrap_or_default());
+            let notecraft_formats::Block::Table { rows, .. } = &blocks[0] else { panic!("table expected") };
+            assert_eq!(rows[0][0].iter().map(|s| s.text.as_str()).collect::<String>(), "bravo");
+            assert!(rows[0][0].iter().all(|s| if key == "B" { s.bold } else { s.italic }), "{key} formats the focused cell");
+        }
+    }
+}
+
+#[test]
+fn formatting_shortcuts_do_not_format_a_stale_page_caret_from_search_or_source() {
+    let (_t, mut app, s) = sample_app("ui-formatting-focus");
+    notecraft_store::page::save_body(&s.html_page, "<p>alpha bravo omega</p>").expect("fixture");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("search");
+    settle(&mut h);
+    for key in ["B", "I", "U"] {
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": true})).expect("format shortcut in search");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before, "search owns {key}");
+    }
+    ask(&mut h, "ui.text", json!({"text": "findneedle"})).expect("query");
+    settle(&mut h);
+    assert!(h.get_all_by_role(egui::accesskit::Role::TextInput).any(|node| node.value().as_deref() == Some("findneedle")));
+    assert_eq!(h.state().body().unwrap_or_default(), before);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    for key in ["B", "I", "U"] {
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": true})).expect("format shortcut in source");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before, "source view does not format the retained page caret");
+    }
+}
+
+#[test]
+fn formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage() {
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-formatting-shortcuts");
+        let mut h = sized_harness(app, theme, egui::vec2(2000.0, 900.0));
+        for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
+            for (key, label) in [(egui::Key::B, "Bold"), (egui::Key::I, "Italic"), (egui::Key::U, "Underline")] {
+                for mac in [false, true] {
+                    notecraft_store::page::save_body(
+                        page,
+                        if format == notecraft_model::PageFormat::Html { "<p>alpha bravo omega</p>" } else { "alpha bravo omega" },
+                    )
+                    .expect("fixture");
+                    h.state_mut().open_path(&page.to_string_lossy());
+                    settle(&mut h);
+                    let before = h.state().body().unwrap_or_default().to_string();
+                    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+                    pump(&mut h);
+                    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+                    pump(&mut h);
+                    for _ in 0..6 {
+                        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+                        pump(&mut h);
+                    }
+                    for _ in 0..5 {
+                        ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+                        pump(&mut h);
+                    }
+                    let press = |h: &mut Harness<'_, NoteCraftApp>| {
+                        let modifiers = egui::Modifiers { ctrl: !mac, mac_cmd: mac, command: true, ..egui::Modifiers::NONE };
+                        h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+                        pump(h);
+                        h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+                        settle(h);
+                    };
+                    press(&mut h);
+                    let after = h.state().body().unwrap_or_default().to_string();
+                    if key == egui::Key::B && !mac {
+                        review(&mut h, &format!("shortcut_{format:?}_{}", theme.id()));
+                    }
+                    let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+                    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+                    let active = |s: &notecraft_formats::markdown::Span| match key {
+                        egui::Key::B => s.bold,
+                        egui::Key::I => s.italic,
+                        _ => s.underline,
+                    };
+                    assert_eq!(
+                        spans.iter().filter(|s| active(s)).map(|s| s.text.as_str()).collect::<String>(),
+                        "bravo",
+                        "{label}, mac={mac}: {after}"
+                    );
+                    press(&mut h);
+                    let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().unwrap_or_default());
+                    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+                    assert!(spans.iter().all(|s| !active(s)), "second shortcut toggles the same selection");
+                    ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
+                    settle(&mut h);
+                    assert_eq!(h.state().body().unwrap_or_default(), after);
+                    ask(&mut h, "ui.undo", json!({})).expect("undo mark");
+                    settle(&mut h);
+                    assert_eq!(h.state().body().unwrap_or_default(), before);
+                    // Undo restores the earlier caret snapshot too. Select the same word
+                    // again for an independent mouse/keyboard comparison.
+                    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret for ribbon");
+                    pump(&mut h);
+                    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+                    pump(&mut h);
+                    for _ in 0..6 {
+                        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+                        pump(&mut h);
+                    }
+                    for _ in 0..5 {
+                        ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+                        pump(&mut h);
+                    }
+                    h.get_by_label(label).click();
+                    settle(&mut h);
+                    assert_eq!(h.state().body().unwrap_or_default(), after, "keyboard and ribbon match");
+                    if key == egui::Key::B && !mac {
+                        review(&mut h, &format!("ribbon_{format:?}_{}", theme.id()));
+                    }
+                    ask(&mut h, "ui.undo", json!({})).expect("undo ribbon");
+                    ask(&mut h, "ui.redo", json!({})).expect("redo ribbon");
+                    settle(&mut h);
+                    assert_eq!(h.state().body().unwrap_or_default(), after);
+                    h.state_mut().save_page_now();
+                    h.state_mut().open_path(&page.to_string_lossy());
+                    settle(&mut h);
+                    assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "saved formatting survives reopening");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
     let (_t, app, s) = sample_app("ui-partial-legacy-marks");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));

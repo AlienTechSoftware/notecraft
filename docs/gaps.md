@@ -56,13 +56,15 @@ it is fixed and tested, not when it is promised.
   `Mixed` when a selection has different values. Ambiguous selections show the control name.
 - **Underline, subscript and superscript are in progress.** The ribbon can toggle them on
   an entire selected line or container, with undo, and can format newly typed text at a plain
-  caret, and safely mapped partial selections. Selections across lines, some selections that
-  cross markup, and turning off a mark inherited at the caret are not supported yet; the
+  caret, and safely mapped partial selections. Table cells, selections across lines, some
+  selections that cross markup, and turning off a mark inherited at the caret are not supported yet; the
   controls report this rather than changing the page.
 - **Bold, italic and strikethrough are in progress.** Safely mapped partial selections and
   newly typed text at a plain caret can use these marks. Across-line selections and turning
   off a mark inherited at the caret are not supported yet; the controls report this rather
-  than changing the wrong text.
+  than changing the wrong text. Ctrl+B, Ctrl+I and Ctrl+U invoke the existing Bold, Italic
+  and Underline actions from focused page text (Command on macOS). Their selection limits
+  are the same as the ribbon actions.
 - **Links follow by relative path only.** A click on a link opens the page or folder it
   names, a file in the program the system has for it, or a web address in the browser; the
   target is a path as written, so a renamed page breaks the links to it. Links by id are not
