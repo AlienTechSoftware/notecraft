@@ -302,6 +302,60 @@ fn shown_in(root: &Path, p: &Path, redact: bool) -> String {
     }
 }
 
+/// Where the Tags Summary looks for tagged notes (issue #166), widest last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TagScope {
+    Page,
+    Section,
+    Notebook,
+    All,
+}
+
+impl TagScope {
+    const ALL: [TagScope; 4] = [TagScope::Page, TagScope::Section, TagScope::Notebook, TagScope::All];
+
+    fn label(self) -> &'static str {
+        match self {
+            TagScope::Page => crate::tl_id!("ui.tags_scope_this_page"),
+            TagScope::Section => crate::tl_id!("ui.tags_scope_this_section"),
+            TagScope::Notebook => crate::tl_id!("ui.tags_scope_this_notebook"),
+            TagScope::All => crate::tl_id!("ui.tags_scope_all_notebooks"),
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            TagScope::Page => "page",
+            TagScope::Section => "section",
+            TagScope::Notebook => "notebook",
+            TagScope::All => "all",
+        }
+    }
+}
+
+/// The Tags Summary pane, OneNote's Find Tags: the tagged notes in a scope, grouped by tag,
+/// each one a way back to its line. It lists what the pages said when it last looked; Refresh
+/// looks again, as OneNote's does.
+struct TagsPane {
+    scope: TagScope,
+    /// Only the To Do items not yet ticked.
+    unchecked: bool,
+    found: Vec<notecraft_store::tags::Tagged>,
+}
+
+/// The section a page is in: the nearest folder above it that is a section.
+fn section_for(path: &Path) -> Option<PathBuf> {
+    let mut current = path.parent()?;
+    loop {
+        match notecraft_store::tree::read_node(current).map(|node| node.kind) {
+            Some(NodeKind::Section) => return Some(current.to_path_buf()),
+            Some(NodeKind::Page) => {}
+            _ => return None,
+        }
+        current = current.parent()?;
+    }
+}
+
 /// What the Format Painter holds: the formatting it picked up, where it picked it up (so the
 /// selection it was picked up from is not painted with itself), and whether it keeps painting.
 #[derive(Clone, Debug)]
@@ -788,6 +842,8 @@ pub struct NoteCraftApp {
     search: String,
     searched: String,
     hits: Vec<Hit>,
+    /// The Tags Summary, while it is open.
+    tags_pane: Option<TagsPane>,
     cursor: usize,
     tokens: Tokens,
     mode_pref: ModePref,
@@ -958,6 +1014,7 @@ impl NoteCraftApp {
             search: String::new(),
             searched: String::new(),
             hits: Vec::new(),
+            tags_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
@@ -3771,6 +3828,13 @@ impl NoteCraftApp {
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
+            ribbon::Act::FindTags => {
+                // OneNote looks in the section first; with no page open there is no section.
+                let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
+                let unchecked = self.tags_pane.as_ref().is_some_and(|p| p.unchecked);
+                self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
+                self.refresh_tags();
+            }
             ribbon::Act::NotBuilt(what) => {
                 self.status =
                     crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
@@ -5745,6 +5809,176 @@ impl NoteCraftApp {
             self.searched.clear();
             self.hits.clear();
         }
+    }
+
+    /// Looks again for the tagged notes in the Tags Summary's scope.
+    fn refresh_tags(&mut self) {
+        let Some(pane) = self.tags_pane.as_ref() else { return };
+        let page = self.editor.as_ref().map(|ed| ed.dir.clone());
+        let scope = match pane.scope {
+            TagScope::Page => page.clone(),
+            TagScope::Section => page.as_deref().and_then(section_for),
+            TagScope::Notebook => page.as_deref().and_then(notebook_for),
+            TagScope::All => None,
+        };
+        let mut p: Vec<(&str, String)> = Vec::new();
+        if let Some(scope) = scope {
+            p.push(("scope", path_str(&scope)));
+        } else if pane.scope != TagScope::All {
+            // Nothing open to look round: there is nothing in this page or section to list.
+            if let Some(pane) = self.tags_pane.as_mut() {
+                pane.found.clear();
+            }
+            return;
+        }
+        if pane.scope == TagScope::Page {
+            p.push(("page", "true".into()));
+        }
+        if pane.unchecked {
+            p.push(("unchecked", "true".into()));
+        }
+        let pairs: Vec<(&str, &str)> = p.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let found = match self.run("tags.find", &params(&pairs)) {
+            Some(Output::Tagged(found)) => found,
+            _ => Vec::new(),
+        };
+        if let Some(pane) = self.tags_pane.as_mut() {
+            pane.found = found;
+        }
+    }
+
+    /// The Tags Summary pane, on the right of the page as OneNote has it.
+    fn tags_panel(&mut self, ui: &mut Ui) {
+        let Some(pane) = self.tags_pane.as_mut() else { return };
+        let tokens = self.tokens;
+        let mut close = false;
+        let mut refresh = false;
+        let mut chosen: Option<(PathBuf, usize)> = None;
+        egui::Panel::right("tags-summary").resizable(true).default_size(300.0).size_range(220.0..=600.0).show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.strong(crate::tl_id!("ui.tags_summary"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // A cross drawn with lines: the interface fonts have no glyph for one.
+                    let (rect, x) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                    x.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.close_the_tags_summary")));
+                    if x.hovered() {
+                        ui.painter().rect_filled(rect, 3.0, tokens.row_hover);
+                    }
+                    let c = rect.shrink(7.0);
+                    let stroke = egui::Stroke::new(1.4, tokens.text);
+                    ui.painter().line_segment([c.left_top(), c.right_bottom()], stroke);
+                    ui.painter().line_segment([c.right_top(), c.left_bottom()], stroke);
+                    if x.on_hover_text(crate::tl_id!("ui.close_the_tags_summary")).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            ui.label(egui::RichText::new(crate::tl_id!("ui.tags_look_in")).small().color(tokens.muted));
+            ui.horizontal_wrapped(|ui| {
+                for scope in TagScope::ALL {
+                    if ui.selectable_label(pane.scope == scope, scope.label()).clicked() && pane.scope != scope {
+                        pane.scope = scope;
+                        refresh = true;
+                    }
+                }
+            });
+            if ui.checkbox(&mut pane.unchecked, crate::tl_id!("ui.tags_only_unchecked_to_do_items")).changed() {
+                refresh = true;
+            }
+            if ui.button(crate::tl_id!("ui.refresh")).on_hover_text(crate::tl_id!("ui.look_again_for_tagged_notes")).clicked() {
+                refresh = true;
+            }
+            ui.separator();
+            egui::ScrollArea::vertical().id_salt("tags-summary-list").auto_shrink([false, false]).show(ui, |ui| {
+                if pane.found.is_empty() {
+                    ui.weak(crate::tl_id!("ui.no_tagged_notes_here"));
+                }
+                for tag in notecraft_model::Tag::ALL {
+                    let mut lines = pane.found.iter().filter(|f| f.tag == tag).peekable();
+                    if lines.peek().is_none() {
+                        continue;
+                    }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                        let mark = ribbon::mark_for(tag);
+                        crate::ribbon_icons::paint(ui.painter(), rect, mark, mark.color(tokens.text, tokens.accent));
+                        ui.strong(crate::tl!(tag.label()));
+                    });
+                    for line in lines {
+                        let words = if line.text.is_empty() { crate::tl_id!("ui.tags_empty_line").to_string() } else { line.text.clone() };
+                        let place = if line.section.is_empty() { line.page.clone() } else { format!("{} > {}", line.section, line.page) };
+                        // Painted rather than laid out as labels, so the row is one target that
+                        // a screen reader names once, with a To Do's box ticked or not.
+                        let width = ui.available_width().max(60.0);
+                        let indent = 22.0;
+                        let text = ui.painter().layout(words.clone(), egui::FontId::proportional(13.5), tokens.text, width - indent);
+                        let under = ui.painter().layout(place, egui::FontId::proportional(11.5), tokens.muted, width - indent);
+                        let (rect, row) = ui.allocate_exact_size(vec2(width, text.size().y + under.size().y + 8.0), Sense::click());
+                        row.widget_info(|| match line.done {
+                            Some(done) => egui::WidgetInfo::selected(egui::WidgetType::CheckBox, true, done, words.clone()),
+                            None => egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words.clone()),
+                        });
+                        let painter = ui.painter();
+                        if row.hovered() {
+                            painter.rect_filled(rect, 3.0, tokens.row_hover);
+                        }
+                        if let Some(done) = line.done {
+                            let tick = egui::Rect::from_min_size(rect.min + vec2(4.0, 4.0), vec2(12.0, 12.0));
+                            painter.rect_stroke(tick, 2.0, egui::Stroke::new(1.2, tokens.muted), egui::StrokeKind::Inside);
+                            if done {
+                                let at = |x: f32, y: f32| tick.min + vec2(x, y);
+                                painter.line(vec![at(2.5, 6.5), at(5.0, 9.0), at(9.5, 3.0)], egui::Stroke::new(1.6, tokens.accent));
+                            }
+                        }
+                        let below = text.size().y + 3.0;
+                        painter.galley(rect.min + vec2(indent, 2.0), text, tokens.text);
+                        painter.galley(rect.min + vec2(indent, 2.0 + below), under, tokens.muted);
+                        if row.clicked() {
+                            chosen = Some((line.path.clone(), line.block));
+                        }
+                    }
+                }
+            });
+        });
+        if close {
+            self.tags_pane = None;
+            return;
+        }
+        if refresh {
+            self.refresh_tags();
+        }
+        if let Some((page, block)) = chosen {
+            self.go_to_tagged(&page, block);
+        }
+    }
+
+    /// Opens the page a tagged line is on and puts the caret at the start of that line.
+    fn go_to_tagged(&mut self, page: &Path, block: usize) {
+        let mut parent = page.parent();
+        while let Some(d) = parent {
+            if d == self.session.root() {
+                break;
+            }
+            self.open.insert(d.to_path_buf());
+            parent = d.parent();
+        }
+        if self.editor.as_ref().is_none_or(|ed| ed.dir != page) {
+            self.open_page(page);
+        }
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == page && ed.writable) else { return };
+        let Some(b) = ed.blocks.get(block).filter(|b| pageedit::is_writable(b)) else { return };
+        ed.caret = Some(pageedit::Caret {
+            block,
+            text: pageedit::caret_text(b),
+            focus: true,
+            selection: (0, 0),
+            place: None,
+            cell: None,
+            span: None,
+            inline: None,
+        });
     }
 
     fn side_panel(&mut self, ui: &mut Ui) {
@@ -8034,6 +8268,13 @@ impl NoteCraftApp {
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},
+            // Home > Find Tags: where the Tags Summary looks and how many lines it lists, or
+            // null while it is closed.
+            "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
+                "scope": p.scope.id(),
+                "unchecked": p.unchecked,
+                "lines": p.found.iter().map(|l| json!({"tag": l.tag.id(), "text": l.text, "done": l.done, "page": l.page, "section": l.section})).collect::<Vec<_>>(),
+            })),
             // Back and Forward, and the Quick Access Toolbar's choices.
             "nav": {
                 "back": self.nav.back_count(),
@@ -8225,6 +8466,7 @@ impl NoteCraftApp {
         self.storage_notice(ui);
         self.status_bar(ui);
         self.side_panel(ui);
+        self.tags_panel(ui);
         self.central(ui);
         self.paint_formatting(ctx);
         self.search_popup(ctx);

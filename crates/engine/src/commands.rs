@@ -8,7 +8,8 @@ use notecraft_store::page::Page;
 use notecraft_store::page::Version;
 use notecraft_store::recycle::Recycled;
 use notecraft_store::search::Hit;
-use notecraft_store::{StoreError, assets, check, ops, page, recycle, search, tree};
+use notecraft_store::tags::Tagged;
+use notecraft_store::{StoreError, assets, check, ops, page, recycle, search, tags, tree};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -23,6 +24,7 @@ pub enum Output {
     Versions(Vec<Version>),
     Recycled(Vec<Recycled>),
     Hits(Vec<Hit>),
+    Tagged(Vec<Tagged>),
     Report(Report),
     Count(usize),
 }
@@ -205,6 +207,37 @@ fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     // Every open notebook, the ones opened from another folder too: the window calls this
     // Search all pages (issue #127).
     Ok(Output::Hits(search::search_in(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
+}
+
+/// The tagged notes in a scope: what Find Tags lists in its Tags Summary (issue #166).
+fn tags_find(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let limit = match p.get("limit") {
+        Some(l) => l.trim().parse::<usize>().map_err(|_| EngineError::BadParam("limit must be a number".into()))?.min(tags::MAX),
+        None => 500,
+    };
+    let only_page = match p.get("page").map(|v| v.trim()) {
+        None | Some("" | "false") => false,
+        Some("true") => true,
+        Some(_) => return Err(EngineError::BadParam("page must be true or false".into())),
+    };
+    let unchecked = match p.get("unchecked").map(|v| v.trim()) {
+        None | Some("" | "false") => false,
+        Some("true") => true,
+        Some(_) => return Err(EngineError::BadParam("unchecked must be true or false".into())),
+    };
+    let want = match p.get("tag").map(|t| t.trim()).filter(|t| !t.is_empty()) {
+        Some(t) => Some(notecraft_model::Tag::parse(t).ok_or_else(|| EngineError::BadParam(format!("there is no tag called {t}")))?),
+        None => None,
+    };
+    // Without a scope, every open notebook: the ones opened from another folder too.
+    let scopes: Vec<PathBuf> = match p.get("scope").map(|x| x.trim()).filter(|x| !x.is_empty()) {
+        Some(scope) => vec![s.resolve(scope)?],
+        None => tree::child_dirs(s.root()).into_iter().chain(s.opened_elsewhere().iter().cloned()).collect(),
+    };
+    let mut found = tags::find(&scopes, only_page, tags::MAX);
+    found.retain(|t| want.is_none_or(|w| t.tag == w) && (!unchecked || t.done == Some(false)));
+    found.truncate(limit);
+    Ok(Output::Tagged(found))
 }
 
 fn notebook_check(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -545,6 +578,13 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: search_query,
     },
     CommandSpec {
+        id: "tags.find",
+        label: "Find tagged notes",
+        params: "scope (optional): a page, section, section group or notebook to look in, relative to the notebooks folder; every open notebook when left out\npage (optional): true to look in the scope page alone, without its subpages\ntag (optional): only this tag, by its id (todo, important, question and the rest)\nunchecked (optional): true for only the To Do items not yet ticked\nlimit (optional): at most this many lines (default 500, at most 2000)",
+        changes_tree: false,
+        run: tags_find,
+    },
+    CommandSpec {
         id: "notebook.open",
         label: "Open a notebook or initialize an empty folder",
         params: "path (required): a notebook folder anywhere on this machine, or an empty folder to initialize as a notebook named after the folder. The notebooks already open stay open, and this one is opened again next time",
@@ -698,6 +738,43 @@ mod tests {
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
+    }
+
+    /// Issue #166: Find Tags lists the tagged lines of a page, a section or every notebook, and
+    /// can keep only one tag or only the To Do items not yet ticked.
+    #[test]
+    fn find_tags_lists_tagged_lines_by_scope_and_filter() {
+        let t = TempDir::new("engine-find-tags");
+        let mut s = session(&t);
+        let nb = path_of(s.run("notebook.create", &p(&[("name", "Work")])).expect("notebook"));
+        let section = nb.join("new-section-1");
+        let first = section.join("untitled-page");
+        let body = "<p>#important Book the room</p><ul><li>plain</li></ul>";
+        s.run("page.save", &p(&[("path", &first.to_string_lossy()), ("body", body)])).expect("save");
+        let md = path_of(
+            s.run("node.create", &p(&[("parent", &section.to_string_lossy()), ("kind", "page"), ("title", "Minutes"), ("format", "cmgfm")]))
+                .expect("page"),
+        );
+        s.run("page.save", &p(&[("path", &md.to_string_lossy()), ("body", "- [x] Write minutes\n- [ ] Fix the build\n\n#question Who owns it?\n")]))
+            .expect("save");
+        let found = |s: &mut Session, extra: &[(&str, &str)]| match s.run("tags.find", &p(extra)).expect("tags.find") {
+            Output::Tagged(found) => found.into_iter().map(|t| (t.tag.id(), t.text, t.done)).collect::<Vec<_>>(),
+            other => panic!("{other:?}"),
+        };
+        let all = found(&mut s, &[]);
+        assert_eq!(all.len(), 4, "{all:?}");
+        assert_eq!(found(&mut s, &[("scope", &first.to_string_lossy()), ("page", "true")]), vec![("important", "Book the room".to_string(), None)]);
+        assert_eq!(found(&mut s, &[("tag", "question")]), vec![("question", "Who owns it?".to_string(), None)]);
+        assert_eq!(found(&mut s, &[("unchecked", "true")]), vec![("todo", "Fix the build".to_string(), Some(false))]);
+        assert_eq!(found(&mut s, &[("limit", "1")]).len(), 1);
+        assert!(s.run("tags.find", &p(&[("tag", "nonsense")])).is_err());
+        assert!(s.run("tags.find", &p(&[("unchecked", "maybe")])).is_err());
+        assert!(s.run("tags.find", &p(&[("limit", "many")])).is_err());
+        let json = crate::json::output_json(&s.run("tags.find", &p(&[("tag", "todo")])).expect("json"));
+        assert_eq!(json[0]["label"], "To Do");
+        assert_eq!(json[0]["done"], true);
+        assert_eq!(json[0]["page"], "Minutes");
+        assert_eq!(json[0]["block"], 0);
     }
 
     /// Issue #127: Search all pages finds pages in a notebook opened from another folder, once

@@ -101,6 +101,8 @@ pub enum Act {
     ClearFormatting,
     /// Put a tag on the line the caret is in, or take it off again.
     Tag(Tag),
+    /// Open the Tags Summary: the tagged notes, and a way to each of them (issue #166).
+    FindTags,
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
@@ -1150,8 +1152,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
             acts.push(Act::Block("todo"));
         }
-        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.not_built"), t).clicked() {
-            acts.push(Act::NotBuilt("Find Tags"));
+        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.list_the_tagged_notes_and_go_to_them"), t).clicked() {
+            acts.push(Act::FindTags);
         }
     });
     group(ui, crate::tl_id!("ui.email"), t, |ui| {
