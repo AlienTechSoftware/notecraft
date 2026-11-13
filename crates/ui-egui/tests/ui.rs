@@ -3062,6 +3062,65 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
+/// page as well as from the list, and stop at either end (issue #162).
+#[test]
+fn ctrl_page_up_and_down_step_through_the_pages_of_the_section() {
+    let (_t, app, s) = sample_app("ui-page-up-down");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("section").to_path_buf();
+    let mut made = Vec::new();
+    for title in ["Second", "Third"] {
+        let page = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section.to_string_lossy(), "kind": "page", "title": title, "format": "cmgfm"}}),
+        )
+        .expect("page");
+        made.push(PathBuf::from(page.as_str().expect("a path")));
+    }
+    // The section's pages in the order the page list shows them.
+    let listed: Vec<PathBuf> = notecraft_store::tree::child_dirs(&section)
+        .into_iter()
+        .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+        .collect();
+    assert!(listed.len() >= 3, "the section has pages to step through: {listed:?}");
+    let open_now = |h: &mut Harness<'_, NoteCraftApp>| {
+        let state = ask(h, "ui.inspect", json!({})).expect("inspect");
+        // The page list names a page by its folder; the section is the same for all of them.
+        state["page"]["path"].as_str().and_then(|p| p.rsplit('/').next()).map(str::to_string)
+    };
+    let canon = |p: &PathBuf| p.file_name().map(|n| n.to_string_lossy().into_owned());
+
+    ask(&mut h, "ui.open", json!({"path": listed[0].to_string_lossy()})).expect("open the first page");
+    settle(&mut h);
+    // With the caret in the page, as when writing: the keys still move between pages.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    for want in &listed[1..] {
+        ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown");
+        settle(&mut h);
+        assert_eq!(open_now(&mut h), canon(want), "Ctrl+Page Down opens the next page");
+    }
+    // At the last page it stays, and says so.
+    ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown at the end");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(listed.last().expect("last")), "the last page stays open");
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["status"]["text"].clone();
+    assert_eq!(status, json!("This is the last page"), "and the window says why");
+
+    ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(&listed[listed.len() - 2]), "Ctrl+Page Up opens the page before");
+    for _ in 0..listed.len() {
+        ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+        settle(&mut h);
+    }
+    assert_eq!(open_now(&mut h), canon(&listed[0]), "and stops at the first page");
+    let _ = made;
+}
+
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
 /// a row taken out of a table.
 /// Inserting the date is an edit like any other: Ctrl+Z takes it back (owner, 2026-11-12).
