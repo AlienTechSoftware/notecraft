@@ -113,9 +113,16 @@ pub fn outline(stroke: &Stroke) -> Vec<(f32, f32)> {
     let (left, right) = sides(stroke);
     let last = line.last().copied().unwrap_or(first);
     let mut out = left;
-    out.extend(half_circle(last, width_at(stroke, last.pressure) / 2.0, line.get(line.len().saturating_sub(2)).copied().unwrap_or(first)));
+    // Where the readings give no direction, `sides` assumed the pen was going across the
+    // page, left to right; each end assumes the same, so a tap still closes into a dot.
+    out.extend(half_circle(
+        last,
+        width_at(stroke, last.pressure) / 2.0,
+        line.get(line.len().saturating_sub(2)).copied().unwrap_or(first),
+        (1.0, 0.0),
+    ));
     out.extend(right.into_iter().rev());
-    out.extend(half_circle(first, width_at(stroke, first.pressure) / 2.0, line.get(1).copied().unwrap_or(last)));
+    out.extend(half_circle(first, width_at(stroke, first.pressure) / 2.0, line.get(1).copied().unwrap_or(last), (-1.0, 0.0)));
     out
 }
 
@@ -132,13 +139,19 @@ fn circle(x: f32, y: f32, r: f32) -> Vec<(f32, f32)> {
 }
 
 /// The round end of a stroke: a half turn around `at`, starting on the side the ribbon
-/// arrived on. `from` is the point before it, which says which way the pen was going.
-fn half_circle(at: Dab, r: f32, from: Dab) -> Vec<(f32, f32)> {
+/// arrived on. `from` is the point before it, which says which way the pen was going;
+/// `otherwise` is the way out to assume when `from` is in the same place.
+fn half_circle(at: Dab, r: f32, from: Dab, otherwise: (f32, f32)) -> Vec<(f32, f32)> {
     let (dx, dy) = (at.x - from.x, at.y - from.y);
     let len = (dx * dx + dy * dy).sqrt();
-    let (ux, uy) = if len > f32::EPSILON { (dx / len, dy / len) } else { (1.0, 0.0) };
-    // Start at the left edge (the normal) and swing half a turn to the right edge.
-    let start = (-uy).atan2(ux);
+    let (ux, uy) = if len > f32::EPSILON { (dx / len, dy / len) } else { otherwise };
+    // Start at the left edge, which is where `sides` put it: the normal (-uy, ux), the
+    // heading turned a quarter anticlockwise. Its angle is atan2(ux, -uy). Swinging half a
+    // turn clockwise from there passes through the heading itself, the tip, and ends on the
+    // right edge. At the start of a stroke `from` is the point after, so the heading points
+    // back out of the stroke and its "left" is the ribbon's right edge, which is where the
+    // outline has just arrived.
+    let start = ux.atan2(-uy);
     (0..=CAP)
         .map(|i| {
             #[allow(clippy::cast_precision_loss)]
@@ -176,6 +189,23 @@ fn distance_to_segment(x: f32, y: f32, a: &Dab, b: &Dab) -> f32 {
     }
     let t = (((x - a.x) * vx + (y - a.y) * vy) / len2).clamp(0.0, 1.0);
     (a.x + vx * t - x).hypot(a.y + vy * t - y)
+}
+
+/// Whether a closed polygon covers (`x`, `y`) under the even-odd rule, which is how an SVG
+/// path with no `fill-rule` set to the contrary is filled. For tests that ask what a saved
+/// outline would actually paint.
+#[cfg(test)]
+pub(crate) fn encloses(ring: &[(f32, f32)], x: f32, y: f32) -> bool {
+    let mut inside = false;
+    let mut j = ring.len().wrapping_sub(1);
+    for (i, &(xi, yi)) in ring.iter().enumerate() {
+        let (xj, yj) = ring.get(j).copied().unwrap_or((xi, yi));
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 #[cfg(test)]
@@ -270,6 +300,83 @@ mod tests {
         }
     }
 
+    /// Issue #217: the reproduction from the report. A wide straight stroke's saved outline
+    /// covers whole round lobes at both ends, not lobes with a diagonal chord cut off them.
+    #[test]
+    fn both_ends_of_a_wide_stroke_are_whole_round_lobes() {
+        let mut s = Stroke::new(Tool::Pen, Rgb::BLACK, 40.0);
+        s.dabs.push(Dab::new(40.0, 40.0, 1.0));
+        s.dabs.push(Dab::new(160.0, 40.0, 1.0));
+        let ring = outline(&s);
+        // Inside each round end, in all four corners of it, and right out at its tip.
+        for (x, y) in [(26.0, 30.0), (26.0, 50.0), (21.0, 40.0), (174.0, 30.0), (174.0, 50.0), (179.0, 40.0)] {
+            assert!(encloses(&ring, x, y), "({x}, {y}) is inside a round end of the stroke");
+        }
+        // And nothing beyond the radius is painted.
+        for (x, y) in [(15.0, 40.0), (185.0, 40.0), (25.0, 24.0), (175.0, 56.0)] {
+            assert!(!encloses(&ring, x, y), "({x}, {y}) is outside the stroke");
+        }
+    }
+
+    /// Issue #217: whichever way the pen went and however hard each end was pressed, each
+    /// round end starts where the ribbon edge it follows stops, finishes where the next edge
+    /// begins, and swings outward, away from the stroke, the whole way round.
+    #[test]
+    fn the_round_ends_join_the_ribbon_and_bulge_outward_in_every_direction() {
+        let lines: [((f32, f32), (f32, f32)); 6] = [
+            ((40.0, 40.0), (160.0, 40.0)), // left to right
+            ((160.0, 40.0), (40.0, 40.0)), // right to left
+            ((50.0, 20.0), (50.0, 140.0)), // down the page
+            ((50.0, 140.0), (50.0, 20.0)), // up the page
+            ((10.0, 10.0), (90.0, 70.0)),  // a diagonal
+            ((90.0, 130.0), (10.0, 20.0)), // the other diagonal, backwards
+        ];
+        for ((ax, ay), (bx, by)) in lines {
+            for (pa, pb) in [(1.0, 1.0), (0.2, 1.0), (1.0, 0.3)] {
+                let mut s = Stroke::new(Tool::Pen, Rgb::BLACK, 30.0);
+                s.dabs.push(Dab::new(ax, ay, pa));
+                s.dabs.push(Dab::new((ax + bx) / 2.0, (ay + by) / 2.0, (pa + pb) / 2.0));
+                s.dabs.push(Dab::new(bx, by, pb));
+                let what = format!("({ax}, {ay}) at {pa} to ({bx}, {by}) at {pb}");
+
+                let line = centre(&s);
+                let (left, right) = sides(&s);
+                let ring = outline(&s);
+                let n = line.len();
+                assert_eq!(ring.len(), 2 * n + 2 * (CAP + 1), "{what}: two edges and two ends");
+                let end_cap = &ring[n..n + CAP + 1];
+                let start_cap = &ring[2 * n + CAP + 1..];
+
+                let near = |p: (f32, f32), q: (f32, f32)| (p.0 - q.0).hypot(p.1 - q.1) < 0.01;
+                assert!(near(end_cap[0], left[n - 1]), "{what}: the far end starts on the left edge: {:?} vs {:?}", end_cap[0], left[n - 1]);
+                assert!(near(end_cap[CAP], right[n - 1]), "{what}: and finishes on the right edge: {:?} vs {:?}", end_cap[CAP], right[n - 1]);
+                assert!(near(start_cap[0], right[0]), "{what}: the near end starts on the right edge: {:?} vs {:?}", start_cap[0], right[0]);
+                assert!(near(start_cap[CAP], left[0]), "{what}: and finishes on the left edge: {:?} vs {:?}", start_cap[CAP], left[0]);
+
+                // Outward is the way the pen was going at the far end, and back the way it
+                // came at the near one.
+                let (len, ux, uy) = {
+                    let (dx, dy) = (bx - ax, by - ay);
+                    let len = dx.hypot(dy);
+                    (len, dx / len, dy / len)
+                };
+                assert!(len > 0.0);
+                let first = line[0];
+                let last = line[n - 1];
+                for (cap, at, (ox, oy)) in [(end_cap, last, (ux, uy)), (start_cap, first, (-ux, -uy))] {
+                    let r = width_at(&s, at.pressure) / 2.0;
+                    for &(x, y) in cap {
+                        assert!(((x - at.x).hypot(y - at.y) - r).abs() < 0.01, "{what}: every point of an end is a radius out");
+                        let ahead = (x - at.x) * ox + (y - at.y) * oy;
+                        assert!(ahead > -0.01, "{what}: no point of an end swings back over the stroke: {ahead}");
+                    }
+                    let tip = cap[CAP / 2];
+                    assert!(near(tip, (at.x + r * ox, at.y + r * oy)), "{what}: the middle of an end is its tip: {tip:?}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_eraser_catches_what_it_passes_over_and_nothing_else() {
         let s = drawn(Tool::Pen, &[(0.0, 0.0, 1.0), (100.0, 0.0, 1.0)]);
@@ -290,5 +397,9 @@ mod tests {
         let ring = outline(&s);
         assert!(!ring.is_empty(), "readings all in one place still draw something");
         assert!(ring.iter().all(|(x, y)| x.is_finite() && y.is_finite()), "and nothing came out as a non-number");
+        // A tap is many readings in one place; it is a whole dot, not half of one.
+        for (x, y) in [(8.3, 7.0), (5.7, 7.0), (7.0, 8.3), (7.0, 5.7)] {
+            assert!(encloses(&ring, x, y), "({x}, {y}) is inside the dot");
+        }
     }
 }
