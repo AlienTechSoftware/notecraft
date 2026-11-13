@@ -744,6 +744,15 @@ enum Act {
     CopyLink(PathBuf),
 }
 
+/// A file the UI's host should deliver through its download facility.
+/// The desktop host keeps the normal file instead; browser hosts opt in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileDownload {
+    pub name: String,
+    pub mime: &'static str,
+    pub bytes: Vec<u8>,
+}
+
 pub struct NoteCraftApp {
     session: Session,
     /// Writes autosaves off the window's thread (see [`crate::saver`]).
@@ -818,6 +827,8 @@ pub struct NoteCraftApp {
     sensitivity: u8,
     /// The drawing open in this page, if it has one.
     pad: Option<crate::inkpad::Pad>,
+    /// Present only when the host supplies a download facility.
+    file_downloads: Option<Vec<FileDownload>>,
     /// Lines or squares behind the page.
     rules: ribbon::RuleLines,
     /// Lines round the cells of a table, which is how a table is drawn unless the Table
@@ -976,6 +987,7 @@ impl NoteCraftApp {
             nib,
             sensitivity,
             pad: None,
+            file_downloads: None,
             rules: session_rules,
             table_borders: session_borders,
             gridcraft: crate::gridcraft::installed(),
@@ -1055,6 +1067,17 @@ impl NoteCraftApp {
 
     pub fn session(&self) -> &Session {
         &self.session
+    }
+
+    /// Opt in to host-delivered files for explicit exports. Ordinary saves never
+    /// request a download. The host must drain these outputs after every frame.
+    pub fn enable_file_downloads(&mut self) {
+        self.file_downloads.get_or_insert_with(Vec::new);
+    }
+
+    /// Takes each explicit file export once, for a host such as the web wrapper.
+    pub fn take_file_downloads(&mut self) -> Vec<FileDownload> {
+        self.file_downloads.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     /// The session, for tests and for tools that drive the window.
@@ -4505,9 +4528,21 @@ impl NoteCraftApp {
             self.say(crate::tl_id!("ui.there_is_no_drawing_on_this_page"));
             return;
         };
-        match pad.save_plain() {
+        let saved = pad.save_plain().and_then(|path| {
+            if let Some(downloads) = self.file_downloads.as_mut() {
+                let bytes = std::fs::read(&path)?;
+                let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| "ink-picture.svg".to_owned());
+                downloads.push(FileDownload { name, mime: "image/svg+xml", bytes });
+            }
+            Ok(path)
+        });
+        match saved {
             Ok(path) => {
-                let shown = self.shown(&path);
+                let shown = if self.file_downloads.is_some() {
+                    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| self.shown(&path))
+                } else {
+                    self.shown(&path)
+                };
                 self.say(crate::i18n::format_message_id("ui.saved_the_drawing_as_a_picture_path", &[("path", &shown)]));
             }
             Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())])),
