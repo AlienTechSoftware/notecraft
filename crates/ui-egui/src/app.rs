@@ -5333,6 +5333,7 @@ impl NoteCraftApp {
                 if ui.small_button(crate::tl_id!("ui.collapse_all")).clicked() {
                     self.open.clear();
                 }
+                self.new_section_button(ui, &mut acts);
             });
             ui.add_space(2.0);
             // A drag in a pane must not scroll it: in the page a drag moves a container,
@@ -5455,6 +5456,34 @@ impl NoteCraftApp {
         }
     }
 
+    /// Where a new section goes: the notebook or section group the chosen section or page is in,
+    /// a section group that is itself chosen, or else the first notebook. `None` with no notebook.
+    fn new_section_parent(&self) -> Option<(PathBuf, NodeKind)> {
+        let mut at = self.selected.clone().or_else(|| self.editor.as_ref().map(|e| e.dir.clone()));
+        while let Some(path) = at {
+            match notecraft_store::tree::read_node(&path).map(|n| n.kind) {
+                Some(kind @ (NodeKind::Notebook | NodeKind::SectionGroup)) => return Some((path, kind)),
+                Some(_) => at = path.parent().map(Path::to_path_buf),
+                None => break,
+            }
+        }
+        self.session.tree().first().map(|n| (n.path.clone(), NodeKind::Notebook))
+    }
+
+    /// A plain, always visible "+ New section" button for the chosen notebook, as OneNote has
+    /// under its sections, so a section can be added without finding the hover-only plus or the
+    /// right-click menu (issue #139). It opens the same dialog those do.
+    fn new_section_button(&self, ui: &mut Ui, acts: &mut Vec<Act>) {
+        let target = self.new_section_parent();
+        let button = egui::Button::new(crate::tl_id!("ui.new_section_button")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
+        let resp = ui.add_enabled(target.is_some(), button).on_hover_text(crate::tl_id!("ui.a_new_section_in_the_chosen_notebook"));
+        if resp.clicked()
+            && let Some((parent, kind)) = target
+        {
+            acts.push(Act::AddKind(parent, kind, NodeKind::Section));
+        }
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
         // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
@@ -5488,6 +5517,7 @@ impl NoteCraftApp {
                     toggle |= Self::bars_button_at(ui).clicked();
                     ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
                 });
+                ui.horizontal(|ui| self.new_section_button(ui, acts));
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
@@ -6784,6 +6814,14 @@ impl NoteCraftApp {
                         self.open.insert(parent.clone());
                         if *kind == NodeKind::Page {
                             self.open_page(&dir);
+                        } else if *kind == NodeKind::Section {
+                            // The new section is the one chosen, so its pages (none yet, with
+                            // the Add page button above them) are what the page list shows next
+                            // (issue #139).
+                            self.selected = Some(dir.clone());
+                            if let Some(page) = first_page(self.session.tree(), &dir) {
+                                self.open_page(&page);
+                            }
                         }
                         self.say(crate::tl_id!("ui.created"));
                     }

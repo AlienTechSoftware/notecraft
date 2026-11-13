@@ -3028,6 +3028,40 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// A labelled "+ New section" button is always there for the chosen notebook, in both side
+/// panel layouts, not only a plus that appears on hover. It opens the section dialog for the
+/// notebook the open page is in, and the new section is the one chosen afterwards (issue #139).
+#[test]
+fn a_new_section_button_adds_a_section_to_the_chosen_notebook() {
+    for split in [false, true] {
+        let (_t, app, s) = if split { split_sample_app("ui-new-section-split") } else { sample_app("ui-new-section") };
+        let mut h = harness(app, LIGHT);
+        ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        let notebook = s.notebook.clone();
+        let before = notecraft_store::tree::child_dirs(&notebook).len();
+        review(&mut h, if split { "new_section_split" } else { "new_section_tree" });
+
+        h.get_by_label("+ New section").click();
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "Plans"})).expect("type the name");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+        settle(&mut h);
+
+        let made: Vec<_> = notecraft_store::tree::child_dirs(&notebook)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title == "Plans" && n.kind == notecraft_model::NodeKind::Section))
+            .collect();
+        assert_eq!(made.len(), 1, "split={split}: one section named Plans was made in the notebook");
+        assert_eq!(notecraft_store::tree::child_dirs(&notebook).len(), before + 1, "split={split}: and nothing else");
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        let chosen: Vec<&Value> =
+            state["rows"].as_array().map(|r| r.iter().filter(|row| row["selected"] == json!(true)).collect()).unwrap_or_default();
+        assert!(chosen.iter().any(|row| row["title"] == json!("Plans")), "split={split}: the new section is the chosen one: {chosen:?}");
+    }
+}
+
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
 /// a row taken out of a table.
 /// Inserting the date is an edit like any other: Ctrl+Z takes it back (owner, 2026-11-12).
