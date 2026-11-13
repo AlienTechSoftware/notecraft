@@ -643,6 +643,42 @@ mod tests {
         assert_eq!(load_page(&page).expect("load").body, "# Page\n\n- [ ] one\n");
     }
 
+    /// Hidden borders are part of the line the page keeps for its tables, so they are kept
+    /// for one table, in both formats, and the words of the page are not touched (issue #161).
+    #[test]
+    fn hidden_table_borders_survive_a_save_and_a_reopen() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("table-borders", format);
+            assert!(table_columns(&dir).expect("read").is_empty(), "{format:?}: a new page has every table's borders");
+
+            let body = match format {
+                PageFormat::Html => {
+                    "<table><tr><th>A</th></tr><tr><td>one</td></tr></table><p>Between</p><table><tr><th>C</th></tr><tr><td>two</td></tr></table>"
+                }
+                PageFormat::Cmgfm => "| A |\n|---|\n| one |\n\nBetween\n\n| C |\n|---|\n| two |\n",
+            };
+            save_body(&dir, body).expect("save");
+            let mut layout = table_columns(&dir).expect("read");
+            assert!(layout.set_borders(0, true));
+            set_table_columns(&dir, &layout).expect("write");
+
+            let back = table_columns(&dir).expect("read");
+            assert!(back.borders_hidden(0), "{format:?}: the first table has none");
+            assert!(!back.borders_hidden(2), "{format:?}: the second table keeps its own");
+            assert_eq!(back, layout, "{format:?}");
+            assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the body is the same text");
+
+            // An edit of the words elsewhere does not lose it, and showing them again takes
+            // the line out.
+            save_body(&dir, body).expect("save");
+            assert!(table_columns(&dir).expect("read").borders_hidden(0), "{format:?}: an edit does not lose it");
+            let mut shown = back;
+            assert!(shown.set_borders(0, false));
+            set_table_columns(&dir, &shown).expect("write");
+            assert!(table_columns(&dir).expect("read").is_empty(), "{format:?}");
+        }
+    }
+
     /// A justified paragraph is a line in the page's head, and the words of the page are
     /// not touched by it: a page saved and reopened comes back with the same body and the
     /// same paragraphs justified, in both formats.

@@ -2310,6 +2310,53 @@ fn the_pen_draws_on_open_canvas_away_from_any_text() {
     }
 }
 
+/// Issue #149: an explicit picture export must reach hosts without a local disk.
+#[test]
+fn picture_export_delivers_plain_svg_to_the_host_once_in_both_formats() {
+    for html in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-picture-download");
+        let page = if html { &s.html_page } else { &s.md_page };
+        app.enable_file_downloads();
+        app.open_path(&page.to_string_lossy());
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        settle(&mut h);
+        assert!(h.state_mut().take_file_downloads().is_empty(), "opening a notebook is not an export");
+        h.get_by_label("Draw").click();
+        pump(&mut h);
+        h.get_by_label("Pen blue").click();
+        pump(&mut h);
+        let canvas = h.state().page_rect().expect("canvas");
+        let (x, y) = (canvas.min.x + 30.0, canvas.min.y + 140.0);
+        ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("pen down");
+        pump(&mut h);
+        for step in 1..=4 {
+            ask(&mut h, "ui.move", json!({"x": x + step as f32 * 25.0, "y": y + step as f32 * 4.0})).expect("stroke");
+            pump(&mut h);
+        }
+        ask(&mut h, "ui.release", json!({"x": x + 100.0, "y": y + 16.0})).expect("pen up");
+        settle(&mut h);
+        assert!(h.state_mut().take_file_downloads().is_empty(), "ink autosave is not a download");
+        h.get_by_label("Save picture").click();
+        settle(&mut h);
+        let downloads = h.state_mut().take_file_downloads();
+        assert_eq!(downloads.len(), 1, "Save picture reaches the host, html={html}");
+        let download = &downloads[0];
+        assert_eq!(download.name, "ink-picture.svg");
+        assert_eq!(download.mime, "image/svg+xml");
+        assert_eq!(download.bytes, std::fs::read(page.join(&download.name)).expect("real exported file"));
+        let svg = std::str::from_utf8(&download.bytes).expect("SVG text");
+        assert!(svg.contains("<svg") && svg.contains("<path"), "the drawn stroke is exported: {svg}");
+        assert!(!svg.contains("nc:"), "plain export has no pen readings");
+        assert!(h.state_mut().take_file_downloads().is_empty(), "an output is delivered only once");
+        h.get_by_label("Save picture").click();
+        settle(&mut h);
+        let again = h.state_mut().take_file_downloads();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].name, "ink-picture-2.svg");
+        assert_eq!(again[0].bytes, download.bytes, "repeated export keeps the drawing");
+    }
+}
+
 /// Issue #138: file details belong in the chrome, leaving the note to lead with its title.
 #[test]
 fn page_file_details_stay_below_the_canvas_and_drop_hint_is_transient() {
@@ -2390,6 +2437,7 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     let plain = s.html_page.join("ink-picture.svg");
     assert!(plain.exists(), "the picture was written");
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
+    assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
 /// Issues #155 and #156: Redo puts back a stroke Undo took, and Undo on a page just opened
@@ -3140,6 +3188,70 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     // And the table is drawn to it: the second column starts further right than it did.
     let now = h.get_by_label("B").rect();
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
+}
+
+/// Table > Hide Borders belongs to the table the caret is in: the other table on the page keeps
+/// its borders, the choice is kept with the page, and it is still there when the page is
+/// opened again (issue #161).
+#[test]
+fn hide_borders_formats_only_the_selected_table_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-borders");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Two tables", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| A | B |\n|---|---|\n| one | two |\n\nBetween\n\n| C | D |\n|---|---|\n| three | four |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    assert_eq!(kept(&mut h, &page), "", "every table has its borders to begin with");
+
+    // Hide them in the first table.
+    into(&mut h, "one");
+    h.get_by_label("Hide Borders").click();
+    settle(&mut h);
+    review(&mut h, "table_borders_hidden_in_one");
+    assert_eq!(kept(&mut h, &page), "0:!", "the page says the first table, and only the first, has none");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    h.get_by_label("Show Borders");
+
+    // The second table still offers to hide its own, and the first offers to show its.
+    into(&mut h, "three");
+    h.get_by_label("Hide Borders");
+    into(&mut h, "one");
+    h.get_by_label("Show Borders");
+
+    // Opened again, the choice is still the first table's.
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    into(&mut h, "one");
+    h.get_by_label("Show Borders");
+    into(&mut h, "three");
+    h.get_by_label("Hide Borders");
+
+    // And Show Borders gives the first table its lines again.
+    into(&mut h, "one");
+    h.get_by_label("Show Borders").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "", "nothing is kept for a table with its borders");
 }
 
 /// A labelled "+ New section" button is always there for the chosen notebook, in both side

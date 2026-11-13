@@ -744,6 +744,15 @@ enum Act {
     CopyLink(PathBuf),
 }
 
+/// A file the UI's host should deliver through its download facility.
+/// The desktop host keeps the normal file instead; browser hosts opt in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileDownload {
+    pub name: String,
+    pub mime: &'static str,
+    pub bytes: Vec<u8>,
+}
+
 pub struct NoteCraftApp {
     session: Session,
     /// Writes autosaves off the window's thread (see [`crate::saver`]).
@@ -820,11 +829,10 @@ pub struct NoteCraftApp {
     sensitivity: u8,
     /// The drawing open in this page, if it has one.
     pad: Option<crate::inkpad::Pad>,
+    /// Present only when the host supplies a download facility.
+    file_downloads: Option<Vec<FileDownload>>,
     /// Lines or squares behind the page.
     rules: ribbon::RuleLines,
-    /// Lines round the cells of a table, which is how a table is drawn unless the Table
-    /// tab turns them off.
-    table_borders: bool,
     /// Where GridCraft is, when it is installed: a table can be handed to it. Looked for
     /// once, when the window opens.
     gridcraft: Option<std::path::PathBuf>,
@@ -902,9 +910,6 @@ impl NoteCraftApp {
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
-        // A table has borders unless it was turned off: OneNote draws them, and a table
-        // without them reads as loose columns of words.
-        let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. This is the product's default navigation layout; the one-tree view remains
         // available as an explicit preference.
@@ -979,8 +984,8 @@ impl NoteCraftApp {
             nib,
             sensitivity,
             pad: None,
+            file_downloads: None,
             rules: session_rules,
-            table_borders: session_borders,
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
             snap_to_grid: session_snap,
@@ -1058,6 +1063,17 @@ impl NoteCraftApp {
 
     pub fn session(&self) -> &Session {
         &self.session
+    }
+
+    /// Opt in to host-delivered files for explicit exports. Ordinary saves never
+    /// request a download. The host must drain these outputs after every frame.
+    pub fn enable_file_downloads(&mut self) {
+        self.file_downloads.get_or_insert_with(Vec::new);
+    }
+
+    /// Takes each explicit file export once, for a host such as the web wrapper.
+    pub fn take_file_downloads(&mut self) -> Vec<FileDownload> {
+        self.file_downloads.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     /// The session, for tests and for tools that drive the window.
@@ -3335,7 +3351,7 @@ impl NoteCraftApp {
             rack: &self.rack,
             nib: self.nib,
             in_table: self.caret_in_table(),
-            table_borders: self.table_borders,
+            table_borders: self.caret_table_has_borders(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
@@ -3779,10 +3795,7 @@ impl NoteCraftApp {
             ribbon::Act::Table(what) => self.edit_table(what),
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
-            ribbon::Act::TableBorders(on) => {
-                self.table_borders = on;
-                let _ = self.session.settings.set("table_borders", if on { "true" } else { "false" });
-            }
+            ribbon::Act::TableBorders(on) => self.set_table_borders(on),
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -4118,6 +4131,36 @@ impl NoteCraftApp {
             .as_ref()
             .and_then(|e| e.caret.as_ref().map(|c| (e, c)))
             .is_some_and(|(e, c)| c.cell.is_some() && matches!(e.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })))
+    }
+
+    /// Whether the table the caret is in is drawn with lines round its cells. A table has
+    /// them until its own borders are hidden, so with the caret outside any table this reads
+    /// as true.
+    fn caret_table_has_borders(&self) -> bool {
+        let Some(ed) = self.editor.as_ref() else { return true };
+        let Some(c) = ed.caret.as_ref().filter(|c| c.cell.is_some()) else { return true };
+        !ed.columns.borders_hidden(c.block)
+    }
+
+    /// Table > Hide Borders or Show Borders: the table the caret is in, and no other. The
+    /// choice is kept with the page, like the widths of the table's columns, so it is there
+    /// when the page is opened again (issue #161).
+    fn set_table_borders(&mut self, on: bool) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.writable {
+            return;
+        }
+        let Some(at) = ed.caret.as_ref().filter(|c| c.cell.is_some()).map(|c| c.block) else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        if !matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Table { .. })) || !ed.columns.set_borders(at, !on) {
+            return;
+        }
+        // Noted on the step the page is at, which is how a dragged column is noted too: an
+        // undo back to here keeps the choice.
+        Self::remember_edit(ed);
+        self.save_block_marks((true, false));
     }
 
     /// Writes a file of the open page that was typed in in the code view.
@@ -4515,9 +4558,21 @@ impl NoteCraftApp {
             self.say(crate::tl_id!("ui.there_is_no_drawing_on_this_page"));
             return;
         };
-        match pad.save_plain() {
+        let saved = pad.save_plain().and_then(|path| {
+            if let Some(downloads) = self.file_downloads.as_mut() {
+                let bytes = std::fs::read(&path)?;
+                let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| "ink-picture.svg".to_owned());
+                downloads.push(FileDownload { name, mime: "image/svg+xml", bytes });
+            }
+            Ok(path)
+        });
+        match saved {
             Ok(path) => {
-                let shown = self.shown(&path);
+                let shown = if self.file_downloads.is_some() {
+                    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| self.shown(&path))
+                } else {
+                    self.shown(&path)
+                };
                 self.say(crate::i18n::format_message_id("ui.saved_the_drawing_as_a_picture_path", &[("path", &shown)]));
             }
             Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())])),
@@ -6085,7 +6140,6 @@ impl NoteCraftApp {
         });
         // What the title area is showing, so the page's words do not say it again.
         let shown_title = self.editor.as_ref().map(|e| e.title.clone()).unwrap_or_default();
-        let table_borders = self.table_borders;
         let (mut toggle_source, mut toggle_full_page, mut focus_search) = (false, false, false);
         let mut from_blocks = false;
         let mut boxes_moved = false;
@@ -6262,7 +6316,6 @@ impl NoteCraftApp {
                                     &ed.dir,
                                     &tokens,
                                     page_dir,
-                                    table_borders,
                                     &mut ed.columns,
                                     &mut ed.justified,
                                     &mut ed.across,

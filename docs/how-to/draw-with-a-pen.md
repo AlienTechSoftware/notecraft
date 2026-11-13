@@ -98,7 +98,8 @@ Two things, in one file:
 
 **Save picture** writes the ink again next to it, as `ink-picture.svg`, with the readings
 left out. Use it when you are sending the drawing somewhere else and want nothing but the
-picture.
+picture. In the browser, it also starts a download so you can retrieve the SVG outside
+the in-memory notebook. Exporting again uses a new filename and keeps earlier pictures.
 
 ## What is not here yet
 

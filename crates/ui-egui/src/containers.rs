@@ -233,7 +233,6 @@ pub fn show(
     page_dir: &std::path::Path,
     t: &Tokens,
     page: Option<notecraft_model::Dir>,
-    borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     justified: &mut notecraft_model::justify::Justified,
     across: &mut Option<pageedit::Across>,
@@ -423,8 +422,7 @@ pub fn show(
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width * zoom, area.height()))).layout(*ui.layout()));
         child.set_width(b.width * zoom);
-        let changed =
-            pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), borders, cols, justified, across, shown_title, zoom);
+        let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), cols, justified, across, shown_title, zoom);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
         out.changed.columns |= changed.columns;
@@ -2069,7 +2067,6 @@ more
                 std::path::Path::new("."),
                 &t,
                 Some(notecraft_model::Dir::Ltr),
-                true,
                 &mut Default::default(),
                 &mut Default::default(),
                 &mut None,
@@ -2101,7 +2098,6 @@ more
                 std::path::Path::new("."),
                 &t,
                 Some(notecraft_model::Dir::Ltr),
-                true,
                 &mut Default::default(),
                 &mut Default::default(),
                 &mut None,
@@ -2135,7 +2131,6 @@ more
                 std::path::Path::new("."),
                 &t,
                 Some(notecraft_model::Dir::Ltr),
-                true,
                 &mut Default::default(),
                 &mut Default::default(),
                 &mut None,

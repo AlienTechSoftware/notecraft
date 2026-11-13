@@ -272,7 +272,9 @@ fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     };
     let widths = notecraft_model::tablecols::parse(want);
     if widths.is_empty() && !want.trim().is_empty() {
-        return Err(EngineError::BadParam("widths is block:w,w,w per table, separated by semicolons".into()));
+        return Err(EngineError::BadParam(
+            "widths is block:w,w,w per table, separated by semicolons, with a ! for a table whose borders are hidden".into(),
+        ));
     }
     page::set_table_columns(&path, &widths)?;
     Ok(Output::Text(notecraft_model::tablecols::write(&widths)))
@@ -493,9 +495,9 @@ color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray,
     },
     CommandSpec {
         id: "page.columns",
-        label: "How wide the columns of a page's tables are",
+        label: "How wide the columns of a page's tables are, and which tables have their borders hidden",
         params: "path (required): the page
-widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported",
+widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported",
         changes_tree: false,
         run: page_columns,
     },
