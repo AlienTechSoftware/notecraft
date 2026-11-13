@@ -21,10 +21,15 @@ pub const SCHEME: &str = "notecraft:";
 
 /// A link to this page, to paste into another one. `None` when the folder is not under any
 /// of the open notebooks.
+///
+/// The path always starts with the notebook's folder name. For a notebook opened from
+/// elsewhere the open folder is the notebook itself, and stripping it whole left
+/// `section/page`, the same for every such notebook laid out alike, so a link to a page in
+/// one opened the matching page of whichever was open first (issue #128).
 pub fn page_uri(roots: &[PathBuf], dir: &Path) -> Option<String> {
     let full = normalise(dir.to_path_buf())?;
     let root = roots.iter().find(|r| full.starts_with(r))?;
-    let rest = full.strip_prefix(root).ok()?;
+    let rest = full.strip_prefix(link_base(root)).ok()?;
     let path = rest.components().filter_map(|c| c.as_os_str().to_str()).collect::<Vec<_>>().join("/");
     Some(format!("{SCHEME}/{path}"))
 }
@@ -78,18 +83,24 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
         }
         let mut inside_somewhere = None;
         for root in roots {
-            let Some(full) = normalise(root.join(&decoded)) else { continue };
-            if !full.starts_with(root) {
-                // A link that climbs out of this notebook; it may still be in another.
-                continue;
+            // From the folder above a notebook opened from elsewhere, where links start now;
+            // then from the notebook itself, where links copied before issue #128 started.
+            let base = link_base(root);
+            let bases: &[&Path] = if base == root.as_path() { &[root] } else { &[base, root] };
+            for base in bases {
+                let Some(full) = normalise(base.join(&decoded)) else { continue };
+                if !full.starts_with(root) {
+                    // A link that climbs out of this notebook; it may still be in another.
+                    continue;
+                }
+                if full.is_dir() {
+                    return if read_node(&full).is_some() { Link::Node(full) } else { Link::File(full) };
+                }
+                if full.is_file() {
+                    return Link::File(full);
+                }
+                inside_somewhere.get_or_insert(full);
             }
-            if full.is_dir() {
-                return if read_node(&full).is_some() { Link::Node(full) } else { Link::File(full) };
-            }
-            if full.is_file() {
-                return Link::File(full);
-            }
-            inside_somewhere.get_or_insert(full);
         }
         // Nothing of that name: missing when the path at least stayed inside a notebook,
         // out when it climbed above every one of them.
@@ -137,6 +148,16 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
         Link::File(full)
     } else {
         Link::Missing(full)
+    }
+}
+
+/// The folder a link of our own is written from: the notebooks folder, or, for a notebook
+/// opened from elsewhere, the folder holding it, so the link names the notebook.
+fn link_base(root: &Path) -> &Path {
+    let is_notebook = read_node(root).is_some_and(|n| n.kind == notecraft_model::NodeKind::Notebook);
+    match root.parent() {
+        Some(parent) if is_notebook => parent,
+        _ => root,
     }
 }
 
@@ -317,6 +338,39 @@ mod tests {
         assert_eq!(resolve_in(&roots, &a, "notecraft:/../secret"), Link::Outside);
         assert_eq!(resolve_in(&roots, &a, "notecraft:/"), Link::Outside);
         assert!(matches!(resolve_in(&roots, &a, "notecraft:/nothing/here"), Link::Missing(_)));
+    }
+
+    /// Issue #128: two notebooks opened from elsewhere, laid out alike, gave their matching
+    /// pages the same link, and it opened whichever notebook had been opened first.
+    #[test]
+    fn links_to_pages_in_two_notebooks_from_elsewhere_name_their_notebook() {
+        let t = TempDir::new("links-two-away");
+        let root = t.path().join("notebooks");
+        let settings = crate::Settings::at(t.path().join("settings.toml"));
+        std::fs::create_dir_all(&root).expect("root");
+        let page_in = |away: &str, name: &str| {
+            let nb = crate::ops::create_notebook(&t.path().join(away), name, None, &settings).expect("notebook");
+            let section = crate::ops::create_node(&nb, "Section", notecraft_model::NodeKind::Section, None, &settings).expect("section");
+            let page = crate::ops::create_node(&section, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+            (nb, page)
+        };
+        let (nb_a, page_a) = page_in("away-a", "Book A");
+        let (nb_b, page_b) = page_in("away-b", "Book B");
+
+        for roots in [vec![root.clone(), nb_a.clone(), nb_b.clone()], vec![root.clone(), nb_b.clone(), nb_a.clone()]] {
+            let uri_a = page_uri(&roots, &page_a).expect("a link to page A");
+            let uri_b = page_uri(&roots, &page_b).expect("a link to page B");
+            assert_ne!(uri_a, uri_b, "two pages, two links");
+            assert!(uri_b.starts_with("notecraft:/book-b/"), "the link names its notebook: {uri_b}");
+            assert_eq!(resolve_in(&roots, &page_a, &uri_b), Link::Node(page_b.clone()));
+            assert_eq!(resolve_in(&roots, &page_b, &uri_a), Link::Node(page_a.clone()));
+        }
+
+        // A link copied before the fix, without the notebook's name, still opens a page.
+        let roots = vec![root.clone(), nb_a.clone()];
+        assert_eq!(resolve_in(&roots, &page_a, "notecraft:/section/page"), Link::Node(page_a.clone()));
+        // And the folder above the notebook is not a way out of it.
+        assert_eq!(resolve_in(&roots, &page_a, "notecraft:/away-a-sibling/x"), Link::Missing(root.join("away-a-sibling").join("x")));
     }
 
     #[test]
