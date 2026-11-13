@@ -10,6 +10,10 @@
 # Turn off for good: git config --unset core.hooksPath
 set -e
 
+# Git sends the list of refs being pushed on this input. Read and discard it, so git does not
+# fail with a broken pipe (exit 141) when this hook exits.
+cat > /dev/null
+
 # Quality level L2. Up to date with the newest origin/main; merge commits are allowed so the
 # integration provenance remains visible. Coverage is not run here: it rebuilds everything, so it runs on
 # demand and in CI on the pull request.
