@@ -62,6 +62,8 @@ pub enum Act {
     ToggleTitle,
     /// Snap boxes to the page's grid when they are moved or resized, or stop.
     ToggleSnap,
+    /// Sort the table's rows by the caret's column: true for descending (issue #171).
+    TableSort(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -1681,6 +1683,26 @@ fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: 
     resp.on_hover_text(name)
 }
 
+/// Shared by the direct Page colour menu and the combined Format Background gallery.
+fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let mut picked = false;
+    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
+    ui.horizontal(|ui| {
+        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
+            acts.push(Act::PageColour(None));
+            picked = true;
+        }
+        for c in notecraft_model::NodeColor::ALL {
+            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
+                acts.push(Act::PageColour(Some(c)));
+                picked = true;
+            }
+        }
+    });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
+    picked
+}
+
 /// OneNote's Table button: a grid to pick the size from, the way OneNote picks one.
 ///
 /// Running the pointer over the grid lights the cells up to it and names the size, and a
@@ -1825,21 +1847,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                         egui::RichText::new(crate::tl_id!("ui.every_fifth_line_is_slightly_stronger_for_easier_counting")).small().color(t.muted),
                     );
                     ui.separator();
-                    // OneNote's Page Color, under the paper: a pale wash behind the words.
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
-                    ui.horizontal(|ui| {
-                        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
-                            acts.push(Act::PageColour(None));
-                            picked = true;
-                        }
-                        for c in notecraft_model::NodeColor::ALL {
-                            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
-                                acts.push(Act::PageColour(Some(c)));
-                                picked = true;
-                            }
-                        }
-                    });
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
+                    picked |= page_colour_palette(ui, view, t, acts);
                     ui.separator();
                     ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.rule_line_colour_not_built")).color(t.muted)));
                 });
@@ -2688,7 +2696,17 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::DirRtl, "Align\nRight", t);
     });
     group(ui, crate::tl_id!("ui.data"), t, |ui| {
-        soon(ui, Icon::ListNumber, "Sort", t);
+        // Whole rows by the caret's column, or only the picked rows; the heading stays on top.
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_ascending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_a_to_z"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(false));
+        }
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_descending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_z_to_a"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(true));
+        }
     });
     group(ui, crate::tl_id!("ui.convert"), t, |ui| {
         // Where OneNote converts a table to an Excel spreadsheet, NoteCraft hands it to
@@ -2801,7 +2819,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleSnap);
             }
-            not_built(ui, crate::tl_id!("ui.page_colour"), t);
+            ui.add_enabled_ui(view.has_page, |ui| {
+                ui.menu_button(crate::tl_id!("ui.page_colour"), |ui| {
+                    if page_colour_palette(ui, view, t, acts) {
+                        ui.close();
+                    }
+                });
+            });
             not_built(ui, crate::tl_id!("ui.paper_size"), t);
         });
     });
