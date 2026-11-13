@@ -2749,7 +2749,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "eframe",
  "egui",
@@ -2770,7 +2770,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-cli"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-engine",
  "notecraft-import",
@@ -2782,7 +2782,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-demo"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-formats",
  "notecraft-ink",
@@ -2792,14 +2792,14 @@ dependencies = [
 
 [[package]]
 name = "notecraft-diagram"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "mermaid-rs-renderer",
 ]
 
 [[package]]
 name = "notecraft-engine"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-formats",
  "notecraft-model",
@@ -2809,14 +2809,14 @@ dependencies = [
 
 [[package]]
 name = "notecraft-formats"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-model",
 ]
 
 [[package]]
 name = "notecraft-import"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-formats",
  "notecraft-model",
@@ -2826,18 +2826,18 @@ dependencies = [
 
 [[package]]
 name = "notecraft-ink"
-version = "0.0.9"
+version = "0.0.10"
 
 [[package]]
 name = "notecraft-input-language"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "notecraft-math"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "ratex-font",
  "ratex-layout",
@@ -2847,7 +2847,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-mcp"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-engine",
  "notecraft-store",
@@ -2856,18 +2856,18 @@ dependencies = [
 
 [[package]]
 name = "notecraft-model"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "web-time",
 ]
 
 [[package]]
 name = "notecraft-onenote"
-version = "0.0.9"
+version = "0.0.10"
 
 [[package]]
 name = "notecraft-setup"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-store",
  "rfd",
@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-store"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "log",
  "notecraft-formats",
@@ -2885,7 +2885,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-text"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "notecraft-model",
  "parley",
@@ -2893,7 +2893,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-ui-egui"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "arboard",
  "craft-i18n",
@@ -5985,7 +5985,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "proc-macro2",
  "serde_json",
