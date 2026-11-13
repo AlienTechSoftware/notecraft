@@ -589,6 +589,12 @@
 @id	ui.removed_notebook_from_the_known_notebooks_list	Removed notebook from the known notebooks list
 @id	ui.rename	Rename
 @id	ui.rename_ellipsis	Rename...
+@id	ui.it_is_in_place_now	It is in {place} now
+@id	ui.move_or_copy_title_to	Move or copy "{title}" to:
+@id	ui.moved	Moved
+@id	ui.move	Move
+@id	ui.move_or_copy	Move or Copy
+@id	ui.move_or_copy_ellipsis	Move or Copy...
 @id	ui.renamed	Renamed
 @id	ui.rendered_svg_preview	Rendered SVG preview
 @id	ui.repair_icon	Repair icon
