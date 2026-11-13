@@ -9234,3 +9234,33 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
     let width = look(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).unwrap_or(0.0);
     assert!(width >= 500.0, "the box grew from its drawn edge, past the table, with the pointer: {width}");
 }
+
+/// Issue #29: a JPEG XL picture in a page's assets is drawn in the page like a PNG, not shown
+/// as a file card.
+#[test]
+fn a_jpeg_xl_picture_is_drawn_in_the_page() {
+    const TWO_COLOURS: &[u8] = include_bytes!("fixtures/two-colours.jxl");
+    let (_t, mut app, s) = sample_app("ui-jpeg-xl");
+    let md = s.md_page.to_string_lossy().to_string();
+    std::fs::create_dir_all(s.md_page.join("assets")).expect("assets");
+    std::fs::write(s.md_page.join("assets").join("two-colours.jxl"), TWO_COLOURS).expect("picture");
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": md.clone(), "body": "![two colours](assets/two-colours.jxl)\n"}}),
+    )
+    .expect("write one-picture page");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+    settle(&mut h);
+    settle(&mut h);
+    let image = h.render().expect("render");
+    let count = |want: fn(&[u8; 4]) -> bool| image.pixels().filter(|p| want(&p.0)).count();
+    let red = count(|p| p[0] > 200 && p[1] < 60 && p[2] < 60);
+    let blue = count(|p| p[2] > 200 && p[0] < 60 && p[1] < 60);
+    review(&mut h, "jpeg_xl_picture");
+    assert!(red > 50 && blue > 50, "the picture's red and blue halves are drawn: red={red} blue={blue}");
+    assert_eq!(h.query_all_by_label_contains("two-colours.jxl").count(), 0, "no file card stands in for it");
+}
