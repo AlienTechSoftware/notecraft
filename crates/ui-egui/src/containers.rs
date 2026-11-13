@@ -428,6 +428,9 @@ pub fn show(
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
         out.changed.columns |= changed.columns;
+        if let Some(mark) = changed.mark {
+            out.acts.push(Act::Mark(mark));
+        }
         if changed.link.is_some() {
             out.changed.link = changed.link;
         }

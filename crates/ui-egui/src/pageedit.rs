@@ -911,6 +911,19 @@ pub struct Changed {
     pub columns: bool,
     /// A keyboard navigation request to select a whole-block embedded object.
     pub select_object: Option<(usize, String)>,
+    /// A formatting gesture owned by the focused page text widget, for the controller.
+    pub mark: Option<&'static str>,
+}
+
+/// Consume before TextEdit handles Command+B/I/U as cursor movement or text deletion.
+/// A retained page caret does not own input when search, title or another field has focus.
+fn formatting_key(ui: &Ui, id: egui::Id) -> Option<&'static str> {
+    if !ui.is_enabled() || !ui.memory(|memory| memory.has_focus(id)) {
+        return None;
+    }
+    [(Key::B, "bold"), (Key::I, "italic"), (Key::U, "underline")]
+        .into_iter()
+        .find_map(|(key, mark)| ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, key)).then_some(mark))
 }
 
 /// The text of a block as it is edited: the inline marks only.
@@ -1060,6 +1073,7 @@ fn table(
                                 caret.ensure_inline(block);
                                 let previous_selection = caret.selection;
                                 let id = ui.make_persistent_id(("table-cell", i, r, c));
+                                changed.mark = formatting_key(ui, id);
                                 let at = (i, caret.text.clone(), caret.selection);
                                 let out = steady_blink(ui, (at.0, &at.1, at.2), |ui| {
                                     egui::TextEdit::singleline(&mut caret.text)
@@ -1639,6 +1653,7 @@ pub fn show_blocks(
             let mut ticked = None;
             let mut input_caret = None;
             let id = ui.make_persistent_id(("page-block", i));
+            changed.mark = formatting_key(ui, id);
             // A line that reads right to left is written from the right: its bullet, box or
             // tag mark sits on the right, and the words hang from that edge.
             let align = if notecraft_model::direction_in(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
