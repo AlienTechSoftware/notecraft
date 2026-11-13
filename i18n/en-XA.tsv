@@ -841,3 +841,5 @@
 @id	ui.table_align_center_tip	$$$Put the words in the middle of the cell@@@
 @id	ui.table_align_right	$$$Align@@@\n$$$Right@@@
 @id	ui.table_align_right_tip	$$$Line the words up with the right of the cell@@@
+@id	ui.table_shading	$$$Shading@@@
+@id	ui.table_shading_tip	$$$A colour behind the picked cells@@@

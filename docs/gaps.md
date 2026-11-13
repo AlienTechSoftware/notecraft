@@ -276,8 +276,8 @@ Playground hosts with the Files API continue using their existing persistence pa
   when Backspace joins two, when a box is deleted or pasted, or when Ctrl+Z undoes any of these.
   After those, a width or a justification can sit on the block next to the one it was given to.
 - **Table column widths and justification are still on a metadata line.** The boxes of a page are
-  elements in its text, but the widths a table's columns were dragged to (and the alignment its
-  cells were given) are kept in the head
+  elements in its text, but the widths a table's columns were dragged to (and the alignment and
+  shading its cells were given) are kept in the head
   (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
   same way (`notecraft:justify`, `justify:`), so the same disconnect remains for both: another
   program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
@@ -409,8 +409,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   alignment on the same line as the widths (`block@row.column=c`), and it moves with its row or
   column when one goes in or out and with its row when the table is sorted. It is drawn where
   the page is written in; a page drawn for the pen (the Draw tab) still shows its cells aligned
-  left, as it shows its columns at the usual width. Not built, and greyed where a OneNote user
-  looks for them: merging and splitting cells, shading; and the Insert Table dialog. Sort Ascending
+  left, as it shows its columns at the usual width. Shading puts one of the named colours a
+  section can carry behind the caret's cell or every picked cell (`block@row.column=~yellow`, or
+  `=c~yellow` beside an alignment), washed so the words keep their contrast in light and dark
+  themes, and No Colour takes it away; it follows its cell the way alignment does, and the pen's
+  view does not draw it yet either. Not built, and greyed where a OneNote user looks for them:
+  merging and splitting cells; and the Insert Table dialog. Sort Ascending
   and Sort Descending reorder whole rows by the caret's column (only the picked rows when a
   block of cells spans several), numbers as numbers, empty cells last, the heading on top.
   A row has no height of its own on purpose: OneNote sizes a row by the text in it and

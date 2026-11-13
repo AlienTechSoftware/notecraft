@@ -1096,6 +1096,15 @@ const PAD_Y: f32 = 4.0;
 const GRAB: f32 = 4.0;
 
 #[allow(clippy::too_many_arguments)]
+/// The colour a shaded table cell is drawn in (issue #169): a wash of its named colour over the
+/// page, strong enough to tell cells apart and pale enough that the words keep their contrast,
+/// in a light theme and a dark one.
+pub fn cell_shade(t: &Tokens, colour: notecraft_model::NodeColor) -> egui::Color32 {
+    let dark = t.editor.r() < 128;
+    let (r, g, b) = colour.rgb(dark);
+    crate::theme::mix(t.editor, egui::Color32::from_rgb(r, g, b), if dark { 0.30 } else { 0.24 })
+}
+
 fn table(
     ui: &mut Ui,
     block: &Block,
@@ -1160,6 +1169,9 @@ fn table(
     let mut tops = Vec::with_capacity(rows.len() + 1);
     let left = ui.cursor().min.x;
     let bottom;
+    // A place behind the words for the cells' shading, filled in once the cells' edges are
+    // known: shading painted after the words would wash them out.
+    let shading = ui.painter().add(egui::Shape::Noop);
     {
         let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(ui.available_rect_before_wrap()).layout(*ui.layout()));
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
@@ -1258,13 +1270,18 @@ fn table(
     // Every cell, as a rectangle that touches its neighbours: a pointer anywhere in the
     // table is in exactly one cell, borders and gaps included.
     let mut where_ = Vec::with_capacity((rows.len() + 1) * columns);
+    let mut shaded = Vec::new();
     for r in 0..=rows.len() {
         for c in 0..columns {
             if let Some(rect) = cell_rect(r, c) {
                 where_.push(((r, c), rect));
+                if let Some(colour) = cols.shade(i, (r, c)) {
+                    shaded.push(egui::Shape::rect_filled(rect, 0.0, cell_shade(t, colour)));
+                }
             }
         }
     }
+    ui.painter().set(shading, egui::Shape::Vec(shaded));
 
     // A drag from one cell to another picks the block between them. The cell the drag
     // started in is remembered across frames, because the pointer may be over any cell by

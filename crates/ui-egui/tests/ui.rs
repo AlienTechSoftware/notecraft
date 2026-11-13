@@ -9305,3 +9305,76 @@ fn table_cells_are_aligned_from_the_table_tab_and_the_page_keeps_it() {
     settle(&mut h);
     assert_eq!(kept(&mut h, &page), "", "a cell aligned left keeps nothing");
 }
+
+/// Table > Shading puts a colour behind the caret's cell, or every picked cell, kept with the
+/// page beside the cell's alignment; No Colour takes it away (issue #169).
+#[test]
+fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-shading");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Shaded", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    // The colour just left of a cell's words, where the cell's background shows.
+    fn behind(h: &mut Harness<'_, NoteCraftApp>, word: &str) -> [u8; 4] {
+        let at = h.get_by_label(word).rect();
+        let image = h.render().expect("render");
+        let ppp = h.ctx.pixels_per_point();
+        let (x, y) = (((at.min.x - 4.0) * ppp) as u32, (at.center().y * ppp) as u32);
+        image.get_pixel(x, y).0
+    }
+    into(&mut h, "pear");
+    let plain = behind(&mut h, "12");
+    assert_eq!(plain, behind(&mut h, "7"), "two plain cells look the same");
+
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("Yellow").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=~yellow", "the page keeps the cell's colour");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let yellow = behind(&mut h, "12");
+    assert_ne!(yellow, plain, "the shaded cell is drawn in its colour");
+    assert!(yellow[0] > yellow[2] + 10 && yellow[1] > yellow[2], "a yellow wash: {yellow:?}");
+    assert_eq!(behind(&mut h, "7"), plain, "the cell below is left alone");
+    review(&mut h, "table_cell_shaded");
+
+    // Alignment and shading live side by side; No Colour leaves the alignment.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow", "kept when the page is opened again");
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("No colour").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r", "the colour went and the alignment stayed");
+}
