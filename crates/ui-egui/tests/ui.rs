@@ -9234,3 +9234,83 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
     let width = look(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).unwrap_or(0.0);
     assert!(width >= 500.0, "the box grew from its drawn edge, past the table, with the pointer: {width}");
 }
+
+/// The page's sideways scroll bar as `ui.inspect` reports it: the track and the thumb, or `None`.
+fn horizontal_bar(h: &mut Harness<'_, NoteCraftApp>) -> Option<(egui::Rect, egui::Rect)> {
+    let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+    let rect = |key: &str| {
+        let a = v.pointer(&format!("/canvas/{key}")).and_then(Value::as_array)?;
+        let n = |i: usize| a.get(i).and_then(Value::as_f64).map(|f| f as f32);
+        Some(egui::Rect::from_min_max(egui::pos2(n(0)?, n(1)?), egui::pos2(n(2)?, n(3)?)))
+    };
+    rect("horizontalBar").zip(rect("horizontalThumb"))
+}
+
+fn view_offset_x(h: &mut Harness<'_, NoteCraftApp>) -> f64 {
+    let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+    v.pointer("/canvas/viewOffset/0").and_then(Value::as_f64).expect("horizontal view offset")
+}
+
+/// Issue #188: a page whose content reaches past the right of the view gets a scroll bar along its
+/// bottom, and dragging it brings that content into view. A page that fits gets none.
+#[test]
+fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
+    for (label, markdown) in [("ui-hscroll-html", false), ("ui-hscroll-cmgfm", true)] {
+        let (_t, mut app, s) = sample_app(label);
+        let page = if markdown { &s.md_page } else { &s.html_page }.to_string_lossy().to_string();
+        app.open_path(&page);
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+        let arrange = |h: &mut Harness<'_, NoteCraftApp>, x: u32| {
+            ask(
+                h,
+                "engine.execute",
+                json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("{x},20,320,{blocks}")}}),
+            )
+            .expect("arrange");
+            ask(h, "ui.open", json!({"path": page.clone()})).expect("open");
+            settle(h);
+        };
+
+        // Negative control: a box well inside the view.
+        arrange(&mut h, 40);
+        assert_eq!(horizontal_bar(&mut h), None, "a {label} page that fits has no sideways bar");
+
+        // The box placed far past the right edge of a 1200 point window.
+        arrange(&mut h, 1500);
+        let (track, thumb) = horizontal_bar(&mut h).unwrap_or_else(|| panic!("a {label} page wider than the view has a sideways bar"));
+        assert!(thumb.width() < track.width() - 1.0, "the thumb is shorter than the track: {thumb:?} in {track:?}");
+        assert!((thumb.min.x - track.min.x).abs() < 0.5, "the view starts at the page's left: {thumb:?} in {track:?}");
+        review(&mut h, if markdown { "hscroll_bar_cmgfm" } else { "hscroll_bar_html" });
+        let before = view_offset_x(&mut h);
+        let origin_before = page_origin(&mut h);
+
+        // Drag the thumb all the way to the right.
+        drag_by(&mut h, thumb.center(), egui::vec2(track.width(), 0.0));
+        let after = view_offset_x(&mut h);
+        assert!(after < before - 100.0, "dragging the {label} bar right moves the canvas left: {before} -> {after}");
+        assert!(page_origin(&mut h).x < origin_before.x - 100.0, "the page's content moves with it");
+        let (track, thumb) = horizontal_bar(&mut h).expect("the bar stays while the page is wider than the view");
+        assert!((thumb.max.x - track.max.x).abs() < 1.0, "the thumb reached the right end: {thumb:?} in {track:?}");
+        review(&mut h, if markdown { "hscroll_scrolled_cmgfm" } else { "hscroll_scrolled_html" });
+
+        // A click on the track left of the thumb pages back towards the page's left.
+        let left = egui::pos2(track.min.x + 4.0, track.center().y);
+        ask(&mut h, "ui.click", json!({"x": left.x, "y": left.y})).expect("click the track");
+        settle(&mut h);
+        assert!(view_offset_x(&mut h) > after + 100.0, "a click on the {label} track pages back");
+
+        // With a pen in hand the bar still scrolls, and pressing it lays no ink down.
+        h.get_by_label("Draw").click();
+        settle(&mut h);
+        h.get_by_label("Pen red").click();
+        settle(&mut h);
+        let (track, thumb) = horizontal_bar(&mut h).expect("the bar is there with a pen in hand");
+        let start = view_offset_x(&mut h);
+        drag_by(&mut h, thumb.center(), egui::vec2(-track.width(), 0.0));
+        assert!(view_offset_x(&mut h) > start, "the {label} bar scrolls with a pen in hand");
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect ink");
+        assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(0), "the bar took the press, not the pen: {state}");
+    }
+}
