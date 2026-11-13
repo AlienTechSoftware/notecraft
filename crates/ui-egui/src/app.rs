@@ -1312,6 +1312,55 @@ impl NoteCraftApp {
         if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2)) {
             self.go_forward();
         }
+        // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page list,
+        // from the page as well as from the list (issue #162).
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
+            self.step_page(false);
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
+            self.step_page(true);
+        }
+    }
+
+    /// The pages of the section in the order the page list shows them: a page, then its
+    /// subpages when it is expanded. A collapsed page's subpages are not on the list, so they
+    /// are not stepped through either.
+    fn listed_pages(&self) -> Vec<PathBuf> {
+        fn walk(nodes: &[Node], open: &HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+            for n in nodes.iter().filter(|n| n.info.kind == NodeKind::Page) {
+                out.push(n.path.clone());
+                if open.contains(&n.path) {
+                    walk(&n.children, open, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(section) = self.current_section(self.session.tree()) {
+            walk(&section.children, &self.open, &mut out);
+        }
+        out
+    }
+
+    /// Opens the page after the open one in the page list, or the one before it. At either end
+    /// it stays where it is, as OneNote does, and says so. The page being left is saved first.
+    fn step_page(&mut self, forward: bool) {
+        let pages = self.listed_pages();
+        let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
+        let at = here.as_ref().and_then(|h| pages.iter().position(|p| p == h));
+        let next = match at {
+            Some(i) if forward => pages.get(i + 1),
+            Some(i) => i.checked_sub(1).and_then(|i| pages.get(i)),
+            // No page of this section open: the first or last of its list.
+            None if forward => pages.first(),
+            None => pages.last(),
+        };
+        match next.cloned() {
+            Some(page) => {
+                self.selected = Some(page.clone());
+                self.open_page(&page);
+            }
+            None => self.say(if forward { crate::tl_id!("ui.this_is_the_last_page") } else { crate::tl_id!("ui.this_is_the_first_page") }),
+        }
     }
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.

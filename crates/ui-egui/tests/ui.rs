@@ -3062,6 +3062,65 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
+/// page as well as from the list, and stop at either end (issue #162).
+#[test]
+fn ctrl_page_up_and_down_step_through_the_pages_of_the_section() {
+    let (_t, app, s) = sample_app("ui-page-up-down");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("section").to_path_buf();
+    let mut made = Vec::new();
+    for title in ["Second", "Third"] {
+        let page = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section.to_string_lossy(), "kind": "page", "title": title, "format": "cmgfm"}}),
+        )
+        .expect("page");
+        made.push(PathBuf::from(page.as_str().expect("a path")));
+    }
+    // The section's pages in the order the page list shows them.
+    let listed: Vec<PathBuf> = notecraft_store::tree::child_dirs(&section)
+        .into_iter()
+        .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+        .collect();
+    assert!(listed.len() >= 3, "the section has pages to step through: {listed:?}");
+    let open_now = |h: &mut Harness<'_, NoteCraftApp>| {
+        let state = ask(h, "ui.inspect", json!({})).expect("inspect");
+        // The page list names a page by its folder; the section is the same for all of them.
+        state["page"]["path"].as_str().and_then(|p| p.rsplit('/').next()).map(str::to_string)
+    };
+    let canon = |p: &PathBuf| p.file_name().map(|n| n.to_string_lossy().into_owned());
+
+    ask(&mut h, "ui.open", json!({"path": listed[0].to_string_lossy()})).expect("open the first page");
+    settle(&mut h);
+    // With the caret in the page, as when writing: the keys still move between pages.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    for want in &listed[1..] {
+        ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown");
+        settle(&mut h);
+        assert_eq!(open_now(&mut h), canon(want), "Ctrl+Page Down opens the next page");
+    }
+    // At the last page it stays, and says so.
+    ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown at the end");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(listed.last().expect("last")), "the last page stays open");
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["status"]["text"].clone();
+    assert_eq!(status, json!("This is the last page"), "and the window says why");
+
+    ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(&listed[listed.len() - 2]), "Ctrl+Page Up opens the page before");
+    for _ in 0..listed.len() {
+        ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+        settle(&mut h);
+    }
+    assert_eq!(open_now(&mut h), canon(&listed[0]), "and stops at the first page");
+    let _ = made;
+}
+
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
 /// a row taken out of a table.
 /// Inserting the date is an edit like any other: Ctrl+Z takes it back (owner, 2026-11-12).
@@ -4598,6 +4657,73 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     h.state_mut().set_show_source(false);
     settle(&mut h);
     assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
+}
+
+/// Issue #137: the direct colour entry shares the existing page-colour state/actions.
+#[test]
+fn view_page_colour_uses_the_existing_palette_and_persists_only_on_its_page() {
+    use egui_kittest::kittest::NodeT as _;
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-direct-page-colour");
+        let mut h = sized_harness(app, theme, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("View").click();
+        settle(&mut h);
+        assert!(h.get_by_label("Page colour").accesskit_node().is_disabled(), "no page, no page-colour action");
+        for (page, other, format) in [(&s.md_page, &s.html_page, "cmgfm"), (&s.html_page, &s.md_page, "html")] {
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert!(!h.get_by_label("Page colour").accesskit_node().is_disabled());
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(h.get_by_label("No colour").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+            for colour in notecraft_model::NodeColor::ALL {
+                assert_eq!(h.get_by_label(colour.label()).accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+            }
+            review(&mut h, &format!("page_colour_palette_{format}_{}", theme.id()));
+            ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss palette");
+            settle(&mut h);
+            assert_eq!(h.query_all_by_label("No colour").count(), 0, "Escape dismisses the palette");
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            h.get_by_label("Yellow").click();
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("yellow page")["pageColour"], json!("yellow"));
+            h.state_mut().open_path(&other.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("other page")["pageColour"], Value::Null, "colour is page-specific");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("reopened")["pageColour"], json!("yellow"));
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Yellow").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "shared gallery shows the direct choice"
+            );
+            h.get_by_label("College ruled").click();
+            settle(&mut h);
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            h.get_by_label("Blue").click();
+            settle(&mut h);
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Blue").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "direct palette shows the combined gallery choice"
+            );
+            h.get_by_label("No colour").click();
+            settle(&mut h);
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let cleared = ask(&mut h, "ui.inspect", json!({})).expect("cleared colour");
+            assert_eq!(cleared["pageColour"], Value::Null, "No colour survives reopening");
+            assert_eq!(cleared["paper"], json!("college"), "clearing colour preserves the separate paper style");
+        }
+    }
 }
 
 /// The paper a page is drawn on and the colour behind it are the page's own: chosen in
