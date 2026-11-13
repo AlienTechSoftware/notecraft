@@ -109,6 +109,11 @@ Playground hosts with the Files API continue using their existing persistence pa
   Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
   gives the page its room; a tab clicked while it is folded shows its commands over the page
   until one is used, the page is clicked or Escape is pressed. The choice is kept.
+- **Find Tags is a first pass.** Home > Find Tags opens a Tags Summary beside the page. It lists the
+  tagged lines of this page, this section, this notebook or every open notebook, grouped by tag, can
+  keep only the To Do items not yet ticked, and takes the caret to a line when it is clicked. It lists
+  what the pages said when it last looked; Refresh looks again. OneNote's other groupings (by section,
+  title or date), its search box and Create Summary Page are not built.
 - **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
   a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
   Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule
