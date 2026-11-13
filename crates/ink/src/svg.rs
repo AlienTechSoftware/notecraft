@@ -382,6 +382,40 @@ mod tests {
         }
     }
 
+    /// Issue #217: what a saved file paints at the ends of a wide stroke is a whole round
+    /// lobe, in both flavours and for the pen and the highlighter alike, and the Editable
+    /// file still carries the readings exactly as they were taken.
+    #[test]
+    fn a_saved_stroke_keeps_whole_round_ends() {
+        for tool in [Tool::Pen, Tool::Highlighter] {
+            let mut d = Drawing::new(200.0, 80.0);
+            let mut s = Stroke::new(tool, Rgb::BLACK, 40.0);
+            s.dabs.push(Dab::new(40.0, 40.0, 1.0));
+            s.dabs.push(Dab::new(160.0, 40.0, 1.0));
+            d.add(s);
+            for flavour in [Flavour::Plain, Flavour::Editable] {
+                let text = write(&d, flavour);
+                let path = tags(&text, "<path").next().expect("one path");
+                let ring: Vec<(f32, f32)> = attr(path, "d")
+                    .expect("the path has its outline")
+                    .split(['M', 'L', 'Z'])
+                    .filter_map(|p| {
+                        let mut xy = p.split_whitespace().map(str::parse::<f32>);
+                        Some((xy.next()?.ok()?, xy.next()?.ok()?))
+                    })
+                    .collect();
+                for (x, y) in [(26.0, 30.0), (26.0, 50.0), (174.0, 30.0), (174.0, 50.0)] {
+                    assert!(crate::shape::encloses(&ring, x, y), "{tool:?} {flavour:?}: ({x}, {y}) is painted");
+                }
+                for (x, y) in [(15.0, 40.0), (185.0, 40.0)] {
+                    assert!(!crate::shape::encloses(&ring, x, y), "{tool:?} {flavour:?}: ({x}, {y}) is not");
+                }
+            }
+            let (back, _) = read(&write(&d, Flavour::Editable)).expect("read");
+            assert_eq!(back.strokes, d.strokes, "{tool:?}: the readings come back untouched");
+        }
+    }
+
     #[test]
     fn the_plain_flavour_keeps_the_picture_and_drops_the_readings() {
         let plain = write(&sample(), Flavour::Plain);
