@@ -835,3 +835,4 @@
 @id	ui.kept_in_this_tab	Kept in this tab
 @id	ui.session_only_storage_notice	Session-only notes: changes disappear when you reload or close this tab.
 @id	ui.session_storage_guard_failed	Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.
+@id	ui.scroll_the_page_sideways	Scroll the page sideways
