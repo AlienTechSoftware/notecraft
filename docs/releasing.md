@@ -4,13 +4,59 @@ NoteCraft is laid out like the Craft apps (WordCraft, PdfCraft) so a release cou
 pipeline later with little change. It is not part of ArtCraft, and nothing here uses an ArtCraft
 name or mark.
 
+## Nightly releases
+
+The `Nightly release` workflow (`.github/workflows/nightly-release.yml`) makes a release every day
+at 07:00 UTC, which is midnight Mountain Standard Time. While daylight time is in force it runs at
+01:00 Mountain time, because GitHub's schedule has no time zones. No one has to do anything.
+
+One run:
+
+1. Stops, and releases nothing, when no commit reached `main` since the last release.
+2. Stops with an error when CI on `main`'s newest commit is not green.
+3. Takes the next patch number above every published release (0.0.9 becomes 0.0.10), runs
+   `cargo xtask version set`, rebuilds the Welcome notebook for that number, and commits both on
+   top of `main`. Only the tag `v<version>` is pushed. `main` is never pushed to, so the version in
+   `main`'s `Cargo.toml` stays where it is, and the released numbers live in the tags.
+4. Builds and tests the tagged commit on Linux.
+5. Runs the Packaging workflow on the tagged commit: Windows x64 (MSI and portable zip), Linux
+   x86_64 and aarch64 (tar.gz, AppImage, deb and rpm), and macOS Apple Silicon and Intel (DMG and
+   command line zip).
+6. Runs the Website pipeline on the tagged commit and deploys it to notecraft.cloud, including
+   `/demo/`. The built web app is kept as `notecraft-web-<version>.zip`.
+7. Publishes GitHub Release `v<version>` as a pre-release, not a draft, with every file above and
+   one `SHA256SUMS.txt`. The notes are a fixed alpha notice plus GitHub's list of merged pull
+   requests.
+
+### Run a release by hand
+
+- On GitHub: Actions, Nightly release, Run workflow, branch `main`, Run workflow.
+- From a terminal: `gh workflow run nightly-release.yml --repo AlienTechSoftware/notecraft --ref main`.
+- When nothing has merged since the last release the run stops early. Tick **force** (or add
+  `-f force=true`) to release anyway, for example after a failed run.
+- A failed run leaves a tag without a release. The next run reuses that number and replaces the tag.
+- To update only the website, run Actions, Deploy website. It builds `main` and needs no release.
+
+### What it needs
+
+- The `AZURE_STATIC_WEB_APPS_API_TOKEN` repository secret, the one Deploy website already uses.
+- Settings, Actions, General, Workflow permissions must let `GITHUB_TOKEN` write contents. The
+  workflow asks only for what each job needs, but an organisation or repository setting of
+  "read only" caps it and the tag push fails.
+- No tag ruleset may block `github-actions[bot]` from creating `v*` tags.
+- Nothing is signed. When signing secrets are added (see Signing below), the nightly needs a change
+  to use them.
+
 ## Versions
 
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
-- **The version is 0.0.9 and stays there until the owner approves a change, in words, each time.** The
-  rules below say what a number would mean once one is approved; they do not authorise a bump. The
-  first release was `v0.0.1`. The owner approved 0.0.2 on 2026-10-19 for the title band, 0.0.3 on
-  2026-10-21, 0.0.6 on 2026-10-25, 0.0.7 on 2026-10-29, 0.0.8 on 2026-11-02, and 0.0.9 on 2026-11-06 for the current draft release.
+- **Nightly releases bump the patch number by themselves, once a day, in the tag only.** The
+  maintainers approved that on 2026-11-12. A minor or major number, or any change to `main`'s
+  version line, still needs the owner's approval in words, each time. The first release was
+  `v0.0.1`. The owner approved 0.0.2 on 2026-10-19 for the title band, 0.0.3 on 2026-10-21, 0.0.6
+  on 2026-10-25, 0.0.7 on 2026-10-29, 0.0.8 on 2026-11-02, and 0.0.9 on 2026-11-06.
+- A nightly patch number can carry features, not only fixes. The patch rule below is for releases
+  made by hand.
 - Plain semantic versioning: `MAJOR.MINOR.PATCH`, with an optional `-rc.1` style tag. The Craft
   apps do the same, and they are all in the 0.x range today.
 - **Patch** (0.1.0 to 0.1.1): bug fixes only, or a rebuild after a packaging or workflow fix. No new
@@ -33,7 +79,10 @@ name or mark.
 - An MSI version is numeric, so `0.1.0-rc.1` and `0.1.0-rc.2` both become `0.1.0` there. The
   installer allows same-version upgrades so release candidates replace each other.
 
-## Making a release
+## Making a release by hand
+
+The nightly does all of this. These steps are for a release with a number the nightly would not
+pick, such as a minor version.
 
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.

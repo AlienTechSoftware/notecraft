@@ -1,0 +1,265 @@
+# Nightly release: one new patch version a day, published with every platform's packages, and the
+# website (notecraft.cloud and its /demo/) redeployed from the same commit.
+#
+# Runs at 07:00 UTC, which is midnight Mountain Standard Time (UTC-7). GitHub cron has no time
+# zones, so while Mountain Daylight Time is in force the run lands at 01:00 local time.
+#
+# What one run does (docs/releasing.md has the long form):
+#   1. prepare: stops when nothing merged to main since the last release, or when main's own CI is
+#      not green. Otherwise takes the next patch number above every released version, sets it with
+#      `cargo xtask version set`, regenerates the Welcome notebook for that number, commits that on
+#      top of main and pushes only the tag v<version>. main itself is never pushed to: its version
+#      line stays where it is, and the released numbers live in the tags.
+#   2. test: builds and runs the workspace tests on the tagged commit.
+#   3. packaging: the Packaging workflow on the tagged commit (Windows, Linux x86_64 and aarch64,
+#      macOS Apple Silicon and Intel).
+#   4. website: the Website pipeline on the tagged commit, deployed to production. Its web build
+#      is also kept as a release asset.
+#   5. release: publishes GitHub Release v<version>, a pre-release, with every package and one
+#      SHA256SUMS.txt.
+#
+# Run it by hand from Actions, Nightly release, Run workflow (branch main). Tick "force" to release
+# even when nothing merged since the last release, for example after a failed run.
+#
+# Needs: the AZURE_STATIC_WEB_APPS_API_TOKEN repository secret (already used by Deploy website), and
+# workflow permissions that let GITHUB_TOKEN write contents (the tag and the release).
+name: Nightly release
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 00:00 MST (UTC-7)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even if nothing merged to main since the last release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  prepare:
+    name: Decide, bump and tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # push the release tag
+      checks: read # read main's CI result
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Nightly releases run from main only, not $GITHUB_REF"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide whether to release, and which version
+        id: decide
+        env:
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+
+          # Released versions: tags with a published (non-draft) GitHub Release.
+          released="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1000 \
+            --json tagName --jq '.[].tagName' | grep -E "$semver" || true)"
+          cargo_version="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' Cargo.toml)"
+          highest="$(printf '%s\n' $released "v${cargo_version%%-*}" | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)"
+          IFS=. read -r major minor patch <<<"$highest"
+          version="$major.$minor.$((patch + 1))"
+          tag="v$version"
+
+          # The newest release by version: has main moved since then?
+          last="$(printf '%s\n' $released | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)"
+          if [ -n "$last" ] && git rev-parse -q --verify "refs/tags/v$last" >/dev/null; then
+            new_commits="$(git rev-list --count "v$last..$head")"
+          else
+            new_commits=unknown
+          fi
+          echo "main $head, last release ${last:-none}, commits since: $new_commits, next $tag"
+
+          release=true
+          if [ "$new_commits" = 0 ] && [ "$FORCE" != true ]; then
+            release=false
+            echo "Nothing merged to main since v$last: no release tonight." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # A tag left by a failed run (no release behind it) is replaced; any other clash stops here.
+          if [ "$release" = true ] && git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::$tag already has a GitHub Release (maybe a draft). Publish or delete it, then rerun."
+              exit 1
+            fi
+            echo "::warning::$tag exists without a release (an earlier run failed); it will be replaced."
+          fi
+
+          {
+            echo "release=$release"
+            echo "version=$version"
+            echo "tag=$tag"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Require main's CI to be green
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          conclusion="$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?check_name=CI&per_page=100" \
+            --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.completed_at) | last | .conclusion // "missing"')"
+          echo "CI on main $sha: $conclusion"
+          if [ "$conclusion" != success ]; then
+            echo "::error::CI on main ($sha) is '$conclusion', not success. Fix main or wait for CI, then run this workflow again."
+            exit 1
+          fi
+
+      - name: Install Rust
+        if: steps.decide.outputs.release == 'true'
+        run: rustup install
+
+      - name: Set the version and regenerate the Welcome notebook
+        if: steps.decide.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          cargo xtask version set "$VERSION"
+          # The Welcome notebook's title carries the version; rebuild it and confirm it is current.
+          cargo run --quiet --locked -p notecraft-demo -- build both
+          cargo xtask demo-check
+          git status --short
+
+      - name: Commit and push the tag (main is not touched)
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock docs/demo/DemoNotebook
+          git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
+          git tag -f -a "$TAG" -m "NoteCraft $TAG"
+          git push --force origin "refs/tags/$TAG"
+          echo "### NoteCraft $TAG (\`$(git rev-parse --short HEAD)\`, main at \`$(git rev-parse --short HEAD~1)\`)" >>"$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Build and test the tagged commit
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev libfontconfig1-dev libfreetype-dev libvulkan1 mesa-vulkan-drivers
+      - name: Install Rust
+        run: rustup install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: Build workspace
+        run: cargo build --workspace --locked
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
+      - name: Welcome notebook matches the version
+        run: cargo xtask demo-check
+
+  packaging:
+    name: Packaging
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/packaging.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+
+  website:
+    name: Website
+    needs: [prepare, test, packaging]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/website-pipeline.yml
+    with:
+      deploy: true
+      ref: ${{ needs.prepare.outputs.tag }}
+      artifact-name: notecraft-web
+    secrets:
+      AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+
+  release:
+    name: Publish the GitHub Release
+    needs: [prepare, test, packaging, website]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # the release
+      actions: read # download this run's artifacts
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: notecraft-*
+          path: artifacts
+
+      - name: Gather the files and write SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+          mkdir dist
+          # Each platform's artifact may carry its own checksum file; one combined list replaces them.
+          find artifacts -type f ! -name SHA256SUMS.txt -exec cp -n -t dist {} +
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+          for want in windows-x64.msi windows-x64-portable.zip linux-x86_64.tar.gz linux-x86_64.AppImage \
+            linux-x86_64.deb linux-x86_64.rpm linux-aarch64.tar.gz linux-aarch64.AppImage linux-aarch64.deb \
+            linux-aarch64.rpm macos-aarch64.dmg macos-x86_64.dmg macos-aarch64.zip macos-x86_64.zip \
+            "web-${{ needs.prepare.outputs.version }}.zip"; do
+            ls dist | grep -q -- "$want\$" || { echo "::error::no *$want in the release files"; exit 1; }
+          done
+
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          notes="**Alpha nightly build.** NoteCraft is not a finished product. It has had little use, and the folder format can still change. Keep a backup of any notebook you care about.
+
+          Built automatically from \`main\`. The web build is live at https://notecraft.cloud/demo/.
+
+          These files are **not signed**. Windows SmartScreen may show \"Windows protected your PC\": choose More info, then Run anyway. macOS may say the app is from an unidentified developer: right-click it and choose Open. Check a download against \`SHA256SUMS.txt\`, or with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
+
+          Your notebooks are plain folders, and neither an installer nor an uninstall touches them. Report bugs at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in docs/gaps.md."
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+            --title "NoteCraft $TAG" --notes "$notes" --generate-notes
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >>"$GITHUB_STEP_SUMMARY"

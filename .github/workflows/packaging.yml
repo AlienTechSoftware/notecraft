@@ -1,9 +1,16 @@
 name: Packaging
 
-# Packaging is intentionally manual/release-only. It produces reviewable artifacts;
-# it does not create or publish a GitHub Release.
+# Packaging produces reviewable artifacts; it does not create or publish a GitHub Release.
+# Run it by hand, or let the Nightly release workflow call it on the commit it tagged.
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit, tag or branch to package (empty: the caller's commit)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -21,32 +28,63 @@ env:
 
 jobs:
   linux:
-    name: Linux portable package
-    runs-on: ubuntu-24.04
+    name: Linux ${{ matrix.arch }} packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            nfpm: Linux_x86_64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            nfpm: Linux_arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      # appimagetool is itself an AppImage. The runners have no FUSE, so it unpacks itself instead.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev libfontconfig1-dev libfreetype-dev libvulkan1 mesa-vulkan-drivers
+          sudo apt-get install -y --no-install-recommends pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev libfontconfig1-dev libfreetype-dev libvulkan1 mesa-vulkan-drivers file
+      - name: Install nfpm and appimagetool
+        run: |
+          set -eu
+          curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_${{ matrix.nfpm }}.tar.gz" | sudo tar -xz -C /usr/local/bin nfpm
+          sudo curl -sSfL -o /usr/local/bin/appimagetool "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${{ matrix.arch }}.AppImage"
+          sudo chmod +x /usr/local/bin/appimagetool
+          nfpm --version
+          appimagetool --version
       - name: Install Rust
         run: rustup install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: false
-      - name: Build the portable tarball
-        run: packaging/linux/package.sh --formats tar
+      - name: Build the tarball, AppImage, deb and rpm
+        run: packaging/linux/package.sh --formats "tar appimage deb rpm"
       - name: Verify the package
         run: packaging/linux/test.sh
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/linux/*.tar.gz
+          subject-path: |
+            dist/linux/*.tar.gz
+            dist/linux/*.AppImage
+            dist/linux/*.deb
+            dist/linux/*.rpm
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: notecraft-linux
-          path: dist/linux/*.tar.gz
+          name: notecraft-linux-${{ matrix.arch }}
+          path: |
+            dist/linux/*.tar.gz
+            dist/linux/*.AppImage
+            dist/linux/*.deb
+            dist/linux/*.rpm
           if-no-files-found: error
 
   windows:
@@ -55,6 +93,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - name: Install Rust
         shell: bash
         run: rustup install
@@ -96,6 +136,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
       - name: Install Rust
         run: rustup install
