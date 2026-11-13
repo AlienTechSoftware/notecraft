@@ -3403,6 +3403,8 @@ impl NoteCraftApp {
             ribbon::Act::Insert(what) => match what {
                 "space" => {
                     let Some(ed) = self.editor.as_mut() else { return };
+                    // What was written before is kept as it stood, so Undo takes back only the space.
+                    Self::remember_step(ed);
                     let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
                     ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new()));
                     let marks = ed.blocks_inserted(at, 1);
@@ -3418,6 +3420,7 @@ impl NoteCraftApp {
                         inline: None,
                     });
                     Self::mark_dirty_from_blocks(ed);
+                    Self::remember_edit(ed);
                     self.save_block_marks(marks);
                 }
                 "link" => self.insert_in_page("[text](https://)"),
@@ -3989,6 +3992,17 @@ impl NoteCraftApp {
     /// Letters going into the block the caret was already in fold into the step before
     /// them, so Ctrl+Z takes back a run of writing rather than one character.
     fn remember_step(ed: &mut Editor) {
+        Self::remember(ed, false);
+    }
+
+    /// Remembers a change made from the ribbon rather than by writing, such as Insert Space
+    /// or a row put into a table, as a step of its own. It never folds into the writing
+    /// before it, even when the caret stays in the same block (issue #153).
+    fn remember_edit(ed: &mut Editor) {
+        Self::remember(ed, true);
+    }
+
+    fn remember(ed: &mut Editor, edit: bool) {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same {
             // Nothing really changed, or the page was just put back by undo itself.
@@ -4003,7 +4017,7 @@ impl NoteCraftApp {
         let was = ed.history.here().and_then(|s| s.caret.as_ref().map(|c| c.block));
         let shape = ed.history.here().is_some_and(|s| s.blocks.len() == ed.blocks.len());
         let kind = match (shape, here, was) {
-            (true, Some(a), Some(b)) if a == b => crate::history::Kind::Typing(a),
+            (true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
             _ => crate::history::Kind::Edit,
         };
         let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
@@ -4161,6 +4175,8 @@ impl NoteCraftApp {
             (pageedit::TableEdit::DeleteColumn, Some((a, b))) => (a, b.1 - a.1 + 1),
             _ => (cell, 1),
         };
+        // What was written before is kept as it stood, so Undo takes back only the table change.
+        Self::remember_step(ed);
         let Some(block) = ed.blocks.get_mut(at) else { return };
         let mut last = None;
         for _ in 0..times {
@@ -4178,6 +4194,7 @@ impl NoteCraftApp {
         ed.rebuild_body();
         ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None, inline: None });
         Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -8559,5 +8576,123 @@ mod literal_formatting_tests {
             notecraft_formats::markdown::parse(&notecraft_formats::html::to_markdown(app.pending_copy_html.as_deref().expect("html"))),
             blocks
         );
+    }
+}
+
+/// Insert Space and the Table tab's row and column buttons change the page's shape from the
+/// ribbon, not by typing into it, so the page never saw them happen and kept no step for them:
+/// Undo said there was nothing to undo (issue #153).
+#[cfg(test)]
+mod structural_undo_tests {
+    use super::*;
+
+    /// A page with a line of words and a table under it, open in the window.
+    fn page_with_table(html: bool, name: &str) -> (notecraft_store::testing::TempDir, egui_kittest::Harness<'static, NoteCraftApp>) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+        let body = if html {
+            "<p>Alpha</p><table><tr><th>A</th><th>B</th></tr><tr><td>one</td><td>two</td></tr></table>"
+        } else {
+            "Alpha\n\n| A | B |\n|---|---|\n| one | two |\n"
+        };
+        notecraft_store::page::save_body(&page, body).expect("fixture");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        (t, h)
+    }
+
+    fn settle(h: &mut egui_kittest::Harness<'static, NoteCraftApp>) {
+        for _ in 0..5 {
+            h.step();
+        }
+    }
+
+    fn blocks(h: &egui_kittest::Harness<'static, NoteCraftApp>) -> Vec<notecraft_formats::Block> {
+        h.state().editor.as_ref().map(|e| e.blocks.clone()).expect("editor")
+    }
+
+    fn put_caret(h: &mut egui_kittest::Harness<'static, NoteCraftApp>, block: usize, cell: Option<(usize, usize)>) {
+        let ed = h.state_mut().editor.as_mut().expect("editor");
+        let text = match cell {
+            Some(c) => pageedit::cell_text(&ed.blocks[block], c).unwrap_or_default(),
+            None => pageedit::caret_text(&ed.blocks[block]),
+        };
+        ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (0, 0), place: None, cell, span: None, inline: None });
+    }
+
+    /// Does `act`, checks it changed the page, then that one Undo puts the page back and one
+    /// Redo does it again.
+    fn assert_undoable(h: &mut egui_kittest::Harness<'static, NoteCraftApp>, what: &str, act: ribbon::Act) {
+        let before = blocks(h);
+        h.state_mut().ribbon_act(act);
+        settle(h);
+        let after = blocks(h);
+        assert_ne!(after, before, "{what}: the page changed");
+        assert!(h.state().editor.as_ref().is_some_and(|e| e.history.can_undo()), "{what}: there is a step to undo");
+        h.state_mut().undo();
+        settle(h);
+        assert_eq!(blocks(h), before, "{what}: one undo puts the page back");
+        h.state_mut().redo();
+        settle(h);
+        assert_eq!(blocks(h), after, "{what}: redo does it again");
+    }
+
+    #[test]
+    fn insert_space_can_be_undone() {
+        for html in [false, true] {
+            let (_t, mut h) = page_with_table(html, "undo-insert-space");
+            put_caret(&mut h, 0, None);
+            assert_undoable(&mut h, &format!("html={html} space"), ribbon::Act::Insert("space"));
+        }
+    }
+
+    #[test]
+    fn table_rows_and_columns_put_in_or_taken_out_can_be_undone() {
+        use pageedit::TableEdit as E;
+        for html in [false, true] {
+            for (name, edit) in [
+                ("row above", E::InsertRow(true)),
+                ("row below", E::InsertRow(false)),
+                ("column left", E::InsertColumn(true)),
+                ("column right", E::InsertColumn(false)),
+                ("delete row", E::DeleteRow),
+                ("delete column", E::DeleteColumn),
+            ] {
+                let (_t, mut h) = page_with_table(html, "undo-table-edit");
+                let table = blocks(&h).iter().position(|b| matches!(b, notecraft_formats::Block::Table { .. })).expect("a table");
+                put_caret(&mut h, table, Some((1, 0)));
+                assert_undoable(&mut h, &format!("html={html} {name}"), ribbon::Act::Table(edit));
+            }
+        }
+    }
+
+    /// Writing first and then changing the table is two steps, not one: Undo takes back the
+    /// table change and leaves the writing.
+    #[test]
+    fn a_table_change_after_writing_in_its_cell_is_a_step_of_its_own() {
+        let (_t, mut h) = page_with_table(false, "undo-table-after-typing");
+        let table = blocks(&h).iter().position(|b| matches!(b, notecraft_formats::Block::Table { .. })).expect("a table");
+        put_caret(&mut h, table, Some((1, 0)));
+        settle(&mut h);
+        h.state_mut().insert_in_page("X");
+        settle(&mut h);
+        let typed = blocks(&h);
+        h.state_mut().ribbon_act(ribbon::Act::Table(pageedit::TableEdit::InsertColumn(true)));
+        settle(&mut h);
+        assert_ne!(blocks(&h), typed, "a column went in");
+        h.state_mut().undo();
+        settle(&mut h);
+        assert_eq!(blocks(&h), typed, "undo takes back the column and keeps what was written");
     }
 }
