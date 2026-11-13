@@ -811,6 +811,13 @@ pub struct NoteCraftApp {
     snap_to_grid: bool,
     /// The Format Painter's formatting, waiting for the next words picked (issue #165).
     painter: Option<FormatPaint>,
+    /// The ribbon is folded away to its tab names (Ctrl+F1; issue #136). Kept in the settings.
+    ribbon_collapsed: bool,
+    /// While folded, a tab was clicked: its commands are shown over the page until one is used,
+    /// the page is clicked or Escape is pressed.
+    ribbon_peek: bool,
+    /// Where the band with the tab names ends, which is where a shown-over ribbon starts.
+    band_bottom: f32,
     /// The page's zoom. The ribbon and the rest of the window keep their own size.
     zoom_percent: u32,
     /// Recalculate the page zoom from the reading area's width on the next frame.
@@ -871,6 +878,7 @@ impl NoteCraftApp {
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
+        let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // A table has borders unless it was turned off: OneNote draws them, and a table
         // without them reads as loose columns of words.
         let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
@@ -953,6 +961,9 @@ impl NoteCraftApp {
             hide_title: session_hide_title,
             snap_to_grid: session_snap,
             painter: None,
+            ribbon_collapsed: session_ribbon_collapsed,
+            ribbon_peek: false,
+            band_bottom: 0.0,
             zoom_percent: 100,
             fit_page_width: false,
             theme_window: false,
@@ -1324,6 +1335,66 @@ impl NoteCraftApp {
         if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2)) {
             self.go_forward();
         }
+        // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page list,
+        // from the page as well as from the list (issue #162).
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
+            self.step_page(false);
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
+            self.step_page(true);
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F1)) {
+            self.toggle_ribbon();
+        }
+    }
+
+    /// The pages of the section in the order the page list shows them: a page, then its
+    /// subpages when it is expanded. A collapsed page's subpages are not on the list, so they
+    /// are not stepped through either.
+    fn listed_pages(&self) -> Vec<PathBuf> {
+        fn walk(nodes: &[Node], open: &HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+            for n in nodes.iter().filter(|n| n.info.kind == NodeKind::Page) {
+                out.push(n.path.clone());
+                if open.contains(&n.path) {
+                    walk(&n.children, open, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(section) = self.current_section(self.session.tree()) {
+            walk(&section.children, &self.open, &mut out);
+        }
+        out
+    }
+
+    /// Opens the page after the open one in the page list, or the one before it. At either end
+    /// it stays where it is, as OneNote does, and says so. The page being left is saved first.
+    fn step_page(&mut self, forward: bool) {
+        let pages = self.listed_pages();
+        let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
+        let at = here.as_ref().and_then(|h| pages.iter().position(|p| p == h));
+        let next = match at {
+            Some(i) if forward => pages.get(i + 1),
+            Some(i) => i.checked_sub(1).and_then(|i| pages.get(i)),
+            // No page of this section open: the first or last of its list.
+            None if forward => pages.first(),
+            None => pages.last(),
+        };
+        match next.cloned() {
+            Some(page) => {
+                self.selected = Some(page.clone());
+                self.open_page(&page);
+            }
+            None => self.say(if forward { crate::tl_id!("ui.this_is_the_last_page") } else { crate::tl_id!("ui.this_is_the_first_page") }),
+        }
+    }
+
+    /// Folds the ribbon away to its tab names, or puts it back, and keeps the choice for the
+    /// next start (Ctrl+F1, as in Office; issue #136). The page gets the ribbon's height.
+    pub fn toggle_ribbon(&mut self) {
+        self.ribbon_collapsed = !self.ribbon_collapsed;
+        self.ribbon_peek = false;
+        let _ = self.session.settings.set("ribbon_collapsed", if self.ribbon_collapsed { "true" } else { "false" });
     }
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.
@@ -2471,13 +2542,15 @@ impl NoteCraftApp {
         let (tab, source, in_table) = (self.ribbon_tab.clone(), self.show_source, self.caret_in_table());
         let title = self.editor.as_ref().map(|e| e.title.trim().to_owned()).filter(|s| !s.is_empty());
         let mut acts = Vec::new();
-        egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
+        let collapsed = self.ribbon_collapsed;
+        let band = egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
             self.title_row(ui, title.as_deref());
             if with_tabs {
-                ribbon::tab_strip(ui, &tab, source, in_table, &t, &mut acts);
+                ribbon::tab_strip(ui, &tab, source, in_table, collapsed, &t, &mut acts);
             }
         });
+        self.band_bottom = band.response.rect.max.y;
         for a in acts {
             self.ribbon_act(a);
         }
@@ -3171,13 +3244,44 @@ impl NoteCraftApp {
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
-        egui::Panel::top("ribbon")
-            .exact_size(ribbon::GROUP_H + 8.0)
-            .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
-            .show_separator_line(false)
-            .show(ui, |ui| {
-                acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
-            });
+        if !self.ribbon_collapsed {
+            egui::Panel::top("ribbon")
+                .exact_size(ribbon::GROUP_H + 8.0)
+                .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
+                .show_separator_line(false)
+                .show(ui, |ui| {
+                    acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+                });
+        } else if self.ribbon_peek {
+            // Folded, with a tab clicked: the tab's commands over the top of the page, as Office
+            // shows them, so the page does not jump down and back. Using one, clicking anywhere
+            // else or Escape folds it away again.
+            let screen = ui.ctx().content_rect();
+            let area = egui::Area::new(egui::Id::new("ribbon-peek"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(egui::pos2(screen.min.x, self.band_bottom))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::new()
+                        .fill(tokens.panel)
+                        .inner_margin(egui::Margin::symmetric(4, 0))
+                        .stroke(egui::Stroke::new(1.0, tokens.container_border))
+                        .show(ui, |ui| {
+                            ui.set_width(screen.width() - 8.0);
+                            ui.set_height(ribbon::GROUP_H + 8.0);
+                            acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+                        });
+                })
+                .response;
+            let pointer = ui.ctx().pointer_latest_pos();
+            // A gallery the shown ribbon opened (Format Background, say) is over the page too, and
+            // a click in it is still a click in the ribbon.
+            let in_ribbon = |p: egui::Pos2| area.rect.contains(p) || ui.ctx().layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground);
+            let clicked_away = ui.input(|i| i.pointer.any_pressed()) && pointer.is_some_and(|p| !in_ribbon(p) && p.y > self.band_bottom);
+            let used = acts.iter().any(|a| !matches!(a, ribbon::Act::Tab(_)));
+            if used || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.ribbon_peek = false;
+            }
+        }
         let picked = self.editor.as_ref().and_then(|e| crate::containers::selected(ui.ctx(), &e.dir));
         for a in acts {
             if let Some(i) = picked
@@ -3408,7 +3512,14 @@ impl NoteCraftApp {
             }
             ribbon::Act::Symbols => self.dialog = Some(Dialog::Symbols),
             ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
-            ribbon::Act::Tab(name) => self.ribbon_tab = name,
+            ribbon::Act::Tab(name) => {
+                // Folded, a tab shows its commands over the page; the same tab again hides them.
+                if self.ribbon_collapsed {
+                    self.ribbon_peek = !(self.ribbon_peek && self.ribbon_tab == name);
+                }
+                self.ribbon_tab = name;
+            }
+            ribbon::Act::ToggleRibbon => self.toggle_ribbon(),
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
             ribbon::Act::FontFamily(family) => self.apply_font_family(&family),
@@ -3560,6 +3671,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
             ribbon::Act::Table(what) => self.edit_table(what),
+            ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => {
                 self.table_borders = on;
@@ -4190,6 +4302,34 @@ impl NoteCraftApp {
     ///
     /// A block of cells picked across several rows or columns takes them all: Delete Rows
     /// with three rows picked takes the three, the way it does in OneNote.
+    /// Table > Sort: the table's rows by the caret's column, or only the picked rows when a
+    /// block of cells running over more than one row is picked (issue #171). One step of
+    /// the page's history, so Undo puts the rows back in their order.
+    fn sort_table(&mut self, descending: bool) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        let picked = ed.caret.as_ref().and_then(pageedit::cell_range).filter(|(a, b)| a.0 != b.0).map(|(a, b)| (a.0, b.0));
+        Self::remember_step(ed);
+        let Some(block) = ed.blocks.get_mut(at) else { return };
+        if !pageedit::sort_table(block, cell.1, picked, descending) {
+            self.say(crate::tl_id!("ui.the_rows_are_already_in_that_order"));
+            return;
+        }
+        // The caret stays in the same place in the table, and shows what is there now.
+        let text = pageedit::cell_text(block, cell).unwrap_or_default();
+        ed.rebuild_body();
+        if let Some(caret) = ed.caret.as_mut() {
+            caret.text = text;
+            caret.selection = (0, 0);
+            caret.inline = None;
+        }
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+    }
+
     fn edit_table(&mut self, what: pageedit::TableEdit) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
@@ -7524,6 +7664,8 @@ impl NoteCraftApp {
             },
             "windowFrame": if self.frameless { "own" } else { "system" },
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
+            // Folded to its tab names (Ctrl+F1), and whether a clicked tab shows it over the page.
+            "ribbon": {"collapsed": self.ribbon_collapsed, "shown": !self.ribbon_collapsed || self.ribbon_peek, "tab": self.ribbon_tab},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),
@@ -8975,5 +9117,88 @@ mod table_width_tests {
         h.state_mut().save();
         let saved = notecraft_store::page::table_columns(&page).expect("saved widths");
         assert_eq!(saved.of(2), Some([210.0, 290.0].as_slice()), "the page's file follows: {saved:?}");
+    }
+}
+
+/// Table > Sort from the ribbon on both page formats: the page's file is written in the new
+/// order, and one Undo puts the rows back (issue #171).
+#[cfg(test)]
+mod table_sort_tests {
+    use super::*;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    fn settle(h: &mut H) {
+        for _ in 0..5 {
+            h.step();
+        }
+    }
+
+    fn names(h: &H) -> Vec<String> {
+        let ed = h.state().editor.as_ref().expect("editor");
+        let Some(notecraft_formats::Block::Table { rows, .. }) = ed.blocks.iter().find(|b| matches!(b, notecraft_formats::Block::Table { .. }))
+        else {
+            panic!("a table");
+        };
+        rows.iter().map(|r| r[0].iter().map(|s| s.text.as_str()).collect()).collect()
+    }
+
+    #[test]
+    fn sort_from_the_ribbon_saves_and_undoes() {
+        for html in [false, true] {
+            let t = notecraft_store::testing::TempDir::new("table-sort");
+            let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+            settings.set("privacy_welcome_seen", "true").expect("settings");
+            let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+            let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+            let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+            let body = if html {
+                "<table><tr><th>Fruit</th><th>Count</th></tr><tr><td>pear</td><td>3</td></tr><tr><td><b>apple</b></td><td>10</td></tr><tr><td>fig</td><td>2</td></tr></table>"
+            } else {
+                "| Fruit | Count |\n|---|---|\n| pear | 3 |\n| **apple** | 10 |\n| fig | 2 |\n"
+            };
+            notecraft_store::page::save_body(&page, body).expect("fixture");
+            let mut app = NoteCraftApp::new(session);
+            app.open_path(&page.to_string_lossy());
+            let mut h = egui_kittest::Harness::builder()
+                .with_size(vec2(1400.0, 800.0))
+                .with_accessibility_check(false)
+                .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+            settle(&mut h);
+            {
+                let ed = h.state_mut().editor.as_mut().expect("editor");
+                let at = ed.blocks.iter().position(|b| matches!(b, notecraft_formats::Block::Table { .. })).expect("a table");
+                let text = pageedit::cell_text(&ed.blocks[at], (1, 0)).unwrap_or_default();
+                ed.caret = Some(pageedit::Caret {
+                    block: at,
+                    text,
+                    focus: true,
+                    selection: (0, 0),
+                    place: None,
+                    cell: Some((1, 0)),
+                    span: None,
+                    inline: None,
+                });
+            }
+            settle(&mut h);
+            h.state_mut().ribbon_act(ribbon::Act::TableSort(false));
+            settle(&mut h);
+            assert_eq!(names(&h), ["apple", "fig", "pear"], "html={html}: sorted by the caret's column");
+            h.state_mut().save();
+            let saved = notecraft_store::page::load_page(&page).expect("load").body;
+            let (a, f, p) = (saved.find("apple").expect("apple"), saved.find("fig").expect("fig"), saved.find("pear").expect("pear"));
+            assert!(a < f && f < p, "html={html}: the file has the new order:\n{saved}");
+            assert!(saved.contains(if html { "<b>apple</b>" } else { "**apple**" }), "html={html}: and the formatting:\n{saved}");
+
+            h.state_mut().undo();
+            settle(&mut h);
+            assert_eq!(names(&h), ["pear", "apple", "fig"], "html={html}: one undo puts the rows back");
+            h.state_mut().redo();
+            settle(&mut h);
+            assert_eq!(names(&h), ["apple", "fig", "pear"], "html={html}: and redo sorts them again");
+            h.state_mut().ribbon_act(ribbon::Act::TableSort(true));
+            settle(&mut h);
+            assert_eq!(names(&h), ["pear", "fig", "apple"], "html={html}: descending");
+        }
     }
 }

@@ -65,6 +65,10 @@ pub enum Act {
     /// Format Painter: pick up the formatting at the caret for the next words picked. True keeps
     /// painting until Escape (a double-click, as in Office).
     FormatPainter(bool),
+    /// Fold the ribbon away to its tab names, or put it back (Ctrl+F1).
+    ToggleRibbon,
+    /// Sort the table's rows by the caret's column: true for descending (issue #171).
+    TableSort(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -531,8 +535,9 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
 /// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
 /// ribbon below it; the others are white writing on the band, lit when the pointer is over
 /// one.
-pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
-    let chosen = resolve_tab(tab, source, in_table);
+pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed: bool, t: &Tokens, acts: &mut Vec<Act>) {
+    // Folded, no tab is the raised one: there is no ribbon under it to run into.
+    let chosen = if collapsed { "" } else { resolve_tab(tab, source, in_table) };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(4.0);
@@ -560,7 +565,37 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
                 acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
             }
         }
+        // At the far end, the control that folds the ribbon away and puts it back, as Office
+        // has one; Ctrl+F1 does the same (issue #136).
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(6.0);
+            if ribbon_fold(ui, collapsed, t).clicked() {
+                acts.push(Act::ToggleRibbon);
+            }
+        });
     });
+}
+
+/// The fold control at the end of the tab names: a chevron up to fold the ribbon away, down
+/// to put it back.
+fn ribbon_fold(ui: &mut Ui, collapsed: bool, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(26.0, TAB_STRIP_H - 6.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, t.band_hover);
+    }
+    let c = rect.center();
+    let stroke = egui::Stroke::new(1.6, t.band_text);
+    let points = if collapsed {
+        [egui::pos2(c.x - 4.5, c.y - 2.0), egui::pos2(c.x, c.y + 2.5), egui::pos2(c.x + 4.5, c.y - 2.0)]
+    } else {
+        [egui::pos2(c.x - 4.5, c.y + 2.0), egui::pos2(c.x, c.y - 2.5), egui::pos2(c.x + 4.5, c.y + 2.0)]
+    };
+    ui.painter().add(egui::Shape::line(points.to_vec(), stroke));
+    let label = if collapsed { crate::tl_id!("ui.show_the_ribbon_ctrl_f1") } else { crate::tl_id!("ui.collapse_the_ribbon_ctrl_f1") }.to_string();
+    let enabled = ui.is_enabled();
+    let name = label.clone();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
+    resp.on_hover_text(label)
 }
 
 /// The name of the first tab, which opens the File screen instead of a ribbon.
@@ -1698,6 +1733,26 @@ fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: 
     resp.on_hover_text(name)
 }
 
+/// Shared by the direct Page colour menu and the combined Format Background gallery.
+fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let mut picked = false;
+    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
+    ui.horizontal(|ui| {
+        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
+            acts.push(Act::PageColour(None));
+            picked = true;
+        }
+        for c in notecraft_model::NodeColor::ALL {
+            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
+                acts.push(Act::PageColour(Some(c)));
+                picked = true;
+            }
+        }
+    });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
+    picked
+}
+
 /// OneNote's Table button: a grid to pick the size from, the way OneNote picks one.
 ///
 /// Running the pointer over the grid lights the cells up to it and names the size, and a
@@ -1842,21 +1897,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                         egui::RichText::new(crate::tl_id!("ui.every_fifth_line_is_slightly_stronger_for_easier_counting")).small().color(t.muted),
                     );
                     ui.separator();
-                    // OneNote's Page Color, under the paper: a pale wash behind the words.
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
-                    ui.horizontal(|ui| {
-                        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
-                            acts.push(Act::PageColour(None));
-                            picked = true;
-                        }
-                        for c in notecraft_model::NodeColor::ALL {
-                            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
-                                acts.push(Act::PageColour(Some(c)));
-                                picked = true;
-                            }
-                        }
-                    });
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
+                    picked |= page_colour_palette(ui, view, t, acts);
                     ui.separator();
                     ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.rule_line_colour_not_built")).color(t.muted)));
                 });
@@ -2705,7 +2746,17 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::DirRtl, "Align\nRight", t);
     });
     group(ui, crate::tl_id!("ui.data"), t, |ui| {
-        soon(ui, Icon::ListNumber, "Sort", t);
+        // Whole rows by the caret's column, or only the picked rows; the heading stays on top.
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_ascending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_a_to_z"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(false));
+        }
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_descending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_z_to_a"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(true));
+        }
     });
     group(ui, crate::tl_id!("ui.convert"), t, |ui| {
         // Where OneNote converts a table to an Excel spreadsheet, NoteCraft hands it to
@@ -2818,7 +2869,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleSnap);
             }
-            not_built(ui, crate::tl_id!("ui.page_colour"), t);
+            ui.add_enabled_ui(view.has_page, |ui| {
+                ui.menu_button(crate::tl_id!("ui.page_colour"), |ui| {
+                    if page_colour_palette(ui, view, t, acts) {
+                        ui.close();
+                    }
+                });
+            });
             not_built(ui, crate::tl_id!("ui.paper_size"), t);
         });
     });

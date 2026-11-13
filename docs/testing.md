@@ -99,6 +99,12 @@ as a warning, and the task still succeeds. On a pull request the `coverage` job 
 table on the run's summary page; the job is allowed to fail, so it never blocks a merge. It is
 not part of `cargo xtask ci` or the pre-push hook, because a coverage run rebuilds everything.
 
+CI caches the pinned `cargo-llvm-cov` binary separately, after restoring the Rust dependency
+cache. The key includes the Ubuntu runner, architecture, tool version and Rust toolchain.
+A cold cache installs the pinned tool; a warm cache reuses it. Both paths verify the version
+before running the complete coverage command. This does not install anything on a developer's
+machine or change the platform build/test jobs.
+
 When a change raises coverage, run `--update` in the same pull request, so the new figure
 lands with the code that earned it and git keeps the history.
 
@@ -119,6 +125,11 @@ fmt, clippy, the static checks, coverage, and a build and test on Linux, Windows
   UI suite take 14 minutes there instead of 3.
 - **UI tests share one offscreen GPU device per test binary** (`tests/support/gpu.rs`), as the
   icon tests do. Each window still gets its own renderer and textures.
+- **Independent matrix scenarios are separate tests.** The formatting-shortcut matrix keeps
+  all 24 theme, format, style and modifier combinations, each with its own real temporary
+  notebook, settings and harness. The test runner can schedule them across workers, and a
+  failure names its exact combination. The scenario assertions and background waits stay
+  the same. The existing `formatting_shortcuts_match_ribbon` filter still runs the full matrix.
 
 ## Clipboard in tests
 

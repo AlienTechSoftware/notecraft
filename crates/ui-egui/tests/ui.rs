@@ -3062,68 +3062,117 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
-/// Format Painter: click in formatted words, click Format Painter, pick other words, and they
-/// take that formatting; Escape puts a double-clicked painter down (issue #165).
+/// Ctrl+F1 folds the ribbon away to its tab names and puts it back, as in Office, and the
+/// page takes the room; a tab clicked while it is folded shows its commands over the page
+/// until one is used or Escape is pressed. The choice is kept for the next start (issue #136).
 #[test]
-fn the_format_painter_puts_the_formatting_on_the_words_picked_next() {
-    for html in [false, true] {
-        let (_t, app, s) = sample_app("ui-format-painter");
-        let spans_of = |body: &str| -> Vec<notecraft_formats::Span> {
-            let md = if html { notecraft_formats::html::to_markdown(body) } else { body.to_string() };
-            notecraft_formats::markdown::parse(&md)
-                .into_iter()
-                .flat_map(|b| match b {
-                    notecraft_formats::Block::Paragraph(s) => s,
-                    _ => Vec::new(),
-                })
-                .collect()
-        };
-        let mut h = harness(app, LIGHT);
-        h.run();
-        let page = if html { &s.html_page } else { &s.md_page };
-        notecraft_store::page::save_body(page, if html { "<p><b><i>Big</i></b> plain words</p>" } else { "***Big*** plain words" }).expect("fixture");
-        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
-        settle(&mut h);
-        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
-        settle(&mut h);
-        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
-        settle(&mut h);
-        // Into "Big", which is bold and italic, then pick up its formatting.
-        for _ in 0..2 {
-            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
-            pump(&mut h);
-        }
-        settle(&mut h);
-        h.get_by_label("Format Painter").click();
-        settle(&mut h);
-        // Pick "words" (the last five letters) and let go of the pointer, which is when it paints.
-        // The ribbon took the keyboard; back into the line, as a click there would.
-        ask(&mut h, "ui.caret", json!({"block": 0})).expect("back into the line");
-        settle(&mut h);
-        ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
-        settle(&mut h);
-        for _ in 0..5 {
-            ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("pick");
-            pump(&mut h);
-        }
-        settle(&mut h);
-        let line = h.state().page_rect().expect("the page");
-        ask(&mut h, "ui.release", json!({"x": line.max.x - 4.0, "y": line.max.y - 4.0})).expect("let go");
-        settle(&mut h);
-        h.state_mut().save();
-        let body = notecraft_store::page::load_page(page).expect("load").body;
-        let spans = spans_of(&body);
-        assert!(spans.iter().any(|s| s.text.contains("words") && s.bold && s.italic), "html={html}: the picked words took the formatting:\n{body}");
-        assert!(spans.iter().any(|s| s.text.contains("plain") && !s.bold && !s.italic), "html={html}: and nothing else did:\n{body}");
-        assert!(body.contains("Big") && body.contains("plain") && body.contains("words"), "html={html}: the words are all there:\n{body}");
+fn ctrl_f1_folds_the_ribbon_and_a_tab_shows_it_over_the_page() {
+    let (t, app, s) = sample_app("ui-ribbon-fold");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ribbon = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    let top = h.state().page_rect().expect("the page").min.y;
+    assert!(h.query_all_by_label("Bold").next().is_some(), "the Home tab's commands are there to begin with");
 
-        // Undo takes the painting back.
-        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
-        settle(&mut h);
-        let now = h.state().body().unwrap_or_default().to_string();
-        let spans = spans_of(&now);
-        assert!(spans.iter().any(|s| s.text.contains("words") && !s.bold), "html={html}: undo takes the formatting back off:\n{now}");
+    ask(&mut h, "ui.key", json!({"key": "F1", "ctrl": true})).expect("Ctrl+F1");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(true), "Ctrl+F1 folded the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_none(), "its commands are gone");
+    let folded_top = h.state().page_rect().expect("the page").min.y;
+    assert!(folded_top < top - 60.0, "the page took the ribbon's room: {top} then {folded_top}");
+    assert!(h.query_all_by_label("Insert").next().is_some(), "the tab names stay");
+    review(&mut h, "ribbon_folded");
+
+    // A tab shows its commands over the page, which stays where it is.
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true), "a clicked tab shows the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_some(), "with its commands");
+    review(&mut h, "ribbon_folded_tab_shown");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, folded_top, "over the page, not pushing it down");
+    // Using a command folds it away again.
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "using a command folds the ribbon away");
+    // And Escape does too.
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "Escape folds it away");
+
+    // Kept for the next start.
+    let kept = Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed");
+    assert_eq!(kept.as_deref(), Some("true"), "the choice is kept");
+
+    // The control at the end of the tab names puts it back, as Ctrl+F1 would.
+    h.get_by_label("Show the ribbon (Ctrl+F1)").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(false), "the ribbon is back");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, top, "and the page where it was");
+    assert!(h.query_all_by_label("Collapse the ribbon (Ctrl+F1)").next().is_some(), "with the control to fold it again");
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed").as_deref(), Some("false"));
+}
+
+/// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
+/// page as well as from the list, and stop at either end (issue #162).
+#[test]
+fn ctrl_page_up_and_down_step_through_the_pages_of_the_section() {
+    let (_t, app, s) = sample_app("ui-page-up-down");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let section = s.md_page.parent().expect("section").to_path_buf();
+    let mut made = Vec::new();
+    for title in ["Second", "Third"] {
+        let page = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section.to_string_lossy(), "kind": "page", "title": title, "format": "cmgfm"}}),
+        )
+        .expect("page");
+        made.push(PathBuf::from(page.as_str().expect("a path")));
     }
+    // The section's pages in the order the page list shows them.
+    let listed: Vec<PathBuf> = notecraft_store::tree::child_dirs(&section)
+        .into_iter()
+        .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+        .collect();
+    assert!(listed.len() >= 3, "the section has pages to step through: {listed:?}");
+    let open_now = |h: &mut Harness<'_, NoteCraftApp>| {
+        let state = ask(h, "ui.inspect", json!({})).expect("inspect");
+        // The page list names a page by its folder; the section is the same for all of them.
+        state["page"]["path"].as_str().and_then(|p| p.rsplit('/').next()).map(str::to_string)
+    };
+    let canon = |p: &PathBuf| p.file_name().map(|n| n.to_string_lossy().into_owned());
+
+    ask(&mut h, "ui.open", json!({"path": listed[0].to_string_lossy()})).expect("open the first page");
+    settle(&mut h);
+    // With the caret in the page, as when writing: the keys still move between pages.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    for want in &listed[1..] {
+        ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown");
+        settle(&mut h);
+        assert_eq!(open_now(&mut h), canon(want), "Ctrl+Page Down opens the next page");
+    }
+    // At the last page it stays, and says so.
+    ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("Ctrl+PageDown at the end");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(listed.last().expect("last")), "the last page stays open");
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["status"]["text"].clone();
+    assert_eq!(status, json!("This is the last page"), "and the window says why");
+
+    ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+    settle(&mut h);
+    assert_eq!(open_now(&mut h), canon(&listed[listed.len() - 2]), "Ctrl+Page Up opens the page before");
+    for _ in 0..listed.len() {
+        ask(&mut h, "ui.key", json!({"key": "PageUp", "ctrl": true})).expect("Ctrl+PageUp");
+        settle(&mut h);
+    }
+    assert_eq!(open_now(&mut h), canon(&listed[0]), "and stops at the first page");
+    let _ = made;
 }
 
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
@@ -4662,6 +4711,73 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     h.state_mut().set_show_source(false);
     settle(&mut h);
     assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
+}
+
+/// Issue #137: the direct colour entry shares the existing page-colour state/actions.
+#[test]
+fn view_page_colour_uses_the_existing_palette_and_persists_only_on_its_page() {
+    use egui_kittest::kittest::NodeT as _;
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-direct-page-colour");
+        let mut h = sized_harness(app, theme, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("View").click();
+        settle(&mut h);
+        assert!(h.get_by_label("Page colour").accesskit_node().is_disabled(), "no page, no page-colour action");
+        for (page, other, format) in [(&s.md_page, &s.html_page, "cmgfm"), (&s.html_page, &s.md_page, "html")] {
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert!(!h.get_by_label("Page colour").accesskit_node().is_disabled());
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(h.get_by_label("No colour").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+            for colour in notecraft_model::NodeColor::ALL {
+                assert_eq!(h.get_by_label(colour.label()).accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+            }
+            review(&mut h, &format!("page_colour_palette_{format}_{}", theme.id()));
+            ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss palette");
+            settle(&mut h);
+            assert_eq!(h.query_all_by_label("No colour").count(), 0, "Escape dismisses the palette");
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            h.get_by_label("Yellow").click();
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("yellow page")["pageColour"], json!("yellow"));
+            h.state_mut().open_path(&other.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("other page")["pageColour"], Value::Null, "colour is page-specific");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("reopened")["pageColour"], json!("yellow"));
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Yellow").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "shared gallery shows the direct choice"
+            );
+            h.get_by_label("College ruled").click();
+            settle(&mut h);
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            h.get_by_label("Blue").click();
+            settle(&mut h);
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Blue").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "direct palette shows the combined gallery choice"
+            );
+            h.get_by_label("No colour").click();
+            settle(&mut h);
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let cleared = ask(&mut h, "ui.inspect", json!({})).expect("cleared colour");
+            assert_eq!(cleared["pageColour"], Value::Null, "No colour survives reopening");
+            assert_eq!(cleared["paper"], json!("college"), "clearing colour preserves the separate paper style");
+        }
+    }
 }
 
 /// The paper a page is drawn on and the colour behind it are the page's own: chosen in
@@ -7216,100 +7332,131 @@ fn formatting_shortcuts_do_not_format_a_stale_page_caret_from_search_or_source()
     }
 }
 
-#[test]
-fn formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage() {
-    for theme in [LIGHT, DARK] {
+mod formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage {
+    use super::*;
+
+    fn run_case(theme: Theme, format: notecraft_model::PageFormat, key: egui::Key, label: &str, mac: bool) {
         let (_t, app, s) = sample_app("ui-formatting-shortcuts");
         let mut h = sized_harness(app, theme, egui::vec2(2000.0, 900.0));
-        for (page, format) in [(&s.md_page, notecraft_model::PageFormat::Cmgfm), (&s.html_page, notecraft_model::PageFormat::Html)] {
-            for (key, label) in [(egui::Key::B, "Bold"), (egui::Key::I, "Italic"), (egui::Key::U, "Underline")] {
-                for mac in [false, true] {
-                    notecraft_store::page::save_body(
-                        page,
-                        if format == notecraft_model::PageFormat::Html { "<p>alpha bravo omega</p>" } else { "alpha bravo omega" },
-                    )
-                    .expect("fixture");
-                    h.state_mut().open_path(&page.to_string_lossy());
-                    settle(&mut h);
-                    let before = h.state().body().unwrap_or_default().to_string();
-                    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
-                    pump(&mut h);
-                    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
-                    pump(&mut h);
-                    for _ in 0..6 {
-                        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
-                        pump(&mut h);
-                    }
-                    for _ in 0..5 {
-                        ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
-                        pump(&mut h);
-                    }
-                    let press = |h: &mut Harness<'_, NoteCraftApp>| {
-                        let modifiers = egui::Modifiers { ctrl: !mac, mac_cmd: mac, command: true, ..egui::Modifiers::NONE };
-                        h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
-                        pump(h);
-                        h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
-                        settle(h);
-                    };
-                    press(&mut h);
-                    let after = h.state().body().unwrap_or_default().to_string();
-                    if key == egui::Key::B && !mac {
-                        review(&mut h, &format!("shortcut_{format:?}_{}", theme.id()));
-                    }
-                    let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-                    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
-                    let active = |s: &notecraft_formats::markdown::Span| match key {
-                        egui::Key::B => s.bold,
-                        egui::Key::I => s.italic,
-                        _ => s.underline,
-                    };
-                    assert_eq!(
-                        spans.iter().filter(|s| active(s)).map(|s| s.text.as_str()).collect::<String>(),
-                        "bravo",
-                        "{label}, mac={mac}: {after}"
-                    );
-                    press(&mut h);
-                    let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().unwrap_or_default());
-                    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
-                    assert!(spans.iter().all(|s| !active(s)), "second shortcut toggles the same selection");
-                    ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
-                    settle(&mut h);
-                    assert_eq!(h.state().body().unwrap_or_default(), after);
-                    ask(&mut h, "ui.undo", json!({})).expect("undo mark");
-                    settle(&mut h);
-                    assert_eq!(h.state().body().unwrap_or_default(), before);
-                    // Undo restores the earlier caret snapshot too. Select the same word
-                    // again for an independent mouse/keyboard comparison.
-                    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret for ribbon");
-                    pump(&mut h);
-                    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
-                    pump(&mut h);
-                    for _ in 0..6 {
-                        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
-                        pump(&mut h);
-                    }
-                    for _ in 0..5 {
-                        ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
-                        pump(&mut h);
-                    }
-                    h.get_by_label(label).click();
-                    settle(&mut h);
-                    assert_eq!(h.state().body().unwrap_or_default(), after, "keyboard and ribbon match");
-                    if key == egui::Key::B && !mac {
-                        review(&mut h, &format!("ribbon_{format:?}_{}", theme.id()));
-                    }
-                    ask(&mut h, "ui.undo", json!({})).expect("undo ribbon");
-                    ask(&mut h, "ui.redo", json!({})).expect("redo ribbon");
-                    settle(&mut h);
-                    assert_eq!(h.state().body().unwrap_or_default(), after);
-                    h.state_mut().save_page_now();
-                    h.state_mut().open_path(&page.to_string_lossy());
-                    settle(&mut h);
-                    assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "saved formatting survives reopening");
-                }
-            }
+        let page = match format {
+            notecraft_model::PageFormat::Cmgfm => &s.md_page,
+            notecraft_model::PageFormat::Html => &s.html_page,
+        };
+        notecraft_store::page::save_body(
+            page,
+            if format == notecraft_model::PageFormat::Html { "<p>alpha bravo omega</p>" } else { "alpha bravo omega" },
+        )
+        .expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        pump(&mut h);
+        for _ in 0..6 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
         }
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+            pump(&mut h);
+        }
+        let press = |h: &mut Harness<'_, NoteCraftApp>| {
+            let modifiers = egui::Modifiers { ctrl: !mac, mac_cmd: mac, command: true, ..egui::Modifiers::NONE };
+            h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+            pump(h);
+            h.input_mut().events.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+            settle(h);
+        };
+        press(&mut h);
+        let after = h.state().body().unwrap_or_default().to_string();
+        if key == egui::Key::B && !mac {
+            review(&mut h, &format!("shortcut_{format:?}_{}", theme.id()));
+        }
+        let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let active = |s: &notecraft_formats::markdown::Span| match key {
+            egui::Key::B => s.bold,
+            egui::Key::I => s.italic,
+            _ => s.underline,
+        };
+        assert_eq!(spans.iter().filter(|s| active(s)).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{label}, mac={mac}: {after}");
+        press(&mut h);
+        let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().unwrap_or_default());
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert!(spans.iter().all(|s| !active(s)), "second shortcut toggles the same selection");
+        ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+        ask(&mut h, "ui.undo", json!({})).expect("undo mark");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before);
+        // Undo restores the earlier caret snapshot too. Select the same word
+        // again for an independent mouse/keyboard comparison.
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret for ribbon");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        pump(&mut h);
+        for _ in 0..6 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+            pump(&mut h);
+        }
+        h.get_by_label(label).click();
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after, "keyboard and ribbon match");
+        if key == egui::Key::B && !mac {
+            review(&mut h, &format!("ribbon_{format:?}_{}", theme.id()));
+        }
+        ask(&mut h, "ui.undo", json!({})).expect("undo ribbon");
+        ask(&mut h, "ui.redo", json!({})).expect("redo ribbon");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), after);
+        h.state_mut().save_page_now();
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "saved formatting survives reopening");
     }
+
+    // Each case owns its notebook, settings and renderer, so the test runner can
+    // schedule the full matrix across workers instead of leaving one serial tail.
+    macro_rules! case {
+        ($name:ident, $theme:ident, $format:ident, $key:ident, $label:literal, $mac:literal) => {
+            #[test]
+            fn $name() {
+                run_case($theme, notecraft_model::PageFormat::$format, egui::Key::$key, $label, $mac);
+            }
+        };
+    }
+
+    case!(light_cmgfm_bold_ctrl, LIGHT, Cmgfm, B, "Bold", false);
+    case!(light_cmgfm_bold_command, LIGHT, Cmgfm, B, "Bold", true);
+    case!(light_cmgfm_italic_ctrl, LIGHT, Cmgfm, I, "Italic", false);
+    case!(light_cmgfm_italic_command, LIGHT, Cmgfm, I, "Italic", true);
+    case!(light_cmgfm_underline_ctrl, LIGHT, Cmgfm, U, "Underline", false);
+    case!(light_cmgfm_underline_command, LIGHT, Cmgfm, U, "Underline", true);
+    case!(light_html_bold_ctrl, LIGHT, Html, B, "Bold", false);
+    case!(light_html_bold_command, LIGHT, Html, B, "Bold", true);
+    case!(light_html_italic_ctrl, LIGHT, Html, I, "Italic", false);
+    case!(light_html_italic_command, LIGHT, Html, I, "Italic", true);
+    case!(light_html_underline_ctrl, LIGHT, Html, U, "Underline", false);
+    case!(light_html_underline_command, LIGHT, Html, U, "Underline", true);
+    case!(dark_cmgfm_bold_ctrl, DARK, Cmgfm, B, "Bold", false);
+    case!(dark_cmgfm_bold_command, DARK, Cmgfm, B, "Bold", true);
+    case!(dark_cmgfm_italic_ctrl, DARK, Cmgfm, I, "Italic", false);
+    case!(dark_cmgfm_italic_command, DARK, Cmgfm, I, "Italic", true);
+    case!(dark_cmgfm_underline_ctrl, DARK, Cmgfm, U, "Underline", false);
+    case!(dark_cmgfm_underline_command, DARK, Cmgfm, U, "Underline", true);
+    case!(dark_html_bold_ctrl, DARK, Html, B, "Bold", false);
+    case!(dark_html_bold_command, DARK, Html, B, "Bold", true);
+    case!(dark_html_italic_ctrl, DARK, Html, I, "Italic", false);
+    case!(dark_html_italic_command, DARK, Html, I, "Italic", true);
+    case!(dark_html_underline_ctrl, DARK, Html, U, "Underline", false);
+    case!(dark_html_underline_command, DARK, Html, U, "Underline", true);
 }
 
 #[test]
@@ -7947,6 +8094,70 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
         h.state_mut().open_path(&path);
         settle(&mut h);
         assert_eq!(h.state().body().unwrap_or_default().trim_end(), body.trim_end(), "the font size survives save and reopen");
+    }
+}
+
+/// Format Painter: click in formatted words, click Format Painter, pick other words, and they
+/// take that formatting; Escape puts a double-clicked painter down (issue #165).
+#[test]
+fn the_format_painter_puts_the_formatting_on_the_words_picked_next() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-format-painter");
+        let spans_of = |body: &str| -> Vec<notecraft_formats::Span> {
+            let md = if html { notecraft_formats::html::to_markdown(body) } else { body.to_string() };
+            notecraft_formats::markdown::parse(&md)
+                .into_iter()
+                .flat_map(|b| match b {
+                    notecraft_formats::Block::Paragraph(s) => s,
+                    _ => Vec::new(),
+                })
+                .collect()
+        };
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p><b><i>Big</i></b> plain words</p>" } else { "***Big*** plain words" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        settle(&mut h);
+        // Into "Big", which is bold and italic, then pick up its formatting.
+        for _ in 0..2 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        h.get_by_label("Format Painter").click();
+        settle(&mut h);
+        // Pick "words" (the last five letters) and let go of the pointer, which is when it paints.
+        // The ribbon took the keyboard; back into the line, as a click there would.
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("back into the line");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+        settle(&mut h);
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        let line = h.state().page_rect().expect("the page");
+        ask(&mut h, "ui.release", json!({"x": line.max.x - 4.0, "y": line.max.y - 4.0})).expect("let go");
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let spans = spans_of(&body);
+        assert!(spans.iter().any(|s| s.text.contains("words") && s.bold && s.italic), "html={html}: the picked words took the formatting:\n{body}");
+        assert!(spans.iter().any(|s| s.text.contains("plain") && !s.bold && !s.italic), "html={html}: and nothing else did:\n{body}");
+        assert!(body.contains("Big") && body.contains("plain") && body.contains("words"), "html={html}: the words are all there:\n{body}");
+
+        // Undo takes the painting back.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        let now = h.state().body().unwrap_or_default().to_string();
+        let spans = spans_of(&now);
+        assert!(spans.iter().any(|s| s.text.contains("words") && !s.bold), "html={html}: undo takes the formatting back off:\n{now}");
     }
 }
 
