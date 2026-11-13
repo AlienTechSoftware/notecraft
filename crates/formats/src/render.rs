@@ -147,7 +147,11 @@ fn row_to_markdown(cells: &[Vec<Span>]) -> String {
     let mut s = String::from("|");
     for c in cells {
         s.push(' ');
-        s.push_str(&escape_table_cell(&spans_to_markdown(c)));
+        let mut literal = Literal::for_spans(c);
+        let words: String = c.iter().filter(|span| plain_text(span)).map(|span| span.text.as_str()).collect();
+        let lower = words.to_ascii_lowercase();
+        literal.tag |= lower.contains("<br>") || lower.contains("<br ");
+        s.push_str(&escape_table_cell(&table_line_breaks(&marked(c, 0, &literal))));
         s.push_str(" |");
     }
     s.push('\n');
@@ -162,6 +166,14 @@ pub fn spans_to_markdown(spans: &[Span]) -> String {
 /// Quotes the table's delimiters around an already serialized inline source.
 pub(crate) fn escape_table_cell(text: &str) -> String {
     text.replace('\\', "\\\\").replace('|', "\\|")
+}
+
+/// Explicit breaks keep each table row on one source line. HTML folds bare carriage
+/// returns, so the optional attribute preserves the original CSV line-ending bytes.
+pub(crate) const TABLE_BREAKS: [(&str, &str); 3] = [("\r\n", "<br data-nc-break=\"crlf\">"), ("\r", "<br data-nc-break=\"cr\">"), ("\n", "<br>")];
+
+pub(crate) fn table_line_breaks(text: &str) -> String {
+    TABLE_BREAKS.iter().fold(text.to_string(), |text, (newline, tag)| text.replace(newline, tag))
 }
 
 /// Live-editor text and a character mask identifying literal punctuation. Formatting marks
@@ -468,14 +480,14 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                 if !head.is_empty() {
                     out.push_str("<tr>");
                     for c in head {
-                        out.push_str(&format!("<th>{}</th>", spans_to_html(c)));
+                        out.push_str(&format!("<th>{}</th>", spans_to_html_with_breaks(c, true)));
                     }
                     out.push_str("</tr>\n");
                 }
                 for r in rows {
                     out.push_str("<tr>");
                     for c in r {
-                        out.push_str(&format!("<td>{}</td>", spans_to_html(c)));
+                        out.push_str(&format!("<td>{}</td>", spans_to_html_with_breaks(c, true)));
                     }
                     out.push_str("</tr>\n");
                 }
@@ -525,6 +537,11 @@ fn render_html_list(blocks: &[Block], at: &mut usize, depth: usize, ordered: boo
 
 /// Inline spans as HTML.
 pub fn spans_to_html(spans: &[Span]) -> String {
+    spans_to_html_with_breaks(spans, false)
+}
+
+/// Table cell line breaks are content, rather than whitespace between HTML words.
+fn spans_to_html_with_breaks(spans: &[Span], cell: bool) -> String {
     let mut out = String::new();
     for s in spans {
         if let Some(src) = &s.image {
@@ -543,6 +560,9 @@ pub fn spans_to_html(spans: &[Span]) -> String {
             continue;
         }
         let mut text = escape(&s.text);
+        if cell && !s.code {
+            text = table_line_breaks(&text);
+        }
         if s.code {
             text = format!("<code>{text}</code>");
         } else {

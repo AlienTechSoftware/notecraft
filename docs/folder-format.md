@@ -140,6 +140,10 @@ tags: []
   `<span style="font-size: Npt">text</span>` form, where N is 8 through 72. This is a
   subset of CommonMark and GFM, not a full implementation. See `crates/formats/src/markdown.rs`
   for the exact list.
+- Table cell line breaks use `<br>` in both page formats, so a multiline CSV value stays
+  in one cell. LF is the default. `<br data-nc-break="crlf">` and
+  `<br data-nc-break="cr">` preserve CRLF and CR bytes without HTML whitespace folding.
+  Literal break-tag text in a Markdown table is backslash-quoted; inline code stays literal.
 - Font-family spans in the in-progress font-formatting model use the `font-family` CSS
   property. Names that need CSS quoting are written as single-quoted strings, with quotes and
   backslashes escaped, and HTML attribute characters encoded. This representation preserves

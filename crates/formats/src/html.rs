@@ -416,9 +416,14 @@ impl Writer {
         }
     }
 
-    fn line_break(&mut self) {
+    fn line_break(&mut self, attrs: &str) {
         if self.in_cell {
-            self.cell.push(' ');
+            let newline = match attr(attrs, "data-nc-break").as_deref() {
+                Some("crlf") => "\r\n",
+                Some("cr") => "\r",
+                _ => "\n",
+            };
+            self.cell.push_str(&crate::render::table_line_breaks(newline));
         } else if !self.href.is_empty() {
             // An attachment card uses <br> between its icon and file name while
             // keeping both inside one link. Markdown links cannot contain a
@@ -513,7 +518,7 @@ impl Writer {
                 self.quote = true;
                 self.block_break();
             }
-            ("br", _) => self.line_break(),
+            ("br", _) => self.line_break(attrs),
             ("hr", _) => {
                 self.block_break();
                 self.push("---");
@@ -552,7 +557,7 @@ impl Writer {
             ("li", true) => {
                 let trimmed = self.out.trim_end_matches([' ', '\t']).len();
                 self.out.truncate(trimmed);
-                self.line_break();
+                self.line_break("");
             }
             ("b" | "strong", _) => self.push("**"),
             ("i" | "em", _) => self.push("*"),
