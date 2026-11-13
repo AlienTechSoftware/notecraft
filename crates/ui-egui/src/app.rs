@@ -3972,6 +3972,10 @@ impl NoteCraftApp {
                         ed.blocks = step.blocks;
                         ed.boxes = step.boxes;
                         ed.caret = step.caret.map(|c| pageedit::Caret { focus: true, ..c });
+                        // A selection across blocks is kept in byte offsets into the text as
+                        // it was; the restored text can differ (a format adds its markup), so
+                        // the selection is let go rather than left pointing at the wrong words.
+                        ed.across = None;
                         ed.pending_format = None;
                         ed.dirty_since = Some(Instant::now());
                         // The restored text says whether the page was arranged.
@@ -4236,8 +4240,17 @@ impl NoteCraftApp {
     /// Puts marks around the selection in the block the caret is in.
     fn apply_mark(&mut self, mark: &str) {
         if self.editor.as_ref().and_then(|ed| ed.across).is_some_and(|selection| !selection.inside_one_block()) {
-            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
-            self.status_is_error = false;
+            let format = match mark {
+                "bold" => pageedit::InlineFormat::Bold,
+                "italic" => pageedit::InlineFormat::Italic,
+                "strike" => pageedit::InlineFormat::Strike,
+                "underline" => pageedit::InlineFormat::Underline,
+                "subscript" => pageedit::InlineFormat::Subscript,
+                "superscript" => pageedit::InlineFormat::Superscript,
+                "code" => pageedit::InlineFormat::Code,
+                _ => return,
+            };
+            self.apply_across_format(format);
             return;
         }
         if matches!(mark, "underline" | "subscript" | "superscript") {
@@ -4464,6 +4477,55 @@ impl NoteCraftApp {
         self.status_is_error = false;
     }
 
+    /// An inline format over a selection that runs across blocks: every covered block's
+    /// covered words take it, and the selection is kept with its ends remapped to the new
+    /// text, so the highlight, Copy and Delete still cover the same words.
+    fn apply_across_format(&mut self, format: pageedit::InlineFormat) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(open) = ed.across.filter(|a| !a.inside_one_block()) else { return };
+        if !ed.writable {
+            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+            self.status_is_error = false;
+            return;
+        }
+        Self::remember_step(ed);
+        match pageedit::format_across(&mut ed.blocks, open, format) {
+            Some(remapped) => {
+                ed.across = Some(remapped);
+                ed.pending_format = None;
+                ed.rebuild_body();
+                Self::mark_dirty_from_blocks(ed);
+                // The caret's block may be one of the formatted ones: its editing text has
+                // to say what the block says now, or the next keystroke writes the old words
+                // back over the new formatting.
+                if let Some(at) = ed.caret.as_ref().filter(|c| c.cell.is_none()).map(|c| c.block)
+                    && let Some(block) = ed.blocks.get(at)
+                    && matches!(
+                        block,
+                        notecraft_formats::Block::Heading { .. }
+                            | notecraft_formats::Block::Paragraph(_)
+                            | notecraft_formats::Block::Quote(_)
+                            | notecraft_formats::Block::Item { .. }
+                    )
+                    && let Some(caret) = ed.caret.as_mut()
+                {
+                    caret.text = pageedit::caret_text(block);
+                    caret.inline = None;
+                    caret.selection = (0, caret.text.chars().count());
+                }
+                let step =
+                    crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+                ed.history.record(step);
+                self.status.clear();
+                self.status_is_error = false;
+            }
+            None => {
+                self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
+                self.status_is_error = false;
+            }
+        }
+    }
+
     /// With no caret in the page, a font or size choice goes to the end of the last writable
     /// block, so it applies to the next text typed there, as OneNote does.
     fn place_caret_for_format(ed: &mut Editor) {
@@ -4482,13 +4544,12 @@ impl NoteCraftApp {
             log::warn!("ribbon requested an invalid font family");
             return;
         }
-        let Some(ed) = self.editor.as_mut() else { return };
-        Self::place_caret_for_format(ed);
-        if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
-            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
-            self.status_is_error = false;
+        if self.editor.as_ref().and_then(|ed| ed.across).is_some_and(|selection| !selection.inside_one_block()) {
+            self.apply_across_format(pageedit::InlineFormat::Family(family.to_owned()));
             return;
         }
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::place_caret_for_format(ed);
         let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
@@ -4571,13 +4632,12 @@ impl NoteCraftApp {
             log::warn!("ribbon requested unsupported font size {size} pt");
             return;
         }
-        let Some(ed) = self.editor.as_mut() else { return };
-        Self::place_caret_for_format(ed);
-        if ed.across.is_some_and(|selection| !selection.inside_one_block()) {
-            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
-            self.status_is_error = false;
+        if self.editor.as_ref().and_then(|ed| ed.across).is_some_and(|selection| !selection.inside_one_block()) {
+            self.apply_across_format(pageedit::InlineFormat::Size(size));
             return;
         }
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::place_caret_for_format(ed);
         let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;

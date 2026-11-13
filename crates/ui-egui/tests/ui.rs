@@ -9,7 +9,7 @@ use notecraft_engine::{Output, Params, Session};
 use notecraft_store::Settings;
 use notecraft_store::testing::TempDir;
 use notecraft_ui_egui::control::{ControlRequest, start};
-use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, contrast};
+use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, Tokens, contrast};
 use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
 
 mod support;
@@ -6227,8 +6227,70 @@ fn a_drag_can_select_across_paragraphs() {
     assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
 }
 
+/// The highlight bands are painted in the words on the page, but a drag's ends are kept in
+/// the editable text, which is longer wherever a link, a mark or a tag sits in the line.
+/// Before the two were told apart, a selection that began after such a mark painted no band
+/// at all: the byte it started at was past the end of the drawn words.
 #[test]
-fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
+fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
+    let body = "see [the format page](../format-ideas/) and **this** too\n\nSecond paragraph words";
+    let (_t, app, s) = sample_app("ui-cross-marks");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Cross Marks", body);
+
+    let first = h.get_by_label("see the format page and this too").rect();
+    let second = h.get_by_label("Second paragraph words").rect();
+
+    // Press on the last word of the first paragraph and drag into the second.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 30.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+
+    let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null);
+    assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "the drag spans both paragraphs: {open}");
+    assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "the drag spans both paragraphs: {open}");
+    let selected = h.render().expect("picture");
+    review(&mut h, "cross-block-marks");
+
+    // The band is the selection wash painted behind the words; counting its pixels says
+    // where it is, where a diff against the unselected page would also count the words'
+    // own antialiasing.
+    let wash = Tokens::for_theme(LIGHT).selection;
+    let scale = selected.width() as f32 / 1200.0;
+    let band = |img: &image::RgbaImage, rect: egui::Rect| -> u32 {
+        let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
+        let (y0, y1) = ((rect.min.y * scale) as u32, (rect.max.y * scale) as u32);
+        let mut n = 0;
+        for py in y0..y1.min(img.height()) {
+            for px in x0..x1.min(img.width()) {
+                if img.get_pixel(px, py).0 == wash.to_array() {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    // The band begins where the press fell, not at the start of the editable text: the
+    // words before it keep the page's own colour.
+    let before = egui::Rect::from_min_max(first.min, egui::pos2(first.min.x + (first.width() * 0.6), first.max.y));
+    assert!(band(&selected, first) > 40, "the words past the marks are highlighted: {} pixels", band(&selected, first));
+    assert!(
+        band(&selected, before) < band(&selected, first),
+        "the highlight starts at the press, not at the line's start: {} vs {}",
+        band(&selected, before),
+        band(&selected, first)
+    );
+    assert!(band(&selected, second) > 400, "and the second paragraph is highlighted whole: {} pixels", band(&selected, second));
+}
+
+/// A drag across two paragraphs then a font size takes both paragraphs' covered words,
+/// the way OneNote does, and the selection stays open for the next button.
+#[test]
+fn font_size_applies_to_a_selection_across_paragraphs() {
     let (_t, app, s) = sample_app("ui-cross-font-size");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.run();
@@ -6242,20 +6304,25 @@ fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
     assert!(!ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["across"].is_null());
-    let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
     h.get_by_label("18").click();
     settle(&mut h);
-    assert_eq!(h.state().body().unwrap_or_default(), before, "unsupported cross-paragraph selection must not change an unrelated caret");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(body.matches("font-size: 18pt").count(), 2, "both paragraphs took the size:\n{body}");
+    let plain = body.replace("<span style=\"font-size: 18pt\">", "").replace("</span>", "");
+    assert!(plain.contains("First paragraph words") && plain.contains("Second paragraph words"), "the words are all still there:\n{plain}");
     let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
-    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
-    assert!(!inspection["page"]["across"].is_null(), "selection remains available after using the menu");
+    assert!(!inspection["page"]["across"].is_null(), "the selection is kept for the next change");
+    assert!(!inspection["status"]["text"].as_str().unwrap_or_default().contains("not available"), "no limitation is reported: {inspection}");
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("font-size: 18pt"), "undo takes the size back off both paragraphs");
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[test]
-fn font_family_preserves_cross_paragraph_selection_and_reports_limitation() {
+fn font_family_applies_to_a_selection_across_paragraphs() {
     let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
         Ok(catalog) => catalog,
         Err(error) => {
@@ -6276,19 +6343,18 @@ fn font_family_preserves_cross_paragraph_selection_and_reports_limitation() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Family").click();
     h.run();
     h.get_by_label(family).click();
     settle(&mut h);
-    assert_eq!(h.state().body().unwrap_or_default(), before);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(body.matches("font-family:").count(), 2, "both paragraphs took the family:\n{body}");
     let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
-    assert!(!inspection["page"]["across"].is_null());
-    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
+    assert!(!inspection["page"]["across"].is_null(), "the selection is kept for the next change");
 }
 
 #[test]
-fn font_marks_preserve_cross_paragraph_selection_and_report_limitation() {
+fn font_marks_apply_to_a_selection_across_paragraphs() {
     let (_t, app, s) = sample_app("ui-cross-font-marks");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.run();
@@ -6301,16 +6367,21 @@ fn font_marks_preserve_cross_paragraph_selection_and_report_limitation() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    let before = h.state().body().unwrap_or_default().to_string();
     for label in ["Bold", "Italic", "Strikethrough", "Underline", "Subscript", "Superscript"] {
+        let before = h.state().body().unwrap_or_default().to_string();
         h.get_by_label(label).click();
         settle(&mut h);
-        assert_eq!(h.state().body().unwrap_or_default(), before, "{label} must not change unrelated text");
+        let after = h.state().body().unwrap_or_default().to_string();
+        assert_ne!(after, before, "{label} changes the covered words in both paragraphs");
+        let plain = ["**", "~~", "<u>", "</u>", "<sub>", "</sub>", "<sup>", "</sup>", "`", "*"]
+            .iter()
+            .fold(after.clone(), |text, mark| text.replace(mark, ""));
+        assert!(plain.contains("First paragraph words") && plain.contains("Second paragraph words"), "{label} kept the words:\n{plain}");
         let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
         assert!(!inspection["page"]["across"].is_null(), "{label} must preserve the selection");
         assert!(
-            inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"),
-            "{label} must report the limitation: {inspection}"
+            !inspection["status"]["text"].as_str().unwrap_or_default().contains("not available"),
+            "{label} must not report the limitation: {inspection}"
         );
     }
 }
