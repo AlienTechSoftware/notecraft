@@ -18,6 +18,7 @@ pub mod codeview;
 pub mod combo;
 pub mod containers;
 pub mod control;
+pub mod datetime;
 pub mod diagramview;
 pub mod floating;
 pub mod fonts;
