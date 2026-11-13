@@ -64,6 +64,70 @@ impl InlineEdit {
         &self.text
     }
 
+    /// Where each inline image sits in the caret's text, with the span it stands for.
+    pub(super) fn images(&self) -> &[(usize, Span)] {
+        &self.images
+    }
+
+    /// The range of a block's drawn words that editable-text characters `range` cover,
+    /// as bytes of the drawn text. The drawn text is what the preview lays out: the
+    /// marks and the tag marker are not in it, so a byte of the editable text is not a
+    /// byte of it. The covered characters are found by marking them in the editable
+    /// text, parsing it back the way the caret does, and counting the drawn characters
+    /// up to the marks.
+    pub(super) fn drawn_range(&mut self, range: Range<usize>) -> Option<(usize, usize)> {
+        let text = self.text.clone();
+        let (projected, mapping) = self.project(&text)?;
+        let chars: Vec<char> = projected.chars().collect();
+        let (start, end) = (range.start.min(chars.len()), range.end.min(chars.len()));
+        if start >= end {
+            return None;
+        }
+        let mut markers =
+            ('\u{e000}'..='\u{f8ff}').chain('\u{f0000}'..='\u{ffffd}').chain('\u{100000}'..='\u{10fffd}').filter(|c| !projected.contains(*c));
+        let (open, close) = (markers.next()?, markers.next()?);
+        let mut marked = String::new();
+        for at in 0..=chars.len() {
+            if at == start {
+                marked.push(open);
+            }
+            if at == end {
+                marked.push(close);
+            }
+            if let Some(c) = chars.get(at) {
+                marked.push(*c);
+            }
+        }
+        let spans = Self::restore_spans(parse_inline(&marked), &mapping);
+        if spans.iter().any(|s| s.math) {
+            return None;
+        }
+        let mut drawn = String::new();
+        let mut at = 0usize;
+        let (mut a, mut b) = (None, None);
+        for span in spans.iter().filter(|s| s.image.is_none()) {
+            for c in span.text.chars() {
+                if c == open {
+                    a = Some(at);
+                } else if c == close {
+                    b = Some(at);
+                } else {
+                    drawn.push(c);
+                    at += 1;
+                }
+            }
+        }
+        let (Some(a), Some(b)) = (a, b) else { return None };
+        // The tag marker is drawn as a mark beside the line, not as words.
+        let prefix = drawn.chars().count() - Tag::split(&drawn).1.chars().count();
+        let real = drawn.char_indices().nth(prefix).map(|(byte, _)| &drawn[byte..]).unwrap_or("");
+        let byte_at = |char_at: usize| {
+            let char_at = char_at.saturating_sub(prefix);
+            real.char_indices().nth(char_at).map(|(byte, _)| byte).unwrap_or(real.len())
+        };
+        Some((byte_at(a), byte_at(b)))
+    }
+
     pub(super) fn slice(&self, range: Range<usize>) -> Self {
         let start = range.start.min(self.literal.len());
         let end = range.end.min(self.literal.len()).max(start);
