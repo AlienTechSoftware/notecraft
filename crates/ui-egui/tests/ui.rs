@@ -3103,6 +3103,70 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// Table > Hide Borders belongs to the table the caret is in: the other table on the page keeps
+/// its borders, the choice is kept with the page, and it is still there when the page is
+/// opened again (issue #161).
+#[test]
+fn hide_borders_formats_only_the_selected_table_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-borders");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Two tables", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| A | B |\n|---|---|\n| one | two |\n\nBetween\n\n| C | D |\n|---|---|\n| three | four |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    assert_eq!(kept(&mut h, &page), "", "every table has its borders to begin with");
+
+    // Hide them in the first table.
+    into(&mut h, "one");
+    h.get_by_label("Hide Borders").click();
+    settle(&mut h);
+    review(&mut h, "table_borders_hidden_in_one");
+    assert_eq!(kept(&mut h, &page), "0:!", "the page says the first table, and only the first, has none");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    h.get_by_label("Show Borders");
+
+    // The second table still offers to hide its own, and the first offers to show its.
+    into(&mut h, "three");
+    h.get_by_label("Hide Borders");
+    into(&mut h, "one");
+    h.get_by_label("Show Borders");
+
+    // Opened again, the choice is still the first table's.
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    into(&mut h, "one");
+    h.get_by_label("Show Borders");
+    into(&mut h, "three");
+    h.get_by_label("Hide Borders");
+
+    // And Show Borders gives the first table its lines again.
+    into(&mut h, "one");
+    h.get_by_label("Show Borders").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "", "nothing is kept for a table with its borders");
+}
+
 /// A labelled "+ New section" button is always there for the chosen notebook, in both side
 /// panel layouts, not only a plus that appears on hover. It opens the section dialog for the
 /// notebook the open page is in, and the new section is the one chosen afterwards (issue #139).

@@ -1,10 +1,11 @@
-//! How wide the columns of a table are drawn.
+//! How the tables of a page are laid out: how wide their columns are drawn, and whether
+//! their borders are.
 //!
-//! A column width is not part of the table. A CommonMark table has no room for one, and an
+//! None of it is part of the table. A CommonMark table has no room for a width, and an
 //! HTML table could carry it but would then say something the Markdown copy cannot, so the
-//! two formats would stop being the same page. Widths are layout, like the boxes a page is
-//! arranged in, so they are kept where those are: in the page's own metadata, as a line
-//! that names the table by its position among the page's blocks.
+//! two formats would stop being the same page. Layout is kept where the boxes a page is
+//! arranged in are kept: in the page's own metadata, as a line that names each table by its
+//! position among the page's blocks.
 //!
 //! A page whose blocks are rearranged outside NoteCraft may find a width against the wrong
 //! table. The worst that does is draw a table in the wrong widths, which a drag puts right;
@@ -19,37 +20,79 @@ pub const MAX_WIDTH: f32 = 900.0;
 const MAX_TABLES: usize = 200;
 const MAX_COLUMNS: usize = 64;
 
-/// The widths every table on a page was given, each against the block it belongs to.
+/// What one table was given: the widths of its columns, which may be none, and whether its
+/// borders are hidden.
+#[derive(Clone, Debug, PartialEq)]
+struct Layout {
+    block: usize,
+    widths: Vec<f32>,
+    borderless: bool,
+}
+
+/// The layout every table on a page was given, each against the block it belongs to.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Widths {
     /// Sorted by block, so the written line is the same every time.
-    tables: Vec<(usize, Vec<f32>)>,
+    tables: Vec<Layout>,
 }
 
 impl Widths {
+    fn layout(&self, block: usize) -> Option<&Layout> {
+        self.tables.iter().find(|l| l.block == block)
+    }
+
+    fn put(&mut self, layout: Layout) {
+        self.tables.push(layout);
+        self.tables.sort_by_key(|l| l.block);
+    }
+
     /// The widths of the table at block `block`, or `None` when it was never dragged.
     pub fn of(&self, block: usize) -> Option<&[f32]> {
-        self.tables.iter().find(|(at, _)| *at == block).map(|(_, w)| w.as_slice())
+        self.layout(block).map(|l| l.widths.as_slice()).filter(|w| !w.is_empty())
+    }
+
+    /// True when the borders of the table at block `block` were hidden. A table has them
+    /// until that is asked for, and only that table is told (issue #161).
+    pub fn borders_hidden(&self, block: usize) -> bool {
+        self.layout(block).is_some_and(|l| l.borderless)
+    }
+
+    /// Hides the borders of the table at block `block`, or draws them again. True when that
+    /// changed anything. A table that has neither hidden borders nor widths of its own keeps
+    /// nothing, so showing them again takes its entry out of the page.
+    pub fn set_borders(&mut self, block: usize, hidden: bool) -> bool {
+        match self.tables.iter().position(|l| l.block == block) {
+            Some(at) if self.tables[at].borderless == hidden => false,
+            Some(at) => {
+                self.tables[at].borderless = hidden;
+                if !hidden && self.tables[at].widths.is_empty() {
+                    self.tables.remove(at);
+                }
+                true
+            }
+            None if hidden && self.tables.len() < MAX_TABLES => {
+                self.put(Layout { block, widths: Vec::new(), borderless: true });
+                true
+            }
+            None => false,
+        }
     }
 
     /// Sets one column's width, leaving the others as they are. `all` is what the table's
     /// columns are at now, so a table dragged for the first time keeps the look it had.
     pub fn set(&mut self, block: usize, column: usize, width: f32, all: &[f32]) {
-        if column >= all.len() || all.len() > MAX_COLUMNS || self.tables.len() >= MAX_TABLES && self.of(block).is_none() {
+        if column >= all.len() || all.len() > MAX_COLUMNS || self.tables.len() >= MAX_TABLES && self.layout(block).is_none() {
             return;
         }
         let mut widths: Vec<f32> = all.iter().map(|w| w.clamp(MIN_WIDTH, MAX_WIDTH)).collect();
         widths[column] = width.clamp(MIN_WIDTH, MAX_WIDTH);
-        match self.tables.iter_mut().find(|(at, _)| *at == block) {
-            Some((_, have)) => *have = widths,
-            None => {
-                self.tables.push((block, widths));
-                self.tables.sort_by_key(|(at, _)| *at);
-            }
+        match self.tables.iter_mut().find(|l| l.block == block) {
+            Some(have) => have.widths = widths,
+            None => self.put(Layout { block, widths, borderless: false }),
         }
     }
 
-    /// True when no table has been given widths of its own.
+    /// True when no table has been given a layout of its own.
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
     }
@@ -58,9 +101,9 @@ impl Widths {
     /// down one with it, so it stays on the same table. True when anything changed.
     pub fn insert_block(&mut self, at: usize) -> bool {
         let mut moved = false;
-        for (block, _) in &mut self.tables {
-            if *block >= at {
-                *block += 1;
+        for layout in &mut self.tables {
+            if layout.block >= at {
+                layout.block += 1;
                 moved = true;
             }
         }
@@ -72,50 +115,56 @@ impl Widths {
     /// width stays with the column it was dragged for (issue #154). True when anything
     /// changed; a table never dragged has nothing kept and stays that way.
     pub fn insert_column(&mut self, block: usize, at: usize, width: f32) -> bool {
-        let Some((_, widths)) = self.tables.iter_mut().find(|(b, _)| *b == block) else { return false };
-        if widths.len() >= MAX_COLUMNS {
+        let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return false };
+        if layout.widths.is_empty() || layout.widths.len() >= MAX_COLUMNS {
             return false;
         }
-        widths.insert(at.min(widths.len()), width.clamp(MIN_WIDTH, MAX_WIDTH));
+        let at = at.min(layout.widths.len());
+        layout.widths.insert(at, width.clamp(MIN_WIDTH, MAX_WIDTH));
         true
     }
 
     /// Column `at` was taken out of the table at block `block`. Its width goes with it and
     /// the columns after it keep theirs. True when anything changed.
     pub fn remove_column(&mut self, block: usize, at: usize) -> bool {
-        let Some((_, widths)) = self.tables.iter_mut().find(|(b, _)| *b == block) else { return false };
-        if at >= widths.len() {
+        let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return false };
+        if at >= layout.widths.len() {
             return false;
         }
-        widths.remove(at);
+        layout.widths.remove(at);
         true
     }
 
-    /// The blocks in `gone` were taken off the page. A width kept for one of them goes, and
-    /// a width kept for a table after them moves up with it, so it stays on the same table.
+    /// The blocks in `gone` were taken off the page. What is kept for one of them goes, and
+    /// what is kept for a table after them moves up with it, so it stays on the same table.
     /// True when anything changed.
     pub fn remove_blocks(&mut self, gone: std::ops::Range<usize>) -> bool {
         let before = self.tables.clone();
         let n = gone.len();
-        self.tables.retain(|(at, _)| !gone.contains(at));
-        for (at, _) in &mut self.tables {
-            if *at >= gone.end {
-                *at -= n;
+        self.tables.retain(|l| !gone.contains(&l.block));
+        for layout in &mut self.tables {
+            if layout.block >= gone.end {
+                layout.block -= n;
             }
         }
         self.tables != before
     }
 }
 
-/// Reads the line a page keeps: `block:w,w,w`, one table after another, `;` between them.
+/// Reads the line a page keeps: `block:w,w,w`, one table after another, `;` between them. A
+/// `!` after the widths says the table's borders are hidden, and may stand alone: `3:!`.
 ///
-/// Anything that does not read as that is dropped, because a width is a convenience and a
+/// Anything that does not read as that is dropped, because layout is a convenience and a
 /// page must open whatever its metadata says.
 pub fn parse(text: &str) -> Widths {
-    let mut tables: Vec<(usize, Vec<f32>)> = Vec::new();
+    let mut tables: Vec<Layout> = Vec::new();
     for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()).take(MAX_TABLES) {
         let Some((at, list)) = part.split_once(':') else { continue };
         let Ok(at) = at.trim().parse::<usize>() else { continue };
+        let (list, borderless) = match list.trim_end().strip_suffix('!') {
+            Some(list) => (list, true),
+            None => (list, false),
+        };
         let widths: Vec<f32> = list
             .split(',')
             .map(str::trim)
@@ -124,12 +173,12 @@ pub fn parse(text: &str) -> Widths {
             .filter_map(|w| w.parse::<f32>().ok())
             .map(|w| w.clamp(MIN_WIDTH, MAX_WIDTH))
             .collect();
-        if widths.is_empty() || tables.iter().any(|(have, _)| *have == at) {
+        if widths.is_empty() && !borderless || tables.iter().any(|have| have.block == at) {
             continue;
         }
-        tables.push((at, widths));
+        tables.push(Layout { block: at, widths, borderless });
     }
-    tables.sort_by_key(|(at, _)| *at);
+    tables.sort_by_key(|l| l.block);
     Widths { tables }
 }
 
@@ -138,9 +187,9 @@ pub fn write(widths: &Widths) -> String {
     widths
         .tables
         .iter()
-        .map(|(at, w)| {
-            let list: Vec<String> = w.iter().map(|w| format!("{}", w.round() as i64)).collect();
-            format!("{at}:{}", list.join(","))
+        .map(|l| {
+            let list: Vec<String> = l.widths.iter().map(|w| format!("{}", w.round() as i64)).collect();
+            format!("{}:{}{}", l.block, list.join(","), if l.borderless { "!" } else { "" })
         })
         .collect::<Vec<_>>()
         .join("; ")
@@ -149,6 +198,63 @@ pub fn write(widths: &Widths) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #161: hiding the borders is a fact about one table, kept with it.
+    #[test]
+    fn borders_are_hidden_for_one_table_and_leave_the_others() {
+        let mut widths = parse("1:100,100; 6:120,200");
+        assert!(!widths.borders_hidden(1) && !widths.borders_hidden(6), "every table has its borders until one is hidden");
+        assert!(widths.set_borders(1, true));
+        assert!(widths.borders_hidden(1));
+        assert!(!widths.borders_hidden(6), "another table is left alone");
+        assert_eq!(widths.of(1), Some([100.0, 100.0].as_slice()), "the widths stay");
+        assert_eq!(write(&widths), "1:100,100!; 6:120,200");
+        assert!(!widths.set_borders(1, true), "hiding what is hidden changes nothing");
+        assert!(widths.set_borders(1, false));
+        assert_eq!(write(&widths), "1:100,100; 6:120,200");
+    }
+
+    #[test]
+    fn a_table_with_hidden_borders_and_no_dragged_widths_is_kept() {
+        let mut widths = Widths::default();
+        assert!(widths.set_borders(3, true));
+        assert!(!widths.is_empty());
+        assert_eq!(widths.of(3), None, "no widths of its own, so the usual ones are drawn");
+        assert_eq!(write(&widths), "3:!");
+        assert_eq!(parse("3:!"), widths, "and it reads back");
+        // Showing them again leaves nothing to keep, so the line goes away.
+        assert!(widths.set_borders(3, false));
+        assert!(widths.is_empty());
+        assert_eq!(write(&widths), "");
+        assert!(!widths.set_borders(3, false), "showing what is shown changes nothing");
+    }
+
+    #[test]
+    fn hidden_borders_follow_their_table_and_survive_width_changes() {
+        let mut widths = parse("2:!; 5:100,100!");
+        assert!(widths.insert_block(3));
+        assert!(widths.borders_hidden(2) && widths.borders_hidden(6), "a block put in after the first table moves only the second");
+        assert!(widths.remove_blocks(0..1));
+        assert!(widths.borders_hidden(1) && widths.borders_hidden(5));
+        // A drag on a table whose borders are hidden keeps them hidden.
+        widths.set(5, 0, 150.0, &[100.0, 100.0]);
+        assert_eq!(write(&widths), "1:!; 5:150,100!");
+        // A column put into a table with no widths of its own invents none.
+        assert!(!widths.insert_column(1, 0, 160.0));
+        assert_eq!(widths.of(1), None);
+        // The table goes and its borders go with it.
+        assert!(widths.remove_blocks(1..2));
+        assert_eq!(write(&widths), "4:150,100!");
+    }
+
+    #[test]
+    fn a_flag_without_a_table_is_read_without_harm() {
+        assert!(parse("!").is_empty());
+        assert!(parse("x:!").is_empty());
+        assert_eq!(parse("1:bad!").of(1), None);
+        assert!(parse("1:bad!").borders_hidden(1), "the flag is read even when the widths are not");
+        assert!(parse("1:bad,200").of(1).is_some() && !parse("1:bad,200").borders_hidden(1));
+    }
 
     #[test]
     fn a_width_follows_its_table_when_blocks_before_it_go() {

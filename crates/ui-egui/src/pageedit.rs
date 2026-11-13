@@ -1103,12 +1103,13 @@ fn table(
     caret: &mut Option<Caret>,
     t: &Tokens,
     page: Option<notecraft_model::Dir>,
-    borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     changed: &mut Changed,
     zoom: f32,
 ) -> Option<Action> {
     let Block::Table { head, rows } = block else { return None };
+    // Borders belong to the table, not to the app: this one is told, the others are not (issue #161).
+    let borders = !cols.borders_hidden(i);
     let mut action = None;
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
     // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
@@ -1796,14 +1797,13 @@ pub fn show(
     page_dir: &std::path::Path,
     t: &Tokens,
     page: Option<notecraft_model::Dir>,
-    borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     justified: &notecraft_model::justify::Justified,
     across: &mut Option<Across>,
     shown_title: &str,
 ) -> Changed {
     let all = 0..blocks.len();
-    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, borders, cols, justified, across, shown_title, 1.0);
+    let mut changed = show_blocks(ui, blocks, caret, page_dir, t, page, all, cols, justified, across, shown_title, 1.0);
     // Room under the page: a click there writes at the end, the way an empty page does.
     let (_rect, below) = ui.allocate_exact_size(vec2(ui.available_width(), 140.0_f32.min(ui.available_height().max(40.0))), Sense::click());
     if below.clicked() {
@@ -1826,7 +1826,6 @@ pub fn show_blocks(
     t: &Tokens,
     page: Option<notecraft_model::Dir>,
     range: std::ops::Range<usize>,
-    borders: bool,
     cols: &mut notecraft_model::tablecols::Widths,
     // Which blocks are stretched to reach the column; see `notecraft_model::justify`.
     justified: &notecraft_model::justify::Justified,
@@ -1891,7 +1890,7 @@ pub fn show_blocks(
         // where the words will go, until the first is written.
         let outlined = !(range.len() == 1 && crate::preview::is_blank(&block) && caret.as_ref().is_some_and(|c| c.block == i && c.text.is_empty()));
         if matches!(block, Block::Table { .. }) {
-            if let Some(what) = table(ui, &block, i, caret, t, page, borders, cols, &mut changed, zoom) {
+            if let Some(what) = table(ui, &block, i, caret, t, page, cols, &mut changed, zoom) {
                 action = Some(what);
             }
             frame_block(ui, top, editing, t, zoom);
