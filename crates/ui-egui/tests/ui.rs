@@ -2271,6 +2271,47 @@ fn the_pen_draws_on_open_canvas_away_from_any_text() {
     }
 }
 
+/// Issue #138: file details belong in the chrome, leaving the note to lead with its title.
+#[test]
+fn page_file_details_stay_below_the_canvas_and_drop_hint_is_transient() {
+    for theme in [LIGHT, DARK] {
+        for html in [false, true] {
+            let (_t, mut app, s) = sample_app("ui-compact-page-chrome");
+            let page_dir = if html { &s.html_page } else { &s.md_page };
+            app.open_path(&page_dir.to_string_lossy());
+            let mut h = sized_harness(app, theme, egui::vec2(1280.0, 900.0));
+            settle(&mut h);
+            assert_eq!(
+                h.query_all_by_label("Drop a file onto the page to add it").count(),
+                0,
+                "populated notes have no permanent file-drop instruction"
+            );
+            let canvas = h.state().page_rect().expect("page canvas");
+            let format = if html { "HTML" } else { "CommonMark + GFM" };
+            let details = h.get_by_label(&format!("{format} - Saved")).rect();
+            assert!(details.min.y >= canvas.max.y, "file details are in the status bar: {details:?}, canvas {canvas:?}");
+            for label in ["Full page", "Search", "Page source"] {
+                assert!(h.get_by_label(label).rect().max.y <= canvas.min.y, "{label} stays outside the page content");
+            }
+            review(&mut h, &format!("compact_page_chrome_{html}_{}", theme.id()));
+            let relative = page_dir.strip_prefix(h.state().session().root()).expect("sample page").to_string_lossy().replace('\\', "/");
+            let path = format!("<notebooks>/{relative}");
+            assert_eq!(h.query_all_by_label(&path).count(), 0, "the technical path is hidden until requested");
+            h.get_by_label(&format!("{format} - Saved")).hover();
+            for _ in 0..60 {
+                pump(&mut h);
+            }
+            assert_eq!(h.query_all_by_label(&path).count(), 1, "hover reveals the path and respects path redaction");
+            h.input_mut().hovered_files.push(egui::HoveredFile { path: Some(page_dir.join("picture.svg")), ..Default::default() });
+            pump(&mut h);
+            assert_eq!(h.query_all_by_label("Drop a file onto the page to add it").count(), 1, "drag-over explains where to drop");
+            h.input_mut().hovered_files.clear();
+            pump(&mut h);
+            assert_eq!(h.query_all_by_label("Drop a file onto the page to add it").count(), 0, "the instruction goes away with the drag");
+        }
+    }
+}
+
 /// The same on an HTML page, and the ink comes back when the page is opened again.
 #[test]
 fn ink_comes_back_when_the_page_is_opened_again() {
@@ -7010,8 +7051,9 @@ fn dragging_across_text_selects_it() {
     let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     let origin = &page["origin"];
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
-    let _ = (ox, oy);
-    let (y, x0, x1) = (308.0, 500.0, 560.0);
+    // Follow the rendered text container, rather than a screen coordinate that
+    // becomes blank paper when the surrounding application chrome changes.
+    let (y, x0, x1) = (oy + 24.0, ox + 10.0, ox + 70.0);
     ask(&mut h, "ui.click", json!({"x": x0, "y": y})).expect("focus the text");
     settle(&mut h);
     ask(&mut h, "ui.press", json!({"x": x0, "y": y})).expect("press");
@@ -7024,6 +7066,7 @@ fn dragging_across_text_selects_it() {
     settle(&mut h);
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["caret"].clone();
     assert!(caret != Value::Null, "the page has a caret or selection after a drag: {caret}");
+    assert_eq!(caret["text"].as_str(), Some("hello world"), "the drag reached the fixture's text");
     assert!(caret["at"] != caret["anchor"], "the drag made a selection, not a caret: {caret}");
 }
 
