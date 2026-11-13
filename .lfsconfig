@@ -1,0 +1,10 @@
+# The two large OneNote samples under the onenote.rs fixtures are kept in Git LFS for manual
+# import tests only; no build, test or CI run reads them. A clone does not download them, so a
+# clone never waits on 270 MB it does not use and never fails when one of them is unavailable
+# from the server (issue #114). They stay as small LFS pointer files until asked for:
+#
+#   git lfs pull --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one" --exclude=""
+#
+# The empty --exclude is needed: without it this file's exclusion still applies.
+[lfs]
+	fetchexclude = crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one

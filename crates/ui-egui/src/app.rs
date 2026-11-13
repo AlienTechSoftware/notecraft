@@ -818,6 +818,8 @@ pub struct NoteCraftApp {
     canvas_pan: egui::Vec2,
     /// Last middle-button position while panning the canvas.
     canvas_drag: Option<egui::Pos2>,
+    /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
+    page_hbar: Option<(egui::Rect, egui::Rect)>,
     /// What the pointer does on the page (the Draw tab).
     pointer: ribbon::Pointer,
     /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
@@ -978,6 +980,7 @@ impl NoteCraftApp {
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
+            page_hbar: None,
             canvas_drag: None,
             pointer: ribbon::Pointer::Write,
             rack,
@@ -6216,6 +6219,7 @@ impl NoteCraftApp {
         let mut pad = self.pad.take();
         let mut ink_changed = false;
         let mut page_rect = None;
+        let mut hbar = crate::hscroll::Shown::default();
         // What the page's right-click menu asked for, run once the page's borrow is over.
         let mut page_acts: Vec<ribbon::Act> = Vec::new();
         {
@@ -6265,6 +6269,8 @@ impl NoteCraftApp {
             });
             ui.separator();
             let height = ui.available_height();
+            // How far the page's content reaches sideways on screen this frame (issue #188).
+            let mut page_span: Option<(f32, f32)> = None;
             // The page itself. Without the source beside it the page is a readable column,
             // the way a page looks in OneNote or Word, and a click puts the caret in it.
             let mut page = |ui: &mut Ui,
@@ -6389,6 +6395,16 @@ impl NoteCraftApp {
                                 ed.pending_format = None;
                             }
                             page_acts.append(&mut moved.acts);
+                            // The page's column, its boxes and its ink: what the sideways bar
+                            // has to reach.
+                            {
+                                let left = moved.origin.x;
+                                let mut span = (left, (left + moved.right * zoom_scale).max(left + ui.min_rect().width()));
+                                if let Some([x0, _, x1, _]) = pad.as_ref().and_then(|p| p.bounds()) {
+                                    span = (span.0.min(top.x + x0 * zoom_scale), span.1.max(top.x + x1 * zoom_scale));
+                                }
+                                page_span = Some(span);
+                            }
                             // The selection box takes ink as well as boxes, as in OneNote, and what
                             // it took moves together: boxes dragged take the ink with them, ink
                             // dragged takes the boxes.
@@ -6519,7 +6535,7 @@ impl NoteCraftApp {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
                 };
-                egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
+                let shown = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
                     page(
                         ui,
                         ed,
@@ -6534,6 +6550,14 @@ impl NoteCraftApp {
                         &mut rename,
                     );
                 });
+                // Sideways the page is a canvas: when what is on it reaches past the view's
+                // sides, a bar along the bottom shows it and moves the canvas (issue #188).
+                if let Some(span) = page_span {
+                    let view = shown.inner_rect;
+                    let vertical = shown.content_size.y > view.height() + 0.5;
+                    let reserve = if vertical { ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_outer_margin } else { 0.0 };
+                    hbar = crate::hscroll::show(ui.ctx(), egui::Id::new("page-hscroll"), view, span, reserve);
+                }
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -6634,6 +6658,11 @@ impl NoteCraftApp {
         self.pad = pad;
         if page_rect.is_some() {
             self.page_rect = page_rect;
+        }
+        self.page_hbar = hbar.track.zip(hbar.handle);
+        if hbar.pan != 0.0 && hbar.pan.is_finite() {
+            self.canvas_pan.x = (self.canvas_pan.x + hbar.pan).clamp(-1.0e6, 1.0e6);
+            ui.ctx().request_repaint();
         }
         for act in page_acts {
             self.ribbon_act(act);
@@ -8087,7 +8116,13 @@ impl NoteCraftApp {
         let screen = ctx.content_rect();
         json!({
             "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
-            "canvas": {"viewOffset": [self.canvas_pan.x, self.canvas_pan.y]},
+            "canvas": {
+                "viewOffset": [self.canvas_pan.x, self.canvas_pan.y],
+                // The sideways scroll bar along the page's bottom and its thumb, as
+                // [left, top, right, bottom] in screen points, or null when everything fits.
+                "horizontalBar": self.page_hbar.map(|(track, _)| [track.min.x, track.min.y, track.max.x, track.max.y]),
+                "horizontalThumb": self.page_hbar.map(|(_, thumb)| [thumb.min.x, thumb.min.y, thumb.max.x, thumb.max.y]),
+            },
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},
