@@ -3352,6 +3352,7 @@ impl NoteCraftApp {
             nib: self.nib,
             in_table: self.caret_in_table(),
             table_borders: self.caret_table_has_borders(),
+            table_align: self.caret_cells_align(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
@@ -3796,6 +3797,7 @@ impl NoteCraftApp {
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
+            ribbon::Act::TableAlign(align) => self.align_table_cells(align),
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -4142,6 +4144,54 @@ impl NoteCraftApp {
         !ed.columns.borders_hidden(c.block)
     }
 
+    /// The cells Table > Align acts on: every picked cell, or the caret's own. With the
+    /// table's block.
+    fn caret_cells(&self) -> Option<(usize, Vec<(usize, usize)>)> {
+        let ed = self.editor.as_ref()?;
+        let c = ed.caret.as_ref()?;
+        let here = c.cell?;
+        if !matches!(ed.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })) {
+            return None;
+        }
+        let cells = match pageedit::cell_range(c) {
+            Some((a, b)) => (a.0..=b.0).flat_map(|r| (a.1..=b.1).map(move |col| (r, col))).collect(),
+            None => vec![here],
+        };
+        Some((c.block, cells))
+    }
+
+    /// How the cells Table > Align would act on are aligned now, when they all agree. A cell
+    /// given no alignment of its own reads as aligned left, which is how it is drawn.
+    fn caret_cells_align(&self) -> Option<notecraft_model::tablecols::Align> {
+        use notecraft_model::tablecols::Align;
+        let ed = self.editor.as_ref()?;
+        let (at, cells) = self.caret_cells()?;
+        let mut aligns = cells.iter().map(|cell| ed.columns.align(at, *cell).unwrap_or(Align::Left));
+        let first = aligns.next()?;
+        aligns.all(|a| a == first).then_some(first)
+    }
+
+    /// Table > Align Left, Center or Align Right: the words in the caret's cell, or in every
+    /// cell picked, and nothing else; the columns keep their widths and the table its place.
+    /// Kept with the page, like the widths and the borders, and one step of Undo (issue #170).
+    fn align_table_cells(&mut self, align: notecraft_model::tablecols::Align) {
+        let Some((at, cells)) = self.caret_cells() else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.writable {
+            return;
+        }
+        // Left is how a cell is drawn when it was given nothing, so it is kept as nothing.
+        let keep = (align != notecraft_model::tablecols::Align::Left).then_some(align);
+        if !ed.columns.set_align(at, &cells, keep) {
+            return;
+        }
+        Self::remember_edit(ed);
+        self.save_block_marks((true, false));
+    }
+
     /// Table > Hide Borders or Show Borders: the table the caret is in, and no other. The
     /// choice is kept with the page, like the widths of the table's columns, so it is there
     /// when the page is opened again (issue #161).
@@ -4463,10 +4513,10 @@ impl NoteCraftApp {
         let picked = ed.caret.as_ref().and_then(pageedit::cell_range).filter(|(a, b)| a.0 != b.0).map(|(a, b)| (a.0, b.0));
         Self::remember_step(ed);
         let Some(block) = ed.blocks.get_mut(at) else { return };
-        if !pageedit::sort_table(block, cell.1, picked, descending) {
+        let Some(order) = pageedit::sort_table_rows(block, cell.1, picked, descending) else {
             self.say(crate::tl_id!("ui.the_rows_are_already_in_that_order"));
             return;
-        }
+        };
         // The caret stays in the same place in the table, and shows what is there now.
         let text = pageedit::cell_text(block, cell).unwrap_or_default();
         ed.rebuild_body();
@@ -4475,8 +4525,13 @@ impl NoteCraftApp {
             caret.selection = (0, 0);
             caret.inline = None;
         }
+        // An aligned cell goes where its row went (issue #170).
+        let cols_moved = ed.columns.reorder_rows(at, &order);
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
+        if cols_moved {
+            self.save_block_marks((true, false));
+        }
     }
 
     fn edit_table(&mut self, what: pageedit::TableEdit) {
@@ -4524,7 +4579,9 @@ impl NoteCraftApp {
         let cols_moved = match what {
             pageedit::TableEdit::InsertColumn(left) => ed.columns.insert_column(at, if left { cell.1 } else { cell.1 + 1 }, pageedit::COLUMN_W),
             pageedit::TableEdit::DeleteColumn => (0..done).fold(false, |moved, _| ed.columns.remove_column(at, cell.1) || moved),
-            _ => false,
+            // An aligned cell stays with its row too (issue #170).
+            pageedit::TableEdit::InsertRow(above) => ed.columns.insert_row(at, if above { cell.0 } else { cell.0 + 1 }),
+            pageedit::TableEdit::DeleteRow => (0..done).fold(false, |moved, _| ed.columns.remove_row(at, cell.0) || moved),
         };
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);

@@ -9234,3 +9234,74 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
     let width = look(&mut h).pointer("/page/containers/0/width").and_then(Value::as_f64).unwrap_or(0.0);
     assert!(width >= 500.0, "the box grew from its drawn edge, past the table, with the pointer: {width}");
 }
+
+/// Table > Align Left, Center and Align Right line up the words of the caret's cell, or of every
+/// picked cell, are kept with the page, follow their row when rows go in, and leave the column's
+/// width alone (issue #170).
+#[test]
+fn table_cells_are_aligned_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-align");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Aligned", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    let widths = |h: &mut Harness<'_, NoteCraftApp>| h.get_by_label("Name").rect().width() + h.get_by_label("Amount").rect().width();
+    assert_eq!(kept(&mut h, &page), "", "no cell is aligned to begin with");
+    let left = h.get_by_label("12").rect();
+    let names = widths(&mut h);
+
+    // Center the cell holding 12, then look at it from another cell, where it is drawn as words.
+    into(&mut h, "12");
+    h.get_by_label("Center").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=c", "the page keeps the cell's alignment");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let centred = h.get_by_label("12").rect();
+    assert!(centred.min.x > left.min.x + 40.0, "the words moved into the middle of the cell: {left:?} then {centred:?}");
+    assert!((widths(&mut h) - names).abs() < 0.5, "the heading cells, and so the column, kept their width");
+    review(&mut h, "table_cell_centred");
+
+    // Right, then a row put in above: the alignment stays with the row it was given to.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    into(&mut h, "pear");
+    let right = h.get_by_label("12").rect();
+    assert!(right.min.x > centred.min.x + 20.0, "further right again: {centred:?} then {right:?}");
+    into(&mut h, "12");
+    h.get_by_label("Insert Row Above").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r", "the cell moved down with its row");
+
+    // Kept when the page is opened again; Align Left puts it back to how a cell always was.
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r");
+    into(&mut h, "12");
+    h.get_by_label("Align Left").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "", "a cell aligned left keeps nothing");
+}
