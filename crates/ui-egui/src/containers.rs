@@ -211,6 +211,9 @@ pub struct Moved {
     pub justified: bool,
     /// How far down the page, in page points, the containers reach.
     pub bottom: f32,
+    /// How far right of the page's left edge, in page points, the containers reach: the page's
+    /// sideways scroll bar (issue #188) reaches that far.
+    pub right: f32,
     /// How wide each box was drawn, in page points: its own width, or more when what it holds
     /// (a table) is wider than that. Drawn only; the page's arrangement is not changed by it.
     pub shown_widths: Vec<f32>,
@@ -290,6 +293,7 @@ pub fn show(
     let caret_box = caret.as_ref().and_then(|c| container::place(boxes, c.block)).map(|(i, _)| i);
     let before = blocks.len();
     let mut bottom = area.min.y;
+    let mut right = area.min.x;
     // How far down the boxes with something in them reach: where "below everything" is. A blank
     // box (the cursor's place on open paper) is not counted.
     let mut filled_bottom = area.min.y;
@@ -474,6 +478,7 @@ pub fn show(
         let frame = Rect::from_min_size(frame_at, vec2(width * zoom + 2.0 * pad, used + pad));
         frames.push(frame);
         bottom = bottom.max(frame.max.y);
+        right = right.max(frame.max.x);
         let holds_nothing = holds_nothing(blocks, &range);
         if !holds_nothing {
             filled_bottom = filled_bottom.max(frame.max.y);
@@ -1486,6 +1491,7 @@ pub fn show(
         }
     });
     out.bottom = page_points_below(area, filled_bottom, zoom);
+    out.right = page_points_right(area, right, zoom);
     out
 }
 
@@ -1509,6 +1515,7 @@ pub fn show_ink_view(
     out.origin = area.min;
     *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
     let mut bottom = area.min.y;
+    let mut right = area.min.x;
 
     for (container_index, container) in boxes.iter().copied().enumerate() {
         let range = container::blocks_of(boxes, container_index);
@@ -1540,12 +1547,14 @@ pub fn show_ink_view(
         }
         let used = child.min_rect().height().max(18.0);
         bottom = bottom.max(area.min.y + container.y * zoom + HANDLE * zoom + used + PAD * zoom);
+        right = right.max(child.min_rect().max.x.max(inner.max.x) + PAD * zoom);
     }
 
     // Child UIs do not advance the parent cursor; reserve their complete page-space extent
     // so scrolling and the following ink-layer allocation match the editable page.
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
     out.bottom = page_points_below(area, bottom, zoom);
+    out.right = page_points_right(area, right, zoom);
     out
 }
 
@@ -1553,6 +1562,11 @@ pub fn show_ink_view(
 /// [`Moved::bottom`] reports, so a box added later (a printout) can be placed under them.
 fn page_points_below(area: Rect, bottom: f32, zoom: f32) -> f32 {
     if zoom > 0.0 { ((bottom - area.min.y) / zoom).max(0.0) } else { 0.0 }
+}
+
+/// How far right the boxes reach, in page points, from `right` on screen: [`Moved::right`].
+fn page_points_right(area: Rect, right: f32, zoom: f32) -> f32 {
+    if zoom > 0.0 { ((right - area.min.x) / zoom).max(0.0) } else { 0.0 }
 }
 
 fn block_has_image(block: &Block) -> bool {

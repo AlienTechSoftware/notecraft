@@ -82,7 +82,7 @@ fn run_large_rust_fixture(name: &str) {
     let bytes_read = file.read(&mut prefix).expect("read large fixture prefix");
     assert!(
         !prefix[..bytes_read].starts_with(pointer_prefix),
-        "hydrate this fixture with git lfs pull --include=\"crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one\""
+        "hydrate this fixture with git lfs pull --include=\"crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one\" --exclude=\"\""
     );
 
     let temp = TempDir::new("large-third-party-import-corpus");

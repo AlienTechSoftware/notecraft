@@ -81,6 +81,31 @@
 @id	ui.font_size_box	Font size
 @id	ui.font_family	Font Family
 @id	ui.font_family_box	Font name
+@id	ui.pick_date	Pick a date
+@id	ui.pick_time	Pick a time
+@id	ui.am	AM
+@id	ui.pm	PM
+@id	ui.pick_date_and_time	Pick a date and time
+@id	ui.today	Today
+@id	ui.month_1	January
+@id	ui.month_2	February
+@id	ui.month_3	March
+@id	ui.month_4	April
+@id	ui.month_5	May
+@id	ui.month_6	June
+@id	ui.month_7	July
+@id	ui.month_8	August
+@id	ui.month_9	September
+@id	ui.month_10	October
+@id	ui.month_11	November
+@id	ui.month_12	December
+@id	ui.weekday_short_0	Su
+@id	ui.weekday_short_1	Mo
+@id	ui.weekday_short_2	Tu
+@id	ui.weekday_short_3	We
+@id	ui.weekday_short_4	Th
+@id	ui.weekday_short_5	Fr
+@id	ui.weekday_short_6	Sa
 @id	ui.loading_fonts	Loading fonts...
 @id	ui.mixed	Mixed
 @id	ui.font_catalog_unavailable	Installed fonts could not be listed on this device.
@@ -835,3 +860,4 @@
 @id	ui.kept_in_this_tab	Kept in this tab
 @id	ui.session_only_storage_notice	Session-only notes: changes disappear when you reload or close this tab.
 @id	ui.session_storage_guard_failed	Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.
+@id	ui.scroll_the_page_sideways	Scroll the page sideways
