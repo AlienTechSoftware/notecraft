@@ -4600,6 +4600,73 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
 }
 
+/// Issue #137: the direct colour entry shares the existing page-colour state/actions.
+#[test]
+fn view_page_colour_uses_the_existing_palette_and_persists_only_on_its_page() {
+    use egui_kittest::kittest::NodeT as _;
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-direct-page-colour");
+        let mut h = sized_harness(app, theme, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("View").click();
+        settle(&mut h);
+        assert!(h.get_by_label("Page colour").accesskit_node().is_disabled(), "no page, no page-colour action");
+        for (page, other, format) in [(&s.md_page, &s.html_page, "cmgfm"), (&s.html_page, &s.md_page, "html")] {
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert!(!h.get_by_label("Page colour").accesskit_node().is_disabled());
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(h.get_by_label("No colour").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+            for colour in notecraft_model::NodeColor::ALL {
+                assert_eq!(h.get_by_label(colour.label()).accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+            }
+            review(&mut h, &format!("page_colour_palette_{format}_{}", theme.id()));
+            ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss palette");
+            settle(&mut h);
+            assert_eq!(h.query_all_by_label("No colour").count(), 0, "Escape dismisses the palette");
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            h.get_by_label("Yellow").click();
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("yellow page")["pageColour"], json!("yellow"));
+            h.state_mut().open_path(&other.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("other page")["pageColour"], Value::Null, "colour is page-specific");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("reopened")["pageColour"], json!("yellow"));
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Yellow").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "shared gallery shows the direct choice"
+            );
+            h.get_by_label("College ruled").click();
+            settle(&mut h);
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            h.get_by_label("Blue").click();
+            settle(&mut h);
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Blue").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "direct palette shows the combined gallery choice"
+            );
+            h.get_by_label("No colour").click();
+            settle(&mut h);
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let cleared = ask(&mut h, "ui.inspect", json!({})).expect("cleared colour");
+            assert_eq!(cleared["pageColour"], Value::Null, "No colour survives reopening");
+            assert_eq!(cleared["paper"], json!("college"), "clearing colour preserves the separate paper style");
+        }
+    }
+}
+
 /// The paper a page is drawn on and the colour behind it are the page's own: chosen in
 /// Format Background, written into the page's file, and there again when it is reopened.
 #[test]
