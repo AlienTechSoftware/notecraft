@@ -9,7 +9,7 @@ use notecraft_engine::{Output, Params, Session};
 use notecraft_store::Settings;
 use notecraft_store::testing::TempDir;
 use notecraft_ui_egui::control::{ControlRequest, start};
-use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, contrast};
+use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, Tokens, contrast};
 use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
 
 mod support;
@@ -2691,6 +2691,57 @@ fn a_table_cell_is_written_in_and_the_page_keeps_it() {
         "and the rest of the table is untouched:
 {body}"
     );
+}
+
+/// The whole of a cell is where it is clicked into, not only its words: a click in an empty
+/// cell, or in the space after a short word, puts the caret there (issue #147). Before, only
+/// a click on the letters did anything, and an empty cell could not be written in at all.
+#[test]
+fn a_click_anywhere_in_a_table_cell_writes_in_it() {
+    let (_t, app, s) = sample_app("ui-table-cell-click");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Cells", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| Heading one | Heading two |\n|---|---|\n| x |  |\n"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Into the empty cell: under the second heading, level with the x.
+    let second = h.get_by_label("Heading two").rect();
+    let x = h.get_by_label("x").rect();
+    ask(&mut h, "ui.click", json!({"x": second.center().x, "y": x.center().y})).expect("click the empty cell");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Cell B"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Cell B"), "what was typed went into the empty cell:\n{body}");
+    assert!(body.lines().any(|l| l.contains('x') && l.contains("Cell B")), "on the x's row:\n{body}");
+
+    // And into the space after the x, well to the right of the letter.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the cell");
+    settle(&mut h);
+    let x = h.get_by_label("x").rect();
+    // Near the right of the first column, clear of the border between the columns.
+    let right = second.min.x - 16.0;
+    assert!(right > x.max.x + 20.0, "the click is well clear of the letter: {right} vs {}", x.max.x);
+    ask(&mut h, "ui.click", json!({"x": right, "y": x.center().y})).expect("click after the x");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Y"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("xY") || body.contains("Yx"), "the click after the x went into its cell:\n{body}");
 }
 
 /// Tab off the last cell of a table adds a row and lands in it, the way OneNote grows a
@@ -6227,8 +6278,70 @@ fn a_drag_can_select_across_paragraphs() {
     assert_eq!(paragraphs[1], THIRD, "the paragraph below is untouched");
 }
 
+/// The highlight bands are painted in the words on the page, but a drag's ends are kept in
+/// the editable text, which is longer wherever a link, a mark or a tag sits in the line.
+/// Before the two were told apart, a selection that began after such a mark painted no band
+/// at all: the byte it started at was past the end of the drawn words.
 #[test]
-fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
+fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
+    let body = "see [the format page](../format-ideas/) and **this** too\n\nSecond paragraph words";
+    let (_t, app, s) = sample_app("ui-cross-marks");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    page_of(&mut h, &s, "Cross Marks", body);
+
+    let first = h.get_by_label("see the format page and this too").rect();
+    let second = h.get_by_label("Second paragraph words").rect();
+
+    // Press on the last word of the first paragraph and drag into the second.
+    ask(&mut h, "ui.press", json!({"x": first.max.x - 30.0, "y": first.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": second.center().x, "y": second.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
+    settle(&mut h);
+
+    let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null);
+    assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "the drag spans both paragraphs: {open}");
+    assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "the drag spans both paragraphs: {open}");
+    let selected = h.render().expect("picture");
+    review(&mut h, "cross-block-marks");
+
+    // The band is the selection wash painted behind the words; counting its pixels says
+    // where it is, where a diff against the unselected page would also count the words'
+    // own antialiasing.
+    let wash = Tokens::for_theme(LIGHT).selection;
+    let scale = selected.width() as f32 / 1200.0;
+    let band = |img: &image::RgbaImage, rect: egui::Rect| -> u32 {
+        let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
+        let (y0, y1) = ((rect.min.y * scale) as u32, (rect.max.y * scale) as u32);
+        let mut n = 0;
+        for py in y0..y1.min(img.height()) {
+            for px in x0..x1.min(img.width()) {
+                if img.get_pixel(px, py).0 == wash.to_array() {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    // The band begins where the press fell, not at the start of the editable text: the
+    // words before it keep the page's own colour.
+    let before = egui::Rect::from_min_max(first.min, egui::pos2(first.min.x + (first.width() * 0.6), first.max.y));
+    assert!(band(&selected, first) > 40, "the words past the marks are highlighted: {} pixels", band(&selected, first));
+    assert!(
+        band(&selected, before) < band(&selected, first),
+        "the highlight starts at the press, not at the line's start: {} vs {}",
+        band(&selected, before),
+        band(&selected, first)
+    );
+    assert!(band(&selected, second) > 400, "and the second paragraph is highlighted whole: {} pixels", band(&selected, second));
+}
+
+/// A drag across two paragraphs then a font size takes both paragraphs' covered words,
+/// the way OneNote does, and the selection stays open for the next button.
+#[test]
+fn font_size_applies_to_a_selection_across_paragraphs() {
     let (_t, app, s) = sample_app("ui-cross-font-size");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.run();
@@ -6242,20 +6355,25 @@ fn font_size_does_not_change_the_wrong_text_for_a_cross_paragraph_selection() {
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
     assert!(!ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["across"].is_null());
-    let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Size").click();
     h.run();
     h.get_by_label("18").click();
     settle(&mut h);
-    assert_eq!(h.state().body().unwrap_or_default(), before, "unsupported cross-paragraph selection must not change an unrelated caret");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(body.matches("font-size: 18pt").count(), 2, "both paragraphs took the size:\n{body}");
+    let plain = body.replace("<span style=\"font-size: 18pt\">", "").replace("</span>", "");
+    assert!(plain.contains("First paragraph words") && plain.contains("Second paragraph words"), "the words are all still there:\n{plain}");
     let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
-    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
-    assert!(!inspection["page"]["across"].is_null(), "selection remains available after using the menu");
+    assert!(!inspection["page"]["across"].is_null(), "the selection is kept for the next change");
+    assert!(!inspection["status"]["text"].as_str().unwrap_or_default().contains("not available"), "no limitation is reported: {inspection}");
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("font-size: 18pt"), "undo takes the size back off both paragraphs");
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[test]
-fn font_family_preserves_cross_paragraph_selection_and_reports_limitation() {
+fn font_family_applies_to_a_selection_across_paragraphs() {
     let catalog = match notecraft_ui_egui::fonts::system::Catalog::discover() {
         Ok(catalog) => catalog,
         Err(error) => {
@@ -6276,19 +6394,18 @@ fn font_family_preserves_cross_paragraph_selection_and_reports_limitation() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    let before = h.state().body().unwrap_or_default().to_string();
     h.get_by_label("Font Family").click();
     h.run();
     h.get_by_label(family).click();
     settle(&mut h);
-    assert_eq!(h.state().body().unwrap_or_default(), before);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(body.matches("font-family:").count(), 2, "both paragraphs took the family:\n{body}");
     let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
-    assert!(!inspection["page"]["across"].is_null());
-    assert!(inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"));
+    assert!(!inspection["page"]["across"].is_null(), "the selection is kept for the next change");
 }
 
 #[test]
-fn font_marks_preserve_cross_paragraph_selection_and_report_limitation() {
+fn font_marks_apply_to_a_selection_across_paragraphs() {
     let (_t, app, s) = sample_app("ui-cross-font-marks");
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.run();
@@ -6301,16 +6418,21 @@ fn font_marks_preserve_cross_paragraph_selection_and_report_limitation() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    let before = h.state().body().unwrap_or_default().to_string();
     for label in ["Bold", "Italic", "Strikethrough", "Underline", "Subscript", "Superscript"] {
+        let before = h.state().body().unwrap_or_default().to_string();
         h.get_by_label(label).click();
         settle(&mut h);
-        assert_eq!(h.state().body().unwrap_or_default(), before, "{label} must not change unrelated text");
+        let after = h.state().body().unwrap_or_default().to_string();
+        assert_ne!(after, before, "{label} changes the covered words in both paragraphs");
+        let plain = ["**", "~~", "<u>", "</u>", "<sub>", "</sub>", "<sup>", "</sup>", "`", "*"]
+            .iter()
+            .fold(after.clone(), |text, mark| text.replace(mark, ""));
+        assert!(plain.contains("First paragraph words") && plain.contains("Second paragraph words"), "{label} kept the words:\n{plain}");
         let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
         assert!(!inspection["page"]["across"].is_null(), "{label} must preserve the selection");
         assert!(
-            inspection["status"]["text"].as_str().unwrap_or_default().contains("not available for this selection"),
-            "{label} must report the limitation: {inspection}"
+            !inspection["status"]["text"].as_str().unwrap_or_default().contains("not available"),
+            "{label} must not report the limitation: {inspection}"
         );
     }
 }

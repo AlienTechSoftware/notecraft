@@ -233,6 +233,7 @@ pub enum InlineFormat {
     Underline,
     Subscript,
     Superscript,
+    Code,
     Size(u8),
     Family(String),
 }
@@ -255,6 +256,7 @@ pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, f
         InlineFormat::Underline => span.underline,
         InlineFormat::Subscript => span.script == Some(Script::Subscript),
         InlineFormat::Superscript => span.script == Some(Script::Superscript),
+        InlineFormat::Code => span.code,
         InlineFormat::Size(size) => span.font_size == Some(*size),
         InlineFormat::Family(family) => span.font_family.as_ref() == Some(family),
     };
@@ -294,6 +296,7 @@ pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, f
                         InlineFormat::Underline => piece.underline = !all,
                         InlineFormat::Subscript => piece.script = (!all).then_some(Script::Subscript),
                         InlineFormat::Superscript => piece.script = (!all).then_some(Script::Superscript),
+                        InlineFormat::Code => piece.code = !all,
                         InlineFormat::Size(size) => piece.font_size = Some(*size),
                         InlineFormat::Family(family) => piece.font_family = Some(family.clone()),
                     }
@@ -1068,6 +1071,9 @@ fn table(
                         egui::Frame::NONE.inner_margin(egui::Margin::symmetric(pad_x as i8, pad_y as i8)).show(ui, |ui| {
                             ui.set_min_width(inner);
                             ui.set_max_width(inner);
+                            // An empty cell is a line high, as a cell with words in it is, so
+                            // there is something to click (issue #147).
+                            ui.set_min_height(ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(14.5 * zoom))));
                             if here == Some(cell) && picked.is_none() {
                                 let Some(caret) = caret.as_mut() else { return };
                                 caret.ensure_inline(block);
@@ -1225,6 +1231,23 @@ fn table(
     if on_handle {
         // A press on a border is a resize, not the start of a block of cells.
         ui.memory_mut(|m| m.data.remove_temp::<(usize, usize)>(anchor_id));
+    }
+
+    // A click anywhere in a cell goes into it, not only a click on its words: an empty cell
+    // has no words to click, and the space after a short word is most of the cell (issue
+    // #147). Not on a border, which is a resize; not in the cell already being written in,
+    // whose text box places the caret itself; and not when something is drawn over the table.
+    let clicked = ui.input(|i| i.pointer.primary_clicked());
+    if action.is_none()
+        && clicked
+        && !on_border
+        && !on_handle
+        && let (Some(p), Some(cell)) = (at, over)
+        && ui.clip_rect().contains(p)
+        && ui.ctx().layer_id_at(p) == Some(ui.layer_id())
+        && (here != Some(cell) || picked.is_some())
+    {
+        action = Some(Action::EnterCell(i, cell));
     }
 
     ui.add_space(6.0);
@@ -2018,7 +2041,10 @@ pub fn show_blocks(
                         true,
                         page,
                         justified.strength_of(i),
-                        across.filter(|a| !a.inside_one_block()).and_then(|a| a.covering(i, block_text(&block).len())),
+                        across
+                            .filter(|a| !a.inside_one_block())
+                            .and_then(|a| a.covering(i, block_text(&block).len()))
+                            .and_then(|(a, b)| drawn_covering(&block, a, b)),
                         ui.make_persistent_id(("page-block", i)),
                         zoom,
                     )
@@ -2052,8 +2078,7 @@ pub fn show_blocks(
             {
                 let at = char_under(ui, &block, &resp, p, t, page);
                 if across.is_none() {
-                    let byte = byte_of(&block_text(&block), at);
-                    *across = Some(Across { from: (i, byte), to: (i, byte) });
+                    *across = Some(Across { from: (i, byte_of_caret(&block, at)), to: (i, byte_of_caret(&block, at)) });
                 }
                 action = Some(Action::MoveTo(i, Some(at)));
             }
@@ -2063,7 +2088,7 @@ pub fn show_blocks(
                 && let Some(p) = ui.ctx().pointer_latest_pos()
                 && resp.rect.contains(p)
             {
-                let at = byte_of(&block_text(&block), char_under(ui, &block, &resp, p, t, page));
+                let at = byte_of_caret(&block, char_under(ui, &block, &resp, p, t, page));
                 match across.as_mut() {
                     // Already open: this is where it reaches now, the block it began in
                     // included, so dragging back the way it came shortens it again.
@@ -2073,8 +2098,10 @@ pub fn show_blocks(
                     // page. It has now left that block, so the selection becomes the page's
                     // and keeps the anchor the text box was holding.
                     None => {
-                        if let Some(c) = caret.as_ref().filter(|c| c.block != i) {
-                            *across = Some(Across { from: (c.block, byte_of(&c.text, c.selection.1)), to: (i, at) });
+                        if let Some(c) = caret.as_ref().filter(|c| c.block != i)
+                            && let Some(anchor_block) = blocks.get(c.block)
+                        {
+                            *across = Some(Across { from: (c.block, byte_of_caret(anchor_block, c.selection.1)), to: (i, at) });
                         }
                     }
                 }
@@ -2218,6 +2245,103 @@ pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
     }
     renumber(blocks);
     (first, at)
+}
+
+/// `covering`'s bytes of `block_text` as bytes of the block's drawn words, which is what
+/// the preview's selection bands measure in: the editable text carries marks and the tag
+/// marker the drawn line never shows.
+fn drawn_covering(block: &Block, a: usize, b: usize) -> Option<(usize, usize)> {
+    spans_of(block)?;
+    let whole = block_text(block);
+    let range = chars_of(&whole, a)..chars_of(&whole, b);
+    InlineEdit::new(block, false).drawn_range(range)
+}
+
+/// Byte offset in `block_text` of caret-text character `at`.
+///
+/// The caret's text drops the tag marker and writes an inline image as one character,
+/// while `block_text` keeps the marker and the image's markup; `at` counts the caret's
+/// characters, so the markup it skipped has to be added back.
+fn byte_of_caret(block: &Block, at: usize) -> usize {
+    let whole = block_text(block);
+    let prefix = whole.chars().count() - Tag::split(&whole).1.chars().count();
+    let mut pos = at + prefix;
+    let edit = InlineEdit::new(block, true);
+    for (image_at, span) in edit.images() {
+        if *image_at >= at {
+            break;
+        }
+        pos += spans_to_editor(std::slice::from_ref(span)).chars().count().saturating_sub(1);
+    }
+    byte_of_char(&whole, pos.min(whole.chars().count()))
+}
+
+/// The byte offset of the `at`-th character of `text`, or its end.
+fn byte_of_char(text: &str, at: usize) -> usize {
+    text.char_indices().nth(at).map(|(byte, _)| byte).unwrap_or(text.len())
+}
+
+/// An inline format over a selection that runs across blocks: every covered block's
+/// covered words take it, the way the marks do when a whole box is picked. A block that
+/// holds no spans - a table, a picture, code, an equation - is left alone.
+///
+/// Returns the selection with its ends remapped, because formatting can change how long a
+/// block's editable text is; `None` when nothing formattable was covered. The covered
+/// words themselves never change, so the same words stay selected.
+pub fn format_across(blocks: &mut [Block], across: Across, format: InlineFormat) -> Option<Across> {
+    if across.inside_one_block() {
+        return None;
+    }
+    let (first, last) = across.ends();
+    let mut changed = false;
+    // Where each edge of the selection lands in the text its block has afterwards, so the
+    // stored byte offsets still point at the same words.
+    let mut start_byte = None;
+    let mut end_byte = None;
+    for index in across.blocks() {
+        let Some(block) = blocks.get(index) else { continue };
+        if spans_of(block).is_none() {
+            continue;
+        }
+        let whole = block_text(block);
+        let Some((a, b)) = across.covering(index, whole.len()) else { continue };
+        let (Some(a), Some(b)) = (whole.get(..a), whole.get(..b)) else { continue };
+        let covered = (a.chars().count(), b.chars().count());
+        // The caret's own text drops the tag marker, which is not words and must not be
+        // formatted; `covered` is counted in the whole block's text, so the marker's
+        // characters come off the front of the range.
+        let prefix = whole.chars().count() - Tag::split(&whole).1.chars().count();
+        let mut edit = InlineEdit::new(block, true);
+        let text = edit.text().to_owned();
+        let range = (covered.0.saturating_sub(prefix), covered.1.saturating_sub(prefix));
+        let Some((formatted, selection)) = edit.format(&text, range, format.clone()) else { continue };
+        let Some(block) = blocks.get_mut(index) else { continue };
+        edit.write(block, &formatted);
+        changed = true;
+        if index == first.0 || index == last.0 {
+            let now = block_text(block);
+            let mark = now.chars().count() - Tag::split(&now).1.chars().count();
+            let byte_at = |at: usize| byte_of_char(&now, mark + at);
+            if index == first.0 {
+                start_byte = Some(byte_at(selection.0.min(selection.1)));
+            }
+            if index == last.0 {
+                end_byte = Some(byte_at(selection.0.max(selection.1)));
+            }
+        }
+    }
+    if !changed {
+        return None;
+    }
+    let mut next = across;
+    // The drag may have run upwards, so `from` is not always the first block in the page.
+    if let Some(byte) = start_byte {
+        if next.from.0 == first.0 { next.from.1 = byte } else { next.to.1 = byte }
+    }
+    if let Some(byte) = end_byte {
+        if next.from.0 == last.0 { next.from.1 = byte } else { next.to.1 = byte }
+    }
+    Some(next)
 }
 
 /// Where a drag began, when it began inside `rect` and is still going.
@@ -3213,6 +3337,78 @@ mod tests {
             let body = to_body(format, &original);
             assert_eq!(preview::blocks_for(format, &body), original, "{format:?}: {body}");
         }
+    }
+
+    /// A format over a selection that runs across blocks takes each block's covered words,
+    /// leaves the rest of the page alone, and keeps the selection's ends on the same words.
+    #[test]
+    fn a_format_runs_across_the_blocks_a_selection_covers() {
+        let words = |b: &Block| spans_of(b).unwrap_or(&[]).iter().map(|s| s.text.as_str()).collect::<String>();
+        let mut b = blocks("one two\n\n#idea three four\n\nfive six\n");
+        let first = block_text(&b[0]);
+        let second = block_text(&b[1]);
+        let across = Across { from: (0, first.len() / 2), to: (1, second.len() / 2) };
+        let next = format_across(&mut b, across, InlineFormat::Size(18)).expect("formatted");
+        // Both edge blocks took the size on their covered words; the block below did not.
+        for (index, sized) in [(0usize, true), (1, true), (2, false)] {
+            let hit = spans_of(&b[index]).unwrap_or(&[]).iter().any(|s| s.font_size == Some(18));
+            assert_eq!(hit, sized, "block {index}");
+        }
+        // No word was lost or gained, and the tag marker is not words: it stays put.
+        assert_eq!(words(&b[0]), "one two");
+        assert_eq!(words(&b[1]), "#idea three four");
+        assert_eq!(words(&b[2]), "five six");
+        assert_eq!(tag_of(&b[1]).0, Some(Tag::Idea));
+        // The remapped ends still cover words in both blocks.
+        assert!(next.covering(0, block_text(&b[0]).len()).is_some());
+        assert!(next.covering(1, block_text(&b[1]).len()).is_some());
+        // The same selection takes and loses a mark like it does inside one block.
+        let bold = format_across(&mut b, next, InlineFormat::Bold).expect("bold");
+        assert!(format_across(&mut b, bold, InlineFormat::Bold).is_some());
+        assert!(matches!(&b[2], Block::Paragraph(spans) if spans.iter().all(|s| !s.bold)));
+    }
+
+    /// The bands a cross-paragraph selection paints are measured in the words on the
+    /// page, not in the editable text's marks: `**`, `[x](y)` and the `#tag` marker are
+    /// not drawn, so a byte of one is not a byte of the other.
+    #[test]
+    fn a_covering_range_maps_to_the_drawn_words() {
+        // A link and bold marks lengthen the editable text; the drawn words do not have them.
+        let block = blocks("see [the format page](../format-ideas/) and **this** too").remove(0);
+        let whole = block_text(&block);
+        let drawn = "see the format page and this too";
+        // From the "and" to the end of the line.
+        let start = whole.match_indices("and **this**").next().expect("the words").0;
+        let (a, b) = drawn_covering(&block, start, whole.len()).expect("covered");
+        assert_eq!(&drawn[a..b], "and this too");
+        // The whole line covers every drawn word, marks and all.
+        let (a, b) = drawn_covering(&block, 0, whole.len()).expect("covered");
+        assert_eq!(&drawn[a..b], drawn);
+
+        // A tag marker is not words either.
+        let block = blocks("#idea hello world").remove(0);
+        let whole = block_text(&block);
+        let start = whole.match_indices("world").next().expect("the words").0;
+        let (a, b) = drawn_covering(&block, start, whole.len()).expect("covered");
+        assert_eq!(&"hello world"[a..b], "world");
+    }
+
+    /// `Across` endpoints count caret characters; `block_text` also holds the tag
+    /// marker and an image's markup, which the caret's text does not.
+    #[test]
+    fn a_caret_position_maps_back_into_the_block_text() {
+        let plain = blocks("plain words").remove(0);
+        assert_eq!(byte_of_caret(&plain, 3), byte_of_char(&block_text(&plain), 3));
+
+        let tagged = blocks("#idea hello").remove(0);
+        let whole = block_text(&tagged);
+        assert_eq!(byte_of_caret(&tagged, 0), byte_of_char(&whole, "#idea ".len()));
+        assert_eq!(byte_of_caret(&tagged, 5), byte_of_char(&whole, "#idea ".len() + 5));
+
+        let imaged = blocks("before ![a picture](assets/picture.png) after").remove(0);
+        // Caret position 8 is just past the image's one caret character.
+        let whole = block_text(&imaged);
+        assert_eq!(byte_of_caret(&imaged, 8), whole.find(" after").expect("the words"));
     }
 
     #[test]
