@@ -15,6 +15,7 @@ notecraft-model = { workspace = true }
 notecraft-formats = { workspace = true }
 notecraft-onenote = { workspace = true }
 notecraft-store = { workspace = true }
+cab = { workspace = true }
 
 [dev-dependencies]
 notecraft-onenote = { workspace = true, features = ["testing"] }

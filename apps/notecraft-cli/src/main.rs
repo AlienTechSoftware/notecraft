@@ -101,7 +101,9 @@ fn open_in_window(root: &Path, explicit_root: bool, connect: Option<String>, res
 
 const IMPORT_HELP: &str = r"notecraft-cli import onenote [SOURCE] [options]
 
-SOURCE is a folder of OneNote section files (.one), searched all the way down, or one .one file.
+SOURCE is a folder of OneNote section files (.one), searched all the way down, or one .one file,
+or a OneNote package (.onepkg). A package, given alone or found in the folder, is unpacked and
+imported as a notebook named after it.
 Left out on Windows, it is the OneNote backup folder: %LOCALAPPDATA%\Microsoft\OneNote\16.0\Backup.
 The first folder under SOURCE becomes a notebook, folders below it section groups, each .one file a
 section, each page a folder, sub-pages folders inside their page. Pictures and files go in the
@@ -116,8 +118,9 @@ page's assets folder. SOURCE is only read.
 
 const OFFICEIMO_HELP: &str = r"notecraft-cli import officeimo SOURCE [options]
 
-SOURCE is one .one file or a folder tree. A folder becomes a notebook, nested folders become
-section groups, and .one files become sections. OneNote_RecycleBin is skipped.
+SOURCE is one .one file, a OneNote package (.onepkg) or a folder tree. A folder, or a package's
+contents, becomes a notebook, nested folders become section groups, and .one files become
+sections. OneNote_RecycleBin is skipped.
 The bridge is selected by NOTECRAFT_OFFICEIMO_BRIDGE or the platform cache.
 
   --to FOLDER          write the generated notebook under this folder

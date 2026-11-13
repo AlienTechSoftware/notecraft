@@ -28,6 +28,9 @@ is, where it came from, its license status) is in ATTRIBUTION.md.
   and with substitute fonts from PDFium (Foxit Software Inc. copyright) compiled into the program.
   The notices those licences require are in licenses/PDF-RENDERING-NOTICES.txt, which ships with
   every build. See ATTRIBUTION.md.
+- OneNote packages (.onepkg) are unpacked with the cab crate (Matthew D. Steele, MIT License),
+  which uses lzxd (Lonami Exo, MIT OR Apache-2.0) and byteorder (Andrew Gallant, MIT OR
+  Unlicense), linked into the importer.
 - The window also uses the fonts bundled with egui, which carry their own licenses; those ship
   with the egui crates.
 - Dependencies are listed in Cargo.lock, each under its own license. A license audit of them
