@@ -2237,6 +2237,40 @@ fn page_ink_crosses_a_diagram_container_edge() {
     assert!(visible_red(ox + 150.0, y2), "ink remains visible when a stroke starts on open paper and enters the container");
 }
 
+/// Issue #22: the pen drew only over a text block; on the open canvas around and below the
+/// writing nothing was laid down. Strokes far from any text, to the right of the page column
+/// and below the last line, are strokes of the page's ink like any other.
+#[test]
+fn the_pen_draws_on_open_canvas_away_from_any_text() {
+    for html in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-draw-open-canvas");
+        let page = if html { &s.html_page } else { &s.md_page };
+        app.open_path(&page.to_string_lossy());
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        pump(&mut h);
+        h.get_by_label("Pen red").click();
+        pump(&mut h);
+        let area = h.state().page_rect().expect("the page is on the screen");
+        // Each stroke starts and stays on open canvas: beside the page column, and under the writing.
+        let strokes = [(area.max.x - 140.0, area.min.y + 120.0), (area.min.x + 60.0, area.max.y - 90.0)];
+        for (n, (x, y)) in strokes.into_iter().enumerate() {
+            ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
+            pump(&mut h);
+            for step in 1..=4 {
+                ask(&mut h, "ui.move", json!({"x": x + step as f32 * 20.0, "y": y + step as f32 * 6.0})).expect("move");
+                pump(&mut h);
+            }
+            ask(&mut h, "ui.release", json!({"x": x + 80.0, "y": y + 24.0})).expect("up");
+            settle(&mut h);
+            let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+            assert_eq!(ink["strokes"].as_u64(), Some(n as u64 + 1), "html={html}: stroke {n} at ({x},{y}) was laid down: {ink}");
+        }
+        assert!(page.join("ink.svg").exists(), "html={html}: and written beside the page");
+    }
+}
+
 /// The same on an HTML page, and the ink comes back when the page is opened again.
 #[test]
 fn ink_comes_back_when_the_page_is_opened_again() {
@@ -4372,6 +4406,59 @@ fn a_diagram_past_the_size_limit_is_refused_at_once_and_its_source_is_kept() {
     assert!(text.contains("N300[Node 300]"), "the source is untouched");
 }
 
+/// Issue #55: after the page file was changed in the source view, closing the view left the
+/// page unable to take a caret, so it could only be changed as HTML from then on.
+#[test]
+fn the_page_can_be_written_in_after_its_source_was_changed() {
+    let (_t, app, s) = sample_app("ui-source-then-edit");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    h.state_mut().set_show_source(true);
+    settle(&mut h);
+    // A change in the source: a word in the first paragraph.
+    let editor = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|n| n.value().is_some_and(|v| v.contains("Kickoff notes")))
+        .expect("the page file in the code view")
+        .rect();
+    ask(&mut h, "ui.click", json!({"x": editor.center().x, "y": editor.min.y + 4.0})).expect("into the source");
+    settle(&mut h);
+    // Down to the line inside <body> that holds the page, and to its end.
+    let file = std::fs::read_to_string(s.html_page.join("index.html")).expect("page file");
+    let line = file.lines().position(|l| l.contains("Kickoff notes")).expect("the body line");
+    ask(&mut h, "ui.key", json!({"key": "Home", "ctrl": true})).expect("top");
+    settle(&mut h);
+    for _ in 0..line {
+        ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
+        settle(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end of the line");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "<p>Typed in the source</p>"})).expect("type in the source");
+    settle(&mut h);
+    let file = std::fs::read_to_string(s.html_page.join("index.html")).expect("page file");
+    assert!(file.contains("Typed in the source"), "the source change was written:\n{file}");
+
+    // Back to the page, as the toolbar button does.
+    h.get_by_label("Page source").click();
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state["page"]["writable"], json!(true), "the page can still be written in: {}", state["page"]);
+    assert!(h.state().body().unwrap_or_default().contains("Typed in the source"), "the page shows the source change");
+
+    let para = h.get_by_label("Typed in the source").rect();
+    ask(&mut h, "ui.click", json!({"x": para.max.x - 2.0, "y": para.center().y})).expect("into the page");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert!(!caret.is_null(), "a click puts the caret in the page");
+    ask(&mut h, "ui.text", json!({"text": " and in the page"})).expect("type in the page");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("and in the page"), "what was typed in the page went in:\n{body}");
+}
+
 /// The code view names the language of the file it shows and colours it, and a Find bar under the
 /// editor looks in that file: Ctrl+F opens it, typing finds, Enter and Shift+Enter step through the
 /// matches, and Escape closes it with the match selected in the text.
@@ -4570,6 +4657,73 @@ fn the_code_view_lists_the_pages_files_and_shows_the_one_that_is_picked() {
     h.state_mut().set_show_source(false);
     settle(&mut h);
     assert_eq!(h.query_all_by_label_contains("FILES IN THIS PAGE").count(), 0, "the list is gone with the view");
+}
+
+/// Issue #137: the direct colour entry shares the existing page-colour state/actions.
+#[test]
+fn view_page_colour_uses_the_existing_palette_and_persists_only_on_its_page() {
+    use egui_kittest::kittest::NodeT as _;
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-direct-page-colour");
+        let mut h = sized_harness(app, theme, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("View").click();
+        settle(&mut h);
+        assert!(h.get_by_label("Page colour").accesskit_node().is_disabled(), "no page, no page-colour action");
+        for (page, other, format) in [(&s.md_page, &s.html_page, "cmgfm"), (&s.html_page, &s.md_page, "html")] {
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert!(!h.get_by_label("Page colour").accesskit_node().is_disabled());
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(h.get_by_label("No colour").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+            for colour in notecraft_model::NodeColor::ALL {
+                assert_eq!(h.get_by_label(colour.label()).accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+            }
+            review(&mut h, &format!("page_colour_palette_{format}_{}", theme.id()));
+            ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss palette");
+            settle(&mut h);
+            assert_eq!(h.query_all_by_label("No colour").count(), 0, "Escape dismisses the palette");
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            h.get_by_label("Yellow").click();
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("yellow page")["pageColour"], json!("yellow"));
+            h.state_mut().open_path(&other.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("other page")["pageColour"], Value::Null, "colour is page-specific");
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("reopened")["pageColour"], json!("yellow"));
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Yellow").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "shared gallery shows the direct choice"
+            );
+            h.get_by_label("College ruled").click();
+            settle(&mut h);
+            h.get_by_label("Format Background").click();
+            settle(&mut h);
+            h.get_by_label("Blue").click();
+            settle(&mut h);
+            h.get_by_label("Page colour").click();
+            settle(&mut h);
+            assert_eq!(
+                h.get_by_label("Blue").accesskit_node().toggled(),
+                Some(egui::accesskit::Toggled::True),
+                "direct palette shows the combined gallery choice"
+            );
+            h.get_by_label("No colour").click();
+            settle(&mut h);
+            h.state_mut().open_path(&page.to_string_lossy());
+            settle(&mut h);
+            let cleared = ask(&mut h, "ui.inspect", json!({})).expect("cleared colour");
+            assert_eq!(cleared["pageColour"], Value::Null, "No colour survives reopening");
+            assert_eq!(cleared["paper"], json!("college"), "clearing colour preserves the separate paper style");
+        }
+    }
 }
 
 /// The paper a page is drawn on and the colour behind it are the page's own: chosen in

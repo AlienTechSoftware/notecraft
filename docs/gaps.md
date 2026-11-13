@@ -318,8 +318,9 @@ it is fixed and tested, not when it is promised.
   blocks themselves stay in reading order in the file, so a page read anywhere else is
   unchanged; if the counts and the blocks ever disagree, everything goes back into one box
   rather than losing a word.
-- **Paper and page colour are the page's own.** Draw, then Format Background, gives the
-  open page its rule lines or squares and a pale colour behind the words, and both are
+- **Paper and page colour are the page's own.** Format Background on Draw or View gives
+  the open page its rule lines or squares and a pale colour behind the words. View's
+  Page colour opens the same colour palette directly, including No colour. Both choices are
   written into that page's head (`notecraft:paper`, `notecraft:page-color`), so a page
   keeps them and another page is not touched. The window's own rule-lines setting stays as
   what a page with none of its own is drawn on. **Not built:** a rule line colour, and
