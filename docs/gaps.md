@@ -296,7 +296,9 @@ it is fixed and tested, not when it is promised.
 - **The Quick Access Toolbar is part of OneNote's.** It has Back, Forward, Undo and Redo, a menu to
   choose which show, to put it under the ribbon or to hide it, and the choices are kept. OneNote's
   menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands: none exist here, so they
-  are not listed. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons. Undo
+  are not listed. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
+  Ctrl+Page Up and Ctrl+Page Down open the page above or below in the page list, subpages included
+  when their page is expanded, and stop at the first and last page. Undo
   covers the page's words and boxes (a typing burst is one step); ink keeps its own undo and has no
   redo, so Redo never brings a stroke back. In a text box Ctrl+Z is still the text box's own. When the
   strip is hidden a small arrow stays, so it can be brought back: OneNote hides it completely.
