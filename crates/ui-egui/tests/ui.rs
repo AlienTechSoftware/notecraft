@@ -8191,6 +8191,70 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
     }
 }
 
+/// Format Painter: click in formatted words, click Format Painter, pick other words, and they
+/// take that formatting; Escape puts a double-clicked painter down (issue #165).
+#[test]
+fn the_format_painter_puts_the_formatting_on_the_words_picked_next() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-format-painter");
+        let spans_of = |body: &str| -> Vec<notecraft_formats::Span> {
+            let md = if html { notecraft_formats::html::to_markdown(body) } else { body.to_string() };
+            notecraft_formats::markdown::parse(&md)
+                .into_iter()
+                .flat_map(|b| match b {
+                    notecraft_formats::Block::Paragraph(s) => s,
+                    _ => Vec::new(),
+                })
+                .collect()
+        };
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p><b><i>Big</i></b> plain words</p>" } else { "***Big*** plain words" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        settle(&mut h);
+        // Into "Big", which is bold and italic, then pick up its formatting.
+        for _ in 0..2 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        h.get_by_label("Format Painter").click();
+        settle(&mut h);
+        // Pick "words" (the last five letters) and let go of the pointer, which is when it paints.
+        // The ribbon took the keyboard; back into the line, as a click there would.
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("back into the line");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+        settle(&mut h);
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        let line = h.state().page_rect().expect("the page");
+        ask(&mut h, "ui.release", json!({"x": line.max.x - 4.0, "y": line.max.y - 4.0})).expect("let go");
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let spans = spans_of(&body);
+        assert!(spans.iter().any(|s| s.text.contains("words") && s.bold && s.italic), "html={html}: the picked words took the formatting:\n{body}");
+        assert!(spans.iter().any(|s| s.text.contains("plain") && !s.bold && !s.italic), "html={html}: and nothing else did:\n{body}");
+        assert!(body.contains("Big") && body.contains("plain") && body.contains("words"), "html={html}: the words are all there:\n{body}");
+
+        // Undo takes the painting back.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        let now = h.state().body().unwrap_or_default().to_string();
+        let spans = spans_of(&now);
+        assert!(spans.iter().any(|s| s.text.contains("words") && !s.bold), "html={html}: undo takes the formatting back off:\n{now}");
+    }
+}
+
 #[test]
 fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
     let (_t, app, s) = sample_app("ui-font-size-undo");

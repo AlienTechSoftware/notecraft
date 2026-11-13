@@ -268,6 +268,11 @@
 @id	ui.format_background_2	Format\nBackground
 @id	ui.format_for_this_page	Format for this page
 @id	ui.format_painter	Format Painter
+@id	ui.click_in_the_words_whose_formatting_to_copy	Click in the words whose formatting to copy
+@id	ui.pick_the_words_to_give_that_formatting	Pick the words to give that formatting
+@id	ui.format_painter_keeps_painting_until_escape	Format Painter keeps painting until Escape
+@id	ui.format_painter_put_down	Format Painter put down
+@id	ui.format_painter_tip	Copy the formatting at the caret to the next words you pick. Double-click to keep painting until Escape.
 @id	ui.forward	Forward
 @id	ui.forward_to_the_page_after_alt_right	Forward to the page after (Alt+Right)
 @id	ui.fountain_pen	Fountain Pen
