@@ -832,3 +832,6 @@
 @id	ui.welcome_wizard_finish	[[RLI]]$$$Finish@@@[[PDI]]
 @id	ui.welcome_wizard_done_title	[[RLI]]$$$Thank you@@@[[PDI]]
 @id	ui.welcome_wizard_done_body	[[RLI]]$$$NoteCraft is ready to use. Your choices are saved. This setup appears again only after you reset the preferences.@@@[[PDI]]
+@id	ui.kept_in_this_tab	[[RLI]]$$$Kept in this tab@@@[[PDI]]
+@id	ui.session_only_storage_notice	[[RLI]]$$$Session-only notes: changes disappear when you reload or close this tab.@@@[[PDI]]
+@id	ui.session_storage_guard_failed	[[RLI]]$$$Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.@@@[[PDI]]

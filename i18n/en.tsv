@@ -832,3 +832,6 @@
 @id	ui.welcome_wizard_finish	Finish
 @id	ui.welcome_wizard_done_title	Thank you
 @id	ui.welcome_wizard_done_body	NoteCraft is ready to use. Your choices are saved. This setup appears again only after you reset the preferences.
+@id	ui.kept_in_this_tab	Kept in this tab
+@id	ui.session_only_storage_notice	Session-only notes: changes disappear when you reload or close this tab.
+@id	ui.session_storage_guard_failed	Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.

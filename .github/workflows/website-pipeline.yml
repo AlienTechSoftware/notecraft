@@ -89,6 +89,8 @@ jobs:
           set -eu
           python3 .github/web-build/apply-web-diff.py . .github/web-build/web.diff
           python3 .github/web-build/apply-web-patches.py . .github/web-build/patches.yaml
+          # The tab-close policy is platform-neutral and tested with real files on the host.
+          cargo test -p notecraft-web
           # Wasm SIMD: off by default for this target: egui's CPU rendering is noticeably faster with it
           # (this is the same rustflag daijro/openplayground's build.mjs sets), every current browser has it.
           mkdir -p .cargo

@@ -3,6 +3,19 @@
 Last reviewed: 2026-11-06. An honest list of what is missing or unproven. Remove an item when
 it is fixed and tested, not when it is promised.
 
+## Browser demo storage
+
+The standalone demo and invitation sessions keep notebook files only in the current tab.
+They show a session-only notice and use **Kept in this tab**, rather than **Saved**.
+Reloading or closing the tab still discards those files; this is not durable notebook storage.
+Standalone preferences can be retained separately in browser local storage.
+
+After note edits or notebook-file changes, the demo requests the browser's normal close/reload
+confirmation. Autosaving into the virtual file system does not clear that warning. Changing
+preferences alone does not arm it. Browser dialogs require user interaction and are not reliable
+for every mobile shutdown path, so copy any notes you want to keep before leaving the demo.
+Playground hosts with the Files API continue using their existing persistence path.
+
 ## Product
 
 - **Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V reach the words**, from 2026-10-19. None of them was

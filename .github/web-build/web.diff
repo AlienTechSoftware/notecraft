@@ -32,7 +32,7 @@ index 0000000..d9828a4
 +wasm-bindgen = "0.2"
 +wasm-bindgen-futures = "0.4"
 +js-sys = "0.3"
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "Storage", "console"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "Storage", "BeforeUnloadEvent", "console"] }
 diff --git a/apps/notecraft-web/Trunk.toml b/apps/notecraft-web/Trunk.toml
 new file mode 100644
 index 0000000..0b57fe8
@@ -48,7 +48,7 @@ new file mode 100644
 index 0000000..a88777c
 --- /dev/null
 +++ b/apps/notecraft-web/index.html
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +<!DOCTYPE html>
 +<html lang="en">
 +<head>
@@ -65,11 +65,13 @@ index 0000000..a88777c
 +    #notecraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 +    #notecraft_loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
 +      color: #555; font: 14px system-ui, sans-serif; pointer-events: none; }
++    .notecraft_sr_only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 +    @media (prefers-color-scheme: dark) { html, body { background: #1d1b22; } #notecraft_loading { color: #bbb; } }
 +  </style>
 +</head>
 +<body>
-+  <canvas id="notecraft_canvas"></canvas>
++  <canvas id="notecraft_canvas" aria-describedby="notecraft_storage_notice"></canvas>
++  <p id="notecraft_storage_notice" class="notecraft_sr_only" role="status" aria-live="polite"></p>
 +  <div id="notecraft_loading">Loading NoteCraft&hellip;</div>
 +</body>
 +</html>
@@ -78,6 +80,7 @@ new file mode 100644
 index 0000000..f4394fb
 --- /dev/null
 +++ b/apps/notecraft-web/src/main.rs
+@@ -0,0 +1,503 @@
 +// SPDX-License-Identifier: MIT OR Apache-2.0
 +//! NoteCraft in the browser, for Playground (patches/onenote.yaml in github.com/daijro/openplayground): the desktop
 +//! window (crates/ui-egui) on the page's canvas.
@@ -93,8 +96,13 @@ index 0000000..f4394fb
 +//! (16 MB) is a file next to the page, fetched the first time a page or a title needs it, and a pen's pressure
 +//! (pointer events, which eframe passes on without it) reaches the window as the touch force its ink reads.
 +
++#[cfg(any(target_arch = "wasm32", test))]
++#[path = "../../../.github/web-build/session_storage.web.rs"]
++mod session_storage;
++
 +#[cfg(target_arch = "wasm32")]
 +mod web {
++    use super::session_storage::SessionChanges;
 +    use eframe::egui;
 +    use notecraft_engine::{Output, Params, Session};
 +    use notecraft_model::playground::std::fs;
@@ -321,9 +329,32 @@ index 0000000..f4394fb
 +        /// Standalone site preferences use browser-local storage; invitation sessions stay transient.
 +        local_settings: bool,
 +        unsaved: Option<bool>,
++        session_changes: SessionChanges,
++        /// Keeps the callback alive and prevents repeating a failed registration alert.
++        unload_warning: Option<Closure<dyn Fn(web_sys::BeforeUnloadEvent)>>,
 +    }
 +
 +    impl Web {
++        /// Register only after note changes, not for a clean demo or preferences.
++        fn protect_session_changes(&mut self) {
++            if self.persist || !self.session_changes.needs_warning() || self.unload_warning.is_some() {
++                return;
++            }
++            let Some(window) = web_sys::window() else { return };
++            let warning = Closure::<dyn Fn(web_sys::BeforeUnloadEvent)>::new(|event: web_sys::BeforeUnloadEvent| {
++                event.prevent_default();
++                event.set_return_value("Notes in this tab will be lost.");
++            });
++            if window.add_event_listener_with_callback("beforeunload", warning.as_ref().unchecked_ref()).is_err() {
++                self.app.alert(
++                    "session-storage-guard",
++                    notecraft_ui_egui::i18n::t_id("ui.kept_in_this_tab"),
++                    notecraft_ui_egui::i18n::t_id("ui.session_storage_guard_failed"),
++                );
++            }
++            self.unload_warning = Some(warning);
++        }
++
 +        /// A page file Playground handed in: one of these notebooks' pages opens; any other becomes a new page in the
 +        /// Quick Notes notebook.
 +        fn open(&mut self, file: &JsValue) {
@@ -408,6 +439,7 @@ index 0000000..f4394fb
 +                    continue;
 +                }
 +                if !self.persist {
++                    self.session_changes.observe_file(&p);
 +                    if self.local_settings && p == Path::new(SETTINGS) {
 +                        if let (Some(storage), Ok(bytes)) = (browser_settings(), fs::read(&p)) {
 +                            if let Ok(contents) = String::from_utf8(bytes)
@@ -432,9 +464,22 @@ index 0000000..f4394fb
 +                }
 +            }
 +            self.faces();
-+            let unsaved = self.app.is_dirty();
++            let editor_unsaved = self.app.is_dirty();
++            if !self.persist {
++                self.session_changes.observe_editor(editor_unsaved);
++                self.protect_session_changes();
++            }
++            let unsaved = if self.persist { editor_unsaved } else { self.session_changes.needs_warning() };
 +            if self.unsaved.replace(unsaved) != Some(unsaved) {
 +                call("setUnsaved", &[unsaved.into()]);
++            }
++        }
++    }
++
++    impl Drop for Web {
++        fn drop(&mut self) {
++            if let (Some(window), Some(warning)) = (web_sys::window(), self.unload_warning.as_ref()) {
++                let _ = window.remove_event_listener_with_callback("beforeunload", warning.as_ref().unchecked_ref());
 +            }
 +        }
 +    }
@@ -487,6 +532,9 @@ index 0000000..f4394fb
 +            }
 +            let welcome_page = if !invited() { Some(ensure_welcome_notebook().await) } else { None };
 +            let document = web_sys::window().and_then(|w| w.document()).expect("no document");
++            if !persist && let Some(notice) = document.get_element_by_id("notecraft_storage_notice") {
++                notice.set_text_content(Some(notecraft_ui_egui::i18n::t_id("ui.session_only_storage_notice")));
++            }
 +            let canvas = document
 +                .get_element_by_id("notecraft_canvas")
 +                .and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok())
@@ -503,12 +551,22 @@ index 0000000..f4394fb
 +                        // The web demo has no first-use wizard: mark it seen, so it never opens here.
 +                        session.settings.set("privacy_welcome_seen", "true").map_err(|e| e.to_string())?;
 +                        let mut app = NoteCraftApp::new(session).with_welcome_notebook_setup(|_root, format| install_edition(format));
++                        if !persist {
++                            app = app.with_session_only_storage();
++                        }
 +                        if let Some(page) = welcome_page {
 +                            if let Some(page) = page.map_err(|e| e.to_string())? {
 +                                app.open_path(&page);
 +                            }
 +                        }
-+                        Ok(Box::new(Web { app, persist, local_settings, unsaved: None }))
++                        if !persist {
++                            // Bootstrap Welcome files are baseline, not user changes.
++                            let _ = fs::changes();
++                        }
++                        Ok(Box::new(Web {
++                            app, persist, local_settings, unsaved: None,
++                            session_changes: SessionChanges::new(Path::new(ROOT)), unload_warning: None,
++                        }))
 +                    }),
 +                )
 +                .await;
