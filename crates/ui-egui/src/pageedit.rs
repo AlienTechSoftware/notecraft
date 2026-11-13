@@ -1468,6 +1468,88 @@ pub fn linkable_address(address: &str) -> bool {
     !matches!(scheme.as_deref(), Some("javascript" | "vbscript" | "data"))
 }
 
+/// Sorts a table's rows by one column, as OneNote's Table > Sort does (issue #171). Whole rows
+/// move, so every cell stays with its row and keeps its formatting. The heading row is never
+/// sorted: it stays on top. `rows` limits the sort to the body rows from one table row to
+/// another (table rows count the heading as 0), for a picked block of rows; `None` sorts them
+/// all.
+///
+/// Cells are compared by their words. Two cells that both read as numbers (`1,200`, `-3.5`,
+/// `$40`, `12%`) compare as numbers; a number sorts before words; words compare without
+/// regard to case. Empty cells go last whichever way the sort runs, and rows that compare
+/// equal keep their order. Returns whether any row moved.
+pub fn sort_table(block: &mut Block, column: usize, rows: Option<(usize, usize)>, descending: bool) -> bool {
+    let Block::Table { rows: body, .. } = block else { return false };
+    if body.is_empty() {
+        return false;
+    }
+    // The body rows to sort, as indexes into `body`.
+    let (first, last) = match rows {
+        Some((a, b)) => (a.min(b).max(1) - 1, a.max(b).max(1) - 1),
+        None => (0, body.len() - 1),
+    };
+    let last = last.min(body.len() - 1);
+    if first >= last {
+        return false;
+    }
+    let key = |row: &Vec<Vec<Span>>| -> SortKey {
+        let words: String = row.get(column).map(|spans| spans.iter().map(|s| s.text.as_str()).collect()).unwrap_or_default();
+        SortKey::of(words.trim())
+    };
+    let before: Vec<Vec<Vec<Span>>> = body[first..=last].to_vec();
+    let mut keyed: Vec<(SortKey, Vec<Vec<Span>>)> = before.iter().map(|row| (key(row), row.clone())).collect();
+    keyed.sort_by(|(a, _), (b, _)| a.compare(b, descending));
+    let sorted: Vec<Vec<Vec<Span>>> = keyed.into_iter().map(|(_, row)| row).collect();
+    if sorted == before {
+        return false;
+    }
+    body.splice(first..=last, sorted);
+    true
+}
+
+/// What a cell is sorted by.
+#[derive(Debug, Clone, PartialEq)]
+enum SortKey {
+    Number(f64),
+    Words(String),
+    Empty,
+}
+
+impl SortKey {
+    fn of(words: &str) -> SortKey {
+        if words.is_empty() {
+            return SortKey::Empty;
+        }
+        // A number with what usually comes with one: a sign, a currency sign, thousands commas,
+        // a percent sign after it.
+        let bare: String = words.trim_start_matches(['$', '€', '£', '¥']).trim_end_matches('%').chars().filter(|c| *c != ',').collect();
+        match bare.parse::<f64>() {
+            Ok(n) if n.is_finite() => SortKey::Number(n),
+            _ => SortKey::Words(words.to_lowercase()),
+        }
+    }
+
+    /// The order of two keys. Empty cells are last both ways; the rest turn round for a
+    /// descending sort.
+    fn compare(&self, other: &SortKey, descending: bool) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        let rank = |k: &SortKey| match k {
+            SortKey::Number(_) => 0,
+            SortKey::Words(_) => 1,
+            SortKey::Empty => 2,
+        };
+        let order = match (self, other) {
+            (SortKey::Empty, SortKey::Empty) => return Ordering::Equal,
+            (SortKey::Empty, _) => return Ordering::Greater,
+            (_, SortKey::Empty) => return Ordering::Less,
+            (SortKey::Number(a), SortKey::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (SortKey::Words(a), SortKey::Words(b)) => a.cmp(b),
+            (a, b) => rank(a).cmp(&rank(b)),
+        };
+        if descending { order.reverse() } else { order }
+    }
+}
+
 /// How many cells a table has, as (rows including the heading, columns).
 pub fn table_size(block: &Block) -> Option<(usize, usize)> {
     let Block::Table { head, rows } = block else { return None };
@@ -3352,6 +3434,41 @@ mod tests {
         for bad in ["", "  ", "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "vbscript:x", "a\nb"] {
             assert!(!linkable_address(bad), "{bad:?}");
         }
+    }
+
+    /// Issue #171: Table > Sort moves whole rows by one column, keeps the heading on top,
+    /// compares numbers as numbers and puts empty cells last.
+    #[test]
+    fn a_table_sorts_whole_rows_by_one_column() {
+        let mut b = blocks("| Name | Amount |\n|---|---|\n| pear | 1,200 |\n| Apple | 30 |\n|  | 5 |\n| banana | $40 |\n").remove(0);
+        let column = |b: &Block, c: usize| -> Vec<String> {
+            let Block::Table { rows, .. } = b else { panic!("a table") };
+            rows.iter().map(|r| r[c].iter().map(|s| s.text.as_str()).collect::<String>()).collect()
+        };
+        assert!(sort_table(&mut b, 0, None, false));
+        assert_eq!(column(&b, 0), ["Apple", "banana", "pear", ""], "words without regard to case, the empty cell last");
+        assert_eq!(column(&b, 1), ["30", "$40", "1,200", "5"], "each row kept together");
+        assert!(sort_table(&mut b, 0, None, true));
+        assert_eq!(column(&b, 0), ["pear", "banana", "Apple", ""], "descending, the empty cell still last");
+
+        assert!(sort_table(&mut b, 1, None, false));
+        assert_eq!(column(&b, 1), ["5", "30", "$40", "1,200"], "numbers as numbers, not as words");
+        let Block::Table { head, .. } = &b else { panic!("a table") };
+        assert_eq!(head[0].iter().map(|s| s.text.as_str()).collect::<String>(), "Name", "the heading stays on top");
+        assert!(!sort_table(&mut b, 1, None, false), "already in that order: nothing moves");
+
+        // Only the picked rows (table rows 2 to 3, which count the heading as 0).
+        assert!(sort_table(&mut b, 1, Some((2, 3)), true));
+        assert_eq!(column(&b, 1), ["5", "$40", "30", "1,200"], "only the picked rows turned round");
+    }
+
+    #[test]
+    fn numbers_sort_before_words() {
+        let mut b = blocks("| A |\n|---|\n| zed |\n| 7 |\n| alpha |\n| -2.5 |\n").remove(0);
+        assert!(sort_table(&mut b, 0, None, false));
+        let Block::Table { rows, .. } = &b else { panic!("a table") };
+        let got: Vec<String> = rows.iter().map(|r| r[0].iter().map(|s| s.text.as_str()).collect()).collect();
+        assert_eq!(got, ["-2.5", "7", "alpha", "zed"]);
     }
 
     #[test]
