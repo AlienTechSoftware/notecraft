@@ -2750,9 +2750,9 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         // how those cells are aligned now; none is lit when they differ.
         use notecraft_model::tablecols::Align as A;
         for (align, icon, label, tip) in [
-            (A::Left, Icon::DirLtr, "Align\nLeft", "Line the words up with the left of the cell"),
-            (A::Center, Icon::DirLtr, "Center", "Put the words in the middle of the cell"),
-            (A::Right, Icon::DirRtl, "Align\nRight", "Line the words up with the right of the cell"),
+            (A::Left, Icon::DirLtr, crate::tl_id!("ui.table_align_left"), crate::tl_id!("ui.table_align_left_tip")),
+            (A::Center, Icon::DirLtr, crate::tl_id!("ui.table_align_center"), crate::tl_id!("ui.table_align_center_tip")),
+            (A::Right, Icon::DirRtl, crate::tl_id!("ui.table_align_right"), crate::tl_id!("ui.table_align_right_tip")),
         ] {
             if big_on(ui, icon, label, tip, view.table_align == Some(align), t).clicked() {
                 acts.push(Act::TableAlign(align));
