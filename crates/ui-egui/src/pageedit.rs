@@ -980,7 +980,7 @@ pub fn click_below(blocks: &mut Vec<Block>, caret: &mut Option<Caret>) -> bool {
 /// A column used to take a share of whatever room was going, so widening a container
 /// stretched the table with it. OneNote does not: a table is its own size and stays that
 /// size while the paper around it changes, so that is what this is.
-const COLUMN_W: f32 = 160.0;
+pub(crate) const COLUMN_W: f32 = 160.0;
 
 /// Room round the words inside a cell, inside its border lines.
 const PAD_X: f32 = 7.0;
@@ -1750,7 +1750,7 @@ pub fn show_blocks(
                 }
                 frame_block(ui, top, outlined, t, zoom);
                 if let Some(a) = action.take() {
-                    apply(a, blocks, caret, &mut changed);
+                    apply_keeping_widths(a, blocks, caret, &mut changed, cols);
                 }
                 continue;
             }
@@ -2129,7 +2129,7 @@ pub fn show_blocks(
         }
     }
     if let Some(a) = action {
-        apply(a, blocks, caret, &mut changed);
+        apply_keeping_widths(a, blocks, caret, &mut changed, cols);
     }
     changed
 }
@@ -2783,6 +2783,45 @@ fn commit(blocks: &mut [Block], caret: &mut Option<Caret>) {
     {
         c.write(b);
     }
+}
+
+/// [`apply`], and the table widths the page keeps move with their tables when the action puts
+/// a block in or takes one out: Enter splitting a line, Backspace joining one to the line
+/// above, a paste. A width is kept against a table's place among the blocks, so without this
+/// a table after the change lost its widths, or another table took them (issue #154).
+fn apply_keeping_widths(
+    action: Action,
+    blocks: &mut Vec<Block>,
+    caret: &mut Option<Caret>,
+    changed: &mut Changed,
+    cols: &mut notecraft_model::tablecols::Widths,
+) {
+    let before = blocks.len();
+    // Which block the action takes out, if it does (`Some` for certain; the bool says it
+    // happens only when the count drops), and where the blocks it puts in start.
+    let reshape = match &action {
+        Action::Split(at) => Some((None, *at + 1)),
+        Action::JoinBack(at) => Some((Some((*at, true)), *at)),
+        Action::Paste(at, _) => {
+            // An empty line is replaced by what is pasted; otherwise it goes in after the line.
+            let empty = blocks.get(*at).map(|b| block_text(b).trim().is_empty()).unwrap_or(false);
+            Some(if empty { (Some((*at, false)), *at) } else { (None, *at + 1) })
+        }
+        _ => None,
+    };
+    apply(action, blocks, caret, changed);
+    let Some((removed, inserted_at)) = reshape else { return };
+    let now = blocks.len();
+    let removed = removed.filter(|(_, only_if_fewer)| !only_if_fewer || now < before).map(|(at, _)| at);
+    let inserted = (now + usize::from(removed.is_some())).saturating_sub(before);
+    let mut moved = false;
+    if let Some(at) = removed {
+        moved |= cols.remove_blocks(at..at + 1);
+    }
+    for offset in 0..inserted {
+        moved |= cols.insert_block(inserted_at + offset);
+    }
+    changed.columns |= moved;
 }
 
 fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, changed: &mut Changed) {

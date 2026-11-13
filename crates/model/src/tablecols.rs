@@ -67,6 +67,30 @@ impl Widths {
         moved
     }
 
+    /// A column was put into the table at block `block`, at column `at`. The columns from
+    /// there on keep their widths, moved one along, and the new one is `width` wide, so a
+    /// width stays with the column it was dragged for (issue #154). True when anything
+    /// changed; a table never dragged has nothing kept and stays that way.
+    pub fn insert_column(&mut self, block: usize, at: usize, width: f32) -> bool {
+        let Some((_, widths)) = self.tables.iter_mut().find(|(b, _)| *b == block) else { return false };
+        if widths.len() >= MAX_COLUMNS {
+            return false;
+        }
+        widths.insert(at.min(widths.len()), width.clamp(MIN_WIDTH, MAX_WIDTH));
+        true
+    }
+
+    /// Column `at` was taken out of the table at block `block`. Its width goes with it and
+    /// the columns after it keep theirs. True when anything changed.
+    pub fn remove_column(&mut self, block: usize, at: usize) -> bool {
+        let Some((_, widths)) = self.tables.iter_mut().find(|(b, _)| *b == block) else { return false };
+        if at >= widths.len() {
+            return false;
+        }
+        widths.remove(at);
+        true
+    }
+
     /// The blocks in `gone` were taken off the page. A width kept for one of them goes, and
     /// a width kept for a table after them moves up with it, so it stays on the same table.
     /// True when anything changed.
@@ -152,6 +176,26 @@ mod tests {
         assert_eq!(widths.of(7), Some([120.0, 120.0, 300.0].as_slice()));
         assert_eq!(widths.of(3), None, "a table nobody dragged has no widths of its own");
         assert_eq!(write(&widths), line);
+    }
+
+    /// Issue #154: a column put in or taken out keeps every other column's width on the
+    /// column it was dragged for.
+    #[test]
+    fn widths_follow_their_columns_when_a_column_goes_in_or_out() {
+        let mut widths = parse("1:210,290; 4:100,120");
+        assert!(widths.insert_column(1, 0, 160.0), "a column at the front");
+        assert_eq!(widths.of(1), Some([160.0, 210.0, 290.0].as_slice()));
+        assert!(widths.insert_column(1, 3, 150.0), "and one at the end");
+        assert_eq!(widths.of(1), Some([160.0, 210.0, 290.0, 150.0].as_slice()));
+        assert!(widths.remove_column(1, 1));
+        assert_eq!(widths.of(1), Some([160.0, 290.0, 150.0].as_slice()));
+        assert_eq!(widths.of(4), Some([100.0, 120.0].as_slice()), "another table is left alone");
+
+        // A table nobody dragged keeps nothing, before or after.
+        assert!(!widths.insert_column(2, 0, 160.0));
+        assert!(!widths.remove_column(2, 0));
+        assert_eq!(widths.of(2), None);
+        assert!(!widths.remove_column(4, 9), "a column that is not there");
     }
 
     #[test]
