@@ -302,6 +302,15 @@ fn shown_in(root: &Path, p: &Path, redact: bool) -> String {
     }
 }
 
+/// What the Format Painter holds: the formatting it picked up, where it picked it up (so the
+/// selection it was picked up from is not painted with itself), and whether it keeps painting.
+#[derive(Clone, Debug)]
+struct FormatPaint {
+    style: notecraft_formats::Span,
+    from: (usize, (usize, usize)),
+    sticky: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 struct PendingFormat {
     block: usize,
@@ -601,6 +610,13 @@ enum Dialog {
         path: PathBuf,
         title: String,
     },
+    /// Move or Copy (issue #167): where a page, section or section group goes.
+    MoveOrCopy {
+        path: PathBuf,
+        title: String,
+        kind: NodeKind,
+        dest: Option<PathBuf>,
+    },
     /// Insert > Link, or editing the link the caret is in (issue #163): the words to show
     /// and the address, put into the line `block` (or its table cell) in place of the
     /// characters `range` of the caret's text.
@@ -713,6 +729,8 @@ enum Act {
     /// Ask the system for the folder to work from.
     ChooseRoot,
     Rename(PathBuf, String),
+    /// Open Move or Copy for a page, section or section group.
+    MoveOrCopy(PathBuf),
     MakeSubpage(PathBuf),
     PromoteSubpage(PathBuf),
     MovePageUp(PathBuf),
@@ -812,6 +830,8 @@ pub struct NoteCraftApp {
     hide_title: bool,
     /// Boxes snap to the page's grid when moved or resized (View, Snap to grid; issue #79).
     snap_to_grid: bool,
+    /// The Format Painter's formatting, waiting for the next words picked (issue #165).
+    painter: Option<FormatPaint>,
     /// The ribbon is folded away to its tab names (Ctrl+F1; issue #136). Kept in the settings.
     ribbon_collapsed: bool,
     /// While folded, a tab was clicked: its commands are shown over the page until one is used,
@@ -961,6 +981,7 @@ impl NoteCraftApp {
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
             snap_to_grid: session_snap,
+            painter: None,
             ribbon_collapsed: session_ribbon_collapsed,
             ribbon_peek: false,
             band_bottom: 0.0,
@@ -1536,6 +1557,69 @@ impl NoteCraftApp {
         }
     }
 
+    /// Opens Move or Copy for a page, section or section group (issue #167).
+    pub fn open_move_or_copy(&mut self, path: &Path) {
+        let Some(info) =
+            notecraft_store::tree::read_node(path).filter(|n| matches!(n.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup))
+        else {
+            return;
+        };
+        self.dialog = Some(Dialog::MoveOrCopy { path: path.to_path_buf(), title: info.title, kind: info.kind, dest: None });
+    }
+
+    /// The places a node of `kind` can be moved or copied to, as (path, title, depth), in tree
+    /// order: sections for a page, notebooks and section groups for a section or group. Never
+    /// the node itself or anything inside it.
+    fn move_destinations(&self, path: &Path, kind: NodeKind) -> Vec<(PathBuf, String, usize)> {
+        fn walk(nodes: &[Node], path: &Path, kind: NodeKind, depth: usize, out: &mut Vec<(PathBuf, String, usize)>) {
+            for n in nodes.iter().filter(|n| n.info.kind != NodeKind::Page) {
+                if n.path.starts_with(path) {
+                    continue;
+                }
+                let fits = match kind {
+                    NodeKind::Page => n.info.kind == NodeKind::Section,
+                    _ => matches!(n.info.kind, NodeKind::Notebook | NodeKind::SectionGroup),
+                };
+                // A notebook or group is listed even where it does not fit, as the heading of
+                // what is inside it.
+                out.push((n.path.clone(), n.info.title.clone(), depth));
+                if !fits && n.info.kind == NodeKind::Section {
+                    out.pop();
+                }
+                walk(&n.children, path, kind, depth + 1, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(self.session.tree(), path, kind, 0, &mut out);
+        out
+    }
+
+    /// Moves or copies `path` into `dest`, then keeps the window on the same page: a moved page
+    /// that was open is opened again where it went.
+    fn move_or_copy(&mut self, path: &Path, dest: &Path, copy: bool) {
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let command = if copy { "node.copy" } else { "node.move" };
+        let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
+        let Some(Output::Path(new_path)) = self.run(command, &params(&[("path", &path_str(path)), ("to", &path_str(dest))])) else { return };
+        self.open.insert(dest.to_path_buf());
+        if copy {
+            self.say(crate::tl_id!("ui.copied"));
+            return;
+        }
+        self.nav.relocate(path, &new_path);
+        let remap = |candidate: &Path| candidate.strip_prefix(path).map_or_else(|_| candidate.to_path_buf(), |suffix| new_path.join(suffix));
+        self.open = self.open.iter().map(|branch| remap(branch)).collect();
+        self.selected = self.selected.as_deref().map(remap);
+        if let Some(editor_path) = editor_path.filter(|editor_path| editor_path.starts_with(path)) {
+            let relocated = remap(&editor_path);
+            self.open_page_inner(&relocated);
+        }
+        self.say(crate::tl_id!("ui.moved"));
+    }
+
     fn create_page_in(&mut self, parent: &Path) {
         if let Some(Output::Path(page)) = self.run("node.create", &params(&[("parent", &path_str(parent)), ("kind", "page")])) {
             self.open_page(&page);
@@ -1598,6 +1682,11 @@ impl NoteCraftApp {
         }
         let is_macos = cfg!(target_os = "macos");
         let mods = Modifiers { ctrl: !is_macos, alt: true, mac_cmd: is_macos, command: true, ..Modifiers::NONE };
+        // OneNote's Ctrl+Alt+M: Move or Copy the page.
+        if ctx.input_mut(|input| input.consume_key(mods, Key::M)) {
+            self.open_move_or_copy(&page);
+            return;
+        }
         if Self::can_make_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::CloseBracket)) {
             self.reparent_page(&page, "node.demote");
         } else if Self::can_promote_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::OpenBracket)) {
@@ -2197,6 +2286,7 @@ impl NoteCraftApp {
             }
             Act::NewPage(parent) => self.create_page_in(&parent),
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
+            Act::MoveOrCopy(path) => self.open_move_or_copy(&path),
             Act::MakeSubpage(path) => self.reparent_page(&path, "node.demote"),
             Act::PromoteSubpage(path) => self.reparent_page(&path, "node.promote"),
             Act::MovePageUp(path) => {
@@ -2396,6 +2486,12 @@ impl NoteCraftApp {
             floating::menu_separator(ui, t);
             if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
+                ui.close();
+            }
+            if matches!(node.info.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup)
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_or_copy_ellipsis"), t).clicked()
+            {
+                acts.push(Act::MoveOrCopy(node.path.clone()));
                 ui.close();
             }
             if node.info.kind == NodeKind::Notebook
@@ -3237,6 +3333,7 @@ impl NoteCraftApp {
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
+            painting: self.painter.is_some(),
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
             font_size: size.as_deref(),
@@ -3647,6 +3744,7 @@ impl NoteCraftApp {
                 self.fit_page_width = false;
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
+            ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
             ribbon::Act::NotBuilt(what) => {
                 self.status =
                     crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
@@ -4608,6 +4706,82 @@ impl NoteCraftApp {
         self.status_is_error = false;
     }
 
+    /// Format Painter: picks up the formatting at the caret, or of the words picked, to give
+    /// to the next words picked (issue #165). A second click puts the painter down again; a
+    /// double-click (`sticky`) keeps it painting until Escape.
+    fn pick_up_formatting(&mut self, sticky: bool) {
+        if let Some(held) = self.painter.as_mut() {
+            if sticky {
+                held.sticky = true;
+                self.say(crate::tl_id!("ui.format_painter_keeps_painting_until_escape"));
+            } else {
+                self.painter = None;
+                self.say(crate::tl_id!("ui.format_painter_put_down"));
+            }
+            return;
+        }
+        let Some(ed) = self.editor.as_ref().filter(|ed| ed.writable) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let picked = ed.caret.as_ref().and_then(|caret| Some((caret.block, caret.selection, caret.style(ed.blocks.get(caret.block)?)?)));
+        let Some((block, selection, style)) = picked else {
+            self.say(crate::tl_id!("ui.click_in_the_words_whose_formatting_to_copy"));
+            return;
+        };
+        self.painter = Some(FormatPaint { style, from: (block, selection), sticky });
+        self.say(crate::tl_id!("ui.pick_the_words_to_give_that_formatting"));
+    }
+
+    /// Puts the Format Painter's formatting on words just picked with the pointer: on the
+    /// release that ends the pick, as in Office. Escape puts the painter down. Called once a
+    /// frame after the page is drawn.
+    fn paint_formatting(&mut self, ctx: &Context) {
+        if self.painter.is_none() {
+            return;
+        }
+        if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.painter = None;
+            self.say(crate::tl_id!("ui.format_painter_put_down"));
+            return;
+        }
+        if !ctx.input(|i| i.pointer.primary_released()) {
+            return;
+        }
+        let Some(held) = self.painter.clone() else { return };
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(caret) = ed.caret.as_ref() else { return };
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        // A click without a pick, or the words it was picked up from: nothing to paint yet.
+        if lo == hi || (caret.block, caret.selection) == held.from {
+            return;
+        }
+        let Some(block) = ed.blocks.get(caret.block) else { return };
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let Some((text, selection)) = caret.paint(block, &held.style) else {
+            self.say(crate::tl_id!("ui.inline_mark_whole_line"));
+            return;
+        };
+        if text != caret.text {
+            Self::remember_step(ed);
+            let Some(caret) = ed.caret.as_mut() else { return };
+            caret.text = text;
+            caret.selection = selection;
+            caret.place = Some(selection.0);
+            caret.focus = true;
+            if let Some(block) = ed.blocks.get_mut(caret.block) {
+                caret.write(block);
+            }
+            ed.pending_format = None;
+            ed.rebuild_body();
+            Self::mark_dirty_from_blocks(ed);
+            Self::remember_edit(ed);
+        }
+        if !held.sticky {
+            self.painter = None;
+        }
+    }
+
     fn apply_partial_inline_format(&mut self, format: pageedit::InlineFormat) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_ref() else { return };
@@ -5540,6 +5714,7 @@ impl NoteCraftApp {
                 if ui.small_button(crate::tl_id!("ui.collapse_all")).clicked() {
                     self.open.clear();
                 }
+                self.new_section_button(ui, &mut acts);
             });
             ui.add_space(2.0);
             // A drag in a pane must not scroll it: in the page a drag moves a container,
@@ -5662,6 +5837,34 @@ impl NoteCraftApp {
         }
     }
 
+    /// Where a new section goes: the notebook or section group the chosen section or page is in,
+    /// a section group that is itself chosen, or else the first notebook. `None` with no notebook.
+    fn new_section_parent(&self) -> Option<(PathBuf, NodeKind)> {
+        let mut at = self.selected.clone().or_else(|| self.editor.as_ref().map(|e| e.dir.clone()));
+        while let Some(path) = at {
+            match notecraft_store::tree::read_node(&path).map(|n| n.kind) {
+                Some(kind @ (NodeKind::Notebook | NodeKind::SectionGroup)) => return Some((path, kind)),
+                Some(_) => at = path.parent().map(Path::to_path_buf),
+                None => break,
+            }
+        }
+        self.session.tree().first().map(|n| (n.path.clone(), NodeKind::Notebook))
+    }
+
+    /// A plain, always visible "+ New section" button for the chosen notebook, as OneNote has
+    /// under its sections, so a section can be added without finding the hover-only plus or the
+    /// right-click menu (issue #139). It opens the same dialog those do.
+    fn new_section_button(&self, ui: &mut Ui, acts: &mut Vec<Act>) {
+        let target = self.new_section_parent();
+        let button = egui::Button::new(crate::tl_id!("ui.new_section_button")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
+        let resp = ui.add_enabled(target.is_some(), button).on_hover_text(crate::tl_id!("ui.a_new_section_in_the_chosen_notebook"));
+        if resp.clicked()
+            && let Some((parent, kind)) = target
+        {
+            acts.push(Act::AddKind(parent, kind, NodeKind::Section));
+        }
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
         // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
@@ -5695,6 +5898,7 @@ impl NoteCraftApp {
                     toggle |= Self::bars_button_at(ui).clicked();
                     ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
                 });
+                ui.horizontal(|ui| self.new_section_button(ui, acts));
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
@@ -5852,7 +6056,6 @@ impl NoteCraftApp {
         }
         #[allow(clippy::cast_precision_loss)]
         let zoom_scale = self.zoom_percent as f32 / 100.0;
-        let root = self.session.root().to_path_buf();
         let tokens = self.tokens;
         let mut rename: Option<String> = None;
         let cursor = self.cursor;
@@ -5901,31 +6104,14 @@ impl NoteCraftApp {
                 let message = crate::i18n::format_message_id("ui.fonts_unavailable", &[("fonts", &missing_fonts.join(", "))]);
                 ui.label(egui::RichText::new(message).color(tokens.muted));
             }
-            let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
             // One id for the title, whether it is drawn as words or as a text box.
             let title_id = egui::Id::new("page-title-box");
-            ui.label(egui::RichText::new(crumbs).small().color(tokens.muted));
-            ui.horizontal(|ui| {
-                // The title is not here any more. It is drawn on the sheet itself, at the
-                // top of the page, because the page's name is part of the page: that is
-                // what OneNote does and what the owner asked for on 2026-10-19. What is
-                // left in this strip is the things that are about the file rather than in
-                // it, and they stay out of the page.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
-                        crate::tl_id!("ui.editing").to_string()
-                    } else {
-                        ed.last_saved
-                            .clone()
-                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
-                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
-                    };
-                    ui.label(egui::RichText::new(state).small().color(tokens.muted));
-                    ui.label(egui::RichText::new(ed.format.label()).small().color(tokens.muted));
-                });
-            });
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.drop_a_file_onto_the_page_to_add_it")).small().color(tokens.muted));
+                // File details live in the status bar. Keep only compact page controls
+                // here, with a drop instruction while a file is actually over the window.
+                if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.drop_a_file_onto_the_page_to_add_it")).small().color(tokens.muted));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // The page controls, in OneNote's order: full page, search, source.
                     let full = icon_toggle(
@@ -6371,6 +6557,19 @@ impl NoteCraftApp {
             ui.horizontal(|ui| {
                 let color = if self.status_is_error { self.tokens.warn } else { self.tokens.muted };
                 ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&self.status)).color(color));
+                if let Some(ed) = self.editor.as_ref() {
+                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
+                        crate::tl_id!("ui.editing").to_string()
+                    } else {
+                        ed.last_saved
+                            .clone()
+                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
+                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
+                    };
+                    ui.separator();
+                    ui.label(egui::RichText::new(format!("{} - {state}", ed.format.label())).small().color(self.tokens.muted))
+                        .on_hover_text(self.shown(&ed.dir));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
                     let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);
@@ -6991,9 +7190,78 @@ impl NoteCraftApp {
                         self.open.insert(parent.clone());
                         if *kind == NodeKind::Page {
                             self.open_page(&dir);
+                        } else if *kind == NodeKind::Section {
+                            // The new section is the one chosen, so its pages (none yet, with
+                            // the Add page button above them) are what the page list shows next
+                            // (issue #139).
+                            self.selected = Some(dir.clone());
+                            if let Some(page) = first_page(self.session.tree(), &dir) {
+                                self.open_page(&page);
+                            }
                         }
                         self.say(crate::tl_id!("ui.created"));
                     }
+                    keep = false;
+                }
+            }
+            Dialog::MoveOrCopy { path, title, kind, dest } => {
+                let places = self.move_destinations(path, *kind);
+                let here = path.parent().map(Path::to_path_buf);
+                let fits = |p: &Path| notecraft_store::tree::read_node(p).is_some_and(|n| n.kind.may_contain().contains(kind));
+                let mut chosen: Option<bool> = None;
+                egui::Window::new(crate::tl_id!("ui.move_or_copy"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.label(crate::i18n::format_message_id("ui.move_or_copy_title_to", &[("title", title.as_str())]));
+                        let now = places
+                            .iter()
+                            .find(|(p, _, _)| here.as_deref() == Some(p.as_path()))
+                            .map(|(_, name, _)| name.clone())
+                            .or_else(|| here.as_deref().and_then(notecraft_store::tree::read_node).map(|n| n.title))
+                            .unwrap_or_default();
+                        ui.label(
+                            egui::RichText::new(crate::i18n::format_message_id("ui.it_is_in_place_now", &[("place", now.as_str())]))
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        egui::ScrollArea::vertical().max_height(300.0).min_scrolled_height(160.0).show(ui, |ui| {
+                            ui.set_min_width(320.0);
+                            for (place, name, depth) in &places {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(*depth as f32 * 16.0);
+                                    if fits(place) {
+                                        let picked = dest.as_deref() == Some(place.as_path());
+                                        let shown = if here.as_deref() == Some(place.as_path()) { format!("{name} \u{2022}") } else { name.clone() };
+                                        if ui.selectable_label(picked, shown).clicked() {
+                                            *dest = Some(place.clone());
+                                        }
+                                    } else {
+                                        ui.label(egui::RichText::new(name).color(self.tokens.muted));
+                                    }
+                                });
+                            }
+                        });
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                            {
+                                keep = false;
+                            }
+                            let can = dest.is_some();
+                            let moves = can && dest.as_deref() != here.as_deref();
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.copy"), false, can).clicked() {
+                                chosen = Some(true);
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.move"), true, moves).clicked() {
+                                chosen = Some(false);
+                            }
+                        });
+                    });
+                if let (Some(copy), Some(to)) = (chosen, dest.clone()) {
+                    let from = path.clone();
+                    self.move_or_copy(&from, &to, copy);
                     keep = false;
                 }
             }
@@ -7874,6 +8142,7 @@ impl NoteCraftApp {
         self.status_bar(ui);
         self.side_panel(ui);
         self.central(ui);
+        self.paint_formatting(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
         self.import_progress(ctx);

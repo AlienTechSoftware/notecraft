@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.png" alt="NoteCraft with a purple title band across the top, holding the Quick Access Toolbar, the page title and the tab names, and the Home tab of the ribbon open. On the left a tree shows two notebooks, a blue My Notebook with an orange Work section group and a teal Ideas section, nested sub-pages six levels deep. On the right the page Format ideas is written in its finished look: a heading, a checklist with ticked boxes, a numbered list, a quote, a table and an equation." width="100%">
+  <img src="docs/images/hero.png" alt="NoteCraft with a purple title band across the top, holding the Quick Access Toolbar, the page title and the tab names, and the Home tab of the ribbon open. On the left a tree shows two notebooks, a blue My Notebook with an orange Work section group and a teal Ideas section. The selected page Format ideas leads with its title, followed by a checklist with ticked boxes, a numbered list, a quote, a table and an equation. Its format and save state appear in the status bar." width="100%">
   <br><sub><b>The sample notebooks.</b> The ribbon, coloured notebooks and sections, and a page written in the type it will be read in.</sub>
 </p>
 
@@ -64,7 +64,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/file-screen.png" alt="The File screen listing two notebooks with their coloured covers, the folder each one lives in, an Open folder button and a note that online notebooks are not built" width="100%"><p align="center"><sub><b>File.</b> Your notebooks and where they live on disk. Anything not built says so instead of hiding.</sub></p></td>
-<td width="50%" valign="top"><img src="docs/images/html-page.png" alt="An HTML page shown as it reads: a heading, bold and italic text, a link, a bulleted list, a to-do line, a table, a quote, an inline equation and a Mermaid diagram kept as source" width="100%"><p align="center"><sub><b>Both formats.</b> A page is HTML or CommonMark; the same editor, the same look, the file stays in its own format.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/html-page.png" alt="An HTML page shown as it reads: a heading, bold and italic text, a link, a bulleted list, a to-do line, a table, a quote, an inline equation and a Mermaid diagram drawn as connected boxes. The navigation shows nested sub-pages." width="100%"><p align="center"><sub><b>Both formats.</b> A page is HTML or CommonMark; the same editor, the same look, the file stays in its own format.</sub></p></td>
 </tr>
 <tr>
 <td colspan="2" valign="top"><img src="docs/images/page-source.png" alt="The page source view: a list of the page's files on the left, index.md and assets/koala.png, and on the right the whole page file as text, its head with the id, title, order and dates above its Markdown body" width="100%"><p align="center"><sub><b>Inside a page.</b> The files a page owns, and what is in each: the whole page file, head and body, to read and to edit.</sub></p></td>
