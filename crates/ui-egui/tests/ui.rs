@@ -3062,6 +3062,60 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// Ctrl+F1 folds the ribbon away to its tab names and puts it back, as in Office, and the
+/// page takes the room; a tab clicked while it is folded shows its commands over the page
+/// until one is used or Escape is pressed. The choice is kept for the next start (issue #136).
+#[test]
+fn ctrl_f1_folds_the_ribbon_and_a_tab_shows_it_over_the_page() {
+    let (t, app, s) = sample_app("ui-ribbon-fold");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ribbon = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    let top = h.state().page_rect().expect("the page").min.y;
+    assert!(h.query_all_by_label("Bold").next().is_some(), "the Home tab's commands are there to begin with");
+
+    ask(&mut h, "ui.key", json!({"key": "F1", "ctrl": true})).expect("Ctrl+F1");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(true), "Ctrl+F1 folded the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_none(), "its commands are gone");
+    let folded_top = h.state().page_rect().expect("the page").min.y;
+    assert!(folded_top < top - 60.0, "the page took the ribbon's room: {top} then {folded_top}");
+    assert!(h.query_all_by_label("Insert").next().is_some(), "the tab names stay");
+    review(&mut h, "ribbon_folded");
+
+    // A tab shows its commands over the page, which stays where it is.
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true), "a clicked tab shows the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_some(), "with its commands");
+    review(&mut h, "ribbon_folded_tab_shown");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, folded_top, "over the page, not pushing it down");
+    // Using a command folds it away again.
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "using a command folds the ribbon away");
+    // And Escape does too.
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "Escape folds it away");
+
+    // Kept for the next start.
+    let kept = Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed");
+    assert_eq!(kept.as_deref(), Some("true"), "the choice is kept");
+
+    // The control at the end of the tab names puts it back, as Ctrl+F1 would.
+    h.get_by_label("Show the ribbon (Ctrl+F1)").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(false), "the ribbon is back");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, top, "and the page where it was");
+    assert!(h.query_all_by_label("Collapse the ribbon (Ctrl+F1)").next().is_some(), "with the control to fold it again");
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed").as_deref(), Some("false"));
+}
+
 /// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
 /// page as well as from the list, and stop at either end (issue #162).
 #[test]

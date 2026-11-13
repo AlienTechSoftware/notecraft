@@ -809,6 +809,13 @@ pub struct NoteCraftApp {
     hide_title: bool,
     /// Boxes snap to the page's grid when moved or resized (View, Snap to grid; issue #79).
     snap_to_grid: bool,
+    /// The ribbon is folded away to its tab names (Ctrl+F1; issue #136). Kept in the settings.
+    ribbon_collapsed: bool,
+    /// While folded, a tab was clicked: its commands are shown over the page until one is used,
+    /// the page is clicked or Escape is pressed.
+    ribbon_peek: bool,
+    /// Where the band with the tab names ends, which is where a shown-over ribbon starts.
+    band_bottom: f32,
     /// The page's zoom. The ribbon and the rest of the window keep their own size.
     zoom_percent: u32,
     /// Recalculate the page zoom from the reading area's width on the next frame.
@@ -869,6 +876,7 @@ impl NoteCraftApp {
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
+        let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // A table has borders unless it was turned off: OneNote draws them, and a table
         // without them reads as loose columns of words.
         let session_borders = session.settings.get("table_borders").map(|v| v.trim() != "false").unwrap_or(true);
@@ -950,6 +958,9 @@ impl NoteCraftApp {
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
             snap_to_grid: session_snap,
+            ribbon_collapsed: session_ribbon_collapsed,
+            ribbon_peek: false,
+            band_bottom: 0.0,
             zoom_percent: 100,
             fit_page_width: false,
             theme_window: false,
@@ -1329,6 +1340,9 @@ impl NoteCraftApp {
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
             self.step_page(true);
         }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F1)) {
+            self.toggle_ribbon();
+        }
     }
 
     /// The pages of the section in the order the page list shows them: a page, then its
@@ -1370,6 +1384,14 @@ impl NoteCraftApp {
             }
             None => self.say(if forward { crate::tl_id!("ui.this_is_the_last_page") } else { crate::tl_id!("ui.this_is_the_first_page") }),
         }
+    }
+
+    /// Folds the ribbon away to its tab names, or puts it back, and keeps the choice for the
+    /// next start (Ctrl+F1, as in Office; issue #136). The page gets the ribbon's height.
+    pub fn toggle_ribbon(&mut self) {
+        self.ribbon_collapsed = !self.ribbon_collapsed;
+        self.ribbon_peek = false;
+        let _ = self.session.settings.set("ribbon_collapsed", if self.ribbon_collapsed { "true" } else { "false" });
     }
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.
@@ -2592,13 +2614,15 @@ impl NoteCraftApp {
         let (tab, source, in_table) = (self.ribbon_tab.clone(), self.show_source, self.caret_in_table());
         let title = self.editor.as_ref().map(|e| e.title.trim().to_owned()).filter(|s| !s.is_empty());
         let mut acts = Vec::new();
-        egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
+        let collapsed = self.ribbon_collapsed;
+        let band = egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
             self.title_row(ui, title.as_deref());
             if with_tabs {
-                ribbon::tab_strip(ui, &tab, source, in_table, &t, &mut acts);
+                ribbon::tab_strip(ui, &tab, source, in_table, collapsed, &t, &mut acts);
             }
         });
+        self.band_bottom = band.response.rect.max.y;
         for a in acts {
             self.ribbon_act(a);
         }
@@ -3291,13 +3315,44 @@ impl NoteCraftApp {
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
-        egui::Panel::top("ribbon")
-            .exact_size(ribbon::GROUP_H + 8.0)
-            .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
-            .show_separator_line(false)
-            .show(ui, |ui| {
-                acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
-            });
+        if !self.ribbon_collapsed {
+            egui::Panel::top("ribbon")
+                .exact_size(ribbon::GROUP_H + 8.0)
+                .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
+                .show_separator_line(false)
+                .show(ui, |ui| {
+                    acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+                });
+        } else if self.ribbon_peek {
+            // Folded, with a tab clicked: the tab's commands over the top of the page, as Office
+            // shows them, so the page does not jump down and back. Using one, clicking anywhere
+            // else or Escape folds it away again.
+            let screen = ui.ctx().content_rect();
+            let area = egui::Area::new(egui::Id::new("ribbon-peek"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(egui::pos2(screen.min.x, self.band_bottom))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::new()
+                        .fill(tokens.panel)
+                        .inner_margin(egui::Margin::symmetric(4, 0))
+                        .stroke(egui::Stroke::new(1.0, tokens.container_border))
+                        .show(ui, |ui| {
+                            ui.set_width(screen.width() - 8.0);
+                            ui.set_height(ribbon::GROUP_H + 8.0);
+                            acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+                        });
+                })
+                .response;
+            let pointer = ui.ctx().pointer_latest_pos();
+            // A gallery the shown ribbon opened (Format Background, say) is over the page too, and
+            // a click in it is still a click in the ribbon.
+            let in_ribbon = |p: egui::Pos2| area.rect.contains(p) || ui.ctx().layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground);
+            let clicked_away = ui.input(|i| i.pointer.any_pressed()) && pointer.is_some_and(|p| !in_ribbon(p) && p.y > self.band_bottom);
+            let used = acts.iter().any(|a| !matches!(a, ribbon::Act::Tab(_)));
+            if used || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.ribbon_peek = false;
+            }
+        }
         let picked = self.editor.as_ref().and_then(|e| crate::containers::selected(ui.ctx(), &e.dir));
         for a in acts {
             if let Some(i) = picked
@@ -3528,7 +3583,14 @@ impl NoteCraftApp {
             }
             ribbon::Act::Symbols => self.dialog = Some(Dialog::Symbols),
             ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
-            ribbon::Act::Tab(name) => self.ribbon_tab = name,
+            ribbon::Act::Tab(name) => {
+                // Folded, a tab shows its commands over the page; the same tab again hides them.
+                if self.ribbon_collapsed {
+                    self.ribbon_peek = !(self.ribbon_peek && self.ribbon_tab == name);
+                }
+                self.ribbon_tab = name;
+            }
+            ribbon::Act::ToggleRibbon => self.toggle_ribbon(),
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
             ribbon::Act::FontFamily(family) => self.apply_font_family(&family),
@@ -7657,6 +7719,8 @@ impl NoteCraftApp {
             },
             "windowFrame": if self.frameless { "own" } else { "system" },
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
+            // Folded to its tab names (Ctrl+F1), and whether a clicked tab shows it over the page.
+            "ribbon": {"collapsed": self.ribbon_collapsed, "shown": !self.ribbon_collapsed || self.ribbon_peek, "tab": self.ribbon_tab},
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),

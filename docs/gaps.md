@@ -92,6 +92,9 @@ it is fixed and tested, not when it is promised.
   notebook recycle bin can restore or permanently remove pages, sections and groups; deleting
   an entire notebook is not supported. The Unread and Authors controls remain disabled. Missing tabs:
   Review and Help. Other controls that are not built say so rather than doing nothing.
+  Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
+  gives the page its room; a tab clicked while it is folded shows its commands over the page
+  until one is used, the page is clicked or Escape is pressed. The choice is kept.
 - **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
   a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
   Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule

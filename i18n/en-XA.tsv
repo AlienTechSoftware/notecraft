@@ -138,6 +138,7 @@
 @id	ui.collapse	$$$Collapse@@@
 @id	ui.collapse_all	$$$Collapse all@@@
 @id	ui.collapse_subpages	$$$Collapse Subpages@@@
+@id	ui.collapse_the_ribbon_ctrl_f1	$$$Collapse the ribbon (Ctrl+F1)@@@
 @id	ui.college	$$$College@@@
 @id	ui.college_ruled	$$$College ruled@@@
 @id	ui.colour	$$$Colour@@@
@@ -644,6 +645,7 @@
 @id	ui.show_the_notebooks_folder	$$$Show the notebooks folder@@@
 @id	ui.show_the_page_at_100	$$$Show the page at 100%@@@
 @id	ui.show_the_page_source	$$$Show the page source@@@
+@id	ui.show_the_ribbon_ctrl_f1	$$$Show the ribbon (Ctrl+F1)@@@
 @id	ui.show_the_strokes	$$$Show the strokes@@@
 @id	ui.size_kb	$$${size} KB@@@
 @id	ui.size_pt	$$${size} pt@@@
