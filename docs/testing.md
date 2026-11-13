@@ -125,6 +125,11 @@ fmt, clippy, the static checks, coverage, and a build and test on Linux, Windows
   UI suite take 14 minutes there instead of 3.
 - **UI tests share one offscreen GPU device per test binary** (`tests/support/gpu.rs`), as the
   icon tests do. Each window still gets its own renderer and textures.
+- **Independent matrix scenarios are separate tests.** The formatting-shortcut matrix keeps
+  all 24 theme, format, style and modifier combinations, each with its own real temporary
+  notebook, settings and harness. The test runner can schedule them across workers, and a
+  failure names its exact combination. The scenario assertions and background waits stay
+  the same. The existing `formatting_shortcuts_match_ribbon` filter still runs the full matrix.
 
 ## Clipboard in tests
 
