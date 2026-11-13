@@ -1068,6 +1068,9 @@ fn table(
                         egui::Frame::NONE.inner_margin(egui::Margin::symmetric(pad_x as i8, pad_y as i8)).show(ui, |ui| {
                             ui.set_min_width(inner);
                             ui.set_max_width(inner);
+                            // An empty cell is a line high, as a cell with words in it is, so
+                            // there is something to click (issue #147).
+                            ui.set_min_height(ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(14.5 * zoom))));
                             if here == Some(cell) && picked.is_none() {
                                 let Some(caret) = caret.as_mut() else { return };
                                 caret.ensure_inline(block);
@@ -1225,6 +1228,23 @@ fn table(
     if on_handle {
         // A press on a border is a resize, not the start of a block of cells.
         ui.memory_mut(|m| m.data.remove_temp::<(usize, usize)>(anchor_id));
+    }
+
+    // A click anywhere in a cell goes into it, not only a click on its words: an empty cell
+    // has no words to click, and the space after a short word is most of the cell (issue
+    // #147). Not on a border, which is a resize; not in the cell already being written in,
+    // whose text box places the caret itself; and not when something is drawn over the table.
+    let clicked = ui.input(|i| i.pointer.primary_clicked());
+    if action.is_none()
+        && clicked
+        && !on_border
+        && !on_handle
+        && let (Some(p), Some(cell)) = (at, over)
+        && ui.clip_rect().contains(p)
+        && ui.ctx().layer_id_at(p) == Some(ui.layer_id())
+        && (here != Some(cell) || picked.is_some())
+    {
+        action = Some(Action::EnterCell(i, cell));
     }
 
     ui.add_space(6.0);
