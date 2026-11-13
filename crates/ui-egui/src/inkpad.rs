@@ -750,11 +750,72 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
             mesh.add_triangle(a + k + 1, b + k, b + k + 1);
         }
     }
-    painter.add(egui::Shape::mesh(mesh));
-    // Round the two ends, which is what the saved outline does with its half circles.
+    // Only the outward halves belong to the caps. Full circles would paint translucent
+    // ink twice over the ribbon's ends, leaving darker patches within one highlighter stroke.
     let line = shape::centre(stroke);
-    for end in [line.first(), line.last()].into_iter().flatten() {
-        painter.circle_filled(put(end.x, end.y), shape::width_at(stroke, end.pressure) / 2.0, colour);
+    if let [first, next, ..] = line.as_slice() {
+        round_cap(
+            &mut mesh,
+            put(first.x, first.y),
+            vec2(first.x - next.x, first.y - next.y),
+            vec2(-1.0, 0.0),
+            shape::width_at(stroke, first.pressure) / 2.0,
+            feather,
+            colour,
+        );
+    }
+    if let [.., before, last] = line.as_slice() {
+        round_cap(
+            &mut mesh,
+            put(last.x, last.y),
+            vec2(last.x - before.x, last.y - before.y),
+            vec2(1.0, 0.0),
+            shape::width_at(stroke, last.pressure) / 2.0,
+            feather,
+            colour,
+        );
+    }
+    painter.add(egui::Shape::mesh(mesh));
+}
+
+/// A non-overlapping half disc, with the same physical-pixel fringe as the ribbon.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+fn round_cap(
+    mesh: &mut egui::Mesh,
+    centre: egui::Pos2,
+    direction: egui::Vec2,
+    fallback: egui::Vec2,
+    radius: f32,
+    feather: f32,
+    colour: egui::Color32,
+) {
+    let length = direction.length();
+    let outward = if length > f32::EPSILON { direction / length } else { fallback };
+    let across = vec2(-outward.y, outward.x);
+    let inner = (radius - feather / 2.0).max(0.0);
+    let outer = radius + feather / 2.0;
+    // Keep a broad or zoomed cap smooth, without making thin strokes needlessly dense.
+    let segments = ((radius / feather).sqrt() * 3.0).ceil().clamp(6.0, 128.0) as u32;
+    let base = mesh.vertices.len() as u32;
+    mesh.colored_vertex(centre, colour);
+    for i in 0..=segments {
+        let normal = if i == 0 {
+            -across
+        } else if i == segments {
+            across
+        } else {
+            let angle = std::f32::consts::PI * (i as f32 / segments as f32 - 0.5);
+            outward * angle.cos() + across * angle.sin()
+        };
+        mesh.colored_vertex(centre + normal * inner, colour);
+        mesh.colored_vertex(centre + normal * outer, egui::Color32::TRANSPARENT);
+        if i > 0 {
+            let a = base + 1 + (i - 1) * 2;
+            let b = a + 2;
+            mesh.add_triangle(base, a, b);
+            mesh.add_triangle(a, a + 1, b);
+            mesh.add_triangle(a + 1, b + 1, b);
+        }
     }
 }
 
