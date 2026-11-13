@@ -3062,6 +3062,40 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// A labelled "+ New section" button is always there for the chosen notebook, in both side
+/// panel layouts, not only a plus that appears on hover. It opens the section dialog for the
+/// notebook the open page is in, and the new section is the one chosen afterwards (issue #139).
+#[test]
+fn a_new_section_button_adds_a_section_to_the_chosen_notebook() {
+    for split in [false, true] {
+        let (_t, app, s) = if split { split_sample_app("ui-new-section-split") } else { sample_app("ui-new-section") };
+        let mut h = harness(app, LIGHT);
+        ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        let notebook = s.notebook.clone();
+        let before = notecraft_store::tree::child_dirs(&notebook).len();
+        review(&mut h, if split { "new_section_split" } else { "new_section_tree" });
+
+        h.get_by_label("+ New section").click();
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "Plans"})).expect("type the name");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+        settle(&mut h);
+
+        let made: Vec<_> = notecraft_store::tree::child_dirs(&notebook)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title == "Plans" && n.kind == notecraft_model::NodeKind::Section))
+            .collect();
+        assert_eq!(made.len(), 1, "split={split}: one section named Plans was made in the notebook");
+        assert_eq!(notecraft_store::tree::child_dirs(&notebook).len(), before + 1, "split={split}: and nothing else");
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        let chosen: Vec<&Value> =
+            state["rows"].as_array().map(|r| r.iter().filter(|row| row["selected"] == json!(true)).collect()).unwrap_or_default();
+        assert!(chosen.iter().any(|row| row["title"] == json!("Plans")), "split={split}: the new section is the chosen one: {chosen:?}");
+    }
+}
+
 /// Ctrl+F1 folds the ribbon away to its tab names and puts it back, as in Office, and the
 /// page takes the room; a tab clicked while it is folded shows its commands over the page
 /// until one is used or Escape is pressed. The choice is kept for the next start (issue #136).
@@ -3173,6 +3207,66 @@ fn ctrl_page_up_and_down_step_through_the_pages_of_the_section() {
     }
     assert_eq!(open_now(&mut h), canon(&listed[0]), "and stops at the first page");
     let _ = made;
+}
+
+/// OneNote's Move or Copy (Ctrl+Alt+M, or the row menu): pick a section from the notebooks, then
+/// Move takes the page there with its files and keeps it open, and Copy leaves the page and puts
+/// a copy with a new id there (issue #167).
+#[test]
+fn move_or_copy_takes_a_page_to_another_section() {
+    let (_t, app, s) = sample_app("ui-move-or-copy");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ideas = s.md_page.parent().expect("ideas").to_path_buf();
+    let projects = s.html_page.parent().expect("projects").to_path_buf();
+    std::fs::write(s.md_page.join("assets").join("kept.txt"), "kept").expect("a file");
+    let id = notecraft_store::tree::read_node(&s.md_page).map(|n| n.id).expect("id");
+
+    // Ctrl+Alt+M is Cmd+Option+M on macOS, which the control channel's key command cannot send,
+    // so there the dialog is opened as the row menu opens it.
+    let open_move_or_copy = |h: &mut Harness<'_, NoteCraftApp>, page: &std::path::Path| {
+        if cfg!(target_os = "macos") {
+            h.state_mut().open_move_or_copy(page);
+        } else {
+            ask(h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M");
+        }
+        settle(h);
+    };
+    open_move_or_copy(&mut h, &s.md_page);
+    assert!(h.query_all_by_label("Move or Copy").next().is_some(), "the dialog is open");
+    review(&mut h, "move_or_copy");
+    h.query_all_by_label("Projects").last().expect("Projects in the dialog").click();
+    settle(&mut h);
+    h.get_by_label("Move").click();
+    settle(&mut h);
+
+    let pages_in = |dir: &std::path::Path| -> Vec<PathBuf> {
+        notecraft_store::tree::child_dirs(dir)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+            .collect()
+    };
+    assert!(!s.md_page.exists(), "the page left its section");
+    let moved =
+        pages_in(&projects).into_iter().find(|p| notecraft_store::tree::read_node(p).is_some_and(|n| n.id == id)).expect("the page is in Projects");
+    assert!(moved.join("assets").join("kept.txt").is_file(), "with its files");
+    let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["path"].as_str().unwrap_or_default().to_string();
+    assert!(open.ends_with(&format!("projects/{}", moved.file_name().expect("name").to_string_lossy())), "and it is still the open page: {open}");
+
+    // Copy it back to Ideas: it stays in Projects, and the copy is a page of its own.
+    open_move_or_copy(&mut h, &moved);
+    // The tree has an Ideas row too; the dialog's is drawn last, over it.
+    h.query_all_by_label("Ideas").last().expect("Ideas in the dialog").click();
+    settle(&mut h);
+    // The ribbon has a Copy button too; the dialog's is drawn last.
+    h.query_all_by_label("Copy").last().expect("Copy in the dialog").click();
+    settle(&mut h);
+    assert!(moved.is_dir(), "copying leaves the page where it is");
+    let copies = pages_in(&ideas);
+    assert_eq!(copies.len(), 1, "a copy is in Ideas: {copies:?}");
+    assert!(copies[0].join("assets").join("kept.txt").is_file(), "with its files");
+    assert_ne!(notecraft_store::tree::read_node(&copies[0]).map(|n| n.id), Some(id), "and an id of its own");
 }
 
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and

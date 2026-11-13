@@ -20,6 +20,7 @@
 @id	ui.a_mermaid_diagram_kept_as_its_source	A Mermaid diagram, kept as its source
 @id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	A new notebook is a folder in {folder}, with one section and one page inside it.
 @id	ui.a_new_page_in_this_section	A new page in this section
+@id	ui.a_new_section_in_the_chosen_notebook	A new section in the chosen notebook
 @id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	A new spreadsheet beside the page, opened in GridCraft
 @id	ui.a_numbered_list	A numbered list
 @id	ui.a_page_here	A page here
@@ -429,6 +430,7 @@
 @id	ui.new_notebook	New notebook
 @id	ui.new_notebook_2	New notebook...
 @id	ui.new_page	New page
+@id	ui.new_section_button	+ New section
 @id	ui.new_page_2	New page...
 @id	ui.new_page_cmd_n	New Page (Cmd+N)
 @id	ui.new_page_ctrl_n	New Page (Ctrl+N)
@@ -592,6 +594,12 @@
 @id	ui.removed_notebook_from_the_known_notebooks_list	Removed notebook from the known notebooks list
 @id	ui.rename	Rename
 @id	ui.rename_ellipsis	Rename...
+@id	ui.it_is_in_place_now	It is in {place} now
+@id	ui.move_or_copy_title_to	Move or copy "{title}" to:
+@id	ui.moved	Moved
+@id	ui.move	Move
+@id	ui.move_or_copy	Move or Copy
+@id	ui.move_or_copy_ellipsis	Move or Copy...
 @id	ui.renamed	Renamed
 @id	ui.rendered_svg_preview	Rendered SVG preview
 @id	ui.repair_icon	Repair icon
