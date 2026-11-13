@@ -4622,6 +4622,42 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     review(&mut h, "page_paper");
 }
 
+/// View > Page colour opens the page colour palette where OneNote has it, beside Rule Lines,
+/// instead of saying it is not built while Format Background already had it (issue #137). It
+/// is the same colour as Format Background's, on this page only, and it is kept in the file.
+#[test]
+fn view_page_colour_picks_the_colour_of_this_page() {
+    let (_t, app, s) = sample_app("ui-view-page-colour");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    for (page, needle) in [(&s.md_page, "page-color: yellow"), (&s.html_page, "yellow")] {
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        h.get_by_label("View").click();
+        settle(&mut h);
+        let button = h.get_by_role_and_label(egui::accesskit::Role::Button, "Page colour").rect();
+        ask(&mut h, "ui.click", json!({"x": button.center().x, "y": button.center().y})).expect("Page colour");
+        settle(&mut h);
+        review(&mut h, "view_page_colour");
+        h.get_by_label("Yellow").click();
+        settle(&mut h);
+        let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert_eq!(now["pageColour"], json!("yellow"), "the page is yellow: {now}");
+        assert!(h.query_all_by_label("Yellow").next().is_none(), "picking a colour closes the palette");
+        let file = page.join(if page == &s.md_page { "index.md" } else { "index.html" });
+        let text = std::fs::read_to_string(&file).expect("the page file");
+        assert!(text.contains(needle), "the page's file keeps the colour:\n{text}");
+
+        // No colour takes it off again, from the same button.
+        let button = h.get_by_role_and_label(egui::accesskit::Role::Button, "Page colour").rect();
+        ask(&mut h, "ui.click", json!({"x": button.center().x, "y": button.center().y})).expect("Page colour again");
+        settle(&mut h);
+        h.get_by_label("No colour").click();
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["pageColour"], json!(null), "and the colour comes off");
+    }
+}
+
 /// Copy link to page, the way OneNote copies one: the link names the page from the
 /// notebooks folder down, so it works wherever it is pasted, and clicking it opens the
 /// page.

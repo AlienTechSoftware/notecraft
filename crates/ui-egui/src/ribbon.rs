@@ -1854,6 +1854,77 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// View > Page colour, where OneNote has it beside Rule Lines: the page's colour as a chip on
+/// the button, and the palette under it. The same swatches and the same action as the colour
+/// shelf in Format Background, so the two can never say different things (issue #137).
+fn page_colour_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let open_id = egui::Id::new("ribbon-page-colour");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false)) && view.has_page;
+    let label = crate::tl!(crate::tl_id!("ui.page_colour"));
+    let font = egui::FontId::proportional(12.0);
+    let text = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size();
+    let chip = 12.0;
+    let resp = ui.add_enabled_ui(view.has_page, |ui| ui.allocate_exact_size(vec2(text.x + chip + 22.0, SMALL_H), Sense::click()).1).inner;
+    let rect = resp.rect;
+    let painter = ui.painter_at(rect);
+    if open || resp.hovered() {
+        painter.rect_filled(rect, 4.0, if open { t.row_selected } else { t.row_hover });
+    }
+    // The current colour, or the plain page with a stroke through it for none.
+    let chip_rect = Rect::from_center_size(egui::pos2(rect.min.x + 6.0 + chip / 2.0, rect.center().y), vec2(chip, chip));
+    let dark = t.editor.r() < 128;
+    let fill = match view.page_colour {
+        Some(c) => {
+            let (r, g, b) = c.rgb(dark);
+            egui::Color32::from_rgb(r, g, b)
+        }
+        None => t.editor,
+    };
+    painter.rect_filled(chip_rect, 2.0, fill);
+    painter.rect_stroke(chip_rect, 2.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    let colour = if view.has_page { t.text } else { t.muted };
+    painter.text(egui::pos2(chip_rect.max.x + 6.0, rect.center().y), Align2::LEFT_CENTER, label, font, colour);
+    let enabled = view.has_page;
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, open, name.clone()));
+    let resp = resp.on_hover_text(crate::tl!(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(resp.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 5.0);
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.page_colour")).strong().color(t.text));
+                    ui.horizontal(|ui| {
+                        if colour_swatch(ui, None, view.page_colour.is_none(), t).clicked() {
+                            acts.push(Act::PageColour(None));
+                            picked = true;
+                        }
+                        for c in notecraft_model::NodeColor::ALL {
+                            if colour_swatch(ui, Some(c), view.page_colour == Some(c), t).clicked() {
+                                acts.push(Act::PageColour(Some(c)));
+                                picked = true;
+                            }
+                        }
+                    });
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
+                });
+            })
+            .response;
+        let clicked_away =
+            ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+        if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
 /// How readily the pen answers pressure, drawn as the wedge a volume control uses: thin
 /// at the quiet end, thick at the loud one, so which way is "more ink" needs no label.
 ///
@@ -2801,7 +2872,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleSnap);
             }
-            not_built(ui, crate::tl_id!("ui.page_colour"), t);
+            page_colour_menu(ui, view, t, acts);
             not_built(ui, crate::tl_id!("ui.paper_size"), t);
         });
     });
