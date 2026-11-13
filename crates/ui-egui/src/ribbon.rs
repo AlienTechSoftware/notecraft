@@ -62,6 +62,8 @@ pub enum Act {
     ToggleTitle,
     /// Snap boxes to the page's grid when they are moved or resized, or stop.
     ToggleSnap,
+    /// Sort the table's rows by the caret's column: true for descending (issue #171).
+    TableSort(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -2688,7 +2690,17 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::DirRtl, "Align\nRight", t);
     });
     group(ui, crate::tl_id!("ui.data"), t, |ui| {
-        soon(ui, Icon::ListNumber, "Sort", t);
+        // Whole rows by the caret's column, or only the picked rows; the heading stays on top.
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_ascending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_a_to_z"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(false));
+        }
+        if big(ui, Icon::ListNumber, crate::tl_id!("ui.sort_descending_2"), crate::tl_id!("ui.sort_the_rows_by_the_caret_s_column_z_to_a"), t)
+            .clicked()
+        {
+            acts.push(Act::TableSort(true));
+        }
     });
     group(ui, crate::tl_id!("ui.convert"), t, |ui| {
         // Where OneNote converts a table to an Excel spreadsheet, NoteCraft hands it to
