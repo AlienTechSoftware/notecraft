@@ -90,6 +90,14 @@ fn node_promote(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::promote_subpage(&s.resolve(req(p, "path")?)?)?))
 }
 
+fn node_move(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::move_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
+}
+
+fn node_copy(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Path(ops::copy_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
+}
+
 fn node_move_up(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::move_page(&s.resolve(req(p, "path")?)?, true)?))
 }
@@ -363,6 +371,22 @@ static REGISTRY: &[CommandSpec] = &[
         params: "path (required): the subpage to promote",
         changes_tree: true,
         run: node_promote,
+    },
+    CommandSpec {
+        id: "node.move",
+        label: "Move a page, section or section group into another notebook, section group, section or page",
+        params: "path (required): the page, section or section group to move
+to (required): where it goes; it is put last there",
+        changes_tree: true,
+        run: node_move,
+    },
+    CommandSpec {
+        id: "node.copy",
+        label: "Copy a page, section or section group into another notebook, section group, section or page",
+        params: "path (required): the page, section or section group to copy
+to (required): where the copy goes; it is put last there, and every node in it gets a new id",
+        changes_tree: true,
+        run: node_copy,
     },
     CommandSpec {
         id: "node.move_up",
