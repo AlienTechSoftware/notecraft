@@ -383,8 +383,8 @@ it is fixed and tested, not when it is promised.
   last column stay. A drag across cells picks the block between them, which Delete empties
   and the tab's Select Table, Select Rows and Select Columns pick the same way; deleting
   rows or columns with a block picked takes all of them. A table is drawn with lines round
-  its cells, which the tab's Hide Borders turns off and on; that choice is the app's, not
-  each table's, because CommonMark has nowhere to keep it. A column is a fixed width and
+  its cells, which the tab's Hide Borders turns off and on for the table the caret is in, and
+  only that one; the page keeps the choice with the column widths (below). A column is a fixed width and
   stays that width when the box around it is resized, the way OneNote's does; a border
   dragged sideways changes the column to its left, and the page keeps the widths beside
   the arrangement of its boxes (`notecraft:columns`), because neither CommonMark nor an

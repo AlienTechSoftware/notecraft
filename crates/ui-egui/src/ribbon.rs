@@ -421,7 +421,7 @@ pub struct View<'a> {
     pub nib: usize,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
-    /// Whether tables are drawn with lines round their cells.
+    /// Whether the table the caret is in is drawn with lines round its cells.
     pub table_borders: bool,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,

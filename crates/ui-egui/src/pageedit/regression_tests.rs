@@ -94,7 +94,7 @@ fn frame(ctx: &egui::Context, blocks: &mut Vec<Block>, caret: &mut Option<Caret>
     let tokens = crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default }.tokens();
     let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            show(ui, blocks, caret, std::path::Path::new("."), &tokens, None, false, &mut Default::default(), &Default::default(), &mut None, "");
+            show(ui, blocks, caret, std::path::Path::new("."), &tokens, None, &mut Default::default(), &Default::default(), &mut None, "");
         });
     });
     output.textures_delta.clear();

@@ -95,7 +95,8 @@ font-formatting support.
    older one, or one written by hand - has that heading left out of the live view, because
    the title area above the page is already showing it. The file is not changed; the code
    view shows it as it is. Two things are kept there that belong to a block rather than to
-   the page: the width of a table's columns (`columns`) and which paragraphs are justified
+   the page: how a table is laid out, the width of its columns and whether its borders are
+   drawn (`columns`), and which paragraphs are justified
    (`justify`). Both name their block by its position among the page's blocks. Section 2.1
    says why, and [gaps.md](../gaps.md) records what it costs.
 5. **What the window shows and what the folder holds never disagree.** Open a page, change

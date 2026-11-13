@@ -191,12 +191,12 @@ Parameters:
 
 ## `page.columns`
 
-How wide the columns of a page's tables are.
+How wide the columns of a page's tables are, and which tables have their borders hidden.
 
 Parameters:
 
 - path (required): the page
-- widths (optional): block:w,w,w per table, separated by semicolons; empty puts every table back to the usual width. Without it, the current widths are reported
+- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported
 
 ## `page.justify`
 
