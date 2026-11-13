@@ -3062,69 +3062,58 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
-/// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of
-/// typing a placeholder into the note; the same dialog edits the link the caret is in and can
-/// take the link off while keeping its words. Both page formats (issue #163).
+/// Ctrl+F1 folds the ribbon away to its tab names and puts it back, as in Office, and the
+/// page takes the room; a tab clicked while it is folded shows its commands over the page
+/// until one is used or Escape is pressed. The choice is kept for the next start (issue #136).
 #[test]
-fn the_link_dialog_puts_in_edits_and_removes_a_link() {
-    for html in [false, true] {
-        let (_t, app, s) = sample_app("ui-link-dialog");
-        let mut h = harness(app, LIGHT);
-        h.run();
-        let page = if html { &s.html_page } else { &s.md_page };
-        notecraft_store::page::save_body(page, if html { "<p>see the plan today</p>" } else { "see the plan today" }).expect("fixture");
-        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
-        settle(&mut h);
-        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
-        settle(&mut h);
-        // Pick "the plan": after "see ", eight letters with Shift held.
-        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
-        settle(&mut h);
-        for _ in 0..4 {
-            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
-            pump(&mut h);
-        }
-        for _ in 0..8 {
-            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("pick");
-            pump(&mut h);
-        }
-        settle(&mut h);
+fn ctrl_f1_folds_the_ribbon_and_a_tab_shows_it_over_the_page() {
+    let (t, app, s) = sample_app("ui-ribbon-fold");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ribbon = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    let top = h.state().page_rect().expect("the page").min.y;
+    assert!(h.query_all_by_label("Bold").next().is_some(), "the Home tab's commands are there to begin with");
 
-        // Ctrl+K: the picked words are the words to show; the address is asked for.
-        ask(&mut h, "ui.key", json!({"key": "K", "ctrl": true})).expect("Ctrl+K");
-        settle(&mut h);
-        assert!(h.query_all_by_label("Text to display").next().is_some(), "html={html}: the Link dialog is open");
-        ask(&mut h, "ui.text", json!({"text": "https://example.test/plan"})).expect("type the address");
-        settle(&mut h);
-        review(&mut h, "link_dialog");
-        h.get_by_label("OK").click();
-        settle(&mut h);
-        h.state_mut().save();
-        let body = notecraft_store::page::load_page(page).expect("load").body;
-        let made = if html { "<a href=\"https://example.test/plan\">the plan</a>" } else { "[the plan](https://example.test/plan)" };
-        assert!(body.contains(made), "html={html}: the words became a link:\n{body}");
-        assert!(body.contains("see ") && body.contains(" today"), "html={html}: and the rest is as it was:\n{body}");
+    ask(&mut h, "ui.key", json!({"key": "F1", "ctrl": true})).expect("Ctrl+F1");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(true), "Ctrl+F1 folded the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_none(), "its commands are gone");
+    let folded_top = h.state().page_rect().expect("the page").min.y;
+    assert!(folded_top < top - 60.0, "the page took the ribbon's room: {top} then {folded_top}");
+    assert!(h.query_all_by_label("Insert").next().is_some(), "the tab names stay");
+    review(&mut h, "ribbon_folded");
 
-        // With the caret in the link, the dialog edits it.
-        ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("into the link");
-        settle(&mut h);
-        h.get_by_label("Insert").click();
-        settle(&mut h);
-        h.get_by_label("Link").click();
-        settle(&mut h);
-        assert!(h.query_all_by_label("Remove link").next().is_some(), "html={html}: an existing link can be taken off");
-        h.get_by_label("Remove link").click();
-        settle(&mut h);
-        h.state_mut().save();
-        let body = notecraft_store::page::load_page(page).expect("load").body;
-        assert!(!body.contains("example.test"), "html={html}: the link is gone:\n{body}");
-        assert!(body.contains("see the plan today"), "html={html}: and its words are kept:\n{body}");
+    // A tab shows its commands over the page, which stays where it is.
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true), "a clicked tab shows the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_some(), "with its commands");
+    review(&mut h, "ribbon_folded_tab_shown");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, folded_top, "over the page, not pushing it down");
+    // Using a command folds it away again.
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "using a command folds the ribbon away");
+    // And Escape does too.
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "Escape folds it away");
 
-        // Undo puts the link back.
-        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
-        settle(&mut h);
-        assert!(h.state().body().unwrap_or_default().contains("example.test/plan"), "html={html}: undo brings the link back");
-    }
+    // Kept for the next start.
+    let kept = Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed");
+    assert_eq!(kept.as_deref(), Some("true"), "the choice is kept");
+
+    // The control at the end of the tab names puts it back, as Ctrl+F1 would.
+    h.get_by_label("Show the ribbon (Ctrl+F1)").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(false), "the ribbon is back");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, top, "and the page where it was");
+    assert!(h.query_all_by_label("Collapse the ribbon (Ctrl+F1)").next().is_some(), "with the control to fold it again");
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed").as_deref(), Some("false"));
 }
 
 /// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
@@ -4845,6 +4834,71 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     assert_eq!(again["paper"], json!("college"), "and the page still has its own paper");
     assert_eq!(again["pageColour"], json!("yellow"));
     review(&mut h, "page_paper");
+}
+
+/// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of
+/// typing a placeholder into the note; the same dialog edits the link the caret is in and can
+/// take the link off while keeping its words. Both page formats (issue #163).
+#[test]
+fn the_link_dialog_puts_in_edits_and_removes_a_link() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-link-dialog");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p>see the plan today</p>" } else { "see the plan today" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        // Pick "the plan": after "see ", eight letters with Shift held.
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        settle(&mut h);
+        for _ in 0..4 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        for _ in 0..8 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+
+        // Ctrl+K: the picked words are the words to show; the address is asked for.
+        ask(&mut h, "ui.key", json!({"key": "K", "ctrl": true})).expect("Ctrl+K");
+        settle(&mut h);
+        assert!(h.query_all_by_label("Text to display").next().is_some(), "html={html}: the Link dialog is open");
+        ask(&mut h, "ui.text", json!({"text": "https://example.test/plan"})).expect("type the address");
+        settle(&mut h);
+        review(&mut h, "link_dialog");
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let made = if html { "<a href=\"https://example.test/plan\">the plan</a>" } else { "[the plan](https://example.test/plan)" };
+        assert!(body.contains(made), "html={html}: the words became a link:\n{body}");
+        assert!(body.contains("see ") && body.contains(" today"), "html={html}: and the rest is as it was:\n{body}");
+
+        // With the caret in the link, the dialog edits it.
+        ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("into the link");
+        settle(&mut h);
+        h.get_by_label("Insert").click();
+        settle(&mut h);
+        h.get_by_label("Link").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Remove link").next().is_some(), "html={html}: an existing link can be taken off");
+        h.get_by_label("Remove link").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        assert!(!body.contains("example.test"), "html={html}: the link is gone:\n{body}");
+        assert!(body.contains("see the plan today"), "html={html}: and its words are kept:\n{body}");
+
+        // Undo puts the link back.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        assert!(h.state().body().unwrap_or_default().contains("example.test/plan"), "html={html}: undo brings the link back");
+    }
 }
 
 /// Copy link to page, the way OneNote copies one: the link names the page from the
