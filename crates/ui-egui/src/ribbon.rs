@@ -62,6 +62,9 @@ pub enum Act {
     ToggleTitle,
     /// Snap boxes to the page's grid when they are moved or resized, or stop.
     ToggleSnap,
+    /// Format Painter: pick up the formatting at the caret for the next words picked. True keeps
+    /// painting until Escape (a double-click, as in Office).
+    FormatPainter(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -429,6 +432,8 @@ pub struct View<'a> {
     pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
+    /// The Format Painter is holding formatting to put on the next words picked.
+    pub painting: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
     pub style: &'static str,
     pub font_family: Option<&'a str>,
@@ -835,8 +840,14 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             if mark_row(ui, Mark::Copy, crate::tl_id!("ui.copy"), crate::tl_id!("ui.copy_the_selection"), t).clicked() {
                 acts.push(Act::Clipboard("copy"));
             }
-            if mark_row(ui, Mark::Painter, crate::tl_id!("ui.format_painter"), crate::tl_id!("ui.not_built"), t).clicked() {
-                acts.push(Act::NotBuilt("Format Painter"));
+            // Click to copy the formatting at the caret to the next words picked; double-click to
+            // keep painting until Escape (issue #165).
+            let painter =
+                mark_row_on(ui, Mark::Painter, crate::tl_id!("ui.format_painter"), crate::tl_id!("ui.format_painter_tip"), view.painting, t);
+            if painter.double_clicked() {
+                acts.push(Act::FormatPainter(true));
+            } else if painter.clicked() {
+                acts.push(Act::FormatPainter(false));
             }
         });
     });
@@ -1493,21 +1504,27 @@ pub fn mark_for(tag: Tag) -> Mark {
 /// are drawn: a row of those reads as a list of actions, where bare icons read as a puzzle.
 // i18n-ui-text: label,tip
 fn mark_row(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
+    mark_row_on(ui, mark, label, tip, false, t)
+}
+
+/// [`mark_row`] that can be lit, for a command that stays on until it is used (Format Painter).
+// i18n-ui-text: label,tip
+fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
     let label = crate::tl!(label);
     let tip = crate::tl!(tip);
     let font = egui::FontId::proportional(11.0);
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x + SMALL_W + 8.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(width, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
+    if on || resp.hovered() {
+        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
     }
     let left = Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(15.0, 15.0));
     ribbon_icons::paint(&painter, left, mark, mark.color(t.text, t.accent));
     painter.text(egui::pos2(rect.min.x + 23.0, rect.center().y), Align2::LEFT_CENTER, label, font, t.text);
     let enabled = ui.is_enabled();
     let name = label.to_string();
-    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
     resp.on_hover_text(tip)
 }
 

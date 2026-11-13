@@ -302,6 +302,15 @@ fn shown_in(root: &Path, p: &Path, redact: bool) -> String {
     }
 }
 
+/// What the Format Painter holds: the formatting it picked up, where it picked it up (so the
+/// selection it was picked up from is not painted with itself), and whether it keeps painting.
+#[derive(Clone, Debug)]
+struct FormatPaint {
+    style: notecraft_formats::Span,
+    from: (usize, (usize, usize)),
+    sticky: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 struct PendingFormat {
     block: usize,
@@ -800,6 +809,8 @@ pub struct NoteCraftApp {
     hide_title: bool,
     /// Boxes snap to the page's grid when moved or resized (View, Snap to grid; issue #79).
     snap_to_grid: bool,
+    /// The Format Painter's formatting, waiting for the next words picked (issue #165).
+    painter: Option<FormatPaint>,
     /// The page's zoom. The ribbon and the rest of the window keep their own size.
     zoom_percent: u32,
     /// Recalculate the page zoom from the reading area's width on the next frame.
@@ -941,6 +952,7 @@ impl NoteCraftApp {
             gridcraft: crate::gridcraft::installed(),
             hide_title: session_hide_title,
             snap_to_grid: session_snap,
+            painter: None,
             zoom_percent: 100,
             fit_page_width: false,
             theme_window: false,
@@ -3152,6 +3164,7 @@ impl NoteCraftApp {
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
+            painting: self.painter.is_some(),
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
             font_size: size.as_deref(),
@@ -3524,6 +3537,7 @@ impl NoteCraftApp {
                 self.fit_page_width = false;
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
+            ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
             ribbon::Act::NotBuilt(what) => {
                 self.status =
                     crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
@@ -4454,6 +4468,82 @@ impl NoteCraftApp {
         ed.history.record(step);
         self.status.clear();
         self.status_is_error = false;
+    }
+
+    /// Format Painter: picks up the formatting at the caret, or of the words picked, to give
+    /// to the next words picked (issue #165). A second click puts the painter down again; a
+    /// double-click (`sticky`) keeps it painting until Escape.
+    fn pick_up_formatting(&mut self, sticky: bool) {
+        if let Some(held) = self.painter.as_mut() {
+            if sticky {
+                held.sticky = true;
+                self.say(crate::tl_id!("ui.format_painter_keeps_painting_until_escape"));
+            } else {
+                self.painter = None;
+                self.say(crate::tl_id!("ui.format_painter_put_down"));
+            }
+            return;
+        }
+        let Some(ed) = self.editor.as_ref().filter(|ed| ed.writable) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let picked = ed.caret.as_ref().and_then(|caret| Some((caret.block, caret.selection, caret.style(ed.blocks.get(caret.block)?)?)));
+        let Some((block, selection, style)) = picked else {
+            self.say(crate::tl_id!("ui.click_in_the_words_whose_formatting_to_copy"));
+            return;
+        };
+        self.painter = Some(FormatPaint { style, from: (block, selection), sticky });
+        self.say(crate::tl_id!("ui.pick_the_words_to_give_that_formatting"));
+    }
+
+    /// Puts the Format Painter's formatting on words just picked with the pointer: on the
+    /// release that ends the pick, as in Office. Escape puts the painter down. Called once a
+    /// frame after the page is drawn.
+    fn paint_formatting(&mut self, ctx: &Context) {
+        if self.painter.is_none() {
+            return;
+        }
+        if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.painter = None;
+            self.say(crate::tl_id!("ui.format_painter_put_down"));
+            return;
+        }
+        if !ctx.input(|i| i.pointer.primary_released()) {
+            return;
+        }
+        let Some(held) = self.painter.clone() else { return };
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(caret) = ed.caret.as_ref() else { return };
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        // A click without a pick, or the words it was picked up from: nothing to paint yet.
+        if lo == hi || (caret.block, caret.selection) == held.from {
+            return;
+        }
+        let Some(block) = ed.blocks.get(caret.block) else { return };
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let Some((text, selection)) = caret.paint(block, &held.style) else {
+            self.say(crate::tl_id!("ui.inline_mark_whole_line"));
+            return;
+        };
+        if text != caret.text {
+            Self::remember_step(ed);
+            let Some(caret) = ed.caret.as_mut() else { return };
+            caret.text = text;
+            caret.selection = selection;
+            caret.place = Some(selection.0);
+            caret.focus = true;
+            if let Some(block) = ed.blocks.get_mut(caret.block) {
+                caret.write(block);
+            }
+            ed.pending_format = None;
+            ed.rebuild_body();
+            Self::mark_dirty_from_blocks(ed);
+            Self::remember_edit(ed);
+        }
+        if !held.sticky {
+            self.painter = None;
+        }
     }
 
     fn apply_partial_inline_format(&mut self, format: pageedit::InlineFormat) {
@@ -7610,6 +7700,7 @@ impl NoteCraftApp {
         self.status_bar(ui);
         self.side_panel(ui);
         self.central(ui);
+        self.paint_formatting(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
         self.import_progress(ctx);

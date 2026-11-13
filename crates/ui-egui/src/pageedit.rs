@@ -128,6 +128,17 @@ impl Caret {
     pub fn fonts(&self, block: &Block) -> Option<FontSelection> {
         self.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true)).fonts(&self.text, self.selection)
     }
+
+    /// The formatting at the caret or of its selection, for the Format Painter.
+    pub fn style(&self, block: &Block) -> Option<Span> {
+        self.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true)).style(&self.text, self.selection)
+    }
+
+    /// Gives the selected words `style`, for the Format Painter.
+    pub fn paint(&mut self, block: &Block, style: &Span) -> Option<(String, (usize, usize))> {
+        let (text, selection) = (self.text.clone(), self.selection);
+        self.ensure_inline(block).paint(&text, selection, style)
+    }
 }
 
 /// The block of cells a caret covers, as (top-left, bottom-right), or `None` when it is
@@ -418,6 +429,101 @@ fn insert_span_marker(spans: &mut [Span], offset: usize, marker: char, after_bou
         at += len;
     }
     None
+}
+
+/// The inline formatting the Format Painter picks up (issue #165): of the first selected
+/// character, or of the character before the caret (after it at the start of the line).
+/// Only the formatting, not the words, link or picture.
+pub fn style_at(text: &str, selection: (usize, usize)) -> Option<Span> {
+    if text.contains(INLINE_IMAGE_CHAR) || selection.0.max(selection.1) > text.chars().count() {
+        return None;
+    }
+    let marker = ('\u{e000}'..='\u{f8ff}').find(|c| !text.contains(*c))?;
+    let original = span_characters(&parse_inline(text))?;
+    let lo = selection.0.min(selection.1);
+    // A caret in the middle of markup (between the stars of `***Big***`) is at no character of
+    // its own: the nearest place that is one, after it first, is.
+    let len = text.chars().count();
+    let at = (0..=len).find_map(|d| {
+        [lo.checked_add(d).filter(|p| *p <= len), lo.checked_sub(d)].into_iter().flatten().find_map(|p| source_offset(text, p, marker, &original))
+    })?;
+    let from = if lo == selection.0.max(selection.1) && at > 0 { at - 1 } else { at };
+    let (_, span) = original.get(from).or_else(|| original.last())?;
+    Some(Span { text: String::new(), link: None, image: None, math: false, ..span.clone() })
+}
+
+/// Gives the words in `range` (visible characters) the formatting of `style`: every mark, the
+/// script, the size and the font, each set to what `style` has, so what was not on it comes
+/// off. Words, links and pictures stay as they are. Returns whether anything changed.
+pub fn paint_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, style: &Span) -> bool {
+    if range.start >= range.end {
+        return false;
+    }
+    let before = spans.clone();
+    let mut output = Vec::new();
+    let mut at = 0usize;
+    for span in std::mem::take(spans) {
+        let len = if span.image.is_some() { 1 } else { span.text.chars().count() };
+        let hit = at < range.end && at + len > range.start && span.image.is_none() && !span.math && !span.text.is_empty();
+        if hit {
+            let a = range.start.saturating_sub(at).min(len);
+            let b = range.end.saturating_sub(at).min(len);
+            let first = span.text.char_indices().nth(a).map_or(span.text.len(), |(i, _)| i);
+            let last = span.text.char_indices().nth(b).map_or(span.text.len(), |(i, _)| i);
+            for (text, change) in [(&span.text[..first], false), (&span.text[first..last], true), (&span.text[last..], false)] {
+                if text.is_empty() {
+                    continue;
+                }
+                let mut piece = Span { text: text.to_owned(), ..span.clone() };
+                if change {
+                    piece.bold = style.bold;
+                    piece.italic = style.italic;
+                    piece.strike = style.strike;
+                    piece.underline = style.underline;
+                    piece.script = style.script;
+                    piece.code = style.code;
+                    piece.font_size = style.font_size;
+                    piece.font_family = style.font_family.clone();
+                }
+                output.push(piece);
+            }
+        } else {
+            output.push(span);
+        }
+        at += len;
+    }
+    *spans = output;
+    *spans != before
+}
+
+/// [`paint_span_range`] on a selection of a line's editable text, the way
+/// [`format_source_selection`] marks one: `None` when the selection cannot be mapped to the
+/// words unambiguously or the words would not survive.
+pub fn paint_source_selection(text: &str, selection: (usize, usize), style: &Span) -> Option<(String, (usize, usize))> {
+    if text.contains(INLINE_IMAGE_CHAR) || selection.0 == selection.1 || selection.0.max(selection.1) > text.chars().count() {
+        return None;
+    }
+    let marker = ('\u{e000}'..='\u{f8ff}').find(|c| !text.contains(*c))?;
+    let mut spans = parse_inline(text);
+    let original = span_characters(&spans)?;
+    let a = source_offset(text, selection.0.min(selection.1), marker, &original)?;
+    let b = source_offset(text, selection.0.max(selection.1), marker, &original)?;
+    if a >= b {
+        return None;
+    }
+    if !paint_span_range(&mut spans, a..b, style) {
+        return Some((text.to_string(), selection));
+    }
+    let wanted = span_characters(&spans)?;
+    // The caret goes after the painted words, wherever the new markup puts them.
+    insert_span_marker(&mut spans, b, marker, false)?;
+    let marked = spans_to_editor(&spans);
+    let end = marked[..marked.find(marker)?].chars().count();
+    let result = marked.replace(marker, "");
+    if span_characters(&parse_inline(&result))? != wanted {
+        return None;
+    }
+    Some((result, (end, end)))
 }
 
 /// Formats a source selection only when its endpoints map unambiguously to text and the
@@ -3275,6 +3381,33 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    /// Issue #165: the Format Painter picks up the formatting at the caret and puts exactly that
+    /// on other words: what the source has goes on, what it has not comes off, the words stay.
+    #[test]
+    fn the_format_painter_copies_formatting_and_keeps_words() {
+        let text = "**Big** plain *slanted*";
+        let bold = style_at(text, (3, 3)).expect("a style in the bold word");
+        assert!(bold.bold && !bold.italic && bold.text.is_empty(), "{bold:?}");
+        let plain = style_at(text, (9, 9)).expect("a style in the plain word");
+        assert!(!plain.bold && !plain.italic);
+
+        // "plain" (characters 8..13 of the text) takes the bold word's formatting.
+        let (painted, caret) = paint_source_selection(text, (8, 13), &bold).expect("painted");
+        let spans = parse_inline(&painted);
+        let words: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(words, "Big plain slanted", "the words are the same: {painted}");
+        assert!(spans.iter().filter(|s| s.text.contains("plain")).all(|s| s.bold), "plain is bold now: {painted}");
+        assert!(spans.iter().filter(|s| s.text.contains("slanted")).all(|s| s.italic && !s.bold), "slanted is untouched: {painted}");
+        let before: String = painted.chars().take(caret.0).collect();
+        assert!(before.trim_end_matches('*').ends_with("plain"), "the caret is after the painted words: {before:?}");
+
+        // The plain formatting takes the italic off "slanted".
+        let start = text.find("*slanted").expect("slanted");
+        let (painted, _) = paint_source_selection(text, (start, text.chars().count()), &plain).expect("painted");
+        assert!(parse_inline(&painted).iter().all(|s| !s.italic), "italic came off: {painted}");
+        assert!(painted.contains("slanted"));
     }
 
     #[test]

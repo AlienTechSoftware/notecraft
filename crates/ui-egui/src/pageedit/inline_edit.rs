@@ -359,6 +359,27 @@ impl InlineEdit {
         Some((self.text.clone(), selection))
     }
 
+    /// [`super::paint_source_selection`] on the line's own text, as [`Self::format`] marks it.
+    pub(super) fn paint(&mut self, text: &str, selection: (usize, usize), style: &Span) -> Option<(String, (usize, usize))> {
+        if text.contains(INLINE_IMAGE_CHAR) {
+            return None;
+        }
+        let (projected, mapping) = self.project(text)?;
+        let (painted, selection) = super::paint_source_selection(&projected, selection, style)?;
+        self.literal = painted.chars().map(|c| mapping.iter().any(|(marker, _)| *marker == c)).collect();
+        self.text = Self::restore(&painted, &mapping);
+        Some((self.text.clone(), selection))
+    }
+
+    /// [`super::style_at`] on the line's own text.
+    pub(super) fn style(&self, text: &str, selection: (usize, usize)) -> Option<Span> {
+        if text.contains(INLINE_IMAGE_CHAR) {
+            return None;
+        }
+        let (projected, _) = self.clone().project(text)?;
+        super::style_at(&projected, selection)
+    }
+
     pub(super) fn fonts(&self, text: &str, selection: (usize, usize)) -> Option<FontSelection> {
         if text.contains(INLINE_IMAGE_CHAR) {
             return None;
