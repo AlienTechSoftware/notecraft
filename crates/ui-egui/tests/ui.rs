@@ -68,6 +68,45 @@ fn sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
     (t, app, sample)
 }
 
+/// Issue #150: a host with temporary files must not promise durable saves.
+#[test]
+fn session_only_host_discloses_storage_before_editing_and_after_saving() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-session-only-storage");
+        let page = if html { &s.html_page } else { &s.md_page };
+        let mut h = harness(app.with_session_only_storage(), if html { DARK } else { LIGHT });
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let notice = "Session-only notes: changes disappear when you reload or close this tab.";
+        assert_eq!(h.query_all_by_label(notice).count(), 1, "the storage limitation is visible before editing");
+        assert_eq!(h.query_all_by_label_contains("Kept in this tab").count(), 1, "the page caption does not claim a durable save");
+        assert_eq!(h.query_all_by_label("Saved").count(), 0);
+        assert_eq!(h.query_all_by_label_contains(" - Saved").count(), 0);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "session change"})).expect("type");
+        pump(&mut h);
+        h.state_mut().save_page_now();
+        settle(&mut h);
+        assert!(!h.state().is_dirty(), "the virtual file can be written while storage remains temporary");
+        assert_eq!(h.query_all_by_label(notice).count(), 1, "autosave must not hide the warning");
+        assert!(h.query_all_by_label_contains("Kept in this tab").count() >= 1);
+        assert_eq!(h.query_all_by_label("Saved").count(), 0);
+        assert_eq!(h.query_all_by_label_contains(" - Saved").count(), 0);
+        review(&mut h, &format!("session_only_storage_{html}"));
+    }
+}
+
+#[test]
+fn ordinary_file_host_retains_its_saved_caption() {
+    let (_t, app, s) = sample_app("ui-durable-storage-caption");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Kept in this tab").count(), 0);
+    assert_eq!(h.query_all_by_label_contains(" - Saved").count(), 1);
+}
+
 fn split_sample_app(label: &str) -> (TempDir, NoteCraftApp, Sample) {
     let t = TempDir::new(label);
     let mut s = session(&t);

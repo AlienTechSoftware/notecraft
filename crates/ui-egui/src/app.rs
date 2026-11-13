@@ -783,6 +783,8 @@ pub struct NoteCraftApp {
     import_job: Option<ImportJob>,
     status: String,
     status_is_error: bool,
+    /// The host keeps notebook files only for this session, rather than on durable storage.
+    session_only_storage: bool,
     search: String,
     searched: String,
     hits: Vec<Hit>,
@@ -952,6 +954,7 @@ impl NoteCraftApp {
             import_job: None,
             status: crate::tl_id!("ui.ready_2").into(),
             status_is_error: false,
+            session_only_storage: false,
             search: String::new(),
             searched: String::new(),
             hits: Vec::new(),
@@ -1112,6 +1115,13 @@ impl NoteCraftApp {
         let Ok(rel) = dir.strip_prefix(self.session.root()) else { return };
         let value = rel.to_string_lossy().replace('\\', "/");
         let _ = self.session.settings.set("last_page", &value);
+    }
+
+    /// Marks a host whose notebook files disappear with the current browser tab.
+    /// Native callers keep the default durable-file captions.
+    pub fn with_session_only_storage(mut self) -> Self {
+        self.session_only_storage = true;
+        self
     }
 
     /// Whether the page source is shown beside the page. Off by default: the page is what
@@ -1901,7 +1911,7 @@ impl NoteCraftApp {
                     ed.last_saved = Some(ts);
                     ed.saved_body = body;
                 }
-                self.say(crate::tl_id!("ui.saved"));
+                self.say(self.saved_caption(None));
             }
             Ok(_) => {}
             Err(e) => self.fail(&e),
@@ -1942,7 +1952,7 @@ impl NoteCraftApp {
                         }
                         ed.saved_body = saved.body;
                     }
-                    self.say(crate::tl_id!("ui.saved"));
+                    self.say(self.saved_caption(None));
                 }
                 Err(e) => {
                     if let Some(ed) = here {
@@ -6605,20 +6615,39 @@ impl NoteCraftApp {
         }
     }
 
+    fn saved_caption(&self, saved_at: Option<&str>) -> String {
+        if self.session_only_storage {
+            crate::tl_id!("ui.kept_in_this_tab").into()
+        } else {
+            saved_at
+                .map(|time| crate::i18n::format_message_id("ui.saved_time", &[("time", time)]))
+                .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
+        }
+    }
+
+    fn page_save_state(&self, ed: &Editor) -> String {
+        if ed.dirty_since.is_some() || ed.saving.is_some() {
+            crate::tl_id!("ui.editing").into()
+        } else {
+            self.saved_caption(ed.last_saved.as_deref())
+        }
+    }
+
+    fn storage_notice(&self, ui: &mut Ui) {
+        if self.session_only_storage {
+            egui::Panel::top("session-storage-notice").show(ui, |ui| {
+                ui.label(egui::RichText::new(crate::tl_id!("ui.session_only_storage_notice")).color(self.tokens.warn));
+            });
+        }
+    }
+
     fn status_bar(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let color = if self.status_is_error { self.tokens.warn } else { self.tokens.muted };
                 ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&self.status)).color(color));
                 if let Some(ed) = self.editor.as_ref() {
-                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
-                        crate::tl_id!("ui.editing").to_string()
-                    } else {
-                        ed.last_saved
-                            .clone()
-                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
-                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
-                    };
+                    let state = self.page_save_state(ed);
                     ui.separator();
                     ui.label(egui::RichText::new(format!("{} - {state}", ed.format.label())).small().color(self.tokens.muted))
                         .on_hover_text(self.shown(&ed.dir));
@@ -8185,6 +8214,7 @@ impl NoteCraftApp {
         // The File screen takes the whole window while it is open, as it does in Office.
         if self.backstage.is_some() {
             self.title_band(ui, false);
+            self.storage_notice(ui);
             self.backstage_screen(ui);
             self.dialogs(ctx);
             self.import_progress(ctx);
@@ -8192,6 +8222,7 @@ impl NoteCraftApp {
             return;
         }
         self.top_bar(ui);
+        self.storage_notice(ui);
         self.status_bar(ui);
         self.side_panel(ui);
         self.central(ui);
