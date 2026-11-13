@@ -5989,7 +5989,6 @@ impl NoteCraftApp {
         }
         #[allow(clippy::cast_precision_loss)]
         let zoom_scale = self.zoom_percent as f32 / 100.0;
-        let root = self.session.root().to_path_buf();
         let tokens = self.tokens;
         let mut rename: Option<String> = None;
         let cursor = self.cursor;
@@ -6038,31 +6037,14 @@ impl NoteCraftApp {
                 let message = crate::i18n::format_message_id("ui.fonts_unavailable", &[("fonts", &missing_fonts.join(", "))]);
                 ui.label(egui::RichText::new(message).color(tokens.muted));
             }
-            let crumbs = ed.dir.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "  /  ")).unwrap_or_default();
             // One id for the title, whether it is drawn as words or as a text box.
             let title_id = egui::Id::new("page-title-box");
-            ui.label(egui::RichText::new(crumbs).small().color(tokens.muted));
-            ui.horizontal(|ui| {
-                // The title is not here any more. It is drawn on the sheet itself, at the
-                // top of the page, because the page's name is part of the page: that is
-                // what OneNote does and what the owner asked for on 2026-10-19. What is
-                // left in this strip is the things that are about the file rather than in
-                // it, and they stay out of the page.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
-                        crate::tl_id!("ui.editing").to_string()
-                    } else {
-                        ed.last_saved
-                            .clone()
-                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
-                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
-                    };
-                    ui.label(egui::RichText::new(state).small().color(tokens.muted));
-                    ui.label(egui::RichText::new(ed.format.label()).small().color(tokens.muted));
-                });
-            });
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.drop_a_file_onto_the_page_to_add_it")).small().color(tokens.muted));
+                // File details live in the status bar. Keep only compact page controls
+                // here, with a drop instruction while a file is actually over the window.
+                if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.drop_a_file_onto_the_page_to_add_it")).small().color(tokens.muted));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // The page controls, in OneNote's order: full page, search, source.
                     let full = icon_toggle(
@@ -6508,6 +6490,19 @@ impl NoteCraftApp {
             ui.horizontal(|ui| {
                 let color = if self.status_is_error { self.tokens.warn } else { self.tokens.muted };
                 ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&self.status)).color(color));
+                if let Some(ed) = self.editor.as_ref() {
+                    let state = if ed.dirty_since.is_some() || ed.saving.is_some() {
+                        crate::tl_id!("ui.editing").to_string()
+                    } else {
+                        ed.last_saved
+                            .clone()
+                            .map(|t| crate::i18n::format_message_id("ui.saved_time", &[("time", &t)]))
+                            .unwrap_or_else(|| crate::tl_id!("ui.saved").into())
+                    };
+                    ui.separator();
+                    ui.label(egui::RichText::new(format!("{} - {state}", ed.format.label())).small().color(self.tokens.muted))
+                        .on_hover_text(self.shown(&ed.dir));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
                     let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);

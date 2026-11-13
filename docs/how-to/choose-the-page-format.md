@@ -31,7 +31,8 @@ new pages get.
 - **Globally**: the **New pages** box in the status bar, or
   `notecraft-cli run settings.default_format.set format=cmgfm`.
 
-The current page's format is shown at the top right of the page, beside whether it is saved.
+The current page's format and save state are shown in the status bar. Hover over them to see
+the page's folder path. The source, search and full-page buttons stay above the note.
 
 ## Changing a page's format
 
