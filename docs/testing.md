@@ -99,6 +99,12 @@ as a warning, and the task still succeeds. On a pull request the `coverage` job 
 table on the run's summary page; the job is allowed to fail, so it never blocks a merge. It is
 not part of `cargo xtask ci` or the pre-push hook, because a coverage run rebuilds everything.
 
+CI caches the pinned `cargo-llvm-cov` binary separately, after restoring the Rust dependency
+cache. The key includes the Ubuntu runner, architecture, tool version and Rust toolchain.
+A cold cache installs the pinned tool; a warm cache reuses it. Both paths verify the version
+before running the complete coverage command. This does not install anything on a developer's
+machine or change the platform build/test jobs.
+
 When a change raises coverage, run `--update` in the same pull request, so the new figure
 lands with the code that earned it and git keeps the history.
 
