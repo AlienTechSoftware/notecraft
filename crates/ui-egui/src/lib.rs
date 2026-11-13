@@ -24,6 +24,7 @@ pub mod fonts;
 pub mod gridcraft;
 pub mod highlight;
 pub mod history;
+pub mod hscroll;
 pub mod i18n;
 pub mod icons;
 pub mod language_flag;
