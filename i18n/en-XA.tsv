@@ -83,6 +83,9 @@
 @id	ui.font_family_box	$$$Font name@@@
 @id	ui.pick_date	$$$Pick a date@@@
 @id	ui.pick_time	$$$Pick a time@@@
+@id	ui.am	$$$AM@@@
+@id	ui.pm	$$$PM@@@
+@id	ui.pick_date_and_time	$$$Pick a date and time@@@
 @id	ui.today	$$$Today@@@
 @id	ui.month_1	$$$January@@@
 @id	ui.month_2	$$$February@@@

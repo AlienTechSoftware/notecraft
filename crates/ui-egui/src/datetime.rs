@@ -26,9 +26,14 @@ pub fn date_text(date: Date) -> String {
     notecraft_model::time::date_from_iso(&iso).unwrap_or(iso)
 }
 
-/// The time as the page shows it.
+/// The time as the page shows it: 12-hour, with AM or PM.
 pub fn time_text(time: Time) -> String {
-    format!("{:02}:{:02}", time.hour, time.minute)
+    let hour = match time.hour % 12 {
+        0 => 12,
+        h => h,
+    };
+    let half = if time.hour < 12 { crate::tl_id!("ui.am") } else { crate::tl_id!("ui.pm") };
+    format!("{hour}:{:02} {half}", time.minute)
 }
 
 /// A date picker: a calendar button, the date in grey, and a month calendar with a Today button.
@@ -66,6 +71,82 @@ fn month_name(month: u32) -> String {
     .to_string()
 }
 
+/// The calendar: a month header with arrows, the weekdays, the days, and Today. Picking a day
+/// sets `value`. `shown` is the month on screen; `open` is cleared when a day or Today is picked.
+fn calendar(ui: &mut Ui, value: &mut Date, shown: &mut (i32, u32), today: Date, changed: &mut bool, open: &mut bool) {
+    ui.horizontal(|ui| {
+        // i18n-exempt: "<" is the arrow of the previous-month button, not a word.
+        if ui.button("<").clicked() {
+            *shown = if shown.1 == 1 { (shown.0 - 1, 12) } else { (shown.0, shown.1 - 1) };
+        }
+        ui.label(format!("{} {}", month_name(shown.1), shown.0));
+        // i18n-exempt: ">" is the arrow of the next-month button, not a word.
+        if ui.button(">").clicked() {
+            *shown = if shown.1 == 12 { (shown.0 + 1, 1) } else { (shown.0, shown.1 + 1) };
+        }
+    });
+    ui.horizontal(|ui| {
+        for index in 0..7 {
+            ui.label(weekday_name(index));
+        }
+    });
+    for row in month_grid(shown.0, shown.1) {
+        ui.horizontal(|ui| {
+            for cell in row {
+                match cell {
+                    Some(day) => {
+                        let picked = day == value.day && *shown == (value.year, value.month);
+                        if ui.selectable_label(picked, day.to_string()).clicked() {
+                            *value = Date { year: shown.0, month: shown.1, day };
+                            *changed = true;
+                            *open = false;
+                        }
+                    }
+                    None => {
+                        // i18n-exempt: a blank cell keeps the calendar columns lined up.
+                        ui.label("  ");
+                    }
+                }
+            }
+        });
+    }
+    if ui.button(crate::tl_id!("ui.today")).clicked() {
+        *value = today;
+        *changed = true;
+        *open = false;
+    }
+}
+
+/// The time list: every half hour, in order. The list opens on the current half hour, scrolled
+/// into view when `scroll` is set. Picking a time sets `value`.
+fn time_list(ui: &mut Ui, value: &mut Time, scroll: bool, changed: &mut bool, open: &mut bool) {
+    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+        let current = Time { hour: value.hour, minute: if value.minute >= 30 { 30 } else { 0 } };
+        for step in 0..48u32 {
+            let time = Time { hour: step / 2, minute: (step % 2) * 30 };
+            let row = ui.selectable_label(time == current, time_text(time));
+            if time == current && scroll {
+                row.scroll_to_me(Some(egui::Align::Center));
+            }
+            if row.clicked() {
+                *value = time;
+                *changed = true;
+                *open = false;
+            }
+        }
+    });
+}
+
+/// The popup under a button: shown while `open`, and closed by a click away from it.
+fn popup(ui: &mut Ui, id: Id, button: &egui::Response, contents: impl FnOnce(&mut Ui)) -> bool {
+    let area = egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(button.rect.left_bottom()).show(ui.ctx(), |ui| {
+        egui::Frame::popup(ui.style()).show(ui, |ui| contents(ui));
+    });
+    // True when the user clicked away from the popup and its button: the caller closes it.
+    ui.input(|i| i.pointer.any_click()) && !area.response.hovered() && !button.hovered()
+}
+
+/// The calendar button in grey text, and the date beside it. Click for the calendar.
 pub fn date_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Date, today: Date) -> bool {
     let mut changed = false;
     let open_id = id.with("open");
@@ -89,52 +170,8 @@ pub fn date_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Date, today: Dat
             shown = (value.year, value.month);
         }
         if open {
-            let area = egui::Area::new(id.with("popup")).order(egui::Order::Foreground).fixed_pos(button.rect.left_bottom()).show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        // i18n-exempt: "<" is the arrow of the previous-month button, not a word.
-                        if ui.button("<").clicked() {
-                            shown = if shown.1 == 1 { (shown.0 - 1, 12) } else { (shown.0, shown.1 - 1) };
-                        }
-                        ui.label(format!("{} {}", month_name(shown.1), shown.0));
-                        // i18n-exempt: ">" is the arrow of the next-month button, not a word.
-                        if ui.button(">").clicked() {
-                            shown = if shown.1 == 12 { (shown.0 + 1, 1) } else { (shown.0, shown.1 + 1) };
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        for index in 0..7 {
-                            ui.label(weekday_name(index));
-                        }
-                    });
-                    for row in month_grid(shown.0, shown.1) {
-                        ui.horizontal(|ui| {
-                            for cell in row {
-                                match cell {
-                                    Some(day) => {
-                                        let picked = day == value.day && shown == (value.year, value.month);
-                                        if ui.selectable_label(picked, day.to_string()).clicked() {
-                                            *value = Date { year: shown.0, month: shown.1, day };
-                                            changed = true;
-                                            open = false;
-                                        }
-                                    }
-                                    None => {
-                                        // i18n-exempt: a blank cell keeps the calendar columns lined up.
-                                        ui.label("  ");
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    if ui.button(crate::tl_id!("ui.today")).clicked() {
-                        *value = today;
-                        changed = true;
-                        open = false;
-                    }
-                });
-            });
-            if ui.input(|i| i.pointer.any_click()) && !area.response.hovered() && !button.hovered() {
+            let away = popup(ui, id.with("popup"), &button, |ui| calendar(ui, value, &mut shown, today, &mut changed, &mut open));
+            if away {
                 open = false;
             }
         }
@@ -146,13 +183,12 @@ pub fn date_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Date, today: Dat
     changed
 }
 
-/// A time picker: a clock button, the time in grey, and a list of times to choose from.
-/// Returns true when the time changed.
+/// The clock button in grey text, and the time beside it. Click for the list of times.
 pub fn time_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Time) -> bool {
     let mut changed = false;
     let open_id = id.with("open");
-    let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
     let scroll_id = id.with("scroll");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
     let mut scroll = ui.data(|d| d.get_temp::<bool>(scroll_id)).unwrap_or(false);
     ui.horizontal(|ui| {
         let button = ui.add(egui::Button::new("").min_size(egui::vec2(18.0, 18.0)));
@@ -171,27 +207,8 @@ pub fn time_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Time) -> bool {
             scroll = open;
         }
         if open {
-            let area = egui::Area::new(id.with("popup")).order(egui::Order::Foreground).fixed_pos(button.rect.left_bottom()).show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                        // The half hour the time falls in is the current one: the list opens on it.
-                        let current = Time { hour: value.hour, minute: if value.minute >= 30 { 30 } else { 0 } };
-                        for step in 0..48u32 {
-                            let time = Time { hour: step / 2, minute: (step % 2) * 30 };
-                            let row = ui.selectable_label(time == current, time_text(time));
-                            if time == current && scroll {
-                                row.scroll_to_me(Some(egui::Align::Center));
-                            }
-                            if row.clicked() {
-                                *value = time;
-                                changed = true;
-                                open = false;
-                            }
-                        }
-                    });
-                });
-            });
-            if ui.input(|i| i.pointer.any_click()) && !area.response.hovered() && !button.hovered() {
+            let away = popup(ui, id.with("popup"), &button, |ui| time_list(ui, value, scroll, &mut changed, &mut open));
+            if away {
                 open = false;
             }
         }
@@ -203,11 +220,51 @@ pub fn time_picker(ui: &mut Ui, id: Id, t: &Tokens, value: &mut Time) -> bool {
     changed
 }
 
-/// The date and the time together, side by side.
+/// The date and the time as one control: one button, and one popup with the calendar and the
+/// times side by side, as the usual date and time picker does.
 pub fn date_time_picker(ui: &mut Ui, id: Id, t: &Tokens, date: &mut Date, time: &mut Time, today: Date) -> bool {
-    let a = date_picker(ui, id.with("date"), t, date, today);
-    let b = time_picker(ui, id.with("time"), t, time);
-    a || b
+    let mut changed = false;
+    let open_id = id.with("open");
+    let month_id = id.with("month");
+    let scroll_id = id.with("scroll");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    let mut shown = ui.data(|d| d.get_temp::<(i32, u32)>(month_id)).unwrap_or((date.year, date.month));
+    let mut scroll = ui.data(|d| d.get_temp::<bool>(scroll_id)).unwrap_or(false);
+    ui.horizontal(|ui| {
+        let button = ui.add(egui::Button::new("").min_size(egui::vec2(18.0, 18.0)));
+        crate::icons::paint(&ui.painter_at(button.rect), button.rect.shrink(2.0), crate::icons::Icon::Calendar, t.text);
+        let label = crate::tl_id!("ui.pick_date_and_time").to_string();
+        let shown_text = format!("{}  {}", date_text(*date), time_text(*time));
+        let info_text = shown_text.clone();
+        button.widget_info(move || {
+            let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone());
+            info.current_text_value = Some(info_text.clone());
+            info
+        });
+        ui.label(egui::RichText::new(&shown_text).color(t.muted));
+        if button.clicked() {
+            open = !open;
+            shown = (date.year, date.month);
+            scroll = open;
+        }
+        if open {
+            let away = popup(ui, id.with("popup"), &button, |ui| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| calendar(ui, date, &mut shown, today, &mut changed, &mut open));
+                    ui.vertical(|ui| time_list(ui, time, scroll, &mut changed, &mut open));
+                });
+            });
+            if away {
+                open = false;
+            }
+        }
+    });
+    ui.data_mut(|d| {
+        d.insert_temp(open_id, open);
+        d.insert_temp(month_id, shown);
+        d.insert_temp(scroll_id, false);
+    });
+    changed
 }
 
 /// Days in `month` (1 to 12) of `year`, leap years included.
@@ -302,25 +359,36 @@ mod tests {
             NOON,
         );
         h.run();
-        assert_eq!(h.get_by_label("Pick a time").value().as_deref(), Some("15:16"));
+        assert_eq!(h.get_by_label("Pick a time").value().as_deref(), Some("3:16 PM"));
         h.get_by_label("Pick a time").click();
         h.run();
-        h.get_by_label("16:00").click();
+        h.get_by_label("4:00 PM").click();
         h.run();
-        assert_eq!(*h.state(), Time { hour: 16, minute: 0 });
+        assert_eq!(*h.state(), Time { hour: 16, minute: 0 }, "4:00 PM is 16:00");
     }
 
+    /// The combined control is one button with one popup: the calendar and the times in it together.
     #[test]
-    fn the_date_and_time_picker_has_both_controls() {
+    fn the_date_and_time_picker_is_one_button_with_one_popup() {
         let t = tokens();
         let mut h = Harness::new_ui_state(
             |ui, state: &mut (Date, Time)| {
-                date_time_picker(ui, Id::new("dt"), &t, &mut state.0, &mut state.1, NOV_12);
+                date_time_picker(ui, Id::new("dt1"), &t, &mut state.0, &mut state.1, NOV_12);
             },
             (NOV_12, NOON),
         );
         h.run();
-        assert!(h.query_all_by_label("Pick a date").count() == 1 && h.query_all_by_label("Pick a time").count() == 1);
+        assert_eq!(h.query_all_by_label("Pick a date and time").count(), 1, "one button for both");
+        assert_eq!(h.query_all_by_label("Pick a date").count(), 0, "no separate date button");
+        h.get_by_label("Pick a date and time").click();
+        h.run();
+        h.get_by_label("26").click();
+        h.run();
+        h.get_by_label("Pick a date and time").click();
+        h.run();
+        h.get_by_label("4:00 PM").click();
+        h.run();
+        assert_eq!(*h.state(), (Date { year: 2026, month: 11, day: 26 }, Time { hour: 16, minute: 0 }), "one popup changes both");
     }
 
     #[test]
