@@ -3961,6 +3961,7 @@ impl NoteCraftApp {
     /// the Draw tab, because the drawing is its own file beside the page.
     fn step_back(&mut self, back: bool) {
         let mut nothing = false;
+        let mut cols_moved = false;
         if let Some(ed) = self.editor.as_mut() {
             if !ed.writable {
                 nothing = true;
@@ -3980,10 +3981,20 @@ impl NoteCraftApp {
                         ed.dirty_since = Some(Instant::now());
                         // The restored text says whether the page was arranged.
                         ed.arranged = notecraft_formats::boxes::has_boxes(ed.format, &ed.body);
+                        // The table widths as they were then, written back when they differ.
+                        if let Some(columns) = step.columns
+                            && columns != ed.columns
+                        {
+                            ed.columns = columns;
+                            cols_moved = true;
+                        }
                     }
                     None => nothing = true,
                 }
             }
+        }
+        if cols_moved {
+            self.save_block_marks((true, false));
         }
         if nothing {
             self.say(if back { crate::tl_id!("ui.nothing_to_undo") } else { crate::tl_id!("ui.nothing_to_redo") });
@@ -4008,13 +4019,16 @@ impl NoteCraftApp {
 
     fn remember(ed: &mut Editor, edit: bool) {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
-        if same {
-            // Nothing really changed, or the page was just put back by undo itself.
-            return;
-        }
-        // Only the cursor's place on open paper came or went: the page is the one remembered.
-        let saved = ed.body_to_save();
-        if saved != ed.body && ed.history.here().is_some_and(|s| s.body == saved) {
+        if same || {
+            // Only the cursor's place on open paper came or went: the page is the one remembered.
+            let saved = ed.body_to_save();
+            saved != ed.body && ed.history.here().is_some_and(|s| s.body == saved)
+        } {
+            // Nothing really changed, or the page was just put back by undo itself. A column
+            // dragged since is still noted, so an undo back to here keeps it (issue #154).
+            if let Some(step) = ed.history.here_mut() {
+                step.columns = Some(ed.columns.clone());
+            }
             return;
         }
         let here = ed.caret.as_ref().map(|c| c.block);
@@ -4024,7 +4038,8 @@ impl NoteCraftApp {
             (true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
             _ => crate::history::Kind::Edit,
         };
-        let step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
+        let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
+        step.columns = Some(ed.columns.clone());
         ed.history.record(step);
     }
 
@@ -4183,9 +4198,13 @@ impl NoteCraftApp {
         Self::remember_step(ed);
         let Some(block) = ed.blocks.get_mut(at) else { return };
         let mut last = None;
+        let mut done = 0;
         for _ in 0..times {
             match pageedit::edit_table(block, cell, what) {
-                Some(to) => last = Some(to),
+                Some(to) => {
+                    last = Some(to);
+                    done += 1;
+                }
                 None => break,
             }
         }
@@ -4197,8 +4216,16 @@ impl NoteCraftApp {
         let text = pageedit::cell_text(block, to).unwrap_or_default();
         ed.rebuild_body();
         ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(to), span: None, inline: None });
+        // A width the page keeps for this table stays with the column it was dragged for, so a
+        // column put in or taken out does not hand its neighbours the wrong widths (issue #154).
+        let cols_moved = match what {
+            pageedit::TableEdit::InsertColumn(left) => ed.columns.insert_column(at, if left { cell.1 } else { cell.1 + 1 }, pageedit::COLUMN_W),
+            pageedit::TableEdit::DeleteColumn => (0..done).fold(false, |moved, _| ed.columns.remove_column(at, cell.1) || moved),
+            _ => false,
+        };
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
+        self.save_block_marks((cols_moved, false));
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -8754,5 +8781,108 @@ mod structural_undo_tests {
         h.state_mut().undo();
         settle(&mut h);
         assert_eq!(blocks(&h), typed, "undo takes back the column and keeps what was written");
+    }
+}
+
+/// A table's column widths are kept against its place among the page's blocks and its column
+/// numbers. A column put in or taken out, or a line split above the table, used to leave them
+/// where they were, so the widths went to the wrong columns or were lost (issue #154).
+#[cfg(test)]
+mod table_width_tests {
+    use super::*;
+    use notecraft_model::tablecols;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    /// An HTML page with a line and a table under it whose two columns were dragged to 210 and
+    /// 290, open in the window.
+    fn page(name: &str) -> (notecraft_store::testing::TempDir, PathBuf, H) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let page = sample.html_page.clone();
+        notecraft_store::page::save_body(&page, "<p>Alpha</p><table><tr><th>Wide</th><th>Narrow</th></tr><tr><td>A</td><td>B</td></tr></table>")
+            .expect("fixture");
+        notecraft_store::page::set_table_columns(&page, &tablecols::parse("1:210,290")).expect("widths");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        settle(&mut h);
+        assert_eq!(widths(&h).of(1), Some([210.0, 290.0].as_slice()), "the page opened with its widths");
+        (t, page, h)
+    }
+
+    fn settle(h: &mut H) {
+        for _ in 0..5 {
+            h.step();
+        }
+    }
+
+    fn widths(h: &H) -> tablecols::Widths {
+        h.state().editor.as_ref().map(|e| e.columns.clone()).expect("editor")
+    }
+
+    fn into_cell(h: &mut H, cell: (usize, usize)) {
+        let ed = h.state_mut().editor.as_mut().expect("editor");
+        let text = pageedit::cell_text(&ed.blocks[1], cell).unwrap_or_default();
+        ed.caret = Some(pageedit::Caret { block: 1, text, focus: true, selection: (0, 0), place: None, cell: Some(cell), span: None, inline: None });
+    }
+
+    #[test]
+    fn a_column_put_in_on_the_left_keeps_the_others_widths() {
+        let (_t, page, mut h) = page("widths-insert-left");
+        into_cell(&mut h, (0, 0));
+        h.state_mut().ribbon_act(ribbon::Act::Table(pageedit::TableEdit::InsertColumn(true)));
+        settle(&mut h);
+        let want = [pageedit::COLUMN_W, 210.0, 290.0];
+        assert_eq!(widths(&h).of(1), Some(want.as_slice()), "Wide and Narrow keep their widths, the new column the usual one");
+        let saved = notecraft_store::page::table_columns(&page).expect("saved widths");
+        assert_eq!(saved.of(1), Some(want.as_slice()), "and the page's file says so");
+
+        // Undo puts the widths back with the column, and Redo brings both again.
+        h.state_mut().undo();
+        settle(&mut h);
+        assert_eq!(widths(&h).of(1), Some([210.0, 290.0].as_slice()), "undo puts the widths back");
+        assert_eq!(notecraft_store::page::table_columns(&page).expect("saved").of(1), Some([210.0, 290.0].as_slice()));
+        h.state_mut().redo();
+        settle(&mut h);
+        assert_eq!(widths(&h).of(1), Some(want.as_slice()), "redo brings them again");
+    }
+
+    #[test]
+    fn a_column_taken_out_takes_only_its_own_width() {
+        let (_t, _page, mut h) = page("widths-delete");
+        into_cell(&mut h, (0, 0));
+        h.state_mut().ribbon_act(ribbon::Act::Table(pageedit::TableEdit::DeleteColumn));
+        settle(&mut h);
+        assert_eq!(widths(&h).of(1), Some([290.0].as_slice()), "Narrow keeps its width when Wide goes");
+    }
+
+    #[test]
+    fn a_line_split_above_the_table_moves_its_widths_with_it() {
+        let (_t, page, mut h) = page("widths-split");
+        {
+            let ed = h.state_mut().editor.as_mut().expect("editor");
+            let text = pageedit::caret_text(&ed.blocks[0]);
+            let end = text.chars().count();
+            ed.caret =
+                Some(pageedit::Caret { block: 0, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None, inline: None });
+        }
+        settle(&mut h);
+        h.key_press(egui::Key::Enter);
+        settle(&mut h);
+        let ed = h.state().editor.as_ref().expect("editor");
+        assert!(matches!(ed.blocks.get(2), Some(notecraft_formats::Block::Table { .. })), "the table moved down a block: {:?}", ed.blocks);
+        assert_eq!(widths(&h).of(2), Some([210.0, 290.0].as_slice()), "its widths moved with it");
+        assert_eq!(widths(&h).of(1), None, "and the new line has none");
+        settle(&mut h);
+        h.state_mut().save();
+        let saved = notecraft_store::page::table_columns(&page).expect("saved widths");
+        assert_eq!(saved.of(2), Some([210.0, 290.0].as_slice()), "the page's file follows: {saved:?}");
     }
 }
