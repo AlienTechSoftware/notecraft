@@ -866,4 +866,17 @@
 @id	ui.table_align_center_tip	$$$Put the words in the middle of the cell@@@
 @id	ui.table_align_right	$$$Align@@@\n$$$Right@@@
 @id	ui.table_align_right_tip	$$$Line the words up with the right of the cell@@@
+@id	ui.list_the_tagged_notes_and_go_to_them	$$$List the tagged notes and go to them@@@
+@id	ui.tags_summary	$$$Tags Summary@@@
+@id	ui.close_the_tags_summary	$$$Close the tags summary@@@
+@id	ui.tags_look_in	$$$Look in@@@
+@id	ui.tags_scope_this_page	$$$This page@@@
+@id	ui.tags_scope_this_section	$$$This section@@@
+@id	ui.tags_scope_this_notebook	$$$This notebook@@@
+@id	ui.tags_scope_all_notebooks	$$$All notebooks@@@
+@id	ui.tags_only_unchecked_to_do_items	$$$Only unchecked To Do items@@@
+@id	ui.refresh	$$$Refresh@@@
+@id	ui.look_again_for_tagged_notes	$$$Look again for tagged notes@@@
+@id	ui.no_tagged_notes_here	$$$No tagged notes here.@@@
+@id	ui.tags_empty_line	$$$(an empty line)@@@
 @id	ui.scroll_the_page_sideways	$$$Scroll the page sideways@@@
