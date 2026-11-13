@@ -20,6 +20,7 @@
 @id	ui.a_mermaid_diagram_kept_as_its_source	A Mermaid diagram, kept as its source
 @id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	A new notebook is a folder in {folder}, with one section and one page inside it.
 @id	ui.a_new_page_in_this_section	A new page in this section
+@id	ui.a_new_section_in_the_chosen_notebook	A new section in the chosen notebook
 @id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	A new spreadsheet beside the page, opened in GridCraft
 @id	ui.a_numbered_list	A numbered list
 @id	ui.a_page_here	A page here
@@ -49,6 +50,11 @@
 @id	ui.added_a_link_to_name_at_the_end_of_the_page	Added a link to {name} at the end of the page
 @id	ui.added_a_tool	Added a {tool}
 @id	ui.address	Address
+@id	ui.the_line_changed_put_the_link_in_again	The line changed; put the link in again
+@id	ui.select_words_in_one_line_for_a_link	Select words in one line for a link
+@id	ui.that_address_cannot_be_used_for_a_link	That address cannot be used for a link
+@id	ui.remove_link	Remove link
+@id	ui.text_to_display	Text to display
 @id	ui.alignment	Alignment
 @id	ui.alignment_and_direction	Alignment and direction
 @id	ui.alignment_and_which_way_this_paragraph_reads	Alignment, and which way this paragraph reads
@@ -267,6 +273,11 @@
 @id	ui.format_background_2	Format\nBackground
 @id	ui.format_for_this_page	Format for this page
 @id	ui.format_painter	Format Painter
+@id	ui.click_in_the_words_whose_formatting_to_copy	Click in the words whose formatting to copy
+@id	ui.pick_the_words_to_give_that_formatting	Pick the words to give that formatting
+@id	ui.format_painter_keeps_painting_until_escape	Format Painter keeps painting until Escape
+@id	ui.format_painter_put_down	Format Painter put down
+@id	ui.format_painter_tip	Copy the formatting at the caret to the next words you pick. Double-click to keep painting until Escape.
 @id	ui.forward	Forward
 @id	ui.forward_to_the_page_after_alt_right	Forward to the page after (Alt+Right)
 @id	ui.fountain_pen	Fountain Pen
@@ -424,6 +435,7 @@
 @id	ui.new_notebook	New notebook
 @id	ui.new_notebook_2	New notebook...
 @id	ui.new_page	New page
+@id	ui.new_section_button	+ New section
 @id	ui.new_page_2	New page...
 @id	ui.new_page_cmd_n	New Page (Cmd+N)
 @id	ui.new_page_ctrl_n	New Page (Ctrl+N)
