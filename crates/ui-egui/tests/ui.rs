@@ -7175,31 +7175,103 @@ fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
 /// SUP-009 (owner, 2026-11-11): the size box is editable, as OneNote's is. A typed size applies
 /// to the selection on Enter, and the box then shows that size.
 #[test]
-#[ignore = "SUP-009: clicking into the size box clears the page selection; the typed size does not apply yet"]
 fn a_typed_font_size_applies_to_the_selection() {
+    typed_font_size_case(false, false);
+}
+
+#[test]
+fn a_typed_font_size_applies_to_the_html_selection() {
+    typed_font_size_case(true, false);
+}
+
+#[test]
+fn a_typed_font_size_applies_on_enter_in_cmgfm() {
+    typed_font_size_case(false, true);
+}
+
+#[test]
+fn a_typed_font_size_applies_on_enter_in_html() {
+    typed_font_size_case(true, true);
+}
+
+fn typed_font_size_case(html: bool, enter: bool) {
     let (_t, app, s) = sample_app("ui-font-size-typed");
-    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
-    notecraft_store::page::save_body(&s.md_page, "<span style=\"font-size: 18pt\">alpha</span> plain").expect("fixture");
-    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    let (theme, width) = if html == enter { (LIGHT, 2000.0) } else { (DARK, 1280.0) };
+    let mut h = sized_harness(app, theme, egui::vec2(width, 900.0));
+    let page = if html { &s.html_page } else { &s.md_page };
+    let format = if html { notecraft_model::PageFormat::Html } else { notecraft_model::PageFormat::Cmgfm };
+    let body = if html {
+        "<p><span style=\"font-size: 18pt\"><b>alpha</b></span> plain</p><p>untouched paragraph</p>"
+    } else {
+        "<span style=\"font-size: 18pt\">**alpha**</span> plain\n\nuntouched paragraph"
+    };
+    notecraft_store::page::save_body(page, body).expect("fixture");
+    h.state_mut().open_path(&page.to_string_lossy());
     settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
     h.get_by_label("Font size").click();
-    h.run();
+    pump(&mut h);
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    h.run();
+    pump(&mut h);
     h.get_by_label("Font size").type_text("24");
-    h.run();
+    pump(&mut h);
     assert_eq!(h.get_by_label("Font size").value().as_deref(), Some("24"), "the box holds the typed text before Enter");
-    // Leaving the box (by clicking the drop-down arrow) applies the typed size.
-    h.get_by_label("Font Size").click();
-    h.run();
+    if enter {
+        h.key_press(egui::Key::Enter);
+    } else {
+        // Leaving the value box for its arrow also commits the entry.
+        h.get_by_label("Font Size").click();
+    }
+    pump(&mut h);
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24"), "the box shows the typed size");
-    assert!(h.state().body().unwrap_or_default().contains("24pt"), "the selection took the typed size");
+    let after = h.state().body().unwrap_or_default().to_string();
+    let (blocks, _) = notecraft_formats::boxes::read(format, &after);
+    assert_eq!(blocks.len(), 2, "Enter in the combo must not create a paragraph in the note");
+    let notecraft_formats::Block::Paragraph(selected) = &blocks[0] else { panic!("selected paragraph") };
+    assert_eq!(selected.iter().map(|s| s.text.as_str()).collect::<String>(), "alpha plain", "typing in the combo did not edit the note");
+    assert!(selected.iter().all(|s| s.font_size == Some(24)), "the original selection took the size: {after}");
+    assert_eq!(selected.iter().filter(|s| s.bold).map(|s| s.text.as_str()).collect::<String>(), "alpha", "other marks survive");
+    let notecraft_formats::Block::Paragraph(outside) = &blocks[1] else { panic!("outside paragraph") };
+    assert_eq!(outside.iter().map(|s| s.text.as_str()).collect::<String>(), "untouched paragraph");
+    assert!(outside.iter().all(|s| s.font_size.is_none()), "the unselected paragraph is unchanged");
+    review(&mut h, &format!("typed_font_size_{html}_{enter}"));
+    ask(&mut h, "ui.undo", json!({})).expect("undo size");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before, "one undo restores the original mixed sizes");
+    ask(&mut h, "ui.redo", json!({})).expect("redo size");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), after);
+    h.state_mut().save_page_now();
+    h.state_mut().open_path(&page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "typed size survives saving and reopening");
+
+    for (entry, key) in [("19", egui::Key::Enter), ("96", egui::Key::Enter), ("not a size", egui::Key::Enter), ("36", egui::Key::Escape)] {
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("select the same paragraph");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
+        pump(&mut h);
+        h.get_by_label("Font size").click();
+        pump(&mut h);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        pump(&mut h);
+        h.get_by_label("Font size").type_text(entry);
+        pump(&mut h);
+        h.key_press(key);
+        pump(&mut h);
+        assert_eq!(
+            h.get_by_label("Font Size").value().as_deref(),
+            Some("24"),
+            "rejected/cancelled entry {entry} reverts to the actual selection size"
+        );
+        assert_eq!(h.state().body().unwrap_or_default().trim_end(), after.trim_end(), "rejected/cancelled entry {entry} does not alter the page");
+    }
 }
 
 /// OneNote: the size list opens under the size box, left-aligned with it, not under the arrow.
