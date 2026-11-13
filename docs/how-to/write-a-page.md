@@ -46,6 +46,27 @@ Citation, Quote, Code and Normal; and the Tags gallery ([tag a line](tag-a-line.
 
 A style or a tag you ask for twice turns itself off again, as it does elsewhere.
 
+## Font controls
+
+Select the words first, then use the Home font name or size box. A selection can contain
+different sizes and other marks. Changing its size keeps its words, bold/italic marks and
+unselected text. Safely mapped text selections across paragraphs are supported too.
+At a plain caret, a chosen size applies to the next text you type.
+
+The size box accepts the same whole-point values as its list: 8, 9, 10, 11, 12, 14, 16,
+18, 20, 22, 24, 26, 28, 36, 48 and 72. Type one and press Enter, or leave the box to apply
+it. Escape cancels an entry. Unsupported entries, including fractional sizes and whole
+sizes outside this list, revert without changing the page.
+
+The controls show the explicit value, **Default** for an inherited value, or **Mixed**
+for different values in one selection. HTML and CommonMark pages keep the same font
+formatting when saved and reopened. Undo and Redo include these changes.
+
+Font families use regular installed desktop faces. Missing families fall back and are
+reported. Loading bold/italic faces and browser access to local fonts are not supported.
+Some table-cell, raw-markup and ambiguous selections also remain unsupported; see
+[known limits](../gaps.md). Font colour, highlighting and emphasis are separate controls.
+
 ## Equations
 
 Insert, then **Equation**, or type TeX between dollar signs: `$E = mc^2$` inline, or a block
