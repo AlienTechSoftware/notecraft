@@ -32,7 +32,7 @@ index 0000000..d9828a4
 +wasm-bindgen = "0.2"
 +wasm-bindgen-futures = "0.4"
 +js-sys = "0.3"
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location", "Storage", "console"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "Node", "HtmlElement", "HtmlAnchorElement", "HtmlCanvasElement", "Blob", "BlobPropertyBag", "Url", "Location", "Storage", "console"] }
 diff --git a/apps/notecraft-web/Trunk.toml b/apps/notecraft-web/Trunk.toml
 new file mode 100644
 index 0000000..0b57fe8
@@ -78,6 +78,7 @@ new file mode 100644
 index 0000000..f4394fb
 --- /dev/null
 +++ b/apps/notecraft-web/src/main.rs
+@@ -0,0 +1,492 @@
 +// SPDX-License-Identifier: MIT OR Apache-2.0
 +//! NoteCraft in the browser, for Playground (patches/onenote.yaml in github.com/daijro/openplayground): the desktop
 +//! window (crates/ui-egui) on the page's canvas.
@@ -314,6 +315,41 @@ index 0000000..f4394fb
 +        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
 +    }
 +
++    /// Deliver an explicit export through the browser, outside the virtual filesystem.
++    fn download_picture(file: &notecraft_ui_egui::app::FileDownload) -> Result<(), JsValue> {
++        let window = web_sys::window().ok_or_else(|| JsValue::from_str("Browser window is unavailable"))?;
++        let document = window.document().ok_or_else(|| JsValue::from_str("Browser document is unavailable"))?;
++        let body = document.body().ok_or_else(|| JsValue::from_str("Browser document body is unavailable"))?;
++        let anchor = document.create_element("a")?.dyn_into::<web_sys::HtmlAnchorElement>()?;
++        let parts = js_sys::Array::new();
++        parts.push(&js_sys::Uint8Array::from(file.bytes.as_slice()));
++        let options = web_sys::BlobPropertyBag::new();
++        options.set_type(file.mime);
++        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options)?;
++        let url = web_sys::Url::create_object_url_with_blob(&blob)?;
++        anchor.set_href(&url);
++        anchor.set_download(&file.name);
++        if let Err(error) = body.append_child(&anchor) {
++            let _ = web_sys::Url::revoke_object_url(&url);
++            return Err(error);
++        }
++        anchor.click();
++        anchor.remove();
++        // Keep the URL alive while the browser starts reading the Blob.
++        let cleanup_url = url.clone();
++        let cleanup = Closure::once(move || {
++            let _ = web_sys::Url::revoke_object_url(&cleanup_url);
++        });
++        match window.set_timeout_with_callback_and_timeout_and_arguments_0(cleanup.as_ref().unchecked_ref(), 60_000) {
++            Ok(_) => cleanup.forget(),
++            Err(error) => {
++                let _ = web_sys::Url::revoke_object_url(&url);
++                return Err(error);
++            }
++        }
++        Ok(())
++    }
++
 +    pub struct Web {
 +        pub app: NoteCraftApp,
 +        /// The in-memory folder is kept in Files.
@@ -461,7 +497,16 @@ index 0000000..f4394fb
 +        }
 +
 +        fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
++            self.app.enable_file_downloads();
 +            self.app.show(ui);
++            for file in self.app.take_file_downloads() {
++                if let Err(error) = download_picture(&file) {
++                    let error = error.as_string().unwrap_or_else(|| format!("{error:?}"));
++                    let message = notecraft_ui_egui::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &error)]);
++                    self.app.alert("picture-download", notecraft_ui_egui::i18n::t_id("ui.save_picture_2"), &message);
++                    ui.ctx().request_repaint();
++                }
++            }
 +            self.after();
 +        }
 +
