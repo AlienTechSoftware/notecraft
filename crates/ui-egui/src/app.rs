@@ -617,6 +617,18 @@ enum Dialog {
         kind: NodeKind,
         dest: Option<PathBuf>,
     },
+    /// Insert > Link, or editing the link the caret is in (issue #163): the words to show
+    /// and the address, put into the line `block` (or its table cell) in place of the
+    /// characters `range` of the caret's text.
+    Link {
+        block: usize,
+        cell: Option<(usize, usize)>,
+        range: (usize, usize),
+        text: String,
+        address: String,
+        editing: bool,
+        first: bool,
+    },
     /// A file in the page's own folder, about to be deleted.
     DeleteFile {
         page: PathBuf,
@@ -3631,7 +3643,7 @@ impl NoteCraftApp {
                     Self::remember_edit(ed);
                     self.save_block_marks(marks);
                 }
-                "link" => self.insert_in_page("[text](https://)"),
+                "link" => self.open_link_dialog(),
                 "equation" => self.insert_in_page("$E = mc^2$"),
                 "date" | "time" | "datetime" => {
                     let now = notecraft_model::time::iso_now();
@@ -5442,6 +5454,61 @@ impl NoteCraftApp {
     }
 
     /// Puts a snippet where the caret is, or at the end of the page.
+    /// Opens the Link dialog, as OneNote's Insert > Link and Ctrl+K do (issue #163). With the
+    /// caret in a link it edits that link; with words selected they are the words to show;
+    /// otherwise the link goes in at the caret.
+    pub fn open_link_dialog(&mut self) {
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        if ed.across.is_some_and(|a| !a.inside_one_block()) {
+            self.say(crate::tl_id!("ui.select_words_in_one_line_for_a_link"));
+            return;
+        }
+        Self::place_caret_for_format(ed);
+        let Some(caret) = ed.caret.as_ref() else {
+            self.say(crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon"));
+            return;
+        };
+        let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        let (range, text, address, editing) = match pageedit::link_at(&caret.text, lo, hi) {
+            Some((start, end, words, address)) => ((start, end), words, address, true),
+            None => ((lo, hi), caret.text.chars().skip(lo).take(hi - lo).collect(), String::new(), false),
+        };
+        self.dialog = Some(Dialog::Link { block: caret.block, cell: caret.cell, range, text, address, editing, first: true });
+    }
+
+    /// Puts `replacement` in place of the characters `range` of the caret's line, when the
+    /// caret is still in the line the Link dialog was opened for. One step of the history.
+    fn replace_in_caret_line(&mut self, block: usize, cell: Option<(usize, usize)>, range: (usize, usize), replacement: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.caret.as_ref().is_some_and(|c| c.block == block && c.cell == cell) {
+            self.say(crate::tl_id!("ui.the_line_changed_put_the_link_in_again"));
+            return;
+        }
+        Self::remember_step(ed);
+        let Some(caret) = ed.caret.as_mut() else { return };
+        let chars: Vec<char> = caret.text.chars().collect();
+        let (a, b) = (range.0.min(chars.len()), range.1.min(chars.len()));
+        let mut text: String = chars[..a].iter().collect();
+        text.push_str(replacement);
+        let at = text.chars().count();
+        text.extend(&chars[b..]);
+        caret.text = text;
+        caret.selection = (at, at);
+        caret.place = Some(at);
+        caret.focus = true;
+        // Read again from the words, so the new link is a link and not text that looks like one.
+        caret.inline = None;
+        if let Some(b) = ed.blocks.get_mut(block) {
+            caret.write(b);
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+    }
+
     fn insert_in_page(&mut self, text: &str) {
         let Some(ed) = self.editor.as_mut() else { return };
         // An insert is an edit: it is recorded for undo before the page changes.
@@ -7198,6 +7265,57 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::Link { block, cell, range, text, address, editing, first } => {
+                let (mut go, mut remove) = (false, false);
+                let usable = pageedit::linkable_address(address);
+                egui::Window::new(crate::tl_id!("ui.link")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+                    ctx,
+                    |ui| {
+                        egui::Grid::new("link-dialog").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+                            ui.label(crate::tl_id!("ui.text_to_display"));
+                            let words = ui.add(egui::TextEdit::singleline(text).desired_width(320.0));
+                            ui.end_row();
+                            ui.label(crate::tl_id!("ui.address"));
+                            let to = ui.add(egui::TextEdit::singleline(address).desired_width(320.0).hint_text("https://"));
+                            ui.end_row();
+                            // The address is what is missing first, unless the words are.
+                            if *first {
+                                if text.is_empty() && !*editing {
+                                    words.request_focus()
+                                } else {
+                                    to.request_focus()
+                                }
+                                *first = false;
+                            }
+                            if (words.lost_focus() || to.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) && usable {
+                                go = true;
+                            }
+                        });
+                        if !address.trim().is_empty() && !usable {
+                            ui.colored_label(self.tokens.warn, crate::tl_id!("ui.that_address_cannot_be_used_for_a_link"));
+                        }
+                        ui.horizontal(|ui| {
+                            if *editing && modal_button(ui, &self.tokens, crate::tl_id!("ui.remove_link"), false).clicked() {
+                                remove = true;
+                            }
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                            {
+                                keep = false;
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.ok"), true, usable).clicked() {
+                                go = true;
+                            }
+                        });
+                    },
+                );
+                if go || remove {
+                    let (block, cell, range) = (*block, *cell, *range);
+                    // Removing keeps the words and lets go of the address.
+                    let replacement = if remove { text.trim().to_string() } else { pageedit::link_markup(text, address) };
+                    self.replace_in_caret_line(block, cell, range, &replacement);
+                    keep = false;
+                }
+            }
             Dialog::Rename { path, title } => {
                 let mut go = false;
                 egui::Window::new(crate::tl_id!("ui.rename")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
@@ -7996,6 +8114,10 @@ impl NoteCraftApp {
         // them: with the caret in the page, the key went nowhere and the words typed to find
         // something were written into the note (issue #134). The code view has a Find of its
         // own for the file it shows, so it keeps Ctrl+F while it is open.
+        // OneNote's Ctrl+K: the Link dialog for the words picked or the link the caret is in.
+        if !self.show_source && self.dialog.is_none() && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::K)) {
+            self.open_link_dialog();
+        }
         if !self.show_source && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F) || i.consume_key(Modifiers::COMMAND, Key::E)) {
             if let Some(caret) = self.editor.as_mut().and_then(|ed| ed.caret.as_mut()) {
                 caret.focus = false;
