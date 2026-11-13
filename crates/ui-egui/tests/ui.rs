@@ -2693,6 +2693,57 @@ fn a_table_cell_is_written_in_and_the_page_keeps_it() {
     );
 }
 
+/// The whole of a cell is where it is clicked into, not only its words: a click in an empty
+/// cell, or in the space after a short word, puts the caret there (issue #147). Before, only
+/// a click on the letters did anything, and an empty cell could not be written in at all.
+#[test]
+fn a_click_anywhere_in_a_table_cell_writes_in_it() {
+    let (_t, app, s) = sample_app("ui-table-cell-click");
+    let mut h = harness(app, LIGHT);
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Cells", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": page, "body": "| Heading one | Heading two |\n|---|---|\n| x |  |\n"}}),
+    )
+    .expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    // Into the empty cell: under the second heading, level with the x.
+    let second = h.get_by_label("Heading two").rect();
+    let x = h.get_by_label("x").rect();
+    ask(&mut h, "ui.click", json!({"x": second.center().x, "y": x.center().y})).expect("click the empty cell");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Cell B"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Cell B"), "what was typed went into the empty cell:\n{body}");
+    assert!(body.lines().any(|l| l.contains('x') && l.contains("Cell B")), "on the x's row:\n{body}");
+
+    // And into the space after the x, well to the right of the letter.
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the cell");
+    settle(&mut h);
+    let x = h.get_by_label("x").rect();
+    // Near the right of the first column, clear of the border between the columns.
+    let right = second.min.x - 16.0;
+    assert!(right > x.max.x + 20.0, "the click is well clear of the letter: {right} vs {}", x.max.x);
+    ask(&mut h, "ui.click", json!({"x": right, "y": x.center().y})).expect("click after the x");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Y"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("xY") || body.contains("Yx"), "the click after the x went into its cell:\n{body}");
+}
+
 /// Tab off the last cell of a table adds a row and lands in it, the way OneNote grows a
 /// table as it is filled in.
 #[test]
