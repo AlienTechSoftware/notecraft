@@ -4971,6 +4971,71 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     review(&mut h, "page_paper");
 }
 
+/// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of
+/// typing a placeholder into the note; the same dialog edits the link the caret is in and can
+/// take the link off while keeping its words. Both page formats (issue #163).
+#[test]
+fn the_link_dialog_puts_in_edits_and_removes_a_link() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-link-dialog");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p>see the plan today</p>" } else { "see the plan today" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        // Pick "the plan": after "see ", eight letters with Shift held.
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        settle(&mut h);
+        for _ in 0..4 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        for _ in 0..8 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+
+        // Ctrl+K: the picked words are the words to show; the address is asked for.
+        ask(&mut h, "ui.key", json!({"key": "K", "ctrl": true})).expect("Ctrl+K");
+        settle(&mut h);
+        assert!(h.query_all_by_label("Text to display").next().is_some(), "html={html}: the Link dialog is open");
+        ask(&mut h, "ui.text", json!({"text": "https://example.test/plan"})).expect("type the address");
+        settle(&mut h);
+        review(&mut h, "link_dialog");
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let made = if html { "<a href=\"https://example.test/plan\">the plan</a>" } else { "[the plan](https://example.test/plan)" };
+        assert!(body.contains(made), "html={html}: the words became a link:\n{body}");
+        assert!(body.contains("see ") && body.contains(" today"), "html={html}: and the rest is as it was:\n{body}");
+
+        // With the caret in the link, the dialog edits it.
+        ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("into the link");
+        settle(&mut h);
+        h.get_by_label("Insert").click();
+        settle(&mut h);
+        h.get_by_label("Link").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Remove link").next().is_some(), "html={html}: an existing link can be taken off");
+        h.get_by_label("Remove link").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        assert!(!body.contains("example.test"), "html={html}: the link is gone:\n{body}");
+        assert!(body.contains("see the plan today"), "html={html}: and its words are kept:\n{body}");
+
+        // Undo puts the link back.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        assert!(h.state().body().unwrap_or_default().contains("example.test/plan"), "html={html}: undo brings the link back");
+    }
+}
+
 /// Copy link to page, the way OneNote copies one: the link names the page from the
 /// notebooks folder down, so it works wherever it is pasted, and clicking it opens the
 /// page.

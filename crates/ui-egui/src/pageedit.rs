@@ -1525,6 +1525,55 @@ pub fn set_cell_text(block: &mut Block, cell: (usize, usize), text: &str) {
     }
 }
 
+/// A link written `[text](address)` in a line's editable text that the caret or selection
+/// (`lo..hi`, in characters) is in: where it starts and ends, in characters, its text and its
+/// address. A picture (`![...](...)`) is not a link. For the Link dialog (issue #163).
+pub fn link_at(text: &str, lo: usize, hi: usize) -> Option<(usize, usize, String, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '[' && (i == 0 || chars[i - 1] != '!') {
+            let close = (i + 1..chars.len()).find(|&j| chars[j] == ']' || chars[j] == '[');
+            if let Some(close) = close.filter(|&j| chars[j] == ']')
+                && chars.get(close + 1) == Some(&'(')
+                && let Some(end) = (close + 2..chars.len()).find(|&j| chars[j] == ')')
+            {
+                let end = end + 1;
+                if i <= lo && hi <= end {
+                    let words: String = chars[i + 1..close].iter().collect();
+                    let address: String = chars[close + 2..end - 1].iter().collect();
+                    return Some((i, end, words, address));
+                }
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `[text](address)` as the line's editable text writes a link. Brackets in the words would
+/// end the link early, and a space or bracket in the address would end the address, so those
+/// are left out of the words and escaped in the address. Words left empty show the address.
+pub fn link_markup(text: &str, address: &str) -> String {
+    let address = address.trim();
+    let words: String = text.trim().chars().filter(|c| !matches!(c, '[' | ']')).collect();
+    let words = if words.is_empty() { address.to_string() } else { words };
+    let address = address.replace(' ', "%20").replace('(', "%28").replace(')', "%29");
+    format!("[{words}]({address})")
+}
+
+/// Whether an address may be linked to: something to go to, not a script to run.
+pub fn linkable_address(address: &str) -> bool {
+    let address = address.trim();
+    if address.is_empty() || address.chars().any(char::is_control) {
+        return false;
+    }
+    let scheme = address.split_once(':').map(|(s, _)| s.to_ascii_lowercase());
+    !matches!(scheme.as_deref(), Some("javascript" | "vbscript" | "data"))
+}
+
 /// Sorts a table's rows by one column, as OneNote's Table > Sort does (issue #171). Whole rows
 /// move, so every cell stays with its row and keeps its formatting. The heading row is never
 /// sorted: it stays on top. `rows` limits the sort to the body rows from one table row to
@@ -3463,6 +3512,34 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    /// Issue #163: the Link dialog finds the link the caret is in, writes one that reads back as
+    /// a link, and will not link to a script.
+    #[test]
+    fn links_are_found_written_and_checked() {
+        let line = "see [the plan](https://example.test/a) and ![pic](assets/p.png) here";
+        let (start, end, words, address) = link_at(line, 7, 7).expect("the caret is in the link");
+        assert_eq!((words.as_str(), address.as_str()), ("the plan", "https://example.test/a"));
+        assert_eq!(line.chars().skip(start).take(end - start).collect::<String>(), "[the plan](https://example.test/a)");
+        assert!(link_at(line, 0, 2).is_none(), "not in a link");
+        assert!(link_at(line, 46, 46).is_none(), "a picture is not a link");
+        assert!(link_at(line, 2, 7).is_none(), "a selection running out of the link is not in it");
+
+        assert_eq!(link_markup("the plan", " https://example.test/a b "), "[the plan](https://example.test/a%20b)");
+        assert_eq!(link_markup("", "https://example.test"), "[https://example.test](https://example.test)", "no words: the address shows");
+        assert_eq!(link_markup("a [b] c", "x(1)"), "[a b c](x%281%29)");
+        let spans = notecraft_formats::markdown::parse(&link_markup("go [now]", "../other page/")).remove(0);
+        let Block::Paragraph(spans) = spans else { panic!("a paragraph") };
+        assert_eq!(spans.len(), 1, "one link: {spans:?}");
+        assert_eq!(spans[0].link.as_deref(), Some("../other%20page/"));
+
+        for ok in ["https://example.test", "mailto:a@example.test", "../page/", "notecraft:/book/s/p?id=1"] {
+            assert!(linkable_address(ok), "{ok}");
+        }
+        for bad in ["", "  ", "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "vbscript:x", "a\nb"] {
+            assert!(!linkable_address(bad), "{bad:?}");
+        }
     }
 
     /// Issue #165: the Format Painter picks up the formatting at the caret and puts exactly that
