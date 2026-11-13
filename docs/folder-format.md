@@ -256,12 +256,18 @@ A page links to another by a relative path (`../other-page/`), which is what a p
 anywhere else understands. It may also link with NoteCraft's own scheme:
 
 ```text
-notecraft:/Notebook/Section/page-folder
+notecraft:/Notebook/Section/page-folder?id=18e782e8a2aa30300003
 ```
 
 The path is from the notebooks folder down, with forward slashes and the folder names as
 they are on disk. It is what Copy link to page puts on the clipboard, because a relative
 link depends on the page it is pasted into and that is not known when the link is copied.
+
+The `id` is the page's own `notecraft:id`. The path says where the page was when the link
+was copied; the id says which page it is. When the path no longer leads to that page (Make
+Subpage moved it, or another page now has its folder), the page with that id is looked for
+in the open notebooks instead. A link without an id, as ones copied before it was added, is
+resolved by its path alone.
 A reader that does not know the scheme shows it as an address and does not follow it; a
 relative link remains the form to use when writing a page by hand.
 

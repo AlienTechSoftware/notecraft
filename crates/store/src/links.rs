@@ -31,7 +31,14 @@ pub fn page_uri(roots: &[PathBuf], dir: &Path) -> Option<String> {
     let root = roots.iter().find(|r| full.starts_with(r))?;
     let rest = full.strip_prefix(link_base(root)).ok()?;
     let path = rest.components().filter_map(|c| c.as_os_str().to_str()).collect::<Vec<_>>().join("/");
-    Some(format!("{SCHEME}/{path}"))
+    // The page's id goes with its path, so the link still finds the page once it has moved,
+    // as Make Subpage moves it (issue #129). Only an id made of plain characters is written:
+    // it is read back from the link as it stands.
+    let id = read_node(&full).map(|n| n.id).filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    Some(match id {
+        Some(id) => format!("{SCHEME}/{path}?id={id}"),
+        None => format!("{SCHEME}/{path}"),
+    })
 }
 
 /// Where a link leads.
@@ -76,38 +83,26 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
     // character, and a slice there panics (issue #102).
     if let Some(rest) = href.get(..SCHEME.len()).filter(|head| head.eq_ignore_ascii_case(SCHEME)).map(|_| &href[SCHEME.len()..]) {
         let rest = rest.trim_start_matches('/');
+        // The page's id, which Copy Link to Page adds: the path is where the page was, the id
+        // is which page it is, and it still finds the page after it moved (issue #129).
+        let id = rest
+            .split('#')
+            .next()
+            .and_then(|r| r.split_once('?'))
+            .and_then(|(_, query)| query.split('&').find_map(|pair| pair.strip_prefix("id=")))
+            .map(percent_decode)
+            .filter(|id| !id.is_empty());
         let rest = rest.split(['#', '?']).next().unwrap_or("");
-        let decoded = percent_decode(rest);
-        if decoded.is_empty() || decoded.contains('\\') || decoded.contains('\0') {
-            return Link::Outside;
+        let by_path = resolve_scheme_path(roots, &percent_decode(rest));
+        let Some(id) = id else { return by_path };
+        // The path is kept when it is still that page. Anything else (nothing there, or another
+        // page now in its place) is looked for by id, inside the open notebooks only.
+        if let Link::Node(dir) = &by_path
+            && read_node(dir).is_some_and(|n| n.id == id)
+        {
+            return by_path;
         }
-        let mut inside_somewhere = None;
-        for root in roots {
-            // From the folder above a notebook opened from elsewhere, where links start now;
-            // then from the notebook itself, where links copied before issue #128 started.
-            let base = link_base(root);
-            let bases: &[&Path] = if base == root.as_path() { &[root] } else { &[base, root] };
-            for base in bases {
-                let Some(full) = normalise(base.join(&decoded)) else { continue };
-                if !full.starts_with(root) {
-                    // A link that climbs out of this notebook; it may still be in another.
-                    continue;
-                }
-                if full.is_dir() {
-                    return if read_node(&full).is_some() { Link::Node(full) } else { Link::File(full) };
-                }
-                if full.is_file() {
-                    return Link::File(full);
-                }
-                inside_somewhere.get_or_insert(full);
-            }
-        }
-        // Nothing of that name: missing when the path at least stayed inside a notebook,
-        // out when it climbed above every one of them.
-        return match inside_somewhere {
-            Some(full) => Link::Missing(full),
-            None => Link::Outside,
-        };
+        return roots.iter().find_map(|root| node_with_id(root, &id, 0)).map(Link::Node).unwrap_or(by_path);
     }
     if href.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("file:")) {
         // A `file:` address is a path in disguise and could name anything on the disk.
@@ -149,6 +144,50 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
     } else {
         Link::Missing(full)
     }
+}
+
+/// A link of our own's path, read from each open notebook's folder.
+fn resolve_scheme_path(roots: &[PathBuf], decoded: &str) -> Link {
+    if decoded.is_empty() || decoded.contains('\\') || decoded.contains('\0') {
+        return Link::Outside;
+    }
+    let mut inside_somewhere = None;
+    for root in roots {
+        // From the folder above a notebook opened from elsewhere, where links start now;
+        // then from the notebook itself, where links copied before issue #128 started.
+        let base = link_base(root);
+        let bases: &[&Path] = if base == root.as_path() { &[root] } else { &[base, root] };
+        for base in bases {
+            let Some(full) = normalise(base.join(decoded)) else { continue };
+            if !full.starts_with(root) {
+                // A link that climbs out of this notebook; it may still be in another.
+                continue;
+            }
+            if full.is_dir() {
+                return if read_node(&full).is_some() { Link::Node(full) } else { Link::File(full) };
+            }
+            if full.is_file() {
+                return Link::File(full);
+            }
+            inside_somewhere.get_or_insert(full);
+        }
+    }
+    // Nothing of that name: missing when the path at least stayed inside a notebook,
+    // out when it climbed above every one of them.
+    match inside_somewhere {
+        Some(full) => Link::Missing(full),
+        None => Link::Outside,
+    }
+}
+
+/// The node under `dir` whose id is `id`, looking no deeper than a notebook ever goes.
+fn node_with_id(dir: &Path, id: &str, depth: usize) -> Option<PathBuf> {
+    if depth > 32 {
+        return None;
+    }
+    crate::tree::child_dirs(dir)
+        .into_iter()
+        .find_map(|child| if read_node(&child).is_some_and(|n| n.id == id) { Some(child.clone()) } else { node_with_id(&child, id, depth + 1) })
 }
 
 /// The folder a link of our own is written from: the notebooks folder, or, for a notebook
@@ -371,6 +410,43 @@ mod tests {
         assert_eq!(resolve_in(&roots, &page_a, "notecraft:/section/page"), Link::Node(page_a.clone()));
         // And the folder above the notebook is not a way out of it.
         assert_eq!(resolve_in(&roots, &page_a, "notecraft:/away-a-sibling/x"), Link::Missing(root.join("away-a-sibling").join("x")));
+    }
+
+    /// Issue #129: Make Subpage moved the page's folder, and a link copied before the move
+    /// pointed at the old path and found nothing. The link carries the page's id, which the
+    /// move does not change, so it still finds the page, here and from another notebook.
+    #[test]
+    fn a_link_finds_its_page_after_make_subpage_moves_it() {
+        let (_t, root, a, b) = fixture("links-moved");
+        let roots = vec![root.clone()];
+        let uri = page_uri(&roots, &b).expect("a link to page B");
+        assert!(uri.contains("?id="), "the link carries the page's id: {uri}");
+        assert_eq!(resolve_in(&roots, &a, &uri), Link::Node(b.clone()), "before the move");
+
+        let moved = crate::ops::make_subpage(&b).expect("make page B a subpage of page A");
+        // The move names the folder canonically; compare folders, not spellings of them.
+        let node = |link: Link| match link {
+            Link::Node(p) => p.canonicalize().ok(),
+            _ => None,
+        };
+        let moved_at = moved.canonicalize().ok();
+        assert_ne!(moved, b, "the page's folder moved");
+        assert_eq!(node(resolve_in(&roots, &a, &uri)), moved_at, "the link follows the page");
+        assert_eq!(node(resolve_in(&roots, &a, &format!("{uri}#heading"))), moved_at, "with a fragment too");
+
+        // A link without the id, as one copied before this change, still goes by its path.
+        let bare = uri.split('?').next().expect("the path").to_string();
+        assert!(matches!(resolve_in(&roots, &a, &bare), Link::Missing(_)), "a bare old path is only a path");
+
+        // Another page in the old place: the link is for page B, not for whatever is there now.
+        let section = a.parent().expect("section").to_path_buf();
+        let settings = crate::Settings::at(root.parent().expect("temp").join("settings2.toml"));
+        let other = crate::ops::create_node(&section, "Page B", notecraft_model::NodeKind::Page, None, &settings).expect("a new page B");
+        assert_eq!(other, b, "the new page took the old folder name");
+        assert_eq!(node(resolve_in(&roots, &a, &uri)), moved_at, "the link still finds the page it was copied for");
+
+        // An id that is nowhere is no way out of the notebooks: the path decides as before.
+        assert_eq!(resolve_in(&roots, &a, "notecraft:/../secret?id=nothing"), Link::Outside);
     }
 
     #[test]

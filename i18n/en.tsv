@@ -289,6 +289,11 @@
 @id	ui.hide_the_page_title	Hide the page title
 @id	ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely	Snap boxes to the page's grid when you move or resize them. Hold Alt to place one freely.
 @id	ui.snap_to_grid	Snap to grid
+@id	ui.sort_ascending_2	Sort\nAscending
+@id	ui.sort_descending_2	Sort\nDescending
+@id	ui.sort_the_rows_by_the_caret_s_column_a_to_z	Sort the rows by the caret's column, A to Z and 1 to 9. The heading stays on top.
+@id	ui.sort_the_rows_by_the_caret_s_column_z_to_a	Sort the rows by the caret's column, Z to A and 9 to 1. The heading stays on top.
+@id	ui.the_rows_are_already_in_that_order	The rows are already in that order
 @id	ui.highlight	Highlight
 @id	ui.highlighter	Highlighter
 @id	ui.history	History
@@ -722,6 +727,8 @@
 @id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	This could not be moved to the recycle bin. Nothing was deleted.
 @id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	This does not delete notebooks or pages. It cannot be undone.
 @id	ui.this_file_will_be_opened_by_its_associated_application	This file will be opened by its associated application.
+@id	ui.this_is_the_first_page	This is the first page
+@id	ui.this_is_the_last_page	This is the last page
 @id	ui.this_notebook_s_recycle_bin_is_empty	This notebook's recycle bin is empty.
 @id	ui.this_page	This page
 @id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	This page holds markup NoteCraft does not edit yet, so it is shown as it reads.
