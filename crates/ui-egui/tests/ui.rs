@@ -3103,6 +3103,94 @@ fn a_column_border_is_dragged_and_the_page_keeps_the_width() {
     assert!(now.min.x > b.min.x + 40.0, "the second column moved right: {} then {}", b.min.x, now.min.x);
 }
 
+/// A labelled "+ New section" button is always there for the chosen notebook, in both side
+/// panel layouts, not only a plus that appears on hover. It opens the section dialog for the
+/// notebook the open page is in, and the new section is the one chosen afterwards (issue #139).
+#[test]
+fn a_new_section_button_adds_a_section_to_the_chosen_notebook() {
+    for split in [false, true] {
+        let (_t, app, s) = if split { split_sample_app("ui-new-section-split") } else { sample_app("ui-new-section") };
+        let mut h = harness(app, LIGHT);
+        ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        let notebook = s.notebook.clone();
+        let before = notecraft_store::tree::child_dirs(&notebook).len();
+        review(&mut h, if split { "new_section_split" } else { "new_section_tree" });
+
+        h.get_by_label("+ New section").click();
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "Plans"})).expect("type the name");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+        settle(&mut h);
+
+        let made: Vec<_> = notecraft_store::tree::child_dirs(&notebook)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title == "Plans" && n.kind == notecraft_model::NodeKind::Section))
+            .collect();
+        assert_eq!(made.len(), 1, "split={split}: one section named Plans was made in the notebook");
+        assert_eq!(notecraft_store::tree::child_dirs(&notebook).len(), before + 1, "split={split}: and nothing else");
+        let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        let chosen: Vec<&Value> =
+            state["rows"].as_array().map(|r| r.iter().filter(|row| row["selected"] == json!(true)).collect()).unwrap_or_default();
+        assert!(chosen.iter().any(|row| row["title"] == json!("Plans")), "split={split}: the new section is the chosen one: {chosen:?}");
+    }
+}
+
+/// Ctrl+F1 folds the ribbon away to its tab names and puts it back, as in Office, and the
+/// page takes the room; a tab clicked while it is folded shows its commands over the page
+/// until one is used or Escape is pressed. The choice is kept for the next start (issue #136).
+#[test]
+fn ctrl_f1_folds_the_ribbon_and_a_tab_shows_it_over_the_page() {
+    let (t, app, s) = sample_app("ui-ribbon-fold");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ribbon = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    let top = h.state().page_rect().expect("the page").min.y;
+    assert!(h.query_all_by_label("Bold").next().is_some(), "the Home tab's commands are there to begin with");
+
+    ask(&mut h, "ui.key", json!({"key": "F1", "ctrl": true})).expect("Ctrl+F1");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(true), "Ctrl+F1 folded the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_none(), "its commands are gone");
+    let folded_top = h.state().page_rect().expect("the page").min.y;
+    assert!(folded_top < top - 60.0, "the page took the ribbon's room: {top} then {folded_top}");
+    assert!(h.query_all_by_label("Insert").next().is_some(), "the tab names stay");
+    review(&mut h, "ribbon_folded");
+
+    // A tab shows its commands over the page, which stays where it is.
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true), "a clicked tab shows the ribbon");
+    assert!(h.query_all_by_label("Bold").next().is_some(), "with its commands");
+    review(&mut h, "ribbon_folded_tab_shown");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, folded_top, "over the page, not pushing it down");
+    // Using a command folds it away again.
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "using a command folds the ribbon away");
+    // And Escape does too.
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["shown"], json!(false), "Escape folds it away");
+
+    // Kept for the next start.
+    let kept = Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed");
+    assert_eq!(kept.as_deref(), Some("true"), "the choice is kept");
+
+    // The control at the end of the tab names puts it back, as Ctrl+F1 would.
+    h.get_by_label("Show the ribbon (Ctrl+F1)").click();
+    settle(&mut h);
+    assert_eq!(ribbon(&mut h)["collapsed"], json!(false), "the ribbon is back");
+    assert_eq!(h.state().page_rect().expect("the page").min.y, top, "and the page where it was");
+    assert!(h.query_all_by_label("Collapse the ribbon (Ctrl+F1)").next().is_some(), "with the control to fold it again");
+    assert_eq!(Settings::at(t.path().join("settings.toml")).get("ribbon_collapsed").as_deref(), Some("false"));
+}
+
 /// OneNote's Ctrl+Page Up and Ctrl+Page Down step through the section's page list, from the
 /// page as well as from the list, and stop at either end (issue #162).
 #[test]
@@ -3160,6 +3248,66 @@ fn ctrl_page_up_and_down_step_through_the_pages_of_the_section() {
     }
     assert_eq!(open_now(&mut h), canon(&listed[0]), "and stops at the first page");
     let _ = made;
+}
+
+/// OneNote's Move or Copy (Ctrl+Alt+M, or the row menu): pick a section from the notebooks, then
+/// Move takes the page there with its files and keeps it open, and Copy leaves the page and puts
+/// a copy with a new id there (issue #167).
+#[test]
+fn move_or_copy_takes_a_page_to_another_section() {
+    let (_t, app, s) = sample_app("ui-move-or-copy");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let ideas = s.md_page.parent().expect("ideas").to_path_buf();
+    let projects = s.html_page.parent().expect("projects").to_path_buf();
+    std::fs::write(s.md_page.join("assets").join("kept.txt"), "kept").expect("a file");
+    let id = notecraft_store::tree::read_node(&s.md_page).map(|n| n.id).expect("id");
+
+    // Ctrl+Alt+M is Cmd+Option+M on macOS, which the control channel's key command cannot send,
+    // so there the dialog is opened as the row menu opens it.
+    let open_move_or_copy = |h: &mut Harness<'_, NoteCraftApp>, page: &std::path::Path| {
+        if cfg!(target_os = "macos") {
+            h.state_mut().open_move_or_copy(page);
+        } else {
+            ask(h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M");
+        }
+        settle(h);
+    };
+    open_move_or_copy(&mut h, &s.md_page);
+    assert!(h.query_all_by_label("Move or Copy").next().is_some(), "the dialog is open");
+    review(&mut h, "move_or_copy");
+    h.query_all_by_label("Projects").last().expect("Projects in the dialog").click();
+    settle(&mut h);
+    h.get_by_label("Move").click();
+    settle(&mut h);
+
+    let pages_in = |dir: &std::path::Path| -> Vec<PathBuf> {
+        notecraft_store::tree::child_dirs(dir)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+            .collect()
+    };
+    assert!(!s.md_page.exists(), "the page left its section");
+    let moved =
+        pages_in(&projects).into_iter().find(|p| notecraft_store::tree::read_node(p).is_some_and(|n| n.id == id)).expect("the page is in Projects");
+    assert!(moved.join("assets").join("kept.txt").is_file(), "with its files");
+    let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["path"].as_str().unwrap_or_default().to_string();
+    assert!(open.ends_with(&format!("projects/{}", moved.file_name().expect("name").to_string_lossy())), "and it is still the open page: {open}");
+
+    // Copy it back to Ideas: it stays in Projects, and the copy is a page of its own.
+    open_move_or_copy(&mut h, &moved);
+    // The tree has an Ideas row too; the dialog's is drawn last, over it.
+    h.query_all_by_label("Ideas").last().expect("Ideas in the dialog").click();
+    settle(&mut h);
+    // The ribbon has a Copy button too; the dialog's is drawn last.
+    h.query_all_by_label("Copy").last().expect("Copy in the dialog").click();
+    settle(&mut h);
+    assert!(moved.is_dir(), "copying leaves the page where it is");
+    let copies = pages_in(&ideas);
+    assert_eq!(copies.len(), 1, "a copy is in Ideas: {copies:?}");
+    assert!(copies[0].join("assets").join("kept.txt").is_file(), "with its files");
+    assert_ne!(notecraft_store::tree::read_node(&copies[0]).map(|n| n.id), Some(id), "and an id of its own");
 }
 
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
@@ -8083,6 +8231,70 @@ fn font_size_applies_to_selected_text_and_survives_reopen_in_both_formats() {
         h.state_mut().open_path(&path);
         settle(&mut h);
         assert_eq!(h.state().body().unwrap_or_default().trim_end(), body.trim_end(), "the font size survives save and reopen");
+    }
+}
+
+/// Format Painter: click in formatted words, click Format Painter, pick other words, and they
+/// take that formatting; Escape puts a double-clicked painter down (issue #165).
+#[test]
+fn the_format_painter_puts_the_formatting_on_the_words_picked_next() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-format-painter");
+        let spans_of = |body: &str| -> Vec<notecraft_formats::Span> {
+            let md = if html { notecraft_formats::html::to_markdown(body) } else { body.to_string() };
+            notecraft_formats::markdown::parse(&md)
+                .into_iter()
+                .flat_map(|b| match b {
+                    notecraft_formats::Block::Paragraph(s) => s,
+                    _ => Vec::new(),
+                })
+                .collect()
+        };
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p><b><i>Big</i></b> plain words</p>" } else { "***Big*** plain words" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        settle(&mut h);
+        // Into "Big", which is bold and italic, then pick up its formatting.
+        for _ in 0..2 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        h.get_by_label("Format Painter").click();
+        settle(&mut h);
+        // Pick "words" (the last five letters) and let go of the pointer, which is when it paints.
+        // The ribbon took the keyboard; back into the line, as a click there would.
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("back into the line");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+        settle(&mut h);
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowLeft", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        let line = h.state().page_rect().expect("the page");
+        ask(&mut h, "ui.release", json!({"x": line.max.x - 4.0, "y": line.max.y - 4.0})).expect("let go");
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let spans = spans_of(&body);
+        assert!(spans.iter().any(|s| s.text.contains("words") && s.bold && s.italic), "html={html}: the picked words took the formatting:\n{body}");
+        assert!(spans.iter().any(|s| s.text.contains("plain") && !s.bold && !s.italic), "html={html}: and nothing else did:\n{body}");
+        assert!(body.contains("Big") && body.contains("plain") && body.contains("words"), "html={html}: the words are all there:\n{body}");
+
+        // Undo takes the painting back.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        let now = h.state().body().unwrap_or_default().to_string();
+        let spans = spans_of(&now);
+        assert!(spans.iter().any(|s| s.text.contains("words") && !s.bold), "html={html}: undo takes the formatting back off:\n{now}");
     }
 }
 
