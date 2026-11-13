@@ -62,6 +62,8 @@ pub enum Act {
     ToggleTitle,
     /// Snap boxes to the page's grid when they are moved or resized, or stop.
     ToggleSnap,
+    /// Fold the ribbon away to its tab names, or put it back (Ctrl+F1).
+    ToggleRibbon,
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
     TogglePanes,
     /// Keep this window above the others, or stop.
@@ -526,8 +528,9 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
 /// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
 /// ribbon below it; the others are white writing on the band, lit when the pointer is over
 /// one.
-pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Tokens, acts: &mut Vec<Act>) {
-    let chosen = resolve_tab(tab, source, in_table);
+pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed: bool, t: &Tokens, acts: &mut Vec<Act>) {
+    // Folded, no tab is the raised one: there is no ribbon under it to run into.
+    let chosen = if collapsed { "" } else { resolve_tab(tab, source, in_table) };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(4.0);
@@ -555,7 +558,37 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, t: &Token
                 acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
             }
         }
+        // At the far end, the control that folds the ribbon away and puts it back, as Office
+        // has one; Ctrl+F1 does the same (issue #136).
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(6.0);
+            if ribbon_fold(ui, collapsed, t).clicked() {
+                acts.push(Act::ToggleRibbon);
+            }
+        });
     });
+}
+
+/// The fold control at the end of the tab names: a chevron up to fold the ribbon away, down
+/// to put it back.
+fn ribbon_fold(ui: &mut Ui, collapsed: bool, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(26.0, TAB_STRIP_H - 6.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, t.band_hover);
+    }
+    let c = rect.center();
+    let stroke = egui::Stroke::new(1.6, t.band_text);
+    let points = if collapsed {
+        [egui::pos2(c.x - 4.5, c.y - 2.0), egui::pos2(c.x, c.y + 2.5), egui::pos2(c.x + 4.5, c.y - 2.0)]
+    } else {
+        [egui::pos2(c.x - 4.5, c.y + 2.0), egui::pos2(c.x, c.y - 2.5), egui::pos2(c.x + 4.5, c.y + 2.0)]
+    };
+    ui.painter().add(egui::Shape::line(points.to_vec(), stroke));
+    let label = if collapsed { crate::tl_id!("ui.show_the_ribbon_ctrl_f1") } else { crate::tl_id!("ui.collapse_the_ribbon_ctrl_f1") }.to_string();
+    let enabled = ui.is_enabled();
+    let name = label.clone();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
+    resp.on_hover_text(label)
 }
 
 /// The name of the first tab, which opens the File screen instead of a ribbon.
