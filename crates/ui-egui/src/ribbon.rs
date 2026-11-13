@@ -101,6 +101,8 @@ pub enum Act {
     ClearFormatting,
     /// Put a tag on the line the caret is in, or take it off again.
     Tag(Tag),
+    /// Take up the Insert Space tool, or put it down (issue #164).
+    InsertSpaceTool,
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
@@ -419,6 +421,8 @@ pub struct View<'a> {
     /// The tools on the rack, and which of them is in hand.
     pub rack: &'a [Nib],
     pub nib: usize,
+    /// True while the Insert Space tool is in hand.
+    pub space_tool: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
@@ -1584,8 +1588,9 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// work is rather than a short list of what happens to exist.
 fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.insert"), t, |ui| {
-        if big(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.add_a_blank_paragraph_at_the_caret"), t).clicked() {
-            acts.push(Act::Insert("space"));
+        // OneNote's tool: a drag on the page adds room there, or takes it away (issue #164).
+        if big_on(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.insert_space_tip"), view.space_tool, t).clicked() {
+            acts.push(Act::InsertSpaceTool);
         }
     });
     group(ui, crate::tl_id!("ui.tables"), t, |ui| {

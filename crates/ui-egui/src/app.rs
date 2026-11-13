@@ -279,6 +279,51 @@ fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
 
+/// The Insert Space tool's own layer over the visible page (issue #164): a vertical-resize
+/// pointer, a guide at the pointer's height, and while it is dragged, the band of room being
+/// added (below the start) or taken away (above it). Returns where the drag began and how far it
+/// went, in screen points, on the frame it is let go.
+fn insert_space_overlay(ctx: &Context, visible: egui::Rect, t: &Tokens) -> Option<(f32, f32)> {
+    let id = Id::new("insert-space-tool");
+    let from_id = id.with("from");
+    let mut done = None;
+    egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(visible.min).constrain(false).movable(false).show(ctx, |ui| {
+        let (rect, resp) = ui.allocate_exact_size(visible.size(), Sense::drag());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.insert_space_how")));
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        if resp.drag_started()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            ui.data_mut(|d| d.insert_temp(from_id, p.y));
+        }
+        let from = ui.data(|d| d.get_temp::<f32>(from_id));
+        let now = ui.ctx().pointer_latest_pos().filter(|p| rect.contains(*p) || resp.dragged()).map(|p| p.y.clamp(rect.min.y, rect.max.y));
+        let painter = ui.painter();
+        let line = egui::Stroke::new(1.5, t.accent);
+        match (from, now) {
+            (Some(a), Some(b)) => {
+                let band = egui::Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(a.min(b), a.max(b)));
+                painter.rect_filled(band, 0.0, t.accent.gamma_multiply(0.12));
+                painter.hline(rect.x_range(), a, line);
+                painter.hline(rect.x_range(), b, egui::Stroke::new(1.0, t.accent.gamma_multiply(0.7)));
+            }
+            (None, Some(y)) => {
+                painter.hline(rect.x_range(), y, line);
+            }
+            _ => {}
+        }
+        if resp.drag_stopped() {
+            if let (Some(a), Some(p)) = (from, resp.interact_pointer_pos()) {
+                done = Some((a, p.y.clamp(rect.min.y, rect.max.y) - a));
+            }
+            ui.data_mut(|d| d.remove::<f32>(from_id));
+        }
+    });
+    done
+}
+
 fn notebook_for(path: &Path) -> Option<PathBuf> {
     let mut current = path;
     loop {
@@ -820,6 +865,8 @@ pub struct NoteCraftApp {
     canvas_drag: Option<egui::Pos2>,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
+    /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
+    space_tool: bool,
     /// What the pointer does on the page (the Draw tab).
     pointer: ribbon::Pointer,
     /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
@@ -981,6 +1028,7 @@ impl NoteCraftApp {
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
             page_hbar: None,
+            space_tool: false,
             canvas_drag: None,
             pointer: ribbon::Pointer::Write,
             rack,
@@ -3354,6 +3402,7 @@ impl NoteCraftApp {
             rack: &self.rack,
             nib: self.nib,
             in_table: self.caret_in_table(),
+            space_tool: self.space_tool,
             table_borders: self.caret_table_has_borders(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
@@ -3774,6 +3823,17 @@ impl NoteCraftApp {
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
+            ribbon::Act::InsertSpaceTool => {
+                if self.editor.is_none() {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                }
+                self.space_tool = !self.space_tool;
+                if self.space_tool {
+                    self.pointer = ribbon::Pointer::Write;
+                    self.say(crate::tl_id!("ui.insert_space_how"));
+                }
+            }
             ribbon::Act::NotBuilt(what) => {
                 self.status =
                     crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
@@ -6165,6 +6225,9 @@ impl NoteCraftApp {
         let mut hbar = crate::hscroll::Shown::default();
         // What the page's right-click menu asked for, run once the page's borrow is over.
         let mut page_acts: Vec<ribbon::Act> = Vec::new();
+        // Insert Space: in hand this frame, and whether it was used or put down.
+        let space_on = self.space_tool && self.pointer == ribbon::Pointer::Write;
+        let mut space_over = false;
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let missing_fonts = crate::fonts::ensure_page_fonts(ui.ctx(), &crate::fonts::page_families(&ed.blocks));
@@ -6347,6 +6410,35 @@ impl NoteCraftApp {
                                     span = (span.0.min(top.x + x0 * zoom_scale), span.1.max(top.x + x1 * zoom_scale));
                                 }
                                 page_span = Some(span);
+                            }
+                            // Insert Space (issue #164): a drag down the page pushes everything that
+                            // starts below where it began, boxes and ink together, down by as far as
+                            // it went; a drag up pulls it back up. One drag, then the tool is put down.
+                            if space_on {
+                                let visible = ui.clip_rect().intersect(viewport.with_max_y(viewport.max.y.max(ui.clip_rect().max.y)));
+                                if let Some((from, by)) = insert_space_overlay(ui.ctx(), visible, &tokens) {
+                                    let z = zoom_scale.max(0.01);
+                                    let (at, by) = ((from - moved.origin.y) / z, by / z);
+                                    let below: Vec<usize> = (0..ed.boxes.len()).filter(|i| ed.boxes.get(*i).is_some_and(|b| b.y >= at)).collect();
+                                    // Room taken away never pulls anything above the top of the page.
+                                    let highest = below.iter().filter_map(|i| ed.boxes.get(*i)).map(|b| b.y).fold(f32::INFINITY, f32::min);
+                                    let by = if by < 0.0 && highest.is_finite() { by.max(-highest) } else { by };
+                                    for i in &below {
+                                        if let Some(b) = ed.boxes.get_mut(*i) {
+                                            *b = notecraft_model::container::Container::new(b.x, b.y + by, b.width, b.blocks);
+                                        }
+                                    }
+                                    if !below.is_empty() && by != 0.0 {
+                                        moved.boxes = true;
+                                    }
+                                    if let Some(pad) = pad.as_mut() {
+                                        ink_changed |= pad.shift_below(at, by);
+                                    }
+                                    space_over = true;
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    space_over = true;
+                                }
                             }
                             // The selection box takes ink as well as boxes, as in OneNote, and what
                             // it took moves together: boxes dragged take the ink with them, ink
@@ -6606,6 +6698,9 @@ impl NoteCraftApp {
         if hbar.pan != 0.0 && hbar.pan.is_finite() {
             self.canvas_pan.x = (self.canvas_pan.x + hbar.pan).clamp(-1.0e6, 1.0e6);
             ui.ctx().request_repaint();
+        }
+        if space_over {
+            self.space_tool = false;
         }
         for act in page_acts {
             self.ribbon_act(act);
@@ -8065,6 +8160,8 @@ impl NoteCraftApp {
                 // [left, top, right, bottom] in screen points, or null when everything fits.
                 "horizontalBar": self.page_hbar.map(|(track, _)| [track.min.x, track.min.y, track.max.x, track.max.y]),
                 "horizontalThumb": self.page_hbar.map(|(_, thumb)| [thumb.min.x, thumb.min.y, thumb.max.x, thumb.max.y]),
+                // True while Insert Space is in hand (issue #164).
+                "insertSpace": self.space_tool,
             },
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.

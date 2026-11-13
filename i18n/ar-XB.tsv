@@ -836,3 +836,5 @@
 @id	ui.session_only_storage_notice	[[RLI]]$$$Session-only notes: changes disappear when you reload or close this tab.@@@[[PDI]]
 @id	ui.session_storage_guard_failed	[[RLI]]$$$Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.@@@[[PDI]]
 @id	ui.scroll_the_page_sideways	[[RLI]]$$$Scroll the page sideways@@@[[PDI]]
+@id	ui.insert_space_tip	[[RLI]]$$$Drag down the page to add room, or up to take it away@@@[[PDI]]
+@id	ui.insert_space_how	[[RLI]]$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@[[PDI]]
