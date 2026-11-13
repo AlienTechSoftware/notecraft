@@ -3135,8 +3135,17 @@ fn move_or_copy_takes_a_page_to_another_section() {
     std::fs::write(s.md_page.join("assets").join("kept.txt"), "kept").expect("a file");
     let id = notecraft_store::tree::read_node(&s.md_page).map(|n| n.id).expect("id");
 
-    ask(&mut h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M");
-    settle(&mut h);
+    // Ctrl+Alt+M is Cmd+Option+M on macOS, which the control channel's key command cannot send,
+    // so there the dialog is opened as the row menu opens it.
+    let open_move_or_copy = |h: &mut Harness<'_, NoteCraftApp>, page: &std::path::Path| {
+        if cfg!(target_os = "macos") {
+            h.state_mut().open_move_or_copy(page);
+        } else {
+            ask(h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M");
+        }
+        settle(h);
+    };
+    open_move_or_copy(&mut h, &s.md_page);
     assert!(h.query_all_by_label("Move or Copy").next().is_some(), "the dialog is open");
     review(&mut h, "move_or_copy");
     h.query_all_by_label("Projects").last().expect("Projects in the dialog").click();
@@ -3158,8 +3167,7 @@ fn move_or_copy_takes_a_page_to_another_section() {
     assert!(open.ends_with(&format!("projects/{}", moved.file_name().expect("name").to_string_lossy())), "and it is still the open page: {open}");
 
     // Copy it back to Ideas: it stays in Projects, and the copy is a page of its own.
-    ask(&mut h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M again");
-    settle(&mut h);
+    open_move_or_copy(&mut h, &moved);
     // The tree has an Ideas row too; the dialog's is drawn last, over it.
     h.query_all_by_label("Ideas").last().expect("Ideas in the dialog").click();
     settle(&mut h);

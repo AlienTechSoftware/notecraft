@@ -1512,7 +1512,7 @@ impl NoteCraftApp {
     }
 
     /// Opens Move or Copy for a page, section or section group (issue #167).
-    fn open_move_or_copy(&mut self, path: &Path) {
+    pub fn open_move_or_copy(&mut self, path: &Path) {
         let Some(info) =
             notecraft_store::tree::read_node(path).filter(|n| matches!(n.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup))
         else {
