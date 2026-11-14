@@ -860,6 +860,14 @@
 @id	ui.kept_in_this_tab	$$$Kept in this tab@@@
 @id	ui.session_only_storage_notice	$$$Session-only notes: changes disappear when you reload or close this tab.@@@
 @id	ui.session_storage_guard_failed	$$$Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.@@@
+@id	ui.table_align_left	$$$Align@@@\n$$$Left@@@
+@id	ui.table_align_left_tip	$$$Line the words up with the left of the cell@@@
+@id	ui.table_align_center	$$$Center@@@
+@id	ui.table_align_center_tip	$$$Put the words in the middle of the cell@@@
+@id	ui.table_align_right	$$$Align@@@\n$$$Right@@@
+@id	ui.table_align_right_tip	$$$Line the words up with the right of the cell@@@
+@id	ui.table_shading	$$$Shading@@@
+@id	ui.table_shading_tip	$$$A colour behind the picked cells@@@
 @id	ui.list_the_tagged_notes_and_go_to_them	$$$List the tagged notes and go to them@@@
 @id	ui.tags_summary	$$$Tags Summary@@@
 @id	ui.close_the_tags_summary	$$$Close the tags summary@@@

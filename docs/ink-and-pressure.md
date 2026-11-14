@@ -48,6 +48,9 @@ thick ink remains solid instead of becoming hazy.
 The editable ink data must preserve the original points, pressure readings, tool, selected width,
 and sensitivity. Edge treatment is a rendering concern and must not destroy that information.
 
+Round endpoints must not darken translucent ink by painting a cap over its own ribbon.
+Separate highlighter strokes still composite normally where they overlap.
+
 ## Acceptance checks
 
 Synthetic tests must cover pressures `0`, `0.1`, `0.25`, `0.5`, `0.75`, and `1.0` at minimum,

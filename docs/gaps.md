@@ -37,8 +37,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
   `docs/research/onenote-file-format/real-files.md`). Notebook and section colors are read from
   `.onetoc2` when available and section colors from `.one` metadata; arbitrary source colors
-  map lossily to NoteCraft's named palette. Still missing: section order, ink, tags, page dates,
-  `.onepkg` packages, password-protected sections, and an import command in the window.
+  map lossily to NoteCraft's named palette. A `.onepkg` package, given on its own or found in
+  the folder, is unpacked (LZX or MSZIP cabinet) into a temporary folder named after it and
+  imported as a notebook of that name; the window's Import File does the same through the
+  OfficeIMO bridge. A package's names are checked so nothing is written outside that folder.
+  Still missing: section order, ink, tags, page dates, password-protected sections, and an
+  import command in the window for the built-in importer.
   Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
@@ -281,7 +285,8 @@ Playground hosts with the Files API continue using their existing persistence pa
   when Backspace joins two, when a box is deleted or pasted, or when Ctrl+Z undoes any of these.
   After those, a width or a justification can sit on the block next to the one it was given to.
 - **Table column widths and justification are still on a metadata line.** The boxes of a page are
-  elements in its text, but the widths a table's columns were dragged to are kept in the head
+  elements in its text, but the widths a table's columns were dragged to (and the alignment and
+  shading its cells were given) are kept in the head
   (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
   same way (`notecraft:justify`, `justify:`), so the same disconnect remains for both: another
   program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
@@ -410,8 +415,17 @@ Playground hosts with the Files API continue using their existing persistence pa
   the arrangement of its boxes (`notecraft:columns`), because neither CommonMark nor an
   HTML table that must match it has anywhere to put them. The Insert
   tab's Table button opens OneNote's size picker, where the pointer runs over a grid and
-  names the size it would make. Not built, and greyed where a OneNote user looks for them:
-  merging and splitting cells, shading, alignment; and the Insert Table dialog. Sort Ascending
+  names the size it would make. The Alignment group lines up the words of the caret's cell,
+  or of every picked cell, left, centre or right; the column keeps its width, the page keeps the
+  alignment on the same line as the widths (`block@row.column=c`), and it moves with its row or
+  column when one goes in or out and with its row when the table is sorted. It is drawn where
+  the page is written in; a page drawn for the pen (the Draw tab) still shows its cells aligned
+  left, as it shows its columns at the usual width. Shading puts one of the named colours a
+  section can carry behind the caret's cell or every picked cell (`block@row.column=~yellow`, or
+  `=c~yellow` beside an alignment), washed so the words keep their contrast in light and dark
+  themes, and No Colour takes it away; it follows its cell the way alignment does, and the pen's
+  view does not draw it yet either. Not built, and greyed where a OneNote user looks for them:
+  merging and splitting cells; and the Insert Table dialog. Sort Ascending
   and Sort Descending reorder whole rows by the caret's column (only the picked rows when a
   block of cells spans several), numbers as numbers, empty cells last, the heading on top.
   A row has no height of its own on purpose: OneNote sizes a row by the text in it and

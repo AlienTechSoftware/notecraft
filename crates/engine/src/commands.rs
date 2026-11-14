@@ -306,7 +306,7 @@ fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let widths = notecraft_model::tablecols::parse(want);
     if widths.is_empty() && !want.trim().is_empty() {
         return Err(EngineError::BadParam(
-            "widths is block:w,w,w per table, separated by semicolons, with a ! for a table whose borders are hidden".into(),
+            "widths is block:w,w,w per table, separated by semicolons, with a ! for a table whose borders are hidden, and block@row.column=l|c|r~colour for aligned and shaded cells".into(),
         ));
     }
     page::set_table_columns(&path, &widths)?;
@@ -528,9 +528,9 @@ color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray,
     },
     CommandSpec {
         id: "page.columns",
-        label: "How wide the columns of a page's tables are, and which tables have their borders hidden",
+        label: "How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded",
         params: "path (required): the page
-widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported",
+widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported",
         changes_tree: false,
         run: page_columns,
     },
