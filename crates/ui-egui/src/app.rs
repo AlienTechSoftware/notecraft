@@ -3915,6 +3915,7 @@ impl NoteCraftApp {
                 let name = self.templates_pane.as_ref().map(|p| p.name.clone()).unwrap_or_default();
                 self.templates_pane = Some(TemplatesPane { templates: Vec::new(), name });
                 self.refresh_templates();
+            }
             ribbon::Act::InsertSpaceTool => {
                 if self.editor.is_none() {
                     self.say(crate::tl_id!("ui.open_a_page_first"));
