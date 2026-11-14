@@ -1169,6 +1169,13 @@ fn table(
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for (c, &w) in screen_widths.iter().enumerate() {
                     let cell = (r, c);
+                    // The cell's own alignment, if it was given one (issue #170). Only its words
+                    // move: the column keeps its width and the table its place.
+                    let halign = match cols.align(i, cell) {
+                        Some(notecraft_model::tablecols::Align::Center) => egui::Align::Center,
+                        Some(notecraft_model::tablecols::Align::Right) => egui::Align::RIGHT,
+                        Some(notecraft_model::tablecols::Align::Left) | None => egui::Align::LEFT,
+                    };
                     ui.allocate_ui_with_layout(vec2(w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                         ui.set_min_width(w);
                         ui.set_max_width(w);
@@ -1192,6 +1199,7 @@ fn table(
                                     egui::TextEdit::singleline(&mut caret.text)
                                         .id(id)
                                         .frame(egui::Frame::NONE)
+                                        .horizontal_align(halign)
                                         .desired_width(inner)
                                         .font(egui::FontId::proportional(14.5 * zoom))
                                         .show(ui)
@@ -1214,7 +1222,13 @@ fn table(
                                 let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
                                 let spans = cell_spans(block, cell).unwrap_or_default();
                                 let job = preview::job(ui, spans, 14.5 * zoom, colour, t, page);
-                                let resp = ui.add(egui::Label::new(job).sense(Sense::click()).selectable(false).wrap());
+                                // The whole cell's width, so the words can sit at either end of it
+                                // or in its middle.
+                                let resp = ui
+                                    .with_layout(egui::Layout::top_down(halign), |ui| {
+                                        ui.add(egui::Label::new(job).halign(halign).sense(Sense::click()).selectable(false).wrap())
+                                    })
+                                    .inner;
                                 if resp.hovered() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                                 }
@@ -1586,9 +1600,15 @@ pub fn linkable_address(address: &str) -> bool {
 /// regard to case. Empty cells go last whichever way the sort runs, and rows that compare
 /// equal keep their order. Returns whether any row moved.
 pub fn sort_table(block: &mut Block, column: usize, rows: Option<(usize, usize)>, descending: bool) -> bool {
-    let Block::Table { rows: body, .. } = block else { return false };
+    sort_table_rows(block, column, rows, descending).is_some()
+}
+
+/// [`sort_table`], returning the rows' new order when any moved: `order[new] = old`, both
+/// counting the heading as row 0, so what the page keeps for each row can follow it.
+pub fn sort_table_rows(block: &mut Block, column: usize, rows: Option<(usize, usize)>, descending: bool) -> Option<Vec<usize>> {
+    let Block::Table { rows: body, .. } = block else { return None };
     if body.is_empty() {
-        return false;
+        return None;
     }
     // The body rows to sort, as indexes into `body`.
     let (first, last) = match rows {
@@ -1597,21 +1617,30 @@ pub fn sort_table(block: &mut Block, column: usize, rows: Option<(usize, usize)>
     };
     let last = last.min(body.len() - 1);
     if first >= last {
-        return false;
+        return None;
     }
     let key = |row: &Vec<Vec<Span>>| -> SortKey {
         let words: String = row.get(column).map(|spans| spans.iter().map(|s| s.text.as_str()).collect()).unwrap_or_default();
         SortKey::of(words.trim())
     };
     let before: Vec<Vec<Vec<Span>>> = body[first..=last].to_vec();
-    let mut keyed: Vec<(SortKey, Vec<Vec<Span>>)> = before.iter().map(|row| (key(row), row.clone())).collect();
-    keyed.sort_by(|(a, _), (b, _)| a.compare(b, descending));
-    let sorted: Vec<Vec<Vec<Span>>> = keyed.into_iter().map(|(_, row)| row).collect();
+    let mut keyed: Vec<(SortKey, usize, Vec<Vec<Span>>)> = before.iter().enumerate().map(|(n, row)| (key(row), n, row.clone())).collect();
+    keyed.sort_by(|(a, _, _), (b, _, _)| a.compare(b, descending));
+    let moved: Vec<usize> = keyed.iter().map(|(_, n, _)| *n).collect();
+    let sorted: Vec<Vec<Vec<Span>>> = keyed.into_iter().map(|(_, _, row)| row).collect();
     if sorted == before {
-        return false;
+        return None;
     }
+    let total = body.len() + 1;
     body.splice(first..=last, sorted);
-    true
+    // Table rows: the heading is 0 and body row `b` is `b + 1`.
+    let mut order: Vec<usize> = (0..total).collect();
+    for (n, old) in moved.into_iter().enumerate() {
+        if let Some(slot) = order.get_mut(first + 1 + n) {
+            *slot = first + 1 + old;
+        }
+    }
+    Some(order)
 }
 
 /// What a cell is sorted by.
@@ -3592,6 +3621,16 @@ mod tests {
         // Only the picked rows (table rows 2 to 3, which count the heading as 0).
         assert!(sort_table(&mut b, 1, Some((2, 3)), true));
         assert_eq!(column(&b, 1), ["5", "$40", "30", "1,200"], "only the picked rows turned round");
+    }
+
+    /// Issue #170: a sort says where each row went, so what is kept for a row can follow it.
+    #[test]
+    fn a_sort_reports_where_each_row_went() {
+        let mut b = blocks("| N |\n|---|\n| c |\n| a |\n| b |\n").remove(0);
+        // Table rows count the heading as 0: c is row 1, a row 2, b row 3.
+        assert_eq!(sort_table_rows(&mut b, 0, None, false), Some(vec![0, 2, 3, 1]), "a, b, c: rows 2, 3 and 1 before");
+        assert_eq!(sort_table_rows(&mut b, 0, None, false), None, "already in order");
+        assert_eq!(sort_table_rows(&mut b, 0, Some((2, 3)), true), Some(vec![0, 1, 3, 2]), "only the picked rows");
     }
 
     #[test]

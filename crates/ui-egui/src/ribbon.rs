@@ -111,6 +111,8 @@ pub enum Act {
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
     TableBorders(bool),
+    /// Align the words in the caret's cell, or in every picked cell (issue #170).
+    TableAlign(notecraft_model::tablecols::Align),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
@@ -425,6 +427,9 @@ pub struct View<'a> {
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
     pub table_borders: bool,
+    /// How the words in the caret's cell, or in every picked cell, are aligned; `None` when
+    /// the picked cells differ.
+    pub table_align: Option<notecraft_model::tablecols::Align>,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,
     /// The colour behind the open page, when it carries one of its own.
@@ -2743,9 +2748,18 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::Picture, "Shading", t);
     });
     group(ui, crate::tl_id!("ui.alignment"), t, |ui| {
-        soon(ui, Icon::DirLtr, "Align\nLeft", t);
-        soon(ui, Icon::DirLtr, "Center", t);
-        soon(ui, Icon::DirRtl, "Align\nRight", t);
+        // The words in the caret's cell, or in every cell picked (issue #170). The one lit is
+        // how those cells are aligned now; none is lit when they differ.
+        use notecraft_model::tablecols::Align as A;
+        for (align, icon, label, tip) in [
+            (A::Left, Icon::DirLtr, crate::tl_id!("ui.table_align_left"), crate::tl_id!("ui.table_align_left_tip")),
+            (A::Center, Icon::DirLtr, crate::tl_id!("ui.table_align_center"), crate::tl_id!("ui.table_align_center_tip")),
+            (A::Right, Icon::DirRtl, crate::tl_id!("ui.table_align_right"), crate::tl_id!("ui.table_align_right_tip")),
+        ] {
+            if big_on(ui, icon, label, tip, view.table_align == Some(align), t).clicked() {
+                acts.push(Act::TableAlign(align));
+            }
+        }
     });
     group(ui, crate::tl_id!("ui.data"), t, |ui| {
         // Whole rows by the caret's column, or only the picked rows; the heading stays on top.
