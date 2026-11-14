@@ -581,6 +581,10 @@ fn render(scale: f32, bg: Color32, draw: impl Fn(&Painter) + 'static) -> RgbaIma
         draw(ui.painter());
     });
     h.run();
+    // One readback at a time on the shared device, as in `support/gpu.rs`: two in flight at once
+    // can come back blank. Everything before this line still runs on every test thread.
+    static READBACK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = READBACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     h.render().expect("an offscreen renderer is required for the visual suite")
 }
 

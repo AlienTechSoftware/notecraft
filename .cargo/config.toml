@@ -1,7 +1,2 @@
 [alias]
 xtask = "run --package xtask --"
-# The UI tests read pixels back from one offscreen GPU renderer each. Run in parallel, the
-# readbacks come back blank (see tests/ui.rs, the highlight and ink tests), so the test threads
-# are one. Set RUST_TEST_THREADS yourself to override it.
-[env]
-RUST_TEST_THREADS = "1"
