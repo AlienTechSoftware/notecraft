@@ -9552,6 +9552,87 @@ fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
     }
 }
 
+/// Issue #164: Insert > Insert Space is OneNote's tool. A drag down the page pushes the boxes
+/// and the ink below where it began down by as far as it went; a drag up takes room away; Esc
+/// puts the tool down; Undo puts the boxes back.
+#[test]
+fn insert_space_drags_room_into_the_page_and_out_again() {
+    let (_t, mut app, s) = sample_app("ui-insert-space");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks > 3, "the sample page has blocks to split: {blocks}");
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,3;40,500,320,{}", blocks - 3)}}),
+    )
+    .expect("two boxes");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let boxes = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let y = |i: usize| v.pointer(&format!("/page/containers/{i}/y")).and_then(Value::as_f64).unwrap_or(-1.0);
+        (y(0), y(1))
+    };
+    let tool =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/canvas/insertSpace").and_then(Value::as_bool);
+    assert_eq!(boxes(&mut h), (20.0, 500.0));
+    let origin = page_origin(&mut h);
+
+    // Ink under the line moves with the boxes; the pen is put down again before the tool.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    drag_by(&mut h, origin + egui::vec2(500.0, 420.0), egui::vec2(80.0, 0.0));
+    let ink_top = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/bounds/1").and_then(Value::as_f64).expect("ink bounds")
+    };
+    let ink_before = ink_top(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false));
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true), "the tool is in hand");
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/pointer").and_then(Value::as_str), Some("write"));
+
+    // Down 100 points from between the boxes: the lower box and the ink move, the upper box stays.
+    drag_by(&mut h, origin + egui::vec2(600.0, 300.0), egui::vec2(0.0, 100.0));
+    assert_eq!(boxes(&mut h), (20.0, 600.0), "room was added above the lower box");
+    assert!((ink_top(&mut h) - (ink_before + 100.0)).abs() < 1.0, "the ink below moved with it");
+    assert_eq!(tool(&mut h), Some(false), "one drag, then the tool is put down");
+    review(&mut h, "insert_space_added");
+    let kept = ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone()}})).expect("layout");
+    assert!(kept.as_str().unwrap_or_default().contains("40,600,320"), "the page keeps the new place: {kept}");
+
+    // Undo puts the box back where it was.
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h).1, 500.0, "undo takes the room back out");
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h).1, 600.0);
+
+    // Up 150 points from just above the lower box: the room is taken away again.
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    drag_by(&mut h, origin + egui::vec2(600.0, 590.0), egui::vec2(0.0, -150.0));
+    assert_eq!(boxes(&mut h), (20.0, 450.0), "room was taken away");
+
+    // Esc puts the tool down without changing anything.
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false), "Esc puts the tool down");
+    assert_eq!(boxes(&mut h), (20.0, 450.0));
+}
+
 /// Issue #44: Alt and a number pick up that pen on the rack, from anywhere, so a tablet's express
 /// keys can be bound to pens; Alt+0 goes back to typing. A Mac's Option+digit character is not
 /// typed into the note.

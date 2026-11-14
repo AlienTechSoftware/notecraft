@@ -362,6 +362,23 @@ impl Pad {
         (shift != (0.0, 0.0)).then_some(shift)
     }
 
+    /// Insert Space (issue #164): every stroke whose top is at or below `y`, in page points,
+    /// moves down by `dy`, or up when `dy` is negative. True when any moved.
+    pub fn shift_below(&mut self, y: f32, dy: f32) -> bool {
+        if dy == 0.0 || !dy.is_finite() {
+            return false;
+        }
+        let below: Vec<usize> =
+            (0..self.drawing.strokes.len()).filter(|i| pick::bounds(&self.drawing, &[*i]).is_some_and(|(_, top, _, _)| top >= y)).collect();
+        if below.is_empty() {
+            return false;
+        }
+        pick::move_by(&mut self.drawing, &below, 0.0, dy);
+        self.dirty = true;
+        self.touched = true;
+        true
+    }
+
     /// The box round all the ink on the page, in page points.
     pub fn bounds(&self) -> Option<[f32; 4]> {
         let all: Vec<usize> = (0..self.drawing.strokes.len()).collect();

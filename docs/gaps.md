@@ -465,7 +465,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   picture, a link, the three time stamps, an equation, a symbol picker, insert space, and
   NoteCraft's own Mermaid diagram. File printout, screen clipping, online video,
   transcription, recording, page templates and stickers remain unbuilt. Spreadsheet is
-  available through the existing GridCraft integration when installed.
+  available through the existing GridCraft integration when installed. Insert Space is
+  OneNote's tool: with it in hand, a drag down the page moves every box and every stroke of
+  ink that starts below where the drag began down by as far as it went, and a drag up moves
+  them up, never past the top of the page; a guide shows the line and the band of room, Esc
+  puts the tool down, and one drag is one step of Undo. It moves boxes, as OneNote moves its
+  containers: it does not open a gap between two lines inside one box.
 - **Unread and author history** are not built. Page version
   history stores snapshots of the page's main file; changes to attached files and drawings
   are not captured by those snapshots. (Tags are: to-do boxes and the other familiar marks,

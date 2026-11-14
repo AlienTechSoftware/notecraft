@@ -882,5 +882,7 @@
 @id	ui.no_tagged_notes_here	[[RLI]]$$$No tagged notes here.@@@[[PDI]]
 @id	ui.tags_empty_line	[[RLI]]$$$(an empty line)@@@[[PDI]]
 @id	ui.scroll_the_page_sideways	[[RLI]]$$$Scroll the page sideways@@@[[PDI]]
+@id	ui.insert_space_tip	[[RLI]]$$$Drag down the page to add room, or up to take it away@@@[[PDI]]
+@id	ui.insert_space_how	[[RLI]]$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@[[PDI]]
 @id	ui.pen_keys_typing	[[RLI]]$$$Typing (Alt+0)@@@[[PDI]]
 @id	ui.pen_keys_picked	[[RLI]]$$$Pen {number} (Alt+{number})@@@[[PDI]]
