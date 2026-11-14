@@ -3768,7 +3768,7 @@ impl NoteCraftApp {
                     crate::tl_id!("ui.choose_a_file_to_attach")
                 });
                 if matches!(act, ribbon::Act::AddPicture) {
-                    picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+                    picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"]);
                 }
                 if let Some(file) = picker.pick_file() {
                     self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
@@ -8494,7 +8494,7 @@ impl NoteCraftApp {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         if !self.loaders_installed {
-            egui_extras::install_image_loaders(ctx);
+            crate::pictures::install(ctx);
             self.loaders_installed = true;
         }
         // Arabic and the other right-to-left scripts have no glyphs in egui's own faces.
