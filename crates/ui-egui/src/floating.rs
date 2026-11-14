@@ -207,6 +207,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             items: &fonts.families,
                             empty_note: fonts.families_note.as_deref(),
                             accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                            filter: true,
                         },
                     );
                     if let Some(name) = families.chosen {
@@ -225,6 +226,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             items: &fonts.sizes,
                             empty_note: None,
                             accept: &|typed| typed.parse::<u8>().is_ok_and(|size| crate::ribbon::FONT_SIZES.contains(&size)),
+                            filter: false,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

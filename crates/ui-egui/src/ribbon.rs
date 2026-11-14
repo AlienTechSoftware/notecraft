@@ -1214,6 +1214,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         items: &families,
                         empty_note: families_note.as_deref(),
                         accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                        filter: true,
                     },
                 );
                 if let Some(name) = family_out.chosen {
@@ -1241,6 +1242,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         items: &sizes,
                         empty_note: None,
                         accept: &|typed| typed.parse::<u8>().is_ok_and(|size| FONT_SIZES.contains(&size)),
+                        filter: false,
                     },
                 );
                 let boxes = crate::floating::FontBoxes {

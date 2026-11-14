@@ -9460,6 +9460,29 @@ fn choosing_a_font_changes_the_font_box() {
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
 }
 
+/// Typing in the font box lists the families that contain the text, so a family can be found by
+/// its middle letters rather than scrolled to.
+#[test]
+#[ignore = "exploration: after typing, the harness shows the shown value again; focus or delivery of ui.text to the font box is unresolved"]
+fn typing_a_font_name_lists_the_families_that_contain_it() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog.families().iter().find(|n| notecraft_formats::markdown::valid_font_family(n) && n.len() > 4).cloned() else { return };
+    let query: String = name.chars().skip(1).take(3).collect();
+    let (_t, app, s) = sample_app("ui-font-filter");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font Family").click();
+    h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box's text");
+    ask(&mut h, "ui.text", json!({"text": query})).expect("type a part of the name");
+    settle(&mut h);
+    h.get_by_label(&name);
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(query.as_str()), "the box shows what was typed");
+}
+
 /// Dragging across plain text selects it, and the page reports the selection.
 #[test]
 fn dragging_across_text_selects_it() {
