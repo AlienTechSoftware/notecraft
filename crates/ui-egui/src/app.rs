@@ -3911,7 +3911,7 @@ impl NoteCraftApp {
                     self.pointer = ribbon::Pointer::Write;
                     self.say(crate::tl_id!("ui.insert_space_how"));
                 }
-          }
+            }
             ribbon::Act::FindTags => {
                 // OneNote looks in the section first; with no page open there is no section.
                 let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
