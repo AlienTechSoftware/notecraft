@@ -1,9 +1,11 @@
 # Android build and device test
 
-NoteCraft's Android APK uses an Android adapter maintained in the Android builder repository.
-The builder runs on Linux and is not part of the normal `cargo xtask ci` gate. The standard Linux
-setup remains required for Rust and native build dependencies; the Android setup adds the SDK,
-NDK, Java, and Rust cross-compilation tools.
+NoteCraft's Android APK is built from this repository: the crate and resources in
+[`android/`](../../../android/README.md), packaged by `android/build.sh`. The build runs on Linux
+(or WSL2) and is not part of the normal `cargo xtask ci` gate; CI checks it in its own job, and the
+Packaging workflow builds the release APK. The standard Linux setup remains required for Rust and
+native build dependencies; the Android setup adds the SDK, NDK, Java, and Rust cross-compilation
+tools.
 
 ## Bootstrap
 
@@ -25,7 +27,7 @@ Check-only mode does not install or change anything. Install mode uses the syste
 and Rustup, downloads the Android command-line tools and `cargo-ndk`, then prompts for Android SDK
 license acceptance before installing packages.
 
-The default tool versions match the Android builder CI configuration:
+The default tool versions match `android/build.sh` and the CI jobs (`android/ci-setup.sh`):
 
 | Tool | Version or target |
 |---|---|
@@ -40,7 +42,7 @@ The default tool versions match the Android builder CI configuration:
 
 The SDK defaults to `$HOME/Android/Sdk`. Override the Android SDK versions with
 `ARTCRAFT_TARGET_SDK`, `ARTCRAFT_BUILD_TOOLS_VERSION`, and `ARTCRAFT_NDK_VERSION`. In WSL, keep
-the SDK under the Linux filesystem, not a Windows drive mounted under `/mnt/`. The builder creates
+the SDK under the Linux filesystem, not a Windows drive mounted under `/mnt/`. The SDK manager creates
 and moves SDK directories during setup; the Windows mount can reject those operations.
 
 Add the SDK tools to each shell that will run ADB or `sdkmanager`:
@@ -53,25 +55,17 @@ export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
 
 ## Build an APK
 
-Use the Android builder checkout and branch selected for the build. From its repository root,
-select NoteCraft's pinned Rust toolchain explicitly. The builder itself may not contain
-`rust-toolchain.toml`, and Cargo needs the source project's toolchain before it can run
-`cargo-ndk`:
+From the repository root, after the setup above:
 
 ```bash
-channel="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' /path/to/notecraft/rust-toolchain.toml)"
-RUSTUP_TOOLCHAIN="$channel" bash build.sh -notecraft
+bash android/build.sh   # dist/android/notecraft-<version>-android-arm64.apk
+bash android/test.sh    # signature, manifest, native library, Welcome payload
 ```
 
-The builder uses the latest stable NoteCraft tag by default. To build its `main` branch instead:
-
-```bash
-RUSTUP_TOOLCHAIN="$channel" BUILD_SOURCE=main bash build.sh -notecraft
-```
-
-The APK is written to `output/` in the builder checkout. Builds use a local development signing
-key; do not distribute that APK publicly or use it for a release. Public releases need a separately
-managed release key and explicit release approval.
+Without `ANDROID_KEYSTORE` the APK is signed with a key made for that build only. It installs, but
+an APK signed with another key cannot update it in place. Release builds use the release key from
+the repository secrets (`docs/releasing.md`, Android signing). For a quick compile check without
+packaging: `cargo ndk --target arm64-v8a --platform 26 clippy -p notecraft-android -- -D warnings`.
 
 ## Test on an Android device
 
@@ -82,12 +76,12 @@ prompt. Confirm that ADB sees it:
 adb devices -l
 ```
 
-Install the APK path printed by the builder and launch the app:
+Install the APK `android/build.sh` printed and launch the app:
 
 ```bash
-adb install -r /path/to/notecraft.apk
-adb shell am start -n com.artcraft.notecraft/.NoteCraftActivity
-adb logcat -s com.artcraft.notecraft
+adb install -r dist/android/notecraft-<version>-android-arm64.apk
+adb shell am start -n com.alientechsoftware.notecraft/android.app.NativeActivity
+adb logcat -s NoteCraft
 ```
 
 If WSL cannot see a USB-connected device, use a configured ADB connection over wireless debugging
@@ -98,8 +92,8 @@ storage access, text input, or stylus interaction works on a device; check those
 
 - `can't find crate for std` for `aarch64-linux-android`: install the target for the active
   NoteCraft toolchain, not only Rustup's default toolchain. Run the Android setup script again.
-- `cargo-ndk` is installed but Cargo cannot run it: from the builder checkout, set
-  `RUSTUP_TOOLCHAIN` to the channel in NoteCraft's `rust-toolchain.toml`.
+- `cargo-ndk` is installed but Cargo cannot run it: run it from the repository root, so
+  `rust-toolchain.toml` selects the pinned toolchain.
 - SDK setup reports a move or permission error: keep `ANDROID_SDK_ROOT` under the WSL/Linux home
   filesystem instead of `/mnt/<drive>`.
 - `adb devices -l` shows no device: authorize USB debugging or connect ADB over wireless debugging.

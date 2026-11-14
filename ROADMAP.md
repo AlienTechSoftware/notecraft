@@ -59,6 +59,8 @@ Last reviewed: 2026-10-17. Status of the proof of concept, measured where a numb
 
 - **Android platform support**: build pipeline, touch UI, mobile file access, and feature parity
   with v0.0.9.
+  Started 2026-11-13: the APK (`android/`), its CI and Packaging jobs, and the phone-width
+  layout (issue #12). Device checks, file access and the clipboard remain (`docs/gaps.md`).
 
 1. **Import, the rest**: the importer runs (`notecraft-cli import onenote`) and has been tried on
    a real set of 443 backup files. Still to do: ink, tags and page dates, the notebook table of

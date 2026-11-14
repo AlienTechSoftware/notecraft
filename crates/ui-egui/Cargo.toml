@@ -24,16 +24,21 @@ notecraft-import = { workspace = true }
 egui = { workspace = true }
 egui_extras = { workspace = true }
 notecraft-diagram = { workspace = true }
-rfd = { workspace = true }
 image = { workspace = true }
 jxl-oxide = { workspace = true }
 hayro = { workspace = true }
 log = { workspace = true }
-arboard = { workspace = true }
 serde_json = { workspace = true }
 zip = { workspace = true }
 # SystemTime::now()/Instant::now() panic on wasm32-unknown-unknown; see the workspace Cargo.toml.
 web-time = { workspace = true }
+
+# The system file dialogs and the system clipboard. Android has neither through these crates:
+# its file picker and clipboard are Java services (see `filepicker.android.rs` and
+# `clipboard.android.rs`), so the window says they are missing there instead.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = { workspace = true }
+arboard = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 fontdb = "0.23"

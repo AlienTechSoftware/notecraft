@@ -73,8 +73,10 @@ in the website workflow, and is loaded under the same `/NoteCraft` root as other
 The generic engine sample remains a separate sample notebook and is not the release Welcome
 notebook.
 
-The Android launch activity refreshes the managed notebook from both APK asset formats before
-opening the native app.
+The Android app unpacks both editions from the APK asset `welcome-to-notecraft.zip` into its
+internal storage once per app version (application data, like the desktop's `demo` folder), then
+runs the same first-use wizard, which asks before copying the chosen edition into the notebooks
+folder (`android/src/welcome.rs`).
 
 ## Platform scope for 0.0.9 (owner, 2026-11-08)
 
@@ -97,8 +99,9 @@ Desktop and mobile package staging follows the app-managed refresh contract:
   required. The macOS setup app now shows a notice and does not install anything; agent 3 must
   revalidate that path.
 
-Android stages both formats as APK assets and refreshes them before opening NoteCraft. Build and
-emulator checks remain required.
+Android stages both formats in one APK asset and unpacks them at startup; `android/test.sh`
+checks the asset holds both editions and all 13 languages. Emulator and device checks remain
+required.
 
 ## Installation verification
 

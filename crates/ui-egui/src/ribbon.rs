@@ -503,8 +503,10 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
     let chosen = resolve_tab(tab, source, view.in_table);
     // A tab with many groups is wider than a narrow window: the Draw tab alone has eleven,
     // as OneNote's does. Rather than clipping the last of them, the groups scroll sideways.
-    // Dragging must not scroll: the controls here are clicked and dragged themselves, and a
-    // drag that scrolled the ribbon instead would take the pen out of the user's hand.
+    // A mouse drag must not scroll: the controls here are clicked and dragged themselves, and a
+    // drag that scrolled the ribbon instead would take the pen out of the user's hand. On a
+    // touch screen a finger drag is the only way to reach the groups past the edge, so there
+    // it scrolls (egui's OnTouch); a control under the finger still takes its own drag.
     egui::ScrollArea::horizontal()
         .id_salt(("ribbon", chosen))
         // The ribbon is an Office-style command band, not a document scroller.  A
@@ -512,7 +514,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
         // is wider than the window, which looks like a stray black artifact.  Keep
         // the scroll area (overflow tabs still scroll) but do not paint that bar.
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .scroll_source(egui::scroll_area::ScrollSource { drag: egui::scroll_area::DragScroll::Never, ..egui::scroll_area::ScrollSource::default() })
+        .scroll_source(egui::scroll_area::ScrollSource { drag: egui::scroll_area::DragScroll::OnTouch, ..egui::scroll_area::ScrollSource::default() })
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.add_space(4.0);

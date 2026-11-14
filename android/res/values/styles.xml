@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The window sits between the status bar and the navigation bar. egui knows nothing of the
+      system bars, so drawing behind them (Android 15's default for apps targeting API 35)
+      would put the title band under the clock. The opt-out keeps the classic layout.
+    -->
+    <style name="NoteCraft" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

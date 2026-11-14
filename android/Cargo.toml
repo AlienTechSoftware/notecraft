@@ -1,0 +1,50 @@
+[package]
+name = "notecraft-android"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft for Android: the native activity that runs the egui app in an APK"
+
+# The APK loads this library by name (android/AndroidManifest.xml, `android.app.lib_name`).
+[lib]
+name = "notecraft_android"
+crate-type = ["cdylib", "rlib"]
+
+# The workspace lints, except one: Android's loader starts the app through an exported
+# `android_main` symbol, and `#[unsafe(no_mangle)]` is an unsafe attribute. The workspace
+# forbids unsafe code, which cannot be relaxed for one item, so this crate denies it instead
+# and allows it on that single function (src/activity.rs). Nothing else here is unsafe.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+# Shared with the host, so the payload code is tested on every CI run.
+[dependencies]
+zip = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+notecraft-engine = { workspace = true }
+notecraft-model = { workspace = true }
+notecraft-store = { workspace = true }
+notecraft-ui-egui = { workspace = true }
+notecraft-setup = { path = "../apps/notecraft-setup" }
+egui = { workspace = true }
+# No accesskit: it needs GameActivity, and winit 0.30 drops GameActivity's text input. The
+# native activity delivers the soft keyboard's keys, which the page editor reads.
+eframe = { workspace = true, default-features = false, features = ["android-native-activity", "default_fonts", "wgpu"] }
+# Only to name AndroidApp, which eframe takes in NativeOptions; the same winit eframe uses.
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
+android_logger = "0.15"
+time = { workspace = true }
+
+[dev-dependencies]
+notecraft-store = { workspace = true }
+notecraft-setup = { path = "../apps/notecraft-setup" }

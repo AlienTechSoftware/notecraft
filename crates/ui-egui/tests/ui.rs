@@ -9851,3 +9851,114 @@ fn alt_and_a_number_pick_up_a_pen_and_alt_zero_goes_back_to_typing() {
     assert!(!after.contains('\u{a1}'), "the Option character was not typed");
     assert_eq!(before, after, "the note is unchanged");
 }
+
+// ---------- phone-width windows (issue #12) ----------
+
+/// A phone held upright: 390 by 800 points, as on a common Android phone.
+fn phone_harness(app: NoteCraftApp) -> Harness<'static, NoteCraftApp> {
+    sized_harness(app, LIGHT, egui::vec2(390.0, 800.0))
+}
+
+fn panes(h: &mut Harness<'_, NoteCraftApp>) -> Value {
+    ask(h, "ui.inspect", json!({})).expect("inspect")["panes"].clone()
+}
+
+/// Issue #12: on a phone the notebooks list fills the window, a page chosen in it then fills
+/// the window, and Back (Android's button) or the page's Full page button bring the list back.
+#[test]
+fn a_phone_width_window_shows_the_notebooks_or_the_page_one_at_a_time() {
+    let (_t, mut app, _s) = sample_app("ui-phone-list-and-page");
+    app.expand_all();
+    let mut h = phone_harness(app);
+    settle(&mut h);
+    let p = panes(&mut h);
+    assert_eq!(p["compact"], json!(true), "390 points is phone width: {p}");
+    assert_eq!(p["list"], json!(true), "with no page open the list fills the window: {p}");
+    let _ = h.get_by_label("Expand all");
+    review(&mut h, "phone_list");
+
+    h.get_by_label("Project X").click();
+    settle(&mut h);
+    assert!(h.state().body().is_some_and(|b| b.contains("Kickoff notes")), "the page is open");
+    let p = panes(&mut h);
+    assert_eq!(p["list"], json!(false), "the chosen page fills the window: {p}");
+    assert_eq!(h.query_all_by_label("Expand all").count(), 0, "the list is not drawn beside the page");
+    review(&mut h, "phone_page");
+
+    assert!(h.state_mut().system_back(), "Back has something to close");
+    settle(&mut h);
+    assert_eq!(panes(&mut h)["list"], json!(true), "Back shows the list again");
+    assert!(h.state().body().is_some(), "and the page stays open behind it");
+    assert!(!h.state_mut().system_back(), "with the list showing, Back leaves the app to Android");
+
+    // The same page again: it fills the window again.
+    h.get_by_label("Project X").click();
+    settle(&mut h);
+    assert_eq!(panes(&mut h)["list"], json!(false));
+    // The page's own Full page button is the way back without Android's Back button.
+    h.get_by_label("Full page").click();
+    settle(&mut h);
+    assert_eq!(panes(&mut h)["list"], json!(true), "the Full page button shows the notebooks");
+}
+
+/// Expanding a notebook or a section on a phone keeps the list up, so the next level can be
+/// chosen; only a page chosen for itself takes the window.
+#[test]
+fn choosing_a_section_on_a_phone_keeps_the_list() {
+    let (_t, app, _s) = sample_app("ui-phone-section");
+    let mut h = phone_harness(app);
+    settle(&mut h);
+    h.get_by_label("My Notebook").click();
+    settle(&mut h);
+    let p = panes(&mut h);
+    assert_eq!(p["list"], json!(true), "a notebook is not a page: {p}");
+}
+
+/// The ribbon stays folded to its tab names on a phone, without changing the saved choice,
+/// and comes back unfolded in a wide window.
+#[test]
+fn the_ribbon_is_folded_on_a_phone_and_not_on_the_desktop() {
+    let (_t, app, s) = sample_app("ui-phone-ribbon");
+    let mut h = phone_harness(app);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let ribbon = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    assert_eq!(ribbon["shown"], json!(false), "only the tab names: {ribbon}");
+    assert_eq!(ribbon["collapsed"], json!(false), "the user's own choice is unchanged: {ribbon}");
+
+    h.set_size(egui::vec2(1200.0, 760.0));
+    settle(&mut h);
+    let ribbon = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ribbon"].clone();
+    assert_eq!(ribbon["shown"], json!(true), "a wide window has the ribbon: {ribbon}");
+    let p = panes(&mut h);
+    assert_eq!(p["compact"], json!(false));
+    assert_eq!(p["fullPage"], json!(false), "the notebooks come back beside the page: {p}");
+}
+
+/// Back closes a dialog first, as its Cancel button would (the name box keeps Escape).
+#[test]
+fn back_closes_a_dialog_before_anything_else() {
+    let (_t, app, _s) = sample_app("ui-phone-back-dialog");
+    let mut h = phone_harness(app);
+    settle(&mut h);
+    h.get_by_label("New notebook").click();
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["dialogOpen"], json!(true), "the dialog is open");
+    assert!(h.state_mut().system_back());
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["dialogOpen"], json!(false), "Back closed it");
+}
+
+/// While a block has the caret, the window says where the soft keyboard's text goes, so the
+/// Android shell can raise the keyboard; without a caret it does not ask.
+#[test]
+fn the_soft_keyboard_is_wanted_only_while_a_block_has_the_caret() {
+    let (_t, app, s) = sample_app("ui-phone-keyboard");
+    let mut h = phone_harness(app);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.state().keyboard_caret_rect(), None);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    assert!(h.state().keyboard_caret_rect().is_some(), "the caret asks for the keyboard");
+}

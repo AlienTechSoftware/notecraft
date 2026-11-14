@@ -13,6 +13,9 @@ path = "src/main.rs"
 
 [dependencies]
 notecraft-store = { workspace = true }
+
+# Only the setup program's own message boxes use it; the library half is shared with Android.
+[target.'cfg(not(target_os = "android"))'.dependencies]
 rfd = { workspace = true }
 
 [lints]

@@ -56,10 +56,14 @@ fn share(v: &Value) -> Share {
     Share { covered: v["covered"].as_u64().unwrap_or(0), count: v["count"].as_u64().unwrap_or(0) }
 }
 
-/// `crates/engine` for `.../crates/engine/src/session.rs`. Files outside `crates/` and `apps/`
-/// count towards the total only.
+/// `crates/engine` for `.../crates/engine/src/session.rs`, and `android` for the Android crate
+/// at the top of its own folder. Other files outside `crates/` and `apps/` count towards the
+/// total only.
 fn crate_of(path: &str) -> Option<String> {
     let path = path.replace('\\', "/");
+    if path.contains("/android/src/") {
+        return Some("android".to_string());
+    }
     for top in ["crates", "apps"] {
         let marker = format!("/{top}/");
         if let Some(i) = path.rfind(&marker) {
