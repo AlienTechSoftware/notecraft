@@ -9632,3 +9632,50 @@ fn insert_space_drags_room_into_the_page_and_out_again() {
     assert_eq!(tool(&mut h), Some(false), "Esc puts the tool down");
     assert_eq!(boxes(&mut h), (20.0, 450.0));
 }
+
+/// Issue #44: Alt and a number pick up that pen on the rack, from anywhere, so a tablet's express
+/// keys can be bound to pens; Alt+0 goes back to typing. A Mac's Option+digit character is not
+/// typed into the note.
+#[test]
+fn alt_and_a_number_pick_up_a_pen_and_alt_zero_goes_back_to_typing() {
+    let (_t, mut app, s) = sample_app("ui-pen-keys");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        (v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string(), v.pointer("/ink/nib").and_then(Value::as_u64))
+    };
+    assert_eq!(ink(&mut h).0, "write");
+    ask(&mut h, "ui.key", json!({"key": "2", "alt": true})).expect("Alt+2");
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(1)), "the second pen on the rack is in hand");
+    ask(&mut h, "ui.key", json!({"key": "5", "alt": true})).expect("Alt+5");
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(4)));
+    ask(&mut h, "ui.key", json!({"key": "0", "alt": true})).expect("Alt+0");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write", "Alt+0 puts the pen down");
+    // A number past the end of the rack picks up nothing.
+    ask(&mut h, "ui.key", json!({"key": "9", "alt": true})).expect("Alt+9");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write", "there is no ninth pen on the starting rack");
+    // A plain digit is still typing, not a pen.
+    ask(&mut h, "ui.key", json!({"key": "3"})).expect("3");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write");
+
+    // With the caret in the note, the character a Mac types for Option+1 does not reach it.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    let alt = egui::Modifiers { alt: true, ..Default::default() };
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Num1, physical_key: None, pressed: true, repeat: false, modifiers: alt });
+    h.input_mut().events.push(egui::Event::Text("\u{a1}".to_string()));
+    h.step();
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(0)), "Alt+1 picks up the first pen");
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert!(!after.contains('\u{a1}'), "the Option character was not typed");
+    assert_eq!(before, after, "the note is unchanged");
+}

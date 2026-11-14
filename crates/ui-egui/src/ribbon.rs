@@ -2202,6 +2202,8 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
         open = false;
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
+    // The first nine pens answer Alt and their number (issue #44).
+    let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
 }

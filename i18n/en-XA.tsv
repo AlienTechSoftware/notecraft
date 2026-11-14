@@ -884,3 +884,5 @@
 @id	ui.scroll_the_page_sideways	$$$Scroll the page sideways@@@
 @id	ui.insert_space_tip	$$$Drag down the page to add room, or up to take it away@@@
 @id	ui.insert_space_how	$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@
+@id	ui.pen_keys_typing	$$$Typing (Alt+0)@@@
+@id	ui.pen_keys_picked	$$$Pen {number} (Alt+{number})@@@
