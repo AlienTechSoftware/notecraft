@@ -6,7 +6,9 @@
 #
 # Signing: packaging/windows/sign.ps1 signs when WINDOWS_CERTIFICATE or the AZURE_* secrets exist
 # and leaves the files unsigned, with a warning, when they do not. No secret is set today, so
-# these builds are unsigned and Windows SmartScreen will warn.
+# these builds are unsigned and Windows SmartScreen will warn. The Android APK is always signed
+# (Android installs nothing unsigned): with the ANDROID_KEYSTORE_* key when it exists, otherwise
+# with a key made for that build (packaging.yml).
 name: Release
 
 on:
@@ -110,6 +112,11 @@ jobs:
           Your notebooks are plain folders under Documents\NoteCraft, and neither the installer nor
           an uninstall touches them. The app writes \`notecraft.log\` in \`%APPDATA%\NoteCraft\`: attach it
           to a bug report at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in
-          docs/gaps.md."
+          docs/gaps.md.
+
+          The Android APK is for 64-bit ARM phones and tablets with Android 8 or later. The Packaging
+          run's summary says whether it was signed with the release key; one signed with a key made
+          for that build cannot update an earlier APK in place. Its notebooks live in the app's own
+          storage (Android/data/com.alientechsoftware.notecraft/files/NoteCraft)."
           mapfile -t artifacts < <(find dist -type f -print)
           gh release create "$tag" "${artifacts[@]}" "${flags[@]}" --notes "$notes"

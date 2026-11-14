@@ -232,10 +232,29 @@ jobs:
           df -h /
       - run: cargo xtask coverage
 
+  # The Android app (android/): clippy for the arm64 target, which also builds every crate the
+  # APK links, so a change that breaks the Android build fails here. The APK itself is built by
+  # the Packaging workflow.
+  android:
+    name: android (clippy, arm64)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the Android SDK packages, the Rust target and cargo-ndk
+        run: bash android/ci-setup.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: android
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo ndk --target arm64-v8a --platform 26 clippy --locked -p notecraft-android -- -D warnings
+
   ci-status:
     name: CI
     runs-on: ubuntu-latest
-    needs: [changes, fmt, clippy, platform-build-test, static, coverage]
+    needs: [changes, fmt, clippy, platform-build-test, android, static, coverage]
     if: always()
     steps:
       - name: Check CI result
@@ -245,6 +264,7 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           BUILD_TEST: ${{ needs.platform-build-test.result }}
+          ANDROID: ${{ needs.android.result }}
           STATIC: ${{ needs.static.result }}
         run: |
           # The change filter must have succeeded: if it failed, the jobs it gates were skipped,
@@ -256,7 +276,7 @@ jobs:
           for result in "$FMT" "$STATIC"; do
             if [[ "$result" != "success" ]]; then echo "Quality checks failed"; exit 1; fi
           done
-          for result in "$CLIPPY" "$BUILD_TEST"; do
+          for result in "$CLIPPY" "$BUILD_TEST" "$ANDROID"; do
             if [[ "$CODE" == "true" && "$result" != "success" ]] || [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
               echo "Quality checks failed"
               exit 1

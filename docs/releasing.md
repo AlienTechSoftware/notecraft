@@ -20,8 +20,8 @@ One run:
    `main`'s `Cargo.toml` stays where it is, and the released numbers live in the tags.
 4. Builds and tests the tagged commit on Linux.
 5. Runs the Packaging workflow on the tagged commit: Windows x64 (MSI and portable zip), Linux
-   x86_64 and aarch64 (tar.gz, AppImage, deb and rpm), and macOS Apple Silicon and Intel (DMG and
-   command line zip).
+   x86_64 and aarch64 (tar.gz, AppImage, deb and rpm), macOS Apple Silicon and Intel (DMG and
+   command line zip), and Android arm64 (APK; see Android signing below).
 6. Runs the Website pipeline on the tagged commit and deploys it to notecraft.cloud, including
    `/demo/`. The built web app is kept as `notecraft-web-<version>.zip`.
 7. Publishes GitHub Release `v<version>` as a regular release marked latest, with every file above and
@@ -88,16 +88,15 @@ pick, such as a minor version.
 1. On `main`, with the gate green, keep the version as it is. Change it with `cargo xtask version set <x.y.z>` only
    when the owner has approved that exact number. Commit it.
 2. Run Actions, Packaging, Run workflow on the approved commit. This manually builds and verifies
-   Linux, Windows, and macOS artifacts and uploads them without publishing anything. Record its
+   Linux, Windows, macOS and Android artifacts and uploads them without publishing anything. Record its
    source commit and the version from `[workspace.package]`.
 3. Run Actions, Release, Run workflow from `main` at that same commit and enter that Packaging run
    ID. The workflow rejects runs from another branch, commit, or workflow, and derives the release
    version from the checked-out workspace. If `main` advanced, rerun Packaging for the new commit.
    The workflow drafts `NoteCraft v<version>`; it does not publish it.
-4. Build Android separately through the approved ArtCraft Android builder. Record the NoteCraft
-   source commit and package version, verify the APK package metadata and signing certificate match
-   the intended release, then install it on a clean emulator/device. Attach it only after those
-   checks pass. Android is not built by this repository's Packaging workflow today.
+4. Android is built by the same Packaging run (`android/build.sh`, checked by `android/test.sh`):
+   `notecraft-<version>-android-arm64.apk`. Check the run's summary for how it was signed (see
+   Android signing below), then install it on a clean emulator or device before publishing.
 5. For the website, wait for the `Deploy website` workflow on the same `main` commit to succeed.
    It publishes the browser app and the separately version-checked Welcome notebook archive from
    `docs/demo/DemoNotebook`. Its production check verifies both the served WASM and notebook
@@ -106,11 +105,31 @@ pick, such as a minor version.
 6. Review the draft's complete asset list and rendered notes, then test each platform package on a
    clean target. Publish the draft only after the owner approves.
 
-The website, desktop release, and Android package are separate pipelines. Each bundles both
+The website and the packages are separate pipelines. Each bundles both
 generated Welcome formats. Desktop NoteCraft runs the first-use wizard once after installation or
 a preferences reset and creates the managed Welcome notebook only when the user chooses Yes. For
-0.0.9 the wizard is verified on Windows only; the website and Android flows are deferred for it. The website uses a static archive transport. The generic engine sample stays
+0.0.9 the wizard is verified on Windows only; the website flow is deferred for it. The Android app
+unpacks both editions into its own storage and runs the same wizard (android/src/welcome.rs). The website uses a static archive transport. The generic engine sample stays
 separate. Record and verify the source revision and version for every artifact.
+
+### Android signing
+
+Android installs only signed APKs, and an installed app can be updated only by an APK signed with
+the same key. The Packaging workflow signs with the release key when these repository secrets
+exist, and otherwise with a key made for that one build (with a warning in the run):
+
+| Secret | Holds |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | The keystore file (`.jks` or `.p12`), base64-encoded |
+| `ANDROID_KEYSTORE_PASSWORD` | Its password |
+| `ANDROID_KEY_ALIAS` | Optional: the key's alias, when the keystore holds more than one |
+| `ANDROID_KEY_PASSWORD` | Optional: the key's password, when it differs from the keystore's |
+
+Make the key once, keep a copy offline, and never commit it. For example:
+`keytool -genkeypair -keystore notecraft-release.p12 -storetype PKCS12 -alias notecraft -keyalg RSA -keysize 4096 -validity 10000`,
+then `base64 -w0 notecraft-release.p12` for the secret. The nightly release notes say which kind
+of key signed that night's APK. Until the secrets exist, each nightly APK has its own key: it
+installs, but cannot update another night's APK in place.
 
 ### Notes and the draft
 
@@ -144,8 +163,8 @@ preferences and confirm it appears again. Confirm an upgrade does not show it.
 Each file also gets a build provenance attestation. Check a download with
 `gh attestation verify <file> --repo AlienTechSoftware/notecraft`.
 
-The manual Packaging workflow builds Windows x64, Linux x64, and macOS Apple Silicon/Intel
-artifacts. They are not official public releases until the separate Release workflow is run and
+The manual Packaging workflow builds Windows x64, Linux x64, macOS Apple Silicon/Intel and
+Android arm64 artifacts. They are not official public releases until the separate Release workflow is run and
 the draft is reviewed. A maintainer must complete native Intel and clean-machine testing,
 Developer ID signing and notarization before public macOS distribution.
 

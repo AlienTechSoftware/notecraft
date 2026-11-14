@@ -1,7 +1,8 @@
 # Android and iOS goals
 
-Status: goals only. No `android/` or `ios/` folder exists yet, and no desktop move has been
-approved. Owner direction, 2026-11-10.
+Status: `android/` exists from 2026-11-13 (the APK shell, a Rust crate with no Java code; see
+`android/README.md`). No `ios/` folder exists yet, and no desktop move has been approved. Owner
+direction, 2026-11-10.
 
 ## Layout
 

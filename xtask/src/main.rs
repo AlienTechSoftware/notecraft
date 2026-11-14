@@ -52,6 +52,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft", 7),
     ("notecraft-web", 7),
     ("notecraft-cli", 7),
+    ("notecraft-android", 7),
     ("xtask", 7),
     ("notecraft-demo", 7),
 ];
@@ -144,6 +145,8 @@ fn layers(root: &Path) -> Result<(), String> {
     }
     manifests.push(root.join("xtask").join("Cargo.toml"));
     manifests.push(root.join("docs").join("demo").join("scripts").join("Cargo.toml"));
+    // The Android app shell: one crate at the top of its own folder (AGENTS.md, platforms).
+    manifests.push(root.join("android").join("Cargo.toml"));
     for m in &manifests {
         let text = fs::read_to_string(m).map_err(|e| format!("{}: {e}", m.display()))?;
         problems.extend(layer_problems(&text));
@@ -799,6 +802,7 @@ mod tests {
             }
         }
         assert!(manifests.len() >= 8, "found {} crates", manifests.len());
+        manifests.push(root.join("android").join("Cargo.toml"));
         for m in manifests {
             let text = fs::read_to_string(&m).expect("manifest");
             let name = package_name(&text).expect("name");

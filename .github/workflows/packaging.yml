@@ -2,6 +2,11 @@ name: Packaging
 
 # Packaging produces reviewable artifacts; it does not create or publish a GitHub Release.
 # Run it by hand, or let the Nightly release workflow call it on the commit it tagged.
+#
+# Android: the APK is signed with the release key when the ANDROID_KEYSTORE_BASE64 and
+# ANDROID_KEYSTORE_PASSWORD secrets exist (ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD are
+# optional), and otherwise with a key made for that one build; the android-signing output says
+# which ("release" or "throwaway"), so the release notes can say so. docs/releasing.md has more.
 on:
   workflow_dispatch:
   workflow_call:
@@ -11,6 +16,10 @@ on:
         type: string
         required: false
         default: ""
+    outputs:
+      android-signing:
+        description: "How the APK was signed: release or throwaway"
+        value: ${{ jobs.android.outputs.signing }}
 
 permissions:
   contents: read
@@ -162,4 +171,55 @@ jobs:
           path: |
             dist/macos/*.dmg
             dist/macos/*.zip
+          if-no-files-found: error
+
+  android:
+    name: Android arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      signing: ${{ steps.key.outputs.signing }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Install the Android SDK packages, the Rust target and cargo-ndk
+        run: bash android/ci-setup.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: android
+          save-if: false
+      - name: Write the release key, when there is one
+        id: key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/notecraft-release.keystore"
+            echo "ANDROID_KEYSTORE=$RUNNER_TEMP/notecraft-release.keystore" >> "$GITHUB_ENV"
+            echo "signing=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: the APK is signed with a key made for this build only, so it cannot update an earlier APK in place."
+            echo "signing=throwaway" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build the APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash android/build.sh
+      - name: Verify the APK
+        run: bash android/test.sh
+      - name: Remove the release key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/notecraft-release.keystore"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/android/*.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: notecraft-android-arm64
+          path: dist/android/*.apk
           if-no-files-found: error

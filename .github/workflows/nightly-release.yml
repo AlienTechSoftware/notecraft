@@ -12,7 +12,7 @@
 #      line stays where it is, and the released numbers live in the tags.
 #   2. test: builds and runs the workspace tests on the tagged commit.
 #   3. packaging: the Packaging workflow on the tagged commit (Windows, Linux x86_64 and aarch64,
-#      macOS Apple Silicon and Intel).
+#      macOS Apple Silicon and Intel, Android arm64).
 #   4. website: the Website pipeline on the tagged commit, deployed to production. Its web build
 #      is also kept as a release asset.
 #   5. release: publishes GitHub Release v<version>, marked latest, with every package and one
@@ -204,6 +204,8 @@ jobs:
     uses: ./.github/workflows/packaging.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
+    # The Android release key, when the repository has one (packaging.yml).
+    secrets: inherit
 
   website:
     name: Website
@@ -246,20 +248,29 @@ jobs:
           for want in windows-x64.msi windows-x64-portable.zip linux-x86_64.tar.gz linux-x86_64.AppImage \
             linux-x86_64.deb linux-x86_64.rpm linux-aarch64.tar.gz linux-aarch64.AppImage linux-aarch64.deb \
             linux-aarch64.rpm macos-aarch64.dmg macos-x86_64.dmg macos-aarch64.zip macos-x86_64.zip \
-            "web-${{ needs.prepare.outputs.version }}.zip"; do
+            android-arm64.apk "web-${{ needs.prepare.outputs.version }}.zip"; do
             ls dist | grep -q -- "$want\$" || { echo "::error::no *$want in the release files"; exit 1; }
           done
 
       - name: Publish the release
+        env:
+          ANDROID_SIGNING: ${{ needs.packaging.outputs.android-signing }}
         run: |
           set -euo pipefail
+          if [ "$ANDROID_SIGNING" = release ]; then
+            android="The Android APK (\`android-arm64.apk\`, 64-bit ARM, Android 8 or later) is signed with the project's release key, so each nightly updates the last one in place. Allow installs from your browser or file manager to install it."
+          else
+            android="The Android APK (\`android-arm64.apk\`, 64-bit ARM, Android 8 or later) is signed with a key made for this build only, so it cannot update an APK from another night in place: Android asks to uninstall first, and uninstalling removes notebooks kept in NoteCraft's own storage unless you choose to keep the app's data. Copy notebooks off the phone (Android/data/com.alientechsoftware.notecraft/files/NoteCraft) before switching builds."
+          fi
           notes="**Alpha nightly build.** NoteCraft is not a finished product. It has had little use, and the folder format can still change. Keep a backup of any notebook you care about.
 
           Built automatically from \`main\`. The web build is live at https://notecraft.cloud/demo/.
 
-          These files are **not signed**. Windows SmartScreen may show \"Windows protected your PC\": choose More info, then Run anyway. macOS may say the app is from an unidentified developer: right-click it and choose Open. Check a download against \`SHA256SUMS.txt\`, or with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
+          The desktop files are **not signed**. Windows SmartScreen may show \"Windows protected your PC\": choose More info, then Run anyway. macOS may say the app is from an unidentified developer: right-click it and choose Open. Check a download against \`SHA256SUMS.txt\`, or with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
 
-          Your notebooks are plain folders, and neither an installer nor an uninstall touches them. Report bugs at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in docs/gaps.md."
+          $android
+
+          Your notebooks are plain folders, and no desktop installer or uninstall touches them. Report bugs at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in docs/gaps.md."
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "NoteCraft $TAG" --notes "$notes" --generate-notes
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >>"$GITHUB_STEP_SUMMARY"

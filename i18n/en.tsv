@@ -50,6 +50,7 @@
 @id	ui.added_a_link_to_name_at_the_end_of_the_page	Added a link to {name} at the end of the page
 @id	ui.added_a_tool	Added a {tool}
 @id	ui.address	Address
+@id	ui.android_no_file_picker	Android cannot show this file dialog yet. Notebooks are in Android/data/com.alientechsoftware.notecraft/files/NoteCraft.
 @id	ui.the_line_changed_put_the_link_in_again	The line changed; put the link in again
 @id	ui.select_words_in_one_line_for_a_link	Select words in one line for a link
 @id	ui.that_address_cannot_be_used_for_a_link	That address cannot be used for a link

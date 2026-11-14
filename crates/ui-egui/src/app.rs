@@ -5,6 +5,9 @@
 
 use crate::backstage;
 use crate::control::{ControlRequest, ControlServer, base64};
+// The file dialogs: `rfd` everywhere it has a backend, and a stand-in on Android that says so.
+#[cfg(target_os = "android")]
+use crate::filepicker as rfd;
 use crate::floating;
 use crate::icons::{self, Icon};
 use crate::navhistory::NavHistory;
@@ -986,6 +989,13 @@ pub struct NoteCraftApp {
     backstage: Option<&'static str>,
     /// The page fills the window: the notebooks are hidden until it is turned off.
     full_page: bool,
+    /// The window is phone-width, so it shows the notebooks or the page, not both
+    /// (`compact.rs`, issue #12). Worked out from the window's width every frame.
+    compact: bool,
+    /// The compact layout turned Full page on itself, so a wider window turns it off again.
+    compact_full_page: bool,
+    /// A page was opened since the last frame: the compact layout shows it.
+    page_opened: bool,
     /// Put the keyboard in the search box on the next frame.
     focus_search: bool,
     /// The page the window closed on has been opened again (once per run).
@@ -1130,6 +1140,9 @@ impl NoteCraftApp {
             keyboard_paste_requested: false,
             backstage: None,
             full_page: false,
+            compact: false,
+            compact_full_page: false,
+            page_opened: false,
             focus_search: false,
             restored: false,
             icon_recovery_reported: HashSet::new(),
@@ -1655,6 +1668,91 @@ impl NoteCraftApp {
         let _ = self.session.settings.set("ribbon_collapsed", if self.ribbon_collapsed { "true" } else { "false" });
     }
 
+    /// Whether the ribbon shows only its tab names: the user folded it, or the window is
+    /// phone-width, where its groups would leave no room for the page (issue #12).
+    fn ribbon_folded(&self) -> bool {
+        self.ribbon_collapsed || self.compact
+    }
+
+    /// Works out the phone-width layout for this frame (`compact.rs`). An opened page fills a
+    /// compact window; a window that grows wide again shows the notebooks beside the page.
+    fn compact_layout(&mut self, ctx: &Context) {
+        let compact = crate::compact::is_compact(ctx.content_rect().width());
+        if compact != self.compact {
+            self.compact = compact;
+            if !compact && self.compact_full_page {
+                self.full_page = false;
+            }
+            self.compact_full_page = false;
+        }
+        if std::mem::take(&mut self.page_opened) && compact && self.editor.is_some() && !self.full_page {
+            self.full_page = true;
+            self.compact_full_page = true;
+        }
+    }
+
+    /// Whether the notebooks list fills a phone-width window this frame, with no page beside it.
+    fn compact_list_fills(&self) -> bool {
+        self.compact && !(self.full_page && self.editor.is_some())
+    }
+
+    /// Android's Back button: closes the topmost thing over the page and says whether it did.
+    /// A dialog closes as its Cancel would (the first-use wizard goes back a step instead); a
+    /// shown-over ribbon or the format painter get Escape, as from the keyboard; the File screen,
+    /// the Tags Summary and the page templates close; a page filling the window gives way to the notebooks. With
+    /// nothing left to close it does nothing, and Android keeps the app open.
+    pub fn system_back(&mut self) -> bool {
+        let escape = |frames: &mut std::collections::VecDeque<Vec<egui::Event>>| {
+            let key =
+                |pressed| egui::Event::Key { key: Key::Escape, physical_key: Some(Key::Escape), pressed, repeat: false, modifiers: Modifiers::NONE };
+            frames.push_back(vec![key(true), key(false)]);
+        };
+        if let Some(dialog) = &self.dialog {
+            // Not every dialog reads Escape (a name box keeps it, for one), so Back cancels the
+            // dialog itself. The wizard reads Escape as its own Back button.
+            if matches!(dialog, Dialog::FirstUseWizard { .. }) {
+                escape(&mut self.event_frames);
+            } else {
+                self.dialog = None;
+            }
+            return true;
+        }
+        if self.ribbon_peek || self.painter.is_some() {
+            escape(&mut self.event_frames);
+            return true;
+        }
+        if self.backstage.is_some() {
+            self.backstage = None;
+            return true;
+        }
+        if self.tags_pane.is_some() && self.compact {
+            self.tags_pane = None;
+            return true;
+        }
+        if self.templates_pane.is_some() && self.compact {
+            self.templates_pane = None;
+            return true;
+        }
+        if self.full_page && self.editor.is_some() {
+            self.full_page = false;
+            self.compact_full_page = false;
+            return true;
+        }
+        false
+    }
+
+    /// Where the soft keyboard's text goes while a block of the page has the caret, or `None`.
+    /// The page editor reads keys itself rather than through a `TextEdit`, so a platform with an
+    /// on-screen keyboard asks for it with this (the Android shell does).
+    pub fn keyboard_caret_rect(&self) -> Option<egui::Rect> {
+        let ed = self.editor.as_ref()?;
+        ed.caret.as_ref()?;
+        if self.show_source || self.dialog.is_some() || self.compact_list_fills() {
+            return None;
+        }
+        self.page_rect
+    }
+
     /// The Quick Access Toolbar, drawn in whatever row it is given.
     fn quick_access(&mut self, ui: &mut Ui, tokens: Tokens) {
         let enabled =
@@ -1943,6 +2041,7 @@ impl NoteCraftApp {
 
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
+        self.page_opened = true;
         self.save_now();
         self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
@@ -2475,6 +2574,9 @@ impl NoteCraftApp {
                     // location while the editor showed another.
                     if let Some(page) = first_page(self.session.tree(), &p) {
                         self.open_page(&page);
+                        // A phone-width window keeps the list up, so the next level can be
+                        // picked; only a page chosen for itself takes the window.
+                        self.page_opened = false;
                     } else {
                         self.selected = Some(p);
                     }
@@ -2875,7 +2977,7 @@ impl NoteCraftApp {
         let (tab, source, in_table) = (self.ribbon_tab.clone(), self.show_source, self.caret_in_table());
         let title = self.editor.as_ref().map(|e| e.title.trim().to_owned()).filter(|s| !s.is_empty());
         let mut acts = Vec::new();
-        let collapsed = self.ribbon_collapsed;
+        let collapsed = self.ribbon_folded();
         let band = egui::Panel::top("band").frame(egui::Frame::new().fill(t.band)).show_separator_line(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
             self.title_row(ui, title.as_deref());
@@ -2920,8 +3022,12 @@ impl NoteCraftApp {
         // A page named in Arabic puts the band's words in the wrong order if the whole
         // string is handed to egui, so the band goes through the bidi painter like the page
         // does. The name decides its own direction here; there is no page to follow.
-        let band = ui.painter_at(row);
-        crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
+        // A phone-width window has no room for the title between the controls: the page's own
+        // title is the first thing on it anyway.
+        if !self.compact {
+            let band = ui.painter_at(row);
+            crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
+        }
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
@@ -2938,9 +3044,16 @@ impl NoteCraftApp {
         right.add_space(4.0);
         self.language_menu(&mut right, on);
         right.add_space(10.0);
-        self.discord_link(&mut right, on);
-        right.add_space(10.0);
-        let resp = right.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::tl_id!("ui.search_all_pages")).desired_width(200.0));
+        if !self.compact {
+            self.discord_link(&mut right, on);
+            right.add_space(10.0);
+        }
+        // The search box takes what the controls on both sides leave, up to its usual width, so
+        // on a phone it does not run over the Quick Access Toolbar.
+        let left_used = left.min_rect().right() - row.left();
+        let search_width = (right.available_width() - left_used - 8.0).clamp(60.0, 200.0);
+        let resp =
+            right.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::tl_id!("ui.search_all_pages")).desired_width(search_width));
         if self.focus_search {
             resp.request_focus();
             self.focus_search = false;
@@ -3582,7 +3695,7 @@ impl NoteCraftApp {
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
-        if !self.ribbon_collapsed {
+        if !self.ribbon_folded() {
             egui::Panel::top("ribbon")
                 .exact_size(ribbon::GROUP_H + 8.0)
                 .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
@@ -3852,7 +3965,7 @@ impl NoteCraftApp {
             ribbon::Act::Equation(tex) => self.insert_in_page(&format!("${tex}$")),
             ribbon::Act::Tab(name) => {
                 // Folded, a tab shows its commands over the page; the same tab again hides them.
-                if self.ribbon_collapsed {
+                if self.ribbon_folded() {
                     self.ribbon_peek = !(self.ribbon_peek && self.ribbon_tab == name);
                 }
                 self.ribbon_tab = name;
@@ -6213,7 +6326,13 @@ impl NoteCraftApp {
         let mut close = false;
         let mut chosen: Option<(String, String)> = None;
         let mut keep: Option<String> = None;
-        egui::Panel::right("page-templates").resizable(true).default_size(280.0).size_range(220.0..=520.0).show(ui, |ui| {
+        // A phone-width window gives the pane the whole width, as it does the Tags Summary.
+        let panel = if self.compact {
+            egui::Panel::right("page-templates-compact").resizable(false).exact_size(ui.available_width())
+        } else {
+            egui::Panel::right("page-templates").resizable(true).default_size(280.0).size_range(220.0..=520.0)
+        };
+        panel.show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.strong(crate::tl_id!("ui.page_templates_title"));
@@ -6302,7 +6421,12 @@ impl NoteCraftApp {
         let mut close = false;
         let mut refresh = false;
         let mut chosen: Option<(PathBuf, usize)> = None;
-        egui::Panel::right("tags-summary").resizable(true).default_size(300.0).size_range(220.0..=600.0).show(ui, |ui| {
+        let panel = if self.compact {
+            egui::Panel::right("tags-summary-compact").resizable(false).exact_size(ui.available_width())
+        } else {
+            egui::Panel::right("tags-summary").resizable(true).default_size(300.0).size_range(220.0..=600.0)
+        };
+        panel.show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.strong(crate::tl_id!("ui.tags_summary"));
@@ -6435,7 +6559,9 @@ impl NoteCraftApp {
             return;
         }
         let mut acts = Vec::new();
-        if self.split_panes {
+        // A phone-width window has room for one column, so it always shows the one tree.
+        let compact = self.compact;
+        if self.split_panes && !compact {
             self.organiser_panes(ui, &mut acts);
             for a in acts {
                 self.apply(a);
@@ -6443,12 +6569,22 @@ impl NoteCraftApp {
             return;
         }
         let mut split_now = false;
-        egui::Panel::left("tree").resizable(true).default_size(300.0).size_range(200.0..=700.0).show(ui, |ui| {
+        // Compact: the list fills the window (a panel of its own, so the desktop width the
+        // tree was dragged to is kept for a wider window).
+        let panel = if compact {
+            egui::Panel::left("tree-compact").resizable(false).exact_size(ui.available_width())
+        } else {
+            egui::Panel::left("tree").resizable(true).default_size(300.0).size_range(200.0..=700.0)
+        };
+        panel.show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 // In the one-tree layout the same button splits the panel and hides the
-                // notebooks, which is what pressing it in OneNote does.
-                split_now = Self::bars_button_at(ui).clicked();
+                // notebooks, which is what pressing it in OneNote does. A phone-width window
+                // has no room for the split, so it has no button for it.
+                if !compact {
+                    split_now = Self::bars_button_at(ui).clicked();
+                }
                 ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
             });
             ui.horizontal_wrapped(|ui| {
@@ -6464,10 +6600,11 @@ impl NoteCraftApp {
                 self.new_section_button(ui, &mut acts);
             });
             ui.add_space(2.0);
-            // A drag in a pane must not scroll it: in the page a drag moves a container,
-            // and in the tree it is a click that slipped. The wheel and the bar still work.
+            // A mouse drag in a pane must not scroll it: in the tree it is a click that
+            // slipped. The wheel and the bar still work, and on a touch screen a finger drag
+            // scrolls, which is the only way a phone has.
             let scroll = egui::containers::scroll_area::ScrollSource {
-                drag: egui::containers::scroll_area::DragScroll::Never,
+                drag: egui::containers::scroll_area::DragScroll::OnTouch,
                 ..egui::containers::scroll_area::ScrollSource::default()
             };
             egui::ScrollArea::vertical().auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
@@ -6632,7 +6769,7 @@ impl NoteCraftApp {
     /// them. The three-bar button in the top bar hides the first column.
     fn organiser_panes(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
         let scroll = || egui::containers::scroll_area::ScrollSource {
-            drag: egui::containers::scroll_area::DragScroll::Never,
+            drag: egui::containers::scroll_area::DragScroll::OnTouch,
             ..egui::containers::scroll_area::ScrollSource::default()
         };
         let mut toggle = false;
@@ -7217,6 +7354,11 @@ impl NoteCraftApp {
                     ..egui::containers::scroll_area::ScrollSource::default()
                 };
                 let shown = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
+                    // On a touch screen two fingers scroll the page. One finger writes,
+                    // selects and moves boxes, as the mouse does, so it cannot scroll too.
+                    if let Some(touch) = ui.input(|i| i.multi_touch()) {
+                        ui.scroll_with_delta(vec2(0.0, touch.translation_delta.y));
+                    }
                     page(
                         ui,
                         ed,
@@ -7422,26 +7564,40 @@ impl NoteCraftApp {
                     ui.label(egui::RichText::new(format!("{} - {state}", ed.format.label())).small().color(self.tokens.muted))
                         .on_hover_text(self.shown(&ed.dir));
                 }
+                // A phone-width window keeps only the default format's box here, without its
+                // labels or the folder summary, so the status beside it stays readable.
+                let compact = self.compact;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
-                    let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);
-                    let items = crate::i18n::format_count_id("ui.n_item_n_items", nodes as u64);
-                    let folder = self.shown(self.session.root());
-                    let summary = crate::i18n::format_message_id(
-                        "ui.notebooks_items_folder",
-                        &[("notebooks", &notebooks), ("items", &items), ("folder", &folder)],
-                    );
-                    ui.label(egui::RichText::new(summary).small().color(self.tokens.muted));
-                    ui.separator();
+                    if !compact {
+                        let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
+                        let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);
+                        let items = crate::i18n::format_count_id("ui.n_item_n_items", nodes as u64);
+                        let folder = self.shown(self.session.root());
+                        let summary = crate::i18n::format_message_id(
+                            "ui.notebooks_items_folder",
+                            &[("notebooks", &notebooks), ("items", &items), ("folder", &folder)],
+                        );
+                        ui.label(egui::RichText::new(summary).small().color(self.tokens.muted));
+                        ui.separator();
+                    }
                     let (current, source) = self.session.settings.global_format();
                     let mut chosen = current;
-                    egui::ComboBox::from_label(crate::tl_id!("ui.default_format")).selected_text(current.label()).show_ui(ui, |ui| {
+                    let combo = if compact {
+                        egui::ComboBox::from_id_salt("default-format")
+                    } else {
+                        egui::ComboBox::from_label(crate::tl_id!("ui.default_format"))
+                    };
+                    let combo = combo.selected_text(current.label()).show_ui(ui, |ui| {
                         for f in PageFormat::ALL {
                             ui.selectable_value(&mut chosen, f, f.label());
                         }
                     });
-                    ui.label(egui::RichText::new(format!("({})", crate::tl!(source.label()))).small().color(self.tokens.muted));
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.new_pages")).small().color(self.tokens.muted));
+                    if compact {
+                        combo.response.on_hover_text(crate::tl_id!("ui.default_format"));
+                    } else {
+                        ui.label(egui::RichText::new(format!("({})", crate::tl!(source.label()))).small().color(self.tokens.muted));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.new_pages")).small().color(self.tokens.muted));
+                    }
                     if chosen != current && self.run("settings.default_format.set", &params(&[("format", chosen.id())])).is_some() {
                         self.say(crate::i18n::format_message_id(
                             "ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6",
@@ -8811,7 +8967,13 @@ impl NoteCraftApp {
             },
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
-            "panes": {"split": self.split_panes, "organisers": self.organisers},
+            "panes": {
+                "split": self.split_panes,
+                "organisers": self.organisers,
+                "compact": self.compact,
+                "fullPage": self.full_page,
+                "list": self.compact_list_fills(),
+            },
             // Home > Find Tags: where the Tags Summary looks and how many lines it lists, or
             // null while it is closed.
             "pageTemplates": self.templates_pane.as_ref().map(|p| json!({
@@ -8832,7 +8994,9 @@ impl NoteCraftApp {
             "windowFrame": if self.frameless { "own" } else { "system" },
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
             // Folded to its tab names (Ctrl+F1), and whether a clicked tab shows it over the page.
-            "ribbon": {"collapsed": self.ribbon_collapsed, "shown": !self.ribbon_collapsed || self.ribbon_peek, "tab": self.ribbon_tab},
+            "ribbon": {"collapsed": self.ribbon_collapsed, "shown": !self.ribbon_folded() || self.ribbon_peek, "tab": self.ribbon_tab},
+            // Whether a dialog is up over the window (Android's Back closes it first).
+            "dialogOpen": self.dialog.is_some(),
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),
@@ -8957,6 +9121,11 @@ impl NoteCraftApp {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
         }
+        // A button whose file dialog Android cannot show says so (filepicker.android.rs).
+        #[cfg(target_os = "android")]
+        if let Some(notice) = crate::filepicker::take_notice() {
+            self.say(notice);
+        }
         self.clipboard_keys(ctx);
         self.poll_control(ctx);
         self.poll_import(ctx);
@@ -9013,13 +9182,17 @@ impl NoteCraftApp {
             self.frame_edges(ctx);
             return;
         }
+        self.compact_layout(ctx);
         self.top_bar(ui);
         self.storage_notice(ui);
         self.status_bar(ui);
         self.side_panel(ui);
         self.tags_panel(ui);
         self.templates_panel(ui);
-        self.central(ui);
+        // In a phone-width window a pane that fills it leaves no room for the page.
+        if !self.compact_list_fills() && !(self.compact && (self.tags_pane.is_some() || self.templates_pane.is_some())) {
+            self.central(ui);
+        }
         self.paint_formatting(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
