@@ -187,7 +187,7 @@ fn review(h: &mut Harness<'_, NoteCraftApp>, name: &str) {
     if let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") {
         let dir = PathBuf::from(dir);
         let _ = std::fs::create_dir_all(&dir);
-        if let Ok(img) = h.render() {
+        if let Ok(img) = support::gpu::render(h) {
             let _ = img.save(dir.join(format!("{name}.png")));
         }
     }
@@ -341,7 +341,7 @@ fn header_language_picker_labels_render_light_text_on_the_purple_band() {
     h.get_by_label("Interface language: English").click();
     settle(&mut h);
     let label_rect = h.get_by_label("Fran\u{00e7}ais").rect();
-    let image = h.render().expect("render open language picker");
+    let image = support::gpu::render(&mut h).expect("render open language picker");
     let scale = image.width() as f32 / 1200.0;
     let min_x = (label_rect.min.x * scale).floor().max(0.0) as u32;
     let max_x = (label_rect.max.x * scale).ceil().min(image.width() as f32) as u32;
@@ -490,7 +490,7 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
         assert_eq!(drawn.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "open canvas accepts ink for {label}: {drawn}");
         let ink_file = path.join("ink.svg");
         let svg = std::fs::read_to_string(&ink_file).unwrap_or_else(|error| panic!("saved canvas ink: {error}; state={drawn}"));
-        let ink_image = h.render().expect("render outside-page stroke");
+        let ink_image = support::gpu::render(&mut h).expect("render outside-page stroke");
         review(&mut h, if markdown { "canvas_open_ink_cmgfm" } else { "canvas_open_ink_html" });
         let red_canvas_pixels = ink_image
             .pixels()
@@ -570,7 +570,7 @@ fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
     );
     assert_eq!(state.pointer("/page/caret").cloned().unwrap_or(Value::Null), caret_before, "drawing over words leaves the text caret alone: {state}");
 
-    let image = h.render().expect("render ink over words");
+    let image = support::gpu::render(&mut h).expect("render ink over words");
     let region = egui::Rect::from_min_max(egui::pos2(x as f32 - 4.0, y as f32 - 4.0), egui::pos2(x as f32 + 42.0, y as f32 + 12.0));
     let red_pixels = image
         .pixels()
@@ -619,14 +619,14 @@ fn pen_palette_owns_pointer_input_over_the_page_canvas() {
     let more_colours = h.get_by_label("More Colours").rect();
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("hover the popup button");
     settle(&mut h);
-    let before = h.render().expect("render the open palette before drawing");
+    let before = support::gpu::render(&mut h).expect("render the open palette before drawing");
     let start = egui::pos2(page.max.x - 40.0, more_colours.center().y);
     assert!(page.contains(start) && !more_colours.contains(start), "the stroke begins on page canvas outside the palette");
     ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("start a page stroke");
     pump(&mut h);
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("carry the stroke across the palette");
     pump(&mut h);
-    let during = h.render().expect("render the stroke beneath the open palette");
+    let during = support::gpu::render(&mut h).expect("render the stroke beneath the open palette");
     let (sx, sy) = (before.width() as f32 / 1200.0, before.height() as f32 / 760.0);
     let (x0, y0, x1, y1) = (
         (more_colours.min.x * sx).floor().max(0.0) as u32,
@@ -1342,7 +1342,7 @@ fn the_plus_between_two_pages_is_round() {
     for _ in 0..4 {
         pump(&mut h);
     }
-    let shot = h.render().expect("a picture");
+    let shot = support::gpu::render(&mut h).expect("a picture");
     // The harness is 1200 points wide; the picture may be rendered larger than that.
     let scale = f64::from(shot.width()) / 1200.0;
 
@@ -1958,7 +1958,7 @@ fn display_math_paints_ink_inside_its_box() {
         notecraft_ui_egui::mathview::display(ui, "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", 28.0, egui::Color32::BLACK);
     });
     h.run();
-    let img = h.render().expect("render");
+    let img = support::gpu::render(&mut h).expect("render");
     let dark: Vec<(u32, u32)> =
         img.enumerate_pixels().filter(|(_, _, p)| p.0[0] < 100 && p.0[1] < 100 && p.0[2] < 100).map(|(x, y, _)| (x, y)).collect();
     assert!(dark.len() > 300, "the formula should leave ink, got {} dark pixels", dark.len());
@@ -2035,7 +2035,7 @@ fn a_swatch_overrides_the_system_mode() {
     assert_eq!(h.state().theme(), Theme { mode: other, accent: Accent::Default });
     assert_eq!(h.state().mode_pref(), if other == Mode::Dark { ModePref::Dark } else { ModePref::Light }, "the swatch stops following the system");
     // And the window really is painted in that mode.
-    let img = h.render().expect("render");
+    let img = support::gpu::render(&mut h).expect("render");
     let total = img.pixels().count();
     let matching = img
         .pixels()
@@ -2180,7 +2180,7 @@ fn page_ink_is_visible_across_container_borders() {
 
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the pen made one page stroke: {ink}");
-    let image = h.render().expect("render the page with the stroke");
+    let image = support::gpu::render(&mut h).expect("render the page with the stroke");
     review(&mut h, "ink_across_boxes");
     let scale = image.width() as f64 / 1200.0;
     let visible_red_near = |x: f64| {
@@ -2257,7 +2257,7 @@ fn page_ink_crosses_a_diagram_container_edge() {
     settle(&mut h);
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect strokes")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(2), "both strokes remain on the page: {ink}");
-    let image = h.render().expect("render diagram and ink");
+    let image = support::gpu::render(&mut h).expect("render diagram and ink");
     review(&mut h, "ink_across_diagram_container");
     let scale = image.width() as f64 / 1200.0;
     let visible_red = |x: f64, at_y: f64| {
@@ -5468,7 +5468,7 @@ fn all_fourteen_themes_render_with_their_own_colours() {
         app.open_path(&s.md_page.to_string_lossy());
         let mut h = harness(app, theme);
         settle(&mut h);
-        let img = h.render().expect("render");
+        let img = support::gpu::render(&mut h).expect("render");
         let tokens = theme.tokens();
         let near = |p: &image::Rgba<u8>, c: egui::Color32| {
             (i32::from(p.0[0]) - i32::from(c.r())).abs() <= 3
@@ -6779,7 +6779,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
     assert_ne!(at, anchor, "and the drag selected something: at {at}, anchor {anchor}");
 
-    let selected = h.render().expect("a picture of the window");
+    let selected = support::gpu::render(&mut h).expect("a picture of the window");
     review(&mut h, "rtl-drag-selection");
 
     // The same page with nothing selected, to compare against.
@@ -6787,7 +6787,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     settle(&mut h);
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
     assert_eq!(caret.get("at").and_then(Value::as_u64), caret.get("anchor").and_then(Value::as_u64), "an arrow without Shift drops the selection");
-    let plain = h.render().expect("a picture of the window");
+    let plain = support::gpu::render(&mut h).expect("a picture of the window");
 
     // The band the drag covered, in the rendered picture's own pixels.
     let scale = selected.width() as f32 / 1200.0;
@@ -6851,7 +6851,7 @@ fn a_drag_can_select_across_paragraphs() {
     let open = across(&mut h);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "it begins in the paragraph the press fell on: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "and reaches the one the drag ended in: {open}");
-    let selected = h.render().expect("picture");
+    let selected = support::gpu::render(&mut h).expect("picture");
     review(&mut h, "cross-block");
 
     // Both paragraphs are drawn with a band behind them. Compared against the same page
@@ -6859,7 +6859,7 @@ fn a_drag_can_select_across_paragraphs() {
     ask(&mut h, "ui.click", json!({"x": 600.0, "y": first.min.y - 40.0})).expect("let go");
     settle(&mut h);
     assert_eq!(across(&mut h), Value::Null, "a press somewhere else lets the selection go");
-    let plain = h.render().expect("picture");
+    let plain = support::gpu::render(&mut h).expect("picture");
     let scale = selected.width() as f32 / 1200.0;
     let band = |rect: egui::Rect| -> u32 {
         let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
@@ -6922,7 +6922,7 @@ fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
     let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "the drag spans both paragraphs: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "the drag spans both paragraphs: {open}");
-    let selected = h.render().expect("picture");
+    let selected = support::gpu::render(&mut h).expect("picture");
     review(&mut h, "cross-block-marks");
 
     // The band is the selection wash painted behind the words; counting its pixels says
