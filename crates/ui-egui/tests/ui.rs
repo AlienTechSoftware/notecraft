@@ -9552,6 +9552,23 @@ fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
     }
 }
 
+/// Issue #23: Draw > Collect All brings boxes and ink that drifted apart on the canvas back
+/// together, keeps their order and does not lay one over another; one Undo puts them all back.
+#[test]
+fn collect_all_gathers_boxes_and_ink_that_drifted_apart() {
+    let (_t, mut app, s) = sample_app("ui-collect-all");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,3;3000,2500,320,{}", blocks - 3)}}),
+    )
+    .expect("two boxes far apart");
+}
 /// Issue #173: Insert > Page Templates lists the templates by category; one click adds a page
 /// to the open section from a template and opens it, and the open page can be kept as a
 /// template of its own, which then makes pages too. No page already there is written over.

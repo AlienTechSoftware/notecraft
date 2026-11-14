@@ -392,7 +392,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   ellipse, circle, diamond, triangle and star - drawn by dragging out the two corners they
   sit between. A drawn shape is ink like any other stroke, so the eraser, Select and Undo
   Stroke all work on it; it is not kept as a shape that can be turned back into a perfect
-  circle later, and the file does not say which shape it was. Alt+1 to Alt+9 pick up the
+  circle later, and the file does not say which shape it was.
+  Draw > Collect All gathers boxes and strokes that drifted apart on the open canvas: every
+  empty stretch of the page wider than a small gap, across or down, is closed to that gap, so
+  things keep their order and nothing ends up on anything it was not already on. Ink over a
+  box moves with the box. One Undo puts the boxes and the ink back.
+  Alt+1 to Alt+9 pick up the
   pen in that place on the rack, from anywhere, so a tablet's express keys can be bound to
   pens; Alt+0 puts the pen down and goes back to typing. OneNote has no such keys.
   **Not built:** automatic shapes; the ruler and other stencils;

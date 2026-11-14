@@ -362,6 +362,25 @@ impl Pad {
         (shift != (0.0, 0.0)).then_some(shift)
     }
 
+    /// The box round each stroke, in page points, in the drawing's order.
+    pub fn stroke_bounds(&self) -> Vec<[f32; 4]> {
+        (0..self.drawing.strokes.len()).map(|i| pick::bounds(&self.drawing, &[i]).map_or([0.0; 4], |(x0, y0, x1, y1)| [x0, y0, x1, y1])).collect()
+    }
+
+    /// Moves each stroke by its own amount, in page points, in the drawing's order (Collect All,
+    /// issue #23). True when any moved.
+    pub fn move_each(&mut self, by: &[(f32, f32)]) -> bool {
+        let mut moved = false;
+        for (i, (dx, dy)) in by.iter().enumerate().take(self.drawing.strokes.len()) {
+            if *dx != 0.0 || *dy != 0.0 {
+                pick::move_by(&mut self.drawing, &[i], *dx, *dy);
+                moved = true;
+            }
+        }
+        self.dirty |= moved;
+        self.touched |= moved;
+        moved
+    }
     /// Insert Space (issue #164): every stroke whose top is at or below `y`, in page points,
     /// moves down by `dy`, or up when `dy` is negative. True when any moved.
     pub fn shift_below(&mut self, y: f32, dy: f32) -> bool {
