@@ -207,6 +207,18 @@ fn describe(o: &Output) -> String {
             items.iter().map(|item| format!("{}  {}  {} item(s)  {}", item.id, item.title, item.count, item.deleted)).collect::<Vec<_>>().join("\n")
         }
         Output::Hits(h) => h.iter().map(|x| format!("{}  {}\n    {}", x.title, display_path(&x.path), x.snippet)).collect::<Vec<_>>().join("\n"),
+        Output::Tagged(found) => found
+            .iter()
+            .map(|x| {
+                let tick = match x.done {
+                    Some(true) => "[x] ",
+                    Some(false) => "[ ] ",
+                    None => "",
+                };
+                format!("{}: {tick}{}\n    {} / {}  {}", x.tag.label(), x.text, x.section, x.page, display_path(&x.path))
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
         Output::Report(r) => {
             let mut s = r.problems.iter().map(|p| format!("problem: {}: {}", display_path(&p.path), p.message)).collect::<Vec<_>>().join("\n");
             if !s.is_empty() {

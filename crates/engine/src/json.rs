@@ -25,6 +25,14 @@ pub fn output_json(o: &Output) -> Value {
             Value::Array(items.iter().map(|x| json!({"id": x.id, "title": x.title, "deleted": x.deleted, "count": x.count})).collect())
         }
         Output::Hits(h) => Value::Array(h.iter().map(|x| json!({"path": display_path(&x.path), "title": x.title, "snippet": x.snippet})).collect()),
+        Output::Tagged(found) => Value::Array(
+            found
+                .iter()
+                .map(|x| {
+                    json!({"path": display_path(&x.path), "page": x.page, "section": x.section, "tag": x.tag.id(), "label": x.tag.label(), "text": x.text, "done": x.done, "block": x.block})
+                })
+                .collect(),
+        ),
         Output::Report(r) => {
             json!({"nodes": r.nodes, "problems": r.problems.iter().map(|p| json!({"path": display_path(&p.path), "message": p.message})).collect::<Vec<_>>()})
         }

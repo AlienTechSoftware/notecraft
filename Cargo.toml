@@ -55,6 +55,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # OneNote packages (.onepkg) are Windows cabinet files, usually LZX compressed (issue #17).
 # Pure Rust, reading only; only crates/import names it.
 cab = "0.6"
+# JPEG XL pictures (issue #29): a pure Rust decoder. It plugs into `image` through image's decoding
+# hooks, so egui_extras' loader draws a .jxl like any other picture. Decoding only; NoteCraft never
+# writes JPEG XL.
+jxl-oxide = { version = "0.12", default-features = false, features = ["image"] }
 hayro = { version = "=0.5.0", default-features = false, features = ["embed-fonts"] }
 # A drop-in SystemTime/Instant: std's own panics with "time not implemented on this
 # platform" on wasm32-unknown-unknown, which has no clock. This is std's types everywhere

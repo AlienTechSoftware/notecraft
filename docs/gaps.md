@@ -113,6 +113,11 @@ Playground hosts with the Files API continue using their existing persistence pa
   Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
   gives the page its room; a tab clicked while it is folded shows its commands over the page
   until one is used, the page is clicked or Escape is pressed. The choice is kept.
+- **Find Tags is a first pass.** Home > Find Tags opens a Tags Summary beside the page. It lists the
+  tagged lines of this page, this section, this notebook or every open notebook, grouped by tag, can
+  keep only the To Do items not yet ticked, and takes the caret to a line when it is clicked. It lists
+  what the pages said when it last looked; Refresh looks again. OneNote's other groupings (by section,
+  title or date), its search box and Create Summary Page are not built.
 - **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
   a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
   Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule
@@ -280,7 +285,8 @@ Playground hosts with the Files API continue using their existing persistence pa
   when Backspace joins two, when a box is deleted or pasted, or when Ctrl+Z undoes any of these.
   After those, a width or a justification can sit on the block next to the one it was given to.
 - **Table column widths and justification are still on a metadata line.** The boxes of a page are
-  elements in its text, but the widths a table's columns were dragged to are kept in the head
+  elements in its text, but the widths a table's columns were dragged to (and the alignment and
+  shading its cells were given) are kept in the head
   (`notecraft:columns`) or the front matter (`columns:`), and which paragraphs are justified in the
   same way (`notecraft:justify`, `justify:`), so the same disconnect remains for both: another
   program does not see them, and a page whose blocks are rearranged outside NoteCraft may find a
@@ -407,8 +413,17 @@ Playground hosts with the Files API continue using their existing persistence pa
   the arrangement of its boxes (`notecraft:columns`), because neither CommonMark nor an
   HTML table that must match it has anywhere to put them. The Insert
   tab's Table button opens OneNote's size picker, where the pointer runs over a grid and
-  names the size it would make. Not built, and greyed where a OneNote user looks for them:
-  merging and splitting cells, shading, alignment; and the Insert Table dialog. Sort Ascending
+  names the size it would make. The Alignment group lines up the words of the caret's cell,
+  or of every picked cell, left, centre or right; the column keeps its width, the page keeps the
+  alignment on the same line as the widths (`block@row.column=c`), and it moves with its row or
+  column when one goes in or out and with its row when the table is sorted. It is drawn where
+  the page is written in; a page drawn for the pen (the Draw tab) still shows its cells aligned
+  left, as it shows its columns at the usual width. Shading puts one of the named colours a
+  section can carry behind the caret's cell or every picked cell (`block@row.column=~yellow`, or
+  `=c~yellow` beside an alignment), washed so the words keep their contrast in light and dark
+  themes, and No Colour takes it away; it follows its cell the way alignment does, and the pen's
+  view does not draw it yet either. Not built, and greyed where a OneNote user looks for them:
+  merging and splitting cells; and the Insert Table dialog. Sort Ascending
   and Sort Descending reorder whole rows by the caret's column (only the picked rows when a
   block of cells spans several), numbers as numbers, empty cells last, the heading on top.
   A row has no height of its own on purpose: OneNote sizes a row by the text in it and
