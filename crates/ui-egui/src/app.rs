@@ -4939,24 +4939,27 @@ impl NoteCraftApp {
             return;
         }
 
-        let ext = std::path::Path::new(&default_name).extension().and_then(|e| e.to_str()).unwrap_or("");
-        let mut picker = rfd::FileDialog::new().set_title(crate::tl_id!("ui.save_picture_as")).set_file_name(&default_name);
-        if !ext.is_empty() && !["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"].contains(&ext) {
-            picker = picker.add_filter(ext, &[ext]);
-        }
-        picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"]);
-
-        let Some(destination) = picker.save_file() else {
-            return;
-        };
-
-        match std::fs::write(&destination, &bytes) {
-            Ok(()) => {
-                let shown = self.shown(&destination);
-                self.say(crate::i18n::format_message_id("ui.saved_picture_as_path", &[("path", &shown)]));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let ext = std::path::Path::new(&default_name).extension().and_then(|e| e.to_str()).unwrap_or("");
+            let mut picker = rfd::FileDialog::new().set_title(crate::tl_id!("ui.save_picture_as")).set_file_name(&default_name);
+            if !ext.is_empty() && !["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"].contains(&ext) {
+                picker = picker.add_filter(ext, &[ext]);
             }
-            Err(e) => {
-                self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())]));
+            picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"]);
+
+            let Some(destination) = picker.save_file() else {
+                return;
+            };
+
+            match std::fs::write(&destination, &bytes) {
+                Ok(()) => {
+                    let shown = self.shown(&destination);
+                    self.say(crate::i18n::format_message_id("ui.saved_picture_as_path", &[("path", &shown)]));
+                }
+                Err(e) => {
+                    self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())]));
+                }
             }
         }
     }
