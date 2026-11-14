@@ -101,6 +101,8 @@ pub enum Act {
     ClearFormatting,
     /// Put a tag on the line the caret is in, or take it off again.
     Tag(Tag),
+    /// Take up the Insert Space tool, or put it down (issue #164).
+    InsertSpaceTool,
     /// Open the Tags Summary: the tagged notes, and a way to each of them (issue #166).
     FindTags,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
@@ -114,6 +116,11 @@ pub enum Act {
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
     TableBorders(bool),
+    /// Align the words in the caret's cell, or in every picked cell (issue #170).
+    TableAlign(notecraft_model::tablecols::Align),
+    /// A colour behind the caret's cell, or behind every picked cell; `None` takes it away
+    /// (issue #169).
+    TableShade(Option<notecraft_model::NodeColor>),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
@@ -424,10 +431,18 @@ pub struct View<'a> {
     /// The tools on the rack, and which of them is in hand.
     pub rack: &'a [Nib],
     pub nib: usize,
+    /// True while the Insert Space tool is in hand.
+    pub space_tool: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
     pub table_borders: bool,
+    /// How the words in the caret's cell, or in every picked cell, are aligned; `None` when
+    /// the picked cells differ.
+    pub table_align: Option<notecraft_model::tablecols::Align>,
+    /// The colour behind the caret's cell, or behind every picked cell: `Some(None)` for none,
+    /// and `None` when the picked cells differ.
+    pub table_shade: Option<Option<notecraft_model::NodeColor>>,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,
     /// The colour behind the open page, when it carries one of its own.
@@ -1589,8 +1604,9 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// work is rather than a short list of what happens to exist.
 fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.insert"), t, |ui| {
-        if big(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.add_a_blank_paragraph_at_the_caret"), t).clicked() {
-            acts.push(Act::Insert("space"));
+        // OneNote's tool: a drag on the page adds room there, or takes it away (issue #164).
+        if big_on(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.insert_space_tip"), view.space_tool, t).clicked() {
+            acts.push(Act::InsertSpaceTool);
         }
     });
     group(ui, crate::tl_id!("ui.tables"), t, |ui| {
@@ -1758,6 +1774,69 @@ fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<
     });
     ui.label(egui::RichText::new(crate::tl_id!("ui.the_paper_and_colour_apply_to_this_page_only")).small().color(t.muted));
     picked
+}
+
+/// Table > Shading: a colour behind the caret's cell, or behind every picked cell (issue #169).
+/// The palette is the named colours a page or section can carry, washed the way the cell will
+/// be drawn, with No Colour first; the colour the cells have now is ringed.
+fn shading_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Picture, crate::tl_id!("ui.table_shading"), crate::tl_id!("ui.table_shading_tip"), t);
+    let open_id = egui::Id::new("ribbon-table-shading");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if !open {
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+        return;
+    }
+    let mut picked = false;
+    let area = egui::Area::new(open_id.with("area"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(resp.rect.left_bottom())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.label(egui::RichText::new(crate::tl_id!("ui.table_shading")).strong().color(t.text));
+                ui.horizontal(|ui| {
+                    let now = view.table_shade;
+                    if shade_swatch(ui, None, now == Some(None), t).clicked() {
+                        acts.push(Act::TableShade(None));
+                        picked = true;
+                    }
+                    for c in notecraft_model::NodeColor::ALL {
+                        if shade_swatch(ui, Some(c), now == Some(Some(c)), t).clicked() {
+                            acts.push(Act::TableShade(Some(c)));
+                            picked = true;
+                        }
+                    }
+                });
+            });
+        })
+        .response;
+    let clicked_away =
+        ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+    if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        open = false;
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+/// One colour in the Shading palette, drawn as a cell shaded with it would be.
+fn shade_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: bool, t: &Tokens) -> egui::Response {
+    let side = 22.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let fill = colour.map_or(t.editor, |c| crate::pageedit::cell_shade(t, c));
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, fill);
+    let (edge, width) = if here { (t.accent, 2.0) } else { (t.faint, 1.0) };
+    painter.rect_stroke(rect, 3.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+    if colour.is_none() {
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "/", egui::FontId::proportional(13.0), t.muted);
+    }
+    let name = colour.map(notecraft_model::NodeColor::label).unwrap_or(crate::tl_id!("ui.no_colour"));
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, name));
+    resp.on_hover_text(name)
 }
 
 /// OneNote's Table button: a grid to pick the size from, the way OneNote picks one.
@@ -2128,6 +2207,8 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
         open = false;
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
+    // The first nine pens answer Alt and their number (issue #44).
+    let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
 }
@@ -2745,12 +2826,21 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big_on(ui, Icon::Table, label, tip, !hiding, t).clicked() {
             acts.push(Act::TableBorders(!hiding));
         }
-        soon(ui, Icon::Picture, "Shading", t);
+        shading_menu(ui, view, t, acts);
     });
     group(ui, crate::tl_id!("ui.alignment"), t, |ui| {
-        soon(ui, Icon::DirLtr, "Align\nLeft", t);
-        soon(ui, Icon::DirLtr, "Center", t);
-        soon(ui, Icon::DirRtl, "Align\nRight", t);
+        // The words in the caret's cell, or in every cell picked (issue #170). The one lit is
+        // how those cells are aligned now; none is lit when they differ.
+        use notecraft_model::tablecols::Align as A;
+        for (align, icon, label, tip) in [
+            (A::Left, Icon::DirLtr, crate::tl_id!("ui.table_align_left"), crate::tl_id!("ui.table_align_left_tip")),
+            (A::Center, Icon::DirLtr, crate::tl_id!("ui.table_align_center"), crate::tl_id!("ui.table_align_center_tip")),
+            (A::Right, Icon::DirRtl, crate::tl_id!("ui.table_align_right"), crate::tl_id!("ui.table_align_right_tip")),
+        ] {
+            if big_on(ui, icon, label, tip, view.table_align == Some(align), t).clicked() {
+                acts.push(Act::TableAlign(align));
+            }
+        }
     });
     group(ui, crate::tl_id!("ui.data"), t, |ui| {
         // Whole rows by the caret's column, or only the picked rows; the heading stays on top.
