@@ -264,6 +264,7 @@ the earlier versions and their notes. `<ver>` in a file name is the version numb
 |---|---|---|
 | Windows x64 (64-bit Intel and AMD) | `notecraft-<ver>-windows-x64.msi` | `notecraft-<ver>-windows-x64-portable.zip` |
 | Linux x64 (glibc, 64-bit Intel and AMD) | - | `notecraft-<ver>-linux-x86_64.tar.gz` |
+| Android (64-bit ARM, Android 8 or later) | `notecraft-<ver>-android-arm64.apk` | - |
 
 Windows x64 and Linux x64 builds are available. macOS is untested, so there is no build for it; the
 [Quick start](#quick-start) builds from source.
@@ -282,6 +283,11 @@ leaves them in place.
 
 For the Linux tar archive, extract it and run `./notecraft-setup` from the extracted package's
 `bin` directory. Debian packages and the AppImage start the helper from their application entry.
+
+The Android APK is new and has not yet been checked on a phone; [android/README.md](android/README.md)
+says how it works and [docs/gaps.md](docs/gaps.md) what it cannot do yet. Allow installs from your
+browser or file manager to install it. Its notebooks live in the app's own storage, which Android
+removes with the app. On a phone the window shows the notebooks or the page, one at a time.
 
 Every release is an alpha and is marked a pre-release. [docs/releasing.md](docs/releasing.md) describes the
 version numbers and how a release is built.

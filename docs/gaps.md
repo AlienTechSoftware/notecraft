@@ -16,6 +16,34 @@ preferences alone does not arm it. Browser dialogs require user interaction and 
 for every mobile shutdown path, so copy any notes you want to keep before leaving the demo.
 Playground hosts with the Files API continue using their existing persistence path.
 
+## Android
+
+The Android app (`android/`, from 2026-11-13) runs the same window as the desktop in an APK
+built by the Packaging workflow. What it does not do yet, each said in the window where it shows:
+
+- **Not run on a device by the change that added it.** The APK is built, signed and checked
+  (`android/test.sh`), and the platform-neutral parts are tested on every CI run, but no emulator
+  or phone was available to that change. Startup, drawing, the soft keyboard and the stylus need a
+  device check before the first release that claims Android.
+- **No file pickers.** Open a notebook folder, Import, Add file or picture, Print out and Export
+  telemetry say "Android cannot show this file dialog yet". Android's pickers (the Storage Access
+  Framework) need a Java shell, which the APK does not have.
+- **No system clipboard.** Copy and paste work inside NoteCraft (egui's own clipboard), not with
+  other apps. Android's clipboard is a Java service.
+- **Notebooks live in the app's own storage**, `Android/data/com.alientechsoftware.notecraft/files/NoteCraft`.
+  Android removes that folder with the app; Android 10 and later ask whether to keep it. Folders
+  elsewhere (synced Drive, OneDrive or Syncthing folders) cannot be opened yet.
+- **Typing is key by key.** The soft keyboard's keys reach the page, but composing (Chinese,
+  Japanese, Korean input, swipe typing, autocorrect) needs GameActivity text input, which winit
+  0.30 does not deliver yet.
+- **No screen reader.** egui's accessibility bridge needs GameActivity on Android.
+- **arm64 only.** No 32-bit ARM or x86_64 (emulator, Chromebook) build.
+- **Until the repository has a release key**, each nightly APK is signed with its own key and
+  cannot update another night's in place (`docs/releasing.md`, Android signing).
+
+The phone-width layout (`crates/ui-egui/src/compact.rs`, issue #12) applies to any window
+narrower than 600 points, on Android, a narrow desktop window or the browser build on a phone.
+
 ## Product
 
 - **Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V reach the words**, from 2026-10-19. None of them was

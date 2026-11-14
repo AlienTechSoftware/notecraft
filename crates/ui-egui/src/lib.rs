@@ -17,10 +17,15 @@ pub mod clipboard;
 pub mod codeview;
 pub mod collect;
 pub mod combo;
+pub mod compact;
 pub mod containers;
 pub mod control;
 pub mod datetime;
+// Android has no `rfd`: app.rs reaches this stand-in under that name there.
 pub mod diagramview;
+#[cfg(target_os = "android")]
+#[path = "filepicker.android.rs"]
+pub(crate) mod filepicker;
 pub mod floating;
 pub mod fonts;
 pub mod gridcraft;

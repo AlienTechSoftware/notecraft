@@ -12,6 +12,12 @@
 //! other program on the machine: it can be empty, held open by something else, or hold
 //! something of a kind we do not want, and none of that is an error worth a message.
 
+// Android has no `arboard`: a stand-in under the same name says the clipboard is not
+// connected there (see clipboard.android.rs).
+#[cfg(target_os = "android")]
+#[path = "clipboard.android.rs"]
+mod arboard;
+
 /// The clipboard as the app uses it. The app holds one of these, made at startup, so that the
 /// system clipboard is the only place a platform's clipboard is reached.
 pub trait Board {

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NoteCraft for Android. The APK has no Java code: Android's own NativeActivity loads
+  libnotecraft_android.so (android/src) and calls its android_main. android/build.sh passes the
+  version name and code, and the SDK levels, to aapt2.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.alientechsoftware.notecraft">
+
+    <!-- egui draws through wgpu: Vulkan where the device has it, OpenGL ES 3 otherwise. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <!-- A phone or a tablet works; neither a touch screen nor a keyboard is required. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!--
+      hasFragileUserData: the notebooks live in the app's own storage, which Android removes with
+      the app. With this, Android 10 and later ask on uninstall whether to keep that data.
+    -->
+    <application
+        android:label="NoteCraft"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/NoteCraft"
+        android:hasCode="false"
+        android:allowBackup="false"
+        android:hasFragileUserData="true"
+        android:resizeableActivity="true">
+
+        <!--
+          configChanges: rotating, folding or resizing the window, or a keyboard coming and
+          going, resizes the egui window in place. Without them Android would destroy the
+          activity and start the app again, losing the open page's place.
+        -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection">
+            <meta-data android:name="android.app.lib_name" android:value="notecraft_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
