@@ -9570,11 +9570,11 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
         )
     };
     // The red pen was the last one in hand; then back to typing.
-h.get_by_label("Draw").click();
+    h.get_by_label("Draw").click();
     settle(&mut h);
     h.get_by_label("Pen red").click();
     settle(&mut h);
-let red = ink(&mut h).1;
+    let red = ink(&mut h).1;
     h.get_by_label("Type").click();
     settle(&mut h);
     assert_eq!(ink(&mut h).0, "write");
