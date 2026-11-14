@@ -9,7 +9,7 @@ use notecraft_store::page::Version;
 use notecraft_store::recycle::Recycled;
 use notecraft_store::search::Hit;
 use notecraft_store::tags::Tagged;
-use notecraft_store::{StoreError, assets, check, ops, page, recycle, search, tags, tree};
+use notecraft_store::{StoreError, assets, check, ops, page, page_templates, recycle, search, tags, tree};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -98,6 +98,29 @@ fn node_move(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 
 fn node_copy(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::copy_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
+}
+
+fn page_templates_list(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
+    Ok(Output::Text(page_templates::describe(&page_templates::list(s.root()))))
+}
+
+fn page_from_template(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let parent = s.resolve(req(p, "parent")?)?;
+    let id = req(p, "template")?;
+    let template =
+        page_templates::find(s.root(), id).ok_or_else(|| EngineError::BadParam(format!("there is no template {id}; page.templates lists them")))?;
+    Ok(Output::Path(page_templates::new_page(&template, &parent, &s.settings)?))
+}
+
+fn page_save_template(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    Ok(Output::Path(page_templates::save(s.root(), &page, req(p, "name")?)?))
+}
+
+fn page_remove_template(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let id = req(p, "template")?;
+    page_templates::remove(s.root(), id)?;
+    Ok(Output::Text(format!("removed {id}")))
 }
 
 fn node_move_up(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -306,7 +329,7 @@ fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let widths = notecraft_model::tablecols::parse(want);
     if widths.is_empty() && !want.trim().is_empty() {
         return Err(EngineError::BadParam(
-            "widths is block:w,w,w per table, separated by semicolons, with a ! for a table whose borders are hidden".into(),
+            "widths is block:w,w,w per table, separated by semicolons, with a ! for a table whose borders are hidden, and block@row.column=l|c|r~colour for aligned and shaded cells".into(),
         ));
     }
     page::set_table_columns(&path, &widths)?;
@@ -424,6 +447,36 @@ to (required): where the copy goes; it is put last there, and every node in it g
         run: node_copy,
     },
     CommandSpec {
+        id: "page.templates",
+        label: "List the page templates, built in and saved: one line each, with the id, the category and the name, separated by tabs",
+        params: "",
+        changes_tree: false,
+        run: page_templates_list,
+    },
+    CommandSpec {
+        id: "page.from_template",
+        label: "A new page started from a template",
+        params: "parent (required): the section (or page, for a subpage) the new page goes in, last
+template (required): the template's id, as page.templates lists it (builtin:meeting-notes, saved:lab-report)",
+        changes_tree: true,
+        run: page_from_template,
+    },
+    CommandSpec {
+        id: "page.save_template",
+        label: "Keep a page as a template",
+        params: "path (required): the page; its words, boxes, ink, files, paper and colour are kept, not its subpages
+name (required): the template's name",
+        changes_tree: false,
+        run: page_save_template,
+    },
+    CommandSpec {
+        id: "page.remove_template",
+        label: "Take away a page saved as a template",
+        params: "template (required): the saved template's id (saved:...). Built-in templates cannot be removed",
+        changes_tree: false,
+        run: page_remove_template,
+    },
+    CommandSpec {
         id: "node.move_up",
         label: "Move a page up among its siblings",
         params: "path (required): the page to move up",
@@ -528,9 +581,9 @@ color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray,
     },
     CommandSpec {
         id: "page.columns",
-        label: "How wide the columns of a page's tables are, and which tables have their borders hidden",
+        label: "How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded",
         params: "path (required): the page
-widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported",
+widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported",
         changes_tree: false,
         run: page_columns,
     },

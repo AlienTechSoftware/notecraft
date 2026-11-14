@@ -402,7 +402,7 @@ fn kind_of(path: &Path, name: &str, page_file: &str) -> Kind {
             }
         }
         "mmd" | "mermaid" => Kind::Diagram,
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" => Kind::Picture,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "jxl" => Kind::Picture,
         "pdf" => Kind::Pdf,
         "docx" | "xlsx" | "pptx" => Kind::Office,
         "md" | "html" | "htm" | "txt" | "json" | "toml" | "csv" | "xml" | "yaml" | "yml" => Kind::Text,

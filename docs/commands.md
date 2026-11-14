@@ -59,6 +59,38 @@ Parameters:
 - path (required): the page, section or section group to copy
 - to (required): where the copy goes; it is put last there, and every node in it gets a new id
 
+## `page.templates`
+
+List the page templates, built in and saved: one line each, with the id, the category and the name, separated by tabs.
+
+No parameters.
+
+## `page.from_template`
+
+A new page started from a template (changes the tree).
+
+Parameters:
+
+- parent (required): the section (or page, for a subpage) the new page goes in, last
+- template (required): the template's id, as page.templates lists it (builtin:meeting-notes, saved:lab-report)
+
+## `page.save_template`
+
+Keep a page as a template.
+
+Parameters:
+
+- path (required): the page; its words, boxes, ink, files, paper and colour are kept, not its subpages
+- name (required): the template's name
+
+## `page.remove_template`
+
+Take away a page saved as a template.
+
+Parameters:
+
+- template (required): the saved template's id (saved:...). Built-in templates cannot be removed
+
 ## `node.move_up`
 
 Move a page up among its siblings (changes the tree).
@@ -191,12 +223,12 @@ Parameters:
 
 ## `page.columns`
 
-How wide the columns of a page's tables are, and which tables have their borders hidden.
+How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded.
 
 Parameters:
 
 - path (required): the page
-- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported
+- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported
 
 ## `page.justify`
 

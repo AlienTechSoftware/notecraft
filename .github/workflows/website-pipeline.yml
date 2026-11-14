@@ -60,6 +60,14 @@ jobs:
       - name: Install the wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
+      # The demo's dependencies are the same from one build to the next, so they come from the
+      # cache rather than being compiled again. Only main saves it (the nightly release builds the
+      # site from main every night); pull requests restore it, as in ci.yml.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: website-wasm
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Install trunk
         run: |
           set -eu

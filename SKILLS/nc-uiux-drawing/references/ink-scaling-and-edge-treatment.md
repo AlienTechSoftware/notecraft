@@ -64,6 +64,9 @@ must therefore remain visually solid instead of becoming hazy. Antialiasing belo
 display/export renderer; the editable stroke must continue to preserve its original points,
 pressures, tool, width, and sensitivity information.
 
+Round endpoints must not darken translucent ink by painting a cap over its own ribbon.
+Separate highlighter strokes still composite normally where they overlap.
+
 ## Verification contract
 
 Test synthetic pressure readings at `0`, `0.1`, `0.25`, `0.5`, `0.75`, and `1.0` at minimum,
