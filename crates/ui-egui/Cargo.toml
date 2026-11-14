@@ -26,6 +26,7 @@ egui_extras = { workspace = true }
 notecraft-diagram = { workspace = true }
 rfd = { workspace = true }
 image = { workspace = true }
+jxl-oxide = { workspace = true }
 hayro = { workspace = true }
 log = { workspace = true }
 arboard = { workspace = true }

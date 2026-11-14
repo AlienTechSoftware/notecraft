@@ -81,6 +81,31 @@
 @id	ui.font_size_box	Font size
 @id	ui.font_family	Font Family
 @id	ui.font_family_box	Font name
+@id	ui.pick_date	Pick a date
+@id	ui.pick_time	Pick a time
+@id	ui.am	AM
+@id	ui.pm	PM
+@id	ui.pick_date_and_time	Pick a date and time
+@id	ui.today	Today
+@id	ui.month_1	January
+@id	ui.month_2	February
+@id	ui.month_3	March
+@id	ui.month_4	April
+@id	ui.month_5	May
+@id	ui.month_6	June
+@id	ui.month_7	July
+@id	ui.month_8	August
+@id	ui.month_9	September
+@id	ui.month_10	October
+@id	ui.month_11	November
+@id	ui.month_12	December
+@id	ui.weekday_short_0	Su
+@id	ui.weekday_short_1	Mo
+@id	ui.weekday_short_2	Tu
+@id	ui.weekday_short_3	We
+@id	ui.weekday_short_4	Th
+@id	ui.weekday_short_5	Fr
+@id	ui.weekday_short_6	Sa
 @id	ui.loading_fonts	Loading fonts...
 @id	ui.mixed	Mixed
 @id	ui.font_catalog_unavailable	Installed fonts could not be listed on this device.
@@ -835,6 +860,27 @@
 @id	ui.kept_in_this_tab	Kept in this tab
 @id	ui.session_only_storage_notice	Session-only notes: changes disappear when you reload or close this tab.
 @id	ui.session_storage_guard_failed	Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.
+@id	ui.table_align_left	Align\nLeft
+@id	ui.table_align_left_tip	Line the words up with the left of the cell
+@id	ui.table_align_center	Center
+@id	ui.table_align_center_tip	Put the words in the middle of the cell
+@id	ui.table_align_right	Align\nRight
+@id	ui.table_align_right_tip	Line the words up with the right of the cell
+@id	ui.table_shading	Shading
+@id	ui.table_shading_tip	A colour behind the picked cells
+@id	ui.list_the_tagged_notes_and_go_to_them	List the tagged notes and go to them
+@id	ui.tags_summary	Tags Summary
+@id	ui.close_the_tags_summary	Close the tags summary
+@id	ui.tags_look_in	Look in
+@id	ui.tags_scope_this_page	This page
+@id	ui.tags_scope_this_section	This section
+@id	ui.tags_scope_this_notebook	This notebook
+@id	ui.tags_scope_all_notebooks	All notebooks
+@id	ui.tags_only_unchecked_to_do_items	Only unchecked To Do items
+@id	ui.refresh	Refresh
+@id	ui.look_again_for_tagged_notes	Look again for tagged notes
+@id	ui.no_tagged_notes_here	No tagged notes here.
+@id	ui.tags_empty_line	(an empty line)
 @id	ui.scroll_the_page_sideways	Scroll the page sideways
 @id	ui.insert_space_tip	Drag down the page to add room, or up to take it away
 @id	ui.insert_space_how	Drag down where you want more room, or up to take room away. Esc puts the tool down.
