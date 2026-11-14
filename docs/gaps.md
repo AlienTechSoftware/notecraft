@@ -393,6 +393,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   sit between. A drawn shape is ink like any other stroke, so the eraser, Select and Undo
   Stroke all work on it; it is not kept as a shape that can be turned back into a perfect
   circle later, and the file does not say which shape it was.
+  The window also switches by itself, as OneNote does: a pen that touches the page while the
+  caret is the pointer picks up the pen last in hand and that touch draws, and typing with an
+  ink tool in hand goes back to the caret, the words landing where it was. Only a contact that
+  reports a force counts as a pen, so this works where the pen's pressure arrives (Windows,
+  the web build); a mouse or a finger changes nothing. **Not built:** fingers panning and
+  pinching the canvas while a pen draws.
   Draw > Collect All gathers boxes and strokes that drifted apart on the open canvas: every
   empty stretch of the page wider than a small gap, across or down, is closed to that gap, so
   things keep their order and nothing ends up on anything it was not already on. Ink over a
