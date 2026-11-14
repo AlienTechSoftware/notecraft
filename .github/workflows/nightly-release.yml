@@ -15,7 +15,7 @@
 #      macOS Apple Silicon and Intel).
 #   4. website: the Website pipeline on the tagged commit, deployed to production. Its web build
 #      is also kept as a release asset.
-#   5. release: publishes GitHub Release v<version>, a pre-release, with every package and one
+#   5. release: publishes GitHub Release v<version>, marked latest, with every package and one
 #      SHA256SUMS.txt.
 #
 # Run it by hand from Actions, Nightly release, Run workflow (branch main). Tick "force" to release
@@ -260,6 +260,6 @@ jobs:
           These files are **not signed**. Windows SmartScreen may show \"Windows protected your PC\": choose More info, then Run anyway. macOS may say the app is from an unidentified developer: right-click it and choose Open. Check a download against \`SHA256SUMS.txt\`, or with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
 
           Your notebooks are plain folders, and neither an installer nor an uninstall touches them. Report bugs at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in docs/gaps.md."
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "NoteCraft $TAG" --notes "$notes" --generate-notes
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >>"$GITHUB_STEP_SUMMARY"
