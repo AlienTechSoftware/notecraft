@@ -19,6 +19,7 @@ Short guides for getting work done. Each one is a page; none is longer than a sc
 | [Make it yours](make-it-yours.md) | Themes, colours for notebooks and sections, full page view, zoom |
 | [Drive it from a script](drive-it-from-a-script.md) | The command line, the control channel and the MCP server |
 | [Move your notes in](move-your-notes.md) | What the importer can read today and what it cannot |
+| [Capture logs and send feedback](capture-logs-and-feedback.md) | Setting diagnostic levels, exporting telemetry sessions, and finding application logs |
 
 Reference, rather than how-to: [the folder format](../folder-format.md),
 [the commands](../commands.md), [the control protocol](../control-protocol.md),
