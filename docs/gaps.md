@@ -388,6 +388,10 @@ Playground hosts with the Files API continue using their existing persistence pa
   sit between. A drawn shape is ink like any other stroke, so the eraser, Select and Undo
   Stroke all work on it; it is not kept as a shape that can be turned back into a perfect
   circle later, and the file does not say which shape it was.
+  Draw > Collect All gathers boxes and strokes that drifted apart on the open canvas: every
+  empty stretch of the page wider than a small gap, across or down, is closed to that gap, so
+  things keep their order and nothing ends up on anything it was not already on. Ink over a
+  box moves with the box. One Undo puts the boxes and the ink back.
   **Not built:** automatic shapes; the ruler and other stencils;
   ink replay; ink to text and ink to math; laser pointer; More Colours and the eyedropper
   in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223

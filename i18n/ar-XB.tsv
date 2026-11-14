@@ -874,3 +874,5 @@
 @id	ui.no_tagged_notes_here	[[RLI]]$$$No tagged notes here.@@@[[PDI]]
 @id	ui.tags_empty_line	[[RLI]]$$$(an empty line)@@@[[PDI]]
 @id	ui.scroll_the_page_sideways	[[RLI]]$$$Scroll the page sideways@@@[[PDI]]
+@id	ui.collect_all	[[RLI]]$$$Collect@@@[[PDI]]\n[[RLI]]$$$All@@@[[PDI]]
+@id	ui.collect_all_tip	[[RLI]]$$$Bring the boxes and ink that drifted apart on the page back together@@@[[PDI]]

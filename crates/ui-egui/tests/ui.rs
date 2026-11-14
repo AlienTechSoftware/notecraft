@@ -9377,3 +9377,63 @@ fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
         assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(0), "the bar took the press, not the pen: {state}");
     }
 }
+
+/// Issue #23: Draw > Collect All brings boxes and ink that drifted apart on the canvas back
+/// together, keeps their order and does not lay one over another; one Undo puts them all back.
+#[test]
+fn collect_all_gathers_boxes_and_ink_that_drifted_apart() {
+    let (_t, mut app, s) = sample_app("ui-collect-all");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,3;3000,2500,320,{}", blocks - 3)}}),
+    )
+    .expect("two boxes far apart");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let boxes = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let n = |p: &str| v.pointer(p).and_then(Value::as_f64).unwrap_or(-1.0);
+        ((n("/page/containers/0/x"), n("/page/containers/0/y")), (n("/page/containers/1/x"), n("/page/containers/1/y")))
+    };
+    assert_eq!(boxes(&mut h), ((40.0, 20.0), (3000.0, 2500.0)));
+
+    // A stroke drawn on its own, far down the page past the first box.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    drag_by(&mut h, origin + egui::vec2(700.0, 800.0), egui::vec2(60.0, 0.0));
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let n = |i: usize| v.pointer(&format!("/ink/bounds/{i}")).and_then(Value::as_f64).unwrap_or(-1.0);
+        (n(0), n(1))
+    };
+    let (ink_x, ink_y) = ink(&mut h);
+    assert!(ink_y > 700.0, "the stroke is far down: {ink_y}");
+
+    h.get_by_label("Collect All").click();
+    settle(&mut h);
+    let ((x0, y0), (x1, y1)) = boxes(&mut h);
+    assert_eq!((x0, y0), (24.0, 20.0), "the first box keeps its place but for the margin closing");
+    assert!(x1 < 1200.0 && y1 < 1200.0, "the far box came back: ({x1}, {y1})");
+    assert!(x1 > x0 + 320.0 && y1 > y0, "and is still after the first box, not on it: ({x1}, {y1})");
+    let (gx, gy) = ink(&mut h);
+    assert!(gy < ink_y && gx <= ink_x, "the stroke came closer too: ({ink_x}, {ink_y}) to ({gx}, {gy})");
+    review(&mut h, "collect_all");
+    let kept = ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone()}})).expect("layout");
+    assert!(!kept.as_str().unwrap_or_default().contains("3000,2500"), "the page keeps the gathered places: {kept}");
+
+    // Undo takes the boxes back where they were.
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h).1, (3000.0, 2500.0), "undo puts the far box back");
+    // The same Undo puts the ink back too: Collect All was one step.
+    assert_eq!(ink(&mut h), (ink_x, ink_y), "and the stroke, in the same step");
+}

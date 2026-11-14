@@ -15,6 +15,7 @@ pub mod backstage;
 pub mod bidi;
 pub mod clipboard;
 pub mod codeview;
+pub mod collect;
 pub mod combo;
 pub mod containers;
 pub mod control;

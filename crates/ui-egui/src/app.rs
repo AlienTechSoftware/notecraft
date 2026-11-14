@@ -279,6 +279,9 @@ fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
 
+/// The widest empty stretch Collect All leaves between things on a page, in page points.
+const COLLECT_GAP: f32 = 24.0;
+
 fn notebook_for(path: &Path) -> Option<PathBuf> {
     let mut current = path;
     loop {
@@ -874,6 +877,8 @@ pub struct NoteCraftApp {
     canvas_pan: egui::Vec2,
     /// Last middle-button position while panning the canvas.
     canvas_drag: Option<egui::Pos2>,
+    /// Collect All was asked for: the page gathers its boxes and ink when it is next drawn.
+    collect_pending: bool,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
     /// What the pointer does on the page (the Draw tab).
@@ -1037,6 +1042,7 @@ impl NoteCraftApp {
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
+            collect_pending: false,
             page_hbar: None,
             canvas_drag: None,
             pointer: ribbon::Pointer::Write,
@@ -3838,6 +3844,15 @@ impl NoteCraftApp {
                 self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
                 self.refresh_tags();
             }
+            ribbon::Act::CollectAll => {
+                if self.editor.as_ref().is_none_or(|ed| !ed.writable) {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                }
+                self.collect_pending = true;
+                // The gathered page starts at its top left, so it is in view.
+                self.canvas_pan = egui::Vec2::ZERO;
+            }
             ribbon::Act::NotBuilt(what) => {
                 self.status =
                     crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(what))]);
@@ -6399,6 +6414,7 @@ impl NoteCraftApp {
         let mut hbar = crate::hscroll::Shown::default();
         // What the page's right-click menu asked for, run once the page's borrow is over.
         let mut page_acts: Vec<ribbon::Act> = Vec::new();
+        let collect_now = std::mem::take(&mut self.collect_pending);
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let missing_fonts = crate::fonts::ensure_page_fonts(ui.ctx(), &crate::fonts::page_families(&ed.blocks));
@@ -6572,6 +6588,31 @@ impl NoteCraftApp {
                                 ed.pending_format = None;
                             }
                             page_acts.append(&mut moved.acts);
+                            // Collect All (issue #23): the boxes and the strokes of ink, each as the
+                            // rectangle it covers, gathered so no empty stretch of the page between
+                            // them is wider than a small gap. Nothing moves past anything else.
+                            if collect_now {
+                                let strokes = pad.as_ref().map(crate::inkpad::Pad::stroke_bounds).unwrap_or_default();
+                                let items: Vec<egui::Rect> = moved
+                                    .frames
+                                    .iter()
+                                    .copied()
+                                    .chain(strokes.iter().map(|[x0, y0, x1, y1]| egui::Rect::from_min_max(egui::pos2(*x0, *y0), egui::pos2(*x1, *y1))))
+                                    .collect();
+                                let by = crate::collect::gather(&items, COLLECT_GAP);
+                                for (i, d) in by.iter().take(moved.frames.len()).enumerate() {
+                                    if let Some(b) = ed.boxes.get_mut(i)
+                                        && *d != egui::Vec2::ZERO
+                                    {
+                                        *b = notecraft_model::container::Container::new(b.x + d.x, b.y + d.y, b.width, b.blocks);
+                                        moved.boxes = true;
+                                    }
+                                }
+                                let ink: Vec<(f32, f32)> = by.iter().skip(moved.frames.len()).map(|d| (d.x, d.y)).collect();
+                                if let Some(pad) = pad.as_mut() {
+                                    ink_changed |= pad.move_each(&ink);
+                                }
+                            }
                             // The page's column, its boxes and its ink: what the sideways bar
                             // has to reach.
                             {

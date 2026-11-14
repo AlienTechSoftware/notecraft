@@ -103,6 +103,8 @@ pub enum Act {
     Tag(Tag),
     /// Open the Tags Summary: the tagged notes, and a way to each of them (issue #166).
     FindTags,
+    /// Gather what has drifted apart on the page, boxes and ink, back together (issue #23).
+    CollectAll,
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
@@ -2634,6 +2636,11 @@ Space",
         // OneNote's Format Background is this tab's way to the paper, and we have the
         // paper, so it goes to the same gallery the View tab opens.
         rule_lines_menu(ui, view, t, acts);
+        // Everything on the canvas that drifted apart, boxes and ink, gathered back together
+        // (issue #23). Last in the group, so the controls before it keep their places.
+        if big(ui, Icon::Shapes, crate::tl_id!("ui.collect_all"), crate::tl_id!("ui.collect_all_tip"), t).clicked() {
+            acts.push(Act::CollectAll);
+        }
     });
     shapes_group(ui, view, t, acts);
     group(ui, crate::tl_id!("ui.shapes"), t, |ui| {
