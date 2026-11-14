@@ -29,6 +29,7 @@ pub mod history;
 pub mod hscroll;
 pub mod i18n;
 pub mod icons;
+pub mod imagemenu;
 pub mod language_flag;
 pub mod input_language {
     pub use notecraft_input_language::{Watcher, is_rtl, watch_changes};

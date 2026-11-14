@@ -4069,6 +4069,7 @@ impl NoteCraftApp {
             ribbon::Act::InkUndo => self.ink_undo(),
             ribbon::Act::InkInsert => self.ink_insert(),
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
+            ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
         }
     }
 
@@ -4906,6 +4907,57 @@ impl NoteCraftApp {
                 self.say(crate::i18n::format_message_id("ui.saved_the_drawing_as_a_picture_path", &[("path", &shown)]));
             }
             Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())])),
+        }
+    }
+
+    /// Exports the original image file at `src` via the native save file dialog (or browser download).
+    fn save_picture_as(&mut self, src: &str) {
+        let Some(page_dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let (_source_path, default_name, bytes) = match crate::imagemenu::validate_and_read_image(&page_dir, src) {
+            Ok(res) => res,
+            Err(e) => {
+                self.complain(&crate::i18n::format_message_id("ui.cannot_read_the_picture_error", &[("error", &e.to_string())]));
+                return;
+            }
+        };
+
+        if let Some(downloads) = self.file_downloads.as_mut() {
+            let mime = match std::path::Path::new(&default_name).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+                Some("png") => "image/png",
+                Some("jpg" | "jpeg") => "image/jpeg",
+                Some("gif") => "image/gif",
+                Some("webp") => "image/webp",
+                Some("bmp") => "image/bmp",
+                Some("svg") => "image/svg+xml",
+                _ => "application/octet-stream",
+            };
+            downloads.push(FileDownload { name: default_name.clone(), mime, bytes });
+            self.say(crate::i18n::format_message_id("ui.saved_picture_as_path", &[("path", &default_name)]));
+            return;
+        }
+
+        let ext = std::path::Path::new(&default_name).extension().and_then(|e| e.to_str()).unwrap_or("");
+        let mut picker = rfd::FileDialog::new().set_title(crate::tl_id!("ui.save_picture_as")).set_file_name(&default_name);
+        if !ext.is_empty() && !["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"].contains(&ext) {
+            picker = picker.add_filter(ext, &[ext]);
+        }
+        picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"]);
+
+        let Some(destination) = picker.save_file() else {
+            return;
+        };
+
+        match std::fs::write(&destination, &bytes) {
+            Ok(()) => {
+                let shown = self.shown(&destination);
+                self.say(crate::i18n::format_message_id("ui.saved_picture_as_path", &[("path", &shown)]));
+            }
+            Err(e) => {
+                self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_picture_error", &[("error", &e.to_string())]));
+            }
         }
     }
 
@@ -7103,6 +7155,7 @@ impl NoteCraftApp {
                                 // the caret, and one that does not sense clicks cannot
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
+                                crate::imagemenu::show(ui, body, &mut page_acts, &tokens);
                                 crate::pagemenu::show(ui, body, &mut page_acts, &tokens);
                             }
                             if moved.changed.blocks {

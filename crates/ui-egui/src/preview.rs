@@ -435,7 +435,7 @@ fn picture_max_height(src: &str, zoom: f32) -> f32 {
     if printout { f32::INFINITY } else { 480.0 * zoom }
 }
 
-fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, object_rect: &mut Option<egui::Rect>) {
+fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, block: usize, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
             match image_bytes(ui.ctx(), page_dir, src) {
@@ -445,6 +445,9 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, o
                     let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, src, zoom) };
                     let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     *object_rect = Some(response.rect);
+                    if s.link.is_none() {
+                        record_rendered_image(ui.ctx(), block, response.rect, src);
+                    }
                     if response.hovered() {
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
                     }
@@ -578,13 +581,13 @@ pub(crate) fn show_block_zoomed(
                 match tagged(spans) {
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
-                            draw_inline_images(ui, &spans, page_dir, zoom, &mut rendered_object_rect);
+                            draw_inline_images(ui, &spans, page_dir, zoom, i, &mut rendered_object_rect);
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
-                        draw_inline_images(ui, spans, page_dir, zoom, &mut rendered_object_rect);
+                        draw_inline_images(ui, spans, page_dir, zoom, i, &mut rendered_object_rect);
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
                         }
@@ -623,11 +626,11 @@ pub(crate) fn show_block_zoomed(
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, &spans, page_dir, zoom, &mut rendered_object_rect);
+                            draw_inline_images(ui, &spans, page_dir, zoom, i, &mut rendered_object_rect);
                         }),
                         None => {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
-                            draw_inline_images(ui, spans, page_dir, zoom, &mut rendered_object_rect);
+                            draw_inline_images(ui, spans, page_dir, zoom, i, &mut rendered_object_rect);
                         }
                     });
                 });
@@ -716,6 +719,9 @@ pub(crate) fn show_block_zoomed(
                             _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(zoom)),
                         };
                         rendered_object_rect = Some(response.rect);
+                        if object_link(&Block::Image { alt: alt.clone(), src: src.clone(), width: *width, height: *height }, page_dir).is_none() {
+                            record_rendered_image(ui.ctx(), i, response.rect, src);
+                        }
                         if response.hovered() {
                             log::debug!(
                                 "image render hover: block={i} src={src:?} rect={:?} pointer={:?}",
@@ -846,6 +852,26 @@ pub(crate) fn object_double_clicked_id() -> egui::Id {
 
 pub(crate) fn object_click_state_id() -> egui::Id {
     egui::Id::new("embedded-object-click-state")
+}
+
+/// A picture rendered in the preview, with its block index, bounds on screen, and source path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderedImage {
+    pub block: usize,
+    pub rect: egui::Rect,
+    pub src: String,
+}
+
+pub fn rendered_images_id() -> egui::Id {
+    egui::Id::new("rendered-image-hits")
+}
+
+pub fn record_rendered_image(ctx: &egui::Context, block: usize, rect: egui::Rect, src: &str) {
+    ctx.data_mut(|data| {
+        let mut images = data.get_temp::<Vec<RenderedImage>>(rendered_images_id()).unwrap_or_default();
+        images.push(RenderedImage { block, rect, src: src.to_string() });
+        data.insert_temp(rendered_images_id(), images);
+    });
 }
 
 /// A text block with no words, no maths and no picture in it: a blank line.
@@ -1298,5 +1324,45 @@ mod tests {
         };
         let rtl_height = height_of(&rtl_nested, 1.0);
         assert!(rtl_height > 10.0, "rtl nested item renders: {rtl_height}");
+    }
+
+    #[test]
+    fn rendered_images_are_recorded_for_standalone_and_inline_images() {
+        let t = notecraft_store::testing::TempDir::new("preview-img-hits");
+        let page_dir = t.path();
+        let assets_dir = page_dir.join("assets");
+        std::fs::create_dir_all(&assets_dir).expect("assets");
+        let png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtest";
+        std::fs::write(assets_dir.join("pic.png"), png_bytes).expect("write pic.png");
+        std::fs::write(assets_dir.join("inline.png"), png_bytes).expect("write inline.png");
+
+        let ctx = egui::Context::default();
+        crate::fonts::install_once(&ctx);
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+
+        let blocks = [
+            Block::Image { alt: "Test picture".into(), src: "assets/pic.png".into(), width: Some(100.0), height: Some(80.0) },
+            Block::Paragraph(vec![
+                Span { text: "Some text ".into(), ..Span::default() },
+                Span { image: Some("assets/inline.png".into()), ..Span::default() },
+            ]),
+        ];
+
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for (i, block) in blocks.iter().enumerate() {
+                let id = ui.id().with(("block", i));
+                let _ = show_block_zoomed(ui, block, i, page_dir, &tokens, false, Some(Dir::Ltr), None, None, id, 1.0);
+            }
+        });
+        frame.textures_delta.clear();
+
+        let images = ctx.data(|d| d.get_temp::<Vec<RenderedImage>>(rendered_images_id())).unwrap_or_default();
+        assert_eq!(images.len(), 2, "both standalone and inline image are recorded");
+        assert_eq!(images[0].block, 0);
+        assert_eq!(images[0].src, "assets/pic.png");
+        assert!(images[0].rect.width() > 0.0 && images[0].rect.height() > 0.0);
+        assert_eq!(images[1].block, 1);
+        assert_eq!(images[1].src, "assets/inline.png");
+        assert!(images[1].rect.width() > 0.0 && images[1].rect.height() > 0.0);
     }
 }
