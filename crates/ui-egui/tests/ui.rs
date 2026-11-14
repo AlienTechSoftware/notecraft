@@ -9377,3 +9377,88 @@ fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
         assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(0), "the bar took the press, not the pen: {state}");
     }
 }
+
+/// Issue #9, OneNote's automatic switching: a pen that comes down on the page while the caret
+/// is the pointer picks up the pen last in hand and draws with it; typing puts it down again and
+/// the words go to the page. A mouse or a finger with no force changes nothing.
+#[test]
+fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
+    let (_t, mut app, s) = sample_app("ui-auto-pen");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        (
+            v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string(),
+            v.pointer("/ink/nib").and_then(Value::as_u64),
+            v.pointer("/ink/strokes").and_then(Value::as_u64).unwrap_or(0),
+        )
+    };
+    // The red pen was the last one in hand; then back to typing.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    let red = ink(&mut h).1;
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write");
+
+    let at = page_origin(&mut h) + egui::vec2(500.0, 420.0);
+    let stroke = |h: &mut Harness<'_, NoteCraftApp>, force: Option<f32>| {
+        let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force };
+        h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        for n in 1..=3 {
+            let to = at + egui::vec2(25.0 * n as f32, 6.0 * n as f32);
+            h.input_mut().events.push(contact(egui::TouchPhase::Move, to));
+            h.input_mut().events.push(egui::Event::PointerMoved(to));
+            h.step();
+        }
+        let to = at + egui::vec2(75.0, 18.0);
+        h.input_mut().events.push(contact(egui::TouchPhase::End, to));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: to,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        settle(h);
+    };
+
+    // A finger on a touch screen reports no force: it is not a pen, and nothing is drawn.
+    stroke(&mut h, None);
+    assert_eq!(ink(&mut h), ("write".to_string(), red, 0), "a finger leaves the caret as it was");
+
+    // The caret is in the first paragraph, where the words were last being written.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+
+    // A pen picks up the red pen and the same touch draws.
+    stroke(&mut h, Some(0.6));
+    assert_eq!(ink(&mut h), ("draw".to_string(), red, 1), "the pen drew with the pen last in hand");
+
+    // A shortcut is not typing: the pen stays in hand.
+    ask(&mut h, "ui.key", json!({"key": "b", "ctrl": true})).expect("Ctrl+B");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "draw", "Ctrl+B does not put the pen down");
+
+    // Typing puts it down, and the words reach the page.
+    let before = h.state().body().unwrap_or_default().to_string();
+    h.input_mut().events.push(egui::Event::Text("Z".to_string()));
+    h.step();
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write", "typing goes back to the caret");
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert_eq!(after.matches('Z').count(), before.matches('Z').count() + 1, "the Z went into the page");
+    assert!(after.contains("ZNoteCraft pages"), "where the caret was before the pen: {after}");
+}

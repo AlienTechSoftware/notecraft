@@ -874,6 +874,10 @@ pub struct NoteCraftApp {
     canvas_pan: egui::Vec2,
     /// Last middle-button position while panning the canvas.
     canvas_drag: Option<egui::Pos2>,
+    /// Words typed while a pen was in hand, held for the caret's line until it has the keyboard
+    /// again (issue #9), and how many frames they have waited.
+    typed_while_inking: Vec<egui::Event>,
+    typed_wait: u8,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
     /// What the pointer does on the page (the Draw tab).
@@ -1039,6 +1043,8 @@ impl NoteCraftApp {
             canvas_pan: egui::Vec2::ZERO,
             page_hbar: None,
             canvas_drag: None,
+            typed_while_inking: Vec::new(),
+            typed_wait: 0,
             pointer: ribbon::Pointer::Write,
             rack,
             nib,
@@ -1430,6 +1436,72 @@ impl NoteCraftApp {
                 self.undone.clear();
                 self.step_back(false);
             }
+        }
+    }
+
+    /// OneNote's automatic switching (issue #9): the window follows what the hand is holding.
+    /// A pen that comes down on the page while the pointer is the caret picks up the pen last in
+    /// hand, colour and thickness and all, and draws with it from that touch on; typing while a
+    /// pen or another ink tool is in hand puts it down and the keys go to the page as words. A
+    /// mouse, and a finger on a touch screen, change nothing: only a contact that reports a
+    /// force is a pen, so this works where the platform passes the pen's pressure on (see
+    /// `stylus.rs`), and elsewhere the tools are chosen by hand as before.
+    fn switch_by_device(&mut self, ctx: &Context) {
+        if self.dialog.is_some() || self.backstage.is_some() || !self.editor.as_ref().is_some_and(|ed| ed.writable) {
+            return;
+        }
+        if self.pointer == ribbon::Pointer::Write {
+            if self.stylus.landed().is_some_and(|at| self.page_rect.is_some_and(|page| page.contains(at))) {
+                self.ribbon_act(ribbon::Act::InkPen(self.nib));
+                crate::inkpad::claim_press(ctx);
+            }
+            return;
+        }
+        let typed = ctx.input(|i| {
+            !i.modifiers.command
+                && !i.modifiers.ctrl
+                && !i.modifiers.alt
+                && i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if !t.trim().is_empty()))
+        });
+        if !typed || ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        self.ribbon_act(ribbon::Act::InkPointer(ribbon::Pointer::Write));
+        // The words go back to the line the caret was in, where it was: the line's text box
+        // was not drawn while the pen was in hand, so it has to take the keyboard again before
+        // it can read them. They are held until it has (`replay_typing`).
+        let Some(ed) = self.editor.as_mut() else { return };
+        // A selection across lines left from before the pen would keep every line as finished
+        // words, with no text box to type into.
+        ed.across = None;
+        let Some(caret) = ed.caret.as_mut() else { return };
+        caret.focus = true;
+        caret.place = Some(caret.selection.1);
+        self.typed_while_inking = ctx.input_mut(|i| {
+            let (text, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut i.events).into_iter().partition(|e| matches!(e, egui::Event::Text(_)));
+            i.events = rest;
+            text
+        });
+        self.typed_wait = 0;
+        ctx.request_repaint();
+    }
+
+    /// Gives the page the words that were typed with a pen in hand (see `switch_by_device`)
+    /// once the caret's line has the keyboard again, a frame or two after the switch.
+    fn replay_typing(&mut self, ctx: &Context) {
+        if self.typed_while_inking.is_empty() {
+            return;
+        }
+        let ready = self.editor.as_ref().and_then(|ed| ed.caret.as_ref()).is_some_and(|c| !c.focus) && ctx.memory(|m| m.focused().is_some());
+        if ready {
+            let typed = std::mem::take(&mut self.typed_while_inking);
+            ctx.input_mut(|i| i.events.extend(typed));
+        } else if self.typed_wait > 4 {
+            // The caret never came back (the page was closed, say): the words have nowhere to go.
+            self.typed_while_inking.clear();
+        } else {
+            self.typed_wait += 1;
+            ctx.request_repaint();
         }
     }
 
@@ -8483,6 +8555,8 @@ impl NoteCraftApp {
             self.focus_search = true;
         }
         self.nav_keys(ctx);
+        self.replay_typing(ctx);
+        self.switch_by_device(ctx);
         self.direction_keys(ctx);
         self.hierarchy_keys(ctx);
         self.restore_last_page();
