@@ -92,6 +92,15 @@ pub fn run_with_progress(
     if source.is_dir() {
         return run_folder(source, output, format, cancelled, progress);
     }
+    // A OneNote package (issue #17): unpacked into a folder named after it, which is then
+    // imported as a notebook folder. The unpacked copy is removed when the import ends.
+    if crate::package::is_package(source) {
+        let scratch = crate::package::Scratch::new()?;
+        let name = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let folder = scratch.path.join(crate::package::safe_name(&safe_name(&name)).unwrap_or_else(|| PathBuf::from("OneNote package")));
+        crate::package::unpack(source, &folder)?;
+        return run_folder(&folder, output, format, cancelled, progress);
+    }
     if cancelled.load(Ordering::Relaxed) {
         return Err("OfficeIMO import cancelled".to_string());
     }
@@ -396,6 +405,20 @@ fn executable_name() -> OsString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
+    /// No bridge is installed for the test, so the run stops at the first section; what it has
+    /// found by then is the package's section.
+    #[test]
+    fn a_package_is_unpacked_and_its_sections_imported_as_a_folder() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/3p/officeimo/makecab-lzx-notebook.onepkg");
+        let out = notecraft_store::testing::TempDir::new("officeimo-onepkg");
+        let mut seen = Vec::new();
+        let _ = run_with_progress(&source, out.path(), Format::Html, &AtomicBool::new(false), &mut |p| seen.push(format!("{p:?}")));
+        assert!(seen.first().is_some_and(|p| p.contains("Found { total: 1 }")), "the package's one section was found: {seen:?}");
+        assert!(seen.iter().any(|p| p.contains("Compressed section.one")), "{seen:?}");
+        assert!(out.path().join("makecab-lzx-notebook").is_dir(), "the notebook is named after the package");
+    }
 
     #[test]
     fn folder_names_and_backup_dates_become_safe_container_names() {

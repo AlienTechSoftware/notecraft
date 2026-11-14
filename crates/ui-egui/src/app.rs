@@ -3184,7 +3184,9 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_file() else { return };
-        self.import_officeimo_source(source, false);
+        // A OneNote package (.onepkg) is a whole notebook, imported the way a folder is (issue #17).
+        let folder = notecraft_import::package::is_package(&source);
+        self.import_officeimo_source(source, folder);
     }
 
     fn import_officeimo_source(&mut self, source: PathBuf, folder: bool) {
