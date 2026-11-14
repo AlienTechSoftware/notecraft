@@ -135,6 +135,13 @@ pub fn took_right_click(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(claimed_id())) == Some(ctx.cumulative_pass_nr())
 }
 
+/// Marks this frame's right click as claimed by a container or context menu, so the page's own
+/// menu stays shut.
+pub fn claim_right_click(ctx: &egui::Context) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(claimed_id(), pass));
+}
+
 /// Takes container `at` off the page together with the blocks it holds. False, and nothing
 /// changed, when there is no such container or the counts do not fit the blocks.
 pub fn remove_container(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, at: usize) -> bool {
@@ -323,6 +330,7 @@ pub fn show(
     let object_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_clicked_id()));
     let object_double_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_double_clicked_id()));
     ui.data_mut(|d| d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()));
+    ui.data_mut(|d| d.remove::<Vec<crate::preview::RenderedImage>>(crate::preview::rendered_images_id()));
     let mut object_sel = selected_object(ui.ctx(), page_dir);
     // Ctrl and a click, while something is selected, adds the box clicked or takes it out of the
     // selection, as in OneNote: the click does not also put the caret in its words or pick up a
@@ -623,9 +631,7 @@ pub fn show(
             log::debug!("container {}: right-clicked, selected={:?}", i, sel);
             menu_at = pointer;
             opened_now = true;
-            // Read before the store is locked: asking the context for it inside would wait on itself.
-            let pass = ui.ctx().cumulative_pass_nr();
-            ui.data_mut(|d| d.insert_temp(claimed_id(), pass));
+            claim_right_click(ui.ctx());
         }
         let is_sel = sel == Some(i);
         if let Some((block, kind)) = object_sel.as_ref().filter(|(block, _)| range.contains(block)) {

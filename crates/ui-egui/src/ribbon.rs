@@ -53,6 +53,8 @@ pub enum Act {
     AddPrintout,
     /// Add a picture to the page.
     AddPicture,
+    /// Save picture as... exports an image file from the page.
+    SavePictureAs(String),
     ToggleSource,
     ToggleFullPage,
     OpenThemes,
