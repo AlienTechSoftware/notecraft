@@ -121,9 +121,62 @@ fn officeimo_and_tika_corpus_imports_in_both_page_formats() {
     assert!(source.join("LICENSE-MIT-OfficeIMO.txt").is_file());
     assert!(source.join("NOTICE.txt").is_file());
 
+    // The five sections, and the one inside the OfficeIMO package, which is now unpacked and
+    // imported (issue #17) rather than left aside.
     for format in [PageFormat::Html, PageFormat::Cmgfm] {
-        verify_source(&source, 5, 3, 2, 1, (3, 1, 0), format);
+        verify_source(&source, 6, 4, 2, 0, (3, 1, 0), format);
     }
+}
+
+/// Issue #17: a `.onepkg` package, given on its own, is unpacked and imported as a notebook named
+/// after it, in both page formats. (The unpacked folder's removal is `package::tests`'s.)
+#[test]
+fn a_onepkg_package_imports_as_a_notebook_in_both_page_formats() {
+    let package = Path::new(FIXTURES).join("officeimo").join("makecab-lzx-notebook.onepkg");
+    for format in [PageFormat::Html, PageFormat::Cmgfm] {
+        let temp = TempDir::new("onepkg-import");
+        let destination = temp.path().join("notebooks");
+        let mut options = Options::new(&package, &destination);
+        options.format = format;
+        let report = run(&options, &mut quiet).expect("import the package");
+        assert_eq!(report.packages, 1, "{report}");
+        assert_eq!(report.ignored, 0, "{report}");
+        assert_eq!(report.toc_files_found, 1, "the package's table of contents is found: {report}");
+        assert_eq!((report.sections_planned, report.sections_imported), (1, 1), "{report}");
+        assert!(report.pages > 0, "{report}");
+        assert!(report.to_string().contains("OneNote packages unpacked: 1"), "{report}");
+        let notebook = destination.join("makecab-lzx-notebook");
+        assert!(
+            notebook.is_dir(),
+            "a notebook named after the package: {:?}",
+            fs::read_dir(&destination).map(|rd| rd.flatten().map(|e| e.file_name()).collect::<Vec<_>>())
+        );
+        assert!(notebook.join("compressed-section").is_dir(), "{format:?}: its section is there");
+    }
+
+    // A dry run unpacks to plan, and writes nothing to the destination.
+    let temp = TempDir::new("onepkg-dry-run");
+    let destination = temp.path().join("notebooks");
+    let mut options = Options::new(&package, &destination);
+    options.dry_run = true;
+    let report = run(&options, &mut quiet).expect("plan the package");
+    assert_eq!((report.packages, report.sections_planned), (1, 1), "{report}");
+    assert!(!destination.exists(), "a dry run writes nothing");
+}
+
+/// A package that cannot be unpacked costs that package, says why, and the rest of the folder
+/// is imported.
+#[test]
+fn a_broken_package_is_reported_and_the_rest_imports() {
+    let temp = TempDir::new("onepkg-broken");
+    let source = temp.path().join("source");
+    fs::create_dir_all(&source).expect("source");
+    fs::write(source.join("broken.onepkg"), b"MSCF this is not a cabinet").expect("broken package");
+    fs::copy(Path::new(FIXTURES).join("officeimo").join("testOneNote2016.one"), source.join("testOneNote2016.one")).expect("section");
+    let report = run(&Options::new(&source, temp.path().join("notebooks")), &mut quiet).expect("import");
+    assert_eq!((report.packages, report.ignored), (0, 1), "{report}");
+    assert!(report.skipped.iter().any(|s| s.label == "broken.onepkg" && s.reason.contains("not a OneNote package")), "{:?}", report.skipped);
+    assert_eq!(report.sections_imported, 1, "the section beside it still imports: {report}");
 }
 
 #[test]

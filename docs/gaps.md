@@ -37,8 +37,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
   `docs/research/onenote-file-format/real-files.md`). Notebook and section colors are read from
   `.onetoc2` when available and section colors from `.one` metadata; arbitrary source colors
-  map lossily to NoteCraft's named palette. Still missing: section order, ink, tags, page dates,
-  `.onepkg` packages, password-protected sections, and an import command in the window.
+  map lossily to NoteCraft's named palette. A `.onepkg` package, given on its own or found in
+  the folder, is unpacked (LZX or MSZIP cabinet) into a temporary folder named after it and
+  imported as a notebook of that name; the window's Import File does the same through the
+  OfficeIMO bridge. A package's names are checked so nothing is written outside that folder.
+  Still missing: section order, ink, tags, page dates, password-protected sections, and an
+  import command in the window for the built-in importer.
   Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
