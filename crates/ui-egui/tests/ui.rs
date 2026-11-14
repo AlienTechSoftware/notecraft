@@ -9265,6 +9265,213 @@ fn a_jpeg_xl_picture_is_drawn_in_the_page() {
     assert_eq!(h.query_all_by_label_contains("two-colours.jxl").count(), 0, "no file card stands in for it");
 }
 
+/// Table > Align Left, Center and Align Right line up the words of the caret's cell, or of every
+/// picked cell, are kept with the page, follow their row when rows go in, and leave the column's
+/// width alone (issue #170).
+#[test]
+fn table_cells_are_aligned_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-align");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Aligned", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    let widths = |h: &mut Harness<'_, NoteCraftApp>| h.get_by_label("Name").rect().width() + h.get_by_label("Amount").rect().width();
+    assert_eq!(kept(&mut h, &page), "", "no cell is aligned to begin with");
+    let left = h.get_by_label("12").rect();
+    let names = widths(&mut h);
+
+    // Center the cell holding 12, then look at it from another cell, where it is drawn as words.
+    into(&mut h, "12");
+    h.get_by_label("Center").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=c", "the page keeps the cell's alignment");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let centred = h.get_by_label("12").rect();
+    assert!(centred.min.x > left.min.x + 40.0, "the words moved into the middle of the cell: {left:?} then {centred:?}");
+    assert!((widths(&mut h) - names).abs() < 0.5, "the heading cells, and so the column, kept their width");
+    review(&mut h, "table_cell_centred");
+
+    // Right, then a row put in above: the alignment stays with the row it was given to.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    into(&mut h, "pear");
+    let right = h.get_by_label("12").rect();
+    assert!(right.min.x > centred.min.x + 20.0, "further right again: {centred:?} then {right:?}");
+    into(&mut h, "12");
+    h.get_by_label("Insert Row Above").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r", "the cell moved down with its row");
+
+    // Kept when the page is opened again; Align Left puts it back to how a cell always was.
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r");
+    into(&mut h, "12");
+    h.get_by_label("Align Left").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "", "a cell aligned left keeps nothing");
+}
+
+/// Table > Shading puts a colour behind the caret's cell, or every picked cell, kept with the
+/// page beside the cell's alignment; No Colour takes it away (issue #169).
+#[test]
+fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-shading");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Shaded", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    // The colour just left of a cell's words, where the cell's background shows.
+    fn behind(h: &mut Harness<'_, NoteCraftApp>, word: &str) -> [u8; 4] {
+        let at = h.get_by_label(word).rect();
+        let image = h.render().expect("render");
+        let ppp = h.ctx.pixels_per_point();
+        let (x, y) = (((at.min.x - 4.0) * ppp) as u32, (at.center().y * ppp) as u32);
+        image.get_pixel(x, y).0
+    }
+    into(&mut h, "pear");
+    let plain = behind(&mut h, "12");
+    assert_eq!(plain, behind(&mut h, "7"), "two plain cells look the same");
+
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("Yellow").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=~yellow", "the page keeps the cell's colour");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let yellow = behind(&mut h, "12");
+    assert_ne!(yellow, plain, "the shaded cell is drawn in its colour");
+    assert!(yellow[0] > yellow[2] + 10 && yellow[1] > yellow[2], "a yellow wash: {yellow:?}");
+    assert_eq!(behind(&mut h, "7"), plain, "the cell below is left alone");
+    review(&mut h, "table_cell_shaded");
+
+    // Alignment and shading live side by side; No Colour leaves the alignment.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow", "kept when the page is opened again");
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("No colour").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r", "the colour went and the alignment stayed");
+}
+
+/// Issue #166: Home > Find Tags opens a Tags Summary of the tagged notes in a scope, can keep
+/// only the unchecked To Do items, and takes the caret to a line when it is clicked.
+#[test]
+fn find_tags_lists_tagged_notes_and_goes_to_them() {
+    let (_t, mut app, s) = sample_app("ui-find-tags");
+    app.open_path(&s.html_page.to_string_lossy());
+    // Wide enough for the whole Home tab: Find Tags is near its right end.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "no summary until it is asked for");
+    h.get_by_label("Find Tags").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 1, "Find Tags opens the summary");
+    assert!(h.query_all_by_label_contains("is not built yet").next().is_none(), "Find Tags no longer says it is missing");
+
+    // It starts in the open page's section, which is not where the checklist is.
+    let lines = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/tagsSummary/lines").and_then(Value::as_array).cloned().unwrap_or_default()
+    };
+    let has = |lines: &[Value], text: &str, done: Option<bool>| {
+        lines
+            .iter()
+            .any(|l| l["text"] == text && l["tag"] == "todo" && l["done"] == json!(done) && l["page"] == "Format ideas" && l["section"] == "Ideas")
+    };
+    assert!(!has(&lines(&mut h), "Create a notebook", Some(true)), "the Projects section has no such line");
+    assert_eq!(h.query_all_by_label("Create a notebook").count(), 0);
+    h.get_by_label("All notebooks").click();
+    settle(&mut h);
+    let all = lines(&mut h);
+    assert!(has(&all, "Create a notebook", Some(true)), "every notebook lists the ticked To Do: {all:?}");
+    assert!(has(&all, "Decide the default format", Some(false)), "and the unticked one: {all:?}");
+    assert_eq!(h.query_all_by_label("Create a notebook").count(), 1, "one row a screen reader names once");
+    assert_eq!(h.query_all_by_label("Ideas > Format ideas").count(), 0, "where it is is part of the row, not a widget of its own");
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v.pointer("/tagsSummary/scope").and_then(Value::as_str), Some("all"), "{v}");
+    review(&mut h, "find_tags_all");
+
+    h.get_by_label("Only unchecked To Do items").click();
+    settle(&mut h);
+    let unchecked = lines(&mut h);
+    assert!(!has(&unchecked, "Create a notebook", Some(true)), "a ticked To Do is left out: {unchecked:?}");
+    assert!(has(&unchecked, "Try attaching a picture", Some(false)), "an unticked one stays: {unchecked:?}");
+    assert!(unchecked.iter().all(|l| l["done"] == json!(false)), "{unchecked:?}");
+
+    // A click opens its page with the caret on that line.
+    h.get_by_label("Try attaching a picture").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v.pointer("/page/title").and_then(Value::as_str), Some("Format ideas"), "the tagged line's page opened: {v}");
+    let caret = v.pointer("/page/caret/text").and_then(Value::as_str).unwrap_or_default();
+    assert!(caret.contains("Try attaching a picture"), "the caret is on the tagged line: {caret:?}");
+    review(&mut h, "find_tags_went_to_line");
+
+    // This page: the open page alone. The summary closes again.
+    h.get_by_label("This page").click();
+    settle(&mut h);
+    let page = lines(&mut h);
+    assert!(!page.is_empty() && page.iter().all(|l| l["page"] == "Format ideas"), "{page:?}");
+    h.get_by_label("Close the tags summary").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "the summary closes");
+}
 /// The page's sideways scroll bar as `ui.inspect` reports it: the track and the thumb, or `None`.
 fn horizontal_bar(h: &mut Harness<'_, NoteCraftApp>) -> Option<(egui::Rect, egui::Rect)> {
     let v = ask(h, "ui.inspect", json!({})).expect("inspect");
