@@ -211,6 +211,9 @@ pub struct Moved {
     pub justified: bool,
     /// How far down the page, in page points, the containers reach.
     pub bottom: f32,
+    /// Where each box was drawn, in page points from the page's top left, handle and all: what
+    /// Collect All (issue #23) gathers.
+    pub frames: Vec<Rect>,
     /// How far right of the page's left edge, in page points, the containers reach: the page's
     /// sideways scroll bar (issue #188) reaches that far.
     pub right: f32,
@@ -1491,6 +1494,7 @@ pub fn show(
         }
     });
     out.bottom = page_points_below(area, filled_bottom, zoom);
+    out.frames = page_frames(area, boxes, &frames, zoom);
     out.right = page_points_right(area, right, zoom);
     out
 }
@@ -1516,6 +1520,7 @@ pub fn show_ink_view(
     *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
     let mut bottom = area.min.y;
     let mut right = area.min.x;
+    let mut ink_frames: Vec<Rect> = Vec::with_capacity(boxes.len());
 
     for (container_index, container) in boxes.iter().copied().enumerate() {
         let range = container::blocks_of(boxes, container_index);
@@ -1548,6 +1553,10 @@ pub fn show_ink_view(
         let used = child.min_rect().height().max(18.0);
         bottom = bottom.max(area.min.y + container.y * zoom + HANDLE * zoom + used + PAD * zoom);
         right = right.max(child.min_rect().max.x.max(inner.max.x) + PAD * zoom);
+        ink_frames.push(Rect::from_min_max(
+            pos2(inner.min.x - PAD * zoom, inner.min.y),
+            pos2(child.min_rect().max.x.max(inner.max.x) + PAD * zoom, inner.min.y + used + PAD * zoom),
+        ));
     }
 
     // Child UIs do not advance the parent cursor; reserve their complete page-space extent
@@ -1555,7 +1564,19 @@ pub fn show_ink_view(
     ui.allocate_rect(Rect::from_min_max(area.min, pos2(area.max.x, bottom)), Sense::hover());
     out.bottom = page_points_below(area, bottom, zoom);
     out.right = page_points_right(area, right, zoom);
+    out.frames = page_frames(area, boxes, &ink_frames, zoom);
     out
+}
+
+/// The boxes' frames as drawn on screen, back in page points from the page's top left, each
+/// starting at its box's own corner so the move handle above the frame is counted in.
+fn page_frames(area: Rect, boxes: &[Container], frames: &[Rect], zoom: f32) -> Vec<Rect> {
+    let z = zoom.max(0.01);
+    boxes
+        .iter()
+        .zip(frames)
+        .map(|(b, f)| Rect::from_min_max(pos2(b.x, b.y), pos2(((f.max.x - area.min.x) / z).max(b.x), ((f.max.y - area.min.y) / z).max(b.y))))
+        .collect()
 }
 
 /// How far down the page the boxes reach, in page points, from `bottom` on screen: what

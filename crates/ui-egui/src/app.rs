@@ -279,6 +279,53 @@ fn shown(p: &Path) -> String {
     notecraft_store::tree::display_path(p)
 }
 
+/// The widest empty stretch Collect All leaves between things on a page, in page points.
+const COLLECT_GAP: f32 = 24.0;
+/// The Insert Space tool's own layer over the visible page (issue #164): a vertical-resize
+/// pointer, a guide at the pointer's height, and while it is dragged, the band of room being
+/// added (below the start) or taken away (above it). Returns where the drag began and how far it
+/// went, in screen points, on the frame it is let go.
+fn insert_space_overlay(ctx: &Context, visible: egui::Rect, t: &Tokens) -> Option<(f32, f32)> {
+    let id = Id::new("insert-space-tool");
+    let from_id = id.with("from");
+    let mut done = None;
+    egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(visible.min).constrain(false).movable(false).show(ctx, |ui| {
+        let (rect, resp) = ui.allocate_exact_size(visible.size(), Sense::drag());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.insert_space_how")));
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        if resp.drag_started()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            ui.data_mut(|d| d.insert_temp(from_id, p.y));
+        }
+        let from = ui.data(|d| d.get_temp::<f32>(from_id));
+        let now = ui.ctx().pointer_latest_pos().filter(|p| rect.contains(*p) || resp.dragged()).map(|p| p.y.clamp(rect.min.y, rect.max.y));
+        let painter = ui.painter();
+        let line = egui::Stroke::new(1.5, t.accent);
+        match (from, now) {
+            (Some(a), Some(b)) => {
+                let band = egui::Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(a.min(b), a.max(b)));
+                painter.rect_filled(band, 0.0, t.accent.gamma_multiply(0.12));
+                painter.hline(rect.x_range(), a, line);
+                painter.hline(rect.x_range(), b, egui::Stroke::new(1.0, t.accent.gamma_multiply(0.7)));
+            }
+            (None, Some(y)) => {
+                painter.hline(rect.x_range(), y, line);
+            }
+            _ => {}
+        }
+        if resp.drag_stopped() {
+            if let (Some(a), Some(p)) = (from, resp.interact_pointer_pos()) {
+                done = Some((a, p.y.clamp(rect.min.y, rect.max.y) - a));
+            }
+            ui.data_mut(|d| d.remove::<f32>(from_id));
+        }
+    });
+    done
+}
+
 fn notebook_for(path: &Path) -> Option<PathBuf> {
     let mut current = path;
     loop {
@@ -341,6 +388,14 @@ struct TagsPane {
     /// Only the To Do items not yet ticked.
     unchecked: bool,
     found: Vec<notecraft_store::tags::Tagged>,
+}
+
+/// The Page Templates pane (issue #173): every template, by category, each one a new page in
+/// the section; and a way to keep the open page as a template of its own.
+struct TemplatesPane {
+    templates: Vec<notecraft_store::page_templates::Template>,
+    /// What the open page will be called as a template.
+    name: String,
 }
 
 /// The section a page is in: the nearest folder above it that is a section.
@@ -844,6 +899,7 @@ pub struct NoteCraftApp {
     hits: Vec<Hit>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
+    templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
     mode_pref: ModePref,
@@ -878,8 +934,12 @@ pub struct NoteCraftApp {
     /// again (issue #9), and how many frames they have waited.
     typed_while_inking: Vec<egui::Event>,
     typed_wait: u8,
+    /// Collect All was asked for: the page gathers its boxes and ink when it is next drawn.
+    collect_pending: bool,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
+    /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
+    space_tool: bool,
     /// What the pointer does on the page (the Draw tab).
     pointer: ribbon::Pointer,
     /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
@@ -1021,6 +1081,7 @@ impl NoteCraftApp {
             searched: String::new(),
             hits: Vec::new(),
             tags_pane: None,
+            templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
@@ -1041,7 +1102,9 @@ impl NoteCraftApp {
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
+            collect_pending: false,
             page_hbar: None,
+            space_tool: false,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
             typed_wait: 0,
@@ -1502,6 +1565,22 @@ impl NoteCraftApp {
         } else {
             self.typed_wait += 1;
             ctx.request_repaint();
+      }
+  }
+    /// Keys for the pens, so a tablet's express keys or a keyboard can change tools without
+    /// reaching for the ribbon (issue #44): Alt+1 to Alt+9 pick up that pen on the Draw tab's
+    /// rack, and Alt+0 puts the pens down and goes back to typing. On a Mac, where Option and a
+    /// digit also type a character, the character is dropped so it does not land in the note.
+    fn pen_keys(&mut self, ctx: &Context) {
+        const DIGITS: [Key; 10] = [Key::Num0, Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9];
+        let Some(n) = ctx.input_mut(|i| DIGITS.iter().position(|key| i.consume_key(Modifiers::ALT, *key))) else { return };
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(_))));
+        if n == 0 {
+            self.ribbon_act(ribbon::Act::InkPointer(ribbon::Pointer::Write));
+            self.say(crate::tl_id!("ui.pen_keys_typing"));
+        } else if n <= self.rack.len() {
+            self.ribbon_act(ribbon::Act::InkPen(n - 1));
+            self.say(crate::i18n::format_message_id("ui.pen_keys_picked", &[("number", &n.to_string())]));
         }
     }
 
@@ -3208,7 +3287,9 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_file() else { return };
-        self.import_officeimo_source(source, false);
+        // A OneNote package (.onepkg) is a whole notebook, imported the way a folder is (issue #17).
+        let folder = notecraft_import::package::is_package(&source);
+        self.import_officeimo_source(source, folder);
     }
 
     fn import_officeimo_source(&mut self, source: PathBuf, folder: bool) {
@@ -3483,7 +3564,10 @@ impl NoteCraftApp {
             rack: &self.rack,
             nib: self.nib,
             in_table: self.caret_in_table(),
+            space_tool: self.space_tool,
             table_borders: self.caret_table_has_borders(),
+            table_align: self.caret_cells_align(),
+            table_shade: self.caret_cells_shade(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
@@ -3838,7 +3922,7 @@ impl NoteCraftApp {
                     crate::tl_id!("ui.choose_a_file_to_attach")
                 });
                 if matches!(act, ribbon::Act::AddPicture) {
-                    picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+                    picker = picker.add_filter(crate::tl_id!("ui.pictures"), &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "jxl"]);
                 }
                 if let Some(file) = picker.pick_file() {
                     self.dialog = Some(Dialog::FileOptions { dir, files: vec![file] });
@@ -3903,12 +3987,37 @@ impl NoteCraftApp {
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
+            ribbon::Act::PageTemplates => {
+                let name = self.templates_pane.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+                self.templates_pane = Some(TemplatesPane { templates: Vec::new(), name });
+                self.refresh_templates();
+            }
+            ribbon::Act::InsertSpaceTool => {
+                if self.editor.is_none() {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                }
+                self.space_tool = !self.space_tool;
+                if self.space_tool {
+                    self.pointer = ribbon::Pointer::Write;
+                    self.say(crate::tl_id!("ui.insert_space_how"));
+                }
+            }
             ribbon::Act::FindTags => {
                 // OneNote looks in the section first; with no page open there is no section.
                 let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
                 let unchecked = self.tags_pane.as_ref().is_some_and(|p| p.unchecked);
                 self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
                 self.refresh_tags();
+            }
+            ribbon::Act::CollectAll => {
+                if self.editor.as_ref().is_none_or(|ed| !ed.writable) {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                }
+                self.collect_pending = true;
+                // The gathered page starts at its top left, so it is in view.
+                self.canvas_pan = egui::Vec2::ZERO;
             }
             ribbon::Act::NotBuilt(what) => {
                 self.status =
@@ -3935,6 +4044,8 @@ impl NoteCraftApp {
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
+            ribbon::Act::TableAlign(align) => self.align_table_cells(align),
+            ribbon::Act::TableShade(shade) => self.shade_table_cells(shade),
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -4281,6 +4392,79 @@ impl NoteCraftApp {
         !ed.columns.borders_hidden(c.block)
     }
 
+    /// The cells Table > Align acts on: every picked cell, or the caret's own. With the
+    /// table's block.
+    fn caret_cells(&self) -> Option<(usize, Vec<(usize, usize)>)> {
+        let ed = self.editor.as_ref()?;
+        let c = ed.caret.as_ref()?;
+        let here = c.cell?;
+        if !matches!(ed.blocks.get(c.block), Some(notecraft_formats::markdown::Block::Table { .. })) {
+            return None;
+        }
+        let cells = match pageedit::cell_range(c) {
+            Some((a, b)) => (a.0..=b.0).flat_map(|r| (a.1..=b.1).map(move |col| (r, col))).collect(),
+            None => vec![here],
+        };
+        Some((c.block, cells))
+    }
+
+    /// How the cells Table > Align would act on are aligned now, when they all agree. A cell
+    /// given no alignment of its own reads as aligned left, which is how it is drawn.
+    fn caret_cells_align(&self) -> Option<notecraft_model::tablecols::Align> {
+        use notecraft_model::tablecols::Align;
+        let ed = self.editor.as_ref()?;
+        let (at, cells) = self.caret_cells()?;
+        let mut aligns = cells.iter().map(|cell| ed.columns.align(at, *cell).unwrap_or(Align::Left));
+        let first = aligns.next()?;
+        aligns.all(|a| a == first).then_some(first)
+    }
+
+    /// The colour behind the cells Table > Shading would act on, when they all agree.
+    fn caret_cells_shade(&self) -> Option<Option<notecraft_model::NodeColor>> {
+        let ed = self.editor.as_ref()?;
+        let (at, cells) = self.caret_cells()?;
+        let mut shades = cells.iter().map(|cell| ed.columns.shade(at, *cell));
+        let first = shades.next()?;
+        shades.all(|s| s == first).then_some(first)
+    }
+
+    /// Table > Shading: a colour behind the caret's cell, or behind every picked cell, and no
+    /// other; No Colour takes it away. Kept with the page beside the cells' alignment, and
+    /// noted on the page's history step as the borders and the alignment are (issue #169).
+    fn shade_table_cells(&mut self, shade: Option<notecraft_model::NodeColor>) {
+        let Some((at, cells)) = self.caret_cells() else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.writable || !ed.columns.set_shade(at, &cells, shade) {
+            return;
+        }
+        Self::remember_edit(ed);
+        self.save_block_marks((true, false));
+    }
+
+    /// Table > Align Left, Center or Align Right: the words in the caret's cell, or in every
+    /// cell picked, and nothing else; the columns keep their widths and the table its place.
+    /// Kept with the page, like the widths and the borders, and one step of Undo (issue #170).
+    fn align_table_cells(&mut self, align: notecraft_model::tablecols::Align) {
+        let Some((at, cells)) = self.caret_cells() else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.writable {
+            return;
+        }
+        // Left is how a cell is drawn when it was given nothing, so it is kept as nothing.
+        let keep = (align != notecraft_model::tablecols::Align::Left).then_some(align);
+        if !ed.columns.set_align(at, &cells, keep) {
+            return;
+        }
+        Self::remember_edit(ed);
+        self.save_block_marks((true, false));
+    }
+
     /// Table > Hide Borders or Show Borders: the table the caret is in, and no other. The
     /// choice is kept with the page, like the widths of the table's columns, so it is there
     /// when the page is opened again (issue #161).
@@ -4602,10 +4786,10 @@ impl NoteCraftApp {
         let picked = ed.caret.as_ref().and_then(pageedit::cell_range).filter(|(a, b)| a.0 != b.0).map(|(a, b)| (a.0, b.0));
         Self::remember_step(ed);
         let Some(block) = ed.blocks.get_mut(at) else { return };
-        if !pageedit::sort_table(block, cell.1, picked, descending) {
+        let Some(order) = pageedit::sort_table_rows(block, cell.1, picked, descending) else {
             self.say(crate::tl_id!("ui.the_rows_are_already_in_that_order"));
             return;
-        }
+        };
         // The caret stays in the same place in the table, and shows what is there now.
         let text = pageedit::cell_text(block, cell).unwrap_or_default();
         ed.rebuild_body();
@@ -4614,8 +4798,13 @@ impl NoteCraftApp {
             caret.selection = (0, 0);
             caret.inline = None;
         }
+        // An aligned cell goes where its row went (issue #170).
+        let cols_moved = ed.columns.reorder_rows(at, &order);
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
+        if cols_moved {
+            self.save_block_marks((true, false));
+        }
     }
 
     fn edit_table(&mut self, what: pageedit::TableEdit) {
@@ -4663,7 +4852,9 @@ impl NoteCraftApp {
         let cols_moved = match what {
             pageedit::TableEdit::InsertColumn(left) => ed.columns.insert_column(at, if left { cell.1 } else { cell.1 + 1 }, pageedit::COLUMN_W),
             pageedit::TableEdit::DeleteColumn => (0..done).fold(false, |moved, _| ed.columns.remove_column(at, cell.1) || moved),
-            _ => false,
+            // An aligned cell stays with its row too (issue #170).
+            pageedit::TableEdit::InsertRow(above) => ed.columns.insert_row(at, if above { cell.0 } else { cell.0 + 1 }),
+            pageedit::TableEdit::DeleteRow => (0..done).fold(false, |moved, _| ed.columns.remove_row(at, cell.0) || moved),
         };
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
@@ -5923,6 +6114,133 @@ impl NoteCraftApp {
     }
 
     /// The Tags Summary pane, on the right of the page as OneNote has it.
+    /// Reads the templates again: the built-in ones and those kept in the notebooks folder.
+    fn refresh_templates(&mut self) {
+        let found = notecraft_store::page_templates::list(self.session.root());
+        if let Some(pane) = self.templates_pane.as_mut() {
+            pane.templates = found;
+        }
+    }
+
+    /// A new page in the open section, started from the template, and opened.
+    fn page_from_template(&mut self, id: &str, name: &str) {
+        let Some(section) = self.current_section(self.session.tree()).map(|n| n.path.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_section_first_for_a_template"));
+            return;
+        };
+        self.save_now();
+        if let Some(Output::Path(page)) = self.run("page.from_template", &params(&[("parent", &path_str(&section)), ("template", id)])) {
+            self.open_page(&page);
+            self.say(crate::i18n::format_message_id("ui.page_from_template", &[("name", name)]));
+        }
+    }
+
+    /// Keeps the open page as a template called `name`.
+    fn save_page_as_template(&mut self, name: &str) {
+        let Some(page) = self.editor.as_ref().map(|ed| ed.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        self.save_now();
+        if let Some(Output::Path(_)) = self.run("page.save_template", &params(&[("path", &path_str(&page)), ("name", name)])) {
+            self.say(crate::i18n::format_message_id("ui.saved_as_template", &[("name", name)]));
+            if let Some(pane) = self.templates_pane.as_mut() {
+                pane.name.clear();
+            }
+            self.refresh_templates();
+        }
+    }
+
+    fn templates_panel(&mut self, ui: &mut Ui) {
+        let Some(pane) = self.templates_pane.as_mut() else { return };
+        let tokens = self.tokens;
+        let has_page = self.editor.is_some();
+        let mut close = false;
+        let mut chosen: Option<(String, String)> = None;
+        let mut keep: Option<String> = None;
+        egui::Panel::right("page-templates").resizable(true).default_size(280.0).size_range(220.0..=520.0).show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.strong(crate::tl_id!("ui.page_templates_title"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // A cross drawn with lines: the interface fonts have no glyph for one.
+                    let (rect, x) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                    x.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.close_the_page_templates")));
+                    if x.hovered() {
+                        ui.painter().rect_filled(rect, 3.0, tokens.row_hover);
+                    }
+                    let c = rect.shrink(7.0);
+                    let stroke = egui::Stroke::new(1.4, tokens.text);
+                    ui.painter().line_segment([c.left_top(), c.right_bottom()], stroke);
+                    ui.painter().line_segment([c.right_top(), c.left_bottom()], stroke);
+                    if x.on_hover_text(crate::tl_id!("ui.close_the_page_templates")).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            ui.label(egui::RichText::new(crate::tl_id!("ui.page_templates_hint")).small().color(tokens.muted));
+            ui.separator();
+            let list_height = (ui.available_height() - 110.0).max(120.0);
+            egui::ScrollArea::vertical().id_salt("page-templates-list").max_height(list_height).auto_shrink([false, true]).show(ui, |ui| {
+                for category in notecraft_store::page_templates::Category::ALL {
+                    let mut items = pane.templates.iter().filter(|t| t.category == category).peekable();
+                    let mine = category == notecraft_store::page_templates::Category::Mine;
+                    if items.peek().is_none() && !mine {
+                        continue;
+                    }
+                    ui.add_space(4.0);
+                    ui.strong(crate::tl!(category.label()));
+                    if items.peek().is_none() {
+                        ui.weak(crate::tl_id!("ui.no_saved_templates"));
+                    }
+                    for template in items {
+                        let label = if mine { template.name.clone() } else { crate::tl!(&template.name).to_string() };
+                        let width = ui.available_width().max(60.0);
+                        let (rect, row) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
+                        row.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+                        if row.hovered() {
+                            ui.painter().rect_filled(rect, 3.0, tokens.row_hover);
+                        }
+                        ui.painter().text(
+                            rect.left_center() + vec2(10.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            &label,
+                            egui::FontId::proportional(13.5),
+                            tokens.text,
+                        );
+                        if row.on_hover_text(crate::tl_id!("ui.add_a_page_from_this_template")).clicked() {
+                            chosen = Some((template.id.clone(), label));
+                        }
+                    }
+                }
+            });
+            ui.separator();
+            ui.label(crate::tl_id!("ui.save_current_page_as_a_template"));
+            ui.add_enabled_ui(has_page, |ui| {
+                let field = egui::TextEdit::singleline(&mut pane.name).hint_text(crate::tl_id!("ui.template_name")).desired_width(f32::INFINITY);
+                let field = ui.add(field);
+                // Named for a screen reader: the grey hint inside the box is not a name.
+                field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, has_page, crate::tl_id!("ui.template_name")));
+                let entered = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let named = !pane.name.trim().is_empty();
+                let clicked = ui.add_enabled(named, egui::Button::new(crate::tl_id!("ui.save_as_template"))).clicked();
+                if named && (entered || clicked) {
+                    keep = Some(pane.name.trim().to_string());
+                }
+            });
+        });
+        if close {
+            self.templates_pane = None;
+            return;
+        }
+        if let Some((id, name)) = chosen {
+            self.page_from_template(&id, &name);
+        }
+        if let Some(name) = keep {
+            self.save_page_as_template(&name);
+        }
+    }
+
     fn tags_panel(&mut self, ui: &mut Ui) {
         let Some(pane) = self.tags_pane.as_mut() else { return };
         let tokens = self.tokens;
@@ -6471,6 +6789,10 @@ impl NoteCraftApp {
         let mut hbar = crate::hscroll::Shown::default();
         // What the page's right-click menu asked for, run once the page's borrow is over.
         let mut page_acts: Vec<ribbon::Act> = Vec::new();
+        let collect_now = std::mem::take(&mut self.collect_pending);
+        // Insert Space: in hand this frame, and whether it was used or put down.
+        let space_on = self.space_tool && self.pointer == ribbon::Pointer::Write;
+        let mut space_over = false;
         {
             let Some(ed) = self.editor.as_mut() else { return };
             let missing_fonts = crate::fonts::ensure_page_fonts(ui.ctx(), &crate::fonts::page_families(&ed.blocks));
@@ -6644,6 +6966,31 @@ impl NoteCraftApp {
                                 ed.pending_format = None;
                             }
                             page_acts.append(&mut moved.acts);
+                            // Collect All (issue #23): the boxes and the strokes of ink, each as the
+                            // rectangle it covers, gathered so no empty stretch of the page between
+                            // them is wider than a small gap. Nothing moves past anything else.
+                            if collect_now {
+                                let strokes = pad.as_ref().map(crate::inkpad::Pad::stroke_bounds).unwrap_or_default();
+                                let items: Vec<egui::Rect> = moved
+                                    .frames
+                                    .iter()
+                                    .copied()
+                                    .chain(strokes.iter().map(|[x0, y0, x1, y1]| egui::Rect::from_min_max(egui::pos2(*x0, *y0), egui::pos2(*x1, *y1))))
+                                    .collect();
+                                let by = crate::collect::gather(&items, COLLECT_GAP);
+                                for (i, d) in by.iter().take(moved.frames.len()).enumerate() {
+                                    if let Some(b) = ed.boxes.get_mut(i)
+                                        && *d != egui::Vec2::ZERO
+                                    {
+                                        *b = notecraft_model::container::Container::new(b.x + d.x, b.y + d.y, b.width, b.blocks);
+                                        moved.boxes = true;
+                                    }
+                                }
+                                let ink: Vec<(f32, f32)> = by.iter().skip(moved.frames.len()).map(|d| (d.x, d.y)).collect();
+                                if let Some(pad) = pad.as_mut() {
+                                    ink_changed |= pad.move_each(&ink);
+                                }
+                            }
                             // The page's column, its boxes and its ink: what the sideways bar
                             // has to reach.
                             {
@@ -6653,6 +7000,35 @@ impl NoteCraftApp {
                                     span = (span.0.min(top.x + x0 * zoom_scale), span.1.max(top.x + x1 * zoom_scale));
                                 }
                                 page_span = Some(span);
+                            }
+                            // Insert Space (issue #164): a drag down the page pushes everything that
+                            // starts below where it began, boxes and ink together, down by as far as
+                            // it went; a drag up pulls it back up. One drag, then the tool is put down.
+                            if space_on {
+                                let visible = ui.clip_rect().intersect(viewport.with_max_y(viewport.max.y.max(ui.clip_rect().max.y)));
+                                if let Some((from, by)) = insert_space_overlay(ui.ctx(), visible, &tokens) {
+                                    let z = zoom_scale.max(0.01);
+                                    let (at, by) = ((from - moved.origin.y) / z, by / z);
+                                    let below: Vec<usize> = (0..ed.boxes.len()).filter(|i| ed.boxes.get(*i).is_some_and(|b| b.y >= at)).collect();
+                                    // Room taken away never pulls anything above the top of the page.
+                                    let highest = below.iter().filter_map(|i| ed.boxes.get(*i)).map(|b| b.y).fold(f32::INFINITY, f32::min);
+                                    let by = if by < 0.0 && highest.is_finite() { by.max(-highest) } else { by };
+                                    for i in &below {
+                                        if let Some(b) = ed.boxes.get_mut(*i) {
+                                            *b = notecraft_model::container::Container::new(b.x, b.y + by, b.width, b.blocks);
+                                        }
+                                    }
+                                    if !below.is_empty() && by != 0.0 {
+                                        moved.boxes = true;
+                                    }
+                                    if let Some(pad) = pad.as_mut() {
+                                        ink_changed |= pad.shift_below(at, by);
+                                    }
+                                    space_over = true;
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    space_over = true;
+                                }
                             }
                             // The selection box takes ink as well as boxes, as in OneNote, and what
                             // it took moves together: boxes dragged take the ink with them, ink
@@ -6912,6 +7288,9 @@ impl NoteCraftApp {
         if hbar.pan != 0.0 && hbar.pan.is_finite() {
             self.canvas_pan.x = (self.canvas_pan.x + hbar.pan).clamp(-1.0e6, 1.0e6);
             ui.ctx().request_repaint();
+        }
+        if space_over {
+            self.space_tool = false;
         }
         for act in page_acts {
             self.ribbon_act(act);
@@ -8371,12 +8750,18 @@ impl NoteCraftApp {
                 // [left, top, right, bottom] in screen points, or null when everything fits.
                 "horizontalBar": self.page_hbar.map(|(track, _)| [track.min.x, track.min.y, track.max.x, track.max.y]),
                 "horizontalThumb": self.page_hbar.map(|(_, thumb)| [thumb.min.x, thumb.min.y, thumb.max.x, thumb.max.y]),
+                // True while Insert Space is in hand (issue #164).
+                "insertSpace": self.space_tool,
             },
             // How the side panel is arranged: one tree, or the organisers and the pages in
             // columns of their own, with the first one hidden or not.
             "panes": {"split": self.split_panes, "organisers": self.organisers},
             // Home > Find Tags: where the Tags Summary looks and how many lines it lists, or
             // null while it is closed.
+            "pageTemplates": self.templates_pane.as_ref().map(|p| json!({
+                "templates": p.templates.iter().map(|t| json!({"id": t.id, "name": t.name, "category": t.category.id()})).collect::<Vec<_>>(),
+                "name": p.name,
+            })),
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
                 "unchecked": p.unchecked,
@@ -8482,7 +8867,7 @@ impl NoteCraftApp {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         if !self.loaders_installed {
-            egui_extras::install_image_loaders(ctx);
+            crate::pictures::install(ctx);
             self.loaders_installed = true;
         }
         // Arabic and the other right-to-left scripts have no glyphs in egui's own faces.
@@ -8557,6 +8942,7 @@ impl NoteCraftApp {
         self.nav_keys(ctx);
         self.replay_typing(ctx);
         self.switch_by_device(ctx);
+        self.pen_keys(ctx);
         self.direction_keys(ctx);
         self.hierarchy_keys(ctx);
         self.restore_last_page();
@@ -8576,6 +8962,7 @@ impl NoteCraftApp {
         self.status_bar(ui);
         self.side_panel(ui);
         self.tags_panel(ui);
+        self.templates_panel(ui);
         self.central(ui);
         self.paint_formatting(ctx);
         self.search_popup(ctx);

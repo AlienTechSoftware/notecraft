@@ -187,7 +187,7 @@ fn review(h: &mut Harness<'_, NoteCraftApp>, name: &str) {
     if let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") {
         let dir = PathBuf::from(dir);
         let _ = std::fs::create_dir_all(&dir);
-        if let Ok(img) = h.render() {
+        if let Ok(img) = support::gpu::render(h) {
             let _ = img.save(dir.join(format!("{name}.png")));
         }
     }
@@ -341,7 +341,7 @@ fn header_language_picker_labels_render_light_text_on_the_purple_band() {
     h.get_by_label("Interface language: English").click();
     settle(&mut h);
     let label_rect = h.get_by_label("Fran\u{00e7}ais").rect();
-    let image = h.render().expect("render open language picker");
+    let image = support::gpu::render(&mut h).expect("render open language picker");
     let scale = image.width() as f32 / 1200.0;
     let min_x = (label_rect.min.x * scale).floor().max(0.0) as u32;
     let max_x = (label_rect.max.x * scale).ceil().min(image.width() as f32) as u32;
@@ -490,7 +490,7 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
         assert_eq!(drawn.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "open canvas accepts ink for {label}: {drawn}");
         let ink_file = path.join("ink.svg");
         let svg = std::fs::read_to_string(&ink_file).unwrap_or_else(|error| panic!("saved canvas ink: {error}; state={drawn}"));
-        let ink_image = h.render().expect("render outside-page stroke");
+        let ink_image = support::gpu::render(&mut h).expect("render outside-page stroke");
         review(&mut h, if markdown { "canvas_open_ink_cmgfm" } else { "canvas_open_ink_html" });
         let red_canvas_pixels = ink_image
             .pixels()
@@ -570,7 +570,7 @@ fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
     );
     assert_eq!(state.pointer("/page/caret").cloned().unwrap_or(Value::Null), caret_before, "drawing over words leaves the text caret alone: {state}");
 
-    let image = h.render().expect("render ink over words");
+    let image = support::gpu::render(&mut h).expect("render ink over words");
     let region = egui::Rect::from_min_max(egui::pos2(x as f32 - 4.0, y as f32 - 4.0), egui::pos2(x as f32 + 42.0, y as f32 + 12.0));
     let red_pixels = image
         .pixels()
@@ -619,14 +619,14 @@ fn pen_palette_owns_pointer_input_over_the_page_canvas() {
     let more_colours = h.get_by_label("More Colours").rect();
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("hover the popup button");
     settle(&mut h);
-    let before = h.render().expect("render the open palette before drawing");
+    let before = support::gpu::render(&mut h).expect("render the open palette before drawing");
     let start = egui::pos2(page.max.x - 40.0, more_colours.center().y);
     assert!(page.contains(start) && !more_colours.contains(start), "the stroke begins on page canvas outside the palette");
     ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("start a page stroke");
     pump(&mut h);
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("carry the stroke across the palette");
     pump(&mut h);
-    let during = h.render().expect("render the stroke beneath the open palette");
+    let during = support::gpu::render(&mut h).expect("render the stroke beneath the open palette");
     let (sx, sy) = (before.width() as f32 / 1200.0, before.height() as f32 / 760.0);
     let (x0, y0, x1, y1) = (
         (more_colours.min.x * sx).floor().max(0.0) as u32,
@@ -1342,7 +1342,7 @@ fn the_plus_between_two_pages_is_round() {
     for _ in 0..4 {
         pump(&mut h);
     }
-    let shot = h.render().expect("a picture");
+    let shot = support::gpu::render(&mut h).expect("a picture");
     // The harness is 1200 points wide; the picture may be rendered larger than that.
     let scale = f64::from(shot.width()) / 1200.0;
 
@@ -1958,7 +1958,7 @@ fn display_math_paints_ink_inside_its_box() {
         notecraft_ui_egui::mathview::display(ui, "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", 28.0, egui::Color32::BLACK);
     });
     h.run();
-    let img = h.render().expect("render");
+    let img = support::gpu::render(&mut h).expect("render");
     let dark: Vec<(u32, u32)> =
         img.enumerate_pixels().filter(|(_, _, p)| p.0[0] < 100 && p.0[1] < 100 && p.0[2] < 100).map(|(x, y, _)| (x, y)).collect();
     assert!(dark.len() > 300, "the formula should leave ink, got {} dark pixels", dark.len());
@@ -2035,7 +2035,7 @@ fn a_swatch_overrides_the_system_mode() {
     assert_eq!(h.state().theme(), Theme { mode: other, accent: Accent::Default });
     assert_eq!(h.state().mode_pref(), if other == Mode::Dark { ModePref::Dark } else { ModePref::Light }, "the swatch stops following the system");
     // And the window really is painted in that mode.
-    let img = h.render().expect("render");
+    let img = support::gpu::render(&mut h).expect("render");
     let total = img.pixels().count();
     let matching = img
         .pixels()
@@ -2180,7 +2180,7 @@ fn page_ink_is_visible_across_container_borders() {
 
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the pen made one page stroke: {ink}");
-    let image = h.render().expect("render the page with the stroke");
+    let image = support::gpu::render(&mut h).expect("render the page with the stroke");
     review(&mut h, "ink_across_boxes");
     let scale = image.width() as f64 / 1200.0;
     let visible_red_near = |x: f64| {
@@ -2257,7 +2257,7 @@ fn page_ink_crosses_a_diagram_container_edge() {
     settle(&mut h);
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect strokes")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(2), "both strokes remain on the page: {ink}");
-    let image = h.render().expect("render diagram and ink");
+    let image = support::gpu::render(&mut h).expect("render diagram and ink");
     review(&mut h, "ink_across_diagram_container");
     let scale = image.width() as f64 / 1200.0;
     let visible_red = |x: f64, at_y: f64| {
@@ -5468,7 +5468,7 @@ fn all_fourteen_themes_render_with_their_own_colours() {
         app.open_path(&s.md_page.to_string_lossy());
         let mut h = harness(app, theme);
         settle(&mut h);
-        let img = h.render().expect("render");
+        let img = support::gpu::render(&mut h).expect("render");
         let tokens = theme.tokens();
         let near = |p: &image::Rgba<u8>, c: egui::Color32| {
             (i32::from(p.0[0]) - i32::from(c.r())).abs() <= 3
@@ -6779,7 +6779,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
     assert_ne!(at, anchor, "and the drag selected something: at {at}, anchor {anchor}");
 
-    let selected = h.render().expect("a picture of the window");
+    let selected = support::gpu::render(&mut h).expect("a picture of the window");
     review(&mut h, "rtl-drag-selection");
 
     // The same page with nothing selected, to compare against.
@@ -6787,7 +6787,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     settle(&mut h);
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
     assert_eq!(caret.get("at").and_then(Value::as_u64), caret.get("anchor").and_then(Value::as_u64), "an arrow without Shift drops the selection");
-    let plain = h.render().expect("a picture of the window");
+    let plain = support::gpu::render(&mut h).expect("a picture of the window");
 
     // The band the drag covered, in the rendered picture's own pixels.
     let scale = selected.width() as f32 / 1200.0;
@@ -6851,7 +6851,7 @@ fn a_drag_can_select_across_paragraphs() {
     let open = across(&mut h);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "it begins in the paragraph the press fell on: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "and reaches the one the drag ended in: {open}");
-    let selected = h.render().expect("picture");
+    let selected = support::gpu::render(&mut h).expect("picture");
     review(&mut h, "cross-block");
 
     // Both paragraphs are drawn with a band behind them. Compared against the same page
@@ -6859,7 +6859,7 @@ fn a_drag_can_select_across_paragraphs() {
     ask(&mut h, "ui.click", json!({"x": 600.0, "y": first.min.y - 40.0})).expect("let go");
     settle(&mut h);
     assert_eq!(across(&mut h), Value::Null, "a press somewhere else lets the selection go");
-    let plain = h.render().expect("picture");
+    let plain = support::gpu::render(&mut h).expect("picture");
     let scale = selected.width() as f32 / 1200.0;
     let band = |rect: egui::Rect| -> u32 {
         let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
@@ -6922,7 +6922,7 @@ fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
     let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "the drag spans both paragraphs: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "the drag spans both paragraphs: {open}");
-    let selected = h.render().expect("picture");
+    let selected = support::gpu::render(&mut h).expect("picture");
     review(&mut h, "cross-block-marks");
 
     // The band is the selection wash painted behind the words; counting its pixels says
@@ -9235,6 +9235,180 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
     assert!(width >= 500.0, "the box grew from its drawn edge, past the table, with the pointer: {width}");
 }
 
+/// Issue #29: a JPEG XL picture in a page's assets is drawn in the page like a PNG, not shown
+/// as a file card.
+#[test]
+fn a_jpeg_xl_picture_is_drawn_in_the_page() {
+    const TWO_COLOURS: &[u8] = include_bytes!("fixtures/two-colours.jxl");
+    let (_t, mut app, s) = sample_app("ui-jpeg-xl");
+    let md = s.md_page.to_string_lossy().to_string();
+    std::fs::create_dir_all(s.md_page.join("assets")).expect("assets");
+    std::fs::write(s.md_page.join("assets").join("two-colours.jxl"), TWO_COLOURS).expect("picture");
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.save", "params": {"path": md.clone(), "body": "![two colours](assets/two-colours.jxl)\n"}}),
+    )
+    .expect("write one-picture page");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+    settle(&mut h);
+    settle(&mut h);
+    let image = h.render().expect("render");
+    let count = |want: fn(&[u8; 4]) -> bool| image.pixels().filter(|p| want(&p.0)).count();
+    let red = count(|p| p[0] > 200 && p[1] < 60 && p[2] < 60);
+    let blue = count(|p| p[2] > 200 && p[0] < 60 && p[1] < 60);
+    review(&mut h, "jpeg_xl_picture");
+    assert!(red > 50 && blue > 50, "the picture's red and blue halves are drawn: red={red} blue={blue}");
+    assert_eq!(h.query_all_by_label_contains("two-colours.jxl").count(), 0, "no file card stands in for it");
+}
+
+/// Table > Align Left, Center and Align Right line up the words of the caret's cell, or of every
+/// picked cell, are kept with the page, follow their row when rows go in, and leave the column's
+/// width alone (issue #170).
+#[test]
+fn table_cells_are_aligned_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-align");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Aligned", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    let widths = |h: &mut Harness<'_, NoteCraftApp>| h.get_by_label("Name").rect().width() + h.get_by_label("Amount").rect().width();
+    assert_eq!(kept(&mut h, &page), "", "no cell is aligned to begin with");
+    let left = h.get_by_label("12").rect();
+    let names = widths(&mut h);
+
+    // Center the cell holding 12, then look at it from another cell, where it is drawn as words.
+    into(&mut h, "12");
+    h.get_by_label("Center").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=c", "the page keeps the cell's alignment");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let centred = h.get_by_label("12").rect();
+    assert!(centred.min.x > left.min.x + 40.0, "the words moved into the middle of the cell: {left:?} then {centred:?}");
+    assert!((widths(&mut h) - names).abs() < 0.5, "the heading cells, and so the column, kept their width");
+    review(&mut h, "table_cell_centred");
+
+    // Right, then a row put in above: the alignment stays with the row it was given to.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    into(&mut h, "pear");
+    let right = h.get_by_label("12").rect();
+    assert!(right.min.x > centred.min.x + 20.0, "further right again: {centred:?} then {right:?}");
+    into(&mut h, "12");
+    h.get_by_label("Insert Row Above").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r", "the cell moved down with its row");
+
+    // Kept when the page is opened again; Align Left puts it back to how a cell always was.
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@2.1=r");
+    into(&mut h, "12");
+    h.get_by_label("Align Left").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "", "a cell aligned left keeps nothing");
+}
+
+/// Table > Shading puts a colour behind the caret's cell, or every picked cell, kept with the
+/// page beside the cell's alignment; No Colour takes it away (issue #169).
+#[test]
+fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
+    let (_t, app, s) = sample_app("ui-table-shading");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    h.run();
+    let ideas = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": ideas, "kind": "page", "title": "Shaded", "format": "cmgfm"}}),
+    )
+    .expect("page");
+    let page = made.as_str().expect("a path").to_string();
+    let body = "| Name | Amount |\n|---|---|\n| pear | 12 |\n| apple | 7 |\n";
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page, "body": body}})).expect("save");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open");
+    settle(&mut h);
+
+    fn into(h: &mut Harness<'_, NoteCraftApp>, word: &str) {
+        let cell = h.get_by_label(word).rect().center();
+        ask(h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("into the cell");
+        settle(h);
+        h.get_by_label("Table").click();
+        settle(h);
+    }
+    fn kept(h: &mut Harness<'_, NoteCraftApp>, page: &str) -> String {
+        let line = ask(h, "engine.execute", json!({"command": "page.columns", "params": {"path": page}})).expect("layout");
+        line.as_str().unwrap_or_default().to_string()
+    }
+    // The colour just left of a cell's words, where the cell's background shows.
+    fn behind(h: &mut Harness<'_, NoteCraftApp>, word: &str) -> [u8; 4] {
+        let at = h.get_by_label(word).rect();
+        let image = h.render().expect("render");
+        let ppp = h.ctx.pixels_per_point();
+        let (x, y) = (((at.min.x - 4.0) * ppp) as u32, (at.center().y * ppp) as u32);
+        image.get_pixel(x, y).0
+    }
+    into(&mut h, "pear");
+    let plain = behind(&mut h, "12");
+    assert_eq!(plain, behind(&mut h, "7"), "two plain cells look the same");
+
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("Yellow").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=~yellow", "the page keeps the cell's colour");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the words of the page are untouched");
+    into(&mut h, "pear");
+    let yellow = behind(&mut h, "12");
+    assert_ne!(yellow, plain, "the shaded cell is drawn in its colour");
+    assert!(yellow[0] > yellow[2] + 10 && yellow[1] > yellow[2], "a yellow wash: {yellow:?}");
+    assert_eq!(behind(&mut h, "7"), plain, "the cell below is left alone");
+    review(&mut h, "table_cell_shaded");
+
+    // Alignment and shading live side by side; No Colour leaves the alignment.
+    into(&mut h, "12");
+    h.get_by_label("Align Right").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open again");
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r~yellow", "kept when the page is opened again");
+    into(&mut h, "12");
+    h.get_by_label("Shading").click();
+    settle(&mut h);
+    h.get_by_label("No colour").click();
+    settle(&mut h);
+    assert_eq!(kept(&mut h, &page), "0@1.1=r", "the colour went and the alignment stayed");
+}
+
 /// Issue #166: Home > Find Tags opens a Tags Summary of the tagged notes in a scope, can keep
 /// only the unchecked To Do items, and takes the caret to a line when it is clicked.
 #[test]
@@ -9396,11 +9570,11 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
         )
     };
     // The red pen was the last one in hand; then back to typing.
-    h.get_by_label("Draw").click();
+      h.get_by_label("Draw").click();
     settle(&mut h);
     h.get_by_label("Pen red").click();
     settle(&mut h);
-    let red = ink(&mut h).1;
+      let red = ink(&mut h).1;
     h.get_by_label("Type").click();
     settle(&mut h);
     assert_eq!(ink(&mut h).0, "write");
@@ -9461,4 +9635,219 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     let after = h.state().body().unwrap_or_default().to_string();
     assert_eq!(after.matches('Z').count(), before.matches('Z').count() + 1, "the Z went into the page");
     assert!(after.contains("ZNoteCraft pages"), "where the caret was before the pen: {after}");
+}
+/// Issue #23: Draw > Collect All brings boxes and ink that drifted apart on the canvas back
+/// together, keeps their order and does not lay one over another; one Undo puts them all back.
+#[test]
+fn collect_all_gathers_boxes_and_ink_that_drifted_apart() {
+    let (_t, mut app, s) = sample_app("ui-collect-all");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,3;3000,2500,320,{}", blocks - 3)}}),
+    )
+    .expect("two boxes far apart");
+}
+/// Issue #173: Insert > Page Templates lists the templates by category; one click adds a page
+/// to the open section from a template and opens it, and the open page can be kept as a
+/// template of its own, which then makes pages too. No page already there is written over.
+#[test]
+fn page_templates_add_pages_and_keep_this_page_as_one() {
+    let (_t, mut app, s) = sample_app("ui-page-templates");
+    let first = s.md_page.to_string_lossy().to_string();
+    app.open_path(&first);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 950.0));
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    let page = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let path = v.pointer("/page/path").and_then(Value::as_str).unwrap_or_default().to_string();
+        let title = v.pointer("/page/title").and_then(Value::as_str).unwrap_or_default().to_string();
+        (path, title, v)
+    };
+    let (first_path, _, _) = page(&mut h);
+
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    h.get_by_label("Page Templates").click();
+    settle(&mut h);
+    let (_, _, v) = page(&mut h);
+    let listed = v.pointer("/pageTemplates/templates").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert!(listed.len() >= 8, "the built-in templates are listed: {listed:?}");
+    review(&mut h, "page_templates_pane");
+
+    h.get_by_label("Meeting Notes").click();
+    settle(&mut h);
+    let (meeting, title, v) = page(&mut h);
+    assert_ne!(meeting, first_path, "a new page, not the one that was open");
+    assert_eq!(title, "Untitled page", "the new page has no title of its own yet");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Action items") && body.contains("- [ ]"), "the template's words: {body}");
+    assert!(v.pointer("/pageTemplates").is_some_and(|p| !p.is_null()), "the pane stays open");
+
+    // The page that was open before is as it was.
+    ask(&mut h, "ui.open", json!({"path": first.clone()})).expect("open");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before, "nothing was written over the open page");
+
+    // Keep this page as a template, and make a page from it.
+    let field = h.get_by_label("Template name").rect().center();
+    ask(&mut h, "ui.click", json!({"x": field.x, "y": field.y})).expect("click the name field");
+    pump(&mut h);
+    h.input_mut().events.push(egui::Event::Text("Idea board".into()));
+    pump(&mut h);
+    h.get_by_label("Save as Template").click();
+    settle(&mut h);
+    let (_, _, v) = page(&mut h);
+    let mine: Vec<Value> = v
+        .pointer("/pageTemplates/templates")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| t["category"] == json!("mine"))
+        .collect();
+    assert_eq!(mine.len(), 1, "the page is a template now: {mine:?}");
+    assert_eq!(mine[0]["name"], json!("Idea board"));
+    review(&mut h, "page_templates_saved");
+
+    h.get_by_label("Idea board").click();
+    settle(&mut h);
+    let (copy, _, _) = page(&mut h);
+    assert!(copy != first_path && copy != meeting, "another new page: {copy}");
+    let words = h.state().body().unwrap_or_default().to_string();
+    assert!(words.contains("NoteCraft pages are **plain files**"), "the saved page's words: {words}");
+}
+
+/// Issue #164: Insert > Insert Space is OneNote's tool. A drag down the page pushes the boxes
+/// and the ink below where it began down by as far as it went; a drag up takes room away; Esc
+/// puts the tool down; Undo puts the boxes back.
+#[test]
+fn insert_space_drags_room_into_the_page_and_out_again() {
+    let (_t, mut app, s) = sample_app("ui-insert-space");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0);
+    assert!(blocks > 3, "the sample page has blocks to split: {blocks}");
+    ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": format!("40,20,320,3;40,500,320,{}", blocks - 3)}}),
+    )
+    .expect("two boxes");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let boxes = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let y = |i: usize| v.pointer(&format!("/page/containers/{i}/y")).and_then(Value::as_f64).unwrap_or(-1.0);
+        (y(0), y(1))
+    };
+    let tool =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/canvas/insertSpace").and_then(Value::as_bool);
+    assert_eq!(boxes(&mut h), (20.0, 500.0));
+    let origin = page_origin(&mut h);
+
+    // Ink under the line moves with the boxes; the pen is put down again before the tool.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    drag_by(&mut h, origin + egui::vec2(500.0, 420.0), egui::vec2(80.0, 0.0));
+    let ink_top = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/bounds/1").and_then(Value::as_f64).expect("ink bounds")
+    };
+    let ink_before = ink_top(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false));
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true), "the tool is in hand");
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/pointer").and_then(Value::as_str), Some("write"));
+
+    // Down 100 points from between the boxes: the lower box and the ink move, the upper box stays.
+    drag_by(&mut h, origin + egui::vec2(600.0, 300.0), egui::vec2(0.0, 100.0));
+    assert_eq!(boxes(&mut h), (20.0, 600.0), "room was added above the lower box");
+    assert!((ink_top(&mut h) - (ink_before + 100.0)).abs() < 1.0, "the ink below moved with it");
+    assert_eq!(tool(&mut h), Some(false), "one drag, then the tool is put down");
+    review(&mut h, "insert_space_added");
+    let kept = ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone()}})).expect("layout");
+    assert!(kept.as_str().unwrap_or_default().contains("40,600,320"), "the page keeps the new place: {kept}");
+
+    // Undo puts the box back where it was.
+    ask(&mut h, "ui.undo", json!({})).expect("undo");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h).1, 500.0, "undo takes the room back out");
+    ask(&mut h, "ui.redo", json!({})).expect("redo");
+    settle(&mut h);
+    assert_eq!(boxes(&mut h).1, 600.0);
+
+    // Up 150 points from just above the lower box: the room is taken away again.
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    drag_by(&mut h, origin + egui::vec2(600.0, 590.0), egui::vec2(0.0, -150.0));
+    assert_eq!(boxes(&mut h), (20.0, 450.0), "room was taken away");
+
+    // Esc puts the tool down without changing anything.
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true));
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false), "Esc puts the tool down");
+    assert_eq!(boxes(&mut h), (20.0, 450.0));
+}
+
+/// Issue #44: Alt and a number pick up that pen on the rack, from anywhere, so a tablet's express
+/// keys can be bound to pens; Alt+0 goes back to typing. A Mac's Option+digit character is not
+/// typed into the note.
+#[test]
+fn alt_and_a_number_pick_up_a_pen_and_alt_zero_goes_back_to_typing() {
+    let (_t, mut app, s) = sample_app("ui-pen-keys");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        (v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string(), v.pointer("/ink/nib").and_then(Value::as_u64))
+    };
+    assert_eq!(ink(&mut h).0, "write");
+    ask(&mut h, "ui.key", json!({"key": "2", "alt": true})).expect("Alt+2");
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(1)), "the second pen on the rack is in hand");
+    ask(&mut h, "ui.key", json!({"key": "5", "alt": true})).expect("Alt+5");
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(4)));
+    ask(&mut h, "ui.key", json!({"key": "0", "alt": true})).expect("Alt+0");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write", "Alt+0 puts the pen down");
+    // A number past the end of the rack picks up nothing.
+    ask(&mut h, "ui.key", json!({"key": "9", "alt": true})).expect("Alt+9");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write", "there is no ninth pen on the starting rack");
+    // A plain digit is still typing, not a pen.
+    ask(&mut h, "ui.key", json!({"key": "3"})).expect("3");
+    settle(&mut h);
+    assert_eq!(ink(&mut h).0, "write");
+
+    // With the caret in the note, the character a Mac types for Option+1 does not reach it.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    let alt = egui::Modifiers { alt: true, ..Default::default() };
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Num1, physical_key: None, pressed: true, repeat: false, modifiers: alt });
+    h.input_mut().events.push(egui::Event::Text("\u{a1}".to_string()));
+    h.step();
+    settle(&mut h);
+    assert_eq!(ink(&mut h), ("draw".to_string(), Some(0)), "Alt+1 picks up the first pen");
+    let after = h.state().body().unwrap_or_default().to_string();
+    assert!(!after.contains('\u{a1}'), "the Option character was not typed");
+    assert_eq!(before, after, "the note is unchanged");
 }

@@ -246,7 +246,7 @@ impl Stroke {
         self.dabs.is_empty()
     }
 
-    /// The box the ink covers, with the width of the stroke taken into account.
+    /// The box the ink covers, including smoothing and the selected full-width padding.
     /// `None` for a stroke with no readings.
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         let first = self.dabs.first()?;
@@ -256,6 +256,17 @@ impl Stroke {
             y0 = y0.min(d.y);
             x1 = x1.max(d.x);
             y1 = y1.max(d.y);
+        }
+        // Catmull-Rom can bow beyond the readings. Keep the original padding and
+        // extrema, but also enclose the same sampled curve that the painter and
+        // saved outline use. Dots and two-reading lines need no smoothing.
+        if self.dabs.len() >= 3 {
+            for d in shape::centre(self) {
+                x0 = x0.min(d.x);
+                y0 = y0.min(d.y);
+                x1 = x1.max(d.x);
+                y1 = y1.max(d.y);
+            }
         }
         let edge = self.width / 2.0;
         Some((x0 - edge, y0 - edge, x1 + edge, y1 + edge))

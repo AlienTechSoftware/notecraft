@@ -16,7 +16,7 @@ side by side. Status words:
 | Structure | Multi-level collapse and expand | Done | Per-row chevrons, Expand all, Collapse all. |
 | Structure | A new notebook starts usable | Done | Like the other app: one section, "New Section 1", holding one empty page. `notebook.create empty=true` skips it. |
 | Structure | Colours per notebook or section | Done | Nine colours on notebooks, section groups and sections, saved in `_node.toml`, shown on the icon and the row edge. |
-| Structure | Templates | Partial | Page templates for both formats; no template picker. |
+| Structure | Templates | Partial | Insert > Page Templates: eight built-in templates in four categories, and any page saved as a template; a click adds a page to the section. No previews, and no default template for new pages. |
 | Authoring | Rich text | Partial | Both formats are written on in their finished look, block by block, with a real caret. A page whose markup cannot be written back exactly opens read-only rather than risking it. No font, size, colour or alignment controls yet. |
 | Authoring | Tables, lists, to-do, quotes, code | Done | The ribbon inserts them, the page draws them, and a to-do box ticks where it stands. |
 | Authoring | Right-to-left text | Partial | Arabic and Hebrew draw, and the page, the line and the run each take a direction, written into the text so it travels. A line that mixes the two directions is still drawn in one order, and the window is not mirrored. |
@@ -35,7 +35,7 @@ side by side. Status words:
 | Sync | Section passwords | Later | |
 | Collaboration | Sharing | By design | A shared folder. Live co-authoring is Later. |
 | Output | Export | Later | Export scope is undecided. |
-| Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). `notecraft-cli import onenote` reads `.one` sections and optional `.onetoc2` color metadata, then writes notebook folders in either page format. Still missing: TOC section order, ink, tags, `.onepkg`, and an import command in the window. |
+| Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). `notecraft-cli import onenote` reads `.one` sections and optional `.onetoc2` color metadata, then writes notebook folders in either page format. `.onepkg` packages are unpacked and imported as notebooks. Still missing: TOC section order, ink, tags, and an import command in the window. |
 | Output | Add-ins, AI | Later | |
 | Look | Themes | Done | 14 themes, contrast checked. `themes.md`. |
 | Look | Ruled and grid page backgrounds | Done | View, Rule Lines: none, lines or squares behind the page, in colours each theme checks for contrast. Remembered between runs. |

@@ -332,6 +332,10 @@ and are not verified for every sync tool.
   `.notecraft/recycle-bin` folder. Restore returns an item to its original path and refuses
   to overwrite a new item there. Emptying an entry permanently deletes it. Deleting an
   entire notebook is not supported yet.
+- A page kept as a template (Insert > Page Templates) is a copy of the page's folder, without
+  its subpages and its hidden `.notecraft` folder, in `.notecraft/templates/<name>/` in the
+  notebooks folder. A page made from it is a copy of that folder with new ids, put last in
+  the section, with no title yet. Built-in templates are not stored there.
 - Deletes are confined to NoteCraft nodes inside a notebook.
 
 ## 10. What this format does not define yet
@@ -341,7 +345,7 @@ and are not verified for every sync tool.
 - Links between pages by id, and how renames update them. Today a page links to another
   page or folder by relative path, as it links to its pictures (`../other-page/`), and the
   app follows such a link; a rename breaks it.
-- Tags and templates.
+- Tags.
 - Encryption of a section.
 - How `.one` files map onto it. A plan is in `docs/research/onenote-file-format/ms-one-notes.md`.
 

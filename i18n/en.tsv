@@ -860,6 +860,14 @@
 @id	ui.kept_in_this_tab	Kept in this tab
 @id	ui.session_only_storage_notice	Session-only notes: changes disappear when you reload or close this tab.
 @id	ui.session_storage_guard_failed	Could not enable a tab-close warning. Copy your notes before reloading or closing this tab.
+@id	ui.table_align_left	Align\nLeft
+@id	ui.table_align_left_tip	Line the words up with the left of the cell
+@id	ui.table_align_center	Center
+@id	ui.table_align_center_tip	Put the words in the middle of the cell
+@id	ui.table_align_right	Align\nRight
+@id	ui.table_align_right_tip	Line the words up with the right of the cell
+@id	ui.table_shading	Shading
+@id	ui.table_shading_tip	A colour behind the picked cells
 @id	ui.list_the_tagged_notes_and_go_to_them	List the tagged notes and go to them
 @id	ui.tags_summary	Tags Summary
 @id	ui.close_the_tags_summary	Close the tags summary
@@ -874,3 +882,35 @@
 @id	ui.no_tagged_notes_here	No tagged notes here.
 @id	ui.tags_empty_line	(an empty line)
 @id	ui.scroll_the_page_sideways	Scroll the page sideways
+@id	ui.collect_all	Collect\nAll
+@id	ui.collect_all_tip	Bring the boxes and ink that drifted apart on the page back together
+@id	ui.page_templates	Page\nTemplates
+@id	ui.page_templates_tip	Start a new page from a template, or keep this page as one
+@id	ui.page_templates_title	Page Templates
+@id	ui.close_the_page_templates	Close the page templates
+@id	ui.page_templates_hint	Click a template to add a page to this section.
+@id	ui.add_a_page_from_this_template	Add a page to this section from this template
+@id	ui.no_saved_templates	No saved templates yet.
+@id	ui.save_current_page_as_a_template	Save current page as a template:
+@id	ui.template_name	Template name
+@id	ui.save_as_template	Save as Template
+@id	ui.page_from_template	New page from the {name} template
+@id	ui.saved_as_template	Saved this page as the template {name}
+@id	ui.open_a_section_first_for_a_template	Open a section first: the new page goes in it
+@id	ui.template_category_academic	Academic
+@id	ui.template_category_blank	Blank
+@id	ui.template_category_business	Business
+@id	ui.template_category_planners	Planners
+@id	ui.template_category_mine	My Templates
+@id	ui.template_lecture_notes	Lecture Notes
+@id	ui.template_study_guide	Study Guide
+@id	ui.template_college_ruled	College Ruled
+@id	ui.template_grid	Grid
+@id	ui.template_meeting_notes	Meeting Notes
+@id	ui.template_project_overview	Project Overview
+@id	ui.template_to_do_list	To Do List
+@id	ui.template_weekly_planner	Weekly Planner
+@id	ui.insert_space_tip	Drag down the page to add room, or up to take it away
+@id	ui.insert_space_how	Drag down where you want more room, or up to take room away. Esc puts the tool down.
+@id	ui.pen_keys_typing	Typing (Alt+0)
+@id	ui.pen_keys_picked	Pen {number} (Alt+{number})
