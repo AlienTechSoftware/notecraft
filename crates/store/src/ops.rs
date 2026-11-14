@@ -51,7 +51,7 @@ fn clean_title(title: &str) -> Result<String> {
 
 /// A folder path under `parent` that does not exist yet, ignoring case, so two
 /// pages titled "Notes" and "notes" never collide on Windows or macOS.
-fn unique_child(parent: &Path, base: &str) -> PathBuf {
+pub(crate) fn unique_child(parent: &Path, base: &str) -> PathBuf {
     let taken: HashSet<String> = match fs::read_dir(parent) {
         Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_lowercase()).collect(),
         Err(_) => HashSet::new(),

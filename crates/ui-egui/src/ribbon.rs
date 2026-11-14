@@ -105,6 +105,9 @@ pub enum Act {
     InsertSpaceTool,
     /// Open the Tags Summary: the tagged notes, and a way to each of them (issue #166).
     FindTags,
+    /// Open the Page Templates pane: new pages from templates, and this page kept as one
+    /// (issue #173).
+    PageTemplates,
     /// Something OneNote has that NoteCraft does not: say so plainly.
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
@@ -1670,7 +1673,9 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.pages"), t, |ui| {
-        soon(ui, Icon::PageStack, "Page\nTemplates", t);
+        if big(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
+            acts.push(Act::PageTemplates);
+        }
     });
     group(ui, crate::tl_id!("ui.symbols"), t, |ui| {
         equation_gallery(ui, t, acts);

@@ -464,8 +464,13 @@ Playground hosts with the Files API continue using their existing persistence pa
 - **The Insert tab** carries OneNote's groups. Working: tables, a file attachment, a
   picture, a link, the three time stamps, an equation, a symbol picker, insert space, and
   NoteCraft's own Mermaid diagram. File printout, screen clipping, online video,
-  transcription, recording, page templates and stickers remain unbuilt. Spreadsheet is
-  available through the existing GridCraft integration when installed. Insert Space is
+  transcription, recording and stickers remain unbuilt. Page Templates opens a pane
+  of templates by category (Academic, Blank, Business, Planners and the user's own); a click
+  adds a page to the open section from one, and the open page can be saved as a template.
+  **Not built:** previews of the templates, a default template for new pages, and removing a
+  saved template from the pane (`page.remove_template` does it). Spreadsheet is
+  available through the existing GridCraft integration when installed.
+  Insert Space is
   OneNote's tool: with it in hand, a drag down the page moves every box and every stroke of
   ink that starts below where the drag began down by as far as it went, and a drag up moves
   them up, never past the top of the page; a guide shows the line and the band of room, Esc

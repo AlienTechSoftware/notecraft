@@ -59,6 +59,38 @@ Parameters:
 - path (required): the page, section or section group to copy
 - to (required): where the copy goes; it is put last there, and every node in it gets a new id
 
+## `page.templates`
+
+List the page templates, built in and saved: one line each, with the id, the category and the name, separated by tabs.
+
+No parameters.
+
+## `page.from_template`
+
+A new page started from a template (changes the tree).
+
+Parameters:
+
+- parent (required): the section (or page, for a subpage) the new page goes in, last
+- template (required): the template's id, as page.templates lists it (builtin:meeting-notes, saved:lab-report)
+
+## `page.save_template`
+
+Keep a page as a template.
+
+Parameters:
+
+- path (required): the page; its words, boxes, ink, files, paper and colour are kept, not its subpages
+- name (required): the template's name
+
+## `page.remove_template`
+
+Take away a page saved as a template.
+
+Parameters:
+
+- template (required): the saved template's id (saved:...). Built-in templates cannot be removed
+
 ## `node.move_up`
 
 Move a page up among its siblings (changes the tree).
