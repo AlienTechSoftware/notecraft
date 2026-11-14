@@ -1565,8 +1565,8 @@ impl NoteCraftApp {
         } else {
             self.typed_wait += 1;
             ctx.request_repaint();
-      }
-  }
+        }
+    }
     /// Keys for the pens, so a tablet's express keys or a keyboard can change tools without
     /// reaching for the ribbon (issue #44): Alt+1 to Alt+9 pick up that pen on the Draw tab's
     /// rack, and Alt+0 puts the pens down and goes back to typing. On a Mac, where Option and a
