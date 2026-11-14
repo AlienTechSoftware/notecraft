@@ -191,12 +191,12 @@ Parameters:
 
 ## `page.columns`
 
-How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned.
+How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded.
 
 Parameters:
 
 - path (required): the page
-- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight), with the heading as row 0; empty puts every table back to the usual width, borders and alignment. Without it, the current layout is reported
+- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported
 
 ## `page.justify`
 

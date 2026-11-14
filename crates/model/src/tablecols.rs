@@ -1,5 +1,5 @@
 //! How the tables of a page are laid out: how wide their columns are drawn, whether their
-//! borders are, and which way the words in each cell are aligned.
+//! borders are, and which way the words in each cell are aligned and what colour is behind them.
 //!
 //! None of it is part of the table. A CommonMark table has no room for a width, and an
 //! HTML table could carry it but would then say something the Markdown copy cannot, so the
@@ -52,8 +52,23 @@ impl Align {
     }
 }
 
+/// What one cell was given: an alignment for its words, a colour behind them, or both.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Cell {
+    align: Option<Align>,
+    /// The cell's shading (issue #169), one of the named colours a page or a section can carry,
+    /// so it reads in both light and dark themes.
+    shade: Option<crate::NodeColor>,
+}
+
+impl Cell {
+    fn is_bare(self) -> bool {
+        self.align.is_none() && self.shade.is_none()
+    }
+}
+
 /// What one table was given: the widths of its columns, which may be none, whether its
-/// borders are hidden, and the cells aligned some other way than the usual one. A cell is
+/// borders are hidden, and the cells given an alignment or a shading of their own. A cell is
 /// `(row, column)`, with the heading as row 0, the way the editor counts them.
 #[derive(Clone, Debug, PartialEq)]
 struct Layout {
@@ -61,7 +76,7 @@ struct Layout {
     widths: Vec<f32>,
     borderless: bool,
     /// Sorted by cell, so the written line is the same every time.
-    cells: Vec<((usize, usize), Align)>,
+    cells: Vec<((usize, usize), Cell)>,
 }
 
 impl Layout {
@@ -97,29 +112,51 @@ impl Widths {
         self.tables.retain(|l| !l.is_bare());
     }
 
+    fn cell(&self, block: usize, cell: (usize, usize)) -> Option<Cell> {
+        self.layout(block).and_then(|l| l.cells.iter().find(|(at, _)| *at == cell).map(|(_, c)| *c))
+    }
+
     /// How the words in cell `(row, column)` of the table at block `block` are aligned, when
     /// the cell was given an alignment of its own.
     pub fn align(&self, block: usize, cell: (usize, usize)) -> Option<Align> {
-        self.layout(block).and_then(|l| l.cells.iter().find(|(at, _)| *at == cell).map(|(_, a)| *a))
+        self.cell(block, cell).and_then(|c| c.align)
+    }
+
+    /// The colour behind cell `(row, column)` of the table at block `block`, when it was given
+    /// one (issue #169).
+    pub fn shade(&self, block: usize, cell: (usize, usize)) -> Option<crate::NodeColor> {
+        self.cell(block, cell).and_then(|c| c.shade)
     }
 
     /// Aligns the words in `cells` of the table at block `block`, or with `None` puts them
     /// back to the usual alignment. True when that changed anything.
     pub fn set_align(&mut self, block: usize, cells: &[(usize, usize)], align: Option<Align>) -> bool {
+        self.change_cells(block, cells, align.is_some(), |c| c.align = align)
+    }
+
+    /// Shades `cells` of the table at block `block` with `shade`, or with `None` takes their
+    /// colour away. Their words and alignment stay. True when that changed anything.
+    pub fn set_shade(&mut self, block: usize, cells: &[(usize, usize)], shade: Option<crate::NodeColor>) -> bool {
+        self.change_cells(block, cells, shade.is_some(), |c| c.shade = shade)
+    }
+
+    /// Changes what `cells` keep by `change`. `adds` says whether it can give a cell something,
+    /// so a table with nothing kept is not given an entry only to take nothing off it.
+    fn change_cells(&mut self, block: usize, cells: &[(usize, usize)], adds: bool, change: impl Fn(&mut Cell)) -> bool {
         if self.layout(block).is_none() {
-            if align.is_none() || self.tables.len() >= MAX_TABLES {
+            if !adds || self.tables.len() >= MAX_TABLES {
                 return false;
             }
             self.put(Layout::new(block));
         }
         let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return false };
         let before = layout.cells.clone();
-        for cell in cells {
-            layout.cells.retain(|(at, _)| at != cell);
-            if let Some(a) = align
-                && layout.cells.len() < MAX_CELLS
-            {
-                layout.cells.push((*cell, a));
+        for at in cells {
+            let mut cell = layout.cells.iter().find(|(have, _)| have == at).map(|(_, c)| *c).unwrap_or_default();
+            change(&mut cell);
+            layout.cells.retain(|(have, _)| have != at);
+            if !cell.is_bare() && layout.cells.len() < MAX_CELLS {
+                layout.cells.push((*at, cell));
             }
         }
         layout.cells.sort_by_key(|(at, _)| *at);
@@ -276,15 +313,17 @@ impl Widths {
 /// Reads the line a page keeps: `block:w,w,w`, one table after another, `;` between them. A
 /// `!` after the widths says the table's borders are hidden, and may stand alone: `3:!`.
 ///
-/// The cells of a table aligned some way of their own follow as a part of their own,
-/// `block@row.column=a,row.column=a`, where `a` is `l`, `c` or `r` (issue #170). It has no `:`
-/// in it, so a NoteCraft from before alignment skips it and keeps the widths.
+/// The cells of a table given something of their own follow as a part of their own,
+/// `block@row.column=a,row.column=a`. `a` is an alignment, `l`, `c` or `r` (issue #170), then a
+/// shading, `~` and a colour's name (issue #169): `1.2=c~yellow`, or `1.2=~yellow` for a cell
+/// with only a colour. The part has no `:` in it, so a NoteCraft from before it skips it and
+/// keeps the widths.
 ///
 /// Anything that does not read as that is dropped, because layout is a convenience and a
 /// page must open whatever its metadata says.
 pub fn parse(text: &str) -> Widths {
     let mut tables: Vec<Layout> = Vec::new();
-    let mut aligned: Vec<(usize, Vec<((usize, usize), Align)>)> = Vec::new();
+    let mut aligned: Vec<(usize, Vec<((usize, usize), Cell)>)> = Vec::new();
     for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()).take(MAX_TABLES * 2) {
         if !part.contains(':')
             && let Some((at, list)) = part.split_once('@')
@@ -293,13 +332,19 @@ pub fn parse(text: &str) -> Widths {
             if aligned.iter().any(|(have, _)| *have == at) {
                 continue;
             }
-            let cells: Vec<((usize, usize), Align)> = list
+            let cells: Vec<((usize, usize), Cell)> = list
                 .split(',')
                 .take(MAX_CELLS)
                 .filter_map(|entry| {
-                    let (cell, a) = entry.split_once('=')?;
+                    let (cell, what) = entry.split_once('=')?;
                     let (r, c) = cell.trim().split_once('.')?;
-                    Some(((r.trim().parse().ok()?, c.trim().parse().ok()?), Align::from_letter(a)?))
+                    let (a, shade) = match what.split_once('~') {
+                        Some((a, shade)) => (a, Some(crate::NodeColor::parse(shade)?)),
+                        None => (what, None),
+                    };
+                    let align = if a.trim().is_empty() { None } else { Some(Align::from_letter(a)?) };
+                    let kept = Cell { align, shade };
+                    (!kept.is_bare()).then_some(((r.trim().parse().ok()?, c.trim().parse().ok()?), kept))
                 })
                 .collect();
             if !cells.is_empty() {
@@ -350,7 +395,15 @@ pub fn write(widths: &Widths) -> String {
             parts.push(format!("{}:{}{}", l.block, list.join(","), if l.borderless { "!" } else { "" }));
         }
         if !l.cells.is_empty() {
-            let list: Vec<String> = l.cells.iter().map(|((r, c), a)| format!("{r}.{c}={}", a.letter())).collect();
+            let list: Vec<String> = l
+                .cells
+                .iter()
+                .map(|((r, c), cell)| {
+                    let a = cell.align.map(|a| a.letter().to_string()).unwrap_or_default();
+                    let shade = cell.shade.map(|s| format!("~{}", s.id())).unwrap_or_default();
+                    format!("{r}.{c}={a}{shade}")
+                })
+                .collect();
             parts.push(format!("{}@{}", l.block, list.join(",")));
         }
     }
@@ -557,6 +610,31 @@ mod tests {
         assert_eq!(write(&widths), "4@1.0=c");
     }
 
+    /// Issue #169: a cell's shading is kept beside its alignment, follows the cell, and goes
+    /// without taking the alignment with it.
+    #[test]
+    fn cell_shading_is_kept_beside_alignment() {
+        use crate::NodeColor;
+        let mut widths = parse("2:100,100");
+        assert_eq!(widths.shade(2, (1, 0)), None, "a cell has no colour until given one");
+        assert!(widths.set_shade(2, &[(1, 0), (1, 1)], Some(NodeColor::Yellow)));
+        assert!(widths.set_align(2, &[(1, 1)], Some(Align::Right)));
+        assert_eq!(write(&widths), "2:100,100; 2@1.0=~yellow,1.1=r~yellow");
+        assert_eq!(parse(&write(&widths)), widths, "and it reads back");
+        assert_eq!(widths.shade(2, (1, 1)), Some(NodeColor::Yellow));
+        assert_eq!(widths.align(2, (1, 1)), Some(Align::Right));
+        assert!(!widths.set_shade(2, &[(1, 0)], Some(NodeColor::Yellow)), "the same colour again changes nothing");
+        // Another colour replaces it; No Colour takes it away and leaves the alignment.
+        assert!(widths.set_shade(2, &[(1, 1)], Some(NodeColor::Blue)));
+        assert!(widths.set_shade(2, &[(1, 0), (1, 1)], None));
+        assert_eq!(write(&widths), "2:100,100; 2@1.1=r");
+        // A shaded cell follows its row like an aligned one, and a table can have only colours.
+        assert!(widths.set_shade(6, &[(2, 0)], Some(NodeColor::Green)));
+        assert!(widths.insert_row(6, 1));
+        assert_eq!(widths.shade(6, (3, 0)), Some(NodeColor::Green));
+        assert!(!widths.set_shade(9, &[(0, 0)], None), "nothing to take off a table with nothing kept");
+    }
+
     #[test]
     fn nonsense_alignment_is_dropped_not_obeyed() {
         assert!(parse("2@").is_empty());
@@ -565,6 +643,10 @@ mod tests {
         assert!(parse("2@1=c").is_empty());
         assert_eq!(parse("2@1.1=c,bad,0.0=r").align(2, (0, 0)), Some(Align::Right), "what can be read is kept");
         assert_eq!(parse("2@1.1=c; 2@1.1=r").align(2, (1, 1)), Some(Align::Center), "the first entry for a table wins");
+        assert!(parse("2@1.1=~").is_empty(), "a shading with no colour is nothing");
+        assert!(parse("2@1.1=~plaid").is_empty(), "nor is a colour with no name it knows");
+        assert!(parse("2@1.1=").is_empty());
+        assert_eq!(parse("2@1.1=c~plaid,0.0=~red").shade(2, (0, 0)), Some(crate::NodeColor::Red));
     }
 
     #[test]

@@ -3413,6 +3413,7 @@ impl NoteCraftApp {
             in_table: self.caret_in_table(),
             table_borders: self.caret_table_has_borders(),
             table_align: self.caret_cells_align(),
+            table_shade: self.caret_cells_shade(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
@@ -3865,6 +3866,7 @@ impl NoteCraftApp {
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
             ribbon::Act::TableAlign(align) => self.align_table_cells(align),
+            ribbon::Act::TableShade(shade) => self.shade_table_cells(shade),
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -4236,6 +4238,31 @@ impl NoteCraftApp {
         let mut aligns = cells.iter().map(|cell| ed.columns.align(at, *cell).unwrap_or(Align::Left));
         let first = aligns.next()?;
         aligns.all(|a| a == first).then_some(first)
+    }
+
+    /// The colour behind the cells Table > Shading would act on, when they all agree.
+    fn caret_cells_shade(&self) -> Option<Option<notecraft_model::NodeColor>> {
+        let ed = self.editor.as_ref()?;
+        let (at, cells) = self.caret_cells()?;
+        let mut shades = cells.iter().map(|cell| ed.columns.shade(at, *cell));
+        let first = shades.next()?;
+        shades.all(|s| s == first).then_some(first)
+    }
+
+    /// Table > Shading: a colour behind the caret's cell, or behind every picked cell, and no
+    /// other; No Colour takes it away. Kept with the page beside the cells' alignment, and
+    /// noted on the page's history step as the borders and the alignment are (issue #169).
+    fn shade_table_cells(&mut self, shade: Option<notecraft_model::NodeColor>) {
+        let Some((at, cells)) = self.caret_cells() else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        let Some(ed) = self.editor.as_mut() else { return };
+        if !ed.writable || !ed.columns.set_shade(at, &cells, shade) {
+            return;
+        }
+        Self::remember_edit(ed);
+        self.save_block_marks((true, false));
     }
 
     /// Table > Align Left, Center or Align Right: the words in the caret's cell, or in every

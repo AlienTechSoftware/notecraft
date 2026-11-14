@@ -866,6 +866,8 @@
 @id	ui.table_align_center_tip	Put the words in the middle of the cell
 @id	ui.table_align_right	Align\nRight
 @id	ui.table_align_right_tip	Line the words up with the right of the cell
+@id	ui.table_shading	Shading
+@id	ui.table_shading_tip	A colour behind the picked cells
 @id	ui.list_the_tagged_notes_and_go_to_them	List the tagged notes and go to them
 @id	ui.tags_summary	Tags Summary
 @id	ui.close_the_tags_summary	Close the tags summary

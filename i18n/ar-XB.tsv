@@ -866,6 +866,8 @@
 @id	ui.table_align_center_tip	[[RLI]]$$$Put the words in the middle of the cell@@@[[PDI]]
 @id	ui.table_align_right	[[RLI]]$$$Align@@@[[PDI]]\n[[RLI]]$$$Right@@@[[PDI]]
 @id	ui.table_align_right_tip	[[RLI]]$$$Line the words up with the right of the cell@@@[[PDI]]
+@id	ui.table_shading	[[RLI]]$$$Shading@@@[[PDI]]
+@id	ui.table_shading_tip	[[RLI]]$$$A colour behind the picked cells@@@[[PDI]]
 @id	ui.list_the_tagged_notes_and_go_to_them	[[RLI]]$$$List the tagged notes and go to them@@@[[PDI]]
 @id	ui.tags_summary	[[RLI]]$$$Tags Summary@@@[[PDI]]
 @id	ui.close_the_tags_summary	[[RLI]]$$$Close the tags summary@@@[[PDI]]
