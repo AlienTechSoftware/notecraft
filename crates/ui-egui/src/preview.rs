@@ -1085,7 +1085,7 @@ mod tests {
         std::fs::write(page.join("assets").join("logo.png"), crate::LOGO_PNG).expect("png");
         let uri = image_uri(&page, "assets/logo.png").expect("uri");
         let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
+        crate::pictures::install(&ctx);
         let mut last = String::new();
         for _ in 0..100 {
             match ctx.try_load_image(&uri, egui::SizeHint::default()) {
@@ -1141,7 +1141,7 @@ mod tests {
 ",
         );
         let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
+        crate::pictures::install(&ctx);
         let tokens = crate::theme::Theme { mode: crate::theme::Mode::Dark, accent: crate::theme::Accent::Default }.tokens();
         let mut tall = 0.0;
         for _ in 0..100 {
@@ -1172,7 +1172,7 @@ mod tests {
         std::fs::write(page.join("assets").join("logo.png"), crate::LOGO_PNG).expect("png");
         let blocks = blocks_for(PageFormat::Cmgfm, "![logo](assets/logo.png)\n");
         let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
+        crate::pictures::install(&ctx);
         let tokens = crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default }.tokens();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(8000.0, 8000.0));
         let tall_at = |zoom: f32| {
@@ -1203,7 +1203,7 @@ mod tests {
         let md = "# H\n\npara **b** *i* ~~s~~ `c` [l](https://x) $m$ ![a](assets/a.png)\n\n- [ ] t\n- [x] d\n1. n\n\n> q\n\n```mermaid\ngraph TD;\n```\n\n$$\nE\n$$\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n\n![alt](assets/x.png)\n";
         let blocks = blocks_for(PageFormat::Cmgfm, md);
         let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
+        crate::pictures::install(&ctx);
         let tokens = crate::theme::Theme { mode: crate::theme::Mode::Dark, accent: crate::theme::Accent::Default }.tokens();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             show(ui, &blocks, Path::new("."), &tokens, Some(Dir::Ltr), &Justified::default());

@@ -113,6 +113,9 @@ pub enum Act {
     TableBorders(bool),
     /// Align the words in the caret's cell, or in every picked cell (issue #170).
     TableAlign(notecraft_model::tablecols::Align),
+    /// A colour behind the caret's cell, or behind every picked cell; `None` takes it away
+    /// (issue #169).
+    TableShade(Option<notecraft_model::NodeColor>),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
@@ -430,6 +433,9 @@ pub struct View<'a> {
     /// How the words in the caret's cell, or in every picked cell, are aligned; `None` when
     /// the picked cells differ.
     pub table_align: Option<notecraft_model::tablecols::Align>,
+    /// The colour behind the caret's cell, or behind every picked cell: `Some(None)` for none,
+    /// and `None` when the picked cells differ.
+    pub table_shade: Option<Option<notecraft_model::NodeColor>>,
     /// True when GridCraft is installed, which is when a table can be handed to it.
     pub gridcraft: bool,
     /// The colour behind the open page, when it carries one of its own.
@@ -1760,6 +1766,69 @@ fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<
     picked
 }
 
+/// Table > Shading: a colour behind the caret's cell, or behind every picked cell (issue #169).
+/// The palette is the named colours a page or section can carry, washed the way the cell will
+/// be drawn, with No Colour first; the colour the cells have now is ringed.
+fn shading_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Picture, crate::tl_id!("ui.table_shading"), crate::tl_id!("ui.table_shading_tip"), t);
+    let open_id = egui::Id::new("ribbon-table-shading");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if !open {
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+        return;
+    }
+    let mut picked = false;
+    let area = egui::Area::new(open_id.with("area"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(resp.rect.left_bottom())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.label(egui::RichText::new(crate::tl_id!("ui.table_shading")).strong().color(t.text));
+                ui.horizontal(|ui| {
+                    let now = view.table_shade;
+                    if shade_swatch(ui, None, now == Some(None), t).clicked() {
+                        acts.push(Act::TableShade(None));
+                        picked = true;
+                    }
+                    for c in notecraft_model::NodeColor::ALL {
+                        if shade_swatch(ui, Some(c), now == Some(Some(c)), t).clicked() {
+                            acts.push(Act::TableShade(Some(c)));
+                            picked = true;
+                        }
+                    }
+                });
+            });
+        })
+        .response;
+    let clicked_away =
+        ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
+    if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        open = false;
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+/// One colour in the Shading palette, drawn as a cell shaded with it would be.
+fn shade_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: bool, t: &Tokens) -> egui::Response {
+    let side = 22.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let fill = colour.map_or(t.editor, |c| crate::pageedit::cell_shade(t, c));
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, fill);
+    let (edge, width) = if here { (t.accent, 2.0) } else { (t.faint, 1.0) };
+    painter.rect_stroke(rect, 3.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+    if colour.is_none() {
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "/", egui::FontId::proportional(13.0), t.muted);
+    }
+    let name = colour.map(notecraft_model::NodeColor::label).unwrap_or(crate::tl_id!("ui.no_colour"));
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, name));
+    resp.on_hover_text(name)
+}
+
 /// OneNote's Table button: a grid to pick the size from, the way OneNote picks one.
 ///
 /// Running the pointer over the grid lights the cells up to it and names the size, and a
@@ -2745,7 +2814,7 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big_on(ui, Icon::Table, label, tip, !hiding, t).clicked() {
             acts.push(Act::TableBorders(!hiding));
         }
-        soon(ui, Icon::Picture, "Shading", t);
+        shading_menu(ui, view, t, acts);
     });
     group(ui, crate::tl_id!("ui.alignment"), t, |ui| {
         // The words in the caret's cell, or in every cell picked (issue #170). The one lit is
