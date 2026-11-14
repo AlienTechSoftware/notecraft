@@ -248,6 +248,18 @@ Parameters:
 - q (required): text to find
 - limit (optional): at most this many hits (default 40, at most 500)
 
+## `tags.find`
+
+Find tagged notes.
+
+Parameters:
+
+- scope (optional): a page, section, section group or notebook to look in, relative to the notebooks folder; every open notebook when left out
+- page (optional): true to look in the scope page alone, without its subpages
+- tag (optional): only this tag, by its id (todo, important, question and the rest)
+- unchecked (optional): true for only the To Do items not yet ticked
+- limit (optional): at most this many lines (default 500, at most 2000)
+
 ## `notebook.open`
 
 Open a notebook or initialize an empty folder (changes the tree).

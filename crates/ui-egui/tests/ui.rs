@@ -9379,6 +9379,69 @@ fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
     assert_eq!(kept(&mut h, &page), "0@1.1=r", "the colour went and the alignment stayed");
 }
 
+/// Issue #166: Home > Find Tags opens a Tags Summary of the tagged notes in a scope, can keep
+/// only the unchecked To Do items, and takes the caret to a line when it is clicked.
+#[test]
+fn find_tags_lists_tagged_notes_and_goes_to_them() {
+    let (_t, mut app, s) = sample_app("ui-find-tags");
+    app.open_path(&s.html_page.to_string_lossy());
+    // Wide enough for the whole Home tab: Find Tags is near its right end.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "no summary until it is asked for");
+    h.get_by_label("Find Tags").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 1, "Find Tags opens the summary");
+    assert!(h.query_all_by_label_contains("is not built yet").next().is_none(), "Find Tags no longer says it is missing");
+
+    // It starts in the open page's section, which is not where the checklist is.
+    let lines = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/tagsSummary/lines").and_then(Value::as_array).cloned().unwrap_or_default()
+    };
+    let has = |lines: &[Value], text: &str, done: Option<bool>| {
+        lines
+            .iter()
+            .any(|l| l["text"] == text && l["tag"] == "todo" && l["done"] == json!(done) && l["page"] == "Format ideas" && l["section"] == "Ideas")
+    };
+    assert!(!has(&lines(&mut h), "Create a notebook", Some(true)), "the Projects section has no such line");
+    assert_eq!(h.query_all_by_label("Create a notebook").count(), 0);
+    h.get_by_label("All notebooks").click();
+    settle(&mut h);
+    let all = lines(&mut h);
+    assert!(has(&all, "Create a notebook", Some(true)), "every notebook lists the ticked To Do: {all:?}");
+    assert!(has(&all, "Decide the default format", Some(false)), "and the unticked one: {all:?}");
+    assert_eq!(h.query_all_by_label("Create a notebook").count(), 1, "one row a screen reader names once");
+    assert_eq!(h.query_all_by_label("Ideas > Format ideas").count(), 0, "where it is is part of the row, not a widget of its own");
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v.pointer("/tagsSummary/scope").and_then(Value::as_str), Some("all"), "{v}");
+    review(&mut h, "find_tags_all");
+
+    h.get_by_label("Only unchecked To Do items").click();
+    settle(&mut h);
+    let unchecked = lines(&mut h);
+    assert!(!has(&unchecked, "Create a notebook", Some(true)), "a ticked To Do is left out: {unchecked:?}");
+    assert!(has(&unchecked, "Try attaching a picture", Some(false)), "an unticked one stays: {unchecked:?}");
+    assert!(unchecked.iter().all(|l| l["done"] == json!(false)), "{unchecked:?}");
+
+    // A click opens its page with the caret on that line.
+    h.get_by_label("Try attaching a picture").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v.pointer("/page/title").and_then(Value::as_str), Some("Format ideas"), "the tagged line's page opened: {v}");
+    let caret = v.pointer("/page/caret/text").and_then(Value::as_str).unwrap_or_default();
+    assert!(caret.contains("Try attaching a picture"), "the caret is on the tagged line: {caret:?}");
+    review(&mut h, "find_tags_went_to_line");
+
+    // This page: the open page alone. The summary closes again.
+    h.get_by_label("This page").click();
+    settle(&mut h);
+    let page = lines(&mut h);
+    assert!(!page.is_empty() && page.iter().all(|l| l["page"] == "Format ideas"), "{page:?}");
+    h.get_by_label("Close the tags summary").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "the summary closes");
+}
 /// The page's sideways scroll bar as `ui.inspect` reports it: the track and the thumb, or `None`.
 fn horizontal_bar(h: &mut Harness<'_, NoteCraftApp>) -> Option<(egui::Rect, egui::Rect)> {
     let v = ask(h, "ui.inspect", json!({})).expect("inspect");
