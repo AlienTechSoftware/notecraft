@@ -37,8 +37,12 @@ Playground hosts with the Files API continue using their existing persistence pa
   and attachments, in HTML or CommonMark + GFM. It was run on 443 real backup files (see
   `docs/research/onenote-file-format/real-files.md`). Notebook and section colors are read from
   `.onetoc2` when available and section colors from `.one` metadata; arbitrary source colors
-  map lossily to NoteCraft's named palette. Still missing: section order, ink, tags, page dates,
-  `.onepkg` packages, password-protected sections, and an import command in the window.
+  map lossily to NoteCraft's named palette. A `.onepkg` package, given on its own or found in
+  the folder, is unpacked (LZX or MSZIP cabinet) into a temporary folder named after it and
+  imported as a notebook of that name; the window's Import File does the same through the
+  OfficeIMO bridge. A package's names are checked so nothing is written outside that folder.
+  Still missing: section order, ink, tags, page dates, password-protected sections, and an
+  import command in the window for the built-in importer.
   Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to
@@ -388,7 +392,9 @@ Playground hosts with the Files API continue using their existing persistence pa
   ellipse, circle, diamond, triangle and star - drawn by dragging out the two corners they
   sit between. A drawn shape is ink like any other stroke, so the eraser, Select and Undo
   Stroke all work on it; it is not kept as a shape that can be turned back into a perfect
-  circle later, and the file does not say which shape it was.
+  circle later, and the file does not say which shape it was. Alt+1 to Alt+9 pick up the
+  pen in that place on the rack, from anywhere, so a tablet's express keys can be bound to
+  pens; Alt+0 puts the pen down and goes back to typing. OneNote has no such keys.
   **Not built:** automatic shapes; the ruler and other stencils;
   ink replay; ink to text and ink to math; laser pointer; More Colours and the eyedropper
   in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223
