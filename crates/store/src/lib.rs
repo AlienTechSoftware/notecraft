@@ -19,6 +19,7 @@ pub mod page;
 pub mod recycle;
 pub mod search;
 pub mod settings;
+pub mod tags;
 pub mod testing;
 pub mod tree;
 

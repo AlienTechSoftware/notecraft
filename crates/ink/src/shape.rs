@@ -162,50 +162,68 @@ fn half_circle(at: Dab, r: f32, from: Dab, otherwise: (f32, f32)) -> Vec<(f32, f
 }
 
 /// Whether a circle of `radius` at (`x`, `y`) touches the stroke: the eraser's question,
-/// and the one a click on a drawing asks. Measured against the readings as drawn, with the
-/// width of the line taken in, so a fat stroke is easier to catch than a hair.
+/// and the one a click on a drawing asks. The saved outline includes the smoothed curve,
+/// changing pressure and round ends, so a hit follows the ink that is actually visible.
 pub fn touches(stroke: &Stroke, x: f32, y: f32, radius: f32) -> bool {
-    let reach = |d: &Dab| radius + width_at(stroke, d.pressure) / 2.0;
-    let mut dabs = stroke.dabs.iter();
-    let Some(mut prev) = dabs.next() else { return false };
-    if (prev.x - x).hypot(prev.y - y) <= reach(prev) {
+    if let Some((x0, y0, x1, y1)) = curve_bounds(stroke) {
+        let rounding = x0.abs().max(y0.abs()).max(x1.abs()).max(y1.abs()).max(1.0) * f32::EPSILON * 8.0;
+        let edge = width_at(stroke, 1.0) / 2.0 + radius.max(0.0) + rounding;
+        if x < x0 - edge || y < y0 - edge || x > x1 + edge || y > y1 + edge {
+            return false;
+        }
+    }
+    let ring = outline(stroke);
+    if encloses(&ring, x, y) {
         return true;
     }
-    for d in dabs {
-        if distance_to_segment(x, y, prev, d) <= reach(d) {
-            return true;
-        }
-        prev = d;
-    }
-    false
+    ring.iter().zip(ring.iter().cycle().skip(1)).any(|(&a, &b)| distance_to_segment(x, y, a, b) <= radius)
 }
 
-/// How far (`x`, `y`) is from the line between two readings.
-fn distance_to_segment(x: f32, y: f32, a: &Dab, b: &Dab) -> f32 {
-    let (vx, vy) = (b.x - a.x, b.y - a.y);
+/// A Catmull-Rom segment stays inside the hull of its equivalent Bezier controls.
+/// Unlike the raw readings' box, this also contains the curve's overshoot. Rejecting
+/// distant eraser movements here avoids building every stroke's outline each frame.
+fn curve_bounds(stroke: &Stroke) -> Option<(f32, f32, f32, f32)> {
+    let first = stroke.dabs.first()?;
+    let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x, first.y);
+    for (i, pair) in stroke.dabs.windows(2).enumerate() {
+        let (p1, p2) = (pair[0], pair[1]);
+        let p0 = stroke.dabs.get(i.saturating_sub(1)).copied().unwrap_or(p1);
+        let p3 = stroke.dabs.get(i + 2).copied().unwrap_or(p2);
+        for (x, y) in
+            [(p1.x + (p2.x - p0.x) / 6.0, p1.y + (p2.y - p0.y) / 6.0), (p2.x - (p3.x - p1.x) / 6.0, p2.y - (p3.y - p1.y) / 6.0), (p2.x, p2.y)]
+        {
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+        }
+    }
+    Some((x0, y0, x1, y1))
+}
+
+/// How far (`x`, `y`) is from one edge of the ink outline.
+fn distance_to_segment(x: f32, y: f32, a: (f32, f32), b: (f32, f32)) -> f32 {
+    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
     let len2 = vx * vx + vy * vy;
     if len2 <= f32::EPSILON {
-        return (a.x - x).hypot(a.y - y);
+        return (a.0 - x).hypot(a.1 - y);
     }
-    let t = (((x - a.x) * vx + (y - a.y) * vy) / len2).clamp(0.0, 1.0);
-    (a.x + vx * t - x).hypot(a.y + vy * t - y)
+    let t = (((x - a.0) * vx + (y - a.1) * vy) / len2).clamp(0.0, 1.0);
+    (a.0 + vx * t - x).hypot(a.1 + vy * t - y)
 }
 
-/// Whether a closed polygon covers (`x`, `y`) under the even-odd rule, which is how an SVG
-/// path with no `fill-rule` set to the contrary is filled. For tests that ask what a saved
-/// outline would actually paint.
-#[cfg(test)]
+/// Whether the outline covers a point under SVG's default nonzero winding rule.
 pub(crate) fn encloses(ring: &[(f32, f32)], x: f32, y: f32) -> bool {
-    let mut inside = false;
-    let mut j = ring.len().wrapping_sub(1);
-    for (i, &(xi, yi)) in ring.iter().enumerate() {
-        let (xj, yj) = ring.get(j).copied().unwrap_or((xi, yi));
-        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
-            inside = !inside;
+    let mut winding = 0;
+    for (&a, &b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+        let cross = (b.0 - a.0) * (y - a.1) - (x - a.0) * (b.1 - a.1);
+        if a.1 <= y && b.1 > y && cross > 0.0 {
+            winding += 1;
+        } else if a.1 > y && b.1 <= y && cross < 0.0 {
+            winding -= 1;
         }
-        j = i;
     }
-    inside
+    winding != 0
 }
 
 #[cfg(test)]
@@ -386,6 +404,70 @@ mod tests {
         assert!(!touches(&s, -40.0, 0.0, 1.0), "before it starts");
         assert!(touches(&s, -2.0, 0.0, 3.0), "but a fat eraser reaches the end of it");
         assert!(!touches(&Stroke::default(), 0.0, 0.0, 100.0), "a stroke with no readings is not there");
+    }
+
+    #[test]
+    fn hit_testing_follows_the_visible_pressure_width_in_either_direction() {
+        for reverse in [false, true] {
+            let mut stroke = Stroke::new(Tool::Pen, Rgb::BLACK, 40.0);
+            stroke.add(Dab::new(0.0, 40.0, 0.0));
+            stroke.add(Dab::new(100.0, 40.0, 1.0));
+            if reverse {
+                stroke.dabs.reverse();
+            }
+            let ring = outline(&stroke);
+            assert!(!encloses(&ring, 10.0, 54.0), "query is outside the visible narrow part");
+            assert!(encloses(&ring, 90.0, 54.0), "query is inside the visible thick part");
+            assert!(!touches(&stroke, 10.0, 54.0, 3.0), "eraser stays clear of narrow ink, reverse={reverse}");
+            assert!(touches(&stroke, 90.0, 54.0, 3.0), "eraser reaches thick ink, reverse={reverse}");
+            let mut drawing = crate::Drawing::new(150.0, 90.0);
+            drawing.add(stroke);
+            assert_eq!(crate::pick::at(&drawing, 10.0, 54.0, 3.0), None, "outside pointer does not select ink");
+            assert_eq!(crate::pick::at(&drawing, 90.0, 54.0, 3.0), Some(0), "inside pointer selects ink");
+            assert_eq!(drawing.erase_at(10.0, 54.0, 3.0), 0, "outside eraser preserves stroke");
+            assert_eq!(drawing.erase_at(90.0, 54.0, 3.0), 1, "inside eraser removes stroke");
+        }
+    }
+
+    #[test]
+    fn hits_include_the_smoothed_curve_dots_caps_and_eraser_radius() {
+        let mut curve = drawn(Tool::Pen, &[(0.0, 0.0, 1.0), (40.0, 40.0, 1.0), (80.0, 0.0, 1.0)]);
+        curve.width = 1.0;
+        let line = centre(&curve);
+        let at = line.iter().min_by(|a, b| (a.x - 20.0).abs().total_cmp(&(b.x - 20.0).abs())).expect("curve point");
+        assert!(encloses(&outline(&curve), at.x, at.y), "smoothed centre is visible ink");
+        assert!(touches(&curve, at.x, at.y, 0.0), "hit follows the curve rather than raw chords");
+
+        for count in [1, 5] {
+            let dot = drawn(Tool::Highlighter, &vec![(20.0, 20.0, 1.0); count]);
+            assert!(touches(&dot, 20.0, 20.0, 0.0), "stationary readings remain a dot");
+            assert!(touches(&dot, 24.0, 20.0, 1.1), "eraser radius reaches the dot edge");
+            assert!(!touches(&dot, 25.0, 20.0, 1.0), "eraser clear of dot preserves it");
+        }
+        let line = drawn(Tool::Highlighter, &[(20.0, 20.0, 1.0), (80.0, 20.0, 1.0)]);
+        assert!(touches(&line, 16.0, 20.0, 1.1), "eraser reaches the round start cap");
+        assert!(touches(&line, 84.0, 20.0, 1.1), "eraser reaches the round end cap");
+        assert!(!touches(&line, 85.0, 20.0, 1.0), "eraser remains outside the round cap");
+    }
+
+    #[test]
+    fn outline_containment_uses_nonzero_winding_for_retraced_loops() {
+        let twice = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0), (0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
+        assert!(encloses(&twice, 10.0, 10.0), "same-direction loops remain filled as in SVG");
+        assert!(!encloses(&twice, 30.0, 10.0), "outside remains empty");
+        let cancelling = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0), (0.0, 0.0), (0.0, 20.0), (20.0, 20.0), (20.0, 0.0)];
+        assert!(!encloses(&cancelling, 10.0, 10.0), "opposite winding cancels");
+    }
+
+    #[test]
+    fn hit_rejection_preserves_visible_spline_overshoot() {
+        let mut stroke = drawn(Tool::Pen, &[(0.0, 0.0, 1.0), (100.0, 0.0, 1.0), (101.0, 0.0, 1.0), (200.0, 200.0, 1.0)]);
+        stroke.width = 1.0;
+        let curve = centre(&stroke);
+        let ring = outline(&stroke);
+        let low = curve.iter().find(|point| point.y < -5.0 && encloses(&ring, point.x, point.y)).expect("visible spline overshoot beyond raw bounds");
+        assert!(touches(&stroke, low.x, low.y, 0.0), "conservative rejection retains overshoot");
+        assert!(!touches(&stroke, -100.0, -100.0, 3.0), "distant miss remains a miss");
     }
 
     #[test]

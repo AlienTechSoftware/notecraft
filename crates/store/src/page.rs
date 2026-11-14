@@ -679,6 +679,37 @@ mod tests {
         }
     }
 
+    /// A cell's alignment is part of the same line, so it is kept the same way in both formats,
+    /// beside widths and hidden borders, and the words of the page are not touched (issue #170).
+    #[test]
+    fn aligned_table_cells_survive_a_save_and_a_reopen() {
+        use notecraft_model::tablecols::Align;
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("table-align", format);
+            let body = match format {
+                PageFormat::Html => "<table><tr><th>A</th><th>B</th></tr><tr><td>one</td><td>1</td></tr></table>",
+                PageFormat::Cmgfm => "| A | B |\n|---|---|\n| one | 1 |\n",
+            };
+            save_body(&dir, body).expect("save");
+            let mut layout = table_columns(&dir).expect("read");
+            layout.set(0, 0, 200.0, &[160.0, 160.0]);
+            assert!(layout.set_borders(0, true));
+            assert!(layout.set_align(0, &[(0, 1), (1, 1)], Some(Align::Right)));
+            assert!(layout.set_align(0, &[(1, 0)], Some(Align::Center)));
+            set_table_columns(&dir, &layout).expect("write");
+
+            let back = table_columns(&dir).expect("read");
+            assert_eq!(back, layout, "{format:?}");
+            assert_eq!(back.align(0, (1, 1)), Some(Align::Right), "{format:?}");
+            assert_eq!(back.align(0, (1, 0)), Some(Align::Center), "{format:?}");
+            assert_eq!(back.of(0), Some([200.0, 160.0].as_slice()), "{format:?}: the widths are kept beside it");
+            assert!(back.borders_hidden(0), "{format:?}");
+            assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the body is the same text");
+            save_body(&dir, body).expect("save");
+            assert_eq!(table_columns(&dir).expect("read"), layout, "{format:?}: an edit of the words does not lose it");
+        }
+    }
+
     /// A justified paragraph is a line in the page's head, and the words of the page are
     /// not touched by it: a page saved and reopened comes back with the same body and the
     /// same paragraphs justified, in both formats.
