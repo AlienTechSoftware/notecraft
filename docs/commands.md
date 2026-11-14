@@ -191,12 +191,12 @@ Parameters:
 
 ## `page.columns`
 
-How wide the columns of a page's tables are, and which tables have their borders hidden.
+How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded.
 
 Parameters:
 
 - path (required): the page
-- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden; empty puts every table back to the usual width and borders. Without it, the current layout is reported
+- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported
 
 ## `page.justify`
 
@@ -247,6 +247,18 @@ Parameters:
 
 - q (required): text to find
 - limit (optional): at most this many hits (default 40, at most 500)
+
+## `tags.find`
+
+Find tagged notes.
+
+Parameters:
+
+- scope (optional): a page, section, section group or notebook to look in, relative to the notebooks folder; every open notebook when left out
+- page (optional): true to look in the scope page alone, without its subpages
+- tag (optional): only this tag, by its id (todo, important, question and the rest)
+- unchecked (optional): true for only the To Do items not yet ticked
+- limit (optional): at most this many lines (default 500, at most 2000)
 
 ## `notebook.open`
 

@@ -26,7 +26,7 @@ pub enum MediaKind {
 pub fn media_kind(name: &str) -> MediaKind {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" => MediaKind::Image,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "jxl" => MediaKind::Image,
         "mp4" | "webm" | "mov" | "mkv" | "avi" => MediaKind::Video,
         "mp3" | "wav" | "ogg" | "m4a" | "flac" => MediaKind::Audio,
         _ => MediaKind::Other,
@@ -470,6 +470,9 @@ mod tests {
     #[test]
     fn media_kinds() {
         assert_eq!(media_kind("a.PNG"), MediaKind::Image);
+        // Issue #29: a JPEG XL picture is a picture, not a file card.
+        assert_eq!(media_kind("photo.jxl"), MediaKind::Image);
+        assert_eq!(media_kind("photo.JXL"), MediaKind::Image);
         assert_eq!(media_kind("a.mp4"), MediaKind::Video);
         assert_eq!(media_kind("a.mp3"), MediaKind::Audio);
         assert_eq!(media_kind("a.pdf"), MediaKind::Other);

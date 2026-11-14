@@ -52,6 +52,10 @@ arboard = { version = "3.7", default-features = false, features = ["image-data",
 # The log facade. The app routes it into its log file (apps/notecraft/src/applog.rs).
 log = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# JPEG XL pictures (issue #29): a pure Rust decoder. It plugs into `image` through image's decoding
+# hooks, so egui_extras' loader draws a .jxl like any other picture. Decoding only; NoteCraft never
+# writes JPEG XL.
+jxl-oxide = { version = "0.12", default-features = false, features = ["image"] }
 hayro = { version = "=0.5.0", default-features = false, features = ["embed-fonts"] }
 # A drop-in SystemTime/Instant: std's own panics with "time not implemented on this
 # platform" on wasm32-unknown-unknown, which has no clock. This is std's types everywhere
