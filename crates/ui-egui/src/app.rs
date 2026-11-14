@@ -343,6 +343,14 @@ struct TagsPane {
     found: Vec<notecraft_store::tags::Tagged>,
 }
 
+/// The Page Templates pane (issue #173): every template, by category, each one a new page in
+/// the section; and a way to keep the open page as a template of its own.
+struct TemplatesPane {
+    templates: Vec<notecraft_store::page_templates::Template>,
+    /// What the open page will be called as a template.
+    name: String,
+}
+
 /// The section a page is in: the nearest folder above it that is a section.
 fn section_for(path: &Path) -> Option<PathBuf> {
     let mut current = path.parent()?;
@@ -844,6 +852,7 @@ pub struct NoteCraftApp {
     hits: Vec<Hit>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
+    templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
     mode_pref: ModePref,
@@ -1017,6 +1026,7 @@ impl NoteCraftApp {
             searched: String::new(),
             hits: Vec::new(),
             tags_pane: None,
+            templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
             mode_pref,
@@ -3831,6 +3841,11 @@ impl NoteCraftApp {
             }
             ribbon::Act::PageWidth => self.fit_page_width = true,
             ribbon::Act::FormatPainter(sticky) => self.pick_up_formatting(sticky),
+            ribbon::Act::PageTemplates => {
+                let name = self.templates_pane.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+                self.templates_pane = Some(TemplatesPane { templates: Vec::new(), name });
+                self.refresh_templates();
+            }
             ribbon::Act::FindTags => {
                 // OneNote looks in the section first; with no page open there is no section.
                 let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
@@ -5851,6 +5866,133 @@ impl NoteCraftApp {
     }
 
     /// The Tags Summary pane, on the right of the page as OneNote has it.
+    /// Reads the templates again: the built-in ones and those kept in the notebooks folder.
+    fn refresh_templates(&mut self) {
+        let found = notecraft_store::page_templates::list(self.session.root());
+        if let Some(pane) = self.templates_pane.as_mut() {
+            pane.templates = found;
+        }
+    }
+
+    /// A new page in the open section, started from the template, and opened.
+    fn page_from_template(&mut self, id: &str, name: &str) {
+        let Some(section) = self.current_section(self.session.tree()).map(|n| n.path.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_section_first_for_a_template"));
+            return;
+        };
+        self.save_now();
+        if let Some(Output::Path(page)) = self.run("page.from_template", &params(&[("parent", &path_str(&section)), ("template", id)])) {
+            self.open_page(&page);
+            self.say(crate::i18n::format_message_id("ui.page_from_template", &[("name", name)]));
+        }
+    }
+
+    /// Keeps the open page as a template called `name`.
+    fn save_page_as_template(&mut self, name: &str) {
+        let Some(page) = self.editor.as_ref().map(|ed| ed.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        self.save_now();
+        if let Some(Output::Path(_)) = self.run("page.save_template", &params(&[("path", &path_str(&page)), ("name", name)])) {
+            self.say(crate::i18n::format_message_id("ui.saved_as_template", &[("name", name)]));
+            if let Some(pane) = self.templates_pane.as_mut() {
+                pane.name.clear();
+            }
+            self.refresh_templates();
+        }
+    }
+
+    fn templates_panel(&mut self, ui: &mut Ui) {
+        let Some(pane) = self.templates_pane.as_mut() else { return };
+        let tokens = self.tokens;
+        let has_page = self.editor.is_some();
+        let mut close = false;
+        let mut chosen: Option<(String, String)> = None;
+        let mut keep: Option<String> = None;
+        egui::Panel::right("page-templates").resizable(true).default_size(280.0).size_range(220.0..=520.0).show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.strong(crate::tl_id!("ui.page_templates_title"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // A cross drawn with lines: the interface fonts have no glyph for one.
+                    let (rect, x) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                    x.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::tl_id!("ui.close_the_page_templates")));
+                    if x.hovered() {
+                        ui.painter().rect_filled(rect, 3.0, tokens.row_hover);
+                    }
+                    let c = rect.shrink(7.0);
+                    let stroke = egui::Stroke::new(1.4, tokens.text);
+                    ui.painter().line_segment([c.left_top(), c.right_bottom()], stroke);
+                    ui.painter().line_segment([c.right_top(), c.left_bottom()], stroke);
+                    if x.on_hover_text(crate::tl_id!("ui.close_the_page_templates")).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            ui.label(egui::RichText::new(crate::tl_id!("ui.page_templates_hint")).small().color(tokens.muted));
+            ui.separator();
+            let list_height = (ui.available_height() - 110.0).max(120.0);
+            egui::ScrollArea::vertical().id_salt("page-templates-list").max_height(list_height).auto_shrink([false, true]).show(ui, |ui| {
+                for category in notecraft_store::page_templates::Category::ALL {
+                    let mut items = pane.templates.iter().filter(|t| t.category == category).peekable();
+                    let mine = category == notecraft_store::page_templates::Category::Mine;
+                    if items.peek().is_none() && !mine {
+                        continue;
+                    }
+                    ui.add_space(4.0);
+                    ui.strong(crate::tl!(category.label()));
+                    if items.peek().is_none() {
+                        ui.weak(crate::tl_id!("ui.no_saved_templates"));
+                    }
+                    for template in items {
+                        let label = if mine { template.name.clone() } else { crate::tl!(&template.name).to_string() };
+                        let width = ui.available_width().max(60.0);
+                        let (rect, row) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
+                        row.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+                        if row.hovered() {
+                            ui.painter().rect_filled(rect, 3.0, tokens.row_hover);
+                        }
+                        ui.painter().text(
+                            rect.left_center() + vec2(10.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            &label,
+                            egui::FontId::proportional(13.5),
+                            tokens.text,
+                        );
+                        if row.on_hover_text(crate::tl_id!("ui.add_a_page_from_this_template")).clicked() {
+                            chosen = Some((template.id.clone(), label));
+                        }
+                    }
+                }
+            });
+            ui.separator();
+            ui.label(crate::tl_id!("ui.save_current_page_as_a_template"));
+            ui.add_enabled_ui(has_page, |ui| {
+                let field = egui::TextEdit::singleline(&mut pane.name).hint_text(crate::tl_id!("ui.template_name")).desired_width(f32::INFINITY);
+                let field = ui.add(field);
+                // Named for a screen reader: the grey hint inside the box is not a name.
+                field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, has_page, crate::tl_id!("ui.template_name")));
+                let entered = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let named = !pane.name.trim().is_empty();
+                let clicked = ui.add_enabled(named, egui::Button::new(crate::tl_id!("ui.save_as_template"))).clicked();
+                if named && (entered || clicked) {
+                    keep = Some(pane.name.trim().to_string());
+                }
+            });
+        });
+        if close {
+            self.templates_pane = None;
+            return;
+        }
+        if let Some((id, name)) = chosen {
+            self.page_from_template(&id, &name);
+        }
+        if let Some(name) = keep {
+            self.save_page_as_template(&name);
+        }
+    }
+
     fn tags_panel(&mut self, ui: &mut Ui) {
         let Some(pane) = self.tags_pane.as_mut() else { return };
         let tokens = self.tokens;
@@ -8305,6 +8447,10 @@ impl NoteCraftApp {
             "panes": {"split": self.split_panes, "organisers": self.organisers},
             // Home > Find Tags: where the Tags Summary looks and how many lines it lists, or
             // null while it is closed.
+            "pageTemplates": self.templates_pane.as_ref().map(|p| json!({
+                "templates": p.templates.iter().map(|t| json!({"id": t.id, "name": t.name, "category": t.category.id()})).collect::<Vec<_>>(),
+                "name": p.name,
+            })),
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
                 "unchecked": p.unchecked,
@@ -8502,6 +8648,7 @@ impl NoteCraftApp {
         self.status_bar(ui);
         self.side_panel(ui);
         self.tags_panel(ui);
+        self.templates_panel(ui);
         self.central(ui);
         self.paint_formatting(ctx);
         self.search_popup(ctx);

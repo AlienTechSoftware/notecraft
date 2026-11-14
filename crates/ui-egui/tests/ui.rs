@@ -9377,3 +9377,74 @@ fn content_wider_than_the_view_gets_a_horizontal_scroll_bar() {
         assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(0), "the bar took the press, not the pen: {state}");
     }
 }
+
+/// Issue #173: Insert > Page Templates lists the templates by category; one click adds a page
+/// to the open section from a template and opens it, and the open page can be kept as a
+/// template of its own, which then makes pages too. No page already there is written over.
+#[test]
+fn page_templates_add_pages_and_keep_this_page_as_one() {
+    let (_t, mut app, s) = sample_app("ui-page-templates");
+    let first = s.md_page.to_string_lossy().to_string();
+    app.open_path(&first);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 950.0));
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    let page = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let path = v.pointer("/page/path").and_then(Value::as_str).unwrap_or_default().to_string();
+        let title = v.pointer("/page/title").and_then(Value::as_str).unwrap_or_default().to_string();
+        (path, title, v)
+    };
+    let (first_path, _, _) = page(&mut h);
+
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    h.get_by_label("Page Templates").click();
+    settle(&mut h);
+    let (_, _, v) = page(&mut h);
+    let listed = v.pointer("/pageTemplates/templates").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert!(listed.len() >= 8, "the built-in templates are listed: {listed:?}");
+    review(&mut h, "page_templates_pane");
+
+    h.get_by_label("Meeting Notes").click();
+    settle(&mut h);
+    let (meeting, title, v) = page(&mut h);
+    assert_ne!(meeting, first_path, "a new page, not the one that was open");
+    assert_eq!(title, "Untitled page", "the new page has no title of its own yet");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Action items") && body.contains("- [ ]"), "the template's words: {body}");
+    assert!(v.pointer("/pageTemplates").is_some_and(|p| !p.is_null()), "the pane stays open");
+
+    // The page that was open before is as it was.
+    ask(&mut h, "ui.open", json!({"path": first.clone()})).expect("open");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), before, "nothing was written over the open page");
+
+    // Keep this page as a template, and make a page from it.
+    let field = h.get_by_label("Template name").rect().center();
+    ask(&mut h, "ui.click", json!({"x": field.x, "y": field.y})).expect("click the name field");
+    pump(&mut h);
+    h.input_mut().events.push(egui::Event::Text("Idea board".into()));
+    pump(&mut h);
+    h.get_by_label("Save as Template").click();
+    settle(&mut h);
+    let (_, _, v) = page(&mut h);
+    let mine: Vec<Value> = v
+        .pointer("/pageTemplates/templates")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| t["category"] == json!("mine"))
+        .collect();
+    assert_eq!(mine.len(), 1, "the page is a template now: {mine:?}");
+    assert_eq!(mine[0]["name"], json!("Idea board"));
+    review(&mut h, "page_templates_saved");
+
+    h.get_by_label("Idea board").click();
+    settle(&mut h);
+    let (copy, _, _) = page(&mut h);
+    assert!(copy != first_path && copy != meeting, "another new page: {copy}");
+    let words = h.state().body().unwrap_or_default().to_string();
+    assert!(words.contains("NoteCraft pages are **plain files**"), "the saved page's words: {words}");
+}

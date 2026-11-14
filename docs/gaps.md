@@ -448,7 +448,11 @@ Playground hosts with the Files API continue using their existing persistence pa
 - **The Insert tab** carries OneNote's groups. Working: tables, a file attachment, a
   picture, a link, the three time stamps, an equation, a symbol picker, insert space, and
   NoteCraft's own Mermaid diagram. File printout, screen clipping, online video,
-  transcription, recording, page templates and stickers remain unbuilt. Spreadsheet is
+  transcription, recording and stickers remain unbuilt. Page Templates opens a pane
+  of templates by category (Academic, Blank, Business, Planners and the user's own); a click
+  adds a page to the open section from one, and the open page can be saved as a template.
+  **Not built:** previews of the templates, a default template for new pages, and removing a
+  saved template from the pane (`page.remove_template` does it). Spreadsheet is
   available through the existing GridCraft integration when installed.
 - **Unread and author history** are not built. Page version
   history stores snapshots of the page's main file; changes to attached files and drawings
