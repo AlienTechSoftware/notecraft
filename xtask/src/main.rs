@@ -505,7 +505,13 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
     match task {
         "fmt" => cargo(&root, &["fmt", "--all", "--", "--check"]),
         "clippy" => cargo(&root, &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
-        "test" => cargo(&root, &["test", "--workspace"]),
+        // The UI tests share a single offscreen wgpu device; concurrent rendering and texture
+        // readback collide on Windows. They run one test at a time, while the other crates run
+        // in parallel.
+        "test" => {
+            cargo(&root, &["test", "--workspace", "--exclude", "notecraft-ui-egui"])?;
+            cargo(&root, &["test", "-p", "notecraft-ui-egui", "--", "--test-threads=1"])
+        }
         "i18n-audit" => {
             if !options.is_empty() {
                 return Err("usage: cargo xtask i18n-audit".into());
