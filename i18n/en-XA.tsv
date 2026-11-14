@@ -882,3 +882,5 @@
 @id	ui.no_tagged_notes_here	$$$No tagged notes here.@@@
 @id	ui.tags_empty_line	$$$(an empty line)@@@
 @id	ui.scroll_the_page_sideways	$$$Scroll the page sideways@@@
+@id	ui.pen_keys_typing	$$$Typing (Alt+0)@@@
+@id	ui.pen_keys_picked	$$$Pen {number} (Alt+{number})@@@

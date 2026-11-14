@@ -1433,6 +1433,23 @@ impl NoteCraftApp {
         }
     }
 
+    /// Keys for the pens, so a tablet's express keys or a keyboard can change tools without
+    /// reaching for the ribbon (issue #44): Alt+1 to Alt+9 pick up that pen on the Draw tab's
+    /// rack, and Alt+0 puts the pens down and goes back to typing. On a Mac, where Option and a
+    /// digit also type a character, the character is dropped so it does not land in the note.
+    fn pen_keys(&mut self, ctx: &Context) {
+        const DIGITS: [Key; 10] = [Key::Num0, Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9];
+        let Some(n) = ctx.input_mut(|i| DIGITS.iter().position(|key| i.consume_key(Modifiers::ALT, *key))) else { return };
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(_))));
+        if n == 0 {
+            self.ribbon_act(ribbon::Act::InkPointer(ribbon::Pointer::Write));
+            self.say(crate::tl_id!("ui.pen_keys_typing"));
+        } else if n <= self.rack.len() {
+            self.ribbon_act(ribbon::Act::InkPen(n - 1));
+            self.say(crate::i18n::format_message_id("ui.pen_keys_picked", &[("number", &n.to_string())]));
+        }
+    }
+
     /// The keys and buttons that move through the pages that were opened. Undo and Redo keys
     /// are the page history's own, taken below.
     fn nav_keys(&mut self, ctx: &Context) {
@@ -8569,6 +8586,7 @@ impl NoteCraftApp {
             self.focus_search = true;
         }
         self.nav_keys(ctx);
+        self.pen_keys(ctx);
         self.direction_keys(ctx);
         self.hierarchy_keys(ctx);
         self.restore_last_page();
