@@ -2051,6 +2051,14 @@ impl NoteCraftApp {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
             let audit = notecraft_formats::boxes::span_audit(&page.body, &blocks);
             log::debug!("page read span audit: page={:?} raw_span_tags={} styled_spans={}", dir, audit.raw_tags, audit.styled);
+            // What the editor will show and edit: any block whose edit text still carries markup
+            // is logged, with its index and the text, so a raw tag on screen is traceable.
+            for (index, block) in blocks.iter().enumerate() {
+                let shown = crate::pageedit::caret_text(block);
+                if shown.contains("<span") || shown.contains("**") {
+                    log::warn!("raw markup in edit text: page={:?} block={index} shown={shown:?}", dir);
+                }
+            }
             let older = notecraft_store::page::containers(dir).unwrap_or_default();
             let arranged = in_the_text.is_some() || !older.is_empty();
             let mut boxes = in_the_text.unwrap_or(older);
