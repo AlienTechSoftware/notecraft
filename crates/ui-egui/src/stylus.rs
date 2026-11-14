@@ -61,12 +61,16 @@ pub struct Stylus {
     samples: u64,
     diagnostics: Diagnostics,
     last_event: &'static str,
+    /// Where a pen came down on the glass this frame, if one did: a touch that reports a force
+    /// as it starts. What the window uses to pick the pen up by itself (issue #9).
+    landed: Option<egui::Pos2>,
 }
 
 impl Stylus {
     /// Takes this frame's input events. Call it once per frame, before anything asks.
     pub fn update(&mut self, events: &[egui::Event]) {
         self.diagnostics.frames += 1;
+        self.landed = None;
         for e in events {
             self.diagnostics.events += 1;
             match e {
@@ -76,7 +80,7 @@ impl Stylus {
                 egui::Event::Touch { .. } => self.diagnostics.touch_events += 1,
                 _ => {}
             }
-            let egui::Event::Touch { phase, force, .. } = e else { continue };
+            let egui::Event::Touch { phase, force, pos, .. } = e else { continue };
             self.last_event = if force.is_some() { "touch with force" } else { "touch without force" };
             if force.is_some() {
                 self.diagnostics.touch_with_force += 1;
@@ -91,6 +95,9 @@ impl Stylus {
             }
             match phase {
                 egui::TouchPhase::Start | egui::TouchPhase::Move => {
+                    if *phase == egui::TouchPhase::Start && reported.is_some() {
+                        self.landed = Some(*pos);
+                    }
                     self.down = true;
                     if self.pen {
                         self.pressure = reported.unwrap_or(0.0);
@@ -139,6 +146,12 @@ impl Stylus {
         (self.highest, self.samples)
     }
 
+    /// Where a pen touched down this frame, in points: only a contact that reports a force as it
+    /// starts, so a mouse or a finger on a touch screen never counts.
+    pub fn landed(&self) -> Option<egui::Pos2> {
+        self.landed
+    }
+
     /// Event counters for the pressure diagnostic canvas and troubleshooting logs.
     pub fn diagnostics(&self) -> Diagnostics {
         self.diagnostics
@@ -179,6 +192,22 @@ mod tests {
         // Lifting ends the contact.
         s.update(&[touch(egui::TouchPhase::End, Some(0.1))]);
         assert_eq!(s.sample(), Sample { pressure: 0.0, pen: true, down: false });
+    }
+
+    /// Issue #9: a pen coming down is noticed for the one frame it happens in; a finger with no
+    /// force, or a pen that is already down and moving, is not a pen landing.
+    #[test]
+    fn a_pen_landing_is_seen_for_its_frame_only() {
+        let mut s = Stylus::default();
+        s.update(&[touch(egui::TouchPhase::Start, None)]);
+        assert_eq!(s.landed(), None, "a finger is not a pen");
+        s.update(&[touch(egui::TouchPhase::End, None)]);
+        s.update(&[touch(egui::TouchPhase::Start, Some(0.4))]);
+        assert_eq!(s.landed(), Some(egui::Pos2::ZERO), "a pen came down");
+        s.update(&[touch(egui::TouchPhase::Move, Some(0.6))]);
+        assert_eq!(s.landed(), None, "only the frame it came down in");
+        s.update(&[]);
+        assert_eq!(s.landed(), None);
     }
 
     #[test]

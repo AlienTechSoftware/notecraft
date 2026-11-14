@@ -420,6 +420,17 @@ pub fn held_area(ctx: &egui::Context) -> Option<egui::Rect> {
     ctx.data(|d| d.get_temp::<egui::Rect>(held_area_id()))
 }
 
+/// Where the window asks the ink layer to take the press that is down now as its own: for the
+/// one frame after a pen touching the page picked up a pen (issue #9).
+pub fn claim_press_id() -> egui::Id {
+    egui::Id::new("notecraft-ink-claim-press")
+}
+
+/// Asks the ink layer, the next time it is drawn, to take the press that is down as its own.
+pub fn claim_press(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(claim_press_id(), true));
+}
+
 fn held_area_id() -> egui::Id {
     egui::Id::new("inkpad-held-area")
 }
@@ -575,7 +586,15 @@ pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pe
 
     // While a pen is in hand the whole page belongs to it, so this goes on last and over
     // everything: a press must not land in the words underneath and move the caret.
-    let resp = ui.interact(body, ui.id().with("ink-layer"), Sense::click_and_drag());
+    let layer = ui.id().with("ink-layer");
+    // A pen that came down on the page while the caret was the pointer has just picked up a
+    // pen (issue #9). Its press began before this layer was here, so egui gave it to whatever
+    // was under it last frame: hand it to the layer, so the touch that switched the tool also
+    // draws.
+    if ui.data_mut(|d| d.remove_temp::<bool>(claim_press_id())).unwrap_or(false) && ui.input(|i| i.pointer.primary_down()) {
+        ui.ctx().set_dragged_id(layer);
+    }
+    let resp = ui.interact(body, layer, Sense::click_and_drag());
     ui.ctx().set_cursor_icon(match pen.pointer {
         Pointer::Erase => egui::CursorIcon::NotAllowed,
         Pointer::Pick => egui::CursorIcon::Grab,
