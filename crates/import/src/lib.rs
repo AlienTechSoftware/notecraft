@@ -13,6 +13,7 @@
 pub mod convert;
 pub mod discover;
 pub mod officeimo;
+pub mod package;
 
 use convert::{Loss, convert_page};
 use discover::{Planned, Scan};
@@ -94,8 +95,10 @@ pub struct Report {
     pub sections_planned: usize,
     /// Older dated copies that were not imported because a newer one was.
     pub older_copies_left: usize,
-    /// `.onepkg` files seen and not imported.
+    /// `.onepkg` packages that could not be unpacked, and so were not imported.
     pub ignored: usize,
+    /// `.onepkg` packages unpacked and imported from (issue #17).
+    pub packages: usize,
     /// `.onetoc2` files found, successfully read, or failed to read or parse.
     pub toc_files_found: usize,
     pub toc_files_read: usize,
@@ -128,8 +131,11 @@ impl fmt::Display for Report {
                 self.toc_files_found, self.toc_files_read, self.toc_files_failed
             )?;
         }
+        if self.packages > 0 {
+            writeln!(f, "  OneNote packages unpacked: {}", self.packages)?;
+        }
         if self.ignored > 0 {
-            writeln!(f, "  OneNote package files noticed, not imported yet: {}", self.ignored)?;
+            writeln!(f, "  OneNote packages that could not be unpacked: {}", self.ignored)?;
         }
         if !self.dry_run {
             writeln!(
@@ -177,12 +183,38 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
     if !options.source.exists() {
         return Err(format!("the source {} does not exist", options.source.display()));
     }
-    let scan: Scan = discover::scan(&options.source);
+    // A package given on its own is not a section file: what is inside it is scanned instead.
+    let mut scan: Scan = if package::is_package(&options.source) { Scan::default() } else { discover::scan(&options.source) };
+    // OneNote packages: each is unpacked into a folder named after it, and what is inside is
+    // imported as a notebook of that name. The folder is removed when the run ends.
+    let packages: Vec<PathBuf> = if package::is_package(&options.source) { vec![options.source.clone()] } else { std::mem::take(&mut scan.ignored) };
+    let scratch = if packages.is_empty() { None } else { Some(package::Scratch::new()?) };
+    let mut unpacked = 0;
+    let mut failed: Vec<Skipped> = Vec::new();
+    for (i, pkg) in packages.iter().enumerate() {
+        let Some(scratch) = scratch.as_ref() else { break };
+        let name = clean_title(&pkg.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), "OneNote package");
+        // The notebook's name is the folder's: one folder per package, under a root of its own,
+        // so two packages never share a notebook folder however they are named.
+        let root = scratch.path.join(i.to_string());
+        let folder = package::safe_name(&name).map_or_else(|| root.join("OneNote package"), |rel| root.join(rel));
+        match package::unpack(pkg, &folder) {
+            Ok(_) => {
+                let inner = discover::scan(&root);
+                scan.files.extend(inner.files);
+                scan.tocs.extend(inner.tocs);
+                unpacked += 1;
+            }
+            Err(reason) => failed.push(Skipped { label: pkg.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), reason }),
+        }
+    }
     let mut report = Report {
         dry_run: options.dry_run,
         files_found: scan.files.len(),
-        ignored: scan.ignored.len(),
+        ignored: failed.len(),
+        packages: unpacked,
         toc_files_found: scan.tocs.len(),
+        skipped: failed,
         ..Report::default()
     };
     let loaded_tocs: Vec<LoadedToc> = scan

@@ -38,6 +38,7 @@ pub mod navhistory;
 pub mod pageedit;
 pub mod pagemenu;
 pub mod pagetext;
+pub mod pictures;
 pub mod preview;
 pub(crate) mod printout;
 pub mod quickaccess;
