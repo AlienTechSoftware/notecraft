@@ -346,6 +346,12 @@ fn size_of_block(block: &Block) -> f32 {
     }
 }
 
+/// The font size for a list item marker (bullet or number), matching the body text size.
+pub(crate) fn item_marker_size(spans: &[Span], zoom: f32) -> f32 {
+    let base = 14.5 * zoom;
+    spans.iter().filter(|s| s.image.is_none()).find_map(|s| s.font_size).map_or(base, |points| base * f32::from(points) / 11.0)
+}
+
 /// The link under a point in a block the bidi painter drew, if the point is on one. `at` is
 /// measured from the block's top left corner and `width` is the block's width. `None` for a
 /// block egui drew (the caller maps those through egui's own layout) and for a point on no
@@ -605,8 +611,13 @@ pub(crate) fn show_block_zoomed(
                             }
                         }
                         None => {
-                            // i18n-exempt: This glyph is the visual bullet marker for an unordered list.
-                            ui.label(RichText::new(if *ordered { format!("{number}.") } else { "\u{2022}".to_string() }).color(tokens.muted));
+                            let marker_size = item_marker_size(spans, zoom);
+                            ui.label(
+                                // i18n-exempt: This glyph is the visual bullet marker for an unordered list.
+                                RichText::new(if *ordered { format!("{number}.") } else { "\u{2022}".to_string() })
+                                    .size(marker_size)
+                                    .color(tokens.muted),
+                            );
                         }
                     }
                     ui.vertical(|ui| match tagged(spans) {
@@ -1209,5 +1220,83 @@ mod tests {
             show(ui, &blocks, Path::new("."), &tokens, Some(Dir::Ltr), &Justified::default());
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn list_marker_size_follows_effective_body_font_size_and_zoom() {
+        let empty: [Span; 0] = [];
+        let default_span = [Span { text: "default".into(), ..Span::default() }];
+        let larger_span = [Span { text: "larger".into(), font_size: Some(18), ..Span::default() }];
+        let huge_span = [Span { text: "huge".into(), font_size: Some(24), ..Span::default() }];
+
+        // Default size at 100% zoom matches base preview body size (14.5).
+        assert_eq!(item_marker_size(&empty, 1.0), 14.5);
+        assert_eq!(item_marker_size(&default_span, 1.0), 14.5);
+
+        // Larger sizes scale proportionally with font size in points relative to 11 pt.
+        assert_eq!(item_marker_size(&larger_span, 1.0), 14.5 * 18.0 / 11.0);
+        assert_eq!(item_marker_size(&huge_span, 1.0), 14.5 * 24.0 / 11.0);
+
+        // Zoom scales proportionally for both default and custom font sizes.
+        assert_eq!(item_marker_size(&default_span, 1.5), 14.5 * 1.5);
+        assert_eq!(item_marker_size(&larger_span, 2.0), 14.5 * 2.0 * 18.0 / 11.0);
+
+        // An inline image before the text does not prevent finding the text font size.
+        let with_image =
+            [Span { image: Some("assets/icon.png".into()), ..Span::default() }, Span { text: "item".into(), font_size: Some(20), ..Span::default() }];
+        assert_eq!(item_marker_size(&with_image, 1.0), 14.5 * 20.0 / 11.0);
+    }
+
+    #[test]
+    fn list_items_render_with_marker_scaled_for_ordered_and_unordered() {
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let ctx = egui::Context::default();
+        crate::fonts::install_once(&ctx);
+
+        let make_item = |ordered: bool, font_size: Option<u8>| Block::Item {
+            ordered,
+            number: 1,
+            task: None,
+            depth: 0,
+            spans: vec![Span { text: "Item text".into(), font_size, ..Span::default() }],
+        };
+
+        let height_of = |block: &Block, zoom: f32| {
+            let mut height = 0.0;
+            let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let out =
+                    show_block_zoomed(ui, block, 0, Path::new("."), &tokens, false, Some(Dir::Ltr), None, None, ui.id().with("item_test"), zoom);
+                height = out.response.rect.height();
+            });
+            frame.textures_delta.clear();
+            height
+        };
+
+        // Unordered list: default size vs larger size.
+        let bullet_default = height_of(&make_item(false, None), 1.0);
+        let bullet_large = height_of(&make_item(false, Some(24)), 1.0);
+        assert!(bullet_default > 10.0, "default bullet item renders: {bullet_default}");
+        assert!(bullet_large > bullet_default * 1.3, "larger bullet item is taller: {bullet_default} -> {bullet_large}");
+
+        // Ordered list: default size vs larger size.
+        let number_default = height_of(&make_item(true, None), 1.0);
+        let number_large = height_of(&make_item(true, Some(24)), 1.0);
+        assert!(number_default > 10.0, "default numbered item renders: {number_default}");
+        assert!(number_large > number_default * 1.3, "larger numbered item is taller: {number_default} -> {number_large}");
+
+        // Zoom scaling increases rendered height.
+        let bullet_zoomed = height_of(&make_item(false, Some(24)), 2.0);
+        assert!(bullet_zoomed > bullet_large * 1.6, "zooming scales item height: {bullet_large} -> {bullet_zoomed}");
+
+        // Nested and RTL items render without panicking.
+        let rtl_nested = Block::Item {
+            ordered: false,
+            number: 1,
+            task: None,
+            depth: 2,
+            spans: vec![Span { text: "مرحبا".into(), font_size: Some(18), ..Span::default() }],
+        };
+        let rtl_height = height_of(&rtl_nested, 1.0);
+        assert!(rtl_height > 10.0, "rtl nested item renders: {rtl_height}");
     }
 }
