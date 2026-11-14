@@ -380,7 +380,7 @@ impl Pad {
         self.dirty |= moved;
         self.touched |= moved;
         moved
-  }
+    }
     /// Insert Space (issue #164): every stroke whose top is at or below `y`, in page points,
     /// moves down by `dy`, or up when `dy` is negative. True when any moved.
     pub fn shift_below(&mut self, y: f32, dy: f32) -> bool {
