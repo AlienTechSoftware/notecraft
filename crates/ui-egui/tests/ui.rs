@@ -244,6 +244,30 @@ fn interface_language_choice_is_saved_and_restored_in_a_new_app() {
     let _ = restored.get_by_label("Langue de l\u{2019}interface");
 }
 
+/// Issue #253: someone asked for a log may be on an old build that does not have the option they
+/// were told about. File > About and File > Options say which version is running and have a
+/// "Check for updates" button. Nothing is fetched or opened until it is pressed, so the test
+/// does not press it: what pressing does is covered by the tests in `update.rs`.
+#[test]
+fn about_and_options_show_the_version_and_an_update_button() {
+    use notecraft_ui_egui::backstage::VERSION;
+    for page in ["About", "Options"] {
+        let t = TempDir::new("ui-check-for-updates");
+        let s = session(&t);
+        s.settings.set("ui_language", "en").expect("set English UI");
+        let mut app = NoteCraftApp::new(s);
+        app.set_redact_paths(true);
+        let mut h = harness(app, LIGHT);
+        h.state_mut().open_backstage_page(page);
+        pump(&mut h);
+        let _ = h.get_by_label(&format!("You are running NoteCraft {VERSION}."));
+        let _ = h.get_by_label("Check for updates");
+        let _ = h.get_by_label_contains("Nothing is sent until you press the button.");
+        assert!(h.output().platform_output.commands.is_empty(), "{page}: nothing is opened before the button is pressed");
+        review(&mut h, &format!("check_for_updates_{}", page.to_lowercase()));
+    }
+}
+
 /// Issue #63: on a high-resolution screen the ribbon and the menus can come out too small to
 /// read. File > Options has an interface size that draws the whole window larger, and it is
 /// there again when the app starts.
@@ -9242,6 +9266,28 @@ fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
     settle(&mut h);
     let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
     assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
+}
+
+/// Issue #256: the View tab had a second Window group after Source, repeating New window and
+/// Dock to desktop and calling the working Always on top "not built". Each window action is
+/// on the tab once, and Always on top is the working toggle.
+#[test]
+fn the_view_tab_has_one_window_group_and_one_entry_per_action() {
+    let (t, app, s) = sample_app("ui-view-one-window-group");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Window").count(), 1, "one Window group");
+    assert_eq!(h.query_all_by_label("Always on top (not built)").count(), 0, "Always on top is not called unbuilt");
+    assert_eq!(h.query_all_by_label("New window (not built)").count(), 1, "New window is listed once");
+    assert_eq!(h.query_all_by_label("Dock to desktop (not built)").count(), 1, "Dock to desktop is listed once, in Views");
+    h.get_by_label("Always on top").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("always_on_top = \"true\""), "the one Always on top toggle works:\n{saved}");
+    review(&mut h, "view_tab_one_window_group");
 }
 
 /// Every straight line painted in the last frame, as its two ends.

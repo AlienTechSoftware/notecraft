@@ -168,6 +168,26 @@ Android arm64 artifacts. They are not official public releases until the separat
 the draft is reviewed. A maintainer must complete native Intel and clean-machine testing,
 Developer ID signing and notarization before public macOS distribution.
 
+## In-app updates
+
+File > About and File > Options have **Check for updates** (`crates/ui-egui/src/update.rs`,
+issue #253). Nothing is fetched until it is pressed. It reads GitHub's
+`releases/latest`, and when that release is newer than the running version it downloads the
+file for this computer, checks it against the SHA-256 GitHub gives with the file (or the
+release's `SHA256SUMS.txt`), and puts it in place:
+
+| Install | File it downloads | What happens |
+|---|---|---|
+| Windows, in Program Files | `notecraft-<version>-windows-x64.msi` | NoteCraft closes, `msiexec /passive` upgrades it, NoteCraft starts again |
+| Windows, anywhere else | `notecraft-<version>-windows-x64-portable.zip` | NoteCraft closes, the zip is copied over its folder, NoteCraft starts again |
+| Linux AppImage | `notecraft-<version>-linux-<arch>.AppImage` | NoteCraft closes, the new AppImage replaces the old one and starts |
+| Linux deb or rpm (`/usr/bin`) | `notecraft-<version>-linux-<arch>.deb` / `.rpm` | handed to the system's software installer |
+| macOS app bundle | `NoteCraft-<version>-macos-<arch>.dmg` | NoteCraft closes, the bundle is replaced and starts; if it cannot be, the disk image opens |
+| anything else (web, Android, a build) | none | the releases page is offered |
+
+The updater finds files by these name endings, so **renaming a release file breaks updates
+for that platform**. A download that does not match its checksum is deleted and never run.
+
 ## Signing
 
 `packaging/windows/sign.ps1` signs with `WINDOWS_CERTIFICATE` (a base64 PFX) or with Azure Trusted
