@@ -116,6 +116,8 @@ pub enum Act {
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
     Table(crate::pageedit::TableEdit),
+    /// Table > Delete Table: the whole table the caret is in.
+    DeleteTable,
     /// Pick a block of cells of the table the caret is in.
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
@@ -2819,7 +2821,9 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.delete"), t, |ui| {
-        soon(ui, Icon::Table, "Delete\nTable", t);
+        if big(ui, Icon::Table, crate::tl_id!("ui.delete_table_2"), crate::tl_id!("ui.take_the_whole_table_out"), t).clicked() {
+            acts.push(Act::DeleteTable);
+        }
         if big(ui, Icon::TableColumn, crate::tl_id!("ui.delete_columns_2"), crate::tl_id!("ui.take_the_caret_s_column_out"), t).clicked() {
             acts.push(Act::Table(E::DeleteColumn));
         }

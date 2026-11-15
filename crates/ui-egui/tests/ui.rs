@@ -1313,8 +1313,11 @@ fn clearing_a_page_title_makes_it_untitled() {
     app.open_path(&s.html_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
     settle(&mut h);
-    let title =
-        h.get_all_by_role(egui::accesskit::Role::TextInput).find(|node| node.value().as_deref() == Some("Project X")).expect("the title box").rect();
+    let title = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|node| node.value().as_deref() == Some("Project X"))
+        .expect("the title box")
+        .rect();
     ask(&mut h, "ui.click", json!({"x": title.center().x, "y": title.center().y})).expect("click the title");
     settle(&mut h);
     ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
@@ -1345,6 +1348,46 @@ fn clearing_a_page_title_makes_it_untitled() {
     settle(&mut h);
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state.pointer("/page/titleArea").and_then(Value::as_str), Some(""), "still untitled when opened again");
+}
+
+/// Issue #316: on a phone a long title was cut off at the page's edge ("Welcome to NoteCraft
+/// (Ver 0.0.1"), because the title box was a single line that scrolls sideways. It wraps now.
+/// It is still one line of text: Enter finishes it, and a pasted line break becomes a space.
+#[test]
+fn a_long_title_wraps_on_a_narrow_page() {
+    let long = "Welcome to NoteCraft (Ver 0.0.12) and a few more words";
+    let (_t, app, s) = sample_app("ui-title-wraps");
+    let mut h = phone_harness(app);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "node.title", "params": {"path": s.html_page.to_string_lossy(), "title": long}}))
+        .expect("a long title");
+    ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    review(&mut h, "title_wraps_debug");
+    let title = |h: &Harness<'_, NoteCraftApp>| {
+        h.get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+            .find(|n| n.value().is_some_and(|v| v.starts_with("Welcome")))
+            .expect("the title box")
+            .rect()
+    };
+    let box_rect = title(&h);
+    assert!(box_rect.height() > 50.0, "the title takes more than one line: {box_rect:?}");
+    assert!(box_rect.max.x <= 390.0, "and stays inside the window: {box_rect:?}");
+    review(&mut h, "title_wraps_on_a_phone");
+
+    // Enter finishes the title without breaking it; a line break typed or pasted becomes a space.
+    ask(&mut h, "ui.click", json!({"x": box_rect.center().x, "y": box_rect.min.y + 10.0})).expect("click the title");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End", "ctrl": true})).expect("end");
+    ask(&mut h, "ui.text", json!({"text": " here\nand there"})).expect("paste a line break");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let shown = state.pointer("/page/titleArea").and_then(Value::as_str).unwrap_or_default().to_string();
+    assert_eq!(shown, format!("{long} here and there"), "one line, with the break made a space");
+    let page = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": s.html_page.to_string_lossy()}})).expect("load");
+    assert_eq!(page.pointer("/title").and_then(Value::as_str), Some(shown.as_str()), "Enter finished and saved the title: {page}");
 }
 
 /// The "+" between two pages is a circle. It is wider than the thin gap it sits in, so it
@@ -2651,6 +2694,44 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(plain.exists(), "the picture was written");
     assert!(!std::fs::read_to_string(&plain).unwrap_or_default().contains("nc:"), "and holds no readings");
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
+}
+
+/// Issue #317: the default black pen drew black ink on the dark theme's near-black page, so
+/// a stroke could hardly be seen. On a dark page dark ink with no colour is drawn light; the
+/// saved colour stays black, as the drawing's file shows.
+#[test]
+fn black_ink_reads_on_a_dark_page_and_is_saved_black() {
+    for (theme, light_stroke) in [(DARK, true), (LIGHT, false)] {
+        let (_t, mut app, s) = sample_app("ui-dark-ink");
+        app.open_path(&s.html_page.to_string_lossy());
+        let mut h = harness(app, theme);
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        pump(&mut h);
+        h.get_by_label("Pen black").click();
+        pump(&mut h);
+        let origin = page_origin(&mut h);
+        let (from, by) = (origin + egui::vec2(60.0, 300.0), egui::vec2(200.0, 0.0));
+        drag_by(&mut h, from, by);
+        settle(&mut h);
+        let image = support::gpu::render(&mut h).expect("render");
+        let ppp = h.ctx.pixels_per_point();
+        let mid = from + by / 2.0;
+        // The lightest pixel across the stroke's width, where its middle is.
+        let brightest = (-3..=3)
+            .map(|dy| image.get_pixel((mid.x * ppp) as u32, ((mid.y + dy as f32) * ppp) as u32).0)
+            .map(|p| (u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])) / 3)
+            .collect::<Vec<_>>();
+        let (lightest, darkest) = (*brightest.iter().max().unwrap_or(&0), *brightest.iter().min().unwrap_or(&255));
+        if light_stroke {
+            assert!(lightest > 200, "on the dark page the stroke is drawn light: {brightest:?}");
+            review(&mut h, "black_ink_on_a_dark_page");
+        } else {
+            assert!(darkest < 60, "on the light page it stays black: {brightest:?}");
+        }
+        let saved = std::fs::read_to_string(s.html_page.join("ink.svg")).expect("the drawing is saved");
+        assert!(saved.contains("fill=\"#202020\""), "saved in the black pen's own colour either way:\n{saved}");
+    }
 }
 
 /// Issue #262: Insert symbol was a plain window. Escape left it open, and Ctrl+Z undid (and
@@ -10328,6 +10409,49 @@ fn alt_and_a_number_pick_up_a_pen_and_alt_zero_goes_back_to_typing() {
 /// A phone held upright: 390 by 800 points, as on a common Android phone.
 fn phone_harness(app: NoteCraftApp) -> Harness<'static, NoteCraftApp> {
     sized_harness(app, LIGHT, egui::vec2(390.0, 800.0))
+}
+
+/// Issue #315: on Android the window's surface runs under the status bar and the navigation
+/// bar, so the ribbon tabs sat under the clock and the status bar under Back and Home. The
+/// Android shell passes the bars as egui's safe area: everything is laid out between them,
+/// and the strips under the bars take the title band's colour.
+#[test]
+fn a_phone_keeps_everything_between_the_status_bar_and_the_navigation_bar() {
+    let (_t, mut app, s) = sample_app("ui-phone-system-bars");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = phone_harness(app);
+    let (top, bottom) = (24.0, 48.0);
+    h.input_mut().safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left: 0.0, right: 0.0, top, bottom }));
+    settle(&mut h);
+    let content = h.ctx.content_rect();
+    assert_eq!((content.min.y, content.max.y), (top, 800.0 - bottom), "egui lays out between the bars");
+    // Every control and every piece of text that reports itself is between the bars.
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+    let ppp = h.ctx.pixels_per_point();
+    for node in h.query_all(egui_kittest::kittest::by()) {
+        let Some(b) = node.accesskit_node().bounding_box() else { continue };
+        let r = egui::Rect::from_min_max(egui::pos2(b.x0 as f32 / ppp, b.y0 as f32 / ppp), egui::pos2(b.x1 as f32 / ppp, b.y1 as f32 / ppp));
+        // Nothing starts above the status bar's edge: the title band, its buttons and the
+        // search box all moved down. (The page's own text may run past the bottom: it scrolls.)
+        if r.is_positive() {
+            assert!(r.min.y >= top - 0.5, "{:?} at {r:?} is under the status bar", node.accesskit_node().label());
+        }
+    }
+    // The status bar is the last thing in the window, and it ends where the navigation bar starts.
+    let status = h.get_by_label("Default format").rect();
+    assert!(status.max.y <= 800.0 - bottom + 0.5 && status.max.y > 800.0 - bottom - 30.0, "the status bar sits on the navigation bar: {status:?}");
+    let file = h.get_by_label("File").rect();
+    assert!(file.min.y >= top, "the File tab is below the status bar: {file:?}");
+
+    // The strips under the bars are painted in the title band's colour (kittest's picture
+    // shows only the content area, so the painted shapes are checked).
+    let band = LIGHT.tokens().band;
+    let painted = h.state().system_bar_strips(&h.ctx);
+    assert_eq!(painted.len(), 2, "one strip under each bar: {painted:?}");
+    assert!(painted.iter().all(|(_, colour)| *colour == band));
+    assert_eq!(painted[0].0, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(390.0, top)));
+    assert_eq!(painted[1].0, egui::Rect::from_min_max(egui::pos2(0.0, 800.0 - bottom), egui::pos2(390.0, 800.0)));
+    review(&mut h, "phone_system_bars");
 }
 
 fn panes(h: &mut Harness<'_, NoteCraftApp>) -> Value {

@@ -941,3 +941,7 @@
 @id	ui.number_of_columns	[[RLI]]$$$Number of columns@@@[[PDI]]
 @id	ui.number_of_rows	[[RLI]]$$$Number of rows@@@[[PDI]]
 @id	ui.table_size_limits	[[RLI]]$$$Columns: 1 to {columns}. Rows: 1 to {rows}.@@@[[PDI]]
+@id	ui.delete_table_2	[[RLI]]$$$Delete\nTable@@@[[PDI]]
+@id	ui.take_the_whole_table_out	[[RLI]]$$$Take the whole table out@@@[[PDI]]
+@id	ui.put_the_caret_in_a_table_first	[[RLI]]$$$Put the caret in a table first@@@[[PDI]]
+@id	ui.deleted_the_table	[[RLI]]$$$Deleted the table@@@[[PDI]]
