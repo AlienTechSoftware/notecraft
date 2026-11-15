@@ -355,6 +355,50 @@ pub enum FontValue<T> {
 pub struct FontSelection {
     pub family: FontValue<String>,
     pub size: FontValue<u8>,
+    /// The marks Home shows as pressed (issue #255).
+    pub marks: Marks,
+}
+
+/// The marks the words at the caret carry, or every selected character carries, so Home's
+/// buttons show whether a click will put a mark on or take it off (issue #255). A selection
+/// that is partly bold is not bold, as in Word and OneNote: a click makes all of it bold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Marks {
+    pub bold: bool,
+    pub italic: bool,
+    pub strike: bool,
+    pub underline: bool,
+    pub subscript: bool,
+    pub superscript: bool,
+}
+
+impl Marks {
+    /// The marks of one run of words.
+    pub fn of(span: &Span) -> Self {
+        use notecraft_formats::markdown::Script;
+        Self {
+            bold: span.bold,
+            italic: span.italic,
+            strike: span.strike,
+            underline: span.underline,
+            subscript: span.script == Some(Script::Subscript),
+            superscript: span.script == Some(Script::Superscript),
+        }
+    }
+
+    /// What both carry.
+    #[must_use]
+    pub fn and(self, other: Self) -> Self {
+        Self {
+            bold: self.bold && other.bold,
+            italic: self.italic && other.italic,
+            strike: self.strike && other.strike,
+            underline: self.underline && other.underline,
+            subscript: self.subscript && other.subscript,
+            superscript: self.superscript && other.superscript,
+        }
+    }
 }
 
 impl FontSelection {
@@ -368,10 +412,12 @@ impl FontSelection {
         }
         merge_value(&mut self.family, other.family);
         merge_value(&mut self.size, other.size);
+        self.marks = self.marks.and(other.marks);
     }
 
     pub fn from_spans<'a>(spans: impl IntoIterator<Item = &'a Span>) -> Self {
         let mut result = Self::default();
+        let mut marks: Option<Marks> = None;
         for span in spans {
             if span.text.is_empty() || span.image.is_some() {
                 continue;
@@ -379,6 +425,7 @@ impl FontSelection {
             if span.code || span.math {
                 return Self::default();
             }
+            marks = Some(marks.map_or_else(|| Marks::of(span), |m| m.and(Marks::of(span))));
             fn add<T: PartialEq>(current: &mut FontValue<T>, value: Option<T>) {
                 match current {
                     FontValue::Unavailable => *current = FontValue::Value(value),
@@ -389,6 +436,7 @@ impl FontSelection {
             add(&mut result.family, span.font_family.clone());
             add(&mut result.size, span.font_size);
         }
+        result.marks = marks.unwrap_or_default();
         result
     }
 }
