@@ -947,3 +947,5 @@
 @id	ui.take_the_whole_table_out	[[RLI]]$$$Take the whole table out@@@[[PDI]]
 @id	ui.put_the_caret_in_a_table_first	[[RLI]]$$$Put the caret in a table first@@@[[PDI]]
 @id	ui.deleted_the_table	[[RLI]]$$$Deleted the table@@@[[PDI]]
+@id	ui.point_at_the_page_without_drawing_on_it	[[RLI]]$$$Point at the page without drawing on it@@@[[PDI]]
+@id	ui.laser_pointer_put_down	[[RLI]]$$$Laser pointer put down@@@[[PDI]]

@@ -5501,6 +5501,16 @@ impl NoteCraftApp {
     /// Puts the Format Painter's formatting on words just picked with the pointer: on the
     /// release that ends the pick, as in Office. Escape puts the painter down. Called once a
     /// frame after the page is drawn.
+    /// Escape puts the laser pointer down (issue #289): it is for a moment of pointing, and
+    /// the caret comes back afterwards.
+    fn laser_keys(&mut self, ctx: &Context) {
+        if self.pointer == ribbon::Pointer::Laser && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.pointer = ribbon::Pointer::Write;
+            crate::inkpad::clear_laser(ctx);
+            self.say(crate::tl_id!("ui.laser_pointer_put_down"));
+        }
+    }
+
     fn paint_formatting(&mut self, ctx: &Context) {
         if self.painter.is_none() {
             return;
@@ -9537,6 +9547,7 @@ impl NoteCraftApp {
             self.central(ui);
         }
         self.paint_formatting(ctx);
+        self.laser_keys(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
         self.import_progress(ctx);
