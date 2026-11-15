@@ -3053,13 +3053,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleSource);
         }
     });
-    group(ui, crate::tl_id!("ui.window"), t, |ui| {
-        rows(ui, |ui| {
-            not_built(ui, crate::tl_id!("ui.new_window"), t);
-            not_built(ui, crate::tl_id!("ui.always_on_top"), t);
-            not_built(ui, crate::tl_id!("ui.dock_to_desktop"), t);
-        });
-    });
+    // One Window group only (#256): it is the one above, with the working Always on top.
+    // Dock to desktop is in Views, where OneNote has it.
 }
 
 /// A control that is listed so nobody goes looking for it, and says it is not built.

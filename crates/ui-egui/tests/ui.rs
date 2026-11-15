@@ -9214,6 +9214,28 @@ fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
     assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
 }
 
+/// Issue #256: the View tab had a second Window group after Source, repeating New window and
+/// Dock to desktop and calling the working Always on top "not built". Each window action is
+/// on the tab once, and Always on top is the working toggle.
+#[test]
+fn the_view_tab_has_one_window_group_and_one_entry_per_action() {
+    let (t, app, s) = sample_app("ui-view-one-window-group");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Window").count(), 1, "one Window group");
+    assert_eq!(h.query_all_by_label("Always on top (not built)").count(), 0, "Always on top is not called unbuilt");
+    assert_eq!(h.query_all_by_label("New window (not built)").count(), 1, "New window is listed once");
+    assert_eq!(h.query_all_by_label("Dock to desktop (not built)").count(), 1, "Dock to desktop is listed once, in Views");
+    h.get_by_label("Always on top").click();
+    settle(&mut h);
+    let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(saved.contains("always_on_top = \"true\""), "the one Always on top toggle works:\n{saved}");
+    review(&mut h, "view_tab_one_window_group");
+}
+
 /// Every straight line painted in the last frame, as its two ends.
 fn painted_segments(h: &Harness<'_, NoteCraftApp>) -> Vec<[egui::Pos2; 2]> {
     fn walk(shape: &egui::Shape, out: &mut Vec<[egui::Pos2; 2]>) {
