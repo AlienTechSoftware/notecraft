@@ -2049,7 +2049,11 @@ impl NoteCraftApp {
     }
 
     fn hierarchy_keys(&mut self, ctx: &Context) {
-        if ctx.egui_wants_keyboard_input() || self.dialog.is_some() || self.backstage.is_some() {
+        // Typing in the page (its title or a paragraph) is not a reason to ignore page
+        // commands: OneNote's Ctrl+N and Ctrl+Alt+M work from the middle of a sentence (issue
+        // #254). Any other text box keeps the keys: the search box, a rename, the source view.
+        let typing_elsewhere = ctx.egui_wants_keyboard_input() && !self.page_text_has_focus(ctx);
+        if typing_elsewhere || self.dialog.is_some() || self.backstage.is_some() {
             return;
         }
         let Some(page) = self.selected.clone().filter(|path| notecraft_store::tree::read_node(path).is_some_and(|info| info.kind == NodeKind::Page))
@@ -2074,6 +2078,16 @@ impl NoteCraftApp {
         } else if Self::can_promote_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::OpenBracket)) {
             self.reparent_page(&page, "node.promote");
         }
+    }
+
+    /// Whether the keyboard is with one of the open page's own text boxes, its title or a block,
+    /// rather than with a box outside the page such as search or a rename in the tree.
+    fn page_text_has_focus(&self, ctx: &Context) -> bool {
+        let (Some(page), Some(_)) = (self.page_rect, self.editor.as_ref()) else { return false };
+        if self.show_source {
+            return false;
+        }
+        ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|focused| page.contains(focused.rect.center()))
     }
 
     // ---------- page open, save ----------
