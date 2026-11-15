@@ -4094,6 +4094,67 @@ fn the_pen_writes_low_in_the_window_once_a_tall_page_is_scrolled() {
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the stroke low in the scrolled window is taken: {ink}");
 }
 
+/// The page's vertical scroll bar is chrome, not page content: it must keep working while
+/// the Select tool owns pointer input on the page.
+#[test]
+fn the_page_scroll_bar_works_while_the_select_tool_is_active() {
+    let (_t, app, s) = sample_app("ui-select-scrollbar");
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
+    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n");
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Tall select scroll", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+
+    let page_bar = |h: &mut Harness<'_, NoteCraftApp>| {
+        h.get_all_by_role(egui::accesskit::Role::ScrollBar)
+            .map(|node| node.rect())
+            .filter(|rect| rect.height() > rect.width() && rect.height() > 200.0)
+            .max_by(|a, b| a.min.x.total_cmp(&b.min.x))
+            .expect("the page has a vertical scroll bar")
+    };
+    let origin_y =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"][1].as_f64().unwrap_or(0.0) as f32;
+    let click_bar = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        ask(h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the scroll bar");
+        settle(h);
+    };
+
+    let bar = page_bar(&mut h);
+    let top = egui::pos2(bar.center().x, bar.min.y + 8.0);
+    let bottom = egui::pos2(bar.center().x, bar.max.y - 8.0);
+    let start = origin_y(&mut h);
+
+    click_bar(&mut h, bottom);
+    let scrolled = origin_y(&mut h);
+    assert!(scrolled < start - 100.0, "Typing mode scrolls the page from the bar: {start} -> {scrolled}");
+
+    click_bar(&mut h, top);
+    let back = origin_y(&mut h);
+    assert!((back - start).abs() < 2.0, "Typing mode returns the page to its top: {start} -> {back}");
+
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Select").click();
+    h.run();
+    let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    assert_eq!(ink["pointer"].as_str(), Some("select"), "the Select tool is active: {ink}");
+
+    let bar = page_bar(&mut h);
+    click_bar(&mut h, egui::pos2(bar.center().x, bar.max.y - 8.0));
+    let selected = origin_y(&mut h);
+    assert!(selected < back - 100.0, "Select mode scrolls the page from the bar: {back} -> {selected}");
+}
+
 /// A box dragged to the bottom edge of the window scrolls the page, so it can be taken further
 /// down than the window shows, and it stays under the pointer while the page moves.
 #[test]
