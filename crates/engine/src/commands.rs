@@ -306,10 +306,28 @@ fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 
 fn page_paper(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
-    let (paper, colour) = (p.get("paper"), p.get("color"));
+    let (paper, colour, rules) = (p.get("paper"), p.get("color"), p.get("rules"));
+    // The colour of the lines, which a page given none draws in the theme's grey (issue #288).
+    // Reported after the paper and the colour only when the page has one, so the answer a
+    // page without it gives stays the two words it always was.
+    let with_rules = |text: String, rules: Option<String>| match rules {
+        Some(r) => format!("{text} {r}"),
+        None => text,
+    };
+    if let Some(want) = rules {
+        let want = want.trim();
+        let want = (!want.is_empty() && want != "none").then_some(want);
+        if let Some(c) = want
+            && notecraft_model::NodeColor::parse(c).is_none()
+        {
+            return Err(EngineError::BadParam(format!("'{c}' is not one of the page colours")));
+        }
+        page::set_rule_colour(&path, want)?;
+    }
     if paper.is_none() && colour.is_none() {
         let (have_paper, have_colour) = page::appearance(&path)?;
-        return Ok(Output::Text(format!("{} {}", have_paper.unwrap_or_else(|| "none".into()), have_colour.unwrap_or_else(|| "none".into()))));
+        let text = format!("{} {}", have_paper.unwrap_or_else(|| "none".into()), have_colour.unwrap_or_else(|| "none".into()));
+        return Ok(Output::Text(with_rules(text, page::rule_colour(&path)?)));
     }
     let (was_paper, was_colour) = page::appearance(&path)?;
     let keep = |want: Option<&String>, was: Option<String>| match want.map(|w| w.trim()) {
@@ -324,7 +342,8 @@ fn page_paper(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         return Err(EngineError::BadParam(format!("'{c}' is not one of the page colours")));
     }
     page::set_appearance(&path, paper.as_deref(), colour.as_deref())?;
-    Ok(Output::Text(format!("{} {}", paper.unwrap_or_else(|| "none".into()), colour.unwrap_or_else(|| "none".into()))))
+    let text = format!("{} {}", paper.unwrap_or_else(|| "none".into()), colour.unwrap_or_else(|| "none".into()));
+    Ok(Output::Text(with_rules(text, page::rule_colour(&path)?)))
 }
 
 fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -585,10 +604,11 @@ boxes (optional): x,y,width,blocks per container, separated by semicolons. The c
     },
     CommandSpec {
         id: "page.paper",
-        label: "The paper a page is drawn on, and the colour behind it",
+        label: "The paper a page is drawn on, the colour behind it and the colour of its lines",
         params: "path (required): the page
 paper (optional): none, narrow, college, standard, wide, grid-small, grid-medium, grid-large, grid-huge, craft-lines, craft-grid
-color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none. Without either, the page's own are reported",
+color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none
+rules (optional): the colour of the rule and grid lines, one of the same colours, or none for the theme's own grey. Without paper or color, the page's own are reported, followed by the lines' colour when it has one",
         changes_tree: false,
         run: page_paper,
     },

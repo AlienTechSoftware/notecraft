@@ -281,6 +281,17 @@ pub fn readable_on(fg: Color32, bg: Color32, min: f32, dark: bool) -> Color32 {
 
 /// A line on `bg` that is just visible: mixed towards `towards` until the contrast reaches
 /// `target`, then stopped. Used for rule lines and grid lines on a page, in both modes.
+/// The rule and grid lines of a page given a line colour of its own (issue #288): the same
+/// faint and stronger lines as the theme's, `(rule, strong)`, leaning towards the colour
+/// instead of the accent, so they stay quiet behind the words in every theme. `None` is the
+/// theme's own lines.
+pub fn rule_lines_in(t: &Tokens, colour: Option<notecraft_model::NodeColor>) -> (Color32, Color32) {
+    let Some(colour) = colour else { return (t.rule_line, t.rule_line_strong) };
+    let (r, g, b) = colour.rgb(t.editor.r() < 128);
+    let towards = Color32::from_rgb(r, g, b);
+    (faint_line(t.editor, towards, 1.25), faint_line(t.editor, towards, 1.8))
+}
+
 fn faint_line(bg: Color32, towards: Color32, target: f32) -> Color32 {
     let mut c = bg;
     for _ in 0..60 {
@@ -466,6 +477,27 @@ mod tests {
         assert_eq!(ModePref::parse("system"), Some(ModePref::System));
         assert_eq!(ModePref::parse("auto"), None);
         assert_eq!(Accent::parse(" red "), Some(Accent::Red));
+    }
+
+    /// Issue #288: coloured rule lines are as quiet as the theme's own: seen against the page,
+    /// never loud enough to hurt the words on them, the stronger line stronger, in every theme.
+    #[test]
+    fn coloured_rule_lines_stay_quiet_in_every_theme() {
+        for theme in Theme::all() {
+            let t = theme.tokens();
+            assert_eq!(rule_lines_in(&t, None), (t.rule_line, t.rule_line_strong));
+            for c in notecraft_model::NodeColor::ALL {
+                let (line, strong) = rule_lines_in(&t, Some(c));
+                let name = format!("{} {c:?}", theme.label());
+                for (what, got, min) in [("line", line, 1.2), ("strong line", strong, 1.7)] {
+                    let k = contrast(got, t.editor);
+                    assert!(k >= min, "{name}: the {what} cannot be seen {k:.2}");
+                    assert!(k <= 4.5, "{name}: the {what} is too loud {k:.2}");
+                    assert!(contrast(t.text, got) >= 4.5, "{name}: text over the {what}");
+                }
+                assert!(contrast(strong, t.editor) > contrast(line, t.editor), "{name}: the strong line is not stronger");
+            }
+        }
     }
 
     /// WCAG: body text 7:1 (AAA), secondary text 4.5:1 (AA), links 4.5:1, accents and icons 3:1.

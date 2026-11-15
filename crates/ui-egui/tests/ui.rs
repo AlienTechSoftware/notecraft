@@ -5694,6 +5694,63 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     review(&mut h, "page_paper");
 }
 
+/// Issue #288: Format Background's Rule line colour was "not built". The lines of a page can be
+/// given one of the named colours, drawn at once, written into the page's own file beside its
+/// paper (both formats), kept when the page is opened again, and Automatic gives the theme's
+/// own lines back. Another page keeps its own lines.
+#[test]
+fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
+    for (page, file, line) in [(true, "index.md", "rule-color: blue"), (false, "index.html", "notecraft:rule-color")] {
+        let (_t, app, s) = sample_app("ui-rule-colour");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let (dir, other) = if page { (&s.md_page, &s.html_page) } else { (&s.html_page, &s.md_page) };
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        settle(&mut h);
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("College ruled").click();
+        settle(&mut h);
+        let plain = support::gpu::render(&mut h).expect("render");
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Blue lines").click();
+        settle(&mut h);
+        let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert_eq!(now["ruleColour"], json!("blue"), "the lines are blue: {now}");
+        assert_eq!(now["paper"], json!("college"), "and the paper is kept: {now}");
+        let blue = support::gpu::render(&mut h).expect("render");
+        // Somewhere on the page a line pixel is bluer than the same pixel was before.
+        let bluer = plain
+            .pixels()
+            .zip(blue.pixels())
+            .filter(|(a, b)| i32::from(b.0[2]) - i32::from(b.0[0]) > i32::from(a.0[2]) - i32::from(a.0[0]) + 6)
+            .count();
+        assert!(bluer > 200, "the drawn lines changed colour ({bluer} pixels)");
+        review(&mut h, &format!("rule_colour_blue_{}", if page { "md" } else { "html" }));
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        assert!(text.contains(line) && text.contains("blue"), "the page's file says so:\n{text}");
+
+        ask(&mut h, "ui.open", json!({"path": other.to_string_lossy()})).expect("another page");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "another page keeps its own lines");
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("back");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!("blue"), "reopened, still blue");
+
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Automatic lines").click();
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "Automatic takes the colour off");
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        // Out of the file: Markdown drops the line, HTML empties the meta as it does the page colour's.
+        assert!(!text.contains("rule-color: ") && !text.contains("rule-color\" content=\"blue"), "and out of the file:\n{text}");
+    }
+}
+
 /// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of
 /// typing a placeholder into the note; the same dialog edits the link the caret is in and can
 /// take the link off while keeping its words. Both page formats (issue #163).
@@ -8352,6 +8409,61 @@ fn formatting_shortcuts_do_not_format_a_stale_page_caret_from_search_or_source()
         ask(&mut h, "ui.key", json!({"key": key, "ctrl": true})).expect("format shortcut in source");
         settle(&mut h);
         assert_eq!(h.state().body().unwrap_or_default(), before, "source view does not format the retained page caret");
+    }
+}
+
+/// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
+/// the words at the caret, or of the whole selection: on only when all of it carries the mark,
+/// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.
+#[test]
+fn home_mark_buttons_show_the_marks_at_the_caret_and_of_the_selection() {
+    use egui_kittest::kittest::NodeT as _;
+    for (format, body) in [
+        (notecraft_model::PageFormat::Html, "<p>alpha <strong>bravo</strong> <em>omega</em></p>"),
+        (notecraft_model::PageFormat::Cmgfm, "alpha **bravo** *omega*"),
+    ] {
+        let (_t, app, s) = sample_app("ui-mark-state");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let on =
+            |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+        // Puts the caret `right` characters into the line and selects `select` more. The line
+        // being written in still shows its marks' markup (`alpha **bravo** *omega*`, issue
+        // #242), and the caret counts through it.
+        let place = |h: &mut Harness<'_, NoteCraftApp>, right: usize, select: usize| {
+            ask(h, "ui.caret", json!({"block": 0})).expect("caret");
+            pump(h);
+            ask(h, "ui.key", json!({"key": "Home"})).expect("home");
+            pump(h);
+            for _ in 0..right {
+                ask(h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+                pump(h);
+            }
+            for _ in 0..select {
+                ask(h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+                pump(h);
+            }
+            settle(h);
+        };
+        assert!(!on(&h, "Bold") && !on(&h, "Italic"), "{format:?}: nothing is pressed with no caret in the words");
+        place(&mut h, 8, 0);
+        assert!(on(&h, "Bold") && !on(&h, "Italic"), "{format:?}: the caret in bravo shows Bold");
+        review(&mut h, &format!("mark_state_bold_{format:?}"));
+        place(&mut h, 2, 0);
+        assert!(!on(&h, "Bold"), "{format:?}: the caret in alpha shows no mark");
+        place(&mut h, 19, 0);
+        assert!(on(&h, "Italic") && !on(&h, "Bold"), "{format:?}: the caret in omega shows Italic");
+        place(&mut h, 8, 5);
+        assert!(on(&h, "Bold"), "{format:?}: all of bravo selected is bold");
+        place(&mut h, 0, 13);
+        assert!(!on(&h, "Bold"), "{format:?}: alpha and bravo together are only partly bold");
+        // A click on Bold makes the whole selection bold, and the button follows.
+        h.get_by_label("Bold").click();
+        settle(&mut h);
+        assert!(on(&h, "Bold"), "{format:?}: after Bold the selection is bold: {}", h.state().body().unwrap_or_default());
     }
 }
 
