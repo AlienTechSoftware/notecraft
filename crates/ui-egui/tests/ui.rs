@@ -2733,7 +2733,7 @@ fn the_panning_hand_drags_the_page_and_changes_nothing_on_it() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
-  /// Issue #317: the default black pen drew black ink on the dark theme's near-black page, so
+/// Issue #317: the default black pen drew black ink on the dark theme's near-black page, so
 /// a stroke could hardly be seen. On a dark page dark ink with no colour is drawn light; the
 /// saved colour stays black, as the drawing's file shows.
 #[test]
