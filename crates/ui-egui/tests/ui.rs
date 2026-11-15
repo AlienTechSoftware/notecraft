@@ -2534,6 +2534,60 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
+/// Issue #262: Insert symbol was a plain window. Escape left it open, and Ctrl+Z undid (and
+/// saved) a change on the page behind it. It is a modal now: Ctrl+Z and Ctrl+Y leave the page
+/// alone while it is open, Escape closes it with nothing inserted, and Undo works again after.
+#[test]
+fn insert_symbol_is_modal_and_escape_closes_it() {
+    let (_t, mut app, s) = sample_app("ui-symbol-modal");
+    app.open_path(&s.html_page.to_string_lossy());
+    // Wide enough that the Insert tab's Symbol button is on the screen to be clicked.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    // A change on the page for Undo to find: one stroke.
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Pen red").click();
+    pump(&mut h);
+    let origin = page_origin(&mut h);
+    drag_by(&mut h, origin + egui::vec2(60.0, 160.0), egui::vec2(180.0, 0.0));
+    let strokes = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64();
+    assert_eq!(strokes(&mut h), Some(1), "one stroke drawn");
+    let body = h.state().body().unwrap_or_default().to_string();
+
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    h.get_by_label("Symbol").click();
+    settle(&mut h);
+    let open = |h: &Harness<'_, NoteCraftApp>| h.query_all_by_label("Choose a symbol to insert at the caret").count() > 0;
+    assert!(open(&h), "the symbol dialog is open");
+
+    for (key, ctrl) in [("Z", true), ("Y", true)] {
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": ctrl})).expect("key");
+        settle(&mut h);
+        assert_eq!(strokes(&mut h), Some(1), "Ctrl+{key} does not change the page behind the dialog");
+        assert!(open(&h), "and the dialog stays open");
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert!(!open(&h), "Escape closes the symbol dialog");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "with nothing inserted");
+
+    // With the dialog gone, Ctrl+Z is the page's again.
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("Ctrl+Z");
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(0), "Ctrl+Z takes the stroke back once the dialog has closed");
+
+    // The Close button still closes it too.
+    h.get_by_label("Symbol").click();
+    settle(&mut h);
+    assert!(open(&h));
+    review(&mut h, "insert_symbol_modal");
+    h.get_by_label("Close").click();
+    settle(&mut h);
+    assert!(!open(&h), "Close closes it");
+}
+
 /// Issues #155 and #156: Redo puts back a stroke Undo took, and Undo on a page just opened
 /// does not take away the ink it was opened with.
 #[test]
