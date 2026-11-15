@@ -669,13 +669,25 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl;
     let r = if editing {
-        let out = egui::TextEdit::singleline(&mut ed.title_buf)
+        // A box that wraps (issue #316): a single-line box scrolls sideways, so a long title
+        // was cut off at the page's edge on a phone. The title is still one line of text:
+        // Enter finishes it rather than breaking it, and a line break pasted in becomes a space.
+        let finish = ui.memory(|m| m.has_focus(title_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        let out = egui::TextEdit::multiline(&mut ed.title_buf)
             .id(title_id)
             .frame(egui::Frame::NONE)
             .font(egui::FontId::proportional(26.0 * zoom))
             .horizontal_align(align)
             .desired_width(width)
+            .desired_rows(1)
+            .return_key(None)
             .show(ui);
+        if ed.title_buf.contains(['\n', '\r']) {
+            ed.title_buf = one_line(&ed.title_buf);
+        }
+        if finish {
+            out.response.surrender_focus();
+        }
         if out.response.has_focus()
             && crate::input_language::is_rtl()
             && let Some(range) = out.cursor_range
@@ -714,6 +726,11 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let (left, right) = (ui.max_rect().min.x, ui.max_rect().max.x);
     ui.painter().hline(left..=right, y, egui::Stroke::new(1.0, tokens.faint));
     ui.add_space(8.0);
+}
+
+/// A title as one line: the line breaks a paste brought in become single spaces.
+fn one_line(text: &str) -> String {
+    text.split(['\n', '\r']).map(str::trim).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// What to do with a file the user dropped on a page.
