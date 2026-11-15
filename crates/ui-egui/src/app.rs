@@ -669,13 +669,25 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl;
     let r = if editing {
-        let out = egui::TextEdit::singleline(&mut ed.title_buf)
+        // A box that wraps (issue #316): a single-line box scrolls sideways, so a long title
+        // was cut off at the page's edge on a phone. The title is still one line of text:
+        // Enter finishes it rather than breaking it, and a line break pasted in becomes a space.
+        let finish = ui.memory(|m| m.has_focus(title_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        let out = egui::TextEdit::multiline(&mut ed.title_buf)
             .id(title_id)
             .frame(egui::Frame::NONE)
             .font(egui::FontId::proportional(26.0 * zoom))
             .horizontal_align(align)
             .desired_width(width)
+            .desired_rows(1)
+            .return_key(None)
             .show(ui);
+        if ed.title_buf.contains(['\n', '\r']) {
+            ed.title_buf = one_line(&ed.title_buf);
+        }
+        if finish {
+            out.response.surrender_focus();
+        }
         if out.response.has_focus()
             && crate::input_language::is_rtl()
             && let Some(range) = out.cursor_range
@@ -714,6 +726,11 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let (left, right) = (ui.max_rect().min.x, ui.max_rect().max.x);
     ui.painter().hline(left..=right, y, egui::Stroke::new(1.0, tokens.faint));
     ui.add_space(8.0);
+}
+
+/// A title as one line: the line breaks a paste brought in become single spaces.
+fn one_line(text: &str) -> String {
+    text.split(['\n', '\r']).map(str::trim).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// What to do with a file the user dropped on a page.
@@ -9253,7 +9270,53 @@ impl NoteCraftApp {
         })
     }
     /// Draws the whole window. Call once per frame.
+    /// Fills the strips the platform's own bars lie over (a phone's status bar and navigation
+    /// bar, reported as egui's safe area) with the title band's colour, so the system's white
+    /// icons read on it in a light theme as well as a dark one. Everything else is laid out
+    /// inside the safe area. On a desktop there is none, and nothing is drawn.
+    fn paint_system_bars(&self, ctx: &Context) {
+        let strips = self.system_bar_strips(ctx);
+        if strips.is_empty() {
+            return;
+        }
+        // On the background layer, which egui always paints, clipped to the whole window rather
+        // than to the safe area as a layer painter is by default. Nothing else is drawn under
+        // the bars: every panel and window is inside the safe area.
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), ctx.viewport_rect());
+        for (strip, colour) in strips {
+            painter.rect_filled(strip, 0.0, colour);
+        }
+    }
+
+    /// The strips [`Self::paint_system_bars`] fills, with their colour: the parts of the window
+    /// outside egui's safe area. None on a desktop.
+    pub fn system_bar_strips(&self, ctx: &Context) -> Vec<(egui::Rect, egui::Color32)> {
+        let (outer, inner) = (ctx.viewport_rect(), ctx.content_rect());
+        let strips = [
+            egui::Rect::from_min_max(outer.min, egui::pos2(outer.max.x, inner.min.y)),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.max.y), outer.max),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.min.y), egui::pos2(inner.min.x, inner.max.y)),
+            egui::Rect::from_min_max(egui::pos2(inner.max.x, inner.min.y), egui::pos2(outer.max.x, inner.max.y)),
+        ];
+        strips.into_iter().filter(|r| r.is_positive()).map(|r| (r, self.tokens.band)).collect()
+    }
+
     pub fn show(&mut self, ui: &mut Ui) {
+        // egui's root `Ui` covers the whole window, the parts under a phone's status and
+        // navigation bars included. Everything is laid out inside the safe area instead
+        // (issue #315); on a desktop the two are the same.
+        let ctx = ui.ctx().clone();
+        let content = ctx.content_rect();
+        if content != ctx.viewport_rect() {
+            self.paint_system_bars(&ctx);
+            let room = ui.max_rect().intersect(content);
+            ui.scope_builder(egui::UiBuilder::new().id_salt("safe-area").max_rect(room), |ui| self.show_in(ui));
+        } else {
+            self.show_in(ui);
+        }
+    }
+
+    fn show_in(&mut self, ui: &mut Ui) {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;

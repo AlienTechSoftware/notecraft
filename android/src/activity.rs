@@ -1,6 +1,6 @@
 //! The native activity: Android's entry point into NoteCraft.
 
-use crate::{storage, welcome};
+use crate::{insets, storage, welcome};
 use notecraft_engine::Session;
 use notecraft_store::Settings;
 use notecraft_ui_egui::NoteCraftApp;
@@ -60,6 +60,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
         }
     };
 
+    let window = app.clone();
     let options = eframe::NativeOptions { android_app: Some(app), ..Default::default() };
     eframe::run_native(
         "NoteCraft",
@@ -75,7 +76,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
                 app.alert(key, "NoteCraft", &message);
             }
             log::info!("window ready");
-            Ok(Box::new(Shell { app, focused: true }))
+            Ok(Box::new(Shell { app, focused: true, window }))
         }),
     )
     .map_err(|e| format!("the window failed: {e}"))
@@ -86,10 +87,23 @@ struct Shell {
     app: NoteCraftApp,
     /// Whether the activity had the input focus last frame.
     focused: bool,
+    /// The activity, asked each frame where the system bars are.
+    window: AndroidApp,
 }
 
 impl eframe::App for Shell {
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        // The status bar and the navigation bar lie over the window's surface: what Android
+        // leaves free between them becomes egui's content area, so nothing is drawn under them.
+        let pixels_per_point = raw_input.viewport().native_pixels_per_point.unwrap_or_else(|| ctx.pixels_per_point());
+        let window = raw_input.screen_rect.map(|r| r.size() * pixels_per_point);
+        let content = self.window.content_rect();
+        if let Some(size) = window
+            && let Some(free) = insets::safe_area((content.left, content.top, content.right, content.bottom), size.x, size.y, pixels_per_point)
+        {
+            let margin = egui::epaint::MarginF32 { left: free.left, right: free.right, top: free.top, bottom: free.bottom };
+            raw_input.safe_area_insets = Some(egui::SafeAreaInsets(margin));
+        }
         // Android's Back button: it closes what is open over the page (a dialog, the
         // notebooks drawer, the File screen) before it does anything else.
         let mut back = false;
