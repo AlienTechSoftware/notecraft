@@ -1,0 +1,56 @@
+{
+  "tag_name": "v0.0.8",
+  "name": "NoteCraft v0.0.8",
+  "html_url": "https://github.com/AlienTechSoftware/notecraft/releases/tag/v0.0.8",
+  "published_at": "2026-11-02T21:54:45Z",
+  "assets": [
+    {
+      "name": "notecraft-0.0.8-linux-x86_64.AppImage",
+      "size": 50608632,
+      "digest": "sha256:0014bbabe2d382f37751975e0673a087c9eadeaf77cc89f5b2893c0d1f49d2cc",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-linux-x86_64.AppImage"
+    },
+    {
+      "name": "notecraft-0.0.8-linux-x86_64.deb",
+      "size": 65865388,
+      "digest": "sha256:3c4ab10da96200d2cc9b83c259cef977c78ccdc531fff0648380e9b701e413bd",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-linux-x86_64.deb"
+    },
+    {
+      "name": "notecraft-0.0.8-linux-x86_64.rpm",
+      "size": 67750583,
+      "digest": "sha256:e55c8651c9f1909cb0a546bdc63fe16ad21cbac0f15ff502d8e418da1fa311d0",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-linux-x86_64.rpm"
+    },
+    {
+      "name": "notecraft-0.0.8-linux-x86_64.tar.gz",
+      "size": 65309412,
+      "digest": "sha256:d361b1546652cde1e245a4be0eda718a480b8cbc75ad268b6fca4d1ed8f661cb",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-linux-x86_64.tar.gz"
+    },
+    {
+      "name": "notecraft-0.0.8-windows-x64-portable.zip",
+      "size": 97949525,
+      "digest": "sha256:a2c7d71e9b452c172ca6db899368118619bfead70f95b502dccc7785272f9a2c",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-windows-x64-portable.zip"
+    },
+    {
+      "name": "notecraft-0.0.8-windows-x64.msi",
+      "size": 71909664,
+      "digest": "sha256:3db9d6248d84d08a57e76052944215c1c01c66a1bc47f4b5ec327ddbb8c6b825",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/notecraft-0.0.8-windows-x64.msi"
+    },
+    {
+      "name": "RELEASE_NOTES.gif",
+      "size": 862941,
+      "digest": "sha256:ea202b4aa3fc82df97892e1487097cbbedc99d5742300b900eb8a9f2f66caf3a",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/RELEASE_NOTES.gif"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 205,
+      "digest": "sha256:a41b8f907060858c39e075925ae7d22b00dec93a5ae1444374412f94aa918aa8",
+      "browser_download_url": "https://github.com/AlienTechSoftware/notecraft/releases/download/v0.0.8/SHA256SUMS.txt"
+    }
+  ]
+}

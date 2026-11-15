@@ -918,3 +918,20 @@
 @id	ui.insert_space_how	Drag down where you want more room, or up to take room away. Esc puts the tool down.
 @id	ui.pen_keys_typing	Typing (Alt+0)
 @id	ui.pen_keys_picked	Pen {number} (Alt+{number})
+@id	ui.redo_stroke	Redo\nstroke
+@id	ui.put_back_the_stroke_undo_stroke_took_back	Put back the stroke Undo stroke took back
+@id	ui.version_and_updates	Version and updates
+@id	ui.you_are_running_version	You are running NoteCraft {version}.
+@id	ui.check_for_updates	Check for updates
+@id	ui.check_for_updates_hint	Asks GitHub for the newest release and, if it is newer, downloads it, checks it and installs it. Nothing is sent until you press the button.
+@id	ui.open_the_releases_page	Open the releases page
+@id	ui.update_checking	Looking for a newer version…
+@id	ui.update_up_to_date	NoteCraft is up to date. The newest release is {version}.
+@id	ui.update_downloading_of	Downloading NoteCraft {version}: {done} of {total} MB…
+@id	ui.update_downloading	Downloading NoteCraft {version}: {done} MB…
+@id	ui.update_verifying	Checking the download of NoteCraft {version} against its published checksum…
+@id	ui.update_restarting	NoteCraft {version} is ready. NoteCraft closes now to put it in place, then starts again.
+@id	ui.update_handed	NoteCraft {version} was downloaded and opened in your system's software installer.
+@id	ui.update_manual	NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.
+@id	ui.update_manual_this_build	This build cannot install updates itself. The releases page has the newest version.
+@id	ui.update_failed	The update did not work: {reason}

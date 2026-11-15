@@ -37,6 +37,10 @@ is, where it came from, its license status) is in ATTRIBUTION.md.
   Horn and Dropbox, Inc., linked in the same way.
 - The window also uses the fonts bundled with egui, which carry their own licenses; those ship
   with the egui crates.
+- File > Check for updates (desktop builds only) talks to GitHub with the ureq crate (Apache-2.0
+  or MIT) over rustls (Apache-2.0, ISC or MIT) and ring (Apache-2.0 and ISC), checks downloads
+  with sha2 (Apache-2.0 or MIT) and compares versions with semver (Apache-2.0 or MIT), all linked
+  into the program.
 - Dependencies are listed in Cargo.lock, each under its own license. A license audit of them
   (for example with cargo deny) has not been run.
 - The pictures in docs/images/ are screenshots of NoteCraft itself, made by its own test
