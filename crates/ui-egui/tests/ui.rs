@@ -2266,6 +2266,29 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
         "and stops claiming to have ink:
 {body}"
     );
+
+    use egui_kittest::kittest::NodeT as _;
+    // Issue #264: Redo stroke follows the drawing's redo steps. It puts the stroke back, file
+    // and all, and is unavailable again once there is nothing left to put back.
+    assert!(!h.get_by_label("Redo stroke").accesskit_node().is_disabled(), "a stroke was taken back, so Redo stroke is offered");
+    h.get_by_label("Redo stroke").click();
+    settle(&mut h);
+    let written = std::fs::read_to_string(&file).expect("the stroke and its file are back");
+    assert_eq!(written.matches("<path").count(), 1, "one stroke again");
+    assert!(h.state().body().unwrap_or_default().contains("![Ink](ink.svg)"), "and the page names its ink again");
+    assert!(h.get_by_label("Redo stroke").accesskit_node().is_disabled(), "nothing more to put back");
+
+    // Draw > Insert Space picks up the same tool as Insert > Insert Space, and Esc puts it down.
+    let tool =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/canvas/insertSpace").and_then(Value::as_bool);
+    assert_eq!(tool(&mut h), Some(false));
+    assert!(!h.get_by_label("Insert Space").accesskit_node().is_disabled(), "Draw > Insert Space is no longer a placeholder");
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true), "the Insert Space tool is in hand");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false), "Esc puts it down");
     review(&mut h, "draw_tab");
 }
 
