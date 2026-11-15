@@ -607,6 +607,10 @@ pub fn show(
         ui.ctx().set_dragged_id(layer);
     }
     let resp = ui.interact(hit, layer, Sense::click_and_drag());
+    if pen.pointer == Pointer::Laser {
+        laser(ui, &painter, body, origin, zoom, resp.is_pointer_button_down_on());
+        return false;
+    }
     ui.ctx().set_cursor_icon(match pen.pointer {
         Pointer::Erase => egui::CursorIcon::NotAllowed,
         Pointer::Pick => egui::CursorIcon::Grab,
@@ -742,7 +746,7 @@ pub fn show(
                 }
             }
         }
-        Pointer::Write | Pointer::Pan => {}
+        Pointer::Write | Pointer::Pan | Pointer::Laser => {}
     }
     // Delete throws away whatever is held, however it was picked up.
     if !pad.held.is_empty() && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
@@ -787,6 +791,73 @@ const DARK_PAGE: f32 = 0.2;
 /// (black, the dark greys) is drawn as its light opposite, as OneNote's dark mode does, so the
 /// default black pen reads (issue #317). The saved colour is untouched: the same stroke is black
 /// again on a light page and in the SVG. Coloured ink keeps its colour.
+/// The laser pointer's red, bright enough to be seen on a light page and a dark one.
+pub const LASER: egui::Color32 = egui::Color32::from_rgb(235, 30, 45);
+
+/// How long a laser trail takes to fade, in seconds.
+pub const LASER_FADE: f64 = 0.8;
+
+fn laser_trail_id() -> egui::Id {
+    egui::Id::new("laser-trail")
+}
+
+/// One place the laser has been: page points from the page's origin, when, and whether it
+/// began a new drag (so two drags are not joined by a line).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LaserPoint {
+    pub x: f32,
+    pub y: f32,
+    pub at: f64,
+    pub starts: bool,
+}
+
+/// Where the laser has been in the last [`LASER_FADE`] seconds. Kept in the window's
+/// memory, never in the drawing.
+pub fn laser_trail(ctx: &egui::Context) -> Vec<LaserPoint> {
+    ctx.data(|d| d.get_temp::<Vec<LaserPoint>>(laser_trail_id())).unwrap_or_default()
+}
+
+/// Forgets the trail, when the laser is put down.
+pub fn clear_laser(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove_temp::<Vec<LaserPoint>>(laser_trail_id()));
+}
+
+/// Draw > Laser Pointer (issue #289): the pointer is a red dot over the page, and while the
+/// button is down it leaves a trail that fades within a second. The trail is kept against the
+/// page, so it scrolls and zooms with what it points at. Nothing here touches the drawing.
+fn laser(ui: &Ui, painter: &egui::Painter, body: egui::Rect, origin: egui::Pos2, zoom: f32, down: bool) {
+    let (now, pressed) = ui.input(|i| (i.time, i.pointer.any_pressed()));
+    let over = ui.ctx().pointer_hover_pos().filter(|p| body.contains(*p));
+    ui.ctx().set_cursor_icon(if over.is_some() { egui::CursorIcon::None } else { egui::CursorIcon::Default });
+    let mut trail = laser_trail(ui.ctx());
+    trail.retain(|p| now - p.at < LASER_FADE);
+    if down && let Some(p) = over {
+        let starts = pressed || trail.last().is_none();
+        trail.push(LaserPoint { x: (p.x - origin.x) / zoom, y: (p.y - origin.y) / zoom, at: now, starts });
+    }
+    let put = |x: f32, y: f32| egui::pos2(origin.x + x * zoom, origin.y + y * zoom);
+    for pair in trail.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        if b.starts {
+            continue;
+        }
+        // Fresh at the pointer, gone at the far end.
+        #[allow(clippy::cast_possible_truncation)]
+        let left = (1.0 - (now - b.at) / LASER_FADE).clamp(0.0, 1.0) as f32;
+        let width = 5.0 * left.max(0.3);
+        painter.line_segment([put(a.x, a.y), put(b.x, b.y)], egui::Stroke::new(width, LASER.gamma_multiply(left)));
+        painter.circle_filled(put(b.x, b.y), width / 2.0, LASER.gamma_multiply(left));
+    }
+    if let Some(p) = over {
+        painter.circle_filled(p, 9.0, LASER.gamma_multiply(0.25));
+        painter.circle_filled(p, 5.0, LASER);
+    }
+    if !trail.is_empty() {
+        ui.ctx().request_repaint();
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(laser_trail_id(), trail));
+}
+
 pub fn shown_colour(colour: Rgb, dark_page: bool) -> Rgb {
     let Rgb(r, g, b) = colour;
     let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));

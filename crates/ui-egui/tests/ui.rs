@@ -2696,6 +2696,64 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
+/// Issue #289: Draw > Add > Laser Pointer was "not built". It is a pointer mode: a red dot over
+/// the page and, while dragging, a red trail that fades within a second. It draws no ink, leaves
+/// the page as it was, and Escape puts it down again.
+#[test]
+fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
+    let (_t, app, s) = sample_app("ui-laser-pointer");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let state = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    // Red against the page: the ribbon's own red words (Pressure off) are counted before and taken off.
+    let red = |img: &image::RgbaImage| {
+        img.pixels().filter(|p| i32::from(p.0[0]) - i32::from(p.0[1]) > 70 && i32::from(p.0[0]) - i32::from(p.0[2]) > 60).count()
+    };
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Add").click();
+    h.run_steps(2);
+    h.get_by_label("Laser Pointer").click();
+    settle(&mut h);
+    let before = state(&mut h);
+    assert_eq!(before["ink"]["pointer"], json!("laser"), "the laser is in hand: {}", before["ink"]);
+    let strokes = before["ink"]["strokes"].clone();
+
+    let base = red(&support::gpu::render(&mut h).expect("render"));
+    let origin = page_origin(&mut h);
+    let from = origin + egui::vec2(150.0, 260.0);
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    pump(&mut h);
+    for k in 1..=6 {
+        let at = from + egui::vec2(40.0 * k as f32, 12.0 * k as f32);
+        ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move");
+        pump(&mut h);
+    }
+    review(&mut h, "laser_pointer");
+    let drawn = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    // The test steps time a frame or more per move, so only the newest part of the trail is
+    // still lit by now: enough red to be the dot and a stretch of trail.
+    assert!(drawn > 100, "the trail is drawn in red while pointing ({drawn} pixels)");
+    let end = from + egui::vec2(240.0, 72.0);
+    ask(&mut h, "ui.release", json!({"x": end.x, "y": end.y})).expect("release");
+    // Away from the page, so the dot is not drawn either, and long enough for the trail to fade.
+    ask(&mut h, "ui.move", json!({"x": 5.0, "y": 5.0})).expect("away");
+    h.run_steps(90);
+    let after = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    assert!(after < drawn / 10, "the trail faded: {drawn} -> {after} red pixels");
+    let now = state(&mut h);
+    assert_eq!(now["ink"]["strokes"], strokes, "no ink was drawn");
+    assert_eq!(now["ink"]["inked"], before["ink"]["inked"], "the drawing is as it was");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "and the page is unchanged");
+
+    // Escape puts the laser down, and the pointer is the caret again.
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.
@@ -5634,6 +5692,63 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     assert_eq!(again["paper"], json!("college"), "and the page still has its own paper");
     assert_eq!(again["pageColour"], json!("yellow"));
     review(&mut h, "page_paper");
+}
+
+/// Issue #288: Format Background's Rule line colour was "not built". The lines of a page can be
+/// given one of the named colours, drawn at once, written into the page's own file beside its
+/// paper (both formats), kept when the page is opened again, and Automatic gives the theme's
+/// own lines back. Another page keeps its own lines.
+#[test]
+fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
+    for (page, file, line) in [(true, "index.md", "rule-color: blue"), (false, "index.html", "notecraft:rule-color")] {
+        let (_t, app, s) = sample_app("ui-rule-colour");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let (dir, other) = if page { (&s.md_page, &s.html_page) } else { (&s.html_page, &s.md_page) };
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        settle(&mut h);
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("College ruled").click();
+        settle(&mut h);
+        let plain = support::gpu::render(&mut h).expect("render");
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Blue lines").click();
+        settle(&mut h);
+        let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert_eq!(now["ruleColour"], json!("blue"), "the lines are blue: {now}");
+        assert_eq!(now["paper"], json!("college"), "and the paper is kept: {now}");
+        let blue = support::gpu::render(&mut h).expect("render");
+        // Somewhere on the page a line pixel is bluer than the same pixel was before.
+        let bluer = plain
+            .pixels()
+            .zip(blue.pixels())
+            .filter(|(a, b)| i32::from(b.0[2]) - i32::from(b.0[0]) > i32::from(a.0[2]) - i32::from(a.0[0]) + 6)
+            .count();
+        assert!(bluer > 200, "the drawn lines changed colour ({bluer} pixels)");
+        review(&mut h, &format!("rule_colour_blue_{}", if page { "md" } else { "html" }));
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        assert!(text.contains(line) && text.contains("blue"), "the page's file says so:\n{text}");
+
+        ask(&mut h, "ui.open", json!({"path": other.to_string_lossy()})).expect("another page");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "another page keeps its own lines");
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("back");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!("blue"), "reopened, still blue");
+
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Automatic lines").click();
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "Automatic takes the colour off");
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        // Out of the file: Markdown drops the line, HTML empties the meta as it does the page colour's.
+        assert!(!text.contains("rule-color: ") && !text.contains("rule-color\" content=\"blue"), "and out of the file:\n{text}");
+    }
 }
 
 /// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of

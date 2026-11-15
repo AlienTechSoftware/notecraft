@@ -512,6 +512,8 @@ struct Editor {
     /// keeps them. `None` means the page says nothing and the window's own choice stands.
     paper: Option<ribbon::RuleLines>,
     colour: Option<notecraft_model::NodeColor>,
+    /// The colour of this page's rule and grid lines, when it was given one (issue #288).
+    rule_colour: Option<notecraft_model::NodeColor>,
     /// What the page looked like before each change, so a change can be taken back.
     history: crate::history::History,
     /// The ink files in the page's folder. The folder is what decides: the page's own
@@ -2214,6 +2216,7 @@ impl NoteCraftApp {
                 ink_files: notecraft_store::page::ink_files(dir),
                 paper: appearance.0,
                 colour: appearance.1,
+                rule_colour: notecraft_store::page::rule_colour(dir).ok().flatten().and_then(|c| notecraft_model::NodeColor::parse(&c)),
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
                 origin_in_canvas: None,
@@ -3825,6 +3828,7 @@ impl NoteCraftApp {
             table_shade: self.caret_cells_shade(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
+            rule_colour: self.editor.as_ref().and_then(|e| e.rule_colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
@@ -4313,6 +4317,19 @@ impl NoteCraftApp {
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
             ribbon::Act::TableAlign(align) => self.align_table_cells(align),
             ribbon::Act::TableShade(shade) => self.shade_table_cells(shade),
+            ribbon::Act::RuleColour(c) => {
+                let Some(ed) = self.editor.as_mut() else {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                };
+                ed.rule_colour = c;
+                let path = path_str(&ed.dir);
+                self.run("page.paper", &params(&[("path", &path), ("rules", c.map(notecraft_model::NodeColor::id).unwrap_or("none"))]));
+                self.say(match c {
+                    Some(c) => crate::i18n::format_message_id("ui.the_lines_are_colour", &[("colour", &crate::tl!(c.label()).to_lowercase())]),
+                    None => crate::tl_id!("ui.the_lines_are_the_theme_s_own_colour").to_string(),
+                });
+            }
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -4345,6 +4362,7 @@ impl NoteCraftApp {
             ribbon::Act::InkInsert => self.ink_insert(),
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
+            ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
         }
     }
 
@@ -5236,6 +5254,90 @@ impl NoteCraftApp {
     }
 
     /// Exports the original image file at `src` via the native save file dialog (or browser download).
+    /// Rotates or flips a picture on the page (issue #273). The turned picture is written as a
+    /// new file beside the page and every place the page shows the old one points at it; the
+    /// original file stays, so Undo puts the page back on it. A picture given a size of its own
+    /// keeps it, with width and height swapped by a quarter turn.
+    fn turn_picture(&mut self, src: &str, how: crate::turn::Turn) {
+        use notecraft_formats::markdown::Block;
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        if !ed.writable {
+            self.complain(crate::tl_id!("ui.this_picture_cannot_be_turned_here"));
+            return;
+        }
+        let dir = ed.dir.clone();
+        let (_, _, bytes) = match crate::imagemenu::validate_and_read_image(&dir, src) {
+            Ok(read) => read,
+            Err(e) => {
+                self.complain(&crate::i18n::format_message_id("ui.cannot_read_the_picture_error", &[("error", &e.to_string())]));
+                return;
+            }
+        };
+        let (turned, ext) = match crate::turn::turn(&bytes, how) {
+            Ok(turned) => turned,
+            Err(e) => {
+                log::debug!("picture turn failed for {src:?}: {e}");
+                self.complain(crate::tl_id!("ui.this_picture_cannot_be_turned_here"));
+                return;
+            }
+        };
+        let link = match notecraft_store::assets::attach_bytes(&dir, &crate::turn::turned_name(src, how, ext), &turned) {
+            Ok(link) => link,
+            Err(e) => {
+                self.complain(&crate::i18n::format_message_id("ui.cannot_save_the_pasted_picture_error", &[("error", &e.to_string())]));
+                return;
+            }
+        };
+        let Some(ed) = self.editor.as_mut() else { return };
+        // The page as it stood is kept, so Undo takes back only the turn.
+        Self::remember_step(ed);
+        let mut found = false;
+        for block in &mut ed.blocks {
+            match block {
+                Block::Image { src: s, width, height, .. } if s == src => {
+                    s.clone_from(&link);
+                    if how.swaps_sides() {
+                        std::mem::swap(width, height);
+                    }
+                    found = true;
+                }
+                Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => {
+                    for span in spans.iter_mut().filter(|s| s.image.as_deref() == Some(src)) {
+                        span.image = Some(link.clone());
+                        found = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !found {
+            // Nothing pointed at it after all: the copy is not left lying in the folder.
+            let _ = notecraft_store::assets::remove(&dir, link.trim_start_matches("assets/"));
+            return;
+        }
+        if let Some(caret) = ed.caret.as_mut()
+            && let Some(block) = ed.blocks.get(caret.block)
+        {
+            caret.text = pageedit::caret_text(block);
+            caret.inline = None;
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        ed.attachments = notecraft_store::assets::list(&dir);
+        let inked = self.pad.as_ref().is_some_and(|p| !p.is_empty());
+        self.say(match (how.swaps_sides(), inked) {
+            (true, false) => crate::tl_id!("ui.rotated_the_picture"),
+            (false, false) => crate::tl_id!("ui.flipped_the_picture"),
+            // Ink is its own layer over the whole page: it is not turned with the picture.
+            (true, true) => crate::tl_id!("ui.rotated_the_picture_ink_on_the_page_stays_where_it_is"),
+            (false, true) => crate::tl_id!("ui.flipped_the_picture_ink_on_the_page_stays_where_it_is"),
+        });
+    }
+
     fn save_picture_as(&mut self, src: &str) {
         let Some(page_dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
             self.say(crate::tl_id!("ui.open_a_page_first"));
@@ -5511,6 +5613,16 @@ impl NoteCraftApp {
     /// Puts the Format Painter's formatting on words just picked with the pointer: on the
     /// release that ends the pick, as in Office. Escape puts the painter down. Called once a
     /// frame after the page is drawn.
+    /// Escape puts the laser pointer down (issue #289): it is for a moment of pointing, and
+    /// the caret comes back afterwards.
+    fn laser_keys(&mut self, ctx: &Context) {
+        if self.pointer == ribbon::Pointer::Laser && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.pointer = ribbon::Pointer::Write;
+            crate::inkpad::clear_laser(ctx);
+            self.say(crate::tl_id!("ui.laser_pointer_put_down"));
+        }
+    }
+
     fn paint_formatting(&mut self, ctx: &Context) {
         if self.painter.is_none() {
             return;
@@ -7271,6 +7383,7 @@ impl NoteCraftApp {
                     ui.painter_at(viewport).rect_filled(viewport, 0.0, wash);
                 }
                 if wide && rules.on() {
+                    let lines = crate::theme::rule_lines_in(&tokens, ed.rule_colour);
                     crate::ribbon::paint_paper_canvas(
                         &ui.painter_at(viewport),
                         viewport,
@@ -7279,8 +7392,8 @@ impl NoteCraftApp {
                         // Through the page's origin, so a box on the grid sits on a line. A page
                         // not yet drawn as boxes counts from the canvas's corner.
                         viewport.translate(self.canvas_pan).min + ed.origin_in_canvas.unwrap_or_default(),
-                        tokens.rule_line,
-                        tokens.rule_line_strong,
+                        lines.0,
+                        lines.1,
                     );
                 }
                 let content_rect = viewport.translate(self.canvas_pan);
@@ -9295,6 +9408,7 @@ impl NoteCraftApp {
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),
+            "ruleColour": self.editor.as_ref().and_then(|e| e.rule_colour).map(notecraft_model::NodeColor::id),
             "pageColour": self.editor.as_ref().and_then(|e| e.colour).map(notecraft_model::NodeColor::id),
             // The pen the Draw tab is set to, and the drawing it writes in.
             "ink": {
@@ -9547,6 +9661,7 @@ impl NoteCraftApp {
             self.central(ui);
         }
         self.paint_formatting(ctx);
+        self.laser_keys(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
         self.import_progress(ctx);
@@ -11033,6 +11148,102 @@ mod insert_table_size_tests {
         assert_eq!(table_size(" 200 ", "30"), Some((200, 30)));
         for (rows, columns) in [("0", "3"), ("3", "0"), ("201", "3"), ("3", "31"), ("", "3"), ("x", "3"), ("-1", "3"), ("2.5", "3")] {
             assert_eq!(table_size(rows, columns), None, "{rows:?} x {columns:?}");
+        }
+    }
+}
+
+/// Issue #273: the picture menu's Rotate and Flip. The turned picture is a new file beside the
+/// page, the page points at it (its size swapped by a quarter turn), the original stays, and
+/// Undo puts the page back on the original. Both page formats.
+#[cfg(test)]
+mod picture_turn_tests {
+    use super::*;
+    use crate::turn::Turn;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    fn settle(h: &mut H) {
+        for _ in 0..5 {
+            h.step();
+        }
+    }
+
+    fn picture(h: &H) -> (String, Option<f32>, Option<f32>) {
+        let ed = h.state().editor.as_ref().expect("editor");
+        ed.blocks
+            .iter()
+            .find_map(|b| match b {
+                notecraft_formats::Block::Image { src, width, height, .. } => Some((src.clone(), *width, *height)),
+                _ => None,
+            })
+            .expect("a picture")
+    }
+
+    fn size_of(page: &std::path::Path, src: &str) -> (u32, u32) {
+        let bytes = std::fs::read(page.join(src)).expect("the file");
+        image::load_from_memory(&bytes).expect("a picture").to_rgba8().dimensions()
+    }
+
+    #[test]
+    fn a_picture_is_turned_into_a_new_file_and_undo_puts_the_old_one_back() {
+        for html in [true, false] {
+            let t = notecraft_store::testing::TempDir::new("picture-turn");
+            let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+            settings.set("privacy_welcome_seen", "true").expect("settings");
+            let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+            let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+            let page = if html { sample.html_page.clone() } else { sample.md_page.clone() };
+            let mut png = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(30, 20, image::Rgba([0, 120, 255, 255])))
+                .write_to(&mut png, image::ImageFormat::Png)
+                .expect("png");
+            let src = notecraft_store::assets::attach_bytes(&page, "pic.png", &png.into_inner()).expect("attach");
+            let body = if html { format!("<p>Alpha</p><p><img src=\"{src}\" alt=\"Pic\"></p>") } else { format!("Alpha\n\n![Pic]({src})\n") };
+            notecraft_store::page::save_body(&page, &body).expect("fixture");
+            let mut app = NoteCraftApp::new(session);
+            app.open_path(&page.to_string_lossy());
+            let mut h: H = egui_kittest::Harness::builder()
+                .with_size(vec2(1400.0, 800.0))
+                .with_accessibility_check(false)
+                .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+            settle(&mut h);
+            {
+                // A size of its own, as a resize gives it, to see it swapped.
+                let ed = h.state_mut().editor.as_mut().expect("editor");
+                for b in &mut ed.blocks {
+                    if let notecraft_formats::Block::Image { width, height, .. } = b {
+                        *width = Some(60.0);
+                        *height = Some(40.0);
+                    }
+                }
+            }
+            settle(&mut h);
+            let before = picture(&h);
+
+            h.state_mut().ribbon_act(ribbon::Act::TurnPicture(src.clone(), Turn::Right));
+            settle(&mut h);
+            let (turned, width, height) = picture(&h);
+            assert_eq!(turned, "assets/pic-rotated.png", "html={html}: the page points at the turned copy");
+            assert_eq!((width, height), (Some(40.0), Some(60.0)), "html={html}: its size is swapped");
+            assert_eq!(size_of(&page, &turned), (20, 30), "html={html}: the copy is turned");
+            assert_eq!(size_of(&page, &src), (30, 20), "html={html}: and the original is untouched");
+            h.state_mut().save_page_now();
+            assert!(notecraft_store::page::load_page(&page).expect("load").body.contains("pic-rotated.png"), "html={html}: saved");
+
+            h.state_mut().undo();
+            settle(&mut h);
+            assert_eq!(picture(&h), before, "html={html}: undo points the page at the original again");
+            h.state_mut().redo();
+            settle(&mut h);
+            assert_eq!(picture(&h).0, turned, "html={html}: redo brings the turned one back");
+
+            // A flip keeps the size and turns the copy of the copy, named once.
+            h.state_mut().ribbon_act(ribbon::Act::TurnPicture(turned.clone(), Turn::FlipHorizontal));
+            settle(&mut h);
+            let (flipped, width, height) = picture(&h);
+            assert_eq!(flipped, "assets/pic-flipped.png");
+            assert_eq!((width, height), (Some(40.0), Some(60.0)));
+            assert_eq!(size_of(&page, &flipped), (20, 30));
         }
     }
 }
