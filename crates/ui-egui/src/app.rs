@@ -4282,6 +4282,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
             ribbon::Act::Table(what) => self.edit_table(what),
+            ribbon::Act::DeleteTable => self.delete_table(),
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
@@ -5051,6 +5052,39 @@ impl NoteCraftApp {
         if cols_moved {
             self.save_block_marks((true, false));
         }
+    }
+
+    /// Table > Delete Table (issue #297): takes the table the caret is in out of the page, as one
+    /// Undo step. The caret goes to the block that takes its place (the one after it, or the
+    /// one before when it was last); a page left with nothing gets an empty line to type on.
+    /// Table widths, cell marks and justified paragraphs after it move up with their blocks.
+    fn delete_table(&mut self) {
+        use notecraft_formats::markdown::Block;
+        let Some(ed) = self.editor.as_mut() else { return };
+        let at = ed.caret.as_ref().filter(|c| c.cell.is_some()).map(|c| c.block);
+        let Some(at) = at.filter(|&at| matches!(ed.blocks.get(at), Some(Block::Table { .. }))) else {
+            self.say(crate::tl_id!("ui.put_the_caret_in_a_table_first"));
+            return;
+        };
+        Self::remember_step(ed);
+        ed.caret = None;
+        ed.blocks.remove(at);
+        ed.count_removed_from_boxes(at);
+        let cols = ed.columns.remove_blocks(at..at + 1);
+        let justified = ed.justified.remove_blocks(at..at + 1);
+        if ed.blocks.is_empty() {
+            ed.blocks.push(Block::Paragraph(Vec::new()));
+            ed.count_inserted_in_boxes(0, 1);
+        }
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        let to = at.min(ed.blocks.len() - 1);
+        let text = pageedit::text_for_caret(&ed.blocks, to);
+        ed.caret = Some(pageedit::Caret { block: to, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None, inline: None });
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks((cols, justified));
+        self.say(crate::tl_id!("ui.deleted_the_table"));
     }
 
     fn edit_table(&mut self, what: pageedit::TableEdit) {
@@ -10558,6 +10592,56 @@ mod structural_undo_tests {
                 assert_undoable(&mut h, &format!("html={html} {name}"), ribbon::Act::Table(edit));
             }
         }
+    }
+
+    /// Issue #297: Table > Delete Table takes the caret's table out as one Undo step, in both
+    /// formats, and the page saves and reopens without it. The caret lands on a real line.
+    #[test]
+    fn delete_table_takes_the_whole_table_out_and_can_be_undone() {
+        use notecraft_formats::Block;
+        for html in [false, true] {
+            let (_t, mut h) = page_with_table(html, "delete-table");
+            let table = blocks(&h).iter().position(|b| matches!(b, Block::Table { .. })).expect("a table");
+            put_caret(&mut h, table, Some((1, 1)));
+            assert_undoable(&mut h, &format!("html={html} delete table"), ribbon::Act::DeleteTable);
+            let left = blocks(&h);
+            assert!(!left.iter().any(|b| matches!(b, Block::Table { .. })), "html={html}: no table is left: {left:?}");
+            assert!(left.iter().any(|b| pageedit::block_text(b).contains("Alpha")), "html={html}: the words around it stay");
+            let caret = h.state().editor.as_ref().and_then(|e| e.caret.clone()).expect("a caret");
+            assert!(caret.cell.is_none() && caret.block < left.len(), "html={html}: the caret is on a line of the page: {caret:?}");
+
+            // Saved and opened again: the table is still gone and nothing else changed.
+            h.state_mut().save_page_now();
+            let path = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("path");
+            let file = if html { path.join("index.html") } else { path.join("index.md") };
+            let written = std::fs::read_to_string(&file).expect("page file");
+            assert!(!written.contains("<table") && !written.contains("| A | B |"), "html={html}: saved without the table:\n{written}");
+            assert!(written.contains("Alpha"), "html={html}: and with the words:\n{written}");
+        }
+    }
+
+    /// A page that held only a table keeps a line to type on, and Delete Table with the caret
+    /// outside a table changes nothing.
+    #[test]
+    fn delete_table_on_a_table_only_page_and_outside_a_table() {
+        use notecraft_formats::Block;
+        let (_t, mut h) = page_with_table(false, "delete-only-table");
+        put_caret(&mut h, 0, None);
+        let before = blocks(&h);
+        h.state_mut().ribbon_act(ribbon::Act::DeleteTable);
+        settle(&mut h);
+        assert_eq!(blocks(&h), before, "with the caret outside a table nothing changes");
+
+        let table = blocks(&h).iter().position(|b| matches!(b, Block::Table { .. })).expect("a table");
+        h.state_mut().editor.as_mut().expect("editor").blocks.retain(|b| matches!(b, Block::Table { .. }));
+        put_caret(&mut h, 0, Some((1, 0)));
+        let _ = table;
+        h.state_mut().ribbon_act(ribbon::Act::DeleteTable);
+        settle(&mut h);
+        let left = blocks(&h);
+        assert_eq!(left.len(), 1, "one empty line is left: {left:?}");
+        assert!(matches!(&left[0], Block::Paragraph(spans) if spans.is_empty()), "{left:?}");
+        assert_eq!(h.state().editor.as_ref().and_then(|e| e.caret.as_ref()).map(|c| c.block), Some(0));
     }
 
     /// Writing first and then changing the table is two steps, not one: Undo takes back the

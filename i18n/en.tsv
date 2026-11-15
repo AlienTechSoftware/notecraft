@@ -936,3 +936,7 @@
 @id	ui.update_manual	NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.
 @id	ui.update_manual_this_build	This build cannot install updates itself. The releases page has the newest version.
 @id	ui.update_failed	The update did not work: {reason}
+@id	ui.delete_table_2	Delete\nTable
+@id	ui.take_the_whole_table_out	Take the whole table out
+@id	ui.put_the_caret_in_a_table_first	Put the caret in a table first
+@id	ui.deleted_the_table	Deleted the table
