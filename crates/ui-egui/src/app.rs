@@ -941,6 +941,8 @@ pub struct NoteCraftApp {
     collect_pending: bool,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
+    /// The page ScrollArea's vertical bar hit strip from last frame, kept out of the ink layer.
+    page_scroll_strip: Option<egui::Rect>,
     /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
     space_tool: bool,
     /// What the pointer does on the page (the Draw tab).
@@ -1114,6 +1116,7 @@ impl NoteCraftApp {
             canvas_pan: egui::Vec2::ZERO,
             collect_pending: false,
             page_hbar: None,
+            page_scroll_strip: None,
             space_tool: false,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
@@ -7097,8 +7100,12 @@ impl NoteCraftApp {
                                 // scrolled page has left behind: the ink reaches down to the
                                 // bottom of what the window shows.
                                 let ink_area = viewport.with_max_y(viewport.max.y.max(ui.clip_rect().max.y));
+                                let hit = self
+                                    .page_scroll_strip
+                                    .filter(|bar| bar.min.x > ink_area.min.x)
+                                    .map_or(ink_area, |bar| ink_area.with_max_x(ink_area.max.x.min(bar.min.x)));
                                 let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(ink_area));
-                                ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, top, pad, pen, pressure, &tokens, zoom_scale);
+                                ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, hit, top, pad, pen, pressure, &tokens, zoom_scale);
                             }
                             // A press lets go of whatever was selected: the drag that may
                             // follow it builds a new one. Done here, once a frame, rather
@@ -7353,6 +7360,7 @@ impl NoteCraftApp {
                     drag: egui::containers::scroll_area::DragScroll::Never,
                     ..egui::containers::scroll_area::ScrollSource::default()
                 };
+                let page_outer = ui.available_rect_before_wrap();
                 let shown = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll).show(ui, |ui| {
                     // On a touch screen two fingers scroll the page. One finger writes,
                     // selects and moves boxes, as the mouse does, so it cannot scroll too.
@@ -7373,6 +7381,11 @@ impl NoteCraftApp {
                         &mut rename,
                     );
                 });
+                let scroll_style = ui.spacing().scroll;
+                let scroll_edge = page_outer.max.x.min(ui.clip_rect().max.x);
+                let max_cross = scroll_edge - scroll_style.bar_outer_margin;
+                self.page_scroll_strip = (scroll.scroll_bar && shown.content_size.y > shown.inner_rect.height() + 0.5)
+                    .then(|| egui::Rect::from_x_y_ranges((max_cross - scroll_style.bar_width)..=max_cross, shown.inner_rect.y_range()));
                 // Sideways the page is a canvas: when what is on it reaches past the view's
                 // sides, a bar along the bottom shows it and moves the canvas (issue #188).
                 if let Some(span) = page_span {

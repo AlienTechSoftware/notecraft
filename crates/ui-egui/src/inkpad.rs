@@ -517,8 +517,19 @@ const HANDLE: f32 = 9.0;
 
 /// Draws a page's ink over the page, and takes what the pen does to it. `body` is the
 /// rectangle the page's words were drawn in; the ink is kept in that rectangle's own
-/// coordinates. Returns true when the ink changed.
-pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pen: Pen, pressure: f32, t: &Tokens, zoom: f32) -> bool {
+/// coordinates. `hit` is the part of `body` that may take the pointer, so page chrome such as
+/// scroll bars can be left out. Returns true when the ink changed.
+pub fn show(
+    ui: &mut Ui,
+    body: egui::Rect,
+    hit: egui::Rect,
+    origin: egui::Pos2,
+    pad: &mut Pad,
+    pen: Pen,
+    pressure: f32,
+    t: &Tokens,
+    zoom: f32,
+) -> bool {
     use crate::ribbon::Pointer;
     let _ = t;
     // Painting on the layer, not through the ui, so ink outside text remains visible. Cut off
@@ -594,7 +605,7 @@ pub fn show(ui: &mut Ui, body: egui::Rect, origin: egui::Pos2, pad: &mut Pad, pe
     if ui.data_mut(|d| d.remove_temp::<bool>(claim_press_id())).unwrap_or(false) && ui.input(|i| i.pointer.primary_down()) {
         ui.ctx().set_dragged_id(layer);
     }
-    let resp = ui.interact(body, layer, Sense::click_and_drag());
+    let resp = ui.interact(hit, layer, Sense::click_and_drag());
     ui.ctx().set_cursor_icon(match pen.pointer {
         Pointer::Erase => egui::CursorIcon::NotAllowed,
         Pointer::Pick => egui::CursorIcon::Grab,
@@ -920,7 +931,7 @@ mod tests {
             ui.set_clip_rect(view);
             // The page, scrolled so its top is 300 points above the view.
             let body = egui::Rect::from_min_size(egui::pos2(0.0, -100.0), vec2(800.0, 2000.0));
-            show(ui, body, body.min, &mut pad, pen, 1.0, &tokens, 1.0);
+            show(ui, body, body, body.min, &mut pad, pen, 1.0, &tokens, 1.0);
         });
         out.textures_delta.clear();
         assert!(!out.shapes.is_empty(), "the stroke is painted");
@@ -938,7 +949,7 @@ mod tests {
         let tokens = crate::theme::Tokens::for_theme(crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default });
         let mut out = ctx.run_ui(input, |ui| {
             let body = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0));
-            show(ui, body, egui::Pos2::ZERO, pad, pen, pressure, &tokens, 1.0);
+            show(ui, body, body, egui::Pos2::ZERO, pad, pen, pressure, &tokens, 1.0);
         });
         // egui insists the frame's texture changes are taken; a test has nowhere to put them.
         out.textures_delta.clear();
