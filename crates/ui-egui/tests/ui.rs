@@ -3555,6 +3555,74 @@ fn move_or_copy_takes_a_page_to_another_section() {
     assert_ne!(notecraft_store::tree::read_node(&copies[0]).map(|n| n.id), Some(id), "and an id of its own");
 }
 
+/// Issue #254: Ctrl+N and Ctrl+Alt+M did nothing while the caret was in a paragraph, because
+/// any focused text box blocked them. They work from the page's own text now, keeping what was
+/// typed, and stay with the search box when that has the keyboard.
+#[test]
+fn page_shortcuts_work_while_typing_in_the_page_but_not_in_search() {
+    let (_t, app, s) = sample_app("ui-page-shortcuts-editing");
+    notecraft_store::page::save_body(&s.md_page, "alpha bravo").expect("fixture");
+    let mut h = harness(app, LIGHT);
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let section = s.md_page.parent().expect("section").to_path_buf();
+    let pages = || {
+        notecraft_store::tree::child_dirs(&section)
+            .into_iter()
+            .filter(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.kind == notecraft_model::NodeKind::Page))
+            .count()
+    };
+    let before = pages();
+    let open_page = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["path"].as_str().unwrap_or_default().to_string()
+    };
+
+    // The search box has the keyboard: Ctrl+N is its, and no page is made.
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("search");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "N", "ctrl": true})).expect("Ctrl+N in search");
+    settle(&mut h);
+    assert_eq!(pages(), before, "Ctrl+N in the search box makes no page");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave search");
+    settle(&mut h);
+
+    // The caret in a paragraph, with words just typed: Ctrl+Alt+M opens Move or Copy.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+    ask(&mut h, "ui.text", json!({"text": " charlie"})).expect("type");
+    settle(&mut h);
+    if !cfg!(target_os = "macos") {
+        ask(&mut h, "ui.key", json!({"key": "M", "ctrl": true, "alt": true})).expect("Ctrl+Alt+M");
+        settle(&mut h);
+        assert!(h.query_all_by_label("Move or Copy").next().is_some(), "Ctrl+Alt+M opens Move or Copy from the paragraph");
+        h.query_all_by_label("Cancel").last().expect("Cancel").click();
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret again");
+        settle(&mut h);
+    }
+
+    // Ctrl+N from the paragraph makes a page, and the words typed before it are kept.
+    let first = open_page(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "N", "ctrl": true})).expect("Ctrl+N in the paragraph");
+    settle(&mut h);
+    assert_eq!(pages(), before + 1, "Ctrl+N makes a page from the middle of a paragraph");
+    assert_ne!(open_page(&mut h), first, "and opens it");
+    let kept = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(kept.contains("alpha bravo charlie"), "what was typed was saved first:\n{kept}");
+
+    // From the page title too: it is the page's own text.
+    // The id the window gives the title box (`app.rs`, "page-title-box").
+    #[allow(deprecated)]
+    let title = egui::Id::new("page-title-box");
+    h.ctx.memory_mut(|m| m.request_focus(title));
+    settle(&mut h);
+    assert!(h.ctx.memory(|m| m.has_focus(title)), "the title has the keyboard");
+    ask(&mut h, "ui.key", json!({"key": "N", "ctrl": true})).expect("Ctrl+N in the title");
+    settle(&mut h);
+    assert_eq!(pages(), before + 2, "Ctrl+N makes a page from the title as well");
+}
+
 /// Ctrl+Z takes back what was just done to the page, and Ctrl+Y puts it back: typing, and
 /// a row taken out of a table.
 /// Inserting the date is an edit like any other: Ctrl+Z takes it back (owner, 2026-11-12).
