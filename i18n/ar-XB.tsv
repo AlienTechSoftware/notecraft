@@ -918,3 +918,5 @@
 @id	ui.insert_space_how	[[RLI]]$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@[[PDI]]
 @id	ui.pen_keys_typing	[[RLI]]$$$Typing (Alt+0)@@@[[PDI]]
 @id	ui.pen_keys_picked	[[RLI]]$$$Pen {number} (Alt+{number})@@@[[PDI]]
+@id	ui.redo_stroke	[[RLI]]$$$Redo\nstroke@@@[[PDI]]
+@id	ui.put_back_the_stroke_undo_stroke_took_back	[[RLI]]$$$Put back the stroke Undo stroke took back@@@[[PDI]]
