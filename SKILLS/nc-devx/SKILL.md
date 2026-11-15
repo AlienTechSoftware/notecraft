@@ -236,15 +236,16 @@ cargo xtask ci
 
 ## Quality Levels
 
-Each level includes the ones before it. The hooks run L1 and L2 for you once
-`git config core.hooksPath .githooks` is set (the setup script does it); GitHub PR
-CI runs L3; L4 is the release signoff and delivery process.
+Each level includes the ones before it. L1 runs automatically from the commit hooks once
+`git config core.hooksPath .githooks` is set (the setup script does it). Run `cargo xtask
+pre-push` manually before pushing; its fast hook checks that validation is still current. GitHub
+PR CI runs L3; L4 is the release signoff and delivery process.
 
 | Level | When | What runs | Where | Time |
 |---|---|---|---|---|
 | **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
 | **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main`. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
-| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | Varies by machine and cache; timings are recorded |
+| **L2** | Before a push | Run `cargo xtask pre-push` before `git push`: fetch current `main`, check PII against `origin/main`, run full `cargo xtask ci`, then record the result for the clean commit and base. The fast `.githooks/pre-push` hook fetches again and verifies the record still matches; it refuses stale or missing validation. Merge commits are allowed. | `cargo xtask pre-push`, `.githooks/pre-push` | Full gate varies by machine/cache; hook is seconds |
 | **L3** | Pull request | Code quality and cross-platform source validation: split fmt, clippy, static checks, demo checks, tests, and non-blocking coverage, plus build/test jobs for Linux, Windows, and macOS. No installers or publishing. | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
 | **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `.github/workflows/packaging.yml`, `.github/workflows/release.yml`, `docs/releasing.md` | release/manual |
 
@@ -447,14 +448,15 @@ Hooks are in `.githooks/` and run automatically after `git config core.hooksPath
 - Fix the issue and re-stage the files
 - Or use `--no-verify` as a last resort (and fix the underlying issue)
 
-### Pre-push Hook (runs before push to remote)
-**File:** `.githooks/pre-push`  
-**Speed:** ~few minutes  
-**Checks:**
-- Full `cargo xtask ci` (all gates: build, test, lint, layers, text, etc.)
+### Push Validation
+Run `cargo xtask pre-push` before `git push`. It checks branch freshness, scans for PII, and runs
+the full `cargo xtask ci` while no remote transport is open. On success, it records the current
+commit and `origin/main` in Git metadata. The `.githooks/pre-push` hook fetches `origin/main` again
+and checks that the working tree is clean and both hashes still match. Missing or stale validation
+refuses the push with the command to rerun. If `origin/main` advances during CI, rerun the command.
 
 **If it blocks:**
-- Fix the issue locally and test: `cargo xtask ci`
+- Fix the issue locally and rerun `cargo xtask pre-push` before pushing
 - Then push
 
 ---
@@ -548,11 +550,10 @@ Or use your IDE's built-in build/test runner if available.
 
 Before submitting a PR:
 
-1. Run the full gate: `cargo xtask ci`
-2. Fix any failures
-3. Verify git hooks are enabled: `git config core.hooksPath` should show `.githooks`
-4. Commit with clear messages
-5. Push and open PR
+1. Verify git hooks are enabled: `git config core.hooksPath` should show `.githooks`
+2. Fix any failures and commit with a clear message
+3. Run `cargo xtask pre-push` after committing; it runs the full gate on the exact clean commit
+4. Push and open the PR; the pre-push hook checks that validation is still current
 
 See [AGENTS.md](../../AGENTS.md) for submission guidelines.
 

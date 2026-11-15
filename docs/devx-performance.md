@@ -6,8 +6,10 @@ code.
 
 ## Commands and measurements
 
-`cargo xtask ci` records the duration of each L2 phase, including the parallel non-UI tests and
-the serial UI tests. `cargo xtask test` records those two test phases. The Linux, Windows, and
+`cargo xtask pre-push` runs PII and the full `cargo xtask ci` gate before `git push` opens an SSH
+transport. The fast pre-push hook only rechecks current `origin/main` and the clean commit's
+validation record. `cargo xtask ci` records the duration of each phase, including the parallel
+non-UI tests and the serial UI tests. `cargo xtask test` records those two test phases. The Linux, Windows, and
 macOS CI build/test job wraps `cargo build --workspace` and `cargo test --workspace` and adds
 their durations to the GitHub Actions summary.
 

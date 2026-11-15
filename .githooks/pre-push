@@ -1,44 +1,17 @@
 #!/bin/sh
-# Runs before every push. The whole gate, the same command CI runs: fmt, clippy with
-# -D warnings, the test suite, layers, assets, docs, text and the Welcome notebook check.
-# Two to four minutes warm, once per push rather than once per commit.
-#
-# This is the one that matters. CI only ever sees pushes, so this is the last place a red
-# tree can be caught before it is public.
-#
-# Skip once:        git push --no-verify
-# Turn off for good: git config --unset core.hooksPath
+# Full validation must run before invoking `git push`, while no SSH transport is open:
+#   cargo xtask pre-push
+# This hook is deliberately fast. It fetches origin/main and verifies the recorded gate result
+# still matches the pushed commit and a clean worktree.
 set -e
 
-# Git sends the list of refs being pushed on this input. Read and discard it, so git does not
-# fail with a broken pipe (exit 141) when this hook exits.
+# Git sends the list of refs being pushed on stdin. Drain it before starting child processes.
 cat > /dev/null
-# The gate below runs child processes; give them no inherited pipe from git, so none of them
-# holds git's stdin open or writes into it after git has finished sending the ref list.
 exec < /dev/null
 
-# Quality level L2. Up to date with the newest origin/main; merge commits are allowed so the
-# integration provenance remains visible. Coverage is not run here: it rebuilds everything, so it runs on
-# demand and in CI on the pull request.
-echo "pre-push (quality level L2): branch, pii, cargo xtask ci"
-if ! cargo xtask check-branch --push; then
+echo "pre-push (quality level L2): checking full-gate validation and origin/main freshness"
+if ! cargo xtask check-push-validation; then
     echo
-    echo "pre-push: update from origin/main first. See SKILLS/nc-devx/SKILL.md, quality levels."
-    exit 1
-fi
-
-# PII check first (fail fast)
-echo "pre-push: checking for PII..."
-if ! bash SKILLS/nc-devx/scripts/check-pii.sh origin/main; then
-    echo
-    echo "pre-push: PII check failed. Remove sensitive data before pushing."
-    exit 1
-fi
-
-echo "pre-push: cargo xtask ci (this takes a few minutes)"
-if ! cargo xtask ci; then
-    echo
-    echo "pre-push: the gate failed. This is what CI would have told you, only sooner."
-    echo "          Push anyway with --no-verify if you mean to."
+    echo "pre-push: run 'cargo xtask pre-push' before pushing. The full gate runs without an open SSH session."
     exit 1
 fi

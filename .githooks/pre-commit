@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs before every commit. The cheap half of the gate only: formatting and the four file
-# checks, about two seconds warm. Compiling is left to pre-push, so making a commit stays
-# something you do without thinking about it.
+# checks, about two seconds warm. The full gate runs with `cargo xtask pre-push` before a push,
+# so making a commit stays something you do without thinking about it.
 #
 # Skip once:        git commit --no-verify
 # Turn off for good: git config --unset core.hooksPath
@@ -37,4 +37,4 @@ for task in fmt i18n-audit layers assets docs text; do
         exit 1
     fi
 done
-echo "pre-commit: ok (clippy and the tests run on push)"
+echo "pre-commit: ok (run cargo xtask pre-push before pushing)"

@@ -18,6 +18,8 @@
 //!           `--update` writes this run as the new baseline
 //! devx-time PHASE -- COMMAND [ARGS...]  measure a build/test command and report timing regressions
 //! check-branch [--push]  the branch and history checks of quality levels L1 and L2
+//! pre-push  run PII and full CI before pushing; bind the result to the current clean commit
+//! check-push-validation  fast pre-push hook check for a current pre-push validation
 //! commit-msg FILE        the commit message check, for the commit-msg hook
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
 //! demo [html|cmgfm|both]            build one or both official demo formats (default: both)
@@ -30,6 +32,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod coverage;
+mod devx_push;
 mod devx_timing;
 mod i18n_audit;
 mod quality;
@@ -543,6 +546,10 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
         "test" if options.is_empty() => run_test_with_timing(&root),
         "test" => Err("usage: cargo xtask test".into()),
         "devx-time" => devx_timing::run_timed_command(&root, options),
+        "pre-push" if options.is_empty() => devx_push::prepare(&root),
+        "pre-push" => Err("usage: cargo xtask pre-push".into()),
+        "check-push-validation" if options.is_empty() => devx_push::check(&root),
+        "check-push-validation" => Err("usage: cargo xtask check-push-validation".into()),
         _ => run_task(&root, task, options),
     }
 }
@@ -594,7 +601,7 @@ fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
         "demo-check" => cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
         other => Err(format!(
-            "unknown task '{other}'. Tasks: ci fmt clippy test i18n-audit layers assets docs text screenshots coverage check-branch commit-msg version demo demo-check demo-copy devx-time"
+            "unknown task '{other}'. Tasks: ci fmt clippy test i18n-audit layers assets docs text screenshots coverage check-branch pre-push check-push-validation commit-msg version demo demo-check demo-copy devx-time"
         )),
     }
 }
