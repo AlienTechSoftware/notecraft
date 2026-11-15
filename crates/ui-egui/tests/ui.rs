@@ -1605,6 +1605,78 @@ fn the_ribbon_inserts_in_both_formats() {
     assert!(h.state().body().is_some_and(|b| b.contains("<table>") && b.contains("<th>")), "{:?}", h.state().body());
 }
 
+/// Issue #287: Insert > Table > Insert Table... was "not built". It opens a dialog for a size
+/// beyond the size picker's grid: OK (or Enter) puts the table in at the caret, a size out of
+/// range is refused, and Cancel or Escape leaves the page alone. Both page formats.
+#[test]
+fn insert_table_dialog_makes_a_table_of_the_typed_size() {
+    for html in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-insert-table-dialog");
+        let page = if html { s.html_page.clone() } else { s.md_page.clone() };
+        app.open_path(&page.to_string_lossy());
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        let tables =
+            |h: &Harness<'_, NoteCraftApp>| h.state().editor_blocks().iter().filter(|b| matches!(b, notecraft_formats::Block::Table { .. })).count();
+        let before = tables(&h);
+        h.get_by_label("Insert").click();
+        h.run();
+        let open = |h: &mut Harness<'_, NoteCraftApp>| {
+            h.get_by_label("Table").click();
+            h.run();
+            h.get_by_label("Insert Table…").click();
+            settle(h);
+        };
+
+        // Escape and Cancel leave the page alone.
+        open(&mut h);
+        let _ = h.get_by_label("Number of columns");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("Number of columns").count(), 0, "Escape closes the dialog");
+        assert_eq!(tables(&h), before);
+        open(&mut h);
+        h.get_by_label("Cancel").click();
+        settle(&mut h);
+        assert_eq!(tables(&h), before, "Cancel inserts nothing");
+
+        // A size out of range is refused; a good one goes in, bigger than the grid offers.
+        open(&mut h);
+        review(&mut h, &format!("insert_table_dialog_{html}"));
+        h.state_mut().set_insert_table_size("0", "4");
+        settle(&mut h);
+        let _ = h.get_by_label_contains("Columns: 1 to 30");
+        ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+        settle(&mut h);
+        assert_eq!(tables(&h), before, "html={html}: zero rows is refused");
+        h.state_mut().set_insert_table_size("25", "12");
+        settle(&mut h);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        let blocks = h.state().editor_blocks();
+        let made = blocks.iter().find_map(|b| match b {
+            notecraft_formats::Block::Table { head, rows } => Some((head.len(), rows.len() + 1)),
+            _ => None,
+        });
+        assert_eq!(made, Some((12, 25)), "html={html}: 12 columns and 25 rows, heading included");
+        h.state_mut().save();
+        // Opened again from disk, the page still has the table at that size.
+        let other = if html { s.md_page.clone() } else { s.html_page.clone() };
+        h.state_mut().open_path(&other.to_string_lossy());
+        settle(&mut h);
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let reopened = h
+            .state()
+            .editor_blocks()
+            .iter()
+            .any(|b| matches!(b, notecraft_formats::Block::Table { head, rows } if head.len() == 12 && rows.len() + 1 == 25));
+        assert!(reopened, "html={html}: saved and read back at 12 by 25");
+    }
+}
+
 /// The ribbon's Styles and Basic Text buttons change the block the caret is in.
 #[test]
 fn the_ribbon_formats_what_the_caret_is_in() {

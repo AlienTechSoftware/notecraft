@@ -138,6 +138,8 @@ pub enum Act {
     NewGridCraft,
     /// A table of this many rows by this many columns, from the size picker.
     InsertTable(usize, usize),
+    /// Insert > Table > Insert Table...: the dialog for a size typed in.
+    InsertTableDialog,
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
     /// The pen at this place on the rack was picked up.
@@ -1934,7 +1936,10 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     picked = true;
                 }
                 ui.separator();
-                ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.insert_table_not_built")).color(t.muted)));
+                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Table)), crate::tl_id!("ui.insert_table_2"), t).clicked() {
+                    acts.push(Act::InsertTableDialog);
+                    picked = true;
+                }
                 if view.gridcraft {
                     if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), crate::tl_id!("ui.new_gridcraft_spreadsheet"), t).clicked() {
                         acts.push(Act::NewGridCraft);

@@ -936,3 +936,8 @@
 @id	ui.update_manual	[[RLI]]$$$NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.@@@[[PDI]]
 @id	ui.update_manual_this_build	[[RLI]]$$$This build cannot install updates itself. The releases page has the newest version.@@@[[PDI]]
 @id	ui.update_failed	[[RLI]]$$$The update did not work: {reason}@@@[[PDI]]
+@id	ui.insert_table	[[RLI]]$$$Insert Table@@@[[PDI]]
+@id	ui.insert_table_2	[[RLI]]$$$Insert Table…@@@[[PDI]]
+@id	ui.number_of_columns	[[RLI]]$$$Number of columns@@@[[PDI]]
+@id	ui.number_of_rows	[[RLI]]$$$Number of rows@@@[[PDI]]
+@id	ui.table_size_limits	[[RLI]]$$$Columns: 1 to {columns}. Rows: 1 to {rows}.@@@[[PDI]]

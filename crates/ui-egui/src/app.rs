@@ -716,6 +716,15 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     ui.add_space(8.0);
 }
 
+use pageedit::{TABLE_MAX_COLUMNS, TABLE_MAX_ROWS};
+
+/// The rows and columns typed into Insert Table, when both are whole numbers within the limits.
+fn table_size(rows: &str, columns: &str) -> Option<(usize, usize)> {
+    let r = rows.trim().parse::<usize>().ok().filter(|r| (1..=TABLE_MAX_ROWS).contains(r))?;
+    let c = columns.trim().parse::<usize>().ok().filter(|c| (1..=TABLE_MAX_COLUMNS).contains(c))?;
+    Some((r, c))
+}
+
 /// What to do with a file the user dropped on a page.
 /// What one Undo took back: the drawing, the page's words and boxes, or both at once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -773,6 +782,12 @@ enum Dialog {
         text: String,
         address: String,
         editing: bool,
+        first: bool,
+    },
+    /// Insert > Table > Insert Table...: a table of any size up to the limits, typed in.
+    InsertTable {
+        rows: String,
+        columns: String,
         first: bool,
     },
     /// A file in the page's own folder, about to be deleted.
@@ -4286,6 +4301,13 @@ impl NoteCraftApp {
             ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
             ribbon::Act::NewGridCraft => self.new_gridcraft(),
             ribbon::Act::InsertTable(rows, columns) => self.insert_table(rows, columns),
+            ribbon::Act::InsertTableDialog => {
+                if self.editor.is_none() {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                } else {
+                    self.dialog = Some(Dialog::InsertTable { rows: "3".into(), columns: "3".into(), first: true });
+                }
+            }
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -5088,6 +5110,20 @@ impl NoteCraftApp {
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
         self.save_block_marks((cols_moved, false));
+    }
+
+    /// The sizes typed into an open Insert Table dialog, as a person would type them. For tests
+    /// and automation; does nothing when the dialog is not open.
+    pub fn set_insert_table_size(&mut self, rows: &str, columns: &str) {
+        if let Some(Dialog::InsertTable { rows: r, columns: c, .. }) = self.dialog.as_mut() {
+            *r = rows.to_string();
+            *c = columns.to_string();
+        }
+    }
+
+    /// The open page's blocks, as the editor holds them.
+    pub fn editor_blocks(&self) -> Vec<notecraft_formats::Block> {
+        self.editor.as_ref().map(|e| e.blocks.clone()).unwrap_or_default()
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -8479,6 +8515,59 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::InsertTable { rows, columns, first } => {
+                let size = table_size(rows, columns);
+                let mut go = false;
+                let backdrop = modal_backdrop(ctx, "insert-table-backdrop");
+                egui::Window::new(crate::tl_id!("ui.insert_table"))
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_table"));
+                        egui::Grid::new("insert-table-dialog").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+                            ui.label(crate::tl_id!("ui.number_of_columns"));
+                            let c = ui.add(egui::TextEdit::singleline(columns).desired_width(80.0));
+                            ui.end_row();
+                            ui.label(crate::tl_id!("ui.number_of_rows"));
+                            ui.add(egui::TextEdit::singleline(rows).desired_width(80.0));
+                            ui.end_row();
+                            if *first {
+                                c.request_focus();
+                                *first = false;
+                            }
+                        });
+                        if size.is_none() {
+                            let limits = crate::i18n::format_message_id(
+                                "ui.table_size_limits",
+                                &[("columns", &TABLE_MAX_COLUMNS.to_string()), ("rows", &TABLE_MAX_ROWS.to_string())],
+                            );
+                            ui.colored_label(self.tokens.warn, limits);
+                        }
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                                keep = false;
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.ok"), true, size.is_some()).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                } else if ctx.input(|input| input.key_pressed(Key::Enter)) && size.is_some() {
+                    go = true;
+                }
+                if go && let Some((r, c)) = size {
+                    keep = false;
+                    self.insert_table(r, c);
+                }
+            }
             Dialog::DeleteFile { page, name } => {
                 let mut go = false;
                 let mut cancel = false;
@@ -10737,5 +10826,19 @@ mod page_row_name_tests {
             assert!(cut.ends_with('…'), "{cut:?}");
         });
         out.textures_delta.clear();
+    }
+}
+
+#[cfg(test)]
+mod insert_table_size_tests {
+    use super::table_size;
+
+    #[test]
+    fn a_typed_size_is_whole_numbers_within_the_limits() {
+        assert_eq!(table_size("3", "4"), Some((3, 4)));
+        assert_eq!(table_size(" 200 ", "30"), Some((200, 30)));
+        for (rows, columns) in [("0", "3"), ("3", "0"), ("201", "3"), ("3", "31"), ("", "3"), ("x", "3"), ("-1", "3"), ("2.5", "3")] {
+            assert_eq!(table_size(rows, columns), None, "{rows:?} x {columns:?}");
+        }
     }
 }
