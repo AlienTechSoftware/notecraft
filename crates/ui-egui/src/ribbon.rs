@@ -116,6 +116,8 @@ pub enum Act {
     NotBuilt(&'static str),
     /// Change the shape of the table the caret is in.
     Table(crate::pageedit::TableEdit),
+    /// Table > Delete Table: the whole table the caret is in.
+    DeleteTable,
     /// Pick a block of cells of the table the caret is in.
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
@@ -138,6 +140,8 @@ pub enum Act {
     NewGridCraft,
     /// A table of this many rows by this many columns, from the size picker.
     InsertTable(usize, usize),
+    /// Insert > Table > Insert Table...: the dialog for a size typed in.
+    InsertTableDialog,
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
     /// The pen at this place on the rack was picked up.
@@ -1938,7 +1942,10 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     picked = true;
                 }
                 ui.separator();
-                ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.insert_table_not_built")).color(t.muted)));
+                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Table)), crate::tl_id!("ui.insert_table_2"), t).clicked() {
+                    acts.push(Act::InsertTableDialog);
+                    picked = true;
+                }
                 if view.gridcraft {
                     if floating::menu_row(ui, Some(Glyph::Icon(Icon::Spreadsheet)), crate::tl_id!("ui.new_gridcraft_spreadsheet"), t).clicked() {
                         acts.push(Act::NewGridCraft);
@@ -2816,7 +2823,9 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.delete"), t, |ui| {
-        soon(ui, Icon::Table, "Delete\nTable", t);
+        if big(ui, Icon::Table, crate::tl_id!("ui.delete_table_2"), crate::tl_id!("ui.take_the_whole_table_out"), t).clicked() {
+            acts.push(Act::DeleteTable);
+        }
         if big(ui, Icon::TableColumn, crate::tl_id!("ui.delete_columns_2"), crate::tl_id!("ui.take_the_caret_s_column_out"), t).clicked() {
             acts.push(Act::Table(E::DeleteColumn));
         }

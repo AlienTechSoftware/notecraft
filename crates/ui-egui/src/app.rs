@@ -669,13 +669,25 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let rtl = crate::bidi::paints(&ed.title_buf, ed.page_dir);
     let editing = ui.memory(|m| m.has_focus(title_id)) || !rtl;
     let r = if editing {
-        let out = egui::TextEdit::singleline(&mut ed.title_buf)
+        // A box that wraps (issue #316): a single-line box scrolls sideways, so a long title
+        // was cut off at the page's edge on a phone. The title is still one line of text:
+        // Enter finishes it rather than breaking it, and a line break pasted in becomes a space.
+        let finish = ui.memory(|m| m.has_focus(title_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        let out = egui::TextEdit::multiline(&mut ed.title_buf)
             .id(title_id)
             .frame(egui::Frame::NONE)
             .font(egui::FontId::proportional(26.0 * zoom))
             .horizontal_align(align)
             .desired_width(width)
+            .desired_rows(1)
+            .return_key(None)
             .show(ui);
+        if ed.title_buf.contains(['\n', '\r']) {
+            ed.title_buf = one_line(&ed.title_buf);
+        }
+        if finish {
+            out.response.surrender_focus();
+        }
         if out.response.has_focus()
             && crate::input_language::is_rtl()
             && let Some(range) = out.cursor_range
@@ -714,6 +726,20 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     let (left, right) = (ui.max_rect().min.x, ui.max_rect().max.x);
     ui.painter().hline(left..=right, y, egui::Stroke::new(1.0, tokens.faint));
     ui.add_space(8.0);
+}
+
+use pageedit::{TABLE_MAX_COLUMNS, TABLE_MAX_ROWS};
+
+/// The rows and columns typed into Insert Table, when both are whole numbers within the limits.
+fn table_size(rows: &str, columns: &str) -> Option<(usize, usize)> {
+    let r = rows.trim().parse::<usize>().ok().filter(|r| (1..=TABLE_MAX_ROWS).contains(r))?;
+    let c = columns.trim().parse::<usize>().ok().filter(|c| (1..=TABLE_MAX_COLUMNS).contains(c))?;
+    Some((r, c))
+}
+
+/// A title as one line: the line breaks a paste brought in become single spaces.
+fn one_line(text: &str) -> String {
+    text.split(['\n', '\r']).map(str::trim).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// What to do with a file the user dropped on a page.
@@ -773,6 +799,12 @@ enum Dialog {
         text: String,
         address: String,
         editing: bool,
+        first: bool,
+    },
+    /// Insert > Table > Insert Table...: a table of any size up to the limits, typed in.
+    InsertTable {
+        rows: String,
+        columns: String,
         first: bool,
     },
     /// A file in the page's own folder, about to be deleted.
@@ -4265,6 +4297,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
             ribbon::Act::Table(what) => self.edit_table(what),
+            ribbon::Act::DeleteTable => self.delete_table(),
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
@@ -4286,6 +4319,13 @@ impl NoteCraftApp {
             ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
             ribbon::Act::NewGridCraft => self.new_gridcraft(),
             ribbon::Act::InsertTable(rows, columns) => self.insert_table(rows, columns),
+            ribbon::Act::InsertTableDialog => {
+                if self.editor.is_none() {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                } else {
+                    self.dialog = Some(Dialog::InsertTable { rows: "3".into(), columns: "3".into(), first: true });
+                }
+            }
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -5036,6 +5076,39 @@ impl NoteCraftApp {
         }
     }
 
+    /// Table > Delete Table (issue #297): takes the table the caret is in out of the page, as one
+    /// Undo step. The caret goes to the block that takes its place (the one after it, or the
+    /// one before when it was last); a page left with nothing gets an empty line to type on.
+    /// Table widths, cell marks and justified paragraphs after it move up with their blocks.
+    fn delete_table(&mut self) {
+        use notecraft_formats::markdown::Block;
+        let Some(ed) = self.editor.as_mut() else { return };
+        let at = ed.caret.as_ref().filter(|c| c.cell.is_some()).map(|c| c.block);
+        let Some(at) = at.filter(|&at| matches!(ed.blocks.get(at), Some(Block::Table { .. }))) else {
+            self.say(crate::tl_id!("ui.put_the_caret_in_a_table_first"));
+            return;
+        };
+        Self::remember_step(ed);
+        ed.caret = None;
+        ed.blocks.remove(at);
+        ed.count_removed_from_boxes(at);
+        let cols = ed.columns.remove_blocks(at..at + 1);
+        let justified = ed.justified.remove_blocks(at..at + 1);
+        if ed.blocks.is_empty() {
+            ed.blocks.push(Block::Paragraph(Vec::new()));
+            ed.count_inserted_in_boxes(0, 1);
+        }
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        let to = at.min(ed.blocks.len() - 1);
+        let text = pageedit::text_for_caret(&ed.blocks, to);
+        ed.caret = Some(pageedit::Caret { block: to, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None, inline: None });
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks((cols, justified));
+        self.say(crate::tl_id!("ui.deleted_the_table"));
+    }
+
     fn edit_table(&mut self, what: pageedit::TableEdit) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some((at, cell)) = ed.caret.as_ref().and_then(|c| c.cell.map(|cell| (c.block, cell))) else {
@@ -5088,6 +5161,20 @@ impl NoteCraftApp {
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
         self.save_block_marks((cols_moved, false));
+    }
+
+    /// The sizes typed into an open Insert Table dialog, as a person would type them. For tests
+    /// and automation; does nothing when the dialog is not open.
+    pub fn set_insert_table_size(&mut self, rows: &str, columns: &str) {
+        if let Some(Dialog::InsertTable { rows: r, columns: c, .. }) = self.dialog.as_mut() {
+            *r = rows.to_string();
+            *c = columns.to_string();
+        }
+    }
+
+    /// The open page's blocks, as the editor holds them.
+    pub fn editor_blocks(&self) -> Vec<notecraft_formats::Block> {
+        self.editor.as_ref().map(|e| e.blocks.clone()).unwrap_or_default()
     }
 
     /// Picks up a pen, which is all it takes: the whole page is the ink's, so there is no
@@ -8486,6 +8573,59 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::InsertTable { rows, columns, first } => {
+                let size = table_size(rows, columns);
+                let mut go = false;
+                let backdrop = modal_backdrop(ctx, "insert-table-backdrop");
+                egui::Window::new(crate::tl_id!("ui.insert_table"))
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_table"));
+                        egui::Grid::new("insert-table-dialog").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+                            ui.label(crate::tl_id!("ui.number_of_columns"));
+                            let c = ui.add(egui::TextEdit::singleline(columns).desired_width(80.0));
+                            ui.end_row();
+                            ui.label(crate::tl_id!("ui.number_of_rows"));
+                            ui.add(egui::TextEdit::singleline(rows).desired_width(80.0));
+                            ui.end_row();
+                            if *first {
+                                c.request_focus();
+                                *first = false;
+                            }
+                        });
+                        if size.is_none() {
+                            let limits = crate::i18n::format_message_id(
+                                "ui.table_size_limits",
+                                &[("columns", &TABLE_MAX_COLUMNS.to_string()), ("rows", &TABLE_MAX_ROWS.to_string())],
+                            );
+                            ui.colored_label(self.tokens.warn, limits);
+                        }
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                                keep = false;
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.ok"), true, size.is_some()).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                } else if ctx.input(|input| input.key_pressed(Key::Enter)) && size.is_some() {
+                    go = true;
+                }
+                if go && let Some((r, c)) = size {
+                    keep = false;
+                    self.insert_table(r, c);
+                }
+            }
             Dialog::DeleteFile { page, name } => {
                 let mut go = false;
                 let mut cancel = false;
@@ -9226,7 +9366,53 @@ impl NoteCraftApp {
         })
     }
     /// Draws the whole window. Call once per frame.
+    /// Fills the strips the platform's own bars lie over (a phone's status bar and navigation
+    /// bar, reported as egui's safe area) with the title band's colour, so the system's white
+    /// icons read on it in a light theme as well as a dark one. Everything else is laid out
+    /// inside the safe area. On a desktop there is none, and nothing is drawn.
+    fn paint_system_bars(&self, ctx: &Context) {
+        let strips = self.system_bar_strips(ctx);
+        if strips.is_empty() {
+            return;
+        }
+        // On the background layer, which egui always paints, clipped to the whole window rather
+        // than to the safe area as a layer painter is by default. Nothing else is drawn under
+        // the bars: every panel and window is inside the safe area.
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), ctx.viewport_rect());
+        for (strip, colour) in strips {
+            painter.rect_filled(strip, 0.0, colour);
+        }
+    }
+
+    /// The strips [`Self::paint_system_bars`] fills, with their colour: the parts of the window
+    /// outside egui's safe area. None on a desktop.
+    pub fn system_bar_strips(&self, ctx: &Context) -> Vec<(egui::Rect, egui::Color32)> {
+        let (outer, inner) = (ctx.viewport_rect(), ctx.content_rect());
+        let strips = [
+            egui::Rect::from_min_max(outer.min, egui::pos2(outer.max.x, inner.min.y)),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.max.y), outer.max),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.min.y), egui::pos2(inner.min.x, inner.max.y)),
+            egui::Rect::from_min_max(egui::pos2(inner.max.x, inner.min.y), egui::pos2(outer.max.x, inner.max.y)),
+        ];
+        strips.into_iter().filter(|r| r.is_positive()).map(|r| (r, self.tokens.band)).collect()
+    }
+
     pub fn show(&mut self, ui: &mut Ui) {
+        // egui's root `Ui` covers the whole window, the parts under a phone's status and
+        // navigation bars included. Everything is laid out inside the safe area instead
+        // (issue #315); on a desktop the two are the same.
+        let ctx = ui.ctx().clone();
+        let content = ctx.content_rect();
+        if content != ctx.viewport_rect() {
+            self.paint_system_bars(&ctx);
+            let room = ui.max_rect().intersect(content);
+            ui.scope_builder(egui::UiBuilder::new().id_salt("safe-area").max_rect(room), |ui| self.show_in(ui));
+        } else {
+            self.show_in(ui);
+        }
+    }
+
+    fn show_in(&mut self, ui: &mut Ui) {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
@@ -10504,6 +10690,56 @@ mod structural_undo_tests {
         }
     }
 
+    /// Issue #297: Table > Delete Table takes the caret's table out as one Undo step, in both
+    /// formats, and the page saves and reopens without it. The caret lands on a real line.
+    #[test]
+    fn delete_table_takes_the_whole_table_out_and_can_be_undone() {
+        use notecraft_formats::Block;
+        for html in [false, true] {
+            let (_t, mut h) = page_with_table(html, "delete-table");
+            let table = blocks(&h).iter().position(|b| matches!(b, Block::Table { .. })).expect("a table");
+            put_caret(&mut h, table, Some((1, 1)));
+            assert_undoable(&mut h, &format!("html={html} delete table"), ribbon::Act::DeleteTable);
+            let left = blocks(&h);
+            assert!(!left.iter().any(|b| matches!(b, Block::Table { .. })), "html={html}: no table is left: {left:?}");
+            assert!(left.iter().any(|b| pageedit::block_text(b).contains("Alpha")), "html={html}: the words around it stay");
+            let caret = h.state().editor.as_ref().and_then(|e| e.caret.clone()).expect("a caret");
+            assert!(caret.cell.is_none() && caret.block < left.len(), "html={html}: the caret is on a line of the page: {caret:?}");
+
+            // Saved and opened again: the table is still gone and nothing else changed.
+            h.state_mut().save_page_now();
+            let path = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("path");
+            let file = if html { path.join("index.html") } else { path.join("index.md") };
+            let written = std::fs::read_to_string(&file).expect("page file");
+            assert!(!written.contains("<table") && !written.contains("| A | B |"), "html={html}: saved without the table:\n{written}");
+            assert!(written.contains("Alpha"), "html={html}: and with the words:\n{written}");
+        }
+    }
+
+    /// A page that held only a table keeps a line to type on, and Delete Table with the caret
+    /// outside a table changes nothing.
+    #[test]
+    fn delete_table_on_a_table_only_page_and_outside_a_table() {
+        use notecraft_formats::Block;
+        let (_t, mut h) = page_with_table(false, "delete-only-table");
+        put_caret(&mut h, 0, None);
+        let before = blocks(&h);
+        h.state_mut().ribbon_act(ribbon::Act::DeleteTable);
+        settle(&mut h);
+        assert_eq!(blocks(&h), before, "with the caret outside a table nothing changes");
+
+        let table = blocks(&h).iter().position(|b| matches!(b, Block::Table { .. })).expect("a table");
+        h.state_mut().editor.as_mut().expect("editor").blocks.retain(|b| matches!(b, Block::Table { .. }));
+        put_caret(&mut h, 0, Some((1, 0)));
+        let _ = table;
+        h.state_mut().ribbon_act(ribbon::Act::DeleteTable);
+        settle(&mut h);
+        let left = blocks(&h);
+        assert_eq!(left.len(), 1, "one empty line is left: {left:?}");
+        assert!(matches!(&left[0], Block::Paragraph(spans) if spans.is_empty()), "{left:?}");
+        assert_eq!(h.state().editor.as_ref().and_then(|e| e.caret.as_ref()).map(|c| c.block), Some(0));
+    }
+
     /// Writing first and then changing the table is two steps, not one: Undo takes back the
     /// table change and leaves the writing.
     #[test]
@@ -10744,5 +10980,19 @@ mod page_row_name_tests {
             assert!(cut.ends_with('…'), "{cut:?}");
         });
         out.textures_delta.clear();
+    }
+}
+
+#[cfg(test)]
+mod insert_table_size_tests {
+    use super::table_size;
+
+    #[test]
+    fn a_typed_size_is_whole_numbers_within_the_limits() {
+        assert_eq!(table_size("3", "4"), Some((3, 4)));
+        assert_eq!(table_size(" 200 ", "30"), Some((200, 30)));
+        for (rows, columns) in [("0", "3"), ("3", "0"), ("201", "3"), ("3", "31"), ("", "3"), ("x", "3"), ("-1", "3"), ("2.5", "3")] {
+            assert_eq!(table_size(rows, columns), None, "{rows:?} x {columns:?}");
+        }
     }
 }

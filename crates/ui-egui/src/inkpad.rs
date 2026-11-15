@@ -531,13 +531,14 @@ pub fn show(
     zoom: f32,
 ) -> bool {
     use crate::ribbon::Pointer;
-    let _ = t;
+    let dark_page = crate::theme::luminance(t.editor) < DARK_PAGE;
     // Painting on the layer, not through the ui, so ink outside text remains visible. Cut off
     // where the view ends as well as the page: a scrolled page reaches above the view, and this
     // layer sits above the ribbon.
     let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(body.intersect(ui.clip_rect()));
     for stroke in pad.drawing.strokes.iter().chain(pad.drawing_now.iter()) {
         let mut scaled = stroke.clone();
+        scaled.colour = shown_colour(scaled.colour, dark_page);
         scaled.width *= zoom;
         for dab in &mut scaled.dabs {
             dab.x *= zoom;
@@ -779,6 +780,20 @@ fn as_tuple(b: egui::Rect, origin: egui::Pos2, zoom: f32) -> (f32, f32, f32, f32
 /// One stroke, as triangles between the two edges of its ribbon, with a round cap at each
 /// end. The edges are the ones the saved outline is built from, so the screen and the file
 /// show the same shape.
+/// A page darker than this (relative luminance) shows dark ink light.
+const DARK_PAGE: f32 = 0.2;
+
+/// The colour a stroke is drawn in. On a dark page, ink that is dark and has no real colour
+/// (black, the dark greys) is drawn as its light opposite, as OneNote's dark mode does, so the
+/// default black pen reads (issue #317). The saved colour is untouched: the same stroke is black
+/// again on a light page and in the SVG. Coloured ink keeps its colour.
+pub fn shown_colour(colour: Rgb, dark_page: bool) -> Rgb {
+    let Rgb(r, g, b) = colour;
+    let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));
+    let neutral_and_dark = hi - lo <= 40 && hi <= 96;
+    if dark_page && neutral_and_dark { Rgb(255 - r, 255 - g, 255 - b) } else { colour }
+}
+
 pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke) {
     let colour = egui::Color32::from_rgb(stroke.colour.0, stroke.colour.1, stroke.colour.2).gamma_multiply(stroke.tool.opacity());
     let put = |x: f32, y: f32| egui::pos2(origin.x + x, origin.y + y);
@@ -1205,5 +1220,17 @@ mod tests {
         let pad = Pad::of_page(&page);
         assert!(pad.is_empty(), "nothing was read, and nothing broke");
         assert!(pad.drawing.width >= 1.0 && pad.drawing.height >= 1.0);
+    }
+
+    #[test]
+    fn dark_colourless_ink_is_drawn_light_on_a_dark_page() {
+        use super::shown_colour;
+        assert_eq!(shown_colour(Rgb(0, 0, 0), true), Rgb(255, 255, 255), "black reads on a dark page");
+        assert_eq!(shown_colour(Rgb(0x40, 0x40, 0x40), true), Rgb(0xbf, 0xbf, 0xbf), "so does dark grey");
+        assert_eq!(shown_colour(Rgb(0, 0, 0), false), Rgb(0, 0, 0), "a light page keeps black ink black");
+        // Colour, or a grey light enough to read already, is kept.
+        for kept in [Rgb(0xd0, 0x21, 0x21), Rgb(0x1f, 0x3a, 0x93), Rgb(0x80, 0x80, 0x80), Rgb(0xff, 0xdd, 0x33)] {
+            assert_eq!(shown_colour(kept, true), kept, "{kept:?}");
+        }
     }
 }
