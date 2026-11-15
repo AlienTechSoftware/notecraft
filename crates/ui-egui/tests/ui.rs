@@ -10258,6 +10258,49 @@ fn phone_harness(app: NoteCraftApp) -> Harness<'static, NoteCraftApp> {
     sized_harness(app, LIGHT, egui::vec2(390.0, 800.0))
 }
 
+/// Issue #315: on Android the window's surface runs under the status bar and the navigation
+/// bar, so the ribbon tabs sat under the clock and the status bar under Back and Home. The
+/// Android shell passes the bars as egui's safe area: everything is laid out between them,
+/// and the strips under the bars take the title band's colour.
+#[test]
+fn a_phone_keeps_everything_between_the_status_bar_and_the_navigation_bar() {
+    let (_t, mut app, s) = sample_app("ui-phone-system-bars");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = phone_harness(app);
+    let (top, bottom) = (24.0, 48.0);
+    h.input_mut().safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left: 0.0, right: 0.0, top, bottom }));
+    settle(&mut h);
+    let content = h.ctx.content_rect();
+    assert_eq!((content.min.y, content.max.y), (top, 800.0 - bottom), "egui lays out between the bars");
+    // Every control and every piece of text that reports itself is between the bars.
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+    let ppp = h.ctx.pixels_per_point();
+    for node in h.query_all(egui_kittest::kittest::by()) {
+        let Some(b) = node.accesskit_node().bounding_box() else { continue };
+        let r = egui::Rect::from_min_max(egui::pos2(b.x0 as f32 / ppp, b.y0 as f32 / ppp), egui::pos2(b.x1 as f32 / ppp, b.y1 as f32 / ppp));
+        // Nothing starts above the status bar's edge: the title band, its buttons and the
+        // search box all moved down. (The page's own text may run past the bottom: it scrolls.)
+        if r.is_positive() {
+            assert!(r.min.y >= top - 0.5, "{:?} at {r:?} is under the status bar", node.accesskit_node().label());
+        }
+    }
+    // The status bar is the last thing in the window, and it ends where the navigation bar starts.
+    let status = h.get_by_label("Default format").rect();
+    assert!(status.max.y <= 800.0 - bottom + 0.5 && status.max.y > 800.0 - bottom - 30.0, "the status bar sits on the navigation bar: {status:?}");
+    let file = h.get_by_label("File").rect();
+    assert!(file.min.y >= top, "the File tab is below the status bar: {file:?}");
+
+    // The strips under the bars are painted in the title band's colour (kittest's picture
+    // shows only the content area, so the painted shapes are checked).
+    let band = LIGHT.tokens().band;
+    let painted = h.state().system_bar_strips(&h.ctx);
+    assert_eq!(painted.len(), 2, "one strip under each bar: {painted:?}");
+    assert!(painted.iter().all(|(_, colour)| *colour == band));
+    assert_eq!(painted[0].0, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(390.0, top)));
+    assert_eq!(painted[1].0, egui::Rect::from_min_max(egui::pos2(0.0, 800.0 - bottom), egui::pos2(390.0, 800.0)));
+    review(&mut h, "phone_system_bars");
+}
+
 fn panes(h: &mut Harness<'_, NoteCraftApp>) -> Value {
     ask(h, "ui.inspect", json!({})).expect("inspect")["panes"].clone()
 }

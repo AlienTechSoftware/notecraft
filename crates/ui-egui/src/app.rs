@@ -9219,7 +9219,53 @@ impl NoteCraftApp {
         })
     }
     /// Draws the whole window. Call once per frame.
+    /// Fills the strips the platform's own bars lie over (a phone's status bar and navigation
+    /// bar, reported as egui's safe area) with the title band's colour, so the system's white
+    /// icons read on it in a light theme as well as a dark one. Everything else is laid out
+    /// inside the safe area. On a desktop there is none, and nothing is drawn.
+    fn paint_system_bars(&self, ctx: &Context) {
+        let strips = self.system_bar_strips(ctx);
+        if strips.is_empty() {
+            return;
+        }
+        // On the background layer, which egui always paints, clipped to the whole window rather
+        // than to the safe area as a layer painter is by default. Nothing else is drawn under
+        // the bars: every panel and window is inside the safe area.
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), ctx.viewport_rect());
+        for (strip, colour) in strips {
+            painter.rect_filled(strip, 0.0, colour);
+        }
+    }
+
+    /// The strips [`Self::paint_system_bars`] fills, with their colour: the parts of the window
+    /// outside egui's safe area. None on a desktop.
+    pub fn system_bar_strips(&self, ctx: &Context) -> Vec<(egui::Rect, egui::Color32)> {
+        let (outer, inner) = (ctx.viewport_rect(), ctx.content_rect());
+        let strips = [
+            egui::Rect::from_min_max(outer.min, egui::pos2(outer.max.x, inner.min.y)),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.max.y), outer.max),
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, inner.min.y), egui::pos2(inner.min.x, inner.max.y)),
+            egui::Rect::from_min_max(egui::pos2(inner.max.x, inner.min.y), egui::pos2(outer.max.x, inner.max.y)),
+        ];
+        strips.into_iter().filter(|r| r.is_positive()).map(|r| (r, self.tokens.band)).collect()
+    }
+
     pub fn show(&mut self, ui: &mut Ui) {
+        // egui's root `Ui` covers the whole window, the parts under a phone's status and
+        // navigation bars included. Everything is laid out inside the safe area instead
+        // (issue #315); on a desktop the two are the same.
+        let ctx = ui.ctx().clone();
+        let content = ctx.content_rect();
+        if content != ctx.viewport_rect() {
+            self.paint_system_bars(&ctx);
+            let room = ui.max_rect().intersect(content);
+            ui.scope_builder(egui::UiBuilder::new().id_salt("safe-area").max_rect(room), |ui| self.show_in(ui));
+        } else {
+            self.show_in(ui);
+        }
+    }
+
+    fn show_in(&mut self, ui: &mut Ui) {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
