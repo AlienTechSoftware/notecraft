@@ -1313,8 +1313,11 @@ fn clearing_a_page_title_makes_it_untitled() {
     app.open_path(&s.html_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
     settle(&mut h);
-    let title =
-        h.get_all_by_role(egui::accesskit::Role::TextInput).find(|node| node.value().as_deref() == Some("Project X")).expect("the title box").rect();
+    let title = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|node| node.value().as_deref() == Some("Project X"))
+        .expect("the title box")
+        .rect();
     ask(&mut h, "ui.click", json!({"x": title.center().x, "y": title.center().y})).expect("click the title");
     settle(&mut h);
     ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select all");
@@ -1345,6 +1348,46 @@ fn clearing_a_page_title_makes_it_untitled() {
     settle(&mut h);
     let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(state.pointer("/page/titleArea").and_then(Value::as_str), Some(""), "still untitled when opened again");
+}
+
+/// Issue #316: on a phone a long title was cut off at the page's edge ("Welcome to NoteCraft
+/// (Ver 0.0.1"), because the title box was a single line that scrolls sideways. It wraps now.
+/// It is still one line of text: Enter finishes it, and a pasted line break becomes a space.
+#[test]
+fn a_long_title_wraps_on_a_narrow_page() {
+    let long = "Welcome to NoteCraft (Ver 0.0.12) and a few more words";
+    let (_t, app, s) = sample_app("ui-title-wraps");
+    let mut h = phone_harness(app);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "node.title", "params": {"path": s.html_page.to_string_lossy(), "title": long}}))
+        .expect("a long title");
+    ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    review(&mut h, "title_wraps_debug");
+    let title = |h: &Harness<'_, NoteCraftApp>| {
+        h.get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+            .find(|n| n.value().is_some_and(|v| v.starts_with("Welcome")))
+            .expect("the title box")
+            .rect()
+    };
+    let box_rect = title(&h);
+    assert!(box_rect.height() > 50.0, "the title takes more than one line: {box_rect:?}");
+    assert!(box_rect.max.x <= 390.0, "and stays inside the window: {box_rect:?}");
+    review(&mut h, "title_wraps_on_a_phone");
+
+    // Enter finishes the title without breaking it; a line break typed or pasted becomes a space.
+    ask(&mut h, "ui.click", json!({"x": box_rect.center().x, "y": box_rect.min.y + 10.0})).expect("click the title");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End", "ctrl": true})).expect("end");
+    ask(&mut h, "ui.text", json!({"text": " here\nand there"})).expect("paste a line break");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+    settle(&mut h);
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let shown = state.pointer("/page/titleArea").and_then(Value::as_str).unwrap_or_default().to_string();
+    assert_eq!(shown, format!("{long} here and there"), "one line, with the break made a space");
+    let page = ask(&mut h, "engine.execute", json!({"command": "page.load", "params": {"path": s.html_page.to_string_lossy()}})).expect("load");
+    assert_eq!(page.pointer("/title").and_then(Value::as_str), Some(shown.as_str()), "Enter finished and saved the title: {page}");
 }
 
 /// The "+" between two pages is a circle. It is wider than the thin gap it sits in, so it
