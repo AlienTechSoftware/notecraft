@@ -948,6 +948,11 @@ pub struct NoteCraftApp {
     /// whether it still has to be handed to egui.
     ui_scale: u16,
     ui_scale_pending: bool,
+    /// What File > Check for updates is doing. The update runs on a thread of its own and
+    /// writes here; the window reads it each frame and closes when the update is ready to
+    /// be put in place.
+    update: std::sync::Arc<std::sync::Mutex<crate::update::Status>>,
+    update_closing: bool,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -1137,6 +1142,8 @@ impl NoteCraftApp {
             ui_language,
             ui_scale,
             ui_scale_pending: ui_scale != 100,
+            update: Default::default(),
+            update_closing: false,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -2042,7 +2049,11 @@ impl NoteCraftApp {
     }
 
     fn hierarchy_keys(&mut self, ctx: &Context) {
-        if ctx.egui_wants_keyboard_input() || self.dialog.is_some() || self.backstage.is_some() {
+        // Typing in the page (its title or a paragraph) is not a reason to ignore page
+        // commands: OneNote's Ctrl+N and Ctrl+Alt+M work from the middle of a sentence (issue
+        // #254). Any other text box keeps the keys: the search box, a rename, the source view.
+        let typing_elsewhere = ctx.egui_wants_keyboard_input() && !self.page_text_has_focus(ctx);
+        if typing_elsewhere || self.dialog.is_some() || self.backstage.is_some() {
             return;
         }
         let Some(page) = self.selected.clone().filter(|path| notecraft_store::tree::read_node(path).is_some_and(|info| info.kind == NodeKind::Page))
@@ -2067,6 +2078,16 @@ impl NoteCraftApp {
         } else if Self::can_promote_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::OpenBracket)) {
             self.reparent_page(&page, "node.promote");
         }
+    }
+
+    /// Whether the keyboard is with one of the open page's own text boxes, its title or a block,
+    /// rather than with a box outside the page such as search or a rename in the tree.
+    fn page_text_has_focus(&self, ctx: &Context) -> bool {
+        let (Some(page), Some(_)) = (self.page_rect, self.editor.as_ref()) else { return false };
+        if self.show_source {
+            return false;
+        }
+        ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|focused| page.contains(focused.rect.center()))
     }
 
     // ---------- page open, save ----------
@@ -3272,6 +3293,7 @@ impl NoteCraftApp {
             let telemetry_root = self.session.settings.path().parent().unwrap_or(std::path::Path::new(".")).join("telemetry");
             let telemetry_level = self.session.settings.get("telemetry_level").unwrap_or_else(|| "none".into());
             let session_id = self.session.settings.get("telemetry_session_id");
+            let update = self.update.lock().map(|s| s.clone()).unwrap_or_default();
             acts = backstage::show(
                 ui,
                 self.session.tree(),
@@ -3285,6 +3307,7 @@ impl NoteCraftApp {
                 &ui_language,
                 &languages,
                 self.ui_scale,
+                &update,
                 &tokens,
             );
         });
@@ -3336,6 +3359,8 @@ impl NoteCraftApp {
                     }
                 }
                 backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
+                backstage::Act::CheckForUpdates => crate::update::start(ui.ctx().clone(), self.update.clone()),
+                backstage::Act::OpenReleases => ui.ctx().open_url(egui::OpenUrl::new_tab(backstage::LATEST_RELEASE)),
                 backstage::Act::ResetPreferences => self.dialog = Some(Dialog::ResetPreferences),
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
@@ -3770,6 +3795,7 @@ impl NoteCraftApp {
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
+            can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
@@ -4265,6 +4291,7 @@ impl NoteCraftApp {
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
             }
             ribbon::Act::InkUndo => self.ink_undo(),
+            ribbon::Act::InkRedo => self.ink_redo(),
             ribbon::Act::InkInsert => self.ink_insert(),
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
@@ -8755,11 +8782,23 @@ impl NoteCraftApp {
             }
             Dialog::Symbols => {
                 let mut chosen: Option<&'static str> = None;
+                // A modal like the other dialogs (issue #262): the page behind is dimmed and
+                // takes no clicks, so the caret stays where the symbol will go, and Escape
+                // closes it with nothing inserted.
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let backdrop = modal_backdrop(ctx, "insert-symbol-backdrop");
                 egui::Window::new(crate::tl_id!("ui.insert_symbol"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_symbol"));
                         ui.label(crate::tl_id!("ui.choose_a_symbol_to_insert_at_the_caret"));
                         ui.add_space(6.0);
                         for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
@@ -9193,6 +9232,14 @@ impl NoteCraftApp {
         // Pen pressure, where the platform reports it. Nothing draws with it yet; it is
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
+        // An update is ready to be put in place: save the page and close, so the script that
+        // waits for this window can replace the program and start the new one.
+        if !self.update_closing && self.update.lock().is_ok_and(|s| matches!(*s, crate::update::Status::Restart { .. })) {
+            self.update_closing = true;
+            self.save();
+            log::info!("update: closing so the new version can be put in place");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         self.apply_theme(ctx);
         // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
         // change the same factor, and are left alone in between.
@@ -9240,10 +9287,14 @@ impl NoteCraftApp {
         // knows only about the letters in that one box, and the page's undo has to be the
         // one that answers, or Ctrl+Z would mean two different things on one page.
         let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
-        if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
+        // Not while a dialog is open: it owns the keyboard, and the page behind it must not
+        // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
+        // text box in the dialog keeps its own undo.
+        let page_keys = self.dialog.is_none();
+        if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
-        } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
+        } else if page_keys && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
             // The ink's changes as well as the page's: whichever was last, or both when one
             // press made them together.
             self.undo();
