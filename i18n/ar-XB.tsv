@@ -918,3 +918,4 @@
 @id	ui.insert_space_how	[[RLI]]$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@[[PDI]]
 @id	ui.pen_keys_typing	[[RLI]]$$$Typing (Alt+0)@@@[[PDI]]
 @id	ui.pen_keys_picked	[[RLI]]$$$Pen {number} (Alt+{number})@@@[[PDI]]
+@id	ui.spreadsheet_gridcraft_is_not_installed	[[RLI]]$$$Spreadsheet: GridCraft is not installed@@@[[PDI]]

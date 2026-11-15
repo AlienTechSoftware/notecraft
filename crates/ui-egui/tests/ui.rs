@@ -5427,6 +5427,32 @@ fn a_shape_is_drawn_on_the_page_as_ink() {
     assert_eq!(state["ink"]["inked"], json!(false), "the shape was taken back: {}", state["ink"]);
 }
 
+/// Issue #306: without GridCraft, Insert > Spreadsheet was the generic "not built yet"
+/// placeholder, though the spreadsheet is built and only GridCraft is missing. It is an
+/// unavailable Spreadsheet button that says GridCraft is not installed, and with GridCraft it
+/// is the working button.
+#[test]
+fn insert_spreadsheet_says_gridcraft_is_missing_rather_than_not_built() {
+    use egui_kittest::kittest::NodeT as _;
+    for (gridcraft, enabled) in [(None, false), (Some(std::path::PathBuf::from("gridcraft")), true)] {
+        let (_t, app, s) = sample_app("ui-spreadsheet-gridcraft");
+        let app = app.with_gridcraft(gridcraft.clone());
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(&mut h);
+        h.get_by_label("Insert").click();
+        settle(&mut h);
+        let button = h.get_by_label("Spreadsheet");
+        assert_eq!(!button.accesskit_node().is_disabled(), enabled, "Spreadsheet is available only with GridCraft ({gridcraft:?})");
+        if !enabled {
+            button.hover();
+            settle(&mut h);
+            assert!(h.query_all_by_label_contains("GridCraft is not installed").count() > 0, "the reason is given");
+            assert_eq!(h.query_all_by_label("Spreadsheet: not built yet").count(), 0, "and it is not called unbuilt");
+        }
+    }
+}
+
 /// A table handed to a spreadsheet and read back again: what the spreadsheet holds is
 /// what the page's table says afterwards.
 #[test]
