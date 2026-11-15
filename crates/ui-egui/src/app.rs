@@ -914,6 +914,11 @@ pub struct NoteCraftApp {
     /// whether it still has to be handed to egui.
     ui_scale: u16,
     ui_scale_pending: bool,
+    /// What File > Check for updates is doing. The update runs on a thread of its own and
+    /// writes here; the window reads it each frame and closes when the update is ready to
+    /// be put in place.
+    update: std::sync::Arc<std::sync::Mutex<crate::update::Status>>,
+    update_closing: bool,
     effective_mode: Mode,
     accent: Accent,
     applied_theme: Option<(ModePref, Accent)>,
@@ -1103,6 +1108,8 @@ impl NoteCraftApp {
             ui_language,
             ui_scale,
             ui_scale_pending: ui_scale != 100,
+            update: Default::default(),
+            update_closing: false,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
             applied_theme: None,
@@ -3233,6 +3240,7 @@ impl NoteCraftApp {
             let telemetry_root = self.session.settings.path().parent().unwrap_or(std::path::Path::new(".")).join("telemetry");
             let telemetry_level = self.session.settings.get("telemetry_level").unwrap_or_else(|| "none".into());
             let session_id = self.session.settings.get("telemetry_session_id");
+            let update = self.update.lock().map(|s| s.clone()).unwrap_or_default();
             acts = backstage::show(
                 ui,
                 self.session.tree(),
@@ -3246,6 +3254,7 @@ impl NoteCraftApp {
                 &ui_language,
                 &languages,
                 self.ui_scale,
+                &update,
                 &tokens,
             );
         });
@@ -3297,6 +3306,8 @@ impl NoteCraftApp {
                     }
                 }
                 backstage::Act::ClearTelemetry(path) => self.dialog = Some(Dialog::ClearTelemetry { path }),
+                backstage::Act::CheckForUpdates => crate::update::start(ui.ctx().clone(), self.update.clone()),
+                backstage::Act::OpenReleases => ui.ctx().open_url(egui::OpenUrl::new_tab(backstage::LATEST_RELEASE)),
                 backstage::Act::ResetPreferences => self.dialog = Some(Dialog::ResetPreferences),
                 backstage::Act::ExportTelemetry(root) => {
                     if let Some(session) = std::fs::read_dir(&root)
@@ -9154,6 +9165,14 @@ impl NoteCraftApp {
         // Pen pressure, where the platform reports it. Nothing draws with it yet; it is
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
+        // An update is ready to be put in place: save the page and close, so the script that
+        // waits for this window can replace the program and start the new one.
+        if !self.update_closing && self.update.lock().is_ok_and(|s| matches!(*s, crate::update::Status::Restart { .. })) {
+            self.update_closing = true;
+            self.save();
+            log::info!("update: closing so the new version can be put in place");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         self.apply_theme(ctx);
         // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
         // change the same factor, and are left alone in between.

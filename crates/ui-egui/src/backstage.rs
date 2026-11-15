@@ -42,6 +42,10 @@ pub enum Act {
     OpenTelemetryFolder(std::path::PathBuf),
     ClearTelemetry(std::path::PathBuf),
     ExportTelemetry(std::path::PathBuf),
+    /// Look for a newer release and install it (issue #253).
+    CheckForUpdates,
+    /// Open the releases page in the browser, when an update cannot be installed from here.
+    OpenReleases,
     ResetPreferences,
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
@@ -67,6 +71,47 @@ pub const SIDE: [(&str, bool); 10] = [
 /// Where NoteCraft comes from. Named once, here, so there is one place to change it.
 pub const REPOSITORY: &str = "https://github.com/AlienTechSoftware/notecraft";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The newest published release. Every nightly build has a version number of its own, so the
+/// version on this page tells whether a build is behind.
+pub const LATEST_RELEASE: &str = "https://github.com/AlienTechSoftware/notecraft/releases/latest";
+
+/// The running version, and the button that updates NoteCraft (issue #253). Nothing is sent
+/// until it is pressed; see `crate::update` for what it does.
+fn version_and_updates(ui: &mut Ui, update: &crate::update::Status, t: &Tokens, acts: &mut Vec<Act>) {
+    use crate::update::Status;
+    ui.label(egui::RichText::new(crate::tl_id!("ui.version_and_updates")).strong().size(14.0).color(t.strong));
+    let running = crate::i18n::format_message_id("ui.you_are_running_version", &[("version", VERSION)]);
+    ui.label(egui::RichText::new(running).size(12.0).color(t.text));
+    ui.horizontal(|ui| {
+        let button = egui::Button::new(crate::tl_id!("ui.check_for_updates")).stroke(egui::Stroke::new(1.0, t.container_border));
+        if ui.add_enabled(!update.busy(), button).clicked() {
+            acts.push(Act::CheckForUpdates);
+        }
+        if matches!(update, Status::Manual { .. } | Status::Failed(_)) && ui.link(crate::tl_id!("ui.open_the_releases_page")).clicked() {
+            acts.push(Act::OpenReleases);
+        }
+    });
+    let mib = |bytes: u64| format!("{:.1}", bytes as f64 / (1024.0 * 1024.0));
+    let (line, error) = match update {
+        Status::Idle => (crate::tl_id!("ui.check_for_updates_hint").to_string(), false),
+        Status::Checking => (crate::tl_id!("ui.update_checking").to_string(), false),
+        Status::UpToDate { latest } => (crate::i18n::format_message_id("ui.update_up_to_date", &[("version", latest)]), false),
+        Status::Downloading { version, done, total: Some(total) } => (
+            crate::i18n::format_message_id("ui.update_downloading_of", &[("version", version), ("done", &mib(*done)), ("total", &mib(*total))]),
+            false,
+        ),
+        Status::Downloading { version, done, total: None } => {
+            (crate::i18n::format_message_id("ui.update_downloading", &[("version", version), ("done", &mib(*done))]), false)
+        }
+        Status::Verifying { version } => (crate::i18n::format_message_id("ui.update_verifying", &[("version", version)]), false),
+        Status::Restart { version } => (crate::i18n::format_message_id("ui.update_restarting", &[("version", version)]), false),
+        Status::Handed { version, .. } => (crate::i18n::format_message_id("ui.update_handed", &[("version", version)]), false),
+        Status::Manual { version } if version.is_empty() => (crate::tl_id!("ui.update_manual_this_build").to_string(), false),
+        Status::Manual { version } => (crate::i18n::format_message_id("ui.update_manual", &[("version", version)]), false),
+        Status::Failed(reason) => (crate::i18n::format_message_id("ui.update_failed", &[("reason", reason)]), true),
+    };
+    ui.label(egui::RichText::new(line).size(11.5).color(if error { t.warn } else { t.muted }));
+}
 
 /// Draws the File screen over the whole window. Returns what the user asked for.
 pub fn show(
@@ -82,6 +127,7 @@ pub fn show(
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
+    update: &crate::update::Status,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -94,8 +140,10 @@ pub fn show(
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
-                    "About" => about_page(ui, telemetry_root, session_id, t),
-                    "Options" => options_page(ui, telemetry_root, telemetry_level, session_id, ui_language, languages, ui_scale, t, &mut acts),
+                    "About" => about_page(ui, telemetry_root, session_id, update, t, &mut acts),
+                    "Options" => {
+                        options_page(ui, telemetry_root, telemetry_level, session_id, ui_language, languages, ui_scale, update, t, &mut acts)
+                    }
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
             });
@@ -355,7 +403,14 @@ fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, pr
 }
 
 /// About: what this is, which version, and where the code lives.
-fn about_page(ui: &mut Ui, telemetry_root: &std::path::Path, session_id: Option<&str>, t: &Tokens) {
+fn about_page(
+    ui: &mut Ui,
+    telemetry_root: &std::path::Path,
+    session_id: Option<&str>,
+    update: &crate::update::Status,
+    t: &Tokens,
+    acts: &mut Vec<Act>,
+) {
     heading(ui, crate::tl_id!("ui.about_notecraft"), t);
     ui.horizontal_top(|ui| {
         ui.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(64.0, 64.0)));
@@ -369,6 +424,8 @@ fn about_page(ui: &mut Ui, telemetry_root: &std::path::Path, session_id: Option<
             );
         });
     });
+    ui.add_space(14.0);
+    version_and_updates(ui, update, t, acts);
     ui.add_space(14.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.the_code")).size(14.0).color(t.strong));
     ui.hyperlink_to(REPOSITORY, REPOSITORY);
@@ -420,6 +477,7 @@ fn options_page(
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
+    update: &crate::update::Status,
     t: &Tokens,
     acts: &mut Vec<Act>,
 ) {
@@ -466,6 +524,10 @@ fn options_page(
             }
         });
     ui.label(egui::RichText::new(crate::tl_id!("ui.interface_size_hint")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
+    // Shown here too: Options is where someone asked for a log looks, and an older build may
+    // not have the option they were told about.
+    version_and_updates(ui, update, t, acts);
     ui.add_space(12.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0")).strong().color(t.strong));
     ui.add_space(12.0);
@@ -563,6 +625,7 @@ mod tests {
                 crate::i18n::AUTO,
                 &crate::i18n::available_languages(),
                 100,
+                &crate::update::Status::Idle,
                 &t,
             );
         });
