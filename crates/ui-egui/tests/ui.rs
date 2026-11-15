@@ -9262,7 +9262,7 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     h.get_by_label("Insert").click();
     settle(&mut h);
     assert!(h.get_by_label_contains("Screen").accesskit_node().is_disabled(), "Screen Clipping is unavailable");
-  }
+}
 
 /// Issue #256: the View tab had a second Window group after Source, repeating New window and
 /// Dock to desktop and calling the working Always on top "not built". Each window action is
