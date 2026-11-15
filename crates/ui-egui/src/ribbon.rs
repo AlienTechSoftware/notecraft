@@ -178,6 +178,9 @@ pub enum Pointer {
     Lasso,
     /// Draw a regular shape: the drag gives the two corners it is drawn between.
     Shape(notecraft_ink::shapes::Shape),
+    /// Draw > Panning Hand: a drag with the main button (or one finger) moves the page, and
+    /// nothing on it is drawn, picked or written in.
+    Pan,
 }
 
 impl Pointer {
@@ -189,6 +192,7 @@ impl Pointer {
             Pointer::Pick => "select",
             Pointer::Lasso => "lasso",
             Pointer::Shape(s) => s.id(),
+            Pointer::Pan => "pan",
         }
     }
 }
@@ -2712,13 +2716,11 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         sensitivity(ui, view.sensitivity, view.pressure_available, t, acts);
     });
     group(ui, crate::tl_id!("ui.input_mode"), t, |ui| {
-        soon(
-            ui,
-            Icon::Hand,
-            "Panning
-Hand",
-            t,
-        );
+        // A mode like the pens: on until another tool (or Type) is chosen, or it is pressed again.
+        let on = view.pointer == Pointer::Pan;
+        if big_on(ui, Icon::Hand, crate::tl_id!("ui.panning_hand_2"), crate::tl_id!("ui.drag_to_move_around_the_page"), on, t).clicked() {
+            acts.push(Act::InkPointer(if on { Pointer::Write } else { Pointer::Pan }));
+        }
     });
     group(ui, crate::tl_id!("ui.stencils"), t, |ui| {
         soon(ui, Icon::Ruler, "Ruler", t);
