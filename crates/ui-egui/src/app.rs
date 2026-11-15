@@ -7092,6 +7092,10 @@ impl NoteCraftApp {
         let page_input_rect = self.page_rect;
         let wheel_canvas_pan_enabled = self.pointer != ribbon::Pointer::Write;
         if self.editor.is_some() && !self.show_source {
+            // Draw > Panning Hand: the main button drags the page as the middle one always does
+            // (issue #270), but not from the scroll bar, which keeps its own drag.
+            let hand = self.pointer == ribbon::Pointer::Pan;
+            let bar = self.page_scroll_strip;
             let (pointer, middle_pressed, middle_down, wheel) = ui.input(|i| {
                 let pointer = page_input_rect.and_then(|rect| i.pointer.interact_pos().filter(|p| rect.contains(*p)));
                 let wheel = if page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))) {
@@ -7104,7 +7108,10 @@ impl NoteCraftApp {
                 } else {
                     egui::Vec2::ZERO
                 };
-                (pointer, i.pointer.button_pressed(egui::PointerButton::Middle), i.pointer.button_down(egui::PointerButton::Middle), wheel)
+                let pointer = pointer.filter(|p| !(hand && bar.is_some_and(|b| b.contains(*p))));
+                let pressed = i.pointer.button_pressed(egui::PointerButton::Middle) || (hand && i.pointer.primary_pressed());
+                let down = i.pointer.button_down(egui::PointerButton::Middle) || (hand && i.pointer.primary_down());
+                (pointer, pressed, down, wheel)
             });
             if wheel_canvas_pan_enabled {
                 self.canvas_pan += wheel;
