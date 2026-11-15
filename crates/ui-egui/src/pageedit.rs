@@ -1961,11 +1961,17 @@ pub fn show_blocks(
             changed.mark = formatting_key(ui, id);
             // A line that reads right to left is written from the right: its bullet, box or
             // tag mark sits on the right, and the words hang from that edge.
-            let align = if notecraft_model::direction_in(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
-            let row = if align == egui::Align::RIGHT {
+            let natural = if notecraft_model::direction_in(&c.text, page).is_rtl() { egui::Align::RIGHT } else { egui::Align::LEFT };
+            let row = if natural == egui::Align::RIGHT {
                 egui::Layout::right_to_left(egui::Align::Min)
             } else {
                 egui::Layout::left_to_right(egui::Align::Min)
+            };
+            // A paragraph or heading set against an edge or the middle keeps its place while it
+            // is written in, so the line does not jump when the caret arrives (issue #258).
+            let align = match (&block, justified.align_of(i)) {
+                (Block::Paragraph(_) | Block::Heading { .. }, Some(a)) => preview::egui_align(a),
+                _ => natural,
             };
             // A line with right-to-left text in it is written in by NoteCraft's own caret;
             // everything else stays with egui's text box, which does it well.
@@ -2322,7 +2328,7 @@ pub fn show_blocks(
                         t,
                         true,
                         page,
-                        justified.strength_of(i),
+                        justified.mark_of(i),
                         across
                             .filter(|a| !a.inside_one_block())
                             .and_then(|a| a.covering(i, block_text(&block).len()))
