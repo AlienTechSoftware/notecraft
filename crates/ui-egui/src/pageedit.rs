@@ -980,8 +980,14 @@ pub(crate) fn text_for_caret(blocks: &[Block], i: usize) -> String {
 ///
 /// The first row is the heading, because a table here always has one: picking four by
 /// five gives a heading and four rows under it, which is five rows of cells in all.
+/// The most rows a table is made with at once (Insert Table): a page is not a spreadsheet, and
+/// a table this long is already slow to write in. More can be added a row at a time.
+pub const TABLE_MAX_ROWS: usize = 200;
+/// The most columns a table is made with at once: wider than this does not fit a page.
+pub const TABLE_MAX_COLUMNS: usize = 30;
+
 pub fn insert_table(blocks: &mut Vec<Block>, at: usize, rows: usize, columns: usize) -> bool {
-    let (rows, columns) = (rows.clamp(1, 20), columns.clamp(1, 20));
+    let (rows, columns) = (rows.clamp(1, TABLE_MAX_ROWS), columns.clamp(1, TABLE_MAX_COLUMNS));
     let row = || vec![Vec::new(); columns];
     let block = Block::Table { head: row(), rows: (1..rows).map(|_| row()).collect() };
     blocks.insert(at.min(blocks.len()), block);
