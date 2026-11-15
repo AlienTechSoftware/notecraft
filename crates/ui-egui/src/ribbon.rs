@@ -55,6 +55,8 @@ pub enum Act {
     AddPicture,
     /// Save picture as... exports an image file from the page.
     SavePictureAs(String),
+    /// Rotate or flip the picture with this source (issue #273).
+    TurnPicture(String, crate::turn::Turn),
     ToggleSource,
     ToggleFullPage,
     OpenThemes,
