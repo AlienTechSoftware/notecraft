@@ -2696,6 +2696,64 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
+/// Issue #289: Draw > Add > Laser Pointer was "not built". It is a pointer mode: a red dot over
+/// the page and, while dragging, a red trail that fades within a second. It draws no ink, leaves
+/// the page as it was, and Escape puts it down again.
+#[test]
+fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
+    let (_t, app, s) = sample_app("ui-laser-pointer");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let state = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    // Red against the page: the ribbon's own red words (Pressure off) are counted before and taken off.
+    let red = |img: &image::RgbaImage| {
+        img.pixels().filter(|p| i32::from(p.0[0]) - i32::from(p.0[1]) > 70 && i32::from(p.0[0]) - i32::from(p.0[2]) > 60).count()
+    };
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Add").click();
+    h.run_steps(2);
+    h.get_by_label("Laser Pointer").click();
+    settle(&mut h);
+    let before = state(&mut h);
+    assert_eq!(before["ink"]["pointer"], json!("laser"), "the laser is in hand: {}", before["ink"]);
+    let strokes = before["ink"]["strokes"].clone();
+
+    let base = red(&support::gpu::render(&mut h).expect("render"));
+    let origin = page_origin(&mut h);
+    let from = origin + egui::vec2(150.0, 260.0);
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    pump(&mut h);
+    for k in 1..=6 {
+        let at = from + egui::vec2(40.0 * k as f32, 12.0 * k as f32);
+        ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move");
+        pump(&mut h);
+    }
+    review(&mut h, "laser_pointer");
+    let drawn = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    // The test steps time a frame or more per move, so only the newest part of the trail is
+    // still lit by now: enough red to be the dot and a stretch of trail.
+    assert!(drawn > 100, "the trail is drawn in red while pointing ({drawn} pixels)");
+    let end = from + egui::vec2(240.0, 72.0);
+    ask(&mut h, "ui.release", json!({"x": end.x, "y": end.y})).expect("release");
+    // Away from the page, so the dot is not drawn either, and long enough for the trail to fade.
+    ask(&mut h, "ui.move", json!({"x": 5.0, "y": 5.0})).expect("away");
+    h.run_steps(90);
+    let after = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    assert!(after < drawn / 10, "the trail faded: {drawn} -> {after} red pixels");
+    let now = state(&mut h);
+    assert_eq!(now["ink"]["strokes"], strokes, "no ink was drawn");
+    assert_eq!(now["ink"]["inked"], before["ink"]["inked"], "the drawing is as it was");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "and the page is unchanged");
+
+    // Escape puts the laser down, and the pointer is the caret again.
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.

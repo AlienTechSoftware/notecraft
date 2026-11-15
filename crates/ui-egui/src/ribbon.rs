@@ -185,6 +185,10 @@ pub enum Pointer {
     /// Draw > Panning Hand: a drag with the main button (or one finger) moves the page, and
     /// nothing on it is drawn, picked or written in.
     Pan,
+    /// Draw > Add > Laser Pointer (issue #289): a red dot follows the pointer and a drag leaves
+    /// a short trail that fades, to point at something while presenting. Nothing is drawn on
+    /// the page, nothing is saved and there is nothing to undo.
+    Laser,
 }
 
 impl Pointer {
@@ -197,6 +201,7 @@ impl Pointer {
             Pointer::Lasso => "lasso",
             Pointer::Shape(s) => s.id(),
             Pointer::Pan => "pan",
+            Pointer::Laser => "laser",
         }
     }
 }
@@ -2182,7 +2187,29 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         }
                     }
                     ui.separator();
-                    not_built(ui, crate::tl_id!("ui.laser_pointer"), t);
+                    // Not a tool for the rack: it draws nothing, so it is picked up here and put
+                    // down with Escape or any other tool (issue #289).
+                    let (row, hit) = ui.allocate_exact_size(vec2(162.0, 28.0), Sense::click());
+                    let painter = ui.painter_at(row);
+                    if hit.hovered() {
+                        painter.rect_filled(row, 4.0, t.row_hover);
+                    }
+                    let dot = egui::pos2(row.min.x + 13.0, row.center().y);
+                    painter.circle_filled(dot, 7.0, crate::inkpad::LASER.gamma_multiply(0.3));
+                    painter.circle_filled(dot, 4.0, crate::inkpad::LASER);
+                    painter.text(
+                        egui::pos2(row.min.x + 32.0, row.center().y),
+                        Align2::LEFT_CENTER,
+                        crate::tl_id!("ui.laser_pointer"),
+                        egui::FontId::proportional(12.5),
+                        t.text,
+                    );
+                    let enabled = ui.is_enabled();
+                    hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, crate::tl_id!("ui.laser_pointer")));
+                    if hit.on_hover_text(crate::tl_id!("ui.point_at_the_page_without_drawing_on_it")).clicked() {
+                        acts.push(Act::InkPointer(Pointer::Laser));
+                        picked = true;
+                    }
                 });
             })
             .response;
