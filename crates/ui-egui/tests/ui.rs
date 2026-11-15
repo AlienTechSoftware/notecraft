@@ -9190,6 +9190,33 @@ fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
     assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
 }
 
+/// Issue #257: the View tab's placeholders were reported to accessibility as enabled buttons,
+/// so a screen reader had to guess from "(not built)" in the name. They are disabled, like the
+/// greyed `soon` buttons on Insert, and the working controls beside them stay enabled.
+#[test]
+fn not_built_placeholders_are_disabled_for_accessibility() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-not-built-disabled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    for name in ["Paper size", "Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
+        let label = format!("{name} (not built)");
+        let nodes: Vec<_> = h.query_all_by_label(&label).collect();
+        assert!(!nodes.is_empty(), "{label} is listed");
+        assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
+    }
+    for working in ["Zoom In", "Zoom Out", "Always on top"] {
+        assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
+    }
+    // Insert's placeholders were already right and stay so.
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert!(h.get_by_label_contains("Screen").accesskit_node().is_disabled(), "Screen Clipping is unavailable");
+}
+
 /// Every straight line painted in the last frame, as its two ends.
 fn painted_segments(h: &Harness<'_, NoteCraftApp>) -> Vec<[egui::Pos2; 2]> {
     fn walk(shape: &egui::Shape, out: &mut Vec<[egui::Pos2; 2]>) {
