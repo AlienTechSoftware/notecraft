@@ -936,3 +936,7 @@
 @id	ui.update_manual	[[RLI]]$$$NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.@@@[[PDI]]
 @id	ui.update_manual_this_build	[[RLI]]$$$This build cannot install updates itself. The releases page has the newest version.@@@[[PDI]]
 @id	ui.update_failed	[[RLI]]$$$The update did not work: {reason}@@@[[PDI]]
+@id	ui.delete_table_2	[[RLI]]$$$Delete\nTable@@@[[PDI]]
+@id	ui.take_the_whole_table_out	[[RLI]]$$$Take the whole table out@@@[[PDI]]
+@id	ui.put_the_caret_in_a_table_first	[[RLI]]$$$Put the caret in a table first@@@[[PDI]]
+@id	ui.deleted_the_table	[[RLI]]$$$Deleted the table@@@[[PDI]]
