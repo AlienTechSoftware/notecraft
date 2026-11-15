@@ -683,14 +683,21 @@ mod tests {
 
     #[test]
     fn downloads_go_to_a_folder_of_this_users_own() {
-        let temp = Path::new("/tmp");
-        assert_eq!(download_root("linux", temp, Some("/home/a/.c".into()), Some("/home/a".into())), PathBuf::from("/home/a/.c/notecraft-update"));
-        assert_eq!(download_root("linux", temp, None, Some("/home/a".into())), PathBuf::from("/home/a/.cache/notecraft-update"));
-        assert_eq!(download_root("linux", temp, Some("relative".into()), None), PathBuf::from("/tmp/notecraft-update"));
-        assert_eq!(
-            download_root("windows", Path::new(r"C:\Users\a\AppData\Local\Temp"), None, None),
-            Path::new(r"C:\Users\a\AppData\Local\Temp").join("notecraft-update")
-        );
+        let dir = notecraft_store::testing::TempDir::new("update-download-root");
+        // Path::is_absolute uses the host's rules, even when testing the Linux policy.
+        let root = dir.path().canonicalize().expect("absolute test folder");
+        let temp = root.join("temp");
+        let home = root.join("home");
+        let cache = home.join(".c");
+        assert_eq!(download_root("linux", &temp, Some(cache.clone()), Some(home.clone())), cache.join("notecraft-update"));
+        assert_eq!(download_root("linux", &temp, None, Some(home.clone())), home.join(".cache").join("notecraft-update"));
+        assert_eq!(download_root("linux", &temp, Some("relative".into()), Some(home.clone())), home.join(".cache").join("notecraft-update"));
+        assert_eq!(download_root("linux", &temp, Some("relative".into()), None), temp.join("notecraft-update"));
+        assert_eq!(download_root("linux", &temp, None, Some("relative".into())), temp.join("notecraft-update"));
+        assert_eq!(download_root("linux", &temp, None, None), temp.join("notecraft-update"));
+        for os in ["windows", "macos"] {
+            assert_eq!(download_root(os, &temp, Some(cache.clone()), Some(home.clone())), temp.join("notecraft-update"));
+        }
     }
 
     #[test]
