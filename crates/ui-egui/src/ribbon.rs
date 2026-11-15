@@ -3074,9 +3074,10 @@ fn not_built(ui: &mut Ui, label: &str, t: &Tokens) {
     let painter = ui.painter_at(rect);
     painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.14)), egui::StrokeKind::Inside);
     painter.text(rect.center(), Align2::CENTER_CENTER, label, font, t.muted);
-    let enabled = ui.is_enabled();
+    // Unavailable, and said so to screen readers and automation as well as on screen: a
+    // placeholder is never an enabled button, whatever the ui around it is (#257).
     let name = crate::i18n::format_message_id("ui.label_not_built", &[("label", label)]);
-    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, false, &name));
     resp.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[("label", crate::tl!(label))]));
 }
 
