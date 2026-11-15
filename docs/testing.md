@@ -86,7 +86,8 @@ cargo xtask coverage            # measure, and compare with docs/coverage.json
 cargo xtask coverage --update   # measure, and make this run the new baseline
 ```
 
-The baseline is [`coverage.json`](coverage.json), one entry per platform: the total line,
+The UI integration tests run serially during coverage, matching the Windows GPU isolation rule
+used by `cargo xtask ci`; other workspace tests retain normal parallelism. The baseline is [`coverage.json`](coverage.json), one entry per platform: the total line,
 function and region coverage, line coverage per crate, and when and with what it was
 measured. It covers the workspace without `xtask`. A run is compared with its own platform
 only, because code for one platform counts only where it is built. `--update` writes the
@@ -107,6 +108,15 @@ machine or change the platform build/test jobs.
 
 When a change raises coverage, run `--update` in the same pull request, so the new figure
 lands with the code that earned it and git keeps the history.
+
+## Developer workflow timings
+
+`cargo xtask ci` records local timings for each validation phase, and `cargo xtask test`
+records its workspace and UI test phases. The build/test jobs also report their measured build
+and test command times in CI summaries. Local timing history stays in ignored `target/`; hosted
+history is kept in a platform-specific GitHub Actions cache. Warnings compare with recent
+successful runs on the same platform and Rust toolchain, and never fail a gate. See
+[`devx-performance.md`](devx-performance.md) for the data fields and thresholds.
 
 ## Continuous integration
 

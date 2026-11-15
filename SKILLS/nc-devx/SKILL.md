@@ -244,7 +244,7 @@ CI runs L3; L4 is the release signoff and delivery process.
 |---|---|---|---|---|
 | **L0** | After each task | `cargo fmt`, then clippy and the tests of the crates you changed: `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>` | by hand | seconds |
 | **L1** | Before a commit | `cargo xtask check-branch`: not on `main`; a branch name starting `feat/ fix/ docs/ test/ chore/ refactor/ perf/ ci/ build/ release/` (a warning otherwise); nothing from `local/`, `target/`, `my-notebooks/` or a `.log` staged; no staged file over 10 MB; a warning when behind `origin/main`. Then PII, fmt, layers, assets, docs links and text. The message: `type(scope): what`, at most 72 characters | `.githooks/pre-commit`, `.githooks/commit-msg` | under 5 s |
-| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | 2 to 4 min |
+| **L2** | Before a push | `cargo xtask check-branch --push`: fetches `main`; being behind `origin/main` stops the push, while merge commits are allowed to preserve integration provenance. Then PII against `origin/main` and the full `cargo xtask ci` (fmt, clippy `-D warnings`, every test, layers, assets, docs, text, demo check) | `.githooks/pre-push` | Varies by machine and cache; timings are recorded |
 | **L3** | Pull request | Code quality and cross-platform source validation: split fmt, clippy, static checks, demo checks, tests, and non-blocking coverage, plus build/test jobs for Linux, Windows, and macOS. No installers or publishing. | `.github/workflows/ci.yml`, `.github/pull_request_template.md` | CI |
 | **L4** | Release | Release signoff, packaging, installer validation, release notes, and deployment approval. Packaging and deployment are separate workflow concerns; neither is a shortcut around L3. | `.github/workflows/packaging.yml`, `.github/workflows/release.yml`, `docs/releasing.md` | release/manual |
 
@@ -312,6 +312,15 @@ Coverage remains visible on pull requests so developers can think about coverage
 its warning-only result must not block merging. Do not select a larger runner unless the
 repository's GitHub account explicitly provides that runner label; record the measured resource
 need and the cost/availability decision in the PR.
+
+### Developer workflow timings
+
+`cargo xtask ci` and `cargo xtask test` record validation phase durations locally under
+`target/devx/timings.jsonl`. The platform build/test workflow also records its build and test
+steps in the GitHub Actions summary. Local history is not uploaded. CI compares only its own
+platform and Rust toolchain history, restored from the main-branch Actions cache; pull request
+runs do not update that history. See [`docs/devx-performance.md`](../../docs/devx-performance.md)
+for the comparison policy and command details.
 
 Never skip a level with `--no-verify` for your own work (AGENTS.md). If a hook stops you on
 work that is not yours, such as another session's half-written file, say so in the report.

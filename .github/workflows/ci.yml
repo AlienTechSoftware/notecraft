@@ -124,6 +124,13 @@ jobs:
       CARGO_BUILD_JOBS: ${{ matrix.build-jobs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore main-branch build/test timing history
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target/devx/timings.jsonl
+          key: devx-timing-v1-${{ matrix.platform }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.run_id }}
+          restore-keys: |
+            devx-timing-v1-${{ matrix.platform }}-${{ hashFiles('rust-toolchain.toml') }}-
       - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -142,26 +149,34 @@ jobs:
           free -h
           df -h /
       - name: Build workspace
-        run: cargo build --workspace --locked
+        run: cargo xtask devx-time build -- cargo build --workspace --locked
       - name: Run workspace tests with infrastructure-only retry (Linux)
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          set -o pipefail
-          set +e
-          cargo test --workspace --locked 2>&1 | tee cargo-test.log
-          status=${PIPESTATUS[0]}
-          set -e
-          if [[ "$status" -eq 0 ]]; then exit 0; fi
-          if grep -Eq 'No space left on device|IO failure on output stream|Bus error|signal 7' cargo-test.log; then
-            echo "Retrying after an infrastructure/resource failure"
-            cargo test --workspace
-            exit $?
-          fi
-          exit "$status"
+          cargo xtask devx-time tests -- bash -c '
+            set -o pipefail
+            set +e
+            cargo test --workspace --locked 2>&1 | tee cargo-test.log
+            status=${PIPESTATUS[0]}
+            set -e
+            if [[ "$status" -eq 0 ]]; then exit 0; fi
+            if grep -Eq "No space left on device|IO failure on output stream|Bus error|signal 7" cargo-test.log; then
+              echo "Retrying after an infrastructure/resource failure"
+              cargo test --workspace
+              exit $?
+            fi
+            exit "$status"
+          '
       - name: Run workspace tests
         if: matrix.platform != 'linux'
-        run: cargo test --workspace --locked
+        run: cargo xtask devx-time tests -- cargo test --workspace --locked
+      - name: Save main-branch build/test timing history
+        if: github.ref == 'refs/heads/main' && success()
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target/devx/timings.jsonl
+          key: devx-timing-v1-${{ matrix.platform }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.run_id }}
 
   static:
     name: static checks

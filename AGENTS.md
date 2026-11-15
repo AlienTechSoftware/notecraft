@@ -269,7 +269,8 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
   check and the cheap gates: fmt, layers, assets, docs, text), a few seconds, and
   [`.githooks/commit-msg`](.githooks/commit-msg) checks the subject line.
   [`.githooks/pre-push`](.githooks/pre-push) runs L2: up to date with `origin/main`, then the
-  whole of `cargo xtask ci`, a few minutes, so a red tree is caught before CI sees it. Git does
+  whole of `cargo xtask ci`; it records per-phase timings because total duration varies by
+  platform, machine and cache. See [`docs/devx-performance.md`](docs/devx-performance.md). Git does
   not pick up a tracked hooks folder by itself, so each clone needs the `core.hooksPath` line
   above once. They check the working tree, not the index, so another session's half-written file
   will stop your commit; `--no-verify` is the way through that, and it is not a thing to reach
