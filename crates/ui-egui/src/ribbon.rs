@@ -148,6 +148,8 @@ pub enum Act {
     InkSensitivity(u8),
     /// Take the last stroke back.
     InkUndo,
+    /// Put back the stroke Undo stroke last took back.
+    InkRedo,
     /// Put a drawing on the page at the caret.
     InkInsert,
     /// Save the drawing beside the page as a plain picture, with no pen readings in it.
@@ -454,6 +456,8 @@ pub struct View<'a> {
     /// Whether the page has anything to take back, and anything to put back.
     pub can_undo: bool,
     pub can_redo: bool,
+    /// Whether the drawing has a stroke that Undo stroke took back, for Draw > Redo stroke.
+    pub can_ink_redo: bool,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
     /// Whether the current input path has reported a pressure-capable pen.
@@ -2627,13 +2631,16 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big(ui, Icon::Undo, crate::tl_id!("ui.undo_stroke"), crate::tl_id!("ui.take_the_last_stroke_back"), t).clicked() {
             acts.push(Act::InkUndo);
         }
-        soon(
-            ui,
-            Icon::Redo,
-            "Redo
-stroke",
-            t,
-        );
+        // Follows the drawing's own redo steps, as Undo stroke follows its undo steps (#264).
+        if ui
+            .add_enabled_ui(view.can_ink_redo, |ui| {
+                big(ui, Icon::Redo, crate::tl_id!("ui.redo_stroke"), crate::tl_id!("ui.put_back_the_stroke_undo_stroke_took_back"), t)
+            })
+            .inner
+            .clicked()
+        {
+            acts.push(Act::InkRedo);
+        }
     });
     group(ui, crate::tl_id!("ui.selection"), t, |ui| {
         if big_on(
@@ -2716,13 +2723,10 @@ Hand",
         {
             acts.push(Act::InkExportPlain);
         }
-        soon(
-            ui,
-            Icon::InsertSpace,
-            "Insert
-Space",
-            t,
-        );
+        // The same tool as Insert > Insert Space, lit the same way while it is in hand (#264).
+        if big_on(ui, Icon::InsertSpace, crate::tl_id!("ui.insert_space_2"), crate::tl_id!("ui.insert_space_tip"), view.space_tool, t).clicked() {
+            acts.push(Act::InsertSpaceTool);
+        }
         // OneNote's Format Background is this tab's way to the paper, and we have the
         // paper, so it goes to the same gallery the View tab opens.
         rule_lines_menu(ui, view, t, acts);
@@ -3053,13 +3057,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleSource);
         }
     });
-    group(ui, crate::tl_id!("ui.window"), t, |ui| {
-        rows(ui, |ui| {
-            not_built(ui, crate::tl_id!("ui.new_window"), t);
-            not_built(ui, crate::tl_id!("ui.always_on_top"), t);
-            not_built(ui, crate::tl_id!("ui.dock_to_desktop"), t);
-        });
-    });
+    // One Window group only (#256): it is the one above, with the working Always on top.
+    // Dock to desktop is in Views, where OneNote has it.
 }
 
 /// A control that is listed so nobody goes looking for it, and says it is not built.
