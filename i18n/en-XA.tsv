@@ -947,3 +947,12 @@
 @id	ui.take_the_whole_table_out	$$$Take the whole table out@@@
 @id	ui.put_the_caret_in_a_table_first	$$$Put the caret in a table first@@@
 @id	ui.deleted_the_table	$$$Deleted the table@@@
+@id	ui.rotate_right_90	$$$Rotate Right 90°@@@
+@id	ui.rotate_left_90	$$$Rotate Left 90°@@@
+@id	ui.flip_horizontal	$$$Flip Horizontal@@@
+@id	ui.flip_vertical	$$$Flip Vertical@@@
+@id	ui.this_picture_cannot_be_turned_here	$$$This picture cannot be rotated or flipped@@@
+@id	ui.rotated_the_picture	$$$Rotated the picture@@@
+@id	ui.flipped_the_picture	$$$Flipped the picture@@@
+@id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	$$$Rotated the picture. Ink on the page stays where it is@@@
+@id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	$$$Flipped the picture. Ink on the page stays where it is@@@
