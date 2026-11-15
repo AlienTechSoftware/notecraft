@@ -2581,6 +2581,44 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
+/// Issue #317: the default black pen drew black ink on the dark theme's near-black page, so
+/// a stroke could hardly be seen. On a dark page dark ink with no colour is drawn light; the
+/// saved colour stays black, as the drawing's file shows.
+#[test]
+fn black_ink_reads_on_a_dark_page_and_is_saved_black() {
+    for (theme, light_stroke) in [(DARK, true), (LIGHT, false)] {
+        let (_t, mut app, s) = sample_app("ui-dark-ink");
+        app.open_path(&s.html_page.to_string_lossy());
+        let mut h = harness(app, theme);
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        pump(&mut h);
+        h.get_by_label("Pen black").click();
+        pump(&mut h);
+        let origin = page_origin(&mut h);
+        let (from, by) = (origin + egui::vec2(60.0, 300.0), egui::vec2(200.0, 0.0));
+        drag_by(&mut h, from, by);
+        settle(&mut h);
+        let image = support::gpu::render(&mut h).expect("render");
+        let ppp = h.ctx.pixels_per_point();
+        let mid = from + by / 2.0;
+        // The lightest pixel across the stroke's width, where its middle is.
+        let brightest = (-3..=3)
+            .map(|dy| image.get_pixel((mid.x * ppp) as u32, ((mid.y + dy as f32) * ppp) as u32).0)
+            .map(|p| (u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])) / 3)
+            .collect::<Vec<_>>();
+        let (lightest, darkest) = (*brightest.iter().max().unwrap_or(&0), *brightest.iter().min().unwrap_or(&255));
+        if light_stroke {
+            assert!(lightest > 200, "on the dark page the stroke is drawn light: {brightest:?}");
+            review(&mut h, "black_ink_on_a_dark_page");
+        } else {
+            assert!(darkest < 60, "on the light page it stays black: {brightest:?}");
+        }
+        let saved = std::fs::read_to_string(s.html_page.join("ink.svg")).expect("the drawing is saved");
+        assert!(saved.contains("fill=\"#202020\""), "saved in the black pen's own colour either way:\n{saved}");
+    }
+}
+
 /// Issue #262: Insert symbol was a plain window. Escape left it open, and Ctrl+Z undid (and
 /// saved) a change on the page behind it. It is a modal now: Ctrl+Z and Ctrl+Y leave the page
 /// alone while it is open, Escape closes it with nothing inserted, and Undo works again after.
