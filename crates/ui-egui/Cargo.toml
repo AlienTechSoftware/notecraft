@@ -30,6 +30,9 @@ hayro = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
 zip = { workspace = true }
+# File > Check for updates: release versions and the SHA-256 of a download (see `update.rs`).
+semver = "1"
+sha2 = "0.10"
 # SystemTime::now()/Instant::now() panic on wasm32-unknown-unknown; see the workspace Cargo.toml.
 web-time = { workspace = true }
 
@@ -42,6 +45,10 @@ arboard = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 fontdb = "0.23"
+# File > About > "Check for updates": asks GitHub for the newest release, downloads the file for
+# this computer and checks it against the release's SHA-256 before running it. Nothing is sent
+# until the button is pressed.
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier", "json"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true }
