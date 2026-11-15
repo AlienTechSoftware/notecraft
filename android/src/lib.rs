@@ -6,9 +6,10 @@
 //! the bundled Welcome notebook payload ([`welcome`]) and runs the same egui window as the
 //! desktop app. `android/build.sh` builds the APK; `android/README.md` says how.
 //!
-//! [`welcome`] and [`storage`] are platform neutral, so the host runs their tests too.
+//! [`welcome`], [`storage`] and [`insets`] are platform neutral, so the host runs their tests too.
 
 #[cfg(target_os = "android")]
 mod activity;
+pub mod insets;
 pub mod storage;
 pub mod welcome;
