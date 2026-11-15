@@ -918,6 +918,7 @@
 @id	ui.insert_space_how	$$$Drag down where you want more room, or up to take room away. Esc puts the tool down.@@@
 @id	ui.pen_keys_typing	$$$Typing (Alt+0)@@@
 @id	ui.pen_keys_picked	$$$Pen {number} (Alt+{number})@@@
+@id	ui.spreadsheet_gridcraft_is_not_installed	$$$Spreadsheet: GridCraft is not installed@@@
 @id	ui.redo_stroke	$$$Redo\nstroke@@@
 @id	ui.put_back_the_stroke_undo_stroke_took_back	$$$Put back the stroke Undo stroke took back@@@
 @id	ui.version_and_updates	$$$Version and updates@@@

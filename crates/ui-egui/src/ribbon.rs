@@ -1650,7 +1650,15 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 acts.push(Act::NewGridCraft);
             }
         } else {
-            soon(ui, Icon::Spreadsheet, "Spreadsheet", t);
+            // Built, but GridCraft is what makes the spreadsheet: without it the button is
+            // unavailable and says why, as Table > Convert to GridCraft does (#306).
+            let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
+            let resp = ui
+                .add_enabled_ui(false, |ui| {
+                    big(ui, Icon::Spreadsheet, crate::tl_id!("ui.spreadsheet"), crate::tl_id!("ui.gridcraft_is_not_installed"), &dim)
+                })
+                .inner;
+            resp.on_disabled_hover_text(crate::tl_id!("ui.spreadsheet_gridcraft_is_not_installed"));
         }
     });
     group(ui, crate::tl_id!("ui.images"), t, |ui| {
