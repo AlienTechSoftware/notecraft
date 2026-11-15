@@ -129,6 +129,8 @@ pub enum Act {
     TableShade(Option<notecraft_model::NodeColor>),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
+    /// Colour the open page's rule and grid lines, or `None` for the theme's own (issue #288).
+    RuleColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
     Undo,
     Redo,
@@ -461,6 +463,8 @@ pub struct View<'a> {
     pub gridcraft: bool,
     /// The colour behind the open page, when it carries one of its own.
     pub page_colour: Option<notecraft_model::NodeColor>,
+    /// The colour of the open page's rule and grid lines, `None` for the theme's (issue #288).
+    pub rule_colour: Option<notecraft_model::NodeColor>,
     /// Whether the page has anything to take back, and anything to put back.
     pub can_undo: bool,
     pub can_redo: bool,
@@ -1782,6 +1786,45 @@ fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: 
     resp.on_hover_text(name)
 }
 
+/// The Rule Line Colour row of the paper gallery (issue #288): Automatic (the theme's own lines)
+/// and the named colours, each swatch drawn as a short rule in the colour the lines will be.
+fn rule_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let mut picked = false;
+    ui.label(egui::RichText::new(crate::tl_id!("ui.rule_line_colour")).strong().color(t.text));
+    ui.add_enabled_ui(view.has_page, |ui| {
+        ui.horizontal(|ui| {
+            for colour in std::iter::once(None).chain(notecraft_model::NodeColor::ALL.into_iter().map(Some)) {
+                let here = view.rule_colour == colour;
+                let side = 22.0;
+                let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+                let painter = ui.painter();
+                painter.rect_filled(rect, 3.0, t.editor);
+                let (_, strong) = crate::theme::rule_lines_in(t, colour);
+                for k in 1..4 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let y = rect.min.y + side * k as f32 / 4.0;
+                    painter.hline(rect.min.x + 3.0..=rect.max.x - 3.0, y, egui::Stroke::new(1.5, strong));
+                }
+                let (edge, width) = if here { (t.accent, 2.0) } else { (t.faint, 1.0) };
+                painter.rect_stroke(rect, 3.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+                // Named apart from the page colour swatches beside them: "Blue lines".
+                let name = match colour {
+                    Some(c) => crate::i18n::format_message_id("ui.colour_lines", &[("colour", crate::tl!(c.label()))]),
+                    None => crate::tl_id!("ui.automatic_rule_lines").to_string(),
+                };
+                let enabled = ui.is_enabled();
+                let said = name.clone();
+                resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, &said));
+                if resp.on_hover_text(name).clicked() {
+                    acts.push(Act::RuleColour(colour));
+                    picked = true;
+                }
+            }
+        });
+    });
+    picked
+}
+
 /// Shared by the direct Page colour menu and the combined Format Background gallery.
 fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let mut picked = false;
@@ -2014,7 +2057,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                     ui.separator();
                     picked |= page_colour_palette(ui, view, t, acts);
                     ui.separator();
-                    ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.rule_line_colour_not_built")).color(t.muted)));
+                    picked |= rule_colour_palette(ui, view, t, acts);
                 });
             })
             .response;

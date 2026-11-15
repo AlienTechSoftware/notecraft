@@ -512,6 +512,8 @@ struct Editor {
     /// keeps them. `None` means the page says nothing and the window's own choice stands.
     paper: Option<ribbon::RuleLines>,
     colour: Option<notecraft_model::NodeColor>,
+    /// The colour of this page's rule and grid lines, when it was given one (issue #288).
+    rule_colour: Option<notecraft_model::NodeColor>,
     /// What the page looked like before each change, so a change can be taken back.
     history: crate::history::History,
     /// The ink files in the page's folder. The folder is what decides: the page's own
@@ -2214,6 +2216,7 @@ impl NoteCraftApp {
                 ink_files: notecraft_store::page::ink_files(dir),
                 paper: appearance.0,
                 colour: appearance.1,
+                rule_colour: notecraft_store::page::rule_colour(dir).ok().flatten().and_then(|c| notecraft_model::NodeColor::parse(&c)),
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
                 origin_in_canvas: None,
@@ -3825,6 +3828,7 @@ impl NoteCraftApp {
             table_shade: self.caret_cells_shade(),
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
+            rule_colour: self.editor.as_ref().and_then(|e| e.rule_colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
@@ -4303,6 +4307,19 @@ impl NoteCraftApp {
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
             ribbon::Act::TableAlign(align) => self.align_table_cells(align),
             ribbon::Act::TableShade(shade) => self.shade_table_cells(shade),
+            ribbon::Act::RuleColour(c) => {
+                let Some(ed) = self.editor.as_mut() else {
+                    self.say(crate::tl_id!("ui.open_a_page_first"));
+                    return;
+                };
+                ed.rule_colour = c;
+                let path = path_str(&ed.dir);
+                self.run("page.paper", &params(&[("path", &path), ("rules", c.map(notecraft_model::NodeColor::id).unwrap_or("none"))]));
+                self.say(match c {
+                    Some(c) => crate::i18n::format_message_id("ui.the_lines_are_colour", &[("colour", &crate::tl!(c.label()).to_lowercase())]),
+                    None => crate::tl_id!("ui.the_lines_are_the_theme_s_own_colour").to_string(),
+                });
+            }
             ribbon::Act::PageColour(c) => {
                 self.set_page_appearance(None, Some(c));
                 self.say(match c {
@@ -7261,6 +7278,7 @@ impl NoteCraftApp {
                     ui.painter_at(viewport).rect_filled(viewport, 0.0, wash);
                 }
                 if wide && rules.on() {
+                    let lines = crate::theme::rule_lines_in(&tokens, ed.rule_colour);
                     crate::ribbon::paint_paper_canvas(
                         &ui.painter_at(viewport),
                         viewport,
@@ -7269,8 +7287,8 @@ impl NoteCraftApp {
                         // Through the page's origin, so a box on the grid sits on a line. A page
                         // not yet drawn as boxes counts from the canvas's corner.
                         viewport.translate(self.canvas_pan).min + ed.origin_in_canvas.unwrap_or_default(),
-                        tokens.rule_line,
-                        tokens.rule_line_strong,
+                        lines.0,
+                        lines.1,
                     );
                 }
                 let content_rect = viewport.translate(self.canvas_pan);
@@ -9285,6 +9303,7 @@ impl NoteCraftApp {
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),
+            "ruleColour": self.editor.as_ref().and_then(|e| e.rule_colour).map(notecraft_model::NodeColor::id),
             "pageColour": self.editor.as_ref().and_then(|e| e.colour).map(notecraft_model::NodeColor::id),
             // The pen the Draw tab is set to, and the drawing it writes in.
             "ink": {
