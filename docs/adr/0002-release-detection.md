@@ -1,6 +1,7 @@
 # ADR 0002: NoteCraft detects new releases itself, behind a source boundary
 
-Status: deferred. Not implemented. Revisit when the owner asks for release detection.
+Status: accepted in part (issue #253). A manual check that also downloads and installs is
+implemented; see "Update, 2026-11-15" at the end. The startup check is not.
 
 ## Context
 
@@ -63,3 +64,25 @@ is the place to plug them in.
 - Owner approval for the HTTP and semver dependencies.
 - Whether the check runs once per launch or once per day.
 - Whether the release source should also read the launcher's catalog.
+
+## Update, 2026-11-15 (issue #253)
+
+A tester asked for a log could not find the option because their build was old, and nothing in
+the app said so. The request that followed (from a contributor) asked for the update button to download and
+install the new version, not only point at it. What was built:
+
+- `crates/ui-egui/src/update.rs`, with the source boundary this ADR describes: a
+  `ReleaseSource` trait (`latest() -> Release`) and a GitHub implementation reading
+  `releases/latest`. `craft-update` can still replace it.
+- `ureq` (with rustls and the system's certificate store) and `semver`, as named above, plus
+  `sha2` to check downloads. These are the new dependencies the "Open questions" asked about.
+- **No startup check.** The check runs only when File > About or File > Options > **Check for
+  updates** is pressed, so nothing is sent unless the user asks. A startup check and its
+  setting remain open.
+- **It departs from "No download and no install".** When the release is newer, the button
+  downloads the file for this install, checks its SHA-256, and installs it: the MSI or the
+  portable zip on Windows, the AppImage on Linux, the app bundle on macOS. deb and rpm installs
+  hand the package to the system's installer. The table in `docs/releasing.md` lists them. The
+  web build and Android open the releases page instead.
+- Failures are shown in the File screen and written to the log, rather than kept silent,
+  because the user pressed the button and is waiting for an answer.
