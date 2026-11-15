@@ -3781,6 +3781,7 @@ impl NoteCraftApp {
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
+            can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
@@ -4276,6 +4277,7 @@ impl NoteCraftApp {
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
             }
             ribbon::Act::InkUndo => self.ink_undo(),
+            ribbon::Act::InkRedo => self.ink_redo(),
             ribbon::Act::InkInsert => self.ink_insert(),
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),

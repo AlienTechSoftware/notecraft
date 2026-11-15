@@ -2266,6 +2266,29 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
         "and stops claiming to have ink:
 {body}"
     );
+
+    use egui_kittest::kittest::NodeT as _;
+    // Issue #264: Redo stroke follows the drawing's redo steps. It puts the stroke back, file
+    // and all, and is unavailable again once there is nothing left to put back.
+    assert!(!h.get_by_label("Redo stroke").accesskit_node().is_disabled(), "a stroke was taken back, so Redo stroke is offered");
+    h.get_by_label("Redo stroke").click();
+    settle(&mut h);
+    let written = std::fs::read_to_string(&file).expect("the stroke and its file are back");
+    assert_eq!(written.matches("<path").count(), 1, "one stroke again");
+    assert!(h.state().body().unwrap_or_default().contains("![Ink](ink.svg)"), "and the page names its ink again");
+    assert!(h.get_by_label("Redo stroke").accesskit_node().is_disabled(), "nothing more to put back");
+
+    // Draw > Insert Space picks up the same tool as Insert > Insert Space, and Esc puts it down.
+    let tool =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/canvas/insertSpace").and_then(Value::as_bool);
+    assert_eq!(tool(&mut h), Some(false));
+    assert!(!h.get_by_label("Insert Space").accesskit_node().is_disabled(), "Draw > Insert Space is no longer a placeholder");
+    h.get_by_label("Insert Space").click();
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(true), "the Insert Space tool is in hand");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    assert_eq!(tool(&mut h), Some(false), "Esc puts it down");
     review(&mut h, "draw_tab");
 }
 
@@ -9266,6 +9289,33 @@ fn the_snap_to_grid_toggle_is_on_the_view_tab_and_is_remembered() {
     settle(&mut h);
     let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
     assert!(saved.contains("snap_to_grid = \"false\""), "and turning it off is saved too:\n{saved}");
+}
+
+/// Issue #257: the View tab's placeholders were reported to accessibility as enabled buttons,
+/// so a screen reader had to guess from "(not built)" in the name. They are disabled, like the
+/// greyed `soon` buttons on Insert, and the working controls beside them stay enabled.
+#[test]
+fn not_built_placeholders_are_disabled_for_accessibility() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-not-built-disabled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    for name in ["Paper size", "Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
+        let label = format!("{name} (not built)");
+        let nodes: Vec<_> = h.query_all_by_label(&label).collect();
+        assert!(!nodes.is_empty(), "{label} is listed");
+        assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
+    }
+    for working in ["Zoom In", "Zoom Out", "Always on top"] {
+        assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
+    }
+    // Insert's placeholders were already right and stay so.
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert!(h.get_by_label_contains("Screen").accesskit_node().is_disabled(), "Screen Clipping is unavailable");
 }
 
 /// Issue #256: the View tab had a second Window group after Source, repeating New window and
