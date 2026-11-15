@@ -57,6 +57,40 @@ fn default_telemetry_level(debug_build: bool) -> &'static str {
 }
 
 const ROW_HEIGHT: f32 = 24.0;
+
+/// Space between the end of a page name and its format label in the page list.
+const ROW_LABEL_GAP: f32 = 6.0;
+
+/// How wide `text` is when drawn on one line at `size` points.
+fn text_width(ui: &Ui, text: &str, size: f32) -> f32 {
+    ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), egui::FontId::proportional(size), egui::Color32::WHITE).rect.width())
+}
+
+/// Whether a row's format label is shown, and how much room its name gets. The label is
+/// shown only when the whole name fits beside it; otherwise the name gets the whole row.
+fn row_name_room(name_width: f32, label_width: Option<f32>, room: f32) -> (bool, f32) {
+    match label_width {
+        Some(label) if name_width + label <= room => (true, room - label),
+        _ => (false, room),
+    }
+}
+
+/// `text` as it fits in `room` points: whole when it fits, otherwise cut at a character
+/// and ended with "…", so a long name never runs into what is drawn after it.
+fn fit_to_width(ui: &Ui, text: &str, size: f32, room: f32) -> String {
+    if text_width(ui, text, size) <= room {
+        return text.to_owned();
+    }
+    let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).skip(1).chain(std::iter::once(text.len())).collect();
+    // The longest start of the name that still fits with the ellipsis after it.
+    let (mut lo, mut hi) = (0usize, ends.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let candidate = format!("{}…", text[..ends[mid - 1]].trim_end());
+        if text_width(ui, &candidate, size) <= room { lo = mid } else { hi = mid - 1 }
+    }
+    if lo == 0 { "…".to_owned() } else { format!("{}…", text[..ends[lo - 1]].trim_end()) }
+}
 const INDENT: f32 = 14.0;
 
 /// Shared title treatment for modal dialogs. Keeping this here makes dialogs use the
@@ -2761,20 +2795,25 @@ impl NoteCraftApp {
         icons::paint(&painter, icon_rect, icon, color);
         let text_pos = egui::pos2(x0 + 40.0, cy);
         let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
-        // Pages reserve room for their format label and add-page affordance. Organiser rows
-        // do not, so notebook, group and section names should run almost to the pane border.
-        let trailing = if node.info.kind == NodeKind::Page { 52.0 } else { 8.0 };
-        let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x - trailing, rect.max.y));
+        // Pages keep room for the add-page "+" at the end of the row. Organiser rows do not,
+        // so notebook, group and section names run almost to the pane border.
+        let trailing = if node.info.kind == NodeKind::Page { 28.0 } else { 8.0 };
+        let room = (rect.max.x - trailing - text_pos.x).max(0.0);
+        // The format label ("html", "md") is the less important of the two: it is shown only
+        // when the whole name fits beside it, and the name is never cut to make room for it.
+        let label = if node.info.kind == NodeKind::Page { node.info.format.map(|f| crate::tl!(f.short())) } else { None };
+        let label_width = label.map(|l| text_width(ui, l, 10.5) + ROW_LABEL_GAP);
+        let (show_label, name_room) = row_name_room(text_width(ui, &node.info.title, 14.0), label_width, room);
+        let name = fit_to_width(ui, &node.info.title, 14.0, name_room);
+        let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(text_pos.x + name_room + 1.0, rect.max.y));
         // The tree is on screen all the time, so this is the most visible place the words
         // of an Arabic name would come out backwards. Each row's name decides its own
         // direction; the row keeps its place and its clip either way.
         let clipped = painter.with_clip_rect(text_clip);
-        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &node.info.title, 14.0, text_color, None);
+        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &name, 14.0, text_color, None);
         let plus_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x - 24.0, rect.min.y + 2.0), vec2(20.0, ROW_HEIGHT - 4.0));
-        if node.info.kind == NodeKind::Page
-            && let Some(f) = node.info.format
-        {
-            painter.text(egui::pos2(rect.max.x - 30.0, cy), Align2::RIGHT_CENTER, crate::tl!(f.short()), egui::FontId::proportional(10.5), t.muted);
+        if show_label && let Some(l) = label {
+            painter.text(egui::pos2(rect.max.x - trailing, cy), Align2::RIGHT_CENTER, l, egui::FontId::proportional(10.5), t.muted);
         }
         if resp.hovered() {
             painter.text(plus_rect.center(), Align2::CENTER_CENTER, "+", egui::FontId::proportional(16.0), t.strong);
@@ -10629,5 +10668,42 @@ mod table_sort_tests {
             settle(&mut h);
             assert_eq!(names(&h), ["pear", "fig", "apple"], "html={html}: descending");
         }
+    }
+}
+
+#[cfg(test)]
+mod page_row_name_tests {
+    use super::{fit_to_width, row_name_room, text_width};
+
+    /// A page row shows its format label only when the whole name fits beside it. A long
+    /// name takes the whole row instead, so it is never cut short to make room for "html"
+    /// (issue #251: names came out as "Welcomhtml").
+    #[test]
+    fn the_format_label_gives_way_to_a_long_name() {
+        assert_eq!(row_name_room(60.0, Some(30.0), 120.0), (true, 90.0));
+        assert_eq!(row_name_room(100.0, Some(30.0), 120.0), (false, 120.0));
+        assert_eq!(row_name_room(100.0, None, 120.0), (false, 120.0));
+    }
+
+    /// A name that does not fit ends in "…" and stays inside its room; one that fits is
+    /// left as it is.
+    #[test]
+    fn a_long_name_ends_in_an_ellipsis_inside_its_room() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let name = "Write a page in plain words";
+            assert_eq!(fit_to_width(ui, name, 14.0, 10_000.0), name);
+            let room = text_width(ui, name, 14.0) / 2.0;
+            let fitted = fit_to_width(ui, name, 14.0, room);
+            assert!(fitted.ends_with('…'), "{fitted:?}");
+            assert!(name.starts_with(fitted.trim_end_matches('…')), "{fitted:?}");
+            assert!(text_width(ui, &fitted, 14.0) <= room, "{fitted:?} fits in {room}");
+            assert_eq!(fit_to_width(ui, name, 14.0, 1.0), "…");
+            // Letters made of several bytes are cut between letters, never inside one.
+            let arabic = "ما الذي يمكنك فعله هنا";
+            let cut = fit_to_width(ui, arabic, 14.0, text_width(ui, arabic, 14.0) / 2.0);
+            assert!(cut.ends_with('…'), "{cut:?}");
+        });
+        out.textures_delta.clear();
     }
 }
