@@ -8768,11 +8768,23 @@ impl NoteCraftApp {
             }
             Dialog::Symbols => {
                 let mut chosen: Option<&'static str> = None;
+                // A modal like the other dialogs (issue #262): the page behind is dimmed and
+                // takes no clicks, so the caret stays where the symbol will go, and Escape
+                // closes it with nothing inserted.
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let backdrop = modal_backdrop(ctx, "insert-symbol-backdrop");
                 egui::Window::new(crate::tl_id!("ui.insert_symbol"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_symbol"));
                         ui.label(crate::tl_id!("ui.choose_a_symbol_to_insert_at_the_caret"));
                         ui.add_space(6.0);
                         for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
@@ -9261,10 +9273,14 @@ impl NoteCraftApp {
         // knows only about the letters in that one box, and the page's undo has to be the
         // one that answers, or Ctrl+Z would mean two different things on one page.
         let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
-        if ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
+        // Not while a dialog is open: it owns the keyboard, and the page behind it must not
+        // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
+        // text box in the dialog keeps its own undo.
+        let page_keys = self.dialog.is_none();
+        if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
-        } else if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
+        } else if page_keys && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Z)) {
             // The ink's changes as well as the page's: whichever was last, or both when one
             // press made them together.
             self.undo();
