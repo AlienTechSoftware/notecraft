@@ -24,7 +24,7 @@ One run:
    command line zip), and Android arm64 (APK; see Android signing below).
 6. Runs the Website pipeline on the tagged commit and deploys it to notecraft.cloud, including
    `/demo/`. The built web app is kept as `notecraft-web-<version>.zip`.
-7. Publishes GitHub Release `v<version>` as a pre-release, not a draft, with every file above and
+7. Publishes GitHub Release `v<version>` as a regular release marked latest, with every file above and
    one `SHA256SUMS.txt`. The notes are a fixed alpha notice plus GitHub's list of merged pull
    requests.
 
@@ -70,7 +70,8 @@ One run:
 - Git tags and release names are `v<version>`, for example `v0.1.0`.
 - `cargo xtask version` prints it. `cargo xtask version set 0.1.0` changes it and refreshes
   `Cargo.lock`.
-- Every 0.x and every `-pre` version is marked a pre-release on GitHub.
+- Nightly releases are regular GitHub releases marked latest. The manual draft workflow marks
+  every 0.x and every pre-release version as a pre-release.
 - The maturity label is **alpha**, said in the README and in each release's notes. The sibling
   Craft apps (WordCraft, PdfCraft, GridCraft) call themselves alpha in their READMEs and release
   plain `v0.x` tags; none of them uses `-alpha` or `-beta` in a version, and neither do we. A

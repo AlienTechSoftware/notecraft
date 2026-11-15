@@ -15,7 +15,7 @@
 #      macOS Apple Silicon and Intel, Android arm64).
 #   4. website: the Website pipeline on the tagged commit, deployed to production. Its web build
 #      is also kept as a release asset.
-#   5. release: publishes GitHub Release v<version>, a pre-release, with every package and one
+#   5. release: publishes GitHub Release v<version>, marked latest, with every package and one
 #      SHA256SUMS.txt.
 #
 # Run it by hand from Actions, Nightly release, Run workflow (branch main). Tick "force" to release
@@ -271,6 +271,6 @@ jobs:
           $android
 
           Your notebooks are plain folders, and no desktop installer or uninstall touches them. Report bugs at https://github.com/${GITHUB_REPOSITORY}/issues. What is missing is listed in docs/gaps.md."
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "NoteCraft $TAG" --notes "$notes" --generate-notes
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >>"$GITHUB_STEP_SUMMARY"
