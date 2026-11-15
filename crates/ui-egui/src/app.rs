@@ -3803,6 +3803,7 @@ impl NoteCraftApp {
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
             font_size: size.as_deref(),
+            marks: font_selection.marks,
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -3898,6 +3899,15 @@ impl NoteCraftApp {
             if let Some(size) = pending.size {
                 result.size = pageedit::FontValue::Value(Some(size));
             }
+            // A mark clicked with nothing selected is put on what is typed next: the button
+            // shows it pressed until then (issue #255).
+            let m = &mut result.marks;
+            m.bold |= pending.bold;
+            m.italic |= pending.italic;
+            m.strike |= pending.strike;
+            m.underline |= pending.underline;
+            m.subscript |= pending.script == Some(notecraft_formats::markdown::Script::Subscript);
+            m.superscript |= pending.script == Some(notecraft_formats::markdown::Script::Superscript);
         }
         result
     }

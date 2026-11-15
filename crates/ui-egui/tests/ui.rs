@@ -8107,6 +8107,61 @@ fn formatting_shortcuts_do_not_format_a_stale_page_caret_from_search_or_source()
     }
 }
 
+/// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
+/// the words at the caret, or of the whole selection: on only when all of it carries the mark,
+/// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.
+#[test]
+fn home_mark_buttons_show_the_marks_at_the_caret_and_of_the_selection() {
+    use egui_kittest::kittest::NodeT as _;
+    for (format, body) in [
+        (notecraft_model::PageFormat::Html, "<p>alpha <strong>bravo</strong> <em>omega</em></p>"),
+        (notecraft_model::PageFormat::Cmgfm, "alpha **bravo** *omega*"),
+    ] {
+        let (_t, app, s) = sample_app("ui-mark-state");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let on =
+            |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+        // Puts the caret `right` characters into the line and selects `select` more. The line
+        // being written in still shows its marks' markup (`alpha **bravo** *omega*`, issue
+        // #242), and the caret counts through it.
+        let place = |h: &mut Harness<'_, NoteCraftApp>, right: usize, select: usize| {
+            ask(h, "ui.caret", json!({"block": 0})).expect("caret");
+            pump(h);
+            ask(h, "ui.key", json!({"key": "Home"})).expect("home");
+            pump(h);
+            for _ in 0..right {
+                ask(h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+                pump(h);
+            }
+            for _ in 0..select {
+                ask(h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
+                pump(h);
+            }
+            settle(h);
+        };
+        assert!(!on(&h, "Bold") && !on(&h, "Italic"), "{format:?}: nothing is pressed with no caret in the words");
+        place(&mut h, 8, 0);
+        assert!(on(&h, "Bold") && !on(&h, "Italic"), "{format:?}: the caret in bravo shows Bold");
+        review(&mut h, &format!("mark_state_bold_{format:?}"));
+        place(&mut h, 2, 0);
+        assert!(!on(&h, "Bold"), "{format:?}: the caret in alpha shows no mark");
+        place(&mut h, 19, 0);
+        assert!(on(&h, "Italic") && !on(&h, "Bold"), "{format:?}: the caret in omega shows Italic");
+        place(&mut h, 8, 5);
+        assert!(on(&h, "Bold"), "{format:?}: all of bravo selected is bold");
+        place(&mut h, 0, 13);
+        assert!(!on(&h, "Bold"), "{format:?}: alpha and bravo together are only partly bold");
+        // A click on Bold makes the whole selection bold, and the button follows.
+        h.get_by_label("Bold").click();
+        settle(&mut h);
+        assert!(on(&h, "Bold"), "{format:?}: after Bold the selection is bold: {}", h.state().body().unwrap_or_default());
+    }
+}
+
 mod formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage {
     use super::*;
 
