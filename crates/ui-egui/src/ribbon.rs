@@ -181,6 +181,9 @@ pub enum Pointer {
     Lasso,
     /// Draw a regular shape: the drag gives the two corners it is drawn between.
     Shape(notecraft_ink::shapes::Shape),
+    /// Draw > Panning Hand: a drag with the main button (or one finger) moves the page, and
+    /// nothing on it is drawn, picked or written in.
+    Pan,
 }
 
 impl Pointer {
@@ -192,6 +195,7 @@ impl Pointer {
             Pointer::Pick => "select",
             Pointer::Lasso => "lasso",
             Pointer::Shape(s) => s.id(),
+            Pointer::Pan => "pan",
         }
     }
 }
@@ -476,6 +480,9 @@ pub struct View<'a> {
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
     pub style: &'static str,
     pub font_family: Option<&'a str>,
+    /// The marks of the words at the caret or of the whole selection, which Home's mark
+    /// buttons show as pressed (issue #255).
+    pub marks: crate::pageedit::Marks,
     pub font_size: Option<&'a str>,
 }
 
@@ -1004,13 +1011,15 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
                     acts.push(Act::FontSize(size));
                 }
-                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
+                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
-                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), false, t).clicked() {
+                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
                     acts.push(Act::Mark("italic"));
                 }
-                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), false, t).clicked() {
+                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t)
+                    .clicked()
+                {
                     acts.push(Act::Mark("strike"));
                 }
                 if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
@@ -1055,15 +1064,15 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             });
             ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), false, t).clicked() {
+                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
                     acts.push(Act::Mark("underline"));
                 }
                 // i18n-exempt: x2 is the compact mathematical symbol for subscript.
-                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), false, t).clicked() {
+                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
                     acts.push(Act::Mark("subscript"));
                 }
                 // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
-                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), false, t).clicked() {
+                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
                     acts.push(Act::Mark("superscript"));
                 }
             });
@@ -2715,13 +2724,11 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         sensitivity(ui, view.sensitivity, view.pressure_available, t, acts);
     });
     group(ui, crate::tl_id!("ui.input_mode"), t, |ui| {
-        soon(
-            ui,
-            Icon::Hand,
-            "Panning
-Hand",
-            t,
-        );
+        // A mode like the pens: on until another tool (or Type) is chosen, or it is pressed again.
+        let on = view.pointer == Pointer::Pan;
+        if big_on(ui, Icon::Hand, crate::tl_id!("ui.panning_hand_2"), crate::tl_id!("ui.drag_to_move_around_the_page"), on, t).clicked() {
+            acts.push(Act::InkPointer(if on { Pointer::Write } else { Pointer::Pan }));
+        }
     });
     group(ui, crate::tl_id!("ui.stencils"), t, |ui| {
         soon(ui, Icon::Ruler, "Ruler", t);

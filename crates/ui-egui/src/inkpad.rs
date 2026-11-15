@@ -610,6 +610,9 @@ pub fn show(
     ui.ctx().set_cursor_icon(match pen.pointer {
         Pointer::Erase => egui::CursorIcon::NotAllowed,
         Pointer::Pick => egui::CursorIcon::Grab,
+        // The page itself moves under the hand (the window does the moving, `app.rs`).
+        Pointer::Pan if resp.is_pointer_button_down_on() => egui::CursorIcon::Grabbing,
+        Pointer::Pan => egui::CursorIcon::Grab,
         _ => egui::CursorIcon::Crosshair,
     });
 
@@ -739,7 +742,7 @@ pub fn show(
                 }
             }
         }
-        Pointer::Write => {}
+        Pointer::Write | Pointer::Pan => {}
     }
     // Delete throws away whatever is held, however it was picked up.
     if !pad.held.is_empty() && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {

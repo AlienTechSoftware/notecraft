@@ -1517,6 +1517,9 @@ pub fn show_ink_view(
     t: &Tokens,
     page: Option<notecraft_model::Dir>,
     justified: &notecraft_model::justify::Justified,
+    // The page's table layout, so a table keeps its widths, borders, shading and alignment
+    // while a pen is in hand (issue #263).
+    columns: &notecraft_model::tablecols::Widths,
     shown_title: &str,
     zoom: f32,
 ) -> Moved {
@@ -1542,6 +1545,10 @@ pub fn show_ink_view(
                 continue;
             }
             let Some(block) = blocks.get(index) else { continue };
+            if matches!(block, Block::Table { .. }) {
+                pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
+                continue;
+            }
             let _ = crate::preview::show_block_zoomed(
                 &mut child,
                 block,

@@ -355,6 +355,50 @@ pub enum FontValue<T> {
 pub struct FontSelection {
     pub family: FontValue<String>,
     pub size: FontValue<u8>,
+    /// The marks Home shows as pressed (issue #255).
+    pub marks: Marks,
+}
+
+/// The marks the words at the caret carry, or every selected character carries, so Home's
+/// buttons show whether a click will put a mark on or take it off (issue #255). A selection
+/// that is partly bold is not bold, as in Word and OneNote: a click makes all of it bold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Marks {
+    pub bold: bool,
+    pub italic: bool,
+    pub strike: bool,
+    pub underline: bool,
+    pub subscript: bool,
+    pub superscript: bool,
+}
+
+impl Marks {
+    /// The marks of one run of words.
+    pub fn of(span: &Span) -> Self {
+        use notecraft_formats::markdown::Script;
+        Self {
+            bold: span.bold,
+            italic: span.italic,
+            strike: span.strike,
+            underline: span.underline,
+            subscript: span.script == Some(Script::Subscript),
+            superscript: span.script == Some(Script::Superscript),
+        }
+    }
+
+    /// What both carry.
+    #[must_use]
+    pub fn and(self, other: Self) -> Self {
+        Self {
+            bold: self.bold && other.bold,
+            italic: self.italic && other.italic,
+            strike: self.strike && other.strike,
+            underline: self.underline && other.underline,
+            subscript: self.subscript && other.subscript,
+            superscript: self.superscript && other.superscript,
+        }
+    }
 }
 
 impl FontSelection {
@@ -368,10 +412,12 @@ impl FontSelection {
         }
         merge_value(&mut self.family, other.family);
         merge_value(&mut self.size, other.size);
+        self.marks = self.marks.and(other.marks);
     }
 
     pub fn from_spans<'a>(spans: impl IntoIterator<Item = &'a Span>) -> Self {
         let mut result = Self::default();
+        let mut marks: Option<Marks> = None;
         for span in spans {
             if span.text.is_empty() || span.image.is_some() {
                 continue;
@@ -379,6 +425,7 @@ impl FontSelection {
             if span.code || span.math {
                 return Self::default();
             }
+            marks = Some(marks.map_or_else(|| Marks::of(span), |m| m.and(Marks::of(span))));
             fn add<T: PartialEq>(current: &mut FontValue<T>, value: Option<T>) {
                 match current {
                     FontValue::Unavailable => *current = FontValue::Value(value),
@@ -389,6 +436,7 @@ impl FontSelection {
             add(&mut result.family, span.font_family.clone());
             add(&mut result.size, span.font_size);
         }
+        result.marks = marks.unwrap_or_default();
         result
     }
 }
@@ -1111,6 +1159,25 @@ pub fn cell_shade(t: &Tokens, colour: notecraft_model::NodeColor) -> egui::Color
     crate::theme::mix(t.editor, egui::Color32::from_rgb(r, g, b), if dark { 0.30 } else { 0.24 })
 }
 
+/// Draws a table the way the page shows it while a drawing tool is in hand: the same column
+/// widths, borders, shading and cell alignment as when it is written in, but nothing in it
+/// answers the pointer, which belongs to the ink (issue #263).
+pub fn show_table_read(
+    ui: &mut Ui,
+    block: &Block,
+    i: usize,
+    t: &Tokens,
+    page: Option<notecraft_model::Dir>,
+    cols: &notecraft_model::tablecols::Widths,
+    zoom: f32,
+) {
+    let mut cols = cols.clone();
+    let _ = table(ui, block, i, &mut None, t, page, &mut cols, &mut Changed::default(), zoom, false);
+}
+
+/// Draws a table. With `live` it is written in: its cells take clicks, Tab and drags, and
+/// its borders are handles that change a column's width. Without, it is only drawn.
+#[allow(clippy::too_many_arguments)]
 fn table(
     ui: &mut Ui,
     block: &Block,
@@ -1121,6 +1188,7 @@ fn table(
     cols: &mut notecraft_model::tablecols::Widths,
     changed: &mut Changed,
     zoom: f32,
+    live: bool,
 ) -> Option<Action> {
     let Block::Table { head, rows } = block else { return None };
     // Borders belong to the table, not to the app: this one is told, the others are not (issue #161).
@@ -1129,9 +1197,13 @@ fn table(
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
     // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
     // asking afterwards never sees it, and Tab did nothing in a table at all.
-    let (tab, shift, escape, rub) = ui.input(|i| {
-        (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape), i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
-    });
+    let (tab, shift, escape, rub) = if live {
+        ui.input(|i| {
+            (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape), i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
+        })
+    } else {
+        (false, false, false, false)
+    };
     // A block of cells dragged across. While one is picked the cells are read, not
     // written in: a text box in the middle of a selection would take the keyboard and
     // the Delete that is meant for the whole block.
@@ -1242,15 +1314,16 @@ fn table(
                                 let job = preview::job(ui, spans, 14.5 * zoom, colour, t, page);
                                 // The whole cell's width, so the words can sit at either end of it
                                 // or in its middle.
+                                let sense = if live { Sense::click() } else { Sense::hover() };
                                 let resp = ui
                                     .with_layout(egui::Layout::top_down(halign), |ui| {
-                                        ui.add(egui::Label::new(job).halign(halign).sense(Sense::click()).selectable(false).wrap())
+                                        ui.add(egui::Label::new(job).halign(halign).sense(sense).selectable(false).wrap())
                                     })
                                     .inner;
-                                if resp.hovered() {
+                                if live && resp.hovered() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                                 }
-                                if resp.clicked() {
+                                if live && resp.clicked() {
                                     action = Some(Action::EnterCell(i, cell));
                                 }
                             }
@@ -1288,6 +1361,14 @@ fn table(
         }
     }
     ui.painter().set(shading, egui::Shape::Vec(shaded));
+
+    if !live {
+        if borders {
+            table_borders(ui, &edge_x, &edge_y, t, zoom);
+        }
+        ui.add_space(6.0);
+        return None;
+    }
 
     // A drag from one cell to another picks the block between them. The cell the drag
     // started in is remembered across frames, because the pointer may be over any cell by
@@ -1335,18 +1416,8 @@ fn table(
         }
     }
 
-    // The borders themselves, which a table has unless they are turned off: OneNote draws
-    // a plain grey line round every cell, and a table with none reads as loose columns of
-    // words rather than as a table.
-    if borders && let (Some(&x0), Some(&x1), Some(&y0), Some(&y1)) = (edge_x.first(), edge_x.last(), edge_y.first(), edge_y.last()) {
-        let line = egui::Stroke::new(1.0 * zoom, t.table_line);
-        let paint = ui.painter();
-        for x in &edge_x {
-            paint.vline(*x, y0..=y1, line);
-        }
-        for y in &edge_y {
-            paint.hline(x0..=x1, *y, line);
-        }
+    if borders {
+        table_borders(ui, &edge_x, &edge_y, t, zoom);
     }
 
     // The borders are handles as well as lines: a drag on one changes the width of the
@@ -1396,6 +1467,21 @@ fn table(
 
     ui.add_space(6.0);
     action
+}
+
+/// The borders of a table, which it has unless they are turned off: OneNote draws a plain grey
+/// line round every cell, and a table with none reads as loose columns of words rather than as
+/// a table. `edge_x` and `edge_y` are where the cells begin and end.
+fn table_borders(ui: &Ui, edge_x: &[f32], edge_y: &[f32], t: &Tokens, zoom: f32) {
+    let (Some(&x0), Some(&x1), Some(&y0), Some(&y1)) = (edge_x.first(), edge_x.last(), edge_y.first(), edge_y.last()) else { return };
+    let line = egui::Stroke::new(1.0 * zoom, t.table_line);
+    let paint = ui.painter();
+    for x in edge_x {
+        paint.vline(*x, y0..=y1, line);
+    }
+    for y in edge_y {
+        paint.hline(x0..=x1, *y, line);
+    }
 }
 
 /// egui blinks a text cursor from the last time the field itself was clicked or typed in. A field
@@ -1942,7 +2028,7 @@ pub fn show_blocks(
         // where the words will go, until the first is written.
         let outlined = !(range.len() == 1 && crate::preview::is_blank(&block) && caret.as_ref().is_some_and(|c| c.block == i && c.text.is_empty()));
         if matches!(block, Block::Table { .. }) {
-            if let Some(what) = table(ui, &block, i, caret, t, page, cols, &mut changed, zoom) {
+            if let Some(what) = table(ui, &block, i, caret, t, page, cols, &mut changed, zoom, true) {
                 action = Some(what);
             }
             frame_block(ui, top, editing, t, zoom);

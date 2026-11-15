@@ -3835,6 +3835,7 @@ impl NoteCraftApp {
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
             font_size: size.as_deref(),
+            marks: font_selection.marks,
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -3930,6 +3931,15 @@ impl NoteCraftApp {
             if let Some(size) = pending.size {
                 result.size = pageedit::FontValue::Value(Some(size));
             }
+            // A mark clicked with nothing selected is put on what is typed next: the button
+            // shows it pressed until then (issue #255).
+            let m = &mut result.marks;
+            m.bold |= pending.bold;
+            m.italic |= pending.italic;
+            m.strike |= pending.strike;
+            m.underline |= pending.underline;
+            m.subscript |= pending.script == Some(notecraft_formats::markdown::Script::Subscript);
+            m.superscript |= pending.script == Some(notecraft_formats::markdown::Script::Superscript);
         }
         result
     }
@@ -7180,6 +7190,10 @@ impl NoteCraftApp {
         let page_input_rect = self.page_rect;
         let wheel_canvas_pan_enabled = self.pointer != ribbon::Pointer::Write;
         if self.editor.is_some() && !self.show_source {
+            // Draw > Panning Hand: the main button drags the page as the middle one always does
+            // (issue #270), but not from the scroll bar, which keeps its own drag.
+            let hand = self.pointer == ribbon::Pointer::Pan;
+            let bar = self.page_scroll_strip;
             let (pointer, middle_pressed, middle_down, wheel) = ui.input(|i| {
                 let pointer = page_input_rect.and_then(|rect| i.pointer.interact_pos().filter(|p| rect.contains(*p)));
                 let wheel = if page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))) {
@@ -7192,7 +7206,10 @@ impl NoteCraftApp {
                 } else {
                     egui::Vec2::ZERO
                 };
-                (pointer, i.pointer.button_pressed(egui::PointerButton::Middle), i.pointer.button_down(egui::PointerButton::Middle), wheel)
+                let pointer = pointer.filter(|p| !(hand && bar.is_some_and(|b| b.contains(*p))));
+                let pressed = i.pointer.button_pressed(egui::PointerButton::Middle) || (hand && i.pointer.primary_pressed());
+                let down = i.pointer.button_down(egui::PointerButton::Middle) || (hand && i.pointer.primary_down());
+                (pointer, pressed, down, wheel)
             });
             if wheel_canvas_pan_enabled {
                 self.canvas_pan += wheel;
@@ -7424,6 +7441,7 @@ impl NoteCraftApp {
                                     &tokens,
                                     page_dir,
                                     &ed.justified,
+                                    &ed.columns,
                                     if hide_title { "" } else { &shown_title },
                                     zoom_scale,
                                 )
@@ -10909,6 +10927,35 @@ mod table_width_tests {
         h.state_mut().redo();
         settle(&mut h);
         assert_eq!(widths(&h).of(1), Some(want.as_slice()), "redo brings them again");
+    }
+
+    /// Where the words `label` are drawn, as accessibility reads them.
+    fn place_of(h: &H, label: &str) -> egui::Rect {
+        use egui_kittest::kittest::{NodeT as _, Queryable as _};
+        let node = h.get_by_label(label);
+        let b = node.accesskit_node().bounding_box().expect("a drawn label");
+        #[allow(clippy::cast_possible_truncation)]
+        egui::Rect::from_min_max(egui::pos2(b.x0 as f32, b.y0 as f32), egui::pos2(b.x1 as f32, b.y1 as f32))
+    }
+
+    /// Issue #263: taking up a pen drew the table as a plain grid sized to its words, so its
+    /// columns narrowed, its borders went and a centred cell went back to the left. With a pen
+    /// in hand it is now drawn from the same layout as when it is written in.
+    #[test]
+    fn a_pen_in_hand_keeps_the_tables_widths_and_alignment() {
+        let (_t, _page, mut h) = page("widths-pen");
+        {
+            let ed = h.state_mut().editor.as_mut().expect("editor");
+            ed.columns.set_align(1, &[(1, 1)], Some(tablecols::Align::Center));
+        }
+        settle(&mut h);
+        let typing = (place_of(&h, "Narrow"), place_of(&h, "B"));
+        h.state_mut().pointer = ribbon::Pointer::Draw;
+        settle(&mut h);
+        let drawing = (place_of(&h, "Narrow"), place_of(&h, "B"));
+        assert!((typing.0.min.x - drawing.0.min.x).abs() < 0.5, "the second column starts where it did: {typing:?} vs {drawing:?}");
+        assert!((typing.1.center().x - drawing.1.center().x).abs() < 0.5, "the centred cell stays centred: {typing:?} vs {drawing:?}");
+        assert!(drawing.1.center().x > drawing.0.min.x + 100.0, "in the middle of its 290 point column, not at its start: {drawing:?}");
     }
 
     #[test]
