@@ -5636,6 +5636,63 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
     review(&mut h, "page_paper");
 }
 
+/// Issue #288: Format Background's Rule line colour was "not built". The lines of a page can be
+/// given one of the named colours, drawn at once, written into the page's own file beside its
+/// paper (both formats), kept when the page is opened again, and Automatic gives the theme's
+/// own lines back. Another page keeps its own lines.
+#[test]
+fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
+    for (page, file, line) in [(true, "index.md", "rule-color: blue"), (false, "index.html", "notecraft:rule-color")] {
+        let (_t, app, s) = sample_app("ui-rule-colour");
+        let mut h = harness(app, LIGHT);
+        h.run();
+        let (dir, other) = if page { (&s.md_page, &s.html_page) } else { (&s.html_page, &s.md_page) };
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        settle(&mut h);
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("College ruled").click();
+        settle(&mut h);
+        let plain = support::gpu::render(&mut h).expect("render");
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Blue lines").click();
+        settle(&mut h);
+        let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+        assert_eq!(now["ruleColour"], json!("blue"), "the lines are blue: {now}");
+        assert_eq!(now["paper"], json!("college"), "and the paper is kept: {now}");
+        let blue = support::gpu::render(&mut h).expect("render");
+        // Somewhere on the page a line pixel is bluer than the same pixel was before.
+        let bluer = plain
+            .pixels()
+            .zip(blue.pixels())
+            .filter(|(a, b)| i32::from(b.0[2]) - i32::from(b.0[0]) > i32::from(a.0[2]) - i32::from(a.0[0]) + 6)
+            .count();
+        assert!(bluer > 200, "the drawn lines changed colour ({bluer} pixels)");
+        review(&mut h, &format!("rule_colour_blue_{}", if page { "md" } else { "html" }));
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        assert!(text.contains(line) && text.contains("blue"), "the page's file says so:\n{text}");
+
+        ask(&mut h, "ui.open", json!({"path": other.to_string_lossy()})).expect("another page");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "another page keeps its own lines");
+        ask(&mut h, "ui.open", json!({"path": dir.to_string_lossy()})).expect("back");
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!("blue"), "reopened, still blue");
+
+        h.get_by_label("Format Background").click();
+        settle(&mut h);
+        h.get_by_label("Automatic lines").click();
+        settle(&mut h);
+        assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ruleColour"], json!(null), "Automatic takes the colour off");
+        let text = std::fs::read_to_string(dir.join(file)).expect("read");
+        // Out of the file: Markdown drops the line, HTML empties the meta as it does the page colour's.
+        assert!(!text.contains("rule-color: ") && !text.contains("rule-color\" content=\"blue"), "and out of the file:\n{text}");
+    }
+}
+
 /// Insert > Link (and Ctrl+K) asks for the words and the address, as OneNote does, instead of
 /// typing a placeholder into the note; the same dialog edits the link the caret is in and can
 /// take the link off while keeping its words. Both page formats (issue #163).

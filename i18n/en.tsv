@@ -947,6 +947,11 @@
 @id	ui.take_the_whole_table_out	Take the whole table out
 @id	ui.put_the_caret_in_a_table_first	Put the caret in a table first
 @id	ui.deleted_the_table	Deleted the table
+@id	ui.rule_line_colour	Rule line colour
+@id	ui.automatic_rule_lines	Automatic lines
+@id	ui.the_lines_are_colour	The page's lines are {colour}
+@id	ui.the_lines_are_the_theme_s_own_colour	The page's lines are the theme's own colour
+@id	ui.colour_lines	{colour} lines
 @id	ui.rotate_right_90	Rotate Right 90°
 @id	ui.rotate_left_90	Rotate Left 90°
 @id	ui.flip_horizontal	Flip Horizontal

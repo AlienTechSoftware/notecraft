@@ -221,13 +221,14 @@ Parameters:
 
 ## `page.paper`
 
-The paper a page is drawn on, and the colour behind it.
+The paper a page is drawn on, the colour behind it and the colour of its lines.
 
 Parameters:
 
 - path (required): the page
 - paper (optional): none, narrow, college, standard, wide, grid-small, grid-medium, grid-large, grid-huge, craft-lines, craft-grid
-- color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none. Without either, the page's own are reported
+- color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none
+- rules (optional): the colour of the rule and grid lines, one of the same colours, or none for the theme's own grey. Without paper or color, the page's own are reported, followed by the lines' colour when it has one
 
 ## `page.columns`
 
