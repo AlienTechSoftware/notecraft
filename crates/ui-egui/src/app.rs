@@ -7343,6 +7343,7 @@ impl NoteCraftApp {
                                     &tokens,
                                     page_dir,
                                     &ed.justified,
+                                    &ed.columns,
                                     if hide_title { "" } else { &shown_title },
                                     zoom_scale,
                                 )
@@ -10828,6 +10829,35 @@ mod table_width_tests {
         h.state_mut().redo();
         settle(&mut h);
         assert_eq!(widths(&h).of(1), Some(want.as_slice()), "redo brings them again");
+    }
+
+    /// Where the words `label` are drawn, as accessibility reads them.
+    fn place_of(h: &H, label: &str) -> egui::Rect {
+        use egui_kittest::kittest::{NodeT as _, Queryable as _};
+        let node = h.get_by_label(label);
+        let b = node.accesskit_node().bounding_box().expect("a drawn label");
+        #[allow(clippy::cast_possible_truncation)]
+        egui::Rect::from_min_max(egui::pos2(b.x0 as f32, b.y0 as f32), egui::pos2(b.x1 as f32, b.y1 as f32))
+    }
+
+    /// Issue #263: taking up a pen drew the table as a plain grid sized to its words, so its
+    /// columns narrowed, its borders went and a centred cell went back to the left. With a pen
+    /// in hand it is now drawn from the same layout as when it is written in.
+    #[test]
+    fn a_pen_in_hand_keeps_the_tables_widths_and_alignment() {
+        let (_t, _page, mut h) = page("widths-pen");
+        {
+            let ed = h.state_mut().editor.as_mut().expect("editor");
+            ed.columns.set_align(1, &[(1, 1)], Some(tablecols::Align::Center));
+        }
+        settle(&mut h);
+        let typing = (place_of(&h, "Narrow"), place_of(&h, "B"));
+        h.state_mut().pointer = ribbon::Pointer::Draw;
+        settle(&mut h);
+        let drawing = (place_of(&h, "Narrow"), place_of(&h, "B"));
+        assert!((typing.0.min.x - drawing.0.min.x).abs() < 0.5, "the second column starts where it did: {typing:?} vs {drawing:?}");
+        assert!((typing.1.center().x - drawing.1.center().x).abs() < 0.5, "the centred cell stays centred: {typing:?} vs {drawing:?}");
+        assert!(drawing.1.center().x > drawing.0.min.x + 100.0, "in the middle of its 290 point column, not at its start: {drawing:?}");
     }
 
     #[test]
