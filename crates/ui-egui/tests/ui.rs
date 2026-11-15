@@ -2581,6 +2581,43 @@ fn ink_comes_back_when_the_page_is_opened_again() {
     assert!(h.state_mut().take_file_downloads().is_empty(), "a native host keeps the file without requesting a download");
 }
 
+/// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
+/// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
+/// Pressed again (or Type) it is put down, and a drag selects text again.
+#[test]
+fn the_panning_hand_drags_the_page_and_changes_nothing_on_it() {
+    let (_t, mut app, s) = sample_app("ui-panning-hand");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let state = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    let offset = |v: &Value| (v["canvas"]["viewOffset"][0].as_f64().unwrap_or(0.0), v["canvas"]["viewOffset"][1].as_f64().unwrap_or(0.0));
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Panning Hand").click();
+    pump(&mut h);
+    let before = state(&mut h);
+    assert_eq!(before["ink"]["pointer"], json!("pan"), "the hand is in use");
+    let strokes = before["ink"]["strokes"].clone();
+    let (x0, y0) = offset(&before);
+
+    let origin = page_origin(&mut h);
+    drag_by(&mut h, origin + egui::vec2(120.0, 200.0), egui::vec2(-60.0, -90.0));
+    settle(&mut h);
+    let after = state(&mut h);
+    let (x1, y1) = offset(&after);
+    assert!((x1 - x0 + 60.0).abs() < 2.0 && (y1 - y0 + 90.0).abs() < 2.0, "the page moved with the hand: {:?} -> {:?}", (x0, y0), (x1, y1));
+    assert_eq!(after["ink"]["strokes"], strokes, "nothing was drawn");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "and nothing on the page changed");
+    review(&mut h, "panning_hand");
+
+    // Pressed again, the hand is put down: the pointer is the caret again.
+    h.get_by_label("Panning Hand").click();
+    pump(&mut h);
+    assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
+}
+
 /// Issue #262: Insert symbol was a plain window. Escape left it open, and Ctrl+Z undid (and
 /// saved) a change on the page behind it. It is a modal now: Ctrl+Z and Ctrl+Y leave the page
 /// alone while it is open, Escape closes it with nothing inserted, and Undo works again after.

@@ -936,3 +936,5 @@
 @id	ui.update_manual	NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.
 @id	ui.update_manual_this_build	This build cannot install updates itself. The releases page has the newest version.
 @id	ui.update_failed	The update did not work: {reason}
+@id	ui.panning_hand_2	Panning\nHand
+@id	ui.drag_to_move_around_the_page	Drag to move around the page
