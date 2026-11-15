@@ -936,3 +936,14 @@
 @id	ui.update_manual	$$$NoteCraft {version} is out, but it cannot be installed from here on this computer. Download it from the releases page.@@@
 @id	ui.update_manual_this_build	$$$This build cannot install updates itself. The releases page has the newest version.@@@
 @id	ui.update_failed	$$$The update did not work: {reason}@@@
+@id	ui.panning_hand_2	$$$Panning\nHand@@@
+@id	ui.drag_to_move_around_the_page	$$$Drag to move around the page@@@
+@id	ui.insert_table	$$$Insert Table@@@
+@id	ui.insert_table_2	$$$Insert Table…@@@
+@id	ui.number_of_columns	$$$Number of columns@@@
+@id	ui.number_of_rows	$$$Number of rows@@@
+@id	ui.table_size_limits	$$$Columns: 1 to {columns}. Rows: 1 to {rows}.@@@
+@id	ui.delete_table_2	$$$Delete\nTable@@@
+@id	ui.take_the_whole_table_out	$$$Take the whole table out@@@
+@id	ui.put_the_caret_in_a_table_first	$$$Put the caret in a table first@@@
+@id	ui.deleted_the_table	$$$Deleted the table@@@
