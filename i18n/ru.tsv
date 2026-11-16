@@ -169,7 +169,7 @@
 @id	ui.current_session_id	Текущая сессия: {id}
 @id	ui.custom	пользовательский
 @id	ui.customize_quick_access_toolbar	Настроить панель быстрого доступа
-@id	ui.customize_tags_not_built	Настроить теги... (не реализовано)
+@id	ui.customize_tags	Настроить теги...
 @id	ui.cut	Вырезать
 @id	ui.cut_2	вырезать
 @id	ui.cut_the_selection	Вырезать выделение

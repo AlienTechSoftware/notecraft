@@ -169,7 +169,7 @@
 @id	ui.current_session_id	Sesión actual: {id}
 @id	ui.custom	custom
 @id	ui.customize_quick_access_toolbar	Personalizar barra de acceso rápido
-@id	ui.customize_tags_not_built	Personalizar etiquetas... (no implementado)
+@id	ui.customize_tags	Personalizar etiquetas...
 @id	ui.cut	Cortar
 @id	ui.cut_2	cortar
 @id	ui.cut_the_selection	Cortar la selección

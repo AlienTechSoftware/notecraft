@@ -169,7 +169,7 @@
 @id	ui.current_session_id	جلسه فعلی: {id}
 @id	ui.custom	سفارشی
 @id	ui.customize_quick_access_toolbar	نوار دسترسی سریع را سفارشی کنید
-@id	ui.customize_tags_not_built	برچسب‌ها را سفارشی کنید... (ساخته نشده)
+@id	ui.customize_tags	برچسب‌ها را سفارشی کنید...
 @id	ui.cut	برش
 @id	ui.cut_2	برش
 @id	ui.cut_the_selection	برش انتخاب

@@ -214,7 +214,6 @@
 @id	ui.current_session_id	$$$Current session: {id}@@@
 @id	ui.custom	$$$custom@@@
 @id	ui.customize_quick_access_toolbar	$$$Customize Quick Access Toolbar@@@
-@id	ui.customize_tags_not_built	$$$Customize Tags... (not built)@@@
 @id	ui.cut	$$$Cut@@@
 @id	ui.cut_2	$$$cut@@@
 @id	ui.cut_the_selection	$$$Cut the selection@@@
@@ -1043,6 +1042,23 @@
 @id	ui.index_card_3_x_5_in	$$$Index Card (3 x 5 in)@@@
 @id	ui.index_card_4_x_6_in	$$$Index Card (4 x 6 in)@@@
 @id	ui.index_card_5_x_8_in	$$$Index Card (5 x 8 in)@@@
+@id	ui.customize_tags	$$$Customize Tags...@@@
+@id	ui.customize_tags_title	$$$Customize Tags@@@
+@id	ui.make_your_own_tags_with_a_name_symbol_and_colour	$$$Make your own tags, each with a name, a symbol and a colour@@@
+@id	ui.custom_tags_none_yet	$$$You have no tags of your own yet.@@@
+@id	ui.custom_tags_explained	$$$Your tags are kept in your settings and work in every notebook. Renaming a tag keeps it on every line that has it. Removing one leaves those lines as they are, marker word and all, so making the same tag again brings it back.@@@
+@id	ui.tag_name	$$$Tag name@@@
+@id	ui.tag_symbol_for_name	$$$Symbol for {name}@@@
+@id	ui.tag_colour_for_name	$$$Colour for {name}@@@
+@id	ui.move_name_up	$$$Move {name} up@@@
+@id	ui.move_name_down	$$$Move {name} down@@@
+@id	ui.remove_name	$$$Remove {name}@@@
+@id	ui.new_tag_name	$$$New tag name@@@
+@id	ui.add_tag	$$$Add tag@@@
+@id	ui.tag_name_added	$$$Tag {name} added@@@
+@id	ui.tag_name_removed	$$$Tag {name} removed; lines that had it keep their words@@@
+@id	ui.the_word_written_in_the_page	$$$The word written in the page@@@
+@id	ui.could_not_save_your_tags_error	$$$Could not save your tags: {error}@@@
 @id	ui.take_a_colour_from_ink_on_the_page	$$$Take a colour from ink on the page@@@
 @id	ui.no_ink_here	$$$No ink here@@@
 @id	ui.the_pen_takes_colour	$$$The pen takes the colour {colour}@@@

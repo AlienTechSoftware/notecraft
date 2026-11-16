@@ -5,6 +5,17 @@
 //! the line, `#important `, and the app draws it as its icon instead of showing the word.
 //! To-do is the exception: it is a task list item (`- [ ]`), which is what every Markdown
 //! reader already understands.
+//!
+//! A person can define tags of their own (issue #259): a name, a symbol and a colour, kept in
+//! their settings. A custom tag is written the same way, as a marker word made from its name
+//! (`#followup `), so a page means the same thing in HTML and in CommonMark. The marker word
+//! never changes once a tag exists: renaming a tag changes what the app calls it, and every
+//! line that carries it keeps it. A line whose tag is not defined here (a tag that was removed,
+//! or one made on another computer) keeps its marker as ordinary words, so nothing is lost and
+//! defining the tag again brings it back.
+
+use crate::color::NodeColor;
+use std::sync::RwLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Tag {
@@ -20,6 +31,113 @@ pub enum Tag {
     Website,
     Idea,
     Critical,
+    /// A tag the person defined, by its marker word (see [`CustomTag`]).
+    Custom(&'static str),
+}
+
+/// A tag the person defined: the marker word written in the page, what it is called, the
+/// symbol drawn in front of the line and the colour of that symbol.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomTag {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    pub color: NodeColor,
+}
+
+/// The symbols a custom tag can show. Each one is in the app's fonts and reads at line height.
+pub const SYMBOLS: [&str; 16] = ["★", "●", "■", "▲", "◆", "♥", "♦", "♣", "✓", "!", "?", "☎", "⚠", "♪", "☀", "→"];
+
+static CUSTOM: RwLock<Vec<Defined>> = RwLock::new(Vec::new());
+static NAMES: RwLock<Vec<&'static str>> = RwLock::new(Vec::new());
+
+#[derive(Clone, Copy)]
+struct Defined {
+    id: &'static str,
+    name: &'static str,
+    symbol: &'static str,
+    color: NodeColor,
+}
+
+/// The same text as a `'static` string, made once: a tag is `Copy`, so its words must live for
+/// the whole run. The few names a person types are kept, never freed.
+fn keep(text: &str) -> &'static str {
+    if let Some(found) = NAMES.read().ok().and_then(|n| n.iter().copied().find(|k| *k == text)) {
+        return found;
+    }
+    let kept: &'static str = Box::leak(text.to_string().into_boxed_str());
+    if let Ok(mut names) = NAMES.write() {
+        names.push(kept);
+    }
+    kept
+}
+
+/// Makes `list` the custom tags, in that order. Entries whose marker word is not a plain word,
+/// is a built-in tag's or repeats an earlier one are left out.
+pub fn set_custom(list: &[CustomTag]) {
+    let mut out: Vec<Defined> = Vec::new();
+    for c in list {
+        let id = c.id.trim().to_ascii_lowercase();
+        if !CustomTag::valid_id(&id) || out.iter().any(|d| d.id == id) {
+            continue;
+        }
+        out.push(Defined { id: keep(&id), name: keep(c.name.trim()), symbol: keep(c.symbol.trim()), color: c.color });
+    }
+    if let Ok(mut custom) = CUSTOM.write() {
+        *custom = out;
+    }
+}
+
+/// The custom tags, in the order the person put them.
+pub fn custom() -> Vec<CustomTag> {
+    let custom = CUSTOM.read().map(|c| c.clone()).unwrap_or_default();
+    custom.into_iter().map(|d| CustomTag { id: d.id.into(), name: d.name.into(), symbol: d.symbol.into(), color: d.color }).collect()
+}
+
+fn defined(id: &str) -> Option<Defined> {
+    CUSTOM.read().ok()?.iter().copied().find(|d| d.id == id)
+}
+
+impl CustomTag {
+    /// A new tag called `name`, with a marker word made from it that no other tag uses.
+    pub fn named(name: &str, taken: &[CustomTag]) -> CustomTag {
+        let base: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase();
+        let base = if base.is_empty() { "tag".to_string() } else { base };
+        let free = |id: &str| CustomTag::valid_id(id) && !taken.iter().any(|t| t.id == id);
+        let id = if free(&base) { base } else { (2..).map(|n| format!("{base}{n}")).find(|id| free(id)).unwrap_or_default() };
+        CustomTag { id, name: name.trim().to_string(), symbol: SYMBOLS[0].to_string(), color: NodeColor::Blue }
+    }
+
+    /// A marker word a custom tag may use: plain letters and digits, and not a built-in tag's.
+    pub fn valid_id(id: &str) -> bool {
+        !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) && !Tag::ALL.iter().any(|t| t.id() == id)
+    }
+
+    /// The tags as one line of the settings file: `id|name|symbol|colour` joined by `;`, with
+    /// `%`, `|`, `;` and line breaks escaped so any name survives.
+    pub fn encode_list(list: &[CustomTag]) -> String {
+        fn esc(text: &str) -> String {
+            text.replace('%', "%25").replace('|', "%7C").replace(';', "%3B").replace('\n', "%0A").replace('\r', "%0D")
+        }
+        list.iter().map(|c| format!("{}|{}|{}|{}", esc(&c.id), esc(&c.name), esc(&c.symbol), c.color.id())).collect::<Vec<_>>().join(";")
+    }
+
+    /// Reads [`CustomTag::encode_list`]. Entries that do not read are skipped.
+    pub fn decode_list(text: &str) -> Vec<CustomTag> {
+        fn unesc(text: &str) -> String {
+            text.replace("%0D", "\r").replace("%0A", "\n").replace("%3B", ";").replace("%7C", "|").replace("%25", "%")
+        }
+        text.split(';')
+            .filter_map(|entry| {
+                let mut parts = entry.split('|');
+                let id = unesc(parts.next()?.trim());
+                let name = unesc(parts.next()?);
+                let symbol = unesc(parts.next().unwrap_or(""));
+                let color = parts.next().and_then(NodeColor::parse).unwrap_or(NodeColor::Blue);
+                CustomTag::valid_id(&id).then(|| CustomTag { name: if name.trim().is_empty() { id.clone() } else { name }, id, symbol, color })
+            })
+            .collect()
+    }
 }
 
 impl Tag {
@@ -38,6 +156,21 @@ impl Tag {
         Tag::Critical,
     ];
 
+    /// Every tag a line can carry: the built-in ones, then the person's own.
+    pub fn all() -> Vec<Tag> {
+        let mut out = Tag::ALL.to_vec();
+        out.extend(CUSTOM.read().map(|c| c.iter().map(|d| Tag::Custom(d.id)).collect::<Vec<_>>()).unwrap_or_default());
+        out
+    }
+
+    /// A custom tag's symbol and colour; `None` for a built-in tag, which has its own mark.
+    pub fn custom_look(self) -> Option<(&'static str, NodeColor)> {
+        match self {
+            Tag::Custom(id) => defined(id).map(|d| (d.symbol, d.color)).or(Some(("", NodeColor::Gray))),
+            _ => None,
+        }
+    }
+
     /// The word written in the page, without its `#`.
     pub fn id(self) -> &'static str {
         match self {
@@ -53,6 +186,7 @@ impl Tag {
             Tag::Website => "website",
             Tag::Idea => "idea",
             Tag::Critical => "critical",
+            Tag::Custom(id) => id,
         }
     }
 
@@ -71,6 +205,7 @@ impl Tag {
             Tag::Website => "Web site to visit",
             Tag::Idea => "Idea",
             Tag::Critical => "Critical",
+            Tag::Custom(id) => defined(id).map(|d| d.name).unwrap_or(id),
         }
     }
 
@@ -97,7 +232,7 @@ impl Tag {
 
     pub fn parse(id: &str) -> Option<Tag> {
         let want = id.trim().trim_start_matches('#').to_ascii_lowercase();
-        Tag::ALL.into_iter().find(|t| t.id() == want)
+        Tag::ALL.into_iter().find(|t| t.id() == want).or_else(|| defined(&want).map(|d| Tag::Custom(d.id)))
     }
 
     /// The tag at the start of `text`, and the rest of the line without it. A direction
@@ -173,6 +308,37 @@ mod tests {
         assert_eq!(Tag::split(""), (None, ""));
         // A tag in the middle of a line is text, not a tag.
         assert_eq!(Tag::split("see #idea here"), (None, "see #idea here"));
+    }
+
+    /// Issue #259: a tag the person defined is written and read like a built-in one, renaming
+    /// it keeps the lines that carry it, and removing it leaves their words alone.
+    #[test]
+    fn a_custom_tag_reads_renames_and_is_never_lost() {
+        let mine = CustomTag::named("Ask legal!", &[]);
+        assert_eq!(mine.id, "asklegal");
+        let clash = CustomTag::named("Idea", &[]);
+        assert_eq!(clash.id, "idea2", "a built-in marker word is not taken");
+        assert_eq!(CustomTag::named("Ask legal", std::slice::from_ref(&mine)).id, "asklegal2");
+        assert_eq!(CustomTag::named("???", &[]).id, "tag");
+
+        let saved = CustomTag::encode_list(&[CustomTag { name: "Odd | name; 100%".into(), ..mine.clone() }]);
+        let back = CustomTag::decode_list(&saved);
+        assert_eq!(back[0].name, "Odd | name; 100%", "any name survives the settings file");
+        assert_eq!(back[0].id, "asklegal");
+        assert!(CustomTag::decode_list("idea|Clash|★|red;Bad Id|x|★|red;;").is_empty(), "bad entries are skipped");
+
+        set_custom(std::slice::from_ref(&mine));
+        assert_eq!(Tag::split("#asklegal check the contract"), (Some(Tag::Custom("asklegal")), "check the contract"));
+        assert_eq!(Tag::set("check it", Some(Tag::Custom("asklegal"))), "#asklegal check it");
+        assert_eq!(Tag::Custom("asklegal").label(), "Ask legal!");
+        assert!(Tag::all().contains(&Tag::Custom("asklegal")));
+        assert_eq!(Tag::Custom("asklegal").custom_look(), Some(("★", NodeColor::Blue)));
+
+        set_custom(&[CustomTag { name: "Legal review".into(), ..mine }]);
+        assert_eq!(Tag::split("#asklegal check").0.map(Tag::label), Some("Legal review"), "a rename keeps the tag on the line");
+
+        set_custom(&[]);
+        assert_eq!(Tag::split("#asklegal check"), (None, "#asklegal check"), "a removed tag's marker stays as words");
     }
 
     #[test]

@@ -169,7 +169,7 @@
 @id	ui.current_session_id	Aktuelle Sitzung: {id}
 @id	ui.custom	benutzerdefiniert
 @id	ui.customize_quick_access_toolbar	Schnellzugleiste anpassen
-@id	ui.customize_tags_not_built	Tags anpassen... (nicht eingebaut)
+@id	ui.customize_tags	Tags anpassen...
 @id	ui.cut	Ausschneiden
 @id	ui.cut_2	ausschneiden
 @id	ui.cut_the_selection	Die Auswahl ausschneiden

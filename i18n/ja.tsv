@@ -169,7 +169,7 @@
 @id	ui.current_session_id	現在のセッション: {id}
 @id	ui.custom	カスタム
 @id	ui.customize_quick_access_toolbar	クイック アクセス ツール バーをカスタマイズ
-@id	ui.customize_tags_not_built	タグのカスタマイズ... (未構築)
+@id	ui.customize_tags	タグのカスタマイズ...
 @id	ui.cut	切り取り
 @id	ui.cut_2	切り取り
 @id	ui.cut_the_selection	選択範囲を切り取る

@@ -952,12 +952,12 @@ pub fn tagged(spans: &[Span]) -> Option<(notecraft_model::Tag, Vec<Span>)> {
 fn with_tag(ui: &mut Ui, tag: notecraft_model::Tag, tokens: &Tokens, body: impl FnOnce(&mut Ui)) {
     ui.horizontal_top(|ui| {
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(21.0, 20.0), egui::Sense::hover());
-        let mark = crate::ribbon::mark_for(tag);
-        crate::ribbon_icons::paint(
+        crate::ribbon::paint_tag(
             &ui.painter_at(rect),
             egui::Rect::from_center_size(rect.center(), egui::vec2(17.0, 17.0)),
-            mark,
-            mark.color(tokens.text, tokens.accent),
+            tag,
+            tokens.text,
+            tokens.accent,
         );
         resp.on_hover_text(crate::tl!(tag.label()));
         ui.vertical(body);
