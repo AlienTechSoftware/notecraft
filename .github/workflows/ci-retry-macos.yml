@@ -1,0 +1,68 @@
+name: CI retry (macOS runner outage)
+
+# GitHub's hosted macOS arm64 pool sometimes runs out of capacity. The macOS build/test job
+# then waits in the queue, is never picked up by a runner, and is cancelled after 15 minutes
+# ("The job was not acquired by Runner of type hosted even after multiple attempts"). The CI
+# gate counts that cancelled job as a failure, so the run goes red with no code at fault.
+#
+# This workflow re-runs the failed jobs of such a run, and only such a run: every job that
+# did not pass must be a cancelled job that never got a runner. A real build, test or lint
+# failure is left alone. It retries at most twice per run, and never re-runs a run that a
+# newer run on the same branch has replaced, since the CI concurrency group would cancel
+# that newer run.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  retry:
+    name: retry runner outage
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Re-run failed jobs when the only failures are jobs that never got a runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+
+          # Jobs that did not pass, leaving out the CI gate job, which fails because of them.
+          not_passed=$(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/attempts/$ATTEMPT/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name != "CI") | select(.conclusion != "success" and .conclusion != "skipped")
+                  | {name, conclusion, runner: (.runner_name // "")}' | jq -s .)
+          echo "Jobs that did not pass in attempt $ATTEMPT:"
+          echo "$not_passed" | jq -r '.[] | "  \(.name): \(.conclusion) (runner: \(if .runner == "" then "none" else .runner end))"'
+
+          if [[ "$(echo "$not_passed" | jq 'length')" -eq 0 ]]; then
+            echo "No job other than the CI gate failed; nothing to retry."
+            exit 0
+          fi
+          real=$(echo "$not_passed" | jq '[.[] | select(.conclusion != "cancelled" or .runner != "")] | length')
+          if [[ "$real" -ne 0 ]]; then
+            echo "At least one job ran and failed or was cancelled while running; not retrying."
+            exit 0
+          fi
+
+          # Re-running an older run would cancel the newer one through the CI concurrency group.
+          latest=$(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?branch=$BRANCH&event=$EVENT&per_page=1" \
+            --jq '.workflow_runs[0].id')
+          if [[ "$latest" != "$RUN_ID" ]]; then
+            echo "Run $latest has replaced run $RUN_ID on $BRANCH; not retrying."
+            exit 0
+          fi
+
+          echo "Every failure is a job that never got a runner; re-running the failed jobs of run $RUN_ID."
+          gh run rerun "$RUN_ID" --failed --repo "$REPO"
