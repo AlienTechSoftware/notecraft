@@ -149,7 +149,11 @@ jobs:
           free -h
           df -h /
       - name: Build workspace
-        run: cargo xtask devx-time build -- cargo build --workspace --locked
+        # Keep the running xtask timing wrapper out of its own build on Windows. Build xtask
+        # in the next step so the workflow still builds the complete workspace.
+        run: cargo xtask devx-time build -- cargo build --workspace --exclude xtask --locked
+      - name: Build xtask
+        run: cargo build -p xtask --locked
       - name: Run workspace tests with infrastructure-only retry (Linux)
         if: matrix.platform == 'linux'
         shell: bash
