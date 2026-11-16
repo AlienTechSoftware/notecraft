@@ -6,6 +6,10 @@
 </p>
 
 <p align="center">
+  <sub>NoteCraft is an independent, third-party open-source project. It is not affiliated with, endorsed by or sponsored by ArtCraft, <a href="https://getartcraft.com/">getartcraft.com</a> or its <a href="https://discord.com/invite/artcraft">Discord</a>.</sub>
+</p>
+
+<p align="center">
   <b>A clean-room OneNote recreation for local files and sync on your terms.</b>
 </p>
 
