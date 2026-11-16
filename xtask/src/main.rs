@@ -510,10 +510,9 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
 
 fn run_test(root: &Path, recorder: &mut devx_timing::Recorder) -> Result<(), String> {
     recorder.measure("workspace-tests", || cargo(root, &["test", "--workspace", "--exclude", "notecraft-ui-egui"]))?;
-    // The UI tests share a single offscreen wgpu device; concurrent rendering and texture
-    // readback collide on Windows. They run one test at a time, while the other crates run
-    // in parallel.
-    recorder.measure("ui-tests", || cargo(root, &["test", "-p", "notecraft-ui-egui", "--", "--test-threads=1"]))
+    // Pixel assertions hold the shared renderer for their full test. Semantic UI tests need no
+    // renderer and can run concurrently with each other and with the serialized pixel tests.
+    recorder.measure("ui-tests", || cargo(root, &["test", "-p", "notecraft-ui-egui"]))
 }
 
 fn run_ci(root: &Path) -> Result<(), String> {

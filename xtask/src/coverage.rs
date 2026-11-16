@@ -188,11 +188,10 @@ pub fn run(root: &Path, options: &[String]) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     }
     let report_arg = report_path.to_string_lossy().into_owned();
-    // The offscreen UI integration tests share a GPU device on Windows. Keep
-    // their coverage run serial, matching `cargo xtask ci`, while allowing the
-    // rest of the workspace to use the normal test parallelism.
+    // Pixel tests serialize their shared renderer; semantic UI tests use no renderer and can
+    // run concurrently during coverage, matching `cargo xtask ci`.
     crate::cargo(root, &["llvm-cov", "--workspace", "--exclude", "xtask", "--exclude-from-test", "notecraft-ui-egui", "--no-report"])?;
-    crate::cargo(root, &["llvm-cov", "--package", "notecraft-ui-egui", "--no-clean", "--", "--test-threads=1"])?;
+    crate::cargo(root, &["llvm-cov", "--package", "notecraft-ui-egui", "--no-clean"])?;
     crate::cargo(root, &["llvm-cov", "report", "--json", "--summary-only", "--output-path", &report_arg])?;
     let text = fs::read_to_string(&report_path).map_err(|e| format!("read {}: {e}", report_path.display()))?;
     let report: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", report_path.display()))?;

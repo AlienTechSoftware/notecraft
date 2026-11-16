@@ -3,6 +3,13 @@
 use egui::vec2;
 use egui_kittest::Harness;
 use notecraft_ink::{Dab, Rgb, Stroke, Tool};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+static PIXEL_TEST: Mutex<()> = Mutex::new(());
+
+fn pixel_test() -> MutexGuard<'static, ()> {
+    PIXEL_TEST.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// A diagonal stroke 3 points wide, drawn as the page draws ink, at one pixel per point.
 fn render_diagonal() -> image::RgbaImage {
@@ -24,6 +31,7 @@ fn render_diagonal() -> image::RgbaImage {
 /// so a slanted line looked coarse and stair-stepped.
 #[test]
 fn a_stroke_has_smooth_edges() {
+    let _pixel_test = pixel_test();
     let img = render_diagonal();
     let shade = |p: &image::Rgba<u8>| (u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])) / 3;
     let ink = img.pixels().filter(|p| shade(p) < 40).count();
@@ -67,6 +75,7 @@ fn same_coverage(actual: [u8; 4], expected: [u8; 4], context: &str) {
 /// Sample away from the antialiased boundary, on both paper colours and display scales.
 #[test]
 fn one_highlighter_stroke_has_uniform_opacity_through_its_round_ends() {
+    let _pixel_test = pixel_test();
     let directions = [
         ("right", egui::pos2(60.0, 120.0), egui::pos2(180.0, 120.0)),
         ("left", egui::pos2(180.0, 120.0), egui::pos2(60.0, 120.0)),
@@ -112,6 +121,7 @@ fn one_highlighter_stroke_has_uniform_opacity_through_its_round_ends() {
 
 #[test]
 fn separate_highlighter_strokes_still_build_up_ink() {
+    let _pixel_test = pixel_test();
     let (start, end) = (egui::pos2(60.0, 120.0), egui::pos2(180.0, 120.0));
     let centre = egui::pos2(120.0, 120.0);
     let once = pixel(&render_straight(Tool::Highlighter, egui::Color32::WHITE, 1.0, start, end, 1), centre, 1.0);
@@ -122,6 +132,7 @@ fn separate_highlighter_strokes_still_build_up_ink() {
 
 #[test]
 fn round_cap_edges_keep_their_antialiasing_fringe_at_both_display_scales() {
+    let _pixel_test = pixel_test();
     for (scale, xs, ys, minimum) in [(1.0, 38..60, 98..142, 10), (2.0, 76..120, 196..284, 20)] {
         let image = render_straight(Tool::Pen, egui::Color32::WHITE, scale, egui::pos2(60.0, 120.0), egui::pos2(180.0, 120.0), 1);
         // Only the outward half of the starting cap: neither the ribbon nor its long edges.

@@ -86,8 +86,9 @@ cargo xtask coverage            # measure, and compare with docs/coverage.json
 cargo xtask coverage --update   # measure, and make this run the new baseline
 ```
 
-The UI integration tests run serially during coverage, matching the Windows GPU isolation rule
-used by `cargo xtask ci`; other workspace tests retain normal parallelism. The baseline is [`coverage.json`](coverage.json), one entry per platform: the total line,
+Semantic UI tests run in parallel. Tests that assert rendered pixels hold the shared renderer for
+their full duration, so concurrent UI tests do not interfere with screenshots. The coverage job
+uses the same isolation. The baseline is [`coverage.json`](coverage.json), one entry per platform: the total line,
 function and region coverage, line coverage per crate, and when and with what it was
 measured. It covers the workspace without `xtask`. A run is compared with its own platform
 only, because code for one platform counts only where it is built. `--update` writes the
@@ -133,7 +134,7 @@ fmt, clippy, the static checks, coverage, and a build and test on Linux, Windows
   `crates/ui-egui/tests/ui.rs` gives background work half a second measured with a clock. The
   hosted macOS runners oversleep about five times, so counting twenty-five 20 ms sleeps made the
   UI suite take 14 minutes there instead of 3.
-- **UI tests share one offscreen GPU device per test binary** (`tests/support/gpu.rs`), as the
+- **UI tests share one offscreen GPU device per test binary** (`tests/support/gui.rs`), as the
   icon tests do. Each window still gets its own renderer and textures.
 - **Independent matrix scenarios are separate tests.** The formatting-shortcut matrix keeps
   all 24 theme, format, style and modifier combinations, each with its own real temporary
