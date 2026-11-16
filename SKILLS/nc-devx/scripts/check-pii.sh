@@ -19,7 +19,7 @@ fi
 if git rev-parse --git-dir > /dev/null 2>&1; then
     # In a git repo: scan staged files if committing, all files if pushed
     if [[ -n "$1" ]] && [[ "$1" != "--fix" ]]; then
-        # Called from pre-push: scan all changes
+        # Called by cargo xtask pre-push: scan all changes
         FILES=$(git diff origin/main --name-only 2>/dev/null || git diff --cached --name-only)
     else
         # Called from pre-commit: scan staged files

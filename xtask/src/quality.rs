@@ -125,7 +125,7 @@ pub fn check_branch(root: &Path, options: &[String]) -> Result<(), String> {
     }
 
     if push && git(root, &["fetch", "--quiet", "origin", "main"]).is_none() {
-        warnings.push("could not fetch origin/main; compared with the copy from the last fetch".into());
+        problems.push("could not fetch origin/main; refusing to validate a push against stale history".into());
     }
     if git(root, &["rev-parse", "--verify", "--quiet", "origin/main"]).is_some() {
         let behind: u32 = git(root, &["rev-list", "--count", "HEAD..origin/main"]).and_then(|n| n.parse().ok()).unwrap_or(0);

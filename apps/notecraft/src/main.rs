@@ -49,17 +49,17 @@ impl eframe::App for Shell {
 }
 
 fn notebooks_dir(args: &[String]) -> PathBuf {
-    if let Some(i) = args.iter().position(|a| a == "--notebooks") {
-        return args.get(i + 1).map(PathBuf::from).unwrap_or_else(notecraft_store::settings::default_notebooks_dir);
-    }
-    if let Some(path) = notecraft_store::settings::configured_notebooks_dir(&Settings::default_location()) {
-        return path;
-    }
+    let configured = notecraft_store::settings::configured_notebooks_dir(&Settings::default_location());
     let local = PathBuf::from("my-notebooks");
-    if local.is_dir() {
-        return local;
+    let local = local.is_dir().then_some(local);
+    notebooks_dir_from(args, configured, local, notecraft_store::settings::default_notebooks_dir())
+}
+
+fn notebooks_dir_from(args: &[String], configured: Option<PathBuf>, local: Option<PathBuf>, fallback: PathBuf) -> PathBuf {
+    if let Some(i) = args.iter().position(|a| a == "--notebooks") {
+        return args.get(i + 1).map(PathBuf::from).unwrap_or(fallback);
     }
-    notecraft_store::settings::default_notebooks_dir()
+    configured.or(local).unwrap_or(fallback)
 }
 
 /// Test/screenshot sandboxes are valid explicit roots but must never become the next
@@ -73,22 +73,27 @@ fn should_remember_notebooks_root(root: &std::path::Path) -> bool {
 /// Locates the generated HTML and CMGFM demo payload installed beside the app.
 fn demo_payload(_executable: &std::path::Path) -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
-    let installed = _executable.parent()?.join("demo").join("welcome-to-notecraft");
+    let installed = _executable.parent().map(|parent| parent.join("demo").join("welcome-to-notecraft"));
 
     #[cfg(target_os = "linux")]
-    let installed = if let Some(appdir) = std::env::var_os("APPDIR") {
+    let installed: Option<PathBuf> = Some(if let Some(appdir) = std::env::var_os("APPDIR") {
         PathBuf::from(appdir).join("usr/share/notecraft/demo/welcome-to-notecraft")
     } else {
         PathBuf::from("/usr/share/notecraft/demo/welcome-to-notecraft")
-    };
+    });
 
     #[cfg(target_os = "macos")]
-    let installed = _executable.parent()?.parent()?.join("Resources/demo/welcome-to-notecraft");
+    let installed = _executable.parent().and_then(|parent| parent.parent()).map(|parent| parent.join("Resources/demo/welcome-to-notecraft"));
 
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    let installed = _executable.parent()?.join("demo").join("welcome-to-notecraft");
+    let installed = _executable.parent().map(|parent| parent.join("demo").join("welcome-to-notecraft"));
 
-    if installed.is_dir() { Some(installed) } else { Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook")) }
+    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
+    Some(choose_demo_payload(installed.as_deref(), &fallback))
+}
+
+fn choose_demo_payload(installed: Option<&std::path::Path>, fallback: &std::path::Path) -> PathBuf {
+    installed.filter(|path| path.is_dir()).map_or_else(|| fallback.to_path_buf(), std::path::Path::to_path_buf)
 }
 
 /// The file the MSI leaves beside the app to ask for the first-use wizard once.
@@ -317,9 +322,52 @@ mod tests {
     }
 
     #[test]
+    fn no_installer_marker_is_not_consumed() {
+        let t = notecraft_store::testing::TempDir::new("install-marker-absent");
+        let settings = Settings::at(t.path().join("settings.toml"));
+        assert!(!take_install_marker(t.path(), &settings));
+        assert!(!t.path().join(INSTALL_MARKER).exists());
+    }
+
+    #[test]
+    fn installer_marker_stays_when_settings_cannot_be_saved() {
+        let t = notecraft_store::testing::TempDir::new("install-marker-settings-failure");
+        let marker = t.path().join(INSTALL_MARKER);
+        std::fs::write(&marker, "pending").expect("write marker");
+        let settings_parent = t.path().join("settings-parent");
+        std::fs::write(&settings_parent, "a file where the settings directory should be").expect("block settings directory");
+        let settings = Settings::at(settings_parent.join("settings.toml"));
+
+        assert!(!take_install_marker(t.path(), &settings));
+        assert!(marker.is_file(), "the next launch must retry the first-use wizard");
+    }
+
+    #[test]
     fn the_notebooks_flag_wins() {
         let args = vec!["--notebooks".to_string(), "somewhere".to_string()];
         assert_eq!(notebooks_dir(&args), PathBuf::from("somewhere"));
+    }
+
+    #[test]
+    fn notebook_root_candidates_follow_cli_settings_local_default_precedence() {
+        let configured = PathBuf::from("configured-notebooks");
+        let local = PathBuf::from("my-notebooks");
+        let fallback = PathBuf::from("Documents/NoteCraft");
+        let args = Vec::new();
+
+        assert_eq!(notebooks_dir_from(&args, Some(configured.clone()), Some(local.clone()), fallback.clone()), configured);
+        assert_eq!(notebooks_dir_from(&args, None, Some(local.clone()), fallback.clone()), local);
+        assert_eq!(notebooks_dir_from(&args, None, None, fallback.clone()), fallback);
+        assert_eq!(notebooks_dir_from(&["--notebooks".into(), "cli-root".into()], None, None, PathBuf::from("default")), PathBuf::from("cli-root"));
+    }
+
+    #[test]
+    fn notebook_flag_without_a_value_uses_the_default_not_a_saved_root() {
+        let args = vec!["--notebooks".to_string()];
+        assert_eq!(
+            notebooks_dir_from(&args, Some(PathBuf::from("saved")), Some(PathBuf::from("local")), PathBuf::from("default")),
+            PathBuf::from("default")
+        );
     }
 
     #[test]
@@ -358,5 +406,31 @@ mod tests {
         let i = icon().expect("icon");
         assert_eq!((i.width, i.height), (256, 256));
         assert_eq!(i.rgba.len(), 256 * 256 * 4);
+    }
+
+    #[test]
+    fn installed_demo_payload_wins_and_missing_install_uses_the_source_copy() {
+        let t = notecraft_store::testing::TempDir::new("demo-payload");
+        let installed = t.path().join("installed");
+        let fallback = t.path().join("source");
+        std::fs::create_dir_all(&installed).expect("create installed payload");
+        std::fs::create_dir_all(&fallback).expect("create source payload");
+
+        assert_eq!(choose_demo_payload(Some(&installed), &fallback), installed);
+        let missing = t.path().join("missing");
+        assert_eq!(choose_demo_payload(Some(&missing), &fallback), fallback);
+        assert_eq!(choose_demo_payload(None, &missing), missing);
+    }
+
+    #[test]
+    fn explicit_open_path_wins_over_an_earlier_positional_path() {
+        let args = vec!["positional".to_string(), "--open".to_string(), "explicit".to_string()];
+        assert_eq!(open_arg(&args).as_deref(), Some("explicit"));
+    }
+
+    #[test]
+    fn a_missing_open_value_falls_back_to_the_positional_path() {
+        let args = vec!["positional".to_string(), "--open".to_string()];
+        assert_eq!(open_arg(&args).as_deref(), Some("positional"));
     }
 }

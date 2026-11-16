@@ -4,8 +4,9 @@
 
 ## Quality level L3 (see SKILLS/nc-devx/SKILL.md)
 
-- [ ] The branch is rebased on `main` and has no merge commits (the pre-push hook checks this)
-- [ ] `cargo xtask ci` passes (the pre-push hook and CI run it)
+- [ ] `cargo xtask pre-push` passes on the current branch before pushing
+- [ ] The pre-push hook confirms the validation still matches `origin/main`
+- [ ] CI checks pass for this pull request
 - [ ] Coverage: the `coverage` job's warnings are read; `cargo xtask coverage --update` is in
       this pull request if coverage rose
 - [ ] Docs match the change: `docs/commands.md` (regenerated), `docs/gaps.md`,
