@@ -97,6 +97,9 @@ pub enum Act {
     /// when it is already at that strength. An Arabic paragraph is stretched by kashida, a
     /// Latin one by its spaces.
     Justify(notecraft_model::justify::Strength),
+    /// Set the caret's paragraphs against the left, the middle or the right (issue #258), or
+    /// give them back their own alignment when they already have that one.
+    Align(notecraft_model::justify::Align),
     /// Which way the whole page reads. `None` lets every line decide for itself.
     PageDirection(Option<notecraft_model::Dir>),
     /// Which way the selection, or what is typed next, reads: an isolated run inside the line.
@@ -1406,13 +1409,13 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(200.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
-                    for (icon, label, what) in [
-                        (Icon::AlignLeft, "Align Left", "Align left"),
-                        (Icon::AlignCenter, "Center", "Centring"),
-                        (Icon::AlignRight, "Align Right", "Align right"),
+                    for (icon, label, align) in [
+                        (Icon::AlignLeft, crate::tl_id!("ui.align_left_ctrl_l"), notecraft_model::justify::Align::Left),
+                        (Icon::AlignCenter, crate::tl_id!("ui.center"), notecraft_model::justify::Align::Center),
+                        (Icon::AlignRight, crate::tl_id!("ui.align_right_ctrl_r"), notecraft_model::justify::Align::Right),
                     ] {
                         if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
-                            acts.push(Act::NotBuilt(what));
+                            acts.push(Act::Align(align));
                             picked = true;
                         }
                     }

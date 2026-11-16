@@ -12,7 +12,7 @@ use notecraft_formats::html;
 use notecraft_formats::markdown::{self, Block, Span};
 use notecraft_model::Dir;
 use notecraft_model::PageFormat;
-use notecraft_model::justify::{Justified, Strength};
+use notecraft_model::justify::{Align, Justified, Mark};
 use std::path::Path;
 
 /// Blocks to draw for the editable part of a page in `format`.
@@ -257,11 +257,13 @@ fn draw_spans(
     color: egui::Color32,
     tokens: &Tokens,
     page: Option<Dir>,
-    justify: Option<Strength>,
+    mark: Option<Mark>,
     // The bytes of this block's words that are selected, when a selection reaches into it
     // from a drag that crossed more than one paragraph.
     selected: Option<(usize, usize)>,
 ) {
+    let justify = mark.and_then(Mark::strength);
+    let align = mark.and_then(Mark::align);
     if !spans.iter().any(|s| s.math) {
         // A line that mixes the two directions is drawn by egui in the wrong order, and a
         // paragraph that reads right to left is not wrapped by it, so both go through the
@@ -277,7 +279,7 @@ fn draw_spans(
             // `docs/gaps.md`.
             let stretch = justify.filter(|_| dir_of(spans, page).is_rtl());
             let sel = selected.map(|range| crate::bidi::Selected { range, color: tokens.selection });
-            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch, sel);
+            let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch, align, sel);
             let _ = rect;
             return;
         }
@@ -286,6 +288,33 @@ fn draw_spans(
         // egui does it, by widening the spaces. The strength is about kashidas and has
         // nothing to say here.
         job.justify = justify.is_some();
+        if let Some(align) = align {
+            // Set against an edge or the middle (issue #258): every line of the paragraph is
+            // placed in the whole width of the column, the way a centred paragraph reads.
+            let h = egui_align(align);
+            let Some((a, b)) = selected else {
+                ui.with_layout(egui::Layout::top_down(h), |ui| ui.add(egui::Label::new(job).halign(h).wrap()));
+                return;
+            };
+            // Something is selected: laid out here so the selection goes behind the words.
+            job.halign = h;
+            job.wrap.max_width = ui.available_width();
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), galley.size().y), egui::Sense::hover());
+            let at = match h {
+                egui::Align::Center => row.center_top(),
+                egui::Align::Max => row.right_top(),
+                egui::Align::Min => row.left_top(),
+            };
+            let resp = ui.interact(galley.rect.translate(at.to_vec2()), ui.id().with(("aligned", row.min.y as i32)), egui::Sense::hover());
+            let (enabled, said) = (ui.is_enabled(), galley.text().to_string());
+            resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
+            for band in selection_bands(&galley, a, b) {
+                ui.painter().rect_filled(band.translate(at.to_vec2()), 1.0, tokens.selection);
+            }
+            ui.painter().galley(at, galley, color);
+            return;
+        }
         match selected {
             // Nothing selected here: egui's own label, which is what this has always been.
             None if !dir_of(spans, page).is_rtl() => {
@@ -327,6 +356,20 @@ fn draw_spans(
             ui.label(job(ui, &run, size, color, tokens, page));
         }
     });
+}
+
+/// The egui alignment of a paragraph's edge.
+pub fn egui_align(align: Align) -> egui::Align {
+    match align {
+        Align::Left => egui::Align::LEFT,
+        Align::Center => egui::Align::Center,
+        Align::Right => egui::Align::RIGHT,
+    }
+}
+
+/// A mark with its justification dropped: a heading is aligned, never stretched.
+fn aligned_only(mark: Option<Mark>) -> Option<Mark> {
+    mark.filter(|m| m.align().is_some())
 }
 
 fn text_of(spans: &[Span]) -> String {
@@ -501,7 +544,7 @@ pub fn show_zoomed(
 ) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
-        let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.strength_of(i), None, ui.id().with(("block", i)), zoom);
+        let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.mark_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
@@ -528,7 +571,8 @@ pub fn show_block(
     tokens: &Tokens,
     live: bool,
     page: Option<Dir>,
-    justified: Option<Strength>,
+    // How the page lays this paragraph out: justified, or set against an edge (issue #258).
+    justified: Option<Mark>,
     // What of this block's words a selection reaching across paragraphs covers, in bytes.
     selected: Option<(usize, usize)>,
     // The id the block senses under. The page editor passes the one its text box uses for
@@ -549,7 +593,8 @@ pub(crate) fn show_block_zoomed(
     tokens: &Tokens,
     live: bool,
     page: Option<Dir>,
-    justified: Option<Strength>,
+    // How the page lays this paragraph out: justified, or set against an edge (issue #258).
+    justified: Option<Mark>,
     selected: Option<(usize, usize)>,
     id: egui::Id,
     zoom: f32,
@@ -571,8 +616,11 @@ pub(crate) fn show_block_zoomed(
                 } * zoom;
                 ui.add_space(6.0);
                 match tagged(spans) {
-                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| draw_spans(ui, &spans, size, tokens.strong, tokens, page, None, selected)),
-                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, None, selected),
+                    // A heading is aligned as a paragraph is, but never justified.
+                    Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
+                        draw_spans(ui, &spans, size, tokens.strong, tokens, page, aligned_only(justified), selected);
+                    }),
+                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, aligned_only(justified), selected),
                 }
                 ui.add_space(2.0);
             }

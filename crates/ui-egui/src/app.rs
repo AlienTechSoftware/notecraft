@@ -3966,6 +3966,7 @@ impl NoteCraftApp {
                 | ribbon::Act::Indent(_)
                 | ribbon::Act::Tag(_)
                 | ribbon::Act::Justify(_)
+                | ribbon::Act::Align(_)
         );
         let Some(ed) = self.editor.as_mut().filter(|_| wanted) else { return false };
         let range = notecraft_model::container::blocks_of(&ed.boxes, at);
@@ -4062,6 +4063,11 @@ impl NoteCraftApp {
                         pageedit::set_tag(&mut ed.blocks, i, *tag);
                     }
                 }
+            }
+            ribbon::Act::Align(align) => {
+                let blocks: Vec<usize> = range.collect();
+                self.align_blocks(&blocks, *align);
+                return true;
             }
             ribbon::Act::Justify(strength) => {
                 let paragraphs: Vec<usize> = range.filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_)))).collect();
@@ -4303,6 +4309,7 @@ impl NoteCraftApp {
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
             ribbon::Act::Justify(strength) => self.apply_justify(strength),
+            ribbon::Act::Align(align) => self.apply_align(align),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::InkPointer(p) => self.pointer = p,
@@ -4859,6 +4866,7 @@ impl NoteCraftApp {
     fn step_back(&mut self, back: bool) {
         let mut nothing = false;
         let mut cols_moved = false;
+        let mut layout_moved = false;
         if let Some(ed) = self.editor.as_mut() {
             if !ed.writable {
                 nothing = true;
@@ -4885,13 +4893,20 @@ impl NoteCraftApp {
                             ed.columns = columns;
                             cols_moved = true;
                         }
+                        // And which paragraphs were justified or aligned (issue #258).
+                        if let Some(justified) = step.justified
+                            && justified != ed.justified
+                        {
+                            ed.justified = justified;
+                            layout_moved = true;
+                        }
                     }
                     None => nothing = true,
                 }
             }
         }
-        if cols_moved {
-            self.save_block_marks((true, false));
+        if cols_moved || layout_moved {
+            self.save_block_marks((cols_moved, layout_moved));
         }
         if nothing {
             self.say(if back { crate::tl_id!("ui.nothing_to_undo") } else { crate::tl_id!("ui.nothing_to_redo") });
@@ -4925,6 +4940,7 @@ impl NoteCraftApp {
             // dragged since is still noted, so an undo back to here keeps it (issue #154).
             if let Some(step) = ed.history.here_mut() {
                 step.columns = Some(ed.columns.clone());
+                step.justified = Some(ed.justified.clone());
             }
             return;
         }
@@ -4937,6 +4953,7 @@ impl NoteCraftApp {
         };
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
         step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
         ed.history.record(step);
     }
 
@@ -5974,6 +5991,16 @@ impl NoteCraftApp {
         if pressed(ctrl_shift, Key::L) {
             self.apply_direction(Some(Dir::Ltr));
         }
+        // Align Left and Align Right, as in Word and OneNote (issue #258). Ctrl+E, which Word
+        // gives to Center, is Search here as it is in OneNote, so Center is on the menu only.
+        if self.editor.as_ref().is_some_and(|e| e.caret.is_some() || e.across.is_some()) {
+            if pressed(Modifiers::COMMAND, Key::L) {
+                self.apply_align(notecraft_model::justify::Align::Left);
+            }
+            if pressed(Modifiers::COMMAND, Key::R) {
+                self.apply_align(notecraft_model::justify::Align::Right);
+            }
+        }
     }
 
     /// Which way the line the caret is in reads. `None` lets its own words decide.
@@ -6029,6 +6056,67 @@ impl NoteCraftApp {
         let mut marked = ed.justified.clone();
         marked.set(at, want);
         self.write_justified(marked, want);
+    }
+
+    /// Sets the paragraphs the caret or the selection is in against `align` (issue #258).
+    fn apply_align(&mut self, align: notecraft_model::justify::Align) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let blocks: Vec<usize> = match (ed.across.filter(|a| !a.inside_one_block()), ed.caret.as_ref()) {
+            (Some(across), _) => across.blocks().collect(),
+            (None, Some(caret)) => vec![caret.block],
+            (None, None) => {
+                self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+                self.status_is_error = false;
+                return;
+            }
+        };
+        self.align_blocks(&blocks, align);
+    }
+
+    /// Aligns the paragraphs and headings among `blocks`, or, when every one of them already
+    /// has that alignment, gives them back the alignment their words have. One undo step, and
+    /// written into the page's own file with the rest of its paragraph layout.
+    fn align_blocks(&mut self, blocks: &[usize], align: notecraft_model::justify::Align) {
+        use notecraft_formats::Block;
+        let Some(ed) = self.editor.as_mut() else { return };
+        let text: Vec<usize> =
+            blocks.iter().copied().filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_) | Block::Heading { .. }))).collect();
+        if text.is_empty() {
+            self.say(crate::tl_id!("ui.alignment_goes_on_a_paragraph_or_a_heading"));
+            return;
+        }
+        let all = text.iter().all(|i| ed.justified.align_of(*i) == Some(align));
+        let mut marked = ed.justified.clone();
+        for i in &text {
+            marked.set_mark(*i, (!all).then_some(notecraft_model::justify::Mark::Align(align)));
+        }
+        if marked == ed.justified {
+            return;
+        }
+        // The step before, with the layout it had, and the step after with the new one: an
+        // alignment changes no words, so the usual step taken after a change would not see it.
+        Self::remember_step(ed);
+        if let Some(here) = ed.history.here_mut() {
+            here.justified = Some(ed.justified.clone());
+        }
+        ed.justified = marked;
+        let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
+        ed.history.record(step);
+        if let Some(c) = ed.caret.as_mut() {
+            c.focus = true;
+        }
+        self.save_block_marks((false, true));
+        self.say(match (all, align) {
+            (true, _) => crate::tl_id!("ui.the_paragraph_follows_its_words_again"),
+            (false, notecraft_model::justify::Align::Left) => crate::tl_id!("ui.aligned_left"),
+            (false, notecraft_model::justify::Align::Center) => crate::tl_id!("ui.centred"),
+            (false, notecraft_model::justify::Align::Right) => crate::tl_id!("ui.aligned_right"),
+        });
     }
 
     /// Writes which paragraphs are justified into the page's own file, and says what `want` now is.

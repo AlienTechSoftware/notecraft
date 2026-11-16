@@ -743,7 +743,7 @@ fn check_justify(path: &Path, line: &str, html: bool, body: &str) -> Result<(), 
     }
     let format = if html { notecraft_model::PageFormat::Html } else { notecraft_model::PageFormat::Cmgfm };
     let blocks = notecraft_formats::boxes::read(format, body).0;
-    for (at, _) in marked.blocks() {
+    for (at, _) in marked.marks() {
         match blocks.get(*at) {
             Some(notecraft_formats::Block::Paragraph(_)) => {}
             Some(other) => return Err(format!("{}: justify names block {at}, which is a {}, not a paragraph", path.display(), name_of(other))),
