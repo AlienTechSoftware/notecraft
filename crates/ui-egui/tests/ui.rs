@@ -7315,6 +7315,102 @@ fn a_picture_handle_keeps_the_first_drag_movement_in_both_formats() {
     }
 }
 
+/// Issue #344: a picture among other blocks in one box moves by its body. A page that was never
+/// arranged, such as the Welcome page, is one box holding everything, so this is the usual case.
+/// Dragging the picture takes it out into a box of its own where it stood, the words before and
+/// after stay where they were, and the arrangement survives saving and reopening in both formats.
+#[test]
+fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
+    use notecraft_formats::Block;
+    use notecraft_model::PageFormat;
+
+    for format in [PageFormat::Html, PageFormat::Cmgfm] {
+        for arranged in [false, true] {
+            let what = format!("{format:?}, arranged={arranged}");
+            let t = TempDir::new("ui-picture-shared-box-move");
+            let mut s = session(&t);
+            let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+            let page = if format == PageFormat::Html { sample.html_page.clone() } else { sample.md_page.clone() };
+            let path = page.to_string_lossy().into_owned();
+            s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+            let body = match format {
+                PageFormat::Html => "<p>Before</p><img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\"><p>After</p>",
+                PageFormat::Cmgfm => "Before\n\n<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">\n\nAfter\n",
+            };
+            s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+            if arranged {
+                s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,3")])).expect("one shared box");
+            }
+            let mut app = NoteCraftApp::new(s);
+            app.open_path(&path);
+            let mut h = harness(app, LIGHT);
+            settle(&mut h);
+            let (original, _) = notecraft_formats::boxes::read(format, body);
+            assert!(matches!(original[1], Block::Image { .. }), "the picture is a block of its own in {what}");
+
+            let state = look_at(&mut h);
+            let origin = state.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+            let (ox, oy) =
+                (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+            let one = state.pointer("/page/containers").and_then(Value::as_array).map_or(0, Vec::len);
+            assert_eq!(one, 1, "one box holds all three blocks to begin with in {what}: {state}");
+            let width = state.pointer("/page/containers/0/width").and_then(Value::as_f64).expect("width");
+            let rect = rendered_picture_rect(&h, 1);
+            // The picture's box would sit a pad in from its left and a handle's height down.
+            let (from_x, from_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 14.0);
+
+            // A plain click picks the picture and leaves the arrangement alone.
+            ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("click the picture");
+            settle(&mut h);
+            let state = look_at(&mut h);
+            assert_eq!(state.pointer("/page/selectedImage").and_then(Value::as_u64), Some(1), "the click picks the picture in {what}");
+            assert_eq!(
+                state.pointer("/page/containers").and_then(Value::as_array).map(Vec::len),
+                Some(1),
+                "a click does not split the box in {what}"
+            );
+
+            // A drag by its body takes it out, however quick the drag is.
+            let start = rect.center();
+            ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("press the picture");
+            ask(&mut h, "ui.move", json!({"x": start.x + 12.0, "y": start.y + 6.0})).expect("start the drag");
+            ask(&mut h, "ui.move", json!({"x": start.x + 80.0, "y": start.y + 60.0})).expect("drag the picture");
+            ask(&mut h, "ui.release", json!({"x": start.x + 80.0, "y": start.y + 60.0})).expect("drop the picture");
+            settle(&mut h);
+            let state = look_at(&mut h);
+            let boxes = state.pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+            let counts: Vec<u64> = boxes.iter().filter_map(|b| b.get("blocks").and_then(Value::as_u64)).collect();
+            assert_eq!(counts, vec![1, 1, 1], "words, picture, words in three boxes in {what}: {state}");
+            let at = |i: usize, key: &str| boxes[i].get(key).and_then(Value::as_f64).expect("box field") as f32;
+            assert_eq!((at(0, "x"), at(0, "y")), (0.0, 0.0), "the words before did not move in {what}");
+            assert_eq!(at(0, "width") as f64, width, "nor change width in {what}");
+            assert!((at(1, "x") - (from_x + 80.0)).abs() < 2.0, "the picture followed the pointer sideways in {what}: {state}");
+            assert!((at(1, "y") - (from_y + 60.0)).abs() < 2.0, "and down in {what}: {state}");
+            assert!(at(2, "y") >= from_y + 100.0, "the words after stayed below where the picture was in {what}: {state}");
+            assert_eq!(at(2, "x"), 0.0, "and where they were across in {what}");
+
+            // The blocks are the page's own and in the same order; only the arrangement changed.
+            let (moved, _) = notecraft_formats::boxes::read(format, h.state().body().expect("open page"));
+            assert_eq!(moved, original, "the words and the picture are untouched in {what}");
+
+            // It is saved with the page.
+            ask(&mut h, "ui.open", json!({"path": sample.deep_page.to_string_lossy()})).expect("save and leave");
+            ask(&mut h, "ui.open", json!({"path": path})).expect("reopen");
+            settle(&mut h);
+            let again = look_at(&mut h);
+            let kept: Vec<f64> = again
+                .pointer("/page/containers")
+                .and_then(Value::as_array)
+                .map(|b| b.iter().filter_map(|c| c.get("x").and_then(Value::as_f64)).collect())
+                .unwrap_or_default();
+            assert_eq!(kept.len(), 3, "the arrangement is still three boxes after reopening in {what}: {again}");
+            assert!((kept[1] as f32 - (from_x + 80.0)).abs() < 2.0, "the picture is where it was dropped after reopening in {what}");
+            let (reopened, _) = notecraft_formats::boxes::read(format, h.state().body().expect("reopened page"));
+            assert_eq!(reopened, original, "the same blocks after reopening in {what}");
+        }
+    }
+}
+
 // The native attachment-card double-click path is manually verified on Windows. The Linux
 // headless WGPU runner does not deliver the rendered attachment hit target consistently: the
 // same test stalls for the full suite timeout there while passing locally.

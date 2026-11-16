@@ -331,6 +331,11 @@ pub fn show(
     let object_double_clicked = ui.data_mut(|d| d.remove_temp::<(usize, String)>(crate::preview::object_double_clicked_id()));
     ui.data_mut(|d| d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id()));
     ui.data_mut(|d| d.remove::<Vec<crate::preview::RenderedImage>>(crate::preview::rendered_images_id()));
+    ui.data_mut(|d| d.remove::<Vec<(usize, f32)>>(pageedit::after_picture_tops_id()));
+    // A picture taken hold of while it shares its box with other blocks: the box is split so
+    // the picture has one of its own, which is what a picture is moved by. Done after the
+    // boxes are drawn, because it renumbers them.
+    let mut lift_picture: Option<PictureLift> = None;
     let mut object_sel = selected_object(ui.ctx(), page_dir);
     // Ctrl and a click, while something is selected, adds the box clicked or takes it out of the
     // selection, as in OneNote: the click does not also put the caret in its words or pick up a
@@ -556,24 +561,48 @@ pub fn show(
                 pointer
             );
         }
-        let image_hit = image_object
-            .then(|| ui.interact(image_rect, ui.id().with(("image-object", i)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move));
+        // Keyed by the block, not the box: a picture lifted out of a shared box lands in a box
+        // with another number, and a drag in progress has to find the same widget there.
+        let image_hit = image_object.then(|| {
+            ui.interact(image_rect, ui.id().with(("image-object", range.start)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move)
+        });
+        // A picture among other blocks in one box (a page that was never arranged is one box
+        // holding everything). It is moved by its body like any picture, which takes it out of
+        // the box into one of its own where it stands; see `lift_picture` below.
+        if !image_object && range.len() > 1 {
+            let hits = ui.data(|d| d.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id())).unwrap_or_default();
+            for (block, rect, _) in hits
+                .iter()
+                .filter(|(block, _, kind)| kind == "image" && range.contains(block) && matches!(blocks.get(*block), Some(Block::Image { .. })))
+            {
+                let on_handle = object_sel.as_ref().is_some_and(|(selected, _)| selected == block)
+                    && pointer.is_some_and(|p| resize_handle_rects(*rect, resize_handle_size).iter().any(|handle| handle.contains(p)));
+                let body =
+                    ui.interact(*rect, ui.id().with(("image-object", *block)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move);
+                if on_handle {
+                    continue;
+                }
+                if body.clicked() || body.secondary_clicked() || body.dragged() {
+                    if body.clicked() {
+                        picture_clicked(ui, blocks, page_dir, *block, &mut out.changed.link);
+                    }
+                    object_sel = Some((*block, "image".to_string()));
+                    sel = None;
+                    *caret = None;
+                    out.changed.caret = true;
+                    log::debug!("picture in a shared box hit: container={i} block={block}");
+                }
+                if body.drag_started() && lift_picture.is_none() {
+                    lift_picture = Some(PictureLift { container: i, block: *block, rect: *rect });
+                }
+            }
+        }
         if let Some(response) = &image_hit
             && !pointer_on_resize_handle
             && (response.clicked() || response.secondary_clicked() || response.dragged())
         {
             if response.clicked() {
-                let now = ui.input(|input| input.time);
-                let prior = ui.data(|data| data.get_temp::<(usize, f64)>(crate::preview::object_click_state_id()));
-                let is_double = prior.is_some_and(|(previous, at)| previous == range.start && now - at <= 0.75);
-                if is_double {
-                    ui.data_mut(|data| data.remove::<(usize, f64)>(crate::preview::object_click_state_id()));
-                    if let Some(href) = blocks.get(range.start).and_then(|block| crate::preview::object_link(block, page_dir)) {
-                        out.changed.link = Some(href);
-                    }
-                } else {
-                    ui.data_mut(|data| data.insert_temp(crate::preview::object_click_state_id(), (range.start, now)));
-                }
+                picture_clicked(ui, blocks, page_dir, range.start, &mut out.changed.link);
             }
             object_sel = Some((range.start, "image".to_string()));
             sel = None;
@@ -780,7 +809,7 @@ pub fn show(
             let d = response.drag_delta();
             let pull = scroll_at_edges(ui, area.min.y, zoom);
             if let Some(c) = boxes.get_mut(i) {
-                let to = moved_to(ui, ui.id().with(("grab", i)), area.min, (c.x, c.y), response.drag_started(), zoom, pull, snap);
+                let to = moved_to(ui, picture_grab_id(ui, range.start), area.min, (c.x, c.y), response.drag_started(), zoom, pull, snap);
                 *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
             out.boxes = true;
@@ -889,6 +918,45 @@ pub fn show(
                 *c = Container::new(c.x, c.y, right - c.x, c.blocks);
             }
             out.boxes = true;
+        }
+    }
+
+    // A picture taken hold of in a box shared with other blocks: the box becomes up to three, the
+    // blocks before it, the picture, and the blocks after it. Each stays where it was drawn, so
+    // nothing on the page jumps; the picture's box is then moved with the pointer, in this same
+    // frame, so even a quick flick of the mouse takes it along. From the next frame it is a box
+    // holding one picture, and the drag goes on in the code above.
+    if let Some(lift) = lift_picture
+        && delete_at.is_none()
+        && delete_object.is_none()
+        && start_in.is_none()
+        && start_under_date.is_none()
+        && ctrl_toggle.is_none()
+        && let Some(whole) = boxes.get(lift.container).copied()
+    {
+        let range = container::blocks_of(boxes, lift.container);
+        if range.len() > 1 && range.contains(&lift.block) {
+            let next_top = ui
+                .data(|d| d.get_temp::<Vec<(usize, f32)>>(pageedit::after_picture_tops_id()))
+                .and_then(|tops| tops.iter().find(|(block, _)| *block == lift.block + 1).map(|(_, y)| *y));
+            let (parts, picture_at) = lift_out(whole, range, lift.block, area.min, zoom, lift.rect, next_top);
+            boxes.splice(lift.container..=lift.container, parts);
+            let picture_box = lift.container + picture_at;
+            let pull = scroll_at_edges(ui, area.min.y, zoom);
+            if let Some(c) = boxes.get_mut(picture_box) {
+                let to = moved_to(ui, picture_grab_id(ui, lift.block), area.min, (c.x, c.y), true, zoom, pull, snap);
+                *c = Container::new(to.0, to.1, c.width, c.blocks);
+            }
+            // Boxes were renumbered: what was picked by number is let go, the picture is what is
+            // picked now.
+            sel = None;
+            group.clear();
+            group_shift = None;
+            menu_at = None;
+            out.selected_shift = None;
+            out.boxes = true;
+            log::debug!("picture lifted out of its box: container={} block={} into box {picture_box}", lift.container, lift.block);
+            ui.ctx().request_repaint();
         }
     }
 
@@ -1780,6 +1848,76 @@ fn moved_to(ui: &Ui, id: egui::Id, page_min: egui::Pos2, at: (f32, f32), started
     }
 }
 
+/// A picture that was taken hold of in a box shared with other blocks.
+#[derive(Clone, Copy, Debug)]
+struct PictureLift {
+    /// The box it is in.
+    container: usize,
+    /// The picture's block.
+    block: usize,
+    /// Where the picture is drawn, on screen.
+    rect: Rect,
+}
+
+/// Where a picture being moved was taken hold of, kept for the length of the drag. Keyed by the
+/// picture's block, which does not change when its box is split off, where the box's own number
+/// does.
+fn picture_grab_id(ui: &Ui, block: usize) -> Id {
+    ui.id().with(("grab-picture", block))
+}
+
+/// A click on a picture: a second one within three quarters of a second opens the picture's
+/// link, if it has one.
+fn picture_clicked(ui: &Ui, blocks: &[Block], page_dir: &std::path::Path, block: usize, link: &mut Option<String>) {
+    let now = ui.input(|input| input.time);
+    let prior = ui.data(|data| data.get_temp::<(usize, f64)>(crate::preview::object_click_state_id()));
+    let is_double = prior.is_some_and(|(previous, at)| previous == block && now - at <= 0.75);
+    if is_double {
+        ui.data_mut(|data| data.remove::<(usize, f64)>(crate::preview::object_click_state_id()));
+        if let Some(href) = blocks.get(block).and_then(|block| crate::preview::object_link(block, page_dir)) {
+            *link = Some(href);
+        }
+    } else {
+        ui.data_mut(|data| data.insert_temp(crate::preview::object_click_state_id(), (block, now)));
+    }
+}
+
+/// The boxes that replace `whole`, which holds `range`, when the picture `block` in it is taken
+/// out into a box of its own: the blocks before it, the picture, the blocks after it. A part
+/// with nothing in it is left out. Also says which of the boxes is the picture's.
+///
+/// Every part keeps the place it was drawn at, so the page looks the same afterwards. The
+/// picture's box is as wide as the picture and sits where the picture is (`picture`, on the
+/// screen, with the page's corner at `origin`). The blocks after it start where the first of them
+/// was drawn (`next_top`, a screen y), or just under the picture when that is not known.
+fn lift_out(
+    whole: Container,
+    range: std::ops::Range<usize>,
+    block: usize,
+    origin: Pos2,
+    zoom: f32,
+    picture: Rect,
+    next_top: Option<f32>,
+) -> (Vec<Container>, usize) {
+    /// What the page leaves between one block and the next, in page points.
+    const BETWEEN: f32 = 6.0;
+    let zoom = zoom.max(0.01);
+    let mut parts = Vec::with_capacity(3);
+    let before = block - range.start;
+    if before > 0 {
+        parts.push(Container::new(whole.x, whole.y, whole.width, before));
+    }
+    let picture_at = parts.len();
+    // The box's inside starts a pad in from its left edge and a handle's height below its top.
+    parts.push(Container::new((picture.min.x - origin.x) / zoom - PAD, (picture.min.y - origin.y) / zoom - HANDLE, picture.width() / zoom, 1));
+    let after = range.end - block - 1;
+    if after > 0 {
+        let top = next_top.map_or(picture.max.y + BETWEEN * zoom, |y| y.max(picture.max.y));
+        parts.push(Container::new(whole.x, (top - origin.y) / zoom - HANDLE, whole.width, after));
+    }
+    (parts, picture_at)
+}
+
 /// `value` on the nearest line of a grid `step` apart, counted from the page's origin.
 fn to_grid(value: f32, step: f32) -> f32 {
     (value / step).round() * step
@@ -2190,5 +2328,46 @@ more
         frame.textures_delta.clear();
         assert_eq!(boxes.len(), 1, "everything in one box rather than losing a block");
         assert_eq!(boxes.first().map(|b| b.blocks), Some(4));
+    }
+
+    /// Issue #344: a picture taken out of a box it shares with other blocks. The words before
+    /// stay put, the picture's box is where the picture was, and the words after stay where the
+    /// first of them was drawn: nothing on the page moves.
+    #[test]
+    fn lifting_a_picture_out_of_a_shared_box_keeps_every_part_where_it_was() {
+        let whole = Container::new(40.0, 20.0, 400.0, 5);
+        // The page's corner is at (100, 50); the box's inside starts at 100+40+6, 50+20+14.
+        let origin = pos2(100.0, 50.0);
+        let picture = Rect::from_min_size(pos2(146.0, 154.0), vec2(200.0, 120.0));
+        let (parts, at) = lift_out(whole, 0..5, 2, origin, 1.0, picture, Some(290.0));
+        assert_eq!(parts.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![2, 1, 2], "words, picture, words");
+        assert_eq!(at, 1);
+        assert_eq!(parts[0], Container::new(40.0, 20.0, 400.0, 2), "the words before keep the box's place and width");
+        assert_eq!((parts[1].x, parts[1].y, parts[1].width), (40.0, 90.0, 200.0), "the picture's box starts where the picture is drawn");
+        assert_eq!((parts[2].x, parts[2].y, parts[2].width), (40.0, 226.0, 400.0), "the words after start where they were drawn");
+    }
+
+    #[test]
+    fn lifting_the_first_or_last_picture_leaves_no_empty_box() {
+        let whole = Container::new(0.0, 0.0, 300.0, 3);
+        let picture = Rect::from_min_size(pos2(6.0, 14.0), vec2(150.0, 80.0));
+        let (first, at) = lift_out(whole, 0..3, 0, pos2(0.0, 0.0), 1.0, picture, Some(100.0));
+        assert_eq!((first.iter().map(|c| c.blocks).collect::<Vec<_>>(), at), (vec![1, 2], 0));
+        let (last, at) = lift_out(whole, 0..3, 2, pos2(0.0, 0.0), 1.0, picture, None);
+        assert_eq!((last.iter().map(|c| c.blocks).collect::<Vec<_>>(), at), (vec![2, 1], 1));
+    }
+
+    #[test]
+    fn lifting_a_picture_follows_the_zoom_and_never_loses_a_block() {
+        let whole = Container::new(0.0, 0.0, 300.0, 4);
+        // At 200 % the picture is drawn twice as far from the corner and twice as big.
+        let picture = Rect::from_min_size(pos2(24.0, 68.0), vec2(300.0, 160.0));
+        let (parts, _) = lift_out(whole, 0..4, 1, pos2(0.0, 0.0), 2.0, picture, Some(260.0));
+        assert_eq!((parts[1].x, parts[1].y, parts[1].width), (6.0, 20.0, 150.0), "page points, not screen points");
+        assert_eq!(parts[2].y, 116.0);
+        assert_eq!(parts.iter().map(|c| c.blocks).sum::<usize>(), 4);
+        // A box that is only a picture and a line, lifted below a range that starts later.
+        let (parts, _) = lift_out(Container::new(0.0, 0.0, 300.0, 2), 3..5, 4, pos2(0.0, 0.0), 1.0, picture, None);
+        assert_eq!(parts.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![1, 1]);
     }
 }
