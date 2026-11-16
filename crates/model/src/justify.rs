@@ -129,12 +129,48 @@ impl Mark {
     }
 }
 
+/// The most points any one of the three spacings may be. A page that says more is read at
+/// this, because a gap taller than a screen is a mistake in the file, not a layout.
+pub const MAX_POINTS: u16 = 200;
+
+/// The room a paragraph takes beyond what the page gives every paragraph (issue #275), in
+/// points: space before it, space after it, and the least height of each of its lines. Nothing
+/// is the page's own spacing, and a paragraph given nothing keeps no entry at all.
+///
+/// Like the alignment, it is layout and not words, so it is kept in the page's metadata and
+/// the text is never touched.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Spacing {
+    /// Extra room above the paragraph.
+    pub before: u16,
+    /// Extra room below it.
+    pub after: u16,
+    /// The least height of a line, in points. Nothing (0) leaves the line at the height its
+    /// font gives it; a larger number never makes a line shorter than that.
+    pub line: u16,
+}
+
+impl Spacing {
+    /// True when it asks for nothing, which is what a paragraph without an entry has.
+    pub fn is_none(self) -> bool {
+        self == Spacing::default()
+    }
+
+    /// The same with every part held to [`MAX_POINTS`].
+    pub fn clamped(self) -> Spacing {
+        Spacing { before: self.before.min(MAX_POINTS), after: self.after.min(MAX_POINTS), line: self.line.min(MAX_POINTS) }
+    }
+}
+
 /// The paragraphs of a page that are justified or aligned, by their position among its
-/// blocks, each with how.
+/// blocks, each with how, and the ones given room of their own.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Justified {
     /// Sorted by block and without repeats, so the written line is the same every time.
     blocks: Vec<(usize, Mark)>,
+    /// The paragraphs given spacing (issue #275), sorted the same way. Never holds a `Spacing`
+    /// that asks for nothing.
+    spacing: Vec<(usize, Spacing)>,
 }
 
 impl Justified {
@@ -197,7 +233,36 @@ impl Justified {
     /// True when no paragraph on the page is justified, which is what a page says until one
     /// is asked for.
     pub fn is_empty(&self) -> bool {
-        self.blocks.is_empty()
+        self.blocks.is_empty() && self.spacing.is_empty()
+    }
+
+    /// The room the block at `block` was given, or `None` when it was given none.
+    pub fn spacing_of(&self, block: usize) -> Option<Spacing> {
+        let at = self.spacing.binary_search_by_key(&block, |(at, _)| *at).ok()?;
+        self.spacing.get(at).map(|(_, s)| *s)
+    }
+
+    /// Gives a block `spacing`, or, with `None` or a spacing that asks for nothing, takes what
+    /// it had off. Every part is held to [`MAX_POINTS`].
+    pub fn set_spacing(&mut self, block: usize, spacing: Option<Spacing>) {
+        let spacing = spacing.map(Spacing::clamped).filter(|s| !s.is_none());
+        match (self.spacing.binary_search_by_key(&block, |(at, _)| *at), spacing) {
+            (Err(at), Some(s)) if self.spacing.len() < MAX_BLOCKS => self.spacing.insert(at, (block, s)),
+            (Ok(at), Some(s)) => {
+                if let Some(have) = self.spacing.get_mut(at) {
+                    have.1 = s;
+                }
+            }
+            (Ok(at), None) => {
+                self.spacing.remove(at);
+            }
+            _ => {}
+        }
+    }
+
+    /// Every block given spacing, and what it was given, in order.
+    pub fn spacings(&self) -> &[(usize, Spacing)] {
+        &self.spacing
     }
 
     /// The justified blocks and their strengths, in order.
@@ -214,7 +279,7 @@ impl Justified {
     /// down one with it, so it stays on the same paragraph. True when anything changed.
     pub fn insert_block(&mut self, at: usize) -> bool {
         let mut moved = false;
-        for (block, _) in &mut self.blocks {
+        for block in self.blocks.iter_mut().map(|(b, _)| b).chain(self.spacing.iter_mut().map(|(b, _)| b)) {
             if *block >= at {
                 *block += 1;
                 moved = true;
@@ -227,15 +292,16 @@ impl Justified {
     /// on a paragraph after them moves up with it, so it stays on the same paragraph. True
     /// when anything changed.
     pub fn remove_blocks(&mut self, gone: std::ops::Range<usize>) -> bool {
-        let before = self.blocks.clone();
+        let before = (self.blocks.clone(), self.spacing.clone());
         let n = gone.len();
         self.blocks.retain(|(at, _)| !gone.contains(at));
-        for (at, _) in &mut self.blocks {
+        self.spacing.retain(|(at, _)| !gone.contains(at));
+        for at in self.blocks.iter_mut().map(|(b, _)| b).chain(self.spacing.iter_mut().map(|(b, _)| b)) {
             if *at >= gone.end {
                 *at -= n;
             }
         }
-        self.blocks != before
+        (self.blocks.clone(), self.spacing.clone()) != before
     }
 }
 
@@ -250,7 +316,21 @@ impl Justified {
 /// metadata says.
 pub fn parse(text: &str) -> Justified {
     let mut blocks: Vec<(usize, Mark)> = Vec::new();
+    let mut spacing: Vec<(usize, Spacing)> = Vec::new();
     for part in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        // Spacing (issue #275) is an entry that starts with `s`: `s4=6/12/0` gives block 4 six
+        // points before, twelve after and no least line height. A reader from before it
+        // existed finds no block number there and skips the entry, so the justified and aligned
+        // paragraphs of the same line still read the way they always did.
+        if let Some(rest) = part.strip_prefix('s') {
+            if let Some((at, spaces)) = rest.split_once('=').and_then(|(n, v)| Some((n.trim().parse::<usize>().ok()?, spaces_of(v)?)))
+                && !spacing.iter().any(|(have, _)| *have == at)
+                && !spaces.is_none()
+            {
+                spacing.push((at, spaces));
+            }
+            continue;
+        }
         let (number, strength) = match part.split_once(':') {
             Some((n, s)) => (n.trim(), Align::of(s).map_or_else(|| Mark::Justify(Strength::of(s).unwrap_or_default()), Mark::Align)),
             None => (part, Mark::Justify(Strength::default())),
@@ -263,7 +343,16 @@ pub fn parse(text: &str) -> Justified {
     }
     blocks.sort_by_key(|(at, _)| *at);
     blocks.truncate(MAX_BLOCKS);
-    Justified { blocks }
+    spacing.sort_by_key(|(at, _)| *at);
+    spacing.truncate(MAX_BLOCKS);
+    Justified { blocks, spacing }
+}
+
+/// Reads `before/after/line`, each a whole number of points. Anything else is `None`.
+fn spaces_of(text: &str) -> Option<Spacing> {
+    let mut parts = text.split('/').map(|p| p.trim().parse::<u16>());
+    let (before, after, line) = (parts.next()?.ok()?, parts.next()?.ok()?, parts.next()?.ok()?);
+    parts.next().is_none().then(|| Spacing { before, after, line }.clamped())
 }
 
 /// Writes them back as that line. The middle strength writes the number alone, so a page
@@ -278,6 +367,7 @@ pub fn write(justified: &Justified) -> String {
             Mark::Justify(s) => format!("{at}:{}", s.id()),
             Mark::Align(a) => format!("{at}:{}", a.id()),
         })
+        .chain(justified.spacing.iter().map(|(at, s)| format!("s{at}={}/{}/{}", s.before, s.after, s.line)))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -393,5 +483,58 @@ mod tests {
         assert_eq!(parse("3:").strength_of(3), Some(Strength::Medium), "and so does an empty one");
         let crowd: String = (0..MAX_BLOCKS + 50).map(|n| n.to_string()).collect::<Vec<_>>().join(",");
         assert_eq!(parse(&crowd).blocks().len(), MAX_BLOCKS);
+    }
+
+    #[test]
+    fn spacing_is_kept_on_the_same_line_and_survives_the_round_trip() {
+        let line = "2:center, 5, s2=6/12/0, s9=0/0/18";
+        let marked = parse(line);
+        assert_eq!(marked.spacing_of(2), Some(Spacing { before: 6, after: 12, line: 0 }));
+        assert_eq!(marked.spacing_of(9), Some(Spacing { before: 0, after: 0, line: 18 }));
+        assert_eq!(marked.spacing_of(5), None, "a paragraph that was never given room has none");
+        assert_eq!(marked.align_of(2), Some(Align::Center), "the alignment on the same line still reads");
+        assert_eq!(marked.strength_of(5), Some(Strength::Medium));
+        assert_eq!(write(&marked), line, "and writes back the way it came");
+        assert_eq!(marked.blocks(), [(5, Strength::Medium)], "spacing is not mistaken for justification");
+    }
+
+    /// A reader from before spacing existed finds no block number in `s2=6/12/0` and skips it,
+    /// so a page with spacing opens there with the justification it always had.
+    #[test]
+    fn an_entry_of_spacing_is_not_a_block_number() {
+        for entry in ["s2=6/12/0", "s9=0/0/18"] {
+            assert!(entry.parse::<usize>().is_err(), "{entry}: an older reader drops it");
+            assert!(!entry.contains(':'), "{entry}: nor does it read as a strength or an alignment");
+        }
+        assert_eq!(parse("s2=6/12/0").marks(), &[], "the new reader keeps it as spacing and as nothing else");
+    }
+
+    #[test]
+    fn spacing_that_is_wrong_or_asks_for_nothing_is_dropped() {
+        let marked = parse("s1=0/0/0, s2=6/12, s3=a/b/c, s4=1/2/3/4, s=1/1/1, sx=1/1/1, s5=-1/0/0, s6=9/9/9, s6=1/1/1, s7=999/0/5");
+        assert_eq!(marked.spacings(), &[(6, Spacing { before: 9, after: 9, line: 9 }), (7, Spacing { before: MAX_POINTS, after: 0, line: 5 })]);
+        let mut set = Justified::default();
+        set.set_spacing(3, Some(Spacing { before: 7, after: 0, line: 0 }));
+        assert!(!set.is_empty());
+        set.set_spacing(3, Some(Spacing::default()));
+        assert!(set.is_empty(), "asking for nothing takes the entry off");
+        set.set_spacing(3, Some(Spacing { before: 900, after: 1, line: 1 }));
+        assert_eq!(set.spacing_of(3).map(|s| s.before), Some(MAX_POINTS));
+        set.set_spacing(3, None);
+        assert_eq!(set.spacing_of(3), None);
+    }
+
+    #[test]
+    fn spacing_follows_its_paragraph_when_blocks_come_and_go() {
+        let mut marked = parse("1:right, s1=4/0/0, s6=0/9/0");
+        assert!(marked.insert_block(0));
+        assert_eq!(write(&marked), "2:right, s2=4/0/0, s7=0/9/0");
+        assert!(marked.remove_blocks(2..3));
+        assert_eq!(write(&marked), "s6=0/9/0", "the spacing of a removed paragraph goes with it");
+        assert!(!marked.remove_blocks(20..22));
+        assert!(marked.insert_block(6));
+        assert_eq!(write(&marked), "s7=0/9/0");
+        assert!(marked.remove_blocks(7..8));
+        assert!(marked.is_empty());
     }
 }

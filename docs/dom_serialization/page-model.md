@@ -128,6 +128,12 @@ Justify Low, Justify Medium and Justify High and decide how many kashidas a line
 A number on its own is `medium`, so a page written before the strengths existed reads the
 same and writes the same line back.
 
+Alignment (issue #258) and spacing (issue #275) share the line. `2:center` sets paragraph 2
+against the middle; `s2=6/12/18` gives it 6 points of room before, 12 after and a least line
+height of 18 (each at most 200, a whole number of points). Spacing entries start with an `s`, so
+a reader from before they existed finds no block number there and skips them, and the justified
+paragraphs on the same line read the way they always did.
+
 The reader and writer are `notecraft_model::justify`; the store reads and writes it in
 `notecraft_store::page` (`justified`, `set_justified`) and the command is `page.justify`.
 

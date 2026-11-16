@@ -160,6 +160,9 @@ pub enum Act {
     InsertTable(usize, usize),
     /// Insert > Table > Insert Table...: the dialog for a size typed in.
     InsertTableDialog,
+    /// Home > Alignment and direction > Paragraph Spacing Options: the dialog for the room
+    /// before and after the paragraphs the caret or the selection is in, and their line height.
+    ParagraphSpacing,
     /// What the pointer does on the page: write, draw or rub out.
     InkPointer(Pointer),
     /// The pen at this place on the rack was picked up.
@@ -1618,6 +1621,11 @@ fn align_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                             acts.push(Act::Justify(strength));
                             picked = true;
                         }
+                    }
+                    ui.separator();
+                    if floating::menu_row(ui, None, crate::tl_id!("ui.paragraph_spacing_options"), t).clicked() {
+                        acts.push(Act::ParagraphSpacing);
+                        picked = true;
                     }
                     ui.separator();
                     if direction_row(ui, Some(Icon::ParaLtr), crate::tl_id!("ui.left_to_right"), t).clicked() {

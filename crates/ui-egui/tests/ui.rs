@@ -9168,6 +9168,134 @@ fn paragraph_alignment_moves_the_line_saves_and_undoes() {
     }
 }
 
+/// Issue #275: Home > Alignment and direction > Paragraph Spacing Options. A paragraph is given
+/// room before and after it and a least line height, in points. The page's file keeps it in both
+/// formats beside the alignment, the words are untouched, a paragraph that reads right to left
+/// leaves the same room, Undo and Redo carry it, Reset takes it off, and Escape changes nothing.
+#[test]
+fn paragraph_spacing_opens_room_around_a_paragraph_saves_and_undoes() {
+    use egui_kittest::kittest::NodeT as _;
+    use notecraft_model::justify::Spacing;
+    for (format, body) in [
+        (notecraft_model::PageFormat::Html, "<p>alpha</p><p>bravo</p><p>مرحبا</p><p>charlie</p>"),
+        (notecraft_model::PageFormat::Cmgfm, "alpha\n\nbravo\n\nمرحبا\n\ncharlie"),
+    ] {
+        let (_t, app, s) = sample_app("ui-paragraph-spacing");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let top_of = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().bounding_box().expect("drawn").y0 as f32;
+        let saved = |block: usize| notecraft_store::page::justified(page).expect("read").spacing_of(block);
+        let caret = |h: &mut Harness<'_, NoteCraftApp>, block: usize| {
+            ask(h, "ui.caret", json!({"block": block})).expect("caret");
+            settle(h);
+        };
+        // Opens the dialog from the ribbon for the caret's paragraph and types the three values.
+        let give = |h: &mut Harness<'_, NoteCraftApp>, block: usize, before: &str, after: &str, line: &str| {
+            caret(h, block);
+            h.get_by_label("Alignment and direction").click();
+            h.run_steps(2);
+            h.get_by_label("Paragraph Spacing Options…").click();
+            h.run_steps(3);
+            h.state_mut().set_paragraph_spacing_values(before, after, line);
+            h.run_steps(2);
+            h.get_by_label("OK").click();
+            settle(h);
+        };
+        caret(&mut h, 2);
+        let (alpha0, bravo0, charlie0) = (top_of(&h, "alpha"), top_of(&h, "bravo"), top_of(&h, "charlie"));
+        let words = h.state().body().unwrap_or_default().to_string();
+        // What writing in the first paragraph does to the page below it before it was given anything.
+        caret(&mut h, 0);
+        let written_in0 = top_of(&h, "bravo");
+        caret(&mut h, 2);
+
+        // Room before: the paragraph and everything under it moves down by that much.
+        give(&mut h, 0, "12", "0", "0");
+        assert_eq!(saved(0), Some(Spacing { before: 12, after: 0, line: 0 }), "{format:?}: the file says so");
+        assert_eq!(h.state().body().unwrap_or_default(), words, "{format:?}: the words are untouched");
+        caret(&mut h, 2);
+        assert!((top_of(&h, "alpha") - (alpha0 + 12.0)).abs() < 1.5, "{format:?}: 12 points before: {alpha0} -> {}", top_of(&h, "alpha"));
+        assert!((top_of(&h, "bravo") - (bravo0 + 12.0)).abs() < 1.5, "{format:?}: and the next paragraph with it");
+
+        // Room after: only what is below moves.
+        give(&mut h, 0, "12", "30", "0");
+        caret(&mut h, 2);
+        assert!((top_of(&h, "alpha") - (alpha0 + 12.0)).abs() < 1.5, "{format:?}: alpha stays where the room before put it");
+        assert!((top_of(&h, "bravo") - (bravo0 + 42.0)).abs() < 1.5, "{format:?}: 30 points after pushes bravo down");
+        review(&mut h, &format!("paragraph_spacing_{format:?}"));
+
+        // A least line height taller than the font's opens the paragraph's own line up.
+        give(&mut h, 0, "12", "30", "60");
+        caret(&mut h, 2);
+        let tall = top_of(&h, "bravo");
+        assert!(tall > bravo0 + 42.0 + 25.0, "{format:?}: a 60 point line is taller than a 14 point font's: {tall}");
+        // And while it is written in the line keeps its height, so nothing jumps when the caret arrives.
+        caret(&mut h, 0);
+        let written_in = top_of(&h, "bravo");
+        // The text box and the finished words already differ by a few points before any spacing
+        // (4 here), so what is compared is how much the paragraph grew, not where it ends.
+        assert!(
+            ((written_in - written_in0) - (tall - bravo0)).abs() < 4.0,
+            "{format:?}: the paragraph grows as much under the caret as it does read: {} vs {} (written in {written_in0} -> {written_in}, read {bravo0} -> {tall})",
+            written_in - written_in0,
+            tall - bravo0
+        );
+
+        // A paragraph that reads right to left leaves the room after it too.
+        caret(&mut h, 1);
+        let charlie_before = top_of(&h, "charlie");
+        give(&mut h, 2, "0", "25", "0");
+        caret(&mut h, 1);
+        assert!((top_of(&h, "charlie") - (charlie_before + 25.0)).abs() < 1.5, "{format:?}: 25 points after the Arabic paragraph");
+        assert_eq!(saved(2), Some(Spacing { before: 0, after: 25, line: 0 }), "{format:?}");
+        give(&mut h, 2, "0", "0", "0");
+        assert_eq!(saved(2), None, "{format:?}: nothing asked for leaves no entry");
+
+        // Undo and Redo carry it, in the file too.
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        assert_eq!(saved(2), Some(Spacing { before: 0, after: 25, line: 0 }), "{format:?}: undo gives the Arabic paragraph its room back");
+        ask(&mut h, "ui.redo", json!({})).expect("redo");
+        settle(&mut h);
+        assert_eq!(saved(2), None, "{format:?}: redo takes it off again");
+        assert_eq!(saved(0), Some(Spacing { before: 12, after: 30, line: 60 }), "{format:?}: the first paragraph kept its own");
+
+        // Escape closes the dialog and changes nothing.
+        caret(&mut h, 0);
+        h.get_by_label("Alignment and direction").click();
+        h.run_steps(2);
+        h.get_by_label("Paragraph Spacing Options…").click();
+        h.run_steps(3);
+        h.state_mut().set_paragraph_spacing_values("99", "99", "99");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert_eq!(saved(0), Some(Spacing { before: 12, after: 30, line: 60 }), "{format:?}: Escape keeps what the page had");
+
+        // Reopened, it is still there; and Reset takes it all off, taking the line out of the file.
+        h.state_mut().save_page_now();
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        caret(&mut h, 2);
+        assert!(top_of(&h, "bravo") > bravo0 + 42.0 + 25.0, "{format:?}: reopened, the room is still there");
+        caret(&mut h, 0);
+        h.get_by_label("Alignment and direction").click();
+        h.run_steps(2);
+        h.get_by_label("Paragraph Spacing Options…").click();
+        h.run_steps(3);
+        h.get_by_label("Reset").click();
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        assert_eq!(saved(0), None, "{format:?}: Reset takes the room off");
+        assert!(notecraft_store::page::justified(page).expect("read").is_empty(), "{format:?}");
+        caret(&mut h, 2);
+        assert!((top_of(&h, "charlie") - charlie0).abs() < 1.5, "{format:?}: the page is back as it was: {charlie0} vs {}", top_of(&h, "charlie"));
+    }
+}
+
 /// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
 /// the words at the caret, or of the whole selection: on only when all of it carries the mark,
 /// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.

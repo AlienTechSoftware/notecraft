@@ -417,6 +417,19 @@ pub fn inline_job(text: &str, base: f32, strong: bool, t: &Tokens, wrap_width: f
     inline_job_inner(text, base, strong, t, wrap_width, page, None)
 }
 
+/// Keeps every line of `job` at least `floor` tall (issue #275, the least line height a
+/// paragraph was given, already scaled to the page's zoom). A line is never made shorter than
+/// the font gives it, so a small number asks for nothing and a large one opens the lines up.
+pub fn floor_lines(ctx: &egui::Context, job: &mut LayoutJob, floor: f32) {
+    if floor <= 0.0 {
+        return;
+    }
+    for section in &mut job.sections {
+        let natural = ctx.fonts_mut(|fonts| fonts.row_height(&section.format.font_id));
+        section.format.line_height = Some(natural.max(floor));
+    }
+}
+
 pub fn inline_job_with_fonts(
     ctx: &egui::Context,
     text: &str,
@@ -629,6 +642,30 @@ mod tests {
             assert_eq!(word.format.font_id.family, key);
             assert_eq!(word.format.font_id.size, 18.0);
             assert_eq!(job.sections[0].format.color, tokens.muted);
+        });
+        output.textures_delta.clear();
+    }
+
+    /// Issue #275: a paragraph's least line height opens its lines up, never shuts them, and a
+    /// floor of nothing leaves the job as it was.
+    #[test]
+    fn the_least_line_height_opens_lines_up_and_never_shortens_them() {
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let ctx = ui.ctx().clone();
+            let height = |floor: f32| {
+                let mut job = inline_job("one two three four five six seven eight", 14.0, false, &tokens, 90.0, None);
+                floor_lines(&ctx, &mut job, floor);
+                let galley = ctx.fonts_mut(|f| f.layout_job(job));
+                (galley.rows.len(), galley.size().y)
+            };
+            let (rows, natural) = height(0.0);
+            assert!(rows >= 3, "narrow enough to wrap: {rows} rows");
+            assert_eq!(height(1.0), (rows, natural), "a floor below the font's own height changes nothing");
+            let (same_rows, opened) = height(40.0);
+            assert_eq!(same_rows, rows, "the words wrap the same way");
+            assert!(opened >= 40.0 * rows as f32 - 0.5 && opened > natural + 20.0, "every row is at least 40 tall: {natural} -> {opened}");
         });
         output.textures_delta.clear();
     }

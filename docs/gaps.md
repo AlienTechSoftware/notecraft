@@ -315,6 +315,17 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   box is given its first line and when a blank box goes, but not yet when Enter splits a line,
   when Backspace joins two, when a box is deleted or pasted, or when Ctrl+Z undoes any of these.
   After those, a width or a justification can sit on the block next to the one it was given to.
+- **Line spacing does not reach a paragraph drawn by the bidi painter.** Home > Alignment and
+  direction > Paragraph Spacing Options (issue #275) gives a paragraph room before and after it and
+  a least line height. The room before and after is left for every paragraph, but the least line
+  height is applied through egui's text layout, and a paragraph that reads right to left or
+  mixes the two directions is laid out by NoteCraft's own painter (`bidi.rs`), whose lines and
+  caret positions come from parley. That painter keeps its own line height, so there only the room
+  before and after shows. A paragraph with inline maths is laid out the same way. Doing the
+  line height there means giving `bidi::runs`, the caret and the hit tests the same floor.
+- **Spacing is extra room, not the page's whole spacing.** The points are added to the gap every
+  paragraph already has, so 0 is the page's own spacing, not no space at all. Block numbers
+  follow the same edits as the other marks on the line (see the entry above).
 - **Table column widths and justification are still on a metadata line.** The boxes of a page are
   elements in its text, but the widths a table's columns were dragged to (and the alignment and
   shading its cells were given) are kept in the head

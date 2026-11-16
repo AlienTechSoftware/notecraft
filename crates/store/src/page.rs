@@ -879,6 +879,46 @@ mod tests {
         }
     }
 
+    /// Spacing (issue #275) rides on the same line as the alignment, so it is kept in both
+    /// formats, survives an edit of the words, and takes the line out when nothing is left.
+    #[test]
+    fn the_room_given_to_a_paragraph_survives_a_save_and_a_reopen() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("spacing", format);
+            let body = match format {
+                PageFormat::Html => "<p>One</p><p>Two</p><p>Three</p>",
+                PageFormat::Cmgfm => "One\n\nTwo\n\nThree\n",
+            };
+            save_body(&dir, body).expect("save");
+            let mut marked = justify::Justified::default();
+            marked.set_align(1, Some(justify::Align::Center));
+            marked.set_spacing(1, Some(justify::Spacing { before: 6, after: 12, line: 18 }));
+            marked.set_spacing(2, Some(justify::Spacing { before: 0, after: 4, line: 0 }));
+            set_justified(&dir, &marked).expect("write");
+
+            let back = justified(&dir).expect("read");
+            assert_eq!(back, marked, "{format:?}");
+            assert_eq!(back.spacing_of(1), Some(justify::Spacing { before: 6, after: 12, line: 18 }), "{format:?}");
+            assert_eq!(back.align_of(1), Some(justify::Align::Center), "{format:?}: the alignment beside it is kept");
+            assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the words are not touched");
+            save_body(&dir, body).expect("save");
+            assert_eq!(justified(&dir).expect("read"), marked, "{format:?}: an edit elsewhere does not lose it");
+
+            // Taking the alignment off leaves the room; taking both off takes the line out.
+            marked.set_align(1, None);
+            set_justified(&dir, &marked).expect("write");
+            assert_eq!(justified(&dir).expect("read").spacing_of(1).map(|s| s.line), Some(18), "{format:?}");
+            marked.set_spacing(1, None);
+            marked.set_spacing(2, None);
+            set_justified(&dir, &marked).expect("write");
+            assert!(justified(&dir).expect("read").is_empty(), "{format:?}");
+            if format == PageFormat::Cmgfm {
+                let raw = fs::read_to_string(page_file(&dir).expect("page").1).expect("raw");
+                assert!(!raw.contains("justify:"), "the line is gone, not left empty: {raw}");
+            }
+        }
+    }
+
     #[test]
     fn saving_a_body_with_boxes_in_it_drops_the_older_line_and_a_plain_one_keeps_it() {
         for format in [PageFormat::Cmgfm, PageFormat::Html] {

@@ -2028,6 +2028,9 @@ pub fn show_blocks(
         // would own a selection of its own and fight with this one.
         let spanning = across.is_some_and(|a| !a.inside_one_block());
         let editing = !spanning && caret.as_ref().is_some_and(|c| c.block == i);
+        // The room the page gave this paragraph above it, and how tall its lines must be at
+        // least (issue #275), before the place its frame starts from is taken.
+        preview::make_room(ui, justified, i, range.start, zoom);
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
@@ -2058,8 +2061,12 @@ pub fn show_blocks(
             c.ensure_inline(&block);
             let previous_selection = c.selection;
             let inline = c.inline.clone().unwrap_or_default();
+            // The least line height this paragraph was given, so the words keep their lines
+            // while they are written in as they have when they are read (issue #275).
+            let floor = f32::from(justified.spacing_of(i).unwrap_or_default().line) * zoom;
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
-                let job = inline.layout(text.as_str(), |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width, page));
+                let mut job = inline.layout(text.as_str(), |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width, page));
+                pagetext::floor_lines(ui.ctx(), &mut job, floor);
                 ui.fonts_mut(|f| f.layout_job(job))
             };
             let mut at_start = false;
@@ -2525,6 +2532,9 @@ pub fn show_blocks(
             frame_block(ui, top, false, t, zoom);
         }
     }
+    // The last block may have been written in or been a table, which never ask for the least
+    // line height left for them; nothing drawn after this is to find it.
+    preview::clear_room(ui.ctx());
     if let Some(a) = action {
         apply_keeping_widths(a, blocks, caret, &mut changed, cols);
     }
