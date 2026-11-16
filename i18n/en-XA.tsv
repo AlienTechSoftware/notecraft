@@ -947,6 +947,14 @@
 @id	ui.take_the_whole_table_out	$$$Take the whole table out@@@
 @id	ui.put_the_caret_in_a_table_first	$$$Put the caret in a table first@@@
 @id	ui.deleted_the_table	$$$Deleted the table@@@
+@id	ui.align_left_ctrl_l	$$$Align Left (Ctrl+L)@@@
+@id	ui.center	$$$Center@@@
+@id	ui.align_right_ctrl_r	$$$Align Right (Ctrl+R)@@@
+@id	ui.alignment_goes_on_a_paragraph_or_a_heading	$$$Alignment goes on a paragraph or a heading@@@
+@id	ui.the_paragraph_follows_its_words_again	$$$The paragraph is aligned the way its words read again@@@
+@id	ui.aligned_left	$$$Aligned left@@@
+@id	ui.centred	$$$Centered@@@
+@id	ui.aligned_right	$$$Aligned right@@@
 @id	ui.point_at_the_page_without_drawing_on_it	$$$Point at the page without drawing on it@@@
 @id	ui.laser_pointer_put_down	$$$Laser pointer put down@@@
 @id	ui.rule_line_colour	$$$Rule line colour@@@
@@ -977,3 +985,13 @@
 @id	ui.untitled_page	$$$Untitled page@@@
 @id	ui.place_separator	$$$›@@@
 @id	ui.filter	$$$Filter@@@
+@id	ui.version_saved_when	$$$Version saved {when}@@@
+@id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	$$$An older version, read-only. The page is not changed unless you restore it.@@@
+@id	ui.this_version	$$$This version@@@
+@id	ui.compare_with_the_page	$$$Compare with the page@@@
+@id	ui.this_version_has_the_same_words_as_the_page	$$$This version has the same words as the page.@@@
+@id	ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page	$$$Lines marked − are only in this version; lines marked + are only in the page now.@@@
+@id	ui.restore_this_version	$$$Restore this version@@@
+@id	ui.back_to_the_list	$$$Back to the list@@@
+@id	ui.preview	$$$Preview@@@
+@id	ui.cannot_open_that_version_error	$$$Cannot open that version: {error}@@@

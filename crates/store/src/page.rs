@@ -94,6 +94,22 @@ pub fn versions(dir: &Path) -> Result<Vec<Version>> {
     Ok(found)
 }
 
+/// The editable body of a saved version, in the page's own format, to show it without
+/// restoring it (issue #278). The page file is not touched.
+pub fn version_body(dir: &Path, id: &str) -> Result<(PageFormat, String)> {
+    if !valid_version_id(id) {
+        return Err(StoreError::invalid("that page version id is not valid"));
+    }
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let snapshot = version_dir(dir).join(id).join(file.file_name().unwrap_or_default());
+    let meta = fs::metadata(&snapshot).map_err(|e| StoreError::io("read", &snapshot, e))?;
+    if meta.len() > MAX_PAGE_BYTES as u64 {
+        return Err(StoreError::invalid("this page version is too large to open"));
+    }
+    let text = fs::read_to_string(&snapshot).map_err(|e| StoreError::io("read", &snapshot, e))?;
+    Ok((format, body_of(format, &text)))
+}
+
 /// Restores an earlier version, first preserving the current file as another version.
 pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
     if !valid_version_id(id) {
@@ -594,6 +610,28 @@ mod tests {
         restore_version(&page, &saved_versions[0].id).expect("restore");
         assert_eq!(load_page(&page).expect("page").body, initial);
         assert_eq!(versions(&page).expect("versions after restore").len(), 2);
+    }
+
+    /// Issue #278: a saved version can be read without restoring it.
+    #[test]
+    fn a_version_is_read_without_touching_the_page() {
+        let t = crate::testing::TempDir::new("page-version-body");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        // The copy kept is of the page as it was before the first save; saves within a few
+        // minutes of each other share one.
+        let initial = load_page(&page).expect("initial").body;
+        save_body(&page, "first version").expect("first save");
+        save_body(&page, "second version").expect("second save");
+        let saved = versions(&page).expect("versions");
+        let (_, file) = page_file(&page).expect("file");
+        let before = fs::read(&file).expect("read");
+        let bodies: Vec<String> = saved.iter().map(|v| version_body(&page, &v.id).expect("body").1).collect();
+        assert_eq!(bodies, [initial], "the kept copy reads back as it was");
+        assert_eq!(fs::read(&file).expect("read"), before, "the page file is untouched");
+        assert!(version_body(&page, "not-an-id").is_err());
+        assert!(version_body(&page, "0123456789abcdef0123").is_err(), "a version that is not there");
     }
 
     /// A file is ink because of the namespace inside it, not because of its name.
