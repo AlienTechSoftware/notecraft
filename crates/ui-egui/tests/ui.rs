@@ -2767,6 +2767,47 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
+/// Issue #301: File > Save a Copy was "not built". It copies the open page, its section or its
+/// notebook into a folder the user names, as content of its own: files and ink come along,
+/// the saved versions do not, and the original stays open and unchanged.
+#[test]
+fn save_a_copy_copies_the_section_into_a_folder_and_leaves_the_original() {
+    use egui_kittest::kittest::Queryable as _;
+    let (t, app, s) = sample_app("ui-save-a-copy");
+    let out = t.path().join("copies");
+    std::fs::create_dir_all(&out).expect("out");
+    let section = s.html_page.parent().expect("section").to_path_buf();
+    let section_title = notecraft_store::tree::read_node(&section).expect("section").title;
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let before = std::fs::read_dir(&section).expect("read").count();
+
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Save a Copy").click();
+    settle(&mut h);
+    h.get_by_label(&format!("This section: {section_title}")).click();
+    settle(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").type_text(&out.to_string_lossy());
+    settle(&mut h);
+    review(&mut h, "save_a_copy");
+    h.get_by_label("Save the copy").click();
+    settle(&mut h);
+
+    let copied = std::fs::canonicalize(&out).expect("out").join(notecraft_store::tree::folder_name(&section));
+    let info = notecraft_store::tree::read_node(&copied).expect("the copy is a section");
+    assert_eq!(info.title, section_title);
+    assert_ne!(info.id, notecraft_store::tree::read_node(&section).expect("original").id, "an id of its own");
+    let page_copy = copied.join(notecraft_store::tree::folder_name(&s.html_page));
+    assert!(notecraft_store::page::load_page(&page_copy).is_ok(), "the open page came along");
+    assert!(!page_copy.join(".notecraft").exists(), "without its saved versions");
+    assert!(h.query_by_label("Open folder").is_some(), "the screen says where the copy went");
+    assert_eq!(std::fs::read_dir(&section).expect("read").count(), before, "the original is as it was");
+    assert!(h.state().body().is_some(), "and the page is still open");
+}
 /// Issue #291: History > Next Unread and Mark as Read were "not built". A page changed after the
 /// user last read it is unread (a dot in the page list), Next Unread opens it, opening it reads
 /// it, Mark as Unread keeps it unread until it is opened again, and the user's own edits never
@@ -2997,6 +3038,114 @@ fn paper_size_gives_a_page_a_sheet_and_auto_takes_it_away() {
         assert!(!text.contains("a5 landscape"), "and out of the file:\n{text}");
         assert_eq!(h.state().body().unwrap_or_default(), body, "still the same words");
     }
+}
+/// Issue #290: the pen settings' Eyedropper was "not built". It is a pointer mode started from
+/// a rack tool: over ink it shows that ink's colour beside the pointer, a click gives the tool
+/// that colour, and Escape puts it down with the tool as it was.
+#[test]
+fn the_eyedropper_takes_a_colour_from_ink_on_the_page() {
+    let (_t, app, s) = sample_app("ui-eyedropper");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    // A red line on the page.
+    h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num2);
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    let from = origin + egui::vec2(160.0, 260.0);
+    drag_by(&mut h, from, egui::vec2(200.0, 0.0));
+    assert_eq!(ink(&mut h)["strokes"], json!(1), "a stroke was drawn");
+
+    // The blue pen's Eyedropper, from its Modify Tool popup.
+    h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num3);
+    settle(&mut h);
+    let blue = ink(&mut h)["rack"].as_str().unwrap_or_default().split('|').nth(2).unwrap_or_default().to_string();
+    assert!(blue.contains("1855c4"), "the third tool is the blue pen: {blue}");
+    h.get_by_label("Pen blue").click_secondary();
+    h.run_steps(2);
+    h.get_by_label("Modify Tool").click();
+    h.run_steps(2);
+    h.get_by_label("Eyedropper").click();
+    settle(&mut h);
+    assert_eq!(ink(&mut h)["pointer"], json!("eyedropper"));
+
+    // Over the line, the preview names its colour; a click gives the blue pen that colour.
+    let on_line = from + egui::vec2(100.0, 0.0);
+    ask(&mut h, "ui.move", json!({"x": on_line.x, "y": on_line.y})).expect("move");
+    settle(&mut h);
+    review(&mut h, "eyedropper_preview");
+    ask(&mut h, "ui.press", json!({"x": on_line.x, "y": on_line.y})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": on_line.x, "y": on_line.y})).expect("release");
+    settle(&mut h);
+    let now = ink(&mut h);
+    let third = now["rack"].as_str().unwrap_or_default().split('|').nth(2).unwrap_or_default().to_string();
+    assert!(third.contains("d02121"), "the third tool took the red: {third}");
+    assert_eq!(now["pointer"], json!("draw"), "and is back in hand");
+    assert_eq!(now["strokes"], json!(1), "the click drew nothing");
+
+    // Started again and put down with Escape, nothing changes.
+    h.get_by_label("Pen black").click_secondary();
+    h.run_steps(2);
+    let tools_before = ink(&mut h)["rack"].clone();
+    h.get_by_label("Modify Tool").click();
+    h.run_steps(2);
+    h.get_by_label("Eyedropper").click();
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    let after = ink(&mut h);
+    assert_eq!(after["pointer"], json!("draw"));
+    assert_eq!(after["rack"], tools_before, "Escape changed no tool");
+}
+
+/// Issue #277: a ribbon tab wider than the window scrolled sideways but showed no sign of it, so
+/// the groups past the edge were never found. An arrow now shows at each end with more beyond
+/// it, and a click brings the hidden groups into view.
+#[test]
+fn ribbon_overflow_arrows_show_and_reach_the_hidden_groups() {
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+    let (_t, app, _s) = sample_app("ui-ribbon-overflow");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let right = "Show more of the ribbon to the right";
+    let left = "Show more of the ribbon to the left";
+    let x_of = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().bounding_box().map_or(f64::MAX, |b| b.x0);
+    assert!(h.query_by_label(right).is_some(), "a narrow window says there is more to the right");
+    assert!(h.query_by_label(left).is_none(), "and nothing to the left at the start");
+    assert!(x_of(&h, "Collect All") > 900.0, "the last group starts out of sight");
+    review(&mut h, "ribbon_overflow_start");
+    // Each click brings the next stretch into view; on the way Collect All comes into sight.
+    let mut seen = false;
+    for _ in 0..8 {
+        if h.query_by_label(right).is_none() {
+            break;
+        }
+        h.get_by_label(right).click();
+        settle(&mut h);
+        let x = x_of(&h, "Collect All");
+        seen |= x > 0.0 && x < 860.0;
+    }
+    review(&mut h, "ribbon_overflow_end");
+    assert!(seen, "Collect All came into view");
+    assert!(h.query_by_label(right).is_none(), "at the far end there is no more to the right");
+    assert!(h.query_by_label(left).is_some(), "but there is to the left");
+    h.get_by_label(left).click();
+    settle(&mut h);
+    assert!(h.query_by_label(right).is_some(), "going back, there is more to the right again");
+
+    // A window wide enough for the whole tab shows no arrows.
+    let (_t2, app2, _s2) = sample_app("ui-ribbon-no-overflow");
+    let mut wide = sized_harness(app2, LIGHT, egui::vec2(2400.0, 700.0));
+    settle(&mut wide);
+    wide.get_by_label("Home").click();
+    settle(&mut wide);
+    assert!(wide.query_by_label(right).is_none() && wide.query_by_label(left).is_none());
 }
 
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
@@ -7583,8 +7732,12 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     pump(&mut h);
     ask(&mut h, "ui.release", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("release");
     pump(&mut h);
-    settle(&mut h);
-    settle(&mut h);
+    let moved = look_at(&mut h).pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    assert!(moved.get("x").and_then(Value::as_f64).is_some_and(|x| x > 40.0), "the box moved: {moved}");
+    // A slow background autosave can outlast settle's bounded wait. Save waits for any
+    // pending write and persists the current page before the file is inspected.
+    h.state_mut().save_page_now();
+    assert!(!h.state().is_dirty(), "the moved page was saved");
     let now = std::fs::read_to_string(&file_path).unwrap_or_default();
     assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
     assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");

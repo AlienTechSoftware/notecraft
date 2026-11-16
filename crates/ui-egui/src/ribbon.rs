@@ -201,6 +201,9 @@ pub enum Pointer {
     /// a short trail that fades, to point at something while presenting. Nothing is drawn on
     /// the page, nothing is saved and there is nothing to undo.
     Laser,
+    /// The Eyedropper of the rack's tool at this place (issue #290): the colour of the ink
+    /// under the pointer is shown beside it, and a click gives that tool that colour.
+    Eyedropper(usize),
 }
 
 impl Pointer {
@@ -214,6 +217,7 @@ impl Pointer {
             Pointer::Shape(s) => s.id(),
             Pointer::Pan => "pan",
             Pointer::Laser => "laser",
+            Pointer::Eyedropper(_) => "eyedropper",
         }
     }
 }
@@ -549,7 +553,14 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
     // drag that scrolled the ribbon instead would take the pen out of the user's hand. On a
     // touch screen a finger drag is the only way to reach the groups past the edge, so there
     // it scrolls (egui's OnTouch); a control under the finger still takes its own drag.
-    egui::ScrollArea::horizontal()
+    // Where an overflow arrow or the wheel asked the ribbon to go, last frame (issue #277).
+    let jump_id = egui::Id::new(("ribbon-jump", chosen));
+    let jump = ui.data_mut(|d| d.remove_temp::<f32>(jump_id));
+    let mut area = egui::ScrollArea::horizontal();
+    if let Some(x) = jump {
+        area = area.horizontal_scroll_offset(x);
+    }
+    let out = area
         .id_salt(("ribbon", chosen))
         // The ribbon is an Office-style command band, not a document scroller.  A
         // visible horizontal scrollbar is painted across its bottom edge when a tab
@@ -571,7 +582,80 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
                 }
             });
         });
+    if let Some(x) = overflow_arrows(ui, &out, t) {
+        ui.data_mut(|d| d.insert_temp(jump_id, x));
+        ui.ctx().request_repaint();
+    }
     acts
+}
+
+/// How much of the ribbon an arrow moves it by: most of what is in view, so a group cut at
+/// the edge comes whole into sight and nothing is skipped.
+const OVERFLOW_STEP: f32 = 0.7;
+
+/// The arrows at the ends of a ribbon too wide for the window (issue #277). The ribbon
+/// scrolls sideways but shows no scroll bar, so nothing said that groups lay past the edge:
+/// an arrow appears at each end that has more beyond it, over a fade into the ribbon, and a
+/// click (or Enter on it from the keyboard) brings the next stretch into view. The mouse wheel
+/// over the ribbon scrolls it sideways as well.
+/// Returns where the ribbon should scroll to, when that changed.
+fn overflow_arrows<R>(ui: &mut Ui, out: &egui::scroll_area::ScrollAreaOutput<R>, t: &Tokens) -> Option<f32> {
+    let view = out.inner_rect;
+    let spare = (out.content_size.x - view.width()).max(0.0);
+    if spare < 1.0 {
+        return None;
+    }
+    let was = out.state.offset().x;
+    let mut offset = was;
+    // A vertical wheel over a ribbon that only scrolls sideways moves it sideways.
+    let wheel = ui.input(|i| if i.pointer.hover_pos().is_some_and(|p| view.contains(p)) { i.smooth_scroll_delta.y } else { 0.0 });
+    if wheel != 0.0 {
+        offset -= wheel;
+    }
+    let side = 22.0;
+    let arrow = |ui: &mut Ui, left: bool| -> bool {
+        let rect = if left {
+            egui::Rect::from_min_size(view.min, vec2(side, view.height()))
+        } else {
+            egui::Rect::from_min_size(egui::pos2(view.max.x - side, view.min.y), vec2(side, view.height()))
+        };
+        let id = ui.id().with(("ribbon-overflow", left));
+        let resp = ui.interact(rect, id, Sense::click());
+        let painter = ui.painter();
+        // A fade from the ribbon's colour, so the words under the arrow do not show through.
+        let fade = rect.expand2(vec2(10.0, 0.0)).translate(vec2(if left { 10.0 } else { -10.0 }, 0.0));
+        let mut mesh = egui::Mesh::default();
+        let (solid, clear) = (t.panel, t.panel.gamma_multiply(0.0));
+        let (l, r) = if left { (solid, clear) } else { (clear, solid) };
+        mesh.colored_vertex(fade.left_top(), l);
+        mesh.colored_vertex(fade.right_top(), r);
+        mesh.colored_vertex(fade.right_bottom(), r);
+        mesh.colored_vertex(fade.left_bottom(), l);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        painter.add(egui::Shape::mesh(mesh));
+        if resp.hovered() || resp.has_focus() {
+            painter.rect_filled(rect.shrink2(vec2(2.0, 8.0)), 4.0, t.row_hover);
+        }
+        let c = rect.center();
+        let d = if left { -1.0 } else { 1.0 };
+        let stroke = egui::Stroke::new(2.0, t.accent);
+        painter.line_segment([egui::pos2(c.x - 3.0 * d, c.y - 7.0), egui::pos2(c.x + 3.0 * d, c.y)], stroke);
+        painter.line_segment([egui::pos2(c.x + 3.0 * d, c.y), egui::pos2(c.x - 3.0 * d, c.y + 7.0)], stroke);
+        let name =
+            if left { crate::tl_id!("ui.show_more_of_the_ribbon_to_the_left") } else { crate::tl_id!("ui.show_more_of_the_ribbon_to_the_right") };
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+        resp.on_hover_text(name).clicked()
+    };
+    if offset > 0.5 && arrow(ui, true) {
+        offset -= view.width() * OVERFLOW_STEP;
+    }
+    if offset < spare - 0.5 && arrow(ui, false) {
+        offset += view.width() * OVERFLOW_STEP;
+    }
+    let offset = offset.clamp(0.0, spare);
+    ((offset - was).abs() > 0.1).then_some(offset)
 }
 
 /// The tab that is really shown: the Source tab disappears with the source pane.
@@ -2406,7 +2490,9 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
         open = true;
         picked_up = true;
     }
-    if open && modify_tool(ui, open_id, rect, i, nib, rack_len, t, acts) {
+    // The click that opened it (Modify Tool in the right-click menu lies outside the popup)
+    // must not count as a click away from it, or it closed the moment it opened.
+    if open && modify_tool(ui, open_id, rect, i, nib, rack_len, t, acts) && !modify {
         open = false;
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
@@ -2510,7 +2596,12 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                         done = true;
                     }
                 }
-                popup_action_button(ui, crate::tl_id!("ui.eyedropper"), false, t.accent, crate::tl_id!("ui.eyedropper_not_built"));
+                if popup_action_button(ui, crate::tl_id!("ui.eyedropper"), true, t.accent, crate::tl_id!("ui.take_a_colour_from_ink_on_the_page"))
+                    .clicked()
+                {
+                    acts.push(Act::InkPointer(Pointer::Eyedropper(i)));
+                    done = true;
+                }
                 if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
                     .clicked()
                 {
