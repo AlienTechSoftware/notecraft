@@ -971,11 +971,34 @@
 @id	ui.flipped_the_picture	Flipped the picture
 @id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	Rotated the picture. Ink on the page stays where it is
 @id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	Flipped the picture. Ink on the page stays where it is
+@id	ui.save_a_copy	Save a Copy
+@id	ui.open_a_page_first_save_a_copy_copies_it_its_section_or_its_notebook	Open a page first: Save a Copy copies it, its section or its notebook.
+@id	ui.what_to_copy	What to copy
+@id	ui.this_section	This section
+@id	ui.scope_title	{scope}: {title}
+@id	ui.copy_into_this_folder	Copy into this folder
+@id	ui.folder	Folder
+@id	ui.choose	Choose…
+@id	ui.the_copy_is_a_folder_of_its_own_with_the_files_and_ink_but_not_the_saved_versions_the_original_stays_open	The copy is a folder of its own, with the page files, pictures and ink but not the saved versions or the recycle bin. The original stays open and unchanged.
+@id	ui.saved_a_copy_in_path	Saved a copy in {path}
+@id	ui.could_not_save_the_copy_why	Could not save the copy: {why}
+@id	ui.choose_the_folder_for_the_copy	Choose the folder for the copy
+@id	ui.this_notebook	This notebook
+@id	ui.save_the_copy	Save the copy
+@id	ui.next_unread_2	Next\nUnread
+@id	ui.go_to_the_next_page_changed_since_you_last_read_it	Go to the next page changed since you last read it
+@id	ui.mark_as_read_2	Mark as\nRead
+@id	ui.mark_as_unread_2	Mark as\nUnread
+@id	ui.mark_this_page_as_read	Mark this page as read
+@id	ui.mark_this_page_as_unread_to_come_back_to_it	Mark this page as unread, to come back to it
+@id	ui.there_are_no_unread_pages	There are no unread pages.
+@id	ui.marked_as_read	Marked as read
+@id	ui.marked_as_unread	Marked as unread
+@id	ui.title_unread	{title}, unread
 @id	ui.recent_edits_2	Recent\nEdits
 @id	ui.see_the_pages_changed_lately	See the pages changed lately
 @id	ui.recent_edits	Recent edits
 @id	ui.all_open_notebooks	All open notebooks
-@id	ui.this_notebook	This notebook
 @id	ui.filter_by_title_section_or_notebook	Filter by title, section or notebook
 @id	ui.no_pages_were_changed_in_this_time	No pages were changed in this time.
 @id	ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed	This page keeps no time of its own: this is when its file was last changed.
@@ -999,3 +1022,5 @@
 @id	ui.no_ink_here	No ink here
 @id	ui.the_pen_takes_colour	The pen takes the colour {colour}
 @id	ui.eyedropper_put_down_the_pen_is_as_it_was	Eyedropper put down; the pen is as it was
+@id	ui.show_more_of_the_ribbon_to_the_left	Show more of the ribbon to the left
+@id	ui.show_more_of_the_ribbon_to_the_right	Show more of the ribbon to the right

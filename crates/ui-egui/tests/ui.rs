@@ -2767,6 +2767,114 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
+/// Issue #301: File > Save a Copy was "not built". It copies the open page, its section or its
+/// notebook into a folder the user names, as content of its own: files and ink come along,
+/// the saved versions do not, and the original stays open and unchanged.
+#[test]
+fn save_a_copy_copies_the_section_into_a_folder_and_leaves_the_original() {
+    use egui_kittest::kittest::Queryable as _;
+    let (t, app, s) = sample_app("ui-save-a-copy");
+    let out = t.path().join("copies");
+    std::fs::create_dir_all(&out).expect("out");
+    let section = s.html_page.parent().expect("section").to_path_buf();
+    let section_title = notecraft_store::tree::read_node(&section).expect("section").title;
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let before = std::fs::read_dir(&section).expect("read").count();
+
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Save a Copy").click();
+    settle(&mut h);
+    h.get_by_label(&format!("This section: {section_title}")).click();
+    settle(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").type_text(&out.to_string_lossy());
+    settle(&mut h);
+    review(&mut h, "save_a_copy");
+    h.get_by_label("Save the copy").click();
+    settle(&mut h);
+
+    let copied = std::fs::canonicalize(&out).expect("out").join(notecraft_store::tree::folder_name(&section));
+    let info = notecraft_store::tree::read_node(&copied).expect("the copy is a section");
+    assert_eq!(info.title, section_title);
+    assert_ne!(info.id, notecraft_store::tree::read_node(&section).expect("original").id, "an id of its own");
+    let page_copy = copied.join(notecraft_store::tree::folder_name(&s.html_page));
+    assert!(notecraft_store::page::load_page(&page_copy).is_ok(), "the open page came along");
+    assert!(!page_copy.join(".notecraft").exists(), "without its saved versions");
+    assert!(h.query_by_label("Open folder").is_some(), "the screen says where the copy went");
+    assert_eq!(std::fs::read_dir(&section).expect("read").count(), before, "the original is as it was");
+    assert!(h.state().body().is_some(), "and the page is still open");
+}
+/// Issue #291: History > Next Unread and Mark as Read were "not built". A page changed after the
+/// user last read it is unread (a dot in the page list), Next Unread opens it, opening it reads
+/// it, Mark as Unread keeps it unread until it is opened again, and the user's own edits never
+/// make a page unread.
+#[test]
+fn next_unread_and_mark_as_read_follow_what_changed_since_it_was_read() {
+    let (_t, app, s) = sample_app("ui-unread");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let state = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    let unread = |h: &mut Harness<'_, NoteCraftApp>| state(h)["unread"].as_array().cloned().unwrap_or_default();
+    let title = |h: &mut Harness<'_, NoteCraftApp>| state(h)["page"]["title"].clone();
+    let md_title = notecraft_store::tree::read_node(&s.md_page).expect("node").title;
+    let html_title = notecraft_store::tree::read_node(&s.html_page).expect("node").title;
+    h.get_by_label("History").click();
+    settle(&mut h);
+
+    // Nothing has changed since the user began: there is nothing unread.
+    h.get_by_label("Next Unread").click();
+    settle(&mut h);
+    assert_eq!(state(&mut h)["status"]["text"], json!("There are no unread pages."));
+    assert_eq!(title(&mut h), json!(html_title));
+
+    // Someone else changes the CMGFM page (a later stamp, as a sync would bring).
+    let file = s.md_page.join("index.md");
+    let text = std::fs::read_to_string(&file).expect("read");
+    let later: Vec<String> =
+        text.lines().map(|l| if l.starts_with("updated:") { "updated: 2099-01-01T00:00:00Z".into() } else { l.to_string() }).collect();
+    std::fs::write(&file, later.join("\n")).expect("write");
+    h.get_by_label("Next Unread").click();
+    settle(&mut h);
+    assert_eq!(title(&mut h), json!(md_title), "Next Unread opened the changed page");
+    assert!(unread(&mut h).is_empty(), "and opening it read it");
+
+    // Marked unread by hand, it stays unread after the user goes elsewhere.
+    h.get_by_label("Mark as Unread").click();
+    settle(&mut h);
+    assert_eq!(unread(&mut h).len(), 1);
+    assert!(h.query_by_label("Mark as Read").is_some(), "the button offers the way back");
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let list = unread(&mut h);
+    assert_eq!(list.len(), 1, "still unread: {list:?}");
+    assert!(h.query_by_label(&format!("{md_title}, unread")).is_some(), "the page list says so");
+    review(&mut h, "unread_page");
+    h.get_by_label("Next Unread").click();
+    settle(&mut h);
+    assert_eq!(title(&mut h), json!(md_title));
+
+    // The user's own edit is not a change to read.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+    pump(&mut h);
+    ask(&mut h, "ui.text", json!({"text": " more"})).expect("type");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains(" more"), "the user wrote in it");
+    h.state_mut().save_page_now();
+    assert!(std::fs::read_to_string(&file).expect("read").contains(" more"), "and it was saved");
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Next Unread").click();
+    settle(&mut h);
+    assert_eq!(title(&mut h), json!(html_title), "nothing unread to go to");
+    assert!(unread(&mut h).is_empty());
+}
 /// Issue #279: History > Recent Edits was "not built". It lists the pages changed in a range,
 /// newest first, by the time each page keeps of its own, with where each one is; a filter
 /// narrows the list and a title opens that page.
@@ -2936,6 +3044,52 @@ fn the_eyedropper_takes_a_colour_from_ink_on_the_page() {
     let after = ink(&mut h);
     assert_eq!(after["pointer"], json!("draw"));
     assert_eq!(after["rack"], tools_before, "Escape changed no tool");
+}
+
+/// Issue #277: a ribbon tab wider than the window scrolled sideways but showed no sign of it, so
+/// the groups past the edge were never found. An arrow now shows at each end with more beyond
+/// it, and a click brings the hidden groups into view.
+#[test]
+fn ribbon_overflow_arrows_show_and_reach_the_hidden_groups() {
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+    let (_t, app, _s) = sample_app("ui-ribbon-overflow");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let right = "Show more of the ribbon to the right";
+    let left = "Show more of the ribbon to the left";
+    let x_of = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().bounding_box().map_or(f64::MAX, |b| b.x0);
+    assert!(h.query_by_label(right).is_some(), "a narrow window says there is more to the right");
+    assert!(h.query_by_label(left).is_none(), "and nothing to the left at the start");
+    assert!(x_of(&h, "Collect All") > 900.0, "the last group starts out of sight");
+    review(&mut h, "ribbon_overflow_start");
+    // Each click brings the next stretch into view; on the way Collect All comes into sight.
+    let mut seen = false;
+    for _ in 0..8 {
+        if h.query_by_label(right).is_none() {
+            break;
+        }
+        h.get_by_label(right).click();
+        settle(&mut h);
+        let x = x_of(&h, "Collect All");
+        seen |= x > 0.0 && x < 860.0;
+    }
+    review(&mut h, "ribbon_overflow_end");
+    assert!(seen, "Collect All came into view");
+    assert!(h.query_by_label(right).is_none(), "at the far end there is no more to the right");
+    assert!(h.query_by_label(left).is_some(), "but there is to the left");
+    h.get_by_label(left).click();
+    settle(&mut h);
+    assert!(h.query_by_label(right).is_some(), "going back, there is more to the right again");
+
+    // A window wide enough for the whole tab shows no arrows.
+    let (_t2, app2, _s2) = sample_app("ui-ribbon-no-overflow");
+    let mut wide = sized_harness(app2, LIGHT, egui::vec2(2400.0, 700.0));
+    settle(&mut wide);
+    wide.get_by_label("Home").click();
+    settle(&mut wide);
+    assert!(wide.query_by_label(right).is_none() && wide.query_by_label(left).is_none());
 }
 
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
