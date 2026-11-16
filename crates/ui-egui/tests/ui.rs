@@ -7676,8 +7676,12 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     pump(&mut h);
     ask(&mut h, "ui.release", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("release");
     pump(&mut h);
-    settle(&mut h);
-    settle(&mut h);
+    let moved = look_at(&mut h).pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    assert!(moved.get("x").and_then(Value::as_f64).is_some_and(|x| x > 40.0), "the box moved: {moved}");
+    // A slow background autosave can outlast settle's bounded wait. Save waits for any
+    // pending write and persists the current page before the file is inspected.
+    h.state_mut().save_page_now();
+    assert!(!h.state().is_dirty(), "the moved page was saved");
     let now = std::fs::read_to_string(&file_path).unwrap_or_default();
     assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
     assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");
