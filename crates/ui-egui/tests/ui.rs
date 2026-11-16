@@ -8493,7 +8493,7 @@ fn paragraph_alignment_moves_the_line_saves_and_undoes() {
         settle(&mut h);
         caret(&mut h, 1);
         assert!(left_of(&h, "alpha") > centred, "{format:?}: reopened, the line is still at the right");
-          }
+    }
 }
 
 /// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
@@ -8501,7 +8501,7 @@ fn paragraph_alignment_moves_the_line_saves_and_undoes() {
 /// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.
 #[test]
 fn home_mark_buttons_show_the_marks_at_the_caret_and_of_the_selection() {
-    use egui_kittest::kittest::NodeTas as _;
+    use egui_kittest::kittest::NodeT as _;
     for (format, body) in [
         (notecraft_model::PageFormat::Html, "<p>alpha <strong>bravo</strong> <em>omega</em></p>"),
         (notecraft_model::PageFormat::Cmgfm, "alpha **bravo** *omega*"),
