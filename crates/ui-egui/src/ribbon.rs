@@ -142,6 +142,9 @@ pub enum Act {
     TableShade(Option<notecraft_model::NodeColor>),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
+    /// View > Paper Size: the sheet the page is written for, as the page file writes it
+    /// ([`notecraft_model::paper::Paper::write`]), or `None` for Auto (issue #269).
+    PaperSize(Option<String>),
     /// Colour the open page's rule and grid lines, or `None` for the theme's own (issue #288).
     RuleColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
@@ -487,6 +490,8 @@ pub struct View<'a> {
     pub page_colour: Option<notecraft_model::NodeColor>,
     /// The colour of the open page's rule and grid lines, `None` for the theme's (issue #288).
     pub rule_colour: Option<notecraft_model::NodeColor>,
+    /// The open page's sheet; `None` is Auto (issue #269).
+    pub paper_size: Option<notecraft_model::paper::Paper>,
     /// Whether the page has anything to take back, and anything to put back.
     pub can_undo: bool,
     pub can_redo: bool,
@@ -1314,6 +1319,87 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big(ui, Icon::Page, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.not_built"), t).clicked() {
             acts.push(Act::NotBuilt("Meeting Details"));
         }
+    });
+}
+
+/// View > Paper Size (issue #269): Auto or a sheet, which way it is turned, and its margins.
+/// Every change is an act at once, so the page shows it while the menu stays open.
+fn paper_size_menu(ui: &mut Ui, now: Option<notecraft_model::paper::Paper>, t: &Tokens, acts: &mut Vec<Act>) {
+    use notecraft_model::paper::{MAX_SIDE, MIN_SIDE, Paper, Size};
+    ui.set_min_width(250.0);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.size")).strong());
+    if ui.selectable_label(now.is_none(), crate::tl_id!("ui.auto_the_page_grows_with_what_is_on_it")).clicked() {
+        acts.push(Act::PaperSize(None));
+    }
+    let base = now.unwrap_or_else(|| Paper::new(Size::Letter));
+    egui::Grid::new("paper-sizes").num_columns(2).spacing(vec2(6.0, 1.0)).show(ui, |ui| {
+        for (n, size) in Size::STANDARD.into_iter().enumerate() {
+            let here = now.is_some_and(|p| p.size == size);
+            if ui.selectable_label(here, crate::tl!(size.label())).clicked() {
+                acts.push(Act::PaperSize(Some(Paper { size, ..base }.write())));
+            }
+            if n % 2 == 1 {
+                ui.end_row();
+            }
+        }
+        let custom = now.is_some_and(|p| matches!(p.size, Size::Custom(..)));
+        if ui.selectable_label(custom, crate::tl_id!("ui.custom_size")).clicked() && !custom {
+            let (w, h) = base.sheet_mm();
+            acts.push(Act::PaperSize(Some(Paper { size: Size::Custom(w, h), landscape: false, ..base }.write())));
+        }
+    });
+    let Some(paper) = now else {
+        ui.add_space(2.0);
+        ui.label(egui::RichText::new(crate::tl_id!("ui.auto_pages_have_no_edges_choose_a_size_to_see_the_sheet")).color(t.muted).size(11.0));
+        return;
+    };
+    let mut next = paper;
+    if let Size::Custom(w, h) = paper.size {
+        let (mut w, mut h) = (w, h);
+        ui.horizontal(|ui| {
+            mm_field(ui, &mut w, MIN_SIDE..=MAX_SIDE, crate::tl_id!("ui.width_mm"));
+            mm_field(ui, &mut h, MIN_SIDE..=MAX_SIDE, crate::tl_id!("ui.height_mm"));
+        });
+        next.size = Size::Custom(w, h);
+    } else {
+        ui.separator();
+        ui.label(egui::RichText::new(crate::tl_id!("ui.orientation")).strong());
+        ui.horizontal(|ui| {
+            if ui.selectable_label(!paper.landscape, crate::tl_id!("ui.portrait")).clicked() {
+                next.landscape = false;
+            }
+            if ui.selectable_label(paper.landscape, crate::tl_id!("ui.landscape")).clicked() {
+                next.landscape = true;
+            }
+        });
+    }
+    ui.separator();
+    ui.label(egui::RichText::new(crate::tl_id!("ui.margins_mm")).strong());
+    let (w, h) = paper.sheet_mm();
+    let [mut top, mut right, mut bottom, mut left] = paper.margins;
+    egui::Grid::new("paper-margins").num_columns(2).show(ui, |ui| {
+        mm_field(ui, &mut top, 0.0..=h / 2.0, crate::tl_id!("ui.top_margin_mm"));
+        mm_field(ui, &mut bottom, 0.0..=h / 2.0, crate::tl_id!("ui.bottom_margin_mm"));
+        ui.end_row();
+        mm_field(ui, &mut left, 0.0..=w / 2.0, crate::tl_id!("ui.left_margin_mm"));
+        mm_field(ui, &mut right, 0.0..=w / 2.0, crate::tl_id!("ui.right_margin_mm"));
+        ui.end_row();
+    });
+    next.margins = [top, right, bottom, left];
+    if ui.button(crate::tl_id!("ui.restore_default_margins")).clicked() {
+        next.margins = Paper::DEFAULT_MARGINS;
+    }
+    if next != paper {
+        acts.push(Act::PaperSize(Some(next.write())));
+    }
+}
+
+/// A length in millimetres, labelled for a screen reader, that can be dragged or typed.
+// i18n-ui-text: label
+fn mm_field(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, label: &str) {
+    ui.horizontal(|ui| {
+        let name = ui.label(egui::RichText::new(label).size(11.5));
+        ui.add(egui::DragValue::new(value).range(range).speed(0.5).max_decimals(1)).labelled_by(name.id);
     });
 }
 
@@ -3224,7 +3310,15 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                     }
                 });
             });
-            not_built(ui, crate::tl_id!("ui.paper_size"), t);
+            ui.add_enabled_ui(view.has_page, |ui| {
+                // It stays open while sizes are tried and margins dragged; a click away closes it.
+                let config = egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+                egui::containers::menu::MenuButton::new(crate::tl_id!("ui.paper_size"))
+                    .config(config)
+                    .ui(ui, |ui| paper_size_menu(ui, view.paper_size, t, acts))
+                    .0
+                    .on_hover_text(crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"));
+            });
         });
     });
     group(ui, crate::tl_id!("ui.zoom"), t, |ui| {

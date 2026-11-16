@@ -230,6 +230,15 @@ Parameters:
 - color (optional): purple, blue, teal, green, yellow, orange, red, magenta, gray, or none
 - rules (optional): the colour of the rule and grid lines, one of the same colours, or none for the theme's own grey. Without paper or color, the page's own are reported, followed by the lines' colour when it has one
 
+## `page.paper_size`
+
+The sheet a page is written for: its size, which way it is turned and its margins.
+
+Parameters:
+
+- path (required): the page
+- size (optional): auto, or a size (letter, legal, tabloid, executive, a3, a4, a5, a6, b4, b5, index3x5, index4x6, index5x8, or custom:WIDTHxHEIGHT in millimetres) followed by portrait or landscape and the margins in millimetres as top,right,bottom,left, as in a4 portrait 20,20,20,20. Without it, the page's own is reported, or auto
+
 ## `page.columns`
 
 How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded.

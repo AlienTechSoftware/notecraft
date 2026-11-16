@@ -304,6 +304,21 @@ fn page_containers(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(notecraft_model::container::write(&boxes)))
 }
 
+/// A page's sheet (issue #269). Auto is no sheet: the page grows with its content.
+fn page_paper_size(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    if let Some(want) = p.get("size") {
+        let want = want.trim();
+        let paper = if want.is_empty() || want.eq_ignore_ascii_case("auto") {
+            None
+        } else {
+            Some(notecraft_model::paper::Paper::parse(want).ok_or_else(|| EngineError::BadParam(format!("'{want}' is not a paper size")))?)
+        };
+        page::set_paper_size(&path, paper)?;
+    }
+    Ok(Output::Text(page::paper_size(&path)?.map_or_else(|| "auto".to_string(), notecraft_model::paper::Paper::write)))
+}
+
 fn page_paper(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     let (paper, colour, rules) = (p.get("paper"), p.get("color"), p.get("rules"));
@@ -613,6 +628,14 @@ rules (optional): the colour of the rule and grid lines, one of the same colours
         run: page_paper,
     },
     CommandSpec {
+        id: "page.paper_size",
+        label: "The sheet a page is written for: its size, which way it is turned and its margins",
+        params: "path (required): the page
+size (optional): auto, or a size (letter, legal, tabloid, executive, a3, a4, a5, a6, b4, b5, index3x5, index4x6, index5x8, or custom:WIDTHxHEIGHT in millimetres) followed by portrait or landscape and the margins in millimetres as top,right,bottom,left, as in a4 portrait 20,20,20,20. Without it, the page's own is reported, or auto",
+        changes_tree: false,
+        run: page_paper_size,
+    },
+    CommandSpec {
         id: "page.columns",
         label: "How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded",
         params: "path (required): the page
@@ -824,6 +847,27 @@ mod tests {
         // `empty=true` is the way to skip it.
         let bare = path_of(s.run("notebook.create", &p(&[("name", "Bare"), ("empty", "true")])).expect("nb"));
         assert_eq!(std::fs::read_dir(&bare).into_iter().flatten().flatten().filter(|e| e.path().is_dir()).count(), 0);
+    }
+
+    /// Issue #269: a page's sheet is set, reported and taken back to Auto, and a size that does
+    /// not read is refused rather than written.
+    #[test]
+    fn a_page_is_given_a_paper_size_and_back_to_auto() {
+        let t = TempDir::new("engine-paper-size");
+        let mut s = session(&t);
+        let nb = path_of(s.run("notebook.create", &p(&[("name", "Work")])).expect("notebook"));
+        let page = nb.join("new-section-1").join("untitled-page");
+        let path = page.to_string_lossy().to_string();
+        let text = |s: &mut Session, extra: &[(&str, &str)]| match s.run("page.paper_size", &p(extra)).expect("paper size") {
+            Output::Text(t) => t,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(text(&mut s, &[("path", &path)]), "auto");
+        assert_eq!(text(&mut s, &[("path", &path), ("size", "a5 landscape 10,10,10,10")]), "a5 landscape 10,10,10,10");
+        assert_eq!(text(&mut s, &[("path", &path)]), "a5 landscape 10,10,10,10");
+        assert!(s.run("page.paper_size", &p(&[("path", &path), ("size", "folio")])).is_err());
+        assert_eq!(text(&mut s, &[("path", &path)]), "a5 landscape 10,10,10,10", "a refused size changes nothing");
+        assert_eq!(text(&mut s, &[("path", &path), ("size", "auto")]), "auto");
     }
 
     /// Issue #166: Find Tags lists the tagged lines of a page, a section or every notebook, and

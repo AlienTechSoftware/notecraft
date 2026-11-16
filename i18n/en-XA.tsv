@@ -1017,6 +1017,31 @@
 @id	ui.back_to_the_list	$$$Back to the list@@@
 @id	ui.preview	$$$Preview@@@
 @id	ui.cannot_open_that_version_error	$$$Cannot open that version: {error}@@@
+@id	ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins	$$$The sheet this page is written for: its size, which way it is turned and its margins@@@
+@id	ui.size	$$$Size@@@
+@id	ui.auto_the_page_grows_with_what_is_on_it	$$$Auto (the page grows with what is on it)@@@
+@id	ui.custom_size	$$$Custom size@@@
+@id	ui.auto_pages_have_no_edges_choose_a_size_to_see_the_sheet	$$$An Auto page has no edges. Choose a size to see the sheet and its margins.@@@
+@id	ui.width_mm	$$$Width (mm)@@@
+@id	ui.height_mm	$$$Height (mm)@@@
+@id	ui.orientation	$$$Orientation@@@
+@id	ui.portrait	$$$Portrait@@@
+@id	ui.landscape	$$$Landscape@@@
+@id	ui.margins_mm	$$$Margins (mm)@@@
+@id	ui.top_margin_mm	$$$Top@@@
+@id	ui.bottom_margin_mm	$$$Bottom@@@
+@id	ui.left_margin_mm	$$$Left@@@
+@id	ui.right_margin_mm	$$$Right@@@
+@id	ui.restore_default_margins	$$$Restore default margins@@@
+@id	ui.the_page_is_written_on_size_turn	$$$The page is written on {size}, {turn}@@@
+@id	ui.the_page_is_auto_it_grows_with_what_is_on_it	$$$The page is Auto: it grows with what is on it@@@
+@id	ui.paper_letter	$$$Letter@@@
+@id	ui.paper_legal	$$$Legal@@@
+@id	ui.paper_tabloid	$$$Tabloid@@@
+@id	ui.paper_executive	$$$Executive@@@
+@id	ui.index_card_3_x_5_in	$$$Index Card (3 x 5 in)@@@
+@id	ui.index_card_4_x_6_in	$$$Index Card (4 x 6 in)@@@
+@id	ui.index_card_5_x_8_in	$$$Index Card (5 x 8 in)@@@
 @id	ui.customize_tags	$$$Customize Tags...@@@
 @id	ui.customize_tags_title	$$$Customize Tags@@@
 @id	ui.make_your_own_tags_with_a_name_symbol_and_colour	$$$Make your own tags, each with a name, a symbol and a colour@@@

@@ -2983,6 +2983,62 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
 }
 
+/// Issue #269: View > Paper Size gives a page a sheet, turned either way and with its own
+/// margins. The sheet is drawn behind the page and the words run between its margins; the
+/// page's file keeps it, both formats, and Auto takes it away again. Nothing on the page moves
+/// out of it: the words are the words they were.
+#[test]
+fn paper_size_gives_a_page_a_sheet_and_auto_takes_it_away() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-paper-size");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+        h.run();
+        let page = if html { s.html_page.clone() } else { s.md_page.clone() };
+        let (file, key) = if html { ("index.html", "notecraft:paper-size\" content=\"") } else { ("index.md", "paper_size: ") };
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default().to_string();
+        let width = |h: &mut egui_kittest::Harness<'_, notecraft_ui_egui::app::NoteCraftApp>| {
+            ask(h, "ui.inspect", json!({})).expect("inspect")["paperSize"].as_str().unwrap_or_default().to_string()
+        };
+        assert_eq!(width(&mut h), "auto");
+
+        h.get_by_label("View").click();
+        settle(&mut h);
+        h.get_by_label("Paper size").click();
+        settle(&mut h);
+        h.get_by_label("A5").click();
+        settle(&mut h);
+        assert_eq!(width(&mut h), "a5 portrait 19.05,19.05,19.05,19.05");
+        h.get_by_label("Landscape").click();
+        settle(&mut h);
+        assert_eq!(width(&mut h), "a5 landscape 19.05,19.05,19.05,19.05");
+        review(&mut h, &format!("paper_size_a5_landscape_{}", if html { "html" } else { "md" }));
+        let text = std::fs::read_to_string(page.join(file)).expect("read");
+        assert!(text.contains(&format!("{key}a5 landscape 19.05,19.05,19.05,19.05")), "the page's file says so:\n{text}");
+        assert_eq!(h.state().body().unwrap_or_default(), body, "the words are untouched");
+
+        // Reopened, the page is still on its sheet.
+        ask(&mut h, "ui.open", json!({"path": if html { s.md_page.to_string_lossy() } else { s.html_page.to_string_lossy() }}))
+            .expect("another page");
+        settle(&mut h);
+        assert_eq!(width(&mut h), "auto", "another page keeps its own");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("back");
+        settle(&mut h);
+        assert_eq!(width(&mut h), "a5 landscape 19.05,19.05,19.05,19.05", "reopened, still A5");
+
+        h.get_by_label("View").click();
+        settle(&mut h);
+        h.get_by_label("Paper size").click();
+        settle(&mut h);
+        h.get_by_label("Auto (the page grows with what is on it)").click();
+        settle(&mut h);
+        assert_eq!(width(&mut h), "auto");
+        let text = std::fs::read_to_string(page.join(file)).expect("read");
+        assert!(!text.contains("a5 landscape"), "and out of the file:\n{text}");
+        assert_eq!(h.state().body().unwrap_or_default(), body, "still the same words");
+    }
+}
 /// Issue #259: Home > More tags > Customize Tags makes a tag of one's own, with a symbol and a
 /// colour; it goes on a line from the same gallery, keeps the line when renamed, and when it is
 /// removed the line keeps its words.
@@ -10243,13 +10299,13 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     settle(&mut h);
     h.get_by_label("View").click();
     settle(&mut h);
-    for name in ["Paper size", "Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
+    for name in ["Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
         let label = format!("{name} (not built)");
         let nodes: Vec<_> = h.query_all_by_label(&label).collect();
         assert!(!nodes.is_empty(), "{label} is listed");
         assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
     }
-    for working in ["Zoom In", "Zoom Out", "Always on top"] {
+    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size"] {
         assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
     }
     // Insert's placeholders were already right and stay so.
