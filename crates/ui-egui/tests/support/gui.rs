@@ -1,4 +1,4 @@
-//! One offscreen GPU device for a whole test binary.
+//! Shared offscreen rendering for GUI tests in one test binary.
 //!
 //! `Harness::builder().wgpu()` creates a new wgpu instance, adapter, device and queue for every
 //! window. The UI suite opens some two hundred windows, so it spent much of its time asking the
@@ -15,7 +15,36 @@
 use egui_kittest::Harness;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
 use egui_wgpu::{RenderState, Renderer, RendererOptions};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::cell::Cell;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+
+thread_local! {
+    static PIXEL_TEST_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Holds the shared renderer for one test that checks rendered pixels.
+pub struct PixelTestGuard {
+    _turn: MutexGuard<'static, ()>,
+}
+
+impl Drop for PixelTestGuard {
+    fn drop(&mut self) {
+        PIXEL_TEST_ACTIVE.with(|active| active.set(false));
+    }
+}
+
+/// Serializes pixel assertions while semantic UI tests continue to run in parallel.
+pub fn pixel_test() -> PixelTestGuard {
+    static TEST: Mutex<()> = Mutex::new(());
+    let turn = TEST.lock().unwrap_or_else(PoisonError::into_inner);
+    PIXEL_TEST_ACTIVE.with(|active| active.set(true));
+    PixelTestGuard { _turn: turn }
+}
+
+/// Whether this test checks pixels and needs the shared renderer.
+pub fn pixel_test_active() -> bool {
+    PIXEL_TEST_ACTIVE.with(Cell::get)
+}
 
 fn shared() -> &'static RenderState {
     static STATE: OnceLock<RenderState> = OnceLock::new();

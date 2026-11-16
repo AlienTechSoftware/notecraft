@@ -137,11 +137,9 @@ fn harness(app: NoteCraftApp, theme: Theme) -> Harness<'static, NoteCraftApp> {
 /// be clicked.
 fn sized_harness(mut app: NoteCraftApp, theme: Theme, size: egui::Vec2) -> Harness<'static, NoteCraftApp> {
     app.set_theme(theme);
-    Harness::builder()
-        .with_size(size)
-        .with_accessibility_check(false)
-        .renderer(support::gpu::renderer())
-        .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
+    let builder = Harness::builder().with_size(size).with_accessibility_check(false);
+    let builder = if support::gui::pixel_test_active() { builder.renderer(support::gui::renderer()) } else { builder };
+    builder.build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app)
 }
 
 /// Feeds the clicks, keys and text that control requests queued into the next frame, then runs it.
@@ -159,25 +157,31 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
 /// tripped over `run` - four of them did, on four separate days, each looking like a
 /// flake because it passed when run alone. Not calling `run` here is what stops the fifth.
 ///
-/// Background work gets half a second of wall-clock time, measured with a clock, and the window
-/// steps 26 frames. It used to sleep 20 ms twenty-five times instead, which is the same half
-/// second only where a sleep lasts as long as it was asked to. On the hosted macOS runners a
-/// 20 ms sleep lasts about 100 ms, so every call took two and a half seconds, and the UI suite
-/// spent 98% of its macOS time asleep. Now no sleep runs past the half second; the frames that
-/// are left are stepped at once.
+/// Background work gets up to half a second. When the page is saved and egui has stopped asking
+/// for repaints, two quiet frames plus a short grace period are enough; do not spend the full
+/// timeout after every interaction. The deadline remains a cap for slow image loads and saves.
 fn settle(h: &mut Harness<'_, NoteCraftApp>) {
     const BACKGROUND: Duration = Duration::from_millis(500);
-    let deadline = std::time::Instant::now() + BACKGROUND;
+    const QUIET: Duration = Duration::from_millis(40);
+    let start = std::time::Instant::now();
+    let deadline = start + BACKGROUND;
+    let mut quiet_since = None;
     for _ in 0..25 {
         pump(h);
-        let left = deadline.saturating_duration_since(std::time::Instant::now());
-        if !left.is_zero() {
-            std::thread::sleep(left.min(Duration::from_millis(20)));
+        let now = std::time::Instant::now();
+        let background_active = h.state().is_dirty() || h.ctx.has_requested_repaint() || h.ctx.requested_repaint_last_pass();
+        if background_active {
+            quiet_since = None;
+        } else if quiet_since.is_some_and(|quiet: std::time::Instant| now.duration_since(quiet) >= QUIET) {
+            break;
+        } else if quiet_since.is_none() {
+            quiet_since = Some(now);
         }
-    }
-    let left = deadline.saturating_duration_since(std::time::Instant::now());
-    if !left.is_zero() {
-        std::thread::sleep(left);
+        let left = deadline.saturating_duration_since(now);
+        if left.is_zero() {
+            break;
+        }
+        std::thread::sleep(left.min(Duration::from_millis(20)));
     }
     pump(h);
 }
@@ -187,7 +191,7 @@ fn review(h: &mut Harness<'_, NoteCraftApp>, name: &str) {
     if let Some(dir) = std::env::var_os("NOTECRAFT_UI_VISUAL_DIR") {
         let dir = PathBuf::from(dir);
         let _ = std::fs::create_dir_all(&dir);
-        if let Ok(img) = support::gpu::render(h) {
+        if let Ok(img) = support::gui::render(h) {
             let _ = img.save(dir.join(format!("{name}.png")));
         }
     }
@@ -356,6 +360,7 @@ fn header_language_picker_changes_and_persists_interface_language() {
 
 #[test]
 fn header_language_picker_labels_render_light_text_on_the_purple_band() {
+    let _pixel_test = support::gui::pixel_test();
     let t = TempDir::new("ui-header-language-contrast");
     let s = session(&t);
     s.settings.set("ui_language", "en").expect("English UI setting");
@@ -365,7 +370,7 @@ fn header_language_picker_labels_render_light_text_on_the_purple_band() {
     h.get_by_label("Interface language: English").click();
     settle(&mut h);
     let label_rect = h.get_by_label("Fran\u{00e7}ais").rect();
-    let image = support::gpu::render(&mut h).expect("render open language picker");
+    let image = support::gui::render(&mut h).expect("render open language picker");
     let scale = image.width() as f32 / 1200.0;
     let min_x = (label_rect.min.x * scale).floor().max(0.0) as u32;
     let max_x = (label_rect.max.x * scale).ceil().min(image.width() as f32) as u32;
@@ -461,6 +466,7 @@ fn pressure_availability_is_detected_from_input_not_tab_selection() {
 
 #[test]
 fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
+    let _pixel_test = support::gui::pixel_test();
     for (label, markdown) in [("ui-canvas-pan-html", false), ("ui-canvas-pan-cmgfm", true)] {
         let (_t, mut app, sample) = sample_app(label);
         let path = if markdown { &sample.md_page } else { &sample.html_page };
@@ -514,7 +520,7 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
         assert_eq!(drawn.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "open canvas accepts ink for {label}: {drawn}");
         let ink_file = path.join("ink.svg");
         let svg = std::fs::read_to_string(&ink_file).unwrap_or_else(|error| panic!("saved canvas ink: {error}; state={drawn}"));
-        let ink_image = support::gpu::render(&mut h).expect("render outside-page stroke");
+        let ink_image = support::gui::render(&mut h).expect("render outside-page stroke");
         review(&mut h, if markdown { "canvas_open_ink_cmgfm" } else { "canvas_open_ink_html" });
         let red_canvas_pixels = ink_image
             .pixels()
@@ -560,6 +566,7 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
 
 #[test]
 fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, mut app, sample) = sample_app("ui-ink-over-text");
     app.open_path(&sample.html_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
@@ -594,7 +601,7 @@ fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
     );
     assert_eq!(state.pointer("/page/caret").cloned().unwrap_or(Value::Null), caret_before, "drawing over words leaves the text caret alone: {state}");
 
-    let image = support::gpu::render(&mut h).expect("render ink over words");
+    let image = support::gui::render(&mut h).expect("render ink over words");
     let region = egui::Rect::from_min_max(egui::pos2(x as f32 - 4.0, y as f32 - 4.0), egui::pos2(x as f32 + 42.0, y as f32 + 12.0));
     let red_pixels = image
         .pixels()
@@ -611,6 +618,7 @@ fn drawing_over_text_keeps_ink_above_the_page_without_editing_words() {
 
 #[test]
 fn pen_palette_owns_pointer_input_over_the_page_canvas() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, mut app, sample) = sample_app("ui-ink-below-pen-palette");
     app.open_path(&sample.html_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
@@ -643,14 +651,14 @@ fn pen_palette_owns_pointer_input_over_the_page_canvas() {
     let more_colours = h.get_by_label("More Colours").rect();
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("hover the popup button");
     settle(&mut h);
-    let before = support::gpu::render(&mut h).expect("render the open palette before drawing");
+    let before = support::gui::render(&mut h).expect("render the open palette before drawing");
     let start = egui::pos2(page.max.x - 40.0, more_colours.center().y);
     assert!(page.contains(start) && !more_colours.contains(start), "the stroke begins on page canvas outside the palette");
     ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("start a page stroke");
     pump(&mut h);
     ask(&mut h, "ui.move", json!({"x": more_colours.center().x, "y": more_colours.center().y})).expect("carry the stroke across the palette");
     pump(&mut h);
-    let during = support::gpu::render(&mut h).expect("render the stroke beneath the open palette");
+    let during = support::gui::render(&mut h).expect("render the stroke beneath the open palette");
     let (sx, sy) = (before.width() as f32 / 1200.0, before.height() as f32 / 760.0);
     let (x0, y0, x1, y1) = (
         (more_colours.min.x * sx).floor().max(0.0) as u32,
@@ -1396,6 +1404,7 @@ fn a_long_title_wraps_on_a_narrow_page() {
 /// place the difference shows.
 #[test]
 fn the_plus_between_two_pages_is_round() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, mut app, s) = sample_app("ui-gap-circle");
     app.open_path(&s.md_page.to_string_lossy());
     let mut h = harness(app, LIGHT);
@@ -1411,7 +1420,7 @@ fn the_plus_between_two_pages_is_round() {
     for _ in 0..4 {
         pump(&mut h);
     }
-    let shot = support::gpu::render(&mut h).expect("a picture");
+    let shot = support::gui::render(&mut h).expect("a picture");
     // The harness is 1200 points wide; the picture may be rendered larger than that.
     let scale = f64::from(shot.width()) / 1200.0;
 
@@ -2184,14 +2193,15 @@ fn the_control_port_works_end_to_end() {
 
 #[test]
 fn display_math_paints_ink_inside_its_box() {
-    let mut h = Harness::builder().with_size(egui::vec2(400.0, 160.0)).renderer(support::gpu::renderer()).build_ui(|ui| {
+    let _pixel_test = support::gui::pixel_test();
+    let mut h = Harness::builder().with_size(egui::vec2(400.0, 160.0)).renderer(support::gui::renderer()).build_ui(|ui| {
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, egui::Color32::WHITE);
         notecraft_ui_egui::fonts::install_once(ui.ctx());
         notecraft_ui_egui::mathview::display(ui, "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", 28.0, egui::Color32::BLACK);
     });
     h.run();
-    let img = support::gpu::render(&mut h).expect("render");
+    let img = support::gui::render(&mut h).expect("render");
     let dark: Vec<(u32, u32)> =
         img.enumerate_pixels().filter(|(_, _, p)| p.0[0] < 100 && p.0[1] < 100 && p.0[2] < 100).map(|(x, y, _)| (x, y)).collect();
     assert!(dark.len() > 300, "the formula should leave ink, got {} dark pixels", dark.len());
@@ -2241,7 +2251,6 @@ fn picking_a_swatch_changes_the_theme_and_is_remembered() {
     let mut h2 = Harness::builder()
         .with_size(egui::vec2(1200.0, 760.0))
         .with_accessibility_check(false)
-        .renderer(support::gpu::renderer())
         .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     assert_eq!(h2.state().theme(), Theme { mode: Mode::Dark, accent: Accent::Purple });
@@ -2252,6 +2261,7 @@ fn picking_a_swatch_changes_the_theme_and_is_remembered() {
 /// the window kept the system's mode: "Dark Default" on a light desktop looked light.
 #[test]
 fn a_swatch_overrides_the_system_mode() {
+    let _pixel_test = support::gui::pixel_test();
     let t = TempDir::new("ui-swatch-mode");
     let mut app = NoteCraftApp::new(session(&t));
     app.follow_system_theme(Accent::Default);
@@ -2268,7 +2278,7 @@ fn a_swatch_overrides_the_system_mode() {
     assert_eq!(h.state().theme(), Theme { mode: other, accent: Accent::Default });
     assert_eq!(h.state().mode_pref(), if other == Mode::Dark { ModePref::Dark } else { ModePref::Light }, "the swatch stops following the system");
     // And the window really is painted in that mode.
-    let img = support::gpu::render(&mut h).expect("render");
+    let img = support::gui::render(&mut h).expect("render");
     let total = img.pixels().count();
     let matching = img
         .pixels()
@@ -2410,6 +2420,7 @@ fn ink_is_written_on_the_page_itself_and_saved_beside_it() {
 /// Page ink crosses container edges and stays visible in the open space between them.
 #[test]
 fn page_ink_is_visible_across_container_borders() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, mut h, _, (ox, oy)) = two_boxes("ui-ink-across-boxes");
     let boxes = ask(&mut h, "ui.inspect", json!({})).expect("inspect arranged page");
     assert_eq!(
@@ -2436,7 +2447,7 @@ fn page_ink_is_visible_across_container_borders() {
 
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(1), "the pen made one page stroke: {ink}");
-    let image = support::gpu::render(&mut h).expect("render the page with the stroke");
+    let image = support::gui::render(&mut h).expect("render the page with the stroke");
     review(&mut h, "ink_across_boxes");
     let scale = image.width() as f64 / 1200.0;
     let visible_red_near = |x: f64| {
@@ -2458,6 +2469,7 @@ fn page_ink_is_visible_across_container_borders() {
 
 #[test]
 fn page_ink_crosses_a_diagram_container_edge() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, mut app, sample) = sample_app("ui-ink-diagram-edge");
     let page = sample.md_page.to_string_lossy().to_string();
     let md_file = sample.md_page.join("index.md");
@@ -2513,7 +2525,7 @@ fn page_ink_crosses_a_diagram_container_edge() {
     settle(&mut h);
     let ink = ask(&mut h, "ui.inspect", json!({})).expect("inspect strokes")["ink"].clone();
     assert_eq!(ink["strokes"].as_u64(), Some(2), "both strokes remain on the page: {ink}");
-    let image = support::gpu::render(&mut h).expect("render diagram and ink");
+    let image = support::gui::render(&mut h).expect("render diagram and ink");
     review(&mut h, "ink_across_diagram_container");
     let scale = image.width() as f64 / 1200.0;
     let visible_red = |x: f64, at_y: f64| {
@@ -2701,6 +2713,7 @@ fn ink_comes_back_when_the_page_is_opened_again() {
 /// the page as it was, and Escape puts it down again.
 #[test]
 fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, app, s) = sample_app("ui-laser-pointer");
     let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
     h.state_mut().open_path(&s.html_page.to_string_lossy());
@@ -2721,7 +2734,7 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(before["ink"]["pointer"], json!("laser"), "the laser is in hand: {}", before["ink"]);
     let strokes = before["ink"]["strokes"].clone();
 
-    let base = red(&support::gpu::render(&mut h).expect("render"));
+    let base = red(&support::gui::render(&mut h).expect("render"));
     let origin = page_origin(&mut h);
     let from = origin + egui::vec2(150.0, 260.0);
     ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
@@ -2732,7 +2745,7 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
         pump(&mut h);
     }
     review(&mut h, "laser_pointer");
-    let drawn = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    let drawn = red(&support::gui::render(&mut h).expect("render")).saturating_sub(base);
     // The test steps time a frame or more per move, so only the newest part of the trail is
     // still lit by now: enough red to be the dot and a stretch of trail.
     assert!(drawn > 100, "the trail is drawn in red while pointing ({drawn} pixels)");
@@ -2741,7 +2754,7 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     // Away from the page, so the dot is not drawn either, and long enough for the trail to fade.
     ask(&mut h, "ui.move", json!({"x": 5.0, "y": 5.0})).expect("away");
     h.run_steps(90);
-    let after = red(&support::gpu::render(&mut h).expect("render")).saturating_sub(base);
+    let after = red(&support::gui::render(&mut h).expect("render")).saturating_sub(base);
     assert!(after < drawn / 10, "the trail faded: {drawn} -> {after} red pixels");
     let now = state(&mut h);
     assert_eq!(now["ink"]["strokes"], strokes, "no ink was drawn");
@@ -2796,6 +2809,7 @@ fn the_panning_hand_drags_the_page_and_changes_nothing_on_it() {
 /// saved colour stays black, as the drawing's file shows.
 #[test]
 fn black_ink_reads_on_a_dark_page_and_is_saved_black() {
+    let _pixel_test = support::gui::pixel_test();
     for (theme, light_stroke) in [(DARK, true), (LIGHT, false)] {
         let (_t, mut app, s) = sample_app("ui-dark-ink");
         app.open_path(&s.html_page.to_string_lossy());
@@ -2809,7 +2823,7 @@ fn black_ink_reads_on_a_dark_page_and_is_saved_black() {
         let (from, by) = (origin + egui::vec2(60.0, 300.0), egui::vec2(200.0, 0.0));
         drag_by(&mut h, from, by);
         settle(&mut h);
-        let image = support::gpu::render(&mut h).expect("render");
+        let image = support::gui::render(&mut h).expect("render");
         let ppp = h.ctx.pixels_per_point();
         let mid = from + by / 2.0;
         // The lightest pixel across the stroke's width, where its middle is.
@@ -3026,7 +3040,6 @@ fn the_rack_can_be_arranged_and_is_remembered() {
     let mut h2 = Harness::builder()
         .with_size(egui::vec2(1200.0, 760.0))
         .with_accessibility_check(false)
-        .renderer(support::gpu::renderer())
         .build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), again);
     h2.run();
     let reopened = ask(&mut h2, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
@@ -5700,6 +5713,7 @@ fn a_page_keeps_the_paper_and_the_colour_it_was_given() {
 /// own lines back. Another page keeps its own lines.
 #[test]
 fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
+    let _pixel_test = support::gui::pixel_test();
     for (page, file, line) in [(true, "index.md", "rule-color: blue"), (false, "index.html", "notecraft:rule-color")] {
         let (_t, app, s) = sample_app("ui-rule-colour");
         let mut h = harness(app, LIGHT);
@@ -5713,7 +5727,7 @@ fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
         settle(&mut h);
         h.get_by_label("College ruled").click();
         settle(&mut h);
-        let plain = support::gpu::render(&mut h).expect("render");
+        let plain = support::gui::render(&mut h).expect("render");
         h.get_by_label("Format Background").click();
         settle(&mut h);
         h.get_by_label("Blue lines").click();
@@ -5721,7 +5735,7 @@ fn rule_line_colour_colours_the_lines_and_is_kept_with_the_page() {
         let now = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
         assert_eq!(now["ruleColour"], json!("blue"), "the lines are blue: {now}");
         assert_eq!(now["paper"], json!("college"), "and the paper is kept: {now}");
-        let blue = support::gpu::render(&mut h).expect("render");
+        let blue = support::gui::render(&mut h).expect("render");
         // Somewhere on the page a line pixel is bluer than the same pixel was before.
         let bluer = plain
             .pixels()
@@ -6118,12 +6132,13 @@ fn following_the_system_keeps_the_accent() {
 /// the main area has the theme's panel colour, and the accent colour appears.
 #[test]
 fn all_fourteen_themes_render_with_their_own_colours() {
+    let _pixel_test = support::gui::pixel_test();
     for theme in Theme::all() {
         let (_t, mut app, s) = sample_app("ui-all");
         app.open_path(&s.md_page.to_string_lossy());
         let mut h = harness(app, theme);
         settle(&mut h);
-        let img = support::gpu::render(&mut h).expect("render");
+        let img = support::gui::render(&mut h).expect("render");
         let tokens = theme.tokens();
         let near = |p: &image::Rgba<u8>, c: egui::Color32| {
             (i32::from(p.0[0]) - i32::from(c.r())).abs() <= 3
@@ -7410,6 +7425,7 @@ fn enter_in_an_arabic_paragraph_starts_the_next_one() {
 ///    glyphs, which left a row of blank boxes where the sentence had been.
 #[test]
 fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
+    let _pixel_test = support::gui::pixel_test();
     const LINE: &str = "الملاحظات تعيش أطول من البرنامج";
     let (_t, app, s) = sample_app("ui-rtl-drag");
     let mut h = harness(app, LIGHT);
@@ -7434,7 +7450,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     let (at, anchor) = (caret.get("at").and_then(Value::as_u64).unwrap_or(0), caret.get("anchor").and_then(Value::as_u64).unwrap_or(0));
     assert_ne!(at, anchor, "and the drag selected something: at {at}, anchor {anchor}");
 
-    let selected = support::gpu::render(&mut h).expect("a picture of the window");
+    let selected = support::gui::render(&mut h).expect("a picture of the window");
     review(&mut h, "rtl-drag-selection");
 
     // The same page with nothing selected, to compare against.
@@ -7442,7 +7458,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
     settle(&mut h);
     let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret").cloned().unwrap_or(Value::Null);
     assert_eq!(caret.get("at").and_then(Value::as_u64), caret.get("anchor").and_then(Value::as_u64), "an arrow without Shift drops the selection");
-    let plain = support::gpu::render(&mut h).expect("a picture of the window");
+    let plain = support::gui::render(&mut h).expect("a picture of the window");
 
     // The band the drag covered, in the rendered picture's own pixels.
     let scale = selected.width() as f32 / 1200.0;
@@ -7480,6 +7496,7 @@ fn a_drag_across_an_arabic_line_selects_it_and_the_words_stay_readable() {
 /// is a text box, which is why Delete is answered by the page rather than by egui.
 #[test]
 fn a_drag_can_select_across_paragraphs() {
+    let _pixel_test = support::gui::pixel_test();
     const FIRST: &str = "الملاحظات تعيش أطول من البرنامج";
     const SECOND: &str = "Notes outlive the program that wrote them";
     const THIRD: &str = "سطر ثالث للقياس";
@@ -7506,7 +7523,7 @@ fn a_drag_can_select_across_paragraphs() {
     let open = across(&mut h);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "it begins in the paragraph the press fell on: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "and reaches the one the drag ended in: {open}");
-    let selected = support::gpu::render(&mut h).expect("picture");
+    let selected = support::gui::render(&mut h).expect("picture");
     review(&mut h, "cross-block");
 
     // Both paragraphs are drawn with a band behind them. Compared against the same page
@@ -7514,7 +7531,7 @@ fn a_drag_can_select_across_paragraphs() {
     ask(&mut h, "ui.click", json!({"x": 600.0, "y": first.min.y - 40.0})).expect("let go");
     settle(&mut h);
     assert_eq!(across(&mut h), Value::Null, "a press somewhere else lets the selection go");
-    let plain = support::gpu::render(&mut h).expect("picture");
+    let plain = support::gui::render(&mut h).expect("picture");
     let scale = selected.width() as f32 / 1200.0;
     let band = |rect: egui::Rect| -> u32 {
         let (x0, x1) = ((rect.min.x * scale) as u32, (rect.max.x * scale) as u32);
@@ -7557,6 +7574,7 @@ fn a_drag_can_select_across_paragraphs() {
 /// at all: the byte it started at was past the end of the drawn words.
 #[test]
 fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
+    let _pixel_test = support::gui::pixel_test();
     let body = "see [the format page](../format-ideas/) and **this** too\n\nSecond paragraph words";
     let (_t, app, s) = sample_app("ui-cross-marks");
     let mut h = harness(app, LIGHT);
@@ -7577,7 +7595,7 @@ fn a_drag_highlights_the_words_past_the_marks_in_a_paragraph() {
     let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/across").cloned().unwrap_or(Value::Null);
     assert_eq!(open.pointer("/from/0").and_then(Value::as_u64), Some(0), "the drag spans both paragraphs: {open}");
     assert_eq!(open.pointer("/to/0").and_then(Value::as_u64), Some(1), "the drag spans both paragraphs: {open}");
-    let selected = support::gpu::render(&mut h).expect("picture");
+    let selected = support::gui::render(&mut h).expect("picture");
     review(&mut h, "cross-block-marks");
 
     // The band is the selection wash painted behind the words; counting its pixels says
@@ -10064,6 +10082,7 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
 /// as a file card.
 #[test]
 fn a_jpeg_xl_picture_is_drawn_in_the_page() {
+    let _pixel_test = support::gui::pixel_test();
     const TWO_COLOURS: &[u8] = include_bytes!("fixtures/two-colours.jxl");
     let (_t, mut app, s) = sample_app("ui-jpeg-xl");
     let md = s.md_page.to_string_lossy().to_string();
@@ -10081,7 +10100,7 @@ fn a_jpeg_xl_picture_is_drawn_in_the_page() {
     ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
     settle(&mut h);
     settle(&mut h);
-    let image = h.render().expect("render");
+    let image = support::gui::render(&mut h).expect("render");
     let count = |want: fn(&[u8; 4]) -> bool| image.pixels().filter(|p| want(&p.0)).count();
     let red = count(|p| p[0] > 200 && p[1] < 60 && p[2] < 60);
     let blue = count(|p| p[2] > 200 && p[0] < 60 && p[1] < 60);
@@ -10165,6 +10184,7 @@ fn table_cells_are_aligned_from_the_table_tab_and_the_page_keeps_it() {
 /// page beside the cell's alignment; No Colour takes it away (issue #169).
 #[test]
 fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
+    let _pixel_test = support::gui::pixel_test();
     let (_t, app, s) = sample_app("ui-table-shading");
     let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
     h.run();
@@ -10195,7 +10215,7 @@ fn table_cells_are_shaded_from_the_table_tab_and_the_page_keeps_it() {
     // The colour just left of a cell's words, where the cell's background shows.
     fn behind(h: &mut Harness<'_, NoteCraftApp>, word: &str) -> [u8; 4] {
         let at = h.get_by_label(word).rect();
-        let image = h.render().expect("render");
+        let image = support::gui::render(h).expect("render");
         let ppp = h.ctx.pixels_per_point();
         let (x, y) = (((at.min.x - 4.0) * ppp) as u32, (at.center().y * ppp) as u32);
         image.get_pixel(x, y).0

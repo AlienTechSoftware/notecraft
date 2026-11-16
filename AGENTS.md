@@ -206,7 +206,7 @@ Each level includes the ones before it. The detail, with every check, is in
 |---|---|---|
 | **L0** | After each task | `cargo fmt`, clippy and tests for the crates changed |
 | **L1** | Before a commit (pre-commit and commit-msg hooks) | `cargo xtask check-branch` (not on `main`, branch prefix, nothing stray or huge staged, warns when behind `origin/main`), PII, fmt, layers, assets, docs, text; subject `type(scope): what` |
-| **L2** | Before a push (pre-push hook) | `cargo xtask check-branch --push` (up to date with the newest `origin/main`; merge commits allowed), PII, the full `cargo xtask ci` |
+| **L2** | Before a push | Run `cargo xtask pre-push` before `git push`: checks current `origin/main`, PII and full `cargo xtask ci`, then records validation for the clean commit. The fast pre-push hook re-fetches `origin/main` and verifies the record still matches; merge commits are allowed. |
 | **L3** | Pull request (CI) | L2 on Linux, branch name check, coverage compared per platform (warns, never blocks), the pull request template's checklist |
 | **L4** | Release | `nc-reelase-signoff`; by hand today, automation planned, starting with the installer smoke test |
 
@@ -268,8 +268,11 @@ dialog is an in-app themed modal and persists the user's choice in the settings 
 - **Hooks.** [`.githooks/pre-commit`](.githooks/pre-commit) runs quality level L1 (the branch
   check and the cheap gates: fmt, layers, assets, docs, text), a few seconds, and
   [`.githooks/commit-msg`](.githooks/commit-msg) checks the subject line.
-  [`.githooks/pre-push`](.githooks/pre-push) runs L2: up to date with `origin/main`, then the
-  whole of `cargo xtask ci`, a few minutes, so a red tree is caught before CI sees it. Git does
+  [`.githooks/pre-push`](.githooks/pre-push) quickly checks the validation produced by
+  `cargo xtask pre-push`; that command runs L2 before Git opens the remote transport. The
+  validation is bound to the clean commit and `origin/main`, and the hook fetches and checks
+  freshness again. CI records per-phase timings because total duration varies by platform,
+  machine and cache. See [`docs/devx-performance.md`](docs/devx-performance.md). Git does
   not pick up a tracked hooks folder by itself, so each clone needs the `core.hooksPath` line
   above once. They check the working tree, not the index, so another session's half-written file
   will stop your commit; `--no-verify` is the way through that, and it is not a thing to reach

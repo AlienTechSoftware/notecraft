@@ -16,7 +16,10 @@
 //! screenshots  regenerate docs/images from the real window with the headless runner
 //! coverage  coverage with cargo-llvm-cov, compared with docs/coverage.json (warns, never fails);
 //!           `--update` writes this run as the new baseline
+//! devx-time PHASE -- COMMAND [ARGS...]  measure a build/test command and report timing regressions
 //! check-branch [--push]  the branch and history checks of quality levels L1 and L2
+//! pre-push  run PII and full CI before pushing; bind the result to the current clean commit
+//! check-push-validation  fast pre-push hook check for a current pre-push validation
 //! commit-msg FILE        the commit message check, for the commit-msg hook
 //! version   print the workspace version; `version set X.Y.Z[-pre]` changes it
 //! demo [html|cmgfm|both]            build one or both official demo formats (default: both)
@@ -29,6 +32,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod coverage;
+mod devx_push;
+mod devx_timing;
 mod i18n_audit;
 mod quality;
 mod version;
@@ -503,37 +508,74 @@ fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn run_test(root: &Path, recorder: &mut devx_timing::Recorder) -> Result<(), String> {
+    recorder.measure("workspace-tests", || cargo(root, &["test", "--workspace", "--exclude", "notecraft-ui-egui"]))?;
+    // Pixel assertions hold the shared renderer for their full test. Semantic UI tests need no
+    // renderer and can run concurrently with each other and with the serialized pixel tests.
+    recorder.measure("ui-tests", || cargo(root, &["test", "-p", "notecraft-ui-egui"]))
+}
+
+fn run_ci(root: &Path) -> Result<(), String> {
+    let mut recorder = devx_timing::Recorder::new(root, "ci");
+    for task in ["fmt", "clippy", "test", "i18n-audit", "layers", "assets", "docs", "text", "demo-check"] {
+        println!("\n== {task} ==");
+        let result = if task == "test" { run_test(root, &mut recorder) } else { recorder.measure(task, || run_task(root, task, &[])) };
+        if let Err(error) = result {
+            recorder.finish(false);
+            return Err(format!("{task}: {error}"));
+        }
+    }
+    println!("\nci: all checks passed");
+    recorder.finish(true);
+    Ok(())
+}
+
+fn run_test_with_timing(root: &Path) -> Result<(), String> {
+    let mut recorder = devx_timing::Recorder::new(root, "test");
+    let result = run_test(root, &mut recorder);
+    recorder.finish(result.is_ok());
+    result
+}
+
 fn run(task: &str, options: &[String]) -> Result<(), String> {
     let root = root();
     match task {
-        "fmt" => cargo(&root, &["fmt", "--all", "--", "--check"]),
-        "clippy" => cargo(&root, &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
-        // The UI tests share a single offscreen wgpu device; concurrent rendering and texture
-        // readback collide on Windows. They run one test at a time, while the other crates run
-        // in parallel.
-        "test" => {
-            cargo(&root, &["test", "--workspace", "--exclude", "notecraft-ui-egui"])?;
-            cargo(&root, &["test", "-p", "notecraft-ui-egui", "--", "--test-threads=1"])
-        }
+        "ci" if options.is_empty() => run_ci(&root),
+        "ci" => Err("usage: cargo xtask ci".into()),
+        "test" if options.is_empty() => run_test_with_timing(&root),
+        "test" => Err("usage: cargo xtask test".into()),
+        "devx-time" => devx_timing::run_timed_command(&root, options),
+        "pre-push" if options.is_empty() => devx_push::prepare(&root),
+        "pre-push" => Err("usage: cargo xtask pre-push".into()),
+        "check-push-validation" if options.is_empty() => devx_push::check(&root),
+        "check-push-validation" => Err("usage: cargo xtask check-push-validation".into()),
+        _ => run_task(&root, task, options),
+    }
+}
+
+fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
+    match task {
+        "fmt" => cargo(root, &["fmt", "--all", "--", "--check"]),
+        "clippy" => cargo(root, &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
         "i18n-audit" => {
             if !options.is_empty() {
                 return Err("usage: cargo xtask i18n-audit".into());
             }
-            i18n_audit::run(&root)
+            i18n_audit::run(root)
         }
-        "layers" => layers(&root),
-        "assets" => assets(&root),
-        "docs" => docs(&root),
+        "layers" => layers(root),
+        "assets" => assets(root),
+        "docs" => docs(root),
         "text" => {
             let fix = options == ["--fix"];
             if !fix && !options.is_empty() {
                 return Err("usage: cargo xtask text [--fix]".into());
             }
-            text(&root, fix)
+            text(root, fix)
         }
-        "screenshots" => screenshots(&root),
-        "coverage" => coverage::run(&root, options),
-        "check-branch" => quality::check_branch(&root, options),
+        "screenshots" => screenshots(root),
+        "coverage" => coverage::run(root, options),
+        "check-branch" => quality::check_branch(root, options),
         "commit-msg" => match options {
             [file] => quality::commit_msg(Path::new(file)),
             _ => Err("usage: cargo xtask commit-msg FILE".into()),
@@ -546,27 +588,19 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
                 [format] if ["html", "cmgfm", "both"].contains(&format.as_str()) => format.clone(),
                 _ => return Err("usage: cargo xtask demo [html|cmgfm|both] (default: both)".into()),
             };
-            cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
+            cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
             // The scratch copy is always replaced from docs/demo: the source is the one truth.
             if selection == "both" {
-                demo_copy(&root, &["html".into(), "--replace".into()])?;
-                demo_copy(&root, &["cmgfm".into(), "--replace".into()])
+                demo_copy(root, &["html".into(), "--replace".into()])?;
+                demo_copy(root, &["cmgfm".into(), "--replace".into()])
             } else {
-                demo_copy(&root, &[selection, "--replace".into()])
+                demo_copy(root, &[selection, "--replace".into()])
             }
         }
-        "demo-check" => cargo(&root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
+        "demo-check" => cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
-        "ci" => {
-            for t in ["fmt", "clippy", "test", "i18n-audit", "layers", "assets", "docs", "text", "demo-check"] {
-                println!("\n== {t} ==");
-                run(t, &[]).map_err(|e| format!("{t}: {e}"))?;
-            }
-            println!("\nci: all checks passed");
-            Ok(())
-        }
         other => Err(format!(
-            "unknown task '{other}'. Tasks: ci fmt clippy test i18n-audit layers assets docs text screenshots coverage check-branch commit-msg version demo demo-check demo-copy"
+            "unknown task '{other}'. Tasks: ci fmt clippy test i18n-audit layers assets docs text screenshots coverage check-branch pre-push check-push-validation commit-msg version demo demo-check demo-copy devx-time"
         )),
     }
 }
@@ -574,9 +608,10 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let task = args.first().cloned().unwrap_or_else(|| "ci".into());
+    let repo_root = root();
     let result = match task.as_str() {
-        "version" => version::run(&root(), &args[1..]),
-        "demo-copy" => demo_copy(&root(), &args[1..]),
+        "version" => version::run(&repo_root, &args[1..]),
+        "demo-copy" => demo_copy(&repo_root, &args[1..]),
         _ => run(&task, &args[1..]),
     };
     match result {
