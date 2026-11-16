@@ -20,7 +20,7 @@
 pub mod kashida;
 
 use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
-use parley::style::{FontFamily, FontFamilyName};
+use parley::style::{FontFamily, FontFamilyName, LineHeight};
 use parley::{Alignment, AlignmentOptions, FontContext, Layout, LayoutContext, StyleProperty};
 use std::sync::Arc;
 
@@ -77,6 +77,9 @@ use fonts::{ARABIC, CJK, DEVANAGARI, HEBREW};
 /// No brush: the spike cares about where things are, not what colour they are.
 type Brush = [u8; 0];
 
+/// A laid-out line or paragraph, for the callers that hold one between a layout and a measure.
+pub type Laid = Layout<Brush>;
+
 /// A text engine with the bundled faces and nothing from the system, so a test gives the
 /// same answer on every machine.
 pub struct Text {
@@ -118,6 +121,24 @@ impl Text {
 
     /// Lays `text` out in a column `width` wide (`None` for one long line).
     pub fn layout(&mut self, text: &str, size: f32, width: Option<f32>) -> Layout<Brush> {
+        self.layout_floored(text, size, width, 0.0)
+    }
+
+    /// Like [`Text::layout`], with every line at least `floor` tall (issue #275: the least
+    /// line height a paragraph was given). A floor that no line reaches asks for nothing, so
+    /// 0 is the layout as it has always been. A line is never made shorter than the font
+    /// would have it: the floor only opens the lines up, and the words sit in the middle of
+    /// the room, as in any editor.
+    pub fn layout_floored(&mut self, text: &str, size: f32, width: Option<f32>, floor: f32) -> Layout<Brush> {
+        let natural = self.build(text, size, width, None);
+        let tallest = natural.lines().map(|l| l.metrics().line_height).fold(0.0_f32, f32::max);
+        if floor.is_finite() && floor > tallest + 0.01 {
+            return self.build(text, size, width, Some(floor));
+        }
+        natural
+    }
+
+    fn build(&mut self, text: &str, size: f32, width: Option<f32>, floor: Option<f32>) -> Layout<Brush> {
         let mut builder = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, false);
         // One family list: the default face first, then the fallbacks, so parley picks the
         // first that has the character.
@@ -125,6 +146,9 @@ impl Text {
             std::iter::once(self.family.as_str()).chain(self.fallbacks.iter().map(String::as_str)).map(FontFamilyName::named).collect();
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(std::borrow::Cow::Owned(list))));
         builder.push_default(StyleProperty::FontSize(size));
+        if let Some(floor) = floor {
+            builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(floor)));
+        }
         let mut layout: Layout<Brush> = builder.build(text);
         layout.break_all_lines(width);
         // Which edge the lines hang from. parley's `Start` follows the base direction it
@@ -153,6 +177,10 @@ pub struct Line {
     /// Top of the line, down from the top of the text.
     pub y: f32,
     pub height: f32,
+    /// Bottom of the line's box, down from the top of the text. With a floor under the line
+    /// height the words sit in the middle of the box, so `y + height` is below this by half
+    /// the room added; this is where the next line starts.
+    pub bottom: f32,
     /// The bytes of the text this line holds, the break at its end included. The lines of a
     /// layout cover the text once, in order, which is what lets a caller work on one line of
     /// a wrapped paragraph and put the paragraph back together afterwards.
@@ -175,7 +203,7 @@ pub fn lines(layout: &Layout<Brush>) -> Vec<Line> {
                     _ => None,
                 })
                 .collect();
-            Line { runs, y: m.baseline - m.ascent, height: m.line_height, text: line.text_range() }
+            Line { runs, y: m.baseline - m.ascent, height: m.line_height, bottom: m.block_max_coord, text: line.text_range() }
         })
         .collect()
 }
@@ -449,5 +477,36 @@ mod tests {
         // that word sits in the middle of an otherwise English line.
         let at = hit(&layout, arabic.x + arabic.width / 2.0, 4.0);
         assert!(arabic.text.contains(&at), "{at} is inside {:?}: {runs:?}", arabic.text);
+    }
+
+    /// The least line height of a paragraph (issue #275): lines are opened up to it, never
+    /// shortened, and a floor of 0 or below the font's own is the layout as it was.
+    #[test]
+    fn a_least_line_height_opens_the_lines_up_and_never_shortens_them() {
+        const LONG: &str = "هذا اختبار بسيط لعرض الجمل العربية بشكل صحيح في عمود ضيق جدا حتى تلتف الأسطر";
+        let mut t = Text::new();
+        let natural = t.layout(LONG, 16.0, Some(120.0));
+        let natural_lines = lines(&natural);
+        assert!(natural_lines.len() >= 3, "wraps in a narrow column: {}", natural_lines.len());
+        let own = natural_lines[0].height;
+        for floor in [0.0, own * 0.5, own] {
+            let same = lines(&t.layout_floored(LONG, 16.0, Some(120.0), floor));
+            assert_eq!(same, natural_lines, "a floor of {floor} asks for nothing");
+        }
+        let floor = own + 14.0;
+        let tall = lines(&t.layout_floored(LONG, 16.0, Some(120.0), floor));
+        assert_eq!(tall.len(), natural_lines.len(), "the same words break at the same places");
+        for (a, b) in tall.iter().zip(&natural_lines) {
+            assert_eq!(a.text, b.text);
+            assert!((a.height - floor).abs() < 0.01, "each line is the floor tall: {} vs {floor}", a.height);
+        }
+        let step = tall[1].bottom - tall[0].bottom;
+        assert!((step - floor).abs() < 0.01, "lines are a floor apart: {step}");
+        // The words sit inside the room, not at its top: the baseline moved down by half of
+        // what was added, so a caret and a click agree with the drawing.
+        assert!(tall[0].y > natural_lines[0].y + 6.0, "{} vs {}", tall[0].y, natural_lines[0].y);
+        // A click on the second line lands on the second line's words.
+        let second = hit(&t.layout_floored(LONG, 16.0, Some(120.0), floor), 60.0, tall[1].y + 4.0);
+        assert!(tall[1].text.contains(&second), "{second} in {:?}", tall[1].text);
     }
 }

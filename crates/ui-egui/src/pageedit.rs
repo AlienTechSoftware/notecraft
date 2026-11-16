@@ -184,7 +184,10 @@ pub fn char_at(
     offset: egui::Vec2,
     page: Option<notecraft_model::Dir>,
 ) -> usize {
-    let job = pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width.max(1.0), page);
+    let mut job = pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width.max(1.0), page);
+    // The lines of a paragraph that was given a least height (issue #275), so the click is
+    // measured against the lines that were drawn.
+    pagetext::floor_lines(ui.ctx(), &mut job, crate::bidi::current_floor());
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let chars = text.chars().count();
     // Two things have to be undone for a right-to-left line, both measured in
@@ -2031,6 +2034,9 @@ pub fn show_blocks(
         // The room the page gave this paragraph above it, and how tall its lines must be at
         // least (issue #275), before the place its frame starts from is taken.
         preview::make_room(ui, justified, i, range.start, zoom);
+        // And the painter's own hit tests and caret measure against the same lines, for as
+        // long as this block is the one being worked on.
+        let _floor = preview::hold_floor(justified, i, zoom);
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;

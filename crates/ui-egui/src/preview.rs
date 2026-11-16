@@ -281,6 +281,7 @@ fn draw_spans(
             // `docs/gaps.md`.
             let stretch = justify.filter(|_| dir_of(spans, page).is_rtl());
             let sel = selected.map(|range| crate::bidi::Selected { range, color: tokens.selection });
+            let _floor = crate::bidi::floor(floor);
             let rect = crate::bidi::show(ui, &text, &pieces, size, width, page, stretch, align, sel);
             let _ = rect;
             return;
@@ -347,16 +348,26 @@ fn draw_spans(
         for s in spans {
             if s.math {
                 if !run.is_empty() {
-                    ui.label(job(ui, &run, size, color, tokens, page));
+                    let mut text = job(ui, &run, size, color, tokens, page);
+                    crate::pagetext::floor_lines(ui.ctx(), &mut text, floor);
+                    ui.label(text);
                     run.clear();
                 }
                 crate::mathview::inline(ui, &s.text, size * 1.05, color);
+                // A zero-wide strut the least line height tall, on the formula's own row (it
+                // follows the formula, so a formula that wrapped takes it along): a row that holds
+                // only a formula is opened up like the rows of words (issue #275).
+                if floor > 0.0 {
+                    ui.allocate_exact_size(egui::vec2(0.0, floor), egui::Sense::hover());
+                }
             } else {
                 run.push(s.clone());
             }
         }
         if !run.is_empty() {
-            ui.label(job(ui, &run, size, color, tokens, page));
+            let mut text = job(ui, &run, size, color, tokens, page);
+            crate::pagetext::floor_lines(ui.ctx(), &mut text, floor);
+            ui.label(text);
         }
     });
 }
@@ -567,6 +578,13 @@ pub fn make_room(ui: &mut Ui, justified: &Justified, index: usize, first: usize,
     ui.ctx().data_mut(|d| d.insert_temp(line_floor_id(), floor));
 }
 
+/// Holds the least line height of block `index` in force for the painter's hit tests and the
+/// click on a link, for as long as the guard lives (issue #275), so a point is measured against
+/// the lines that were drawn.
+pub fn hold_floor(justified: &Justified, index: usize, zoom: f32) -> crate::bidi::Floor {
+    crate::bidi::floor(f32::from(justified.spacing_of(index).unwrap_or_default().line) * zoom)
+}
+
 pub fn show_zoomed(
     ui: &mut Ui,
     blocks: &[Block],
@@ -579,6 +597,7 @@ pub fn show_zoomed(
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
         make_room(ui, justified, i, 0, zoom);
+        let _floor = hold_floor(justified, i, zoom);
         let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.mark_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()
