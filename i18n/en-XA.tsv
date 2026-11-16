@@ -963,3 +963,13 @@
 @id	ui.flipped_the_picture	$$$Flipped the picture@@@
 @id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	$$$Rotated the picture. Ink on the page stays where it is@@@
 @id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	$$$Flipped the picture. Ink on the page stays where it is@@@
+@id	ui.next_unread_2	$$$Next\nUnread@@@
+@id	ui.go_to_the_next_page_changed_since_you_last_read_it	$$$Go to the next page changed since you last read it@@@
+@id	ui.mark_as_read_2	$$$Mark as\nRead@@@
+@id	ui.mark_as_unread_2	$$$Mark as\nUnread@@@
+@id	ui.mark_this_page_as_read	$$$Mark this page as read@@@
+@id	ui.mark_this_page_as_unread_to_come_back_to_it	$$$Mark this page as unread, to come back to it@@@
+@id	ui.there_are_no_unread_pages	$$$There are no unread pages.@@@
+@id	ui.marked_as_read	$$$Marked as read@@@
+@id	ui.marked_as_unread	$$$Marked as unread@@@
+@id	ui.title_unread	$$${title}, unread@@@
