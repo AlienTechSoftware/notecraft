@@ -2767,6 +2767,65 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
+/// Issue #278: Page Versions only offered Restore, so the one way to see what a saved copy held
+/// was to put it back over the page. Preview opens it read-only, marked as an older version,
+/// with a line comparison against the page; Close and Back leave the page as it was, and
+/// Restore from the preview restores that version.
+#[test]
+fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
+    use egui_kittest::kittest::Queryable as _;
+    let (_t, app, s) = sample_app("ui-version-preview");
+    let page = s.md_page.clone();
+    notecraft_store::page::save_body(&page, "alpha\n\nbravo\n").expect("save");
+    let file = page.join("index.md");
+    let saved = std::fs::read(&file).expect("read");
+    // The newest saved copy, as the list shows it first, and a line of its words.
+    let version = notecraft_store::page::versions(&page).expect("versions").into_iter().next().expect("a saved copy");
+    let (_, then) = notecraft_store::page::version_body(&page, &version.id).expect("its body");
+    let then_line = then.lines().map(str::trim).find(|l| !l.is_empty()).expect("a line").to_string();
+    assert!(!then.contains("bravo"), "the copy is not the page as it is now: {then}");
+
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&page.to_string_lossy());
+    settle(&mut h);
+    let open_preview = |h: &mut Harness<'_, NoteCraftApp>| {
+        // The History tab, the first time; after that its group is named History too.
+        if h.query_by_label("Page Versions").is_none() {
+            h.get_by_label("History").click();
+            settle(h);
+        }
+        h.get_by_label("Page Versions").click();
+        settle(h);
+        h.get_by_label("Preview").click();
+        settle(h);
+    };
+    open_preview(&mut h);
+    assert!(h.query_by_label("An older version, read-only. The page is not changed unless you restore it.").is_some(), "marked as an older version");
+    review(&mut h, "page_version_preview");
+    assert_eq!(h.state().body().unwrap_or_default().trim(), "alpha\n\nbravo", "the page is untouched while previewing");
+
+    h.get_by_label("Compare with the page").click();
+    settle(&mut h);
+    assert!(h.query_by_label("+ alpha").is_some(), "a line only in the page is marked +");
+    assert!(h.query_by_label(&format!("− {then_line}")).is_some(), "a line only in the version is marked −: {then_line}");
+    review(&mut h, "page_version_compare");
+
+    // Back and Close leave everything as it was.
+    h.get_by_label("Back to the list").click();
+    settle(&mut h);
+    assert!(h.query_by_label("Saved copies of this page").is_some(), "back at the list");
+    h.get_by_label("Close").click();
+    settle(&mut h);
+    assert_eq!(std::fs::read(&file).expect("read"), saved, "the page file is untouched");
+
+    // Restore from the preview puts that version back.
+    open_preview(&mut h);
+    h.get_by_label("Restore this version").click();
+    settle(&mut h);
+    let now = h.state().body().unwrap_or_default().to_string();
+    assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.

@@ -963,3 +963,13 @@
 @id	ui.flipped_the_picture	$$$Flipped the picture@@@
 @id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	$$$Rotated the picture. Ink on the page stays where it is@@@
 @id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	$$$Flipped the picture. Ink on the page stays where it is@@@
+@id	ui.version_saved_when	$$$Version saved {when}@@@
+@id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	$$$An older version, read-only. The page is not changed unless you restore it.@@@
+@id	ui.this_version	$$$This version@@@
+@id	ui.compare_with_the_page	$$$Compare with the page@@@
+@id	ui.this_version_has_the_same_words_as_the_page	$$$This version has the same words as the page.@@@
+@id	ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page	$$$Lines marked − are only in this version; lines marked + are only in the page now.@@@
+@id	ui.restore_this_version	$$$Restore this version@@@
+@id	ui.back_to_the_list	$$$Back to the list@@@
+@id	ui.preview	$$$Preview@@@
+@id	ui.cannot_open_that_version_error	$$$Cannot open that version: {error}@@@

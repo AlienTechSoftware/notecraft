@@ -830,6 +830,8 @@ enum Dialog {
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
+        /// A saved version opened for reading, before any Restore (issue #278).
+        preview: Option<Box<crate::versions::Preview>>,
     },
     RecycleBin {
         notebook: PathBuf,
@@ -2050,7 +2052,7 @@ impl NoteCraftApp {
         }
         let p = params(&[("path", &path_str(page))]);
         if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
-            self.dialog = Some(Dialog::PageVersions { page: page.to_path_buf(), versions });
+            self.dialog = Some(Dialog::PageVersions { page: page.to_path_buf(), versions, preview: None });
         }
     }
 
@@ -4106,7 +4108,7 @@ impl NoteCraftApp {
                 if let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) {
                     let p = params(&[("path", &path_str(&page))]);
                     if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
-                        self.dialog = Some(Dialog::PageVersions { page, versions });
+                        self.dialog = Some(Dialog::PageVersions { page, versions, preview: None });
                     }
                 }
             }
@@ -8938,14 +8940,73 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::PageVersions { page, versions } => {
+            Dialog::PageVersions { page, versions, preview } => {
                 let mut restore: Option<String> = None;
+                let mut open: Option<(String, String)> = None;
+                let mut back = false;
+                let t = self.tokens;
                 egui::Window::new(crate::tl_id!("ui.page_versions_2"))
                     .collapsible(false)
                     .resizable(true)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .show(ctx, |ui| {
                         ui.set_min_width(420.0);
+                        if let Some(p) = preview.as_mut() {
+                            // An older version, read-only (issue #278): said in the window
+                            // itself, so it is never taken for the page.
+                            ui.set_min_width(560.0);
+                            ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.version_saved_when", &[("when", &p.when)])).strong());
+                            ui.colored_label(t.warn, crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"));
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui.selectable_label(!p.comparing, crate::tl_id!("ui.this_version")).clicked() {
+                                    p.comparing = false;
+                                }
+                                if ui.selectable_label(p.comparing, crate::tl_id!("ui.compare_with_the_page")).clicked() {
+                                    p.comparing = true;
+                                }
+                            });
+                            ui.separator();
+                            egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
+                                if p.comparing {
+                                    let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
+                                    if !changed {
+                                        ui.label(crate::tl_id!("ui.this_version_has_the_same_words_as_the_page"));
+                                    }
+                                    for change in &p.changes {
+                                        let (mark, line, colour) = match change {
+                                            crate::versions::Change::Same(l) => ("  ", l, t.muted),
+                                            crate::versions::Change::OnlyThen(l) => ("− ", l, t.warn),
+                                            crate::versions::Change::OnlyNow(l) => ("+ ", l, t.accent),
+                                        };
+                                        ui.label(egui::RichText::new(format!("{mark}{line}")).monospace().color(colour));
+                                    }
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(crate::tl_id!(
+                                            "ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page"
+                                        ))
+                                        .small()
+                                        .color(t.muted),
+                                    );
+                                } else {
+                                    let _ = crate::preview::show(ui, &p.blocks, page, &t, None, &notecraft_model::justify::Justified::default());
+                                }
+                            });
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                if modal_button(ui, &t, crate::tl_id!("ui.restore_this_version"), true).clicked() {
+                                    restore = Some(p.id.clone());
+                                }
+                                if modal_button(ui, &t, crate::tl_id!("ui.back_to_the_list"), false).clicked() {
+                                    back = true;
+                                }
+                                if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
+                                    keep = false;
+                                }
+                            });
+                            return;
+                        }
                         ui.label(crate::tl_id!("ui.saved_copies_of_this_page"));
                         ui.add_space(6.0);
                         if versions.is_empty() {
@@ -8954,11 +9015,14 @@ impl NoteCraftApp {
                             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                                 for version in versions.iter() {
                                     ui.horizontal(|ui| {
-                                        ui.label(&version.created);
+                                        ui.label(crate::versions::when(&version.created));
                                         let size = (version.bytes.div_ceil(1024)).to_string();
                                         let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
-                                        ui.label(egui::RichText::new(size).small().color(self.tokens.muted));
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
+                                        ui.label(egui::RichText::new(size).small().color(t.muted));
+                                        if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
+                                            open = Some((version.id.clone(), version.created.clone()));
+                                        }
+                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), true).clicked() {
                                             restore = Some(version.id.clone());
                                         }
                                     });
@@ -8966,10 +9030,22 @@ impl NoteCraftApp {
                             });
                         }
                         ui.add_space(8.0);
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
+                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
                             keep = false;
                         }
                     });
+                if back {
+                    *preview = None;
+                }
+                if let Some((id, created)) = open {
+                    // Compared with the page as it stands, unsaved words included.
+                    let now = self.editor.as_ref().filter(|e| e.dir == *page).map(|e| e.body.clone());
+                    let now = now.or_else(|| notecraft_store::page::load_page(page).ok().map(|p| p.body)).unwrap_or_default();
+                    match crate::versions::open(page, &id, &created, &now) {
+                        Ok(p) => *preview = Some(Box::new(p)),
+                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_that_version_error", &[("error", &e)])),
+                    }
+                }
                 if let Some(id) = restore {
                     if self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some() {
                         self.open_page(page);
