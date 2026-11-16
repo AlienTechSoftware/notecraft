@@ -1034,5 +1034,9 @@
 @id	ui.tag_name_removed	Tag {name} removed; lines that had it keep their words
 @id	ui.the_word_written_in_the_page	The word written in the page
 @id	ui.could_not_save_your_tags_error	Could not save your tags: {error}
+@id	ui.take_a_colour_from_ink_on_the_page	Take a colour from ink on the page
+@id	ui.no_ink_here	No ink here
+@id	ui.the_pen_takes_colour	The pen takes the colour {colour}
+@id	ui.eyedropper_put_down_the_pen_is_as_it_was	Eyedropper put down; the pen is as it was
 @id	ui.show_more_of_the_ribbon_to_the_left	Show more of the ribbon to the left
 @id	ui.show_more_of_the_ribbon_to_the_right	Show more of the ribbon to the right
