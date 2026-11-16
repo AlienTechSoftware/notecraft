@@ -1607,6 +1607,13 @@ fn image_boundary_id() -> egui::Id {
     egui::Id::new("caret-before-whole-block-image")
 }
 
+/// Where, on screen, each block that follows a picture started drawing this frame, as
+/// `(block, y)`. Read by `containers` when a picture is dragged out of a box shared with other
+/// blocks, so the blocks after it stay where they are.
+pub(crate) fn after_picture_tops_id() -> egui::Id {
+    egui::Id::new("blocks-after-a-picture-tops")
+}
+
 fn next_whole_block_image(blocks: &[Block], from: usize, shown_title: &str) -> Option<usize> {
     let image = from.checked_add(1)?;
     (blocks.get(image).is_some_and(|block| matches!(block, Block::Image { .. })) && !is_title_echo(blocks, image, shown_title)).then_some(image)
@@ -2024,6 +2031,16 @@ pub fn show_blocks(
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
+        // The block right after a picture: where it starts is where the words that follow stay
+        // when the picture is lifted out of the box (see `containers`). Only these are noted, so
+        // a long page does not pay for it.
+        if i > 0 && matches!(blocks.get(i - 1), Some(Block::Image { .. })) {
+            ui.data_mut(|d| {
+                let mut tops = d.get_temp::<Vec<(usize, f32)>>(after_picture_tops_id()).unwrap_or_default();
+                tops.push((i, top));
+                d.insert_temp(after_picture_tops_id(), tops);
+            });
+        }
         // Except the one blank line of a box just clicked into: there the cursor alone shows
         // where the words will go, until the first is written.
         let outlined = !(range.len() == 1 && crate::preview::is_blank(&block) && caret.as_ref().is_some_and(|c| c.block == i && c.text.is_empty()));
