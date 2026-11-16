@@ -134,20 +134,28 @@ fn run_section(source: &Path, output: &Path, format: Format, cancelled: &AtomicB
         return Err("OfficeIMO import cancelled".to_string());
     }
     let (notebook_title, notebook) = unique_notebook_path(output, &title);
-    fs::create_dir_all(&notebook).map_err(|e| format!("cannot create imported notebook: {e}"))?;
-    write_node(&notebook, "notebook", &notebook_title, format)?;
-    let destination = notebook.join("imported-section");
-    copy_tree(&section, &destination)?;
-    write_node(&destination, "section", &title, format)?;
-    normalize_ids(&notebook)?;
-    progress(Progress::Destination { path: notebook.clone() });
-    let summary = format!("Imported {} into {}", source.display(), notebook.display());
-    // The bridge's own message names scratch space, not the delivered notebook.
-    Ok(if combined {
-        format!("{summary}\nThis bridge exported the section as one combined page. Original page boundaries are unavailable.")
-    } else {
-        summary
-    })
+    // A folder this run creates is the only one it may remove when conversion fails (#347).
+    fs::create_dir(&notebook).map_err(|e| format!("cannot create imported notebook: {e}"))?;
+    let result = (|| -> Result<String, String> {
+        write_node(&notebook, "notebook", &notebook_title, format)?;
+        let destination = notebook.join("imported-section");
+        copy_tree(&section, &destination)?;
+        write_node(&destination, "section", &title, format)?;
+        normalize_ids(&notebook)?;
+        progress(Progress::Destination { path: notebook.clone() });
+        let summary = format!("Imported {} into {}", source.display(), notebook.display());
+        // The bridge's own message names scratch space, not the delivered notebook.
+        Ok(if combined {
+            format!("{summary}\nThis bridge exported the section as one combined page. Original page boundaries are unavailable.")
+        } else {
+            summary
+        })
+    })();
+    if result.is_err() {
+        // Nothing readable reached this new folder; do not leave it in navigation (issue #347).
+        let _ = fs::remove_dir_all(&notebook);
+    }
+    result
 }
 
 fn run_one(source: &Path, output: &Path, format: Format, cancelled: &AtomicBool) -> Result<String, String> {
@@ -208,12 +216,17 @@ fn run_folder(
 
     let notebook_name = safe_name(source.file_name().and_then(|v| v.to_str()).unwrap_or("Imported notebook"));
     let (notebook_name, notebook) = unique_notebook_path(notebooks, &notebook_name);
-    fs::create_dir_all(&notebook).map_err(|e| format!("cannot create {}: {e}", notebook.display()))?;
+    // Claim a new folder rather than adopt one that appeared since the name was chosen: this
+    // run may remove the folder if no section arrives, and it must only ever remove its own.
+    fs::create_dir(&notebook).map_err(|e| format!("cannot create {}: {e}", notebook.display()))?;
     write_node(&notebook, "notebook", &notebook_name, format)?;
     progress(Progress::Destination { path: notebook.clone() });
 
     let staging = notebook.join(format!(".officeimo-staging-{}", std::process::id()));
     let mut combined_sections = 0;
+    // Sections whose page files reached the notebook. A run that ends with none of them has
+    // nothing to show and must not leave its empty folder behind (issue #347).
+    let mut imported_sections = 0;
     let result = (|| {
         let mut failures = Vec::new();
         for (index, file) in files.iter().enumerate() {
@@ -252,6 +265,7 @@ fn run_folder(
             };
             copy_tree(&generated, &destination)?;
             write_node(&destination, "section", &section_name, format)?;
+            imported_sections += 1;
         }
         normalize_ids(&notebook)?;
         if !failures.is_empty() {
@@ -272,6 +286,11 @@ fn run_folder(
         }
     })();
     let _ = fs::remove_dir_all(&staging);
+    if result.is_err() && imported_sections == 0 {
+        // A notebook that holds no readable section would appear in navigation with nothing
+        // to open (issue #347). The error already carries the report for every failed file.
+        let _ = fs::remove_dir_all(&notebook);
+    }
     result.map(|message| {
         if combined_sections == 0 {
             message
@@ -680,17 +699,47 @@ mod tests {
     }
 
     /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
-    /// No bridge is installed for the test, so the run stops at the first section; what it has
-    /// found by then is the package's section.
+    /// No bridge is installed for the test, so every section fails; the reported destination is
+    /// still named after the package, and the failed run leaves nothing behind (issue #347).
     #[test]
     fn a_package_is_unpacked_and_its_sections_imported_as_a_folder() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/3p/officeimo/makecab-lzx-notebook.onepkg");
         let out = notecraft_store::testing::TempDir::new("officeimo-onepkg");
         let mut seen = Vec::new();
-        let _ = run_with_progress(&source, out.path(), Format::Html, &AtomicBool::new(false), &mut |p| seen.push(format!("{p:?}")));
+        let mut destination = None;
+        let result = run_with_progress(&source, out.path(), Format::Html, &AtomicBool::new(false), &mut |p| {
+            if let Progress::Destination { path } = &p {
+                destination = Some(path.clone());
+            }
+            seen.push(format!("{p:?}"));
+        });
+        assert!(result.is_err(), "no bridge is available for the package's section");
         assert!(seen.first().is_some_and(|p| p.contains("Found { total: 1 }")), "the package's one section was found: {seen:?}");
         assert!(seen.iter().any(|p| p.contains("Compressed section.one")), "{seen:?}");
-        assert!(out.path().join("makecab-lzx-notebook").is_dir(), "the notebook is named after the package");
+        assert_eq!(destination, Some(out.path().join("makecab-lzx-notebook")), "the notebook is named after the package");
+        assert!(!out.path().join("makecab-lzx-notebook").exists(), "a failed import leaves no empty notebook");
+    }
+
+    /// Issue #347: a folder of sections that all fail to convert must not leave a notebook with
+    /// nothing to show, because navigation would present it as though the source had been read.
+    #[test]
+    fn a_folder_whose_sections_all_fail_leaves_no_phantom_notebook() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-total-failure");
+        let source = t.path().join("Journal");
+        let output = t.path().join("Output");
+        fs::create_dir(&source).expect("source");
+        fs::create_dir(&output).expect("output");
+        fs::write(source.join("Notes.one"), b"not a OneNote section").expect("source section");
+        let mut destination = None;
+        let result = run_with_progress(&source, &output, Format::Html, &AtomicBool::new(false), &mut |event| {
+            if let Progress::Destination { path } = event {
+                destination = Some(path);
+            }
+        });
+        assert!(result.is_err(), "the bridge cannot convert this section");
+        assert_eq!(destination, Some(output.join("Journal")), "the run still reports where it meant to write");
+        assert_eq!(fs::read_dir(&output).expect("output entries").count(), 0, "a failed import leaves no empty notebook");
+        assert_eq!(fs::read(source.join("Notes.one")).expect("source preserved"), b"not a OneNote section");
     }
 
     #[test]
@@ -747,7 +796,7 @@ mod tests {
             });
             let expected = output.join(format!("{name} (1)"));
             assert_eq!(reported, Some(expected.clone()), "the UI receives the importer's path for {name}");
-            assert!(expected.join("_node.toml").is_file(), "the reported notebook exists");
+            assert!(!expected.exists(), "the cancelled import leaves no empty notebook for the UI to open");
             assert_eq!(fs::read(source.join("Notes.one")).expect("source retained"), b"");
         }
     }
