@@ -2199,7 +2199,7 @@ impl NoteCraftApp {
             self.unread.insert(dir);
             self.say(crate::tl_id!("ui.marked_as_unread"));
         }
-  }
+    }
     /// Every notebook that is open: those in the notebooks folder and those opened from
     /// elsewhere.
     fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
