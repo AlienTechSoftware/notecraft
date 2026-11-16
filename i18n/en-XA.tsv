@@ -1018,5 +1018,9 @@
 @id	ui.back_to_the_list	$$$Back to the list@@@
 @id	ui.preview	$$$Preview@@@
 @id	ui.cannot_open_that_version_error	$$$Cannot open that version: {error}@@@
+@id	ui.take_a_colour_from_ink_on_the_page	$$$Take a colour from ink on the page@@@
+@id	ui.no_ink_here	$$$No ink here@@@
+@id	ui.the_pen_takes_colour	$$$The pen takes the colour {colour}@@@
+@id	ui.eyedropper_put_down_the_pen_is_as_it_was	$$$Eyedropper put down; the pen is as it was@@@
 @id	ui.show_more_of_the_ribbon_to_the_left	$$$Show more of the ribbon to the left@@@
 @id	ui.show_more_of_the_ribbon_to_the_right	$$$Show more of the ribbon to the right@@@

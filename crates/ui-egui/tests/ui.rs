@@ -2983,6 +2983,69 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
 }
 
+/// Issue #290: the pen settings' Eyedropper was "not built". It is a pointer mode started from
+/// a rack tool: over ink it shows that ink's colour beside the pointer, a click gives the tool
+/// that colour, and Escape puts it down with the tool as it was.
+#[test]
+fn the_eyedropper_takes_a_colour_from_ink_on_the_page() {
+    let (_t, app, s) = sample_app("ui-eyedropper");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let ink = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"].clone();
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    // A red line on the page.
+    h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num2);
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    let from = origin + egui::vec2(160.0, 260.0);
+    drag_by(&mut h, from, egui::vec2(200.0, 0.0));
+    assert_eq!(ink(&mut h)["strokes"], json!(1), "a stroke was drawn");
+
+    // The blue pen's Eyedropper, from its Modify Tool popup.
+    h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Num3);
+    settle(&mut h);
+    let blue = ink(&mut h)["rack"].as_str().unwrap_or_default().split('|').nth(2).unwrap_or_default().to_string();
+    assert!(blue.contains("1855c4"), "the third tool is the blue pen: {blue}");
+    h.get_by_label("Pen blue").click_secondary();
+    h.run_steps(2);
+    h.get_by_label("Modify Tool").click();
+    h.run_steps(2);
+    h.get_by_label("Eyedropper").click();
+    settle(&mut h);
+    assert_eq!(ink(&mut h)["pointer"], json!("eyedropper"));
+
+    // Over the line, the preview names its colour; a click gives the blue pen that colour.
+    let on_line = from + egui::vec2(100.0, 0.0);
+    ask(&mut h, "ui.move", json!({"x": on_line.x, "y": on_line.y})).expect("move");
+    settle(&mut h);
+    review(&mut h, "eyedropper_preview");
+    ask(&mut h, "ui.press", json!({"x": on_line.x, "y": on_line.y})).expect("press");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": on_line.x, "y": on_line.y})).expect("release");
+    settle(&mut h);
+    let now = ink(&mut h);
+    let third = now["rack"].as_str().unwrap_or_default().split('|').nth(2).unwrap_or_default().to_string();
+    assert!(third.contains("d02121"), "the third tool took the red: {third}");
+    assert_eq!(now["pointer"], json!("draw"), "and is back in hand");
+    assert_eq!(now["strokes"], json!(1), "the click drew nothing");
+
+    // Started again and put down with Escape, nothing changes.
+    h.get_by_label("Pen black").click_secondary();
+    h.run_steps(2);
+    let tools_before = ink(&mut h)["rack"].clone();
+    h.get_by_label("Modify Tool").click();
+    h.run_steps(2);
+    h.get_by_label("Eyedropper").click();
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    let after = ink(&mut h);
+    assert_eq!(after["pointer"], json!("draw"));
+    assert_eq!(after["rack"], tools_before, "Escape changed no tool");
+}
+
 /// Issue #277: a ribbon tab wider than the window scrolled sideways but showed no sign of it, so
 /// the groups past the edge were never found. An arrow now shows at each end with more beyond
 /// it, and a click brings the hidden groups into view.
@@ -7613,8 +7676,12 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     pump(&mut h);
     ask(&mut h, "ui.release", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("release");
     pump(&mut h);
-    settle(&mut h);
-    settle(&mut h);
+    let moved = look_at(&mut h).pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
+    assert!(moved.get("x").and_then(Value::as_f64).is_some_and(|x| x > 40.0), "the box moved: {moved}");
+    // A slow background autosave can outlast settle's bounded wait. Save waits for any
+    // pending write and persists the current page before the file is inspected.
+    h.state_mut().save_page_now();
+    assert!(!h.state().is_dirty(), "the moved page was saved");
     let now = std::fs::read_to_string(&file_path).unwrap_or_default();
     assert_eq!(now.matches("class=\"nc-box\"").count(), 2, "the boxes are in the text now:\n{now}");
     assert!(!now.contains("containers:"), "and the older line is gone:\n{now}");
