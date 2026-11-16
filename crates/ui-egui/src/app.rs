@@ -1065,6 +1065,8 @@ pub struct NoteCraftApp {
     keyboard_paste_requested: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
+    /// File > Save a Copy as it is being filled in (issue #301).
+    copy_choice: backstage::CopyChoice,
     /// The page fills the window: the notebooks are hidden until it is turned off.
     full_page: bool,
     /// The window is phone-width, so it shows the notebooks or the page, not both
@@ -1220,6 +1222,7 @@ impl NoteCraftApp {
             pending_copy_html: None,
             keyboard_paste_requested: false,
             backstage: None,
+            copy_choice: backstage::CopyChoice::default(),
             full_page: false,
             compact: false,
             compact_full_page: false,
@@ -3316,6 +3319,9 @@ impl NoteCraftApp {
     /// The File screen: notebooks and what is done to a whole notebook.
     fn backstage_screen(&mut self, ui: &mut Ui) {
         let page = self.backstage.unwrap_or("Info");
+        // Save a Copy counts from the page that is open (issue #301).
+        let mut copy = std::mem::take(&mut self.copy_choice);
+        copy.here = self.editor.as_ref().map(|e| e.dir.clone());
         let tokens = self.tokens;
         let folder = self.shown(self.session.root());
         let recent = self.recent_notebooks();
@@ -3343,6 +3349,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 &update,
+                &mut copy,
                 &tokens,
             );
         });
@@ -3409,6 +3416,17 @@ impl NoteCraftApp {
                         let _ = crate::telemetry_export::export(&session.path(), &destination);
                     }
                 }
+                backstage::Act::ChooseCopyFolder => {
+                    if let Some(folder) = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_folder_for_the_copy")).pick_folder() {
+                        copy.folder = folder.to_string_lossy().into_owned();
+                    }
+                }
+                backstage::Act::SaveCopy { node, folder } => {
+                    copy.result = Some(notecraft_store::ops::save_copy(&node, &folder).map_err(|e| e.to_string()));
+                    if let Some(Ok(at)) = &copy.result {
+                        self.say(crate::i18n::format_message_id("ui.saved_a_copy_in_path", &[("path", &self.shown(at))]));
+                    }
+                }
                 backstage::Act::NotBuilt(name) => {
                     self.status =
                         crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(name))]);
@@ -3416,6 +3434,7 @@ impl NoteCraftApp {
                 }
             }
         }
+        self.copy_choice = copy;
     }
 
     fn recent_notebooks(&self) -> Vec<Node> {

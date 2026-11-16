@@ -51,6 +51,47 @@ pub enum Act {
     Page(&'static str),
     /// A side entry that is listed but not built yet.
     NotBuilt(&'static str),
+    /// Save a Copy: ask the system for the folder the copy goes into (issue #301).
+    ChooseCopyFolder,
+    /// Save a Copy: copy this page, section or notebook into this folder.
+    SaveCopy {
+        node: std::path::PathBuf,
+        folder: std::path::PathBuf,
+    },
+}
+
+/// What File > Save a Copy copies (issue #301).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CopyScope {
+    #[default]
+    Page,
+    Section,
+    Notebook,
+}
+
+/// File > Save a Copy as it is being filled in, kept by the window between frames.
+#[derive(Clone, Debug, Default)]
+pub struct CopyChoice {
+    /// The open page, which the scopes are counted from.
+    pub here: Option<std::path::PathBuf>,
+    pub scope: CopyScope,
+    /// The folder the copy goes into, as typed or picked.
+    pub folder: String,
+    /// Where the last copy went, or why it failed.
+    pub result: Option<Result<std::path::PathBuf, String>>,
+}
+
+impl CopyChoice {
+    /// The page, section and notebook the open page is in, nearest first, that a scope names.
+    pub fn node(&self, scope: CopyScope) -> Option<std::path::PathBuf> {
+        let here = self.here.as_deref()?;
+        let want = match scope {
+            CopyScope::Page => return Some(here.to_path_buf()),
+            CopyScope::Section => notecraft_model::NodeKind::Section,
+            CopyScope::Notebook => notecraft_model::NodeKind::Notebook,
+        };
+        here.ancestors().find(|p| notecraft_store::tree::read_node(p).is_some_and(|n| n.kind == want)).map(std::path::Path::to_path_buf)
+    }
 }
 
 /// The entries down the left side, in the order the Office apps use. The flag says whether
@@ -59,7 +100,7 @@ pub const SIDE: [(&str, bool); 10] = [
     ("Info", true),
     ("New", true),
     ("Open", true),
-    ("Save a Copy", false),
+    ("Save a Copy", true),
     ("Print", false),
     ("Share", false),
     ("Export", false),
@@ -128,6 +169,7 @@ pub fn show(
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
     update: &crate::update::Status,
+    copy: &mut CopyChoice,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -140,6 +182,7 @@ pub fn show(
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
+                    "Save a Copy" => save_copy_page(ui, copy, show_path, t, &mut acts),
                     "About" => about_page(ui, telemetry_root, session_id, update, t, &mut acts),
                     "Options" => {
                         options_page(ui, telemetry_root, telemetry_level, session_id, ui_language, languages, ui_scale, update, t, &mut acts)
@@ -216,6 +259,69 @@ fn side_bar(ui: &mut Ui, page: &str, t: &Tokens, acts: &mut Vec<Act>) {
             }
         }
     });
+}
+
+/// File > Save a Copy (issue #301): a page, its section or its notebook copied, with its files
+/// and ink, into a folder of the user's choosing, as content of its own. The original stays open.
+fn save_copy_page(ui: &mut Ui, copy: &mut CopyChoice, show_path: &dyn Fn(&std::path::Path) -> String, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, crate::tl_id!("ui.save_a_copy"), t);
+    if copy.here.is_none() {
+        ui.label(egui::RichText::new(crate::tl_id!("ui.open_a_page_first_save_a_copy_copies_it_its_section_or_its_notebook")).color(t.muted));
+        return;
+    }
+    ui.label(egui::RichText::new(crate::tl_id!("ui.what_to_copy")).strong().color(t.text));
+    for (scope, label) in [
+        (CopyScope::Page, crate::tl_id!("ui.this_page")),
+        (CopyScope::Section, crate::tl_id!("ui.this_section")),
+        (CopyScope::Notebook, crate::tl_id!("ui.this_notebook")),
+    ] {
+        let Some(node) = copy.node(scope) else { continue };
+        let title = notecraft_store::tree::read_node(&node).map(|n| n.title).unwrap_or_default();
+        let text = crate::i18n::format_message_id("ui.scope_title", &[("scope", label), ("title", &title)]);
+        if ui.radio(copy.scope == scope, text).clicked() {
+            copy.scope = scope;
+        }
+    }
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.copy_into_this_folder")).strong().color(t.text));
+    ui.horizontal(|ui| {
+        let name = ui.label(crate::tl_id!("ui.folder"));
+        ui.add(egui::TextEdit::singleline(&mut copy.folder).desired_width(420.0)).labelled_by(name.id);
+        let choose = egui::Button::new(crate::tl_id!("ui.choose")).stroke(egui::Stroke::new(1.0, t.container_border));
+        if ui.add(choose).clicked() {
+            acts.push(Act::ChooseCopyFolder);
+        }
+    });
+    ui.label(
+        egui::RichText::new(crate::tl_id!(
+            "ui.the_copy_is_a_folder_of_its_own_with_the_files_and_ink_but_not_the_saved_versions_the_original_stays_open"
+        ))
+        .small()
+        .color(t.muted),
+    );
+    ui.add_space(8.0);
+    let folder = copy.folder.trim();
+    let node = copy.node(copy.scope);
+    let ready = !folder.is_empty() && node.is_some();
+    let save =
+        egui::Button::new(egui::RichText::new(crate::tl_id!("ui.save_the_copy")).color(t.band_text)).min_size(vec2(140.0, 32.0)).fill(t.accent);
+    if ui.add_enabled(ready, save).clicked()
+        && let Some(node) = node
+    {
+        acts.push(Act::SaveCopy { node, folder: std::path::PathBuf::from(folder) });
+    }
+    match &copy.result {
+        Some(Ok(at)) => {
+            ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.saved_a_copy_in_path", &[("path", &show_path(at))])).color(t.text));
+            if ui.link(crate::tl_id!("ui.open_folder")).clicked() {
+                acts.push(Act::OpenFolder(at.clone()));
+            }
+        }
+        Some(Err(why)) => {
+            ui.colored_label(t.warn, crate::i18n::format_message_id("ui.could_not_save_the_copy_why", &[("why", why)]));
+        }
+        None => {}
+    }
 }
 
 // i18n-ui-text: text
@@ -601,7 +707,7 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "Options", "About"]);
+        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Options", "About"]);
         assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
         assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
     }
@@ -626,6 +732,7 @@ mod tests {
                 &crate::i18n::available_languages(),
                 100,
                 &crate::update::Status::Idle,
+                &mut CopyChoice::default(),
                 &t,
             );
         });
