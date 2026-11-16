@@ -8430,6 +8430,72 @@ fn formatting_shortcuts_do_not_format_a_stale_page_caret_from_search_or_source()
     }
 }
 
+/// Issue #258: Home > Alignment's Align Left, Center and Align Right were "not built". They
+/// set the caret's paragraph against that edge, drawn in the whole column whether the caret is
+/// in it or not, saved in the page's file in both formats, taken back by Undo, and the same
+/// choice again gives the paragraph back the alignment its words have. Ctrl+R and Ctrl+L too.
+#[test]
+fn paragraph_alignment_moves_the_line_saves_and_undoes() {
+    use egui_kittest::kittest::NodeT as _;
+    for (format, body) in [(notecraft_model::PageFormat::Html, "<p>alpha</p><p>bravo</p>"), (notecraft_model::PageFormat::Cmgfm, "alpha\n\nbravo")] {
+        let (_t, app, s) = sample_app("ui-paragraph-align");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let left_of = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().bounding_box().expect("drawn").x0;
+        let saved = || notecraft_store::page::justified(page).expect("read").align_of(0);
+        let caret = |h: &mut Harness<'_, NoteCraftApp>, block: usize| {
+            ask(h, "ui.caret", json!({"block": block})).expect("caret");
+            settle(h);
+        };
+        caret(&mut h, 1);
+        let ragged = left_of(&h, "alpha");
+        let words = h.state().body().unwrap_or_default().to_string();
+
+        caret(&mut h, 0);
+        h.get_by_label("Alignment and direction").click();
+        h.run_steps(2);
+        h.get_by_label("Center").click();
+        settle(&mut h);
+        assert_eq!(saved(), Some(notecraft_model::justify::Align::Center), "{format:?}: the page's file says centred");
+        assert_eq!(h.state().body().unwrap_or_default(), words, "{format:?}: the words are untouched");
+        caret(&mut h, 1);
+        let centred = left_of(&h, "alpha");
+        assert!(centred > ragged + 200.0, "{format:?}: the line moved to the middle: {ragged} -> {centred}");
+        review(&mut h, &format!("paragraph_centred_{format:?}"));
+
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        assert_eq!(saved(), None, "{format:?}: undo takes the alignment back off, in the file too");
+        caret(&mut h, 1);
+        assert!((left_of(&h, "alpha") - ragged).abs() < 1.0, "{format:?}: and the line is back at the left");
+        ask(&mut h, "ui.redo", json!({})).expect("redo");
+        settle(&mut h);
+        assert_eq!(saved(), Some(notecraft_model::justify::Align::Center), "{format:?}: redo puts it back");
+
+        // Ctrl+R sets it against the right, and Ctrl+R again gives it back its own alignment.
+        caret(&mut h, 0);
+        let ctrl_r = |h: &mut Harness<'_, NoteCraftApp>| {
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::R);
+            settle(h);
+        };
+        ctrl_r(&mut h);
+        assert_eq!(saved(), Some(notecraft_model::justify::Align::Right), "{format:?}: Ctrl+R");
+        ctrl_r(&mut h);
+        assert_eq!(saved(), None, "{format:?}: the same again takes it off");
+
+        // And it is still there when the page is opened again.
+        ctrl_r(&mut h);
+        h.state_mut().save_page_now();
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        caret(&mut h, 1);
+        assert!(left_of(&h, "alpha") > centred, "{format:?}: reopened, the line is still at the right");
+    }
+}
+
 /// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
 /// the words at the caret, or of the whole selection: on only when all of it carries the mark,
 /// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.

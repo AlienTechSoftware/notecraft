@@ -947,6 +947,14 @@
 @id	ui.take_the_whole_table_out	Take the whole table out
 @id	ui.put_the_caret_in_a_table_first	Put the caret in a table first
 @id	ui.deleted_the_table	Deleted the table
+@id	ui.align_left_ctrl_l	Align Left (Ctrl+L)
+@id	ui.center	Center
+@id	ui.align_right_ctrl_r	Align Right (Ctrl+R)
+@id	ui.alignment_goes_on_a_paragraph_or_a_heading	Alignment goes on a paragraph or a heading
+@id	ui.the_paragraph_follows_its_words_again	The paragraph is aligned the way its words read again
+@id	ui.aligned_left	Aligned left
+@id	ui.centred	Centered
+@id	ui.aligned_right	Aligned right
 @id	ui.point_at_the_page_without_drawing_on_it	Point at the page without drawing on it
 @id	ui.laser_pointer_put_down	Laser pointer put down
 @id	ui.rule_line_colour	Rule line colour
