@@ -1557,7 +1557,7 @@ pub fn show_ink_view(
                 t,
                 false,
                 page,
-                justified.strength_of(index),
+                justified.mark_of(index),
                 None,
                 child_id.with(("ink-view-block", index)),
                 zoom,

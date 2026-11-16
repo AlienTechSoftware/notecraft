@@ -17,6 +17,7 @@ pub mod links;
 pub mod ops;
 pub mod page;
 pub mod page_templates;
+pub mod recent;
 pub mod recycle;
 pub mod search;
 pub mod settings;

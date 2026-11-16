@@ -49,13 +49,16 @@ pub struct Step {
     /// The table widths the page kept at this step, so undoing a column put into a table
     /// puts the widths back with it (issue #154). `None` where the step did not note them.
     pub columns: Option<notecraft_model::tablecols::Widths>,
+    /// Which paragraphs were justified or aligned at this step (issue #258). `None` where the
+    /// step did not note them.
+    pub justified: Option<notecraft_model::justify::Justified>,
     pub kind: Kind,
     when: Instant,
 }
 
 impl Step {
     pub fn new(body: String, blocks: Vec<Block>, boxes: Vec<Container>, caret: Option<crate::pageedit::Caret>, kind: Kind) -> Step {
-        Step { body, blocks, boxes, caret, columns: None, kind, when: Instant::now() }
+        Step { body, blocks, boxes, caret, columns: None, justified: None, kind, when: Instant::now() }
     }
 
     /// Roughly what this step weighs, for the cap. The text is most of it.

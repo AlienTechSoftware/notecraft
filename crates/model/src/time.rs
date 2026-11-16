@@ -97,6 +97,33 @@ pub fn long_from_iso_at(iso: &str, offset: i32) -> Option<String> {
     Some(format!("{weekday}, {d} {month} {y}, {:02}:{:02}", rem / 3_600, rem % 3_600 / 60))
 }
 
+/// Seconds since 1970 for a timestamp NoteCraft writes ("2026-11-14T10:00:00Z", seconds
+/// optional). One written with no zone is taken as UTC. `None` when it cannot be read.
+pub fn secs_from_iso(iso: &str) -> Option<i64> {
+    let (date, time) = iso.trim().split_once('T')?;
+    let mut parts = date.split('-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    let d: u32 = parts.next()?.parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let clock = time.trim_end_matches('Z');
+    let mut hms = clock.split(':');
+    let h: i64 = hms.next()?.parse().ok()?;
+    let min: i64 = hms.next()?.parse().ok()?;
+    let sec: i64 = hms.next().map_or(Some(0.0), |s| s.parse::<f64>().ok())?.floor() as i64;
+    if h > 23 || min > 59 || sec > 60 {
+        return None;
+    }
+    Some(days_from_civil(y, m, d) * 86_400 + h * 3_600 + min * 60 + sec)
+}
+
+/// Seconds since 1970 now.
+pub fn now_secs() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| i64::try_from(d.as_secs()).unwrap_or(0)).unwrap_or(0)
+}
+
 /// The inverse of [`civil_from_days`].
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
@@ -119,6 +146,17 @@ pub fn is_long_date(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secs_from_iso_reads_back_what_iso_from_secs_wrote() {
+        for secs in [0, 1, 86_399, 1_794_790_520, 951_782_400] {
+            assert_eq!(secs_from_iso(&iso_from_secs(secs)), Some(secs));
+        }
+        assert_eq!(secs_from_iso("2026-11-14T10:00Z"), secs_from_iso("2026-11-14T10:00:00Z"));
+        assert_eq!(secs_from_iso("2026-11-14T10:00:00.75Z"), secs_from_iso("2026-11-14T10:00:00Z"));
+        assert_eq!(secs_from_iso("yesterday"), None);
+        assert_eq!(secs_from_iso("2026-13-01T00:00:00Z"), None);
+    }
 
     #[test]
     fn long_dates_read_like_a_note() {
