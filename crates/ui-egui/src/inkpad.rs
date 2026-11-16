@@ -611,6 +611,10 @@ pub fn show(
         laser(ui, &painter, body, origin, zoom, resp.is_pointer_button_down_on());
         return false;
     }
+    if let Pointer::Eyedropper(tool) = pen.pointer {
+        eyedropper(ui, &painter, body, origin, zoom, pad, tool, resp.clicked(), t);
+        return false;
+    }
     ui.ctx().set_cursor_icon(match pen.pointer {
         Pointer::Erase => egui::CursorIcon::NotAllowed,
         Pointer::Pick => egui::CursorIcon::Grab,
@@ -746,7 +750,7 @@ pub fn show(
                 }
             }
         }
-        Pointer::Write | Pointer::Pan | Pointer::Laser => {}
+        Pointer::Write | Pointer::Pan | Pointer::Laser | Pointer::Eyedropper(_) => {}
     }
     // Delete throws away whatever is held, however it was picked up.
     if !pad.held.is_empty() && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
@@ -791,6 +795,54 @@ const DARK_PAGE: f32 = 0.2;
 /// (black, the dark greys) is drawn as its light opposite, as OneNote's dark mode does, so the
 /// default black pen reads (issue #317). The saved colour is untouched: the same stroke is black
 /// again on a light page and in the SVG. Coloured ink keeps its colour.
+fn eyedropper_id() -> egui::Id {
+    egui::Id::new("eyedropper-picked")
+}
+
+/// The colour the eyedropper took this frame, for the rack tool it belongs to, once.
+pub fn take_eyedropped(ctx: &egui::Context) -> Option<(usize, Rgb)> {
+    ctx.data_mut(|d| d.remove_temp::<(usize, Rgb)>(eyedropper_id()))
+}
+
+/// The colour of the ink at a point on the page, in page points: the stroke drawn last that
+/// passes within a few points of it. Its saved colour, not the one a dark page shows it in.
+pub fn colour_at(drawing: &Drawing, x: f32, y: f32) -> Option<Rgb> {
+    pick::at(drawing, x, y, 3.0).and_then(|i| drawing.strokes.get(i)).map(|s| s.colour)
+}
+
+/// The Eyedropper (issue #290): a cross-hair over the page and, beside it, a swatch of the
+/// colour of the ink under it, with its hex, or a note that there is no ink there. A click on
+/// ink gives `tool` that colour; a click on nothing changes nothing. Escape (in `app.rs`) puts
+/// it down with the tool as it was.
+#[allow(clippy::too_many_arguments)]
+fn eyedropper(ui: &Ui, painter: &egui::Painter, body: egui::Rect, origin: egui::Pos2, zoom: f32, pad: &Pad, tool: usize, clicked: bool, t: &Tokens) {
+    let Some(p) = ui.ctx().pointer_hover_pos().filter(|p| body.contains(*p)) else { return };
+    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+    let under = colour_at(&pad.drawing, (p.x - origin.x) / zoom, (p.y - origin.y) / zoom);
+    let at = p + vec2(16.0, 16.0);
+    let font = egui::FontId::proportional(11.5);
+    let (fill, text) = match under {
+        Some(c) => (Some(egui::Color32::from_rgb(c.0, c.1, c.2)), c.hex()),
+        None => (None, crate::tl_id!("ui.no_ink_here").to_string()),
+    };
+    let label = painter.layout_no_wrap(text, font, t.text);
+    let card = egui::Rect::from_min_size(at, vec2(30.0 + label.size().x + 10.0, 26.0));
+    painter.rect_filled(card, 5.0, t.panel);
+    painter.rect_stroke(card, 5.0, egui::Stroke::new(1.0, t.container_border), egui::StrokeKind::Inside);
+    let swatch = egui::Rect::from_min_size(card.min + vec2(5.0, 5.0), vec2(16.0, 16.0));
+    if let Some(c) = fill {
+        painter.rect_filled(swatch, 3.0, c);
+    } else {
+        painter.rect_stroke(swatch, 3.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        painter.line_segment([swatch.left_bottom(), swatch.right_top()], egui::Stroke::new(1.0, t.muted));
+    }
+    painter.galley(egui::pos2(swatch.max.x + 6.0, card.center().y - label.size().y / 2.0), label, t.text);
+    if clicked && let Some(c) = under {
+        ui.ctx().data_mut(|d| d.insert_temp(eyedropper_id(), (tool, c)));
+    }
+    ui.ctx().request_repaint();
+}
+
 /// The laser pointer's red, bright enough to be seen on a light page and a dark one.
 pub const LASER: egui::Color32 = egui::Color32::from_rgb(235, 30, 45);
 

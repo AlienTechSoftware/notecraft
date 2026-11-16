@@ -194,6 +194,9 @@ pub enum Pointer {
     /// a short trail that fades, to point at something while presenting. Nothing is drawn on
     /// the page, nothing is saved and there is nothing to undo.
     Laser,
+    /// The Eyedropper of the rack's tool at this place (issue #290): the colour of the ink
+    /// under the pointer is shown beside it, and a click gives that tool that colour.
+    Eyedropper(usize),
 }
 
 impl Pointer {
@@ -207,6 +210,7 @@ impl Pointer {
             Pointer::Shape(s) => s.id(),
             Pointer::Pan => "pan",
             Pointer::Laser => "laser",
+            Pointer::Eyedropper(_) => "eyedropper",
         }
     }
 }
@@ -2314,7 +2318,9 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
         open = true;
         picked_up = true;
     }
-    if open && modify_tool(ui, open_id, rect, i, nib, rack_len, t, acts) {
+    // The click that opened it (Modify Tool in the right-click menu lies outside the popup)
+    // must not count as a click away from it, or it closed the moment it opened.
+    if open && modify_tool(ui, open_id, rect, i, nib, rack_len, t, acts) && !modify {
         open = false;
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
@@ -2418,7 +2424,12 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                         done = true;
                     }
                 }
-                popup_action_button(ui, crate::tl_id!("ui.eyedropper"), false, t.accent, crate::tl_id!("ui.eyedropper_not_built"));
+                if popup_action_button(ui, crate::tl_id!("ui.eyedropper"), true, t.accent, crate::tl_id!("ui.take_a_colour_from_ink_on_the_page"))
+                    .clicked()
+                {
+                    acts.push(Act::InkPointer(Pointer::Eyedropper(i)));
+                    done = true;
+                }
                 if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
                     .clicked()
                 {

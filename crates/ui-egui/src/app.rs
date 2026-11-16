@@ -5705,6 +5705,24 @@ impl NoteCraftApp {
     /// frame after the page is drawn.
     /// Escape puts the laser pointer down (issue #289): it is for a moment of pointing, and
     /// the caret comes back afterwards.
+    /// The Eyedropper (issue #290): a colour taken from the page goes to the tool it was
+    /// started from, and Escape puts it down with that tool in hand, unchanged.
+    fn eyedropper(&mut self, ctx: &Context) {
+        let ribbon::Pointer::Eyedropper(tool) = self.pointer else { return };
+        if let Some((i, colour)) = crate::inkpad::take_eyedropped(ctx)
+            && let Some(nib) = self.rack.get(i).copied()
+        {
+            self.edit_rack(ribbon::RackEdit::Set(i, notecraft_ink::rack::Nib::new(nib.tool, colour, nib.tenths)));
+            self.say(crate::i18n::format_message_id("ui.the_pen_takes_colour", &[("colour", &colour.hex())]));
+            return;
+        }
+        if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.nib = tool.min(self.rack.len().saturating_sub(1));
+            self.pointer = ribbon::Pointer::Draw;
+            self.say(crate::tl_id!("ui.eyedropper_put_down_the_pen_is_as_it_was"));
+        }
+    }
+
     fn laser_keys(&mut self, ctx: &Context) {
         if self.pointer == ribbon::Pointer::Laser && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.pointer = ribbon::Pointer::Write;
@@ -9990,6 +10008,7 @@ impl NoteCraftApp {
         }
         self.paint_formatting(ctx);
         self.laser_keys(ctx);
+        self.eyedropper(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
         self.import_progress(ctx);
