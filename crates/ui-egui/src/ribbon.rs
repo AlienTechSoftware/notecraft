@@ -55,6 +55,8 @@ pub enum Act {
     AddPicture,
     /// Save picture as... exports an image file from the page.
     SavePictureAs(String),
+    /// Rotate or flip the picture with this source (issue #273).
+    TurnPicture(String, crate::turn::Turn),
     ToggleSource,
     ToggleFullPage,
     OpenThemes,
@@ -129,6 +131,8 @@ pub enum Act {
     TableShade(Option<notecraft_model::NodeColor>),
     /// The colour behind the open page. `None` is the theme's own paper.
     PageColour(Option<notecraft_model::NodeColor>),
+    /// Colour the open page's rule and grid lines, or `None` for the theme's own (issue #288).
+    RuleColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
     Undo,
     Redo,
@@ -181,6 +185,10 @@ pub enum Pointer {
     /// Draw > Panning Hand: a drag with the main button (or one finger) moves the page, and
     /// nothing on it is drawn, picked or written in.
     Pan,
+    /// Draw > Add > Laser Pointer (issue #289): a red dot follows the pointer and a drag leaves
+    /// a short trail that fades, to point at something while presenting. Nothing is drawn on
+    /// the page, nothing is saved and there is nothing to undo.
+    Laser,
 }
 
 impl Pointer {
@@ -193,6 +201,7 @@ impl Pointer {
             Pointer::Lasso => "lasso",
             Pointer::Shape(s) => s.id(),
             Pointer::Pan => "pan",
+            Pointer::Laser => "laser",
         }
     }
 }
@@ -461,6 +470,8 @@ pub struct View<'a> {
     pub gridcraft: bool,
     /// The colour behind the open page, when it carries one of its own.
     pub page_colour: Option<notecraft_model::NodeColor>,
+    /// The colour of the open page's rule and grid lines, `None` for the theme's (issue #288).
+    pub rule_colour: Option<notecraft_model::NodeColor>,
     /// Whether the page has anything to take back, and anything to put back.
     pub can_undo: bool,
     pub can_redo: bool,
@@ -477,6 +488,9 @@ pub struct View<'a> {
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
     pub style: &'static str,
     pub font_family: Option<&'a str>,
+    /// The marks of the words at the caret or of the whole selection, which Home's mark
+    /// buttons show as pressed (issue #255).
+    pub marks: crate::pageedit::Marks,
     pub font_size: Option<&'a str>,
 }
 
@@ -1005,13 +1019,15 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
                     acts.push(Act::FontSize(size));
                 }
-                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), false, t).clicked() {
+                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
-                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), false, t).clicked() {
+                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
                     acts.push(Act::Mark("italic"));
                 }
-                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), false, t).clicked() {
+                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t)
+                    .clicked()
+                {
                     acts.push(Act::Mark("strike"));
                 }
                 if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
@@ -1056,15 +1072,15 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             });
             ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), false, t).clicked() {
+                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
                     acts.push(Act::Mark("underline"));
                 }
                 // i18n-exempt: x2 is the compact mathematical symbol for subscript.
-                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), false, t).clicked() {
+                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
                     acts.push(Act::Mark("subscript"));
                 }
                 // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
-                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), false, t).clicked() {
+                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
                     acts.push(Act::Mark("superscript"));
                 }
             });
@@ -1782,6 +1798,45 @@ fn colour_swatch(ui: &mut Ui, colour: Option<notecraft_model::NodeColor>, here: 
     resp.on_hover_text(name)
 }
 
+/// The Rule Line Colour row of the paper gallery (issue #288): Automatic (the theme's own lines)
+/// and the named colours, each swatch drawn as a short rule in the colour the lines will be.
+fn rule_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    let mut picked = false;
+    ui.label(egui::RichText::new(crate::tl_id!("ui.rule_line_colour")).strong().color(t.text));
+    ui.add_enabled_ui(view.has_page, |ui| {
+        ui.horizontal(|ui| {
+            for colour in std::iter::once(None).chain(notecraft_model::NodeColor::ALL.into_iter().map(Some)) {
+                let here = view.rule_colour == colour;
+                let side = 22.0;
+                let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+                let painter = ui.painter();
+                painter.rect_filled(rect, 3.0, t.editor);
+                let (_, strong) = crate::theme::rule_lines_in(t, colour);
+                for k in 1..4 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let y = rect.min.y + side * k as f32 / 4.0;
+                    painter.hline(rect.min.x + 3.0..=rect.max.x - 3.0, y, egui::Stroke::new(1.5, strong));
+                }
+                let (edge, width) = if here { (t.accent, 2.0) } else { (t.faint, 1.0) };
+                painter.rect_stroke(rect, 3.0, egui::Stroke::new(width, edge), egui::StrokeKind::Inside);
+                // Named apart from the page colour swatches beside them: "Blue lines".
+                let name = match colour {
+                    Some(c) => crate::i18n::format_message_id("ui.colour_lines", &[("colour", crate::tl!(c.label()))]),
+                    None => crate::tl_id!("ui.automatic_rule_lines").to_string(),
+                };
+                let enabled = ui.is_enabled();
+                let said = name.clone();
+                resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, here, &said));
+                if resp.on_hover_text(name).clicked() {
+                    acts.push(Act::RuleColour(colour));
+                    picked = true;
+                }
+            }
+        });
+    });
+    picked
+}
+
 /// Shared by the direct Page colour menu and the combined Format Background gallery.
 fn page_colour_palette(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) -> bool {
     let mut picked = false;
@@ -2014,7 +2069,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
                     ui.separator();
                     picked |= page_colour_palette(ui, view, t, acts);
                     ui.separator();
-                    ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.rule_line_colour_not_built")).color(t.muted)));
+                    picked |= rule_colour_palette(ui, view, t, acts);
                 });
             })
             .response;
@@ -2132,7 +2187,29 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                         }
                     }
                     ui.separator();
-                    not_built(ui, crate::tl_id!("ui.laser_pointer"), t);
+                    // Not a tool for the rack: it draws nothing, so it is picked up here and put
+                    // down with Escape or any other tool (issue #289).
+                    let (row, hit) = ui.allocate_exact_size(vec2(162.0, 28.0), Sense::click());
+                    let painter = ui.painter_at(row);
+                    if hit.hovered() {
+                        painter.rect_filled(row, 4.0, t.row_hover);
+                    }
+                    let dot = egui::pos2(row.min.x + 13.0, row.center().y);
+                    painter.circle_filled(dot, 7.0, crate::inkpad::LASER.gamma_multiply(0.3));
+                    painter.circle_filled(dot, 4.0, crate::inkpad::LASER);
+                    painter.text(
+                        egui::pos2(row.min.x + 32.0, row.center().y),
+                        Align2::LEFT_CENTER,
+                        crate::tl_id!("ui.laser_pointer"),
+                        egui::FontId::proportional(12.5),
+                        t.text,
+                    );
+                    let enabled = ui.is_enabled();
+                    hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, crate::tl_id!("ui.laser_pointer")));
+                    if hit.on_hover_text(crate::tl_id!("ui.point_at_the_page_without_drawing_on_it")).clicked() {
+                        acts.push(Act::InkPointer(Pointer::Laser));
+                        picked = true;
+                    }
                 });
             })
             .response;
