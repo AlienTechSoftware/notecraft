@@ -366,6 +366,8 @@ mod tests {
         let page = ops::create_node(&sec, "Lab report", NodeKind::Page, None, &settings).expect("page");
         crate::page::save_body(&page, "# Lab report\n\n## Method\n\n## Results\n").expect("save");
         set_appearance(&page, Some("grid-small"), Some("yellow")).expect("paper");
+        let a5 = notecraft_model::paper::Paper { landscape: true, ..notecraft_model::paper::Paper::new(notecraft_model::paper::Size::A5) };
+        crate::page::set_paper_size(&page, Some(a5)).expect("paper size");
         fs::write(page.join("assets").join("diagram.txt"), "a file").expect("asset");
         fs::create_dir_all(page.join(".notecraft").join("versions")).expect("history");
         let sub = ops::create_node(&page, "Subpage", NodeKind::Page, None, &settings).expect("subpage");
@@ -388,6 +390,7 @@ mod tests {
         assert!(!crate::page::load_page(&one).expect("load").has_title, "the page is untitled, as Add Page makes it");
         assert!(crate::page::load_page(&one).expect("load").body.contains("## Results"));
         assert_eq!(crate::page::appearance(&one).expect("look"), (Some("grid-small".into()), Some("yellow".into())));
+        assert_eq!(crate::page::paper_size(&one).expect("paper size"), Some(a5), "the sheet comes too (issue #269)");
         assert!(one.join("assets").join("diagram.txt").is_file(), "the template's files come too");
         assert!(read_node(&one).expect("one").order > read_node(&page).expect("page").order, "last in the section");
 

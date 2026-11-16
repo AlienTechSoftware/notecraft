@@ -448,6 +448,40 @@ pub fn set_rule_colour(dir: &Path, colour: Option<&str>) -> Result<()> {
     write_atomic(&file, &out)
 }
 
+const PAPER_SIZE_KEY: &str = "paper_size";
+const PAPER_SIZE_META: &str = "notecraft:paper-size";
+
+/// The sheet the page is written for (issue #269). `None` is Auto: the page grows with its
+/// content. A line that does not read is Auto too.
+pub fn paper_size(dir: &Path) -> Result<Option<notecraft_model::paper::Paper>> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let raw = match format {
+        PageFormat::Html => html::meta(&text, PAPER_SIZE_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, PAPER_SIZE_KEY),
+    };
+    Ok(raw.and_then(|r| notecraft_model::paper::Paper::parse(&r)))
+}
+
+/// Writes it into the page's own file. `None` takes the line out, which is Auto.
+pub fn set_paper_size(dir: &Path, paper: Option<notecraft_model::paper::Paper>) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let line = paper.map(notecraft_model::paper::Paper::write);
+    let out = match format {
+        PageFormat::Html => html::set_meta(&text, PAPER_SIZE_META, line.as_deref().unwrap_or_default()),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front = match &line {
+                Some(l) => frontmatter::set_value(&front, PAPER_SIZE_KEY, l),
+                None => frontmatter::remove_value(&front, PAPER_SIZE_KEY),
+            };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
 const COLUMNS_KEY: &str = "columns";
 const COLUMNS_META: &str = "notecraft:columns";
 
@@ -592,6 +626,31 @@ mod tests {
             let fits = "a".repeat(MAX_PAGE_BYTES - 64 * 1024);
             save_body(&page, &fits).expect("a body that fits with its head");
             assert_eq!(load_page(&page).expect("the saved page opens again").body.trim().len(), fits.len(), "{format:?}");
+        }
+    }
+
+    /// Issue #269: a page's paper is kept in its own file in both formats, survives a save of
+    /// its words, and Auto takes it out again.
+    #[test]
+    fn a_page_keeps_its_paper_size_in_both_formats() {
+        use notecraft_model::paper::{Paper, Size};
+        let t = crate::testing::TempDir::new("page-paper-size");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        for format in [notecraft_model::PageFormat::Html, notecraft_model::PageFormat::Cmgfm] {
+            let page =
+                crate::ops::create_node(&notebook, &format!("Sheet {}", format.id()), notecraft_model::NodeKind::Page, Some(format), &settings)
+                    .expect("page");
+            assert_eq!(paper_size(&page).expect("read"), None, "{format:?}: a new page is Auto");
+            let letter = Paper { size: Size::Letter, landscape: true, margins: [10.0, 12.5, 10.0, 12.5] };
+            set_paper_size(&page, Some(letter)).expect("set");
+            save_body(&page, "words after the paper").expect("save");
+            assert_eq!(paper_size(&page).expect("read"), Some(letter), "{format:?}");
+            assert_eq!(load_page(&page).expect("load").body.trim(), "words after the paper", "{format:?}: the words are untouched");
+            let (_, file) = crate::tree::page_file(&page).expect("file");
+            assert!(fs::read_to_string(&file).expect("text").contains("letter landscape 10,12.5,10,12.5"), "{format:?}: one plain line");
+            set_paper_size(&page, None).expect("auto");
+            assert_eq!(paper_size(&page).expect("read"), None, "{format:?}: Auto again");
         }
     }
 

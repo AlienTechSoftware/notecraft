@@ -548,6 +548,8 @@ struct Editor {
     colour: Option<notecraft_model::NodeColor>,
     /// The colour of this page's rule and grid lines, when it was given one (issue #288).
     rule_colour: Option<notecraft_model::NodeColor>,
+    /// The sheet the page is written for; `None` is Auto (issue #269).
+    paper_size: Option<notecraft_model::paper::Paper>,
     /// What the page looked like before each change, so a change can be taken back.
     history: crate::history::History,
     /// The ink files in the page's folder. The folder is what decides: the page's own
@@ -2406,6 +2408,7 @@ impl NoteCraftApp {
                 paper: appearance.0,
                 colour: appearance.1,
                 rule_colour: notecraft_store::page::rule_colour(dir).ok().flatten().and_then(|c| notecraft_model::NodeColor::parse(&c)),
+                paper_size: notecraft_store::page::paper_size(dir).ok().flatten(),
                 history: crate::history::History::new(crate::history::Step::new(first.0, first.1, first.2, None, crate::history::Kind::Edit)),
                 origin: egui::Pos2::ZERO,
                 origin_in_canvas: None,
@@ -4029,6 +4032,7 @@ impl NoteCraftApp {
             gridcraft: self.gridcraft.is_some(),
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             rule_colour: self.editor.as_ref().and_then(|e| e.rule_colour),
+            paper_size: self.editor.as_ref().and_then(|e| e.paper_size),
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
@@ -4551,6 +4555,7 @@ impl NoteCraftApp {
                     None => crate::tl_id!("ui.the_page_is_the_theme_s_own_colour").to_string(),
                 });
             }
+            ribbon::Act::PaperSize(paper) => self.set_paper_size(paper.as_deref().and_then(notecraft_model::paper::Paper::parse)),
             ribbon::Act::Undo => self.undo(),
             ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
@@ -5058,6 +5063,37 @@ impl NoteCraftApp {
             ("color", colour.map(notecraft_model::NodeColor::id).unwrap_or("none")),
         ];
         self.run("page.paper", &params(&pairs));
+    }
+
+    /// Gives the open page its sheet, or takes it back to Auto, and writes it into the page's
+    /// file (issue #269). The words are not touched: only how the page is laid out to show it.
+    fn set_paper_size(&mut self, paper: Option<notecraft_model::paper::Paper>) {
+        let Some(ed) = self.editor.as_mut() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        if ed.paper_size == paper {
+            return;
+        }
+        let was_size = ed.paper_size.map(|p| (std::mem::discriminant(&p.size), p.landscape));
+        ed.paper_size = paper;
+        let path = path_str(&ed.dir);
+        let line = paper.map_or_else(|| "auto".to_string(), notecraft_model::paper::Paper::write);
+        self.run("page.paper_size", &params(&[("path", &path), ("size", &line)]));
+        // Said when the sheet or its turn changes, not at every step of a dragged margin.
+        let now_size = paper.map(|p| (std::mem::discriminant(&p.size), p.landscape));
+        if now_size != was_size || paper.is_none() {
+            self.say(match paper {
+                Some(p) => crate::i18n::format_message_id(
+                    "ui.the_page_is_written_on_size_turn",
+                    &[
+                        ("size", crate::tl!(p.size.label())),
+                        ("turn", &(if p.landscape { crate::tl_id!("ui.landscape") } else { crate::tl_id!("ui.portrait") }).to_lowercase()),
+                    ],
+                ),
+                None => crate::tl_id!("ui.the_page_is_auto_it_grows_with_what_is_on_it").to_string(),
+            });
+        }
     }
 
     /// Takes the page back to how it was before the last change, or forward again.
@@ -7694,9 +7730,18 @@ impl NoteCraftApp {
                     // direction, if the writer gave it one.
                     let page_dir = ed.page_dir;
                     let available_width = ui.available_width();
-                    let page_column = 780.0 * zoom_scale;
+                    // A page written for a sheet runs its words between the sheet's margins, and the
+                    // sheet is drawn behind it; an Auto page is the usual column (issue #269).
+                    let sheet = ed.paper_size.filter(|_| wide).map(|p| crate::paper::Sheet::of(p, zoom_scale));
+                    let page_column = sheet.map_or(780.0 * zoom_scale, crate::paper::Sheet::column);
                     let margin = if wide { ((available_width - page_column) / 2.0).max(8.0) } else { 0.0 };
-                    egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: 4, bottom: 8 }).show(ui, |ui| {
+                    let top_pad = sheet.map_or(4, |s| s.margins[0].round().clamp(4.0, 127.0) as i8);
+                    if let Some(sheet) = sheet {
+                        let left = ui.max_rect().min.x + f32::from(margin as i8) - sheet.margins[3];
+                        let top = ui.max_rect().min.y + f32::from(top_pad) - sheet.margins[0];
+                        crate::paper::paint(&ui.painter().with_clip_rect(viewport), viewport, egui::pos2(left, top), sheet, &tokens);
+                    }
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: top_pad, bottom: 8 }).show(ui, |ui| {
                         let column = if available_width >= page_column { page_column } else { (available_width - 16.0).max(1.0) };
                         ui.set_min_width(column);
                         ui.set_width(column);
@@ -9867,6 +9912,7 @@ impl NoteCraftApp {
             "theme": {"id": self.theme().id(), "modePref": self.mode_pref.id(), "accent": self.accent.id()},
             // The paper behind the pages, as the View tab's gallery sets it.
             "paper": self.paper_now().id(),
+            "paperSize": self.editor.as_ref().and_then(|e| e.paper_size).map_or_else(|| "auto".to_string(), notecraft_model::paper::Paper::write),
             "ruleColour": self.editor.as_ref().and_then(|e| e.rule_colour).map(notecraft_model::NodeColor::id),
             "pageColour": self.editor.as_ref().and_then(|e| e.colour).map(notecraft_model::NodeColor::id),
             // The pen the Draw tab is set to, and the drawing it writes in.
