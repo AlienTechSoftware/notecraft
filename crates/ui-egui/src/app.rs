@@ -363,6 +363,40 @@ fn insert_space_overlay(ctx: &Context, visible: egui::Rect, t: &Tokens) -> Optio
     done
 }
 
+/// How far back History > Recent Edits looks (issue #279).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecentRange {
+    Today,
+    Week,
+    Month,
+    All,
+}
+
+impl RecentRange {
+    pub const ALL: [RecentRange; 4] = [RecentRange::Today, RecentRange::Week, RecentRange::Month, RecentRange::All];
+
+    fn label(self) -> &'static str {
+        match self {
+            RecentRange::Today => crate::tl_id!("ui.today"),
+            RecentRange::Week => crate::tl_id!("ui.last_7_days"),
+            RecentRange::Month => crate::tl_id!("ui.last_30_days"),
+            RecentRange::All => crate::tl_id!("ui.all_time"),
+        }
+    }
+
+    /// The earliest moment in the range, seconds since 1970, for `now` on a clock `offset`
+    /// seconds ahead of UTC: today begins at the user's own midnight.
+    pub fn since(self, now: i64, offset: i32) -> Option<i64> {
+        let midnight = now - (now + i64::from(offset)).rem_euclid(86_400);
+        match self {
+            RecentRange::Today => Some(midnight),
+            RecentRange::Week => Some(midnight - 6 * 86_400),
+            RecentRange::Month => Some(midnight - 29 * 86_400),
+            RecentRange::All => None,
+        }
+    }
+}
+
 fn notebook_for(path: &Path) -> Option<PathBuf> {
     let mut current = path;
     loop {
@@ -827,9 +861,19 @@ enum Dialog {
         path: PathBuf,
     },
     ResetPreferences,
+    /// History > Recent Edits (issue #279).
+    RecentEdits {
+        range: RecentRange,
+        /// Only the notebook the open page is in, rather than every open notebook.
+        this_notebook: bool,
+        filter: String,
+        items: Vec<notecraft_store::recent::Edited>,
+    },
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
+        /// A saved version opened for reading, before any Restore (issue #278).
+        preview: Option<Box<crate::versions::Preview>>,
     },
     RecycleBin {
         notebook: PathBuf,
@@ -2155,6 +2199,33 @@ impl NoteCraftApp {
             self.unread.insert(dir);
             self.say(crate::tl_id!("ui.marked_as_unread"));
         }
+  }
+    /// Every notebook that is open: those in the notebooks folder and those opened from
+    /// elsewhere.
+    fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
+        let mut notebooks = notecraft_store::tree::load_notebooks(self.session.root());
+        for dir in self.session.opened_elsewhere() {
+            if let Some(nb) = notecraft_store::tree::load_tree(dir)
+                && !notebooks.iter().any(|n| n.path == nb.path)
+            {
+                notebooks.push(nb);
+            }
+        }
+        notebooks
+    }
+
+    /// The pages changed in `range`, in every open notebook or the open page's own.
+    fn recent_edits(&self, range: RecentRange, this_notebook: bool) -> Vec<notecraft_store::recent::Edited> {
+        let mut notebooks = self.open_notebooks();
+        if this_notebook && let Some(here) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
+            notebooks.retain(|n| n.path == here);
+        }
+        notecraft_store::recent::edited(&notebooks, range.since(notecraft_model::time::now_secs(), notecraft_model::time::local_offset()))
+    }
+
+    fn show_recent_edits(&mut self, range: RecentRange, this_notebook: bool) {
+        let items = self.recent_edits(range, this_notebook);
+        self.dialog = Some(Dialog::RecentEdits { range, this_notebook, filter: String::new(), items });
     }
 
     fn show_page_versions(&mut self, page: &Path) {
@@ -2164,7 +2235,7 @@ impl NoteCraftApp {
         }
         let p = params(&[("path", &path_str(page))]);
         if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
-            self.dialog = Some(Dialog::PageVersions { page: page.to_path_buf(), versions });
+            self.dialog = Some(Dialog::PageVersions { page: page.to_path_buf(), versions, preview: None });
         }
     }
 
@@ -4094,6 +4165,7 @@ impl NoteCraftApp {
                 | ribbon::Act::Indent(_)
                 | ribbon::Act::Tag(_)
                 | ribbon::Act::Justify(_)
+                | ribbon::Act::Align(_)
         );
         let Some(ed) = self.editor.as_mut().filter(|_| wanted) else { return false };
         let range = notecraft_model::container::blocks_of(&ed.boxes, at);
@@ -4191,6 +4263,11 @@ impl NoteCraftApp {
                     }
                 }
             }
+            ribbon::Act::Align(align) => {
+                let blocks: Vec<usize> = range.collect();
+                self.align_blocks(&blocks, *align);
+                return true;
+            }
             ribbon::Act::Justify(strength) => {
                 let paragraphs: Vec<usize> = range.filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_)))).collect();
                 if paragraphs.is_empty() {
@@ -4233,12 +4310,13 @@ impl NoteCraftApp {
             ribbon::Act::File => self.backstage = Some("Info"),
             ribbon::Act::NextUnread => self.next_unread(),
             ribbon::Act::ToggleRead => self.toggle_read(),
+            ribbon::Act::RecentEdits => self.show_recent_edits(RecentRange::Week, false),
             ribbon::Act::PageVersions => {
                 self.save_now();
                 if let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) {
                     let p = params(&[("path", &path_str(&page))]);
                     if let Some(Output::Versions(versions)) = self.run("page.versions", &p) {
-                        self.dialog = Some(Dialog::PageVersions { page, versions });
+                        self.dialog = Some(Dialog::PageVersions { page, versions, preview: None });
                     }
                 }
             }
@@ -4433,6 +4511,7 @@ impl NoteCraftApp {
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
             ribbon::Act::Justify(strength) => self.apply_justify(strength),
+            ribbon::Act::Align(align) => self.apply_align(align),
             ribbon::Act::PageDirection(d) => self.apply_page_direction(d),
             ribbon::Act::Embedding(d) => self.apply_embedding(d),
             ribbon::Act::InkPointer(p) => self.pointer = p,
@@ -4989,6 +5068,7 @@ impl NoteCraftApp {
     fn step_back(&mut self, back: bool) {
         let mut nothing = false;
         let mut cols_moved = false;
+        let mut layout_moved = false;
         if let Some(ed) = self.editor.as_mut() {
             if !ed.writable {
                 nothing = true;
@@ -5015,13 +5095,20 @@ impl NoteCraftApp {
                             ed.columns = columns;
                             cols_moved = true;
                         }
+                        // And which paragraphs were justified or aligned (issue #258).
+                        if let Some(justified) = step.justified
+                            && justified != ed.justified
+                        {
+                            ed.justified = justified;
+                            layout_moved = true;
+                        }
                     }
                     None => nothing = true,
                 }
             }
         }
-        if cols_moved {
-            self.save_block_marks((true, false));
+        if cols_moved || layout_moved {
+            self.save_block_marks((cols_moved, layout_moved));
         }
         if nothing {
             self.say(if back { crate::tl_id!("ui.nothing_to_undo") } else { crate::tl_id!("ui.nothing_to_redo") });
@@ -5055,6 +5142,7 @@ impl NoteCraftApp {
             // dragged since is still noted, so an undo back to here keeps it (issue #154).
             if let Some(step) = ed.history.here_mut() {
                 step.columns = Some(ed.columns.clone());
+                step.justified = Some(ed.justified.clone());
             }
             return;
         }
@@ -5067,6 +5155,7 @@ impl NoteCraftApp {
         };
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
         step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
         ed.history.record(step);
     }
 
@@ -6104,6 +6193,16 @@ impl NoteCraftApp {
         if pressed(ctrl_shift, Key::L) {
             self.apply_direction(Some(Dir::Ltr));
         }
+        // Align Left and Align Right, as in Word and OneNote (issue #258). Ctrl+E, which Word
+        // gives to Center, is Search here as it is in OneNote, so Center is on the menu only.
+        if self.editor.as_ref().is_some_and(|e| e.caret.is_some() || e.across.is_some()) {
+            if pressed(Modifiers::COMMAND, Key::L) {
+                self.apply_align(notecraft_model::justify::Align::Left);
+            }
+            if pressed(Modifiers::COMMAND, Key::R) {
+                self.apply_align(notecraft_model::justify::Align::Right);
+            }
+        }
     }
 
     /// Which way the line the caret is in reads. `None` lets its own words decide.
@@ -6159,6 +6258,67 @@ impl NoteCraftApp {
         let mut marked = ed.justified.clone();
         marked.set(at, want);
         self.write_justified(marked, want);
+    }
+
+    /// Sets the paragraphs the caret or the selection is in against `align` (issue #258).
+    fn apply_align(&mut self, align: notecraft_model::justify::Align) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let blocks: Vec<usize> = match (ed.across.filter(|a| !a.inside_one_block()), ed.caret.as_ref()) {
+            (Some(across), _) => across.blocks().collect(),
+            (None, Some(caret)) => vec![caret.block],
+            (None, None) => {
+                self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+                self.status_is_error = false;
+                return;
+            }
+        };
+        self.align_blocks(&blocks, align);
+    }
+
+    /// Aligns the paragraphs and headings among `blocks`, or, when every one of them already
+    /// has that alignment, gives them back the alignment their words have. One undo step, and
+    /// written into the page's own file with the rest of its paragraph layout.
+    fn align_blocks(&mut self, blocks: &[usize], align: notecraft_model::justify::Align) {
+        use notecraft_formats::Block;
+        let Some(ed) = self.editor.as_mut() else { return };
+        let text: Vec<usize> =
+            blocks.iter().copied().filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_) | Block::Heading { .. }))).collect();
+        if text.is_empty() {
+            self.say(crate::tl_id!("ui.alignment_goes_on_a_paragraph_or_a_heading"));
+            return;
+        }
+        let all = text.iter().all(|i| ed.justified.align_of(*i) == Some(align));
+        let mut marked = ed.justified.clone();
+        for i in &text {
+            marked.set_mark(*i, (!all).then_some(notecraft_model::justify::Mark::Align(align)));
+        }
+        if marked == ed.justified {
+            return;
+        }
+        // The step before, with the layout it had, and the step after with the new one: an
+        // alignment changes no words, so the usual step taken after a change would not see it.
+        Self::remember_step(ed);
+        if let Some(here) = ed.history.here_mut() {
+            here.justified = Some(ed.justified.clone());
+        }
+        ed.justified = marked;
+        let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
+        ed.history.record(step);
+        if let Some(c) = ed.caret.as_mut() {
+            c.focus = true;
+        }
+        self.save_block_marks((false, true));
+        self.say(match (all, align) {
+            (true, _) => crate::tl_id!("ui.the_paragraph_follows_its_words_again"),
+            (false, notecraft_model::justify::Align::Left) => crate::tl_id!("ui.aligned_left"),
+            (false, notecraft_model::justify::Align::Center) => crate::tl_id!("ui.centred"),
+            (false, notecraft_model::justify::Align::Right) => crate::tl_id!("ui.aligned_right"),
+        });
     }
 
     /// Writes which paragraphs are justified into the page's own file, and says what `want` now is.
@@ -9070,14 +9230,166 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::PageVersions { page, versions } => {
+            Dialog::RecentEdits { range, this_notebook, filter, items } => {
+                let mut changed = false;
+                let mut go: Option<PathBuf> = None;
+                let t = self.tokens;
+                let has_page = self.editor.is_some();
+                egui::Window::new(crate::tl_id!("ui.recent_edits"))
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(520.0);
+                        ui.horizontal_wrapped(|ui| {
+                            for r in RecentRange::ALL {
+                                if ui.selectable_label(*range == r, r.label()).clicked() && *range != r {
+                                    *range = r;
+                                    changed = true;
+                                }
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(!*this_notebook, crate::tl_id!("ui.all_open_notebooks")).clicked() && *this_notebook {
+                                *this_notebook = false;
+                                changed = true;
+                            }
+                            if ui.add_enabled(has_page, egui::Button::selectable(*this_notebook, crate::tl_id!("ui.this_notebook"))).clicked()
+                                && !*this_notebook
+                            {
+                                *this_notebook = true;
+                                changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            let name = ui.label(crate::tl_id!("ui.filter"));
+                            ui.add(
+                                egui::TextEdit::singleline(filter)
+                                    .hint_text(crate::tl_id!("ui.filter_by_title_section_or_notebook"))
+                                    .desired_width(f32::INFINITY),
+                            )
+                            .labelled_by(name.id);
+                        });
+                        ui.separator();
+                        let needle = filter.trim().to_lowercase();
+                        let shown: Vec<&notecraft_store::recent::Edited> = items
+                            .iter()
+                            .filter(|e| {
+                                needle.is_empty()
+                                    || e.title.to_lowercase().contains(&needle)
+                                    || e.notebook.to_lowercase().contains(&needle)
+                                    || e.section.iter().any(|s| s.to_lowercase().contains(&needle))
+                            })
+                            .collect();
+                        if shown.is_empty() {
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.no_pages_were_changed_in_this_time")).color(t.muted));
+                        }
+                        egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+                            for e in shown {
+                                ui.horizontal(|ui| {
+                                    let title = if e.title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { e.title.clone() };
+                                    if ui.link(title).clicked() {
+                                        go = Some(e.page.clone());
+                                    }
+                                    let mut place = vec![e.notebook.clone()];
+                                    place.extend(e.section.iter().cloned());
+                                    ui.label(
+                                        egui::RichText::new(place.join(&format!(" {} ", crate::tl_id!("ui.place_separator")))).small().color(t.muted),
+                                    );
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let when =
+                                            notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(e.at)).unwrap_or_default();
+                                        let label = egui::RichText::new(when).small().color(t.muted);
+                                        let resp = ui.label(label);
+                                        if !e.stamped {
+                                            resp.on_hover_text(crate::tl_id!(
+                                                "ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"
+                                            ));
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                        ui.add_space(8.0);
+                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
+                            keep = false;
+                        }
+                    });
+                if changed {
+                    *items = self.recent_edits(*range, *this_notebook);
+                }
+                if let Some(page) = go {
+                    self.open_path(&path_str(&page));
+                    keep = false;
+                }
+            }
+            Dialog::PageVersions { page, versions, preview } => {
                 let mut restore: Option<String> = None;
+                let mut open: Option<(String, String)> = None;
+                let mut back = false;
+                let t = self.tokens;
                 egui::Window::new(crate::tl_id!("ui.page_versions_2"))
                     .collapsible(false)
                     .resizable(true)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .show(ctx, |ui| {
                         ui.set_min_width(420.0);
+                        if let Some(p) = preview.as_mut() {
+                            // An older version, read-only (issue #278): said in the window
+                            // itself, so it is never taken for the page.
+                            ui.set_min_width(560.0);
+                            ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.version_saved_when", &[("when", &p.when)])).strong());
+                            ui.colored_label(t.warn, crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"));
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui.selectable_label(!p.comparing, crate::tl_id!("ui.this_version")).clicked() {
+                                    p.comparing = false;
+                                }
+                                if ui.selectable_label(p.comparing, crate::tl_id!("ui.compare_with_the_page")).clicked() {
+                                    p.comparing = true;
+                                }
+                            });
+                            ui.separator();
+                            egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
+                                if p.comparing {
+                                    let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
+                                    if !changed {
+                                        ui.label(crate::tl_id!("ui.this_version_has_the_same_words_as_the_page"));
+                                    }
+                                    for change in &p.changes {
+                                        let (mark, line, colour) = match change {
+                                            crate::versions::Change::Same(l) => ("  ", l, t.muted),
+                                            crate::versions::Change::OnlyThen(l) => ("− ", l, t.warn),
+                                            crate::versions::Change::OnlyNow(l) => ("+ ", l, t.accent),
+                                        };
+                                        ui.label(egui::RichText::new(format!("{mark}{line}")).monospace().color(colour));
+                                    }
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(crate::tl_id!(
+                                            "ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page"
+                                        ))
+                                        .small()
+                                        .color(t.muted),
+                                    );
+                                } else {
+                                    let _ = crate::preview::show(ui, &p.blocks, page, &t, None, &notecraft_model::justify::Justified::default());
+                                }
+                            });
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                if modal_button(ui, &t, crate::tl_id!("ui.restore_this_version"), true).clicked() {
+                                    restore = Some(p.id.clone());
+                                }
+                                if modal_button(ui, &t, crate::tl_id!("ui.back_to_the_list"), false).clicked() {
+                                    back = true;
+                                }
+                                if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
+                                    keep = false;
+                                }
+                            });
+                            return;
+                        }
                         ui.label(crate::tl_id!("ui.saved_copies_of_this_page"));
                         ui.add_space(6.0);
                         if versions.is_empty() {
@@ -9086,11 +9398,14 @@ impl NoteCraftApp {
                             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                                 for version in versions.iter() {
                                     ui.horizontal(|ui| {
-                                        ui.label(&version.created);
+                                        ui.label(crate::versions::when(&version.created));
                                         let size = (version.bytes.div_ceil(1024)).to_string();
                                         let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
-                                        ui.label(egui::RichText::new(size).small().color(self.tokens.muted));
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
+                                        ui.label(egui::RichText::new(size).small().color(t.muted));
+                                        if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
+                                            open = Some((version.id.clone(), version.created.clone()));
+                                        }
+                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), true).clicked() {
                                             restore = Some(version.id.clone());
                                         }
                                     });
@@ -9098,10 +9413,22 @@ impl NoteCraftApp {
                             });
                         }
                         ui.add_space(8.0);
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
+                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
                             keep = false;
                         }
                     });
+                if back {
+                    *preview = None;
+                }
+                if let Some((id, created)) = open {
+                    // Compared with the page as it stands, unsaved words included.
+                    let now = self.editor.as_ref().filter(|e| e.dir == *page).map(|e| e.body.clone());
+                    let now = now.or_else(|| notecraft_store::page::load_page(page).ok().map(|p| p.body)).unwrap_or_default();
+                    match crate::versions::open(page, &id, &created, &now) {
+                        Ok(p) => *preview = Some(Box::new(p)),
+                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_that_version_error", &[("error", &e)])),
+                    }
+                }
                 if let Some(id) = restore {
                     if self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some() {
                         self.open_page(page);
@@ -11379,5 +11706,24 @@ mod picture_turn_tests {
             assert_eq!((width, height), (Some(40.0), Some(60.0)));
             assert_eq!(size_of(&page, &flipped), (20, 30));
         }
+    }
+}
+
+#[cfg(test)]
+mod recent_range_tests {
+    use super::RecentRange;
+
+    /// Today begins at the user's own midnight, and the week and the month count whole days
+    /// back from it, today included.
+    #[test]
+    fn ranges_begin_at_the_users_midnight() {
+        let now = notecraft_model::time::secs_from_iso("2026-11-15T20:30:00Z").expect("now");
+        let at = |iso: &str| notecraft_model::time::secs_from_iso(iso);
+        assert_eq!(RecentRange::Today.since(now, 0), at("2026-11-15T00:00:00Z"));
+        // Denver, seven hours behind: its midnight is 07:00 UTC.
+        assert_eq!(RecentRange::Today.since(now, -7 * 3600), at("2026-11-15T07:00:00Z"));
+        assert_eq!(RecentRange::Week.since(now, 0), at("2026-11-09T00:00:00Z"));
+        assert_eq!(RecentRange::Month.since(now, 0), at("2026-10-17T00:00:00Z"));
+        assert_eq!(RecentRange::All.since(now, 0), None);
     }
 }

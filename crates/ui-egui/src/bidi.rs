@@ -322,6 +322,8 @@ pub fn show(
     max_width: f32,
     page: Option<notecraft_model::Dir>,
     justify: Option<Strength>,
+    // The edge the paragraph was set against, if it was given one (issue #258).
+    align: Option<notecraft_model::justify::Align>,
     selected: Option<Selected>,
 ) -> Rect {
     // A justified paragraph is drawn from its stretched words, but it is still the words
@@ -345,7 +347,17 @@ pub fn show(
     let enabled = ui.is_enabled();
     let said = spoken(text);
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &said));
-    let origin = if notecraft_model::direction_in(text, page).is_rtl() { rect.min + vec2((rect.width() - used.x).max(0.0), 0.0) } else { rect.min };
+    // The room the lines leave: a right-to-left paragraph hangs from the right unless it was
+    // aligned otherwise, and a centred one sits in the middle of it.
+    let spare = (rect.width() - used.x).max(0.0);
+    let shift = match align {
+        Some(notecraft_model::justify::Align::Left) => 0.0,
+        Some(notecraft_model::justify::Align::Center) => spare / 2.0,
+        Some(notecraft_model::justify::Align::Right) => spare,
+        None if notecraft_model::direction_in(text, page).is_rtl() => spare,
+        None => 0.0,
+    };
+    let origin = rect.min + vec2(shift, 0.0);
     // Behind the words, never over them: the fill is opaque.
     if let Some(sel) = selected {
         let (a, b) = (moved_to(text, &long, sel.range.0), moved_to(text, &long, sel.range.1));
