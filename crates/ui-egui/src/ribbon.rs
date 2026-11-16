@@ -30,6 +30,8 @@ pub enum Act {
     File,
     /// Show the saved versions of the open page.
     PageVersions,
+    /// History > Recent Edits: the pages changed lately, to go to one (issue #279).
+    RecentEdits,
     /// Open the active notebook's recycle bin.
     RecycleBin,
     /// Open the built-in symbol picker.
@@ -2685,7 +2687,9 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::Todo, "Mark as\nRead", t);
     });
     group(ui, crate::tl_id!("ui.authors"), t, |ui| {
-        soon(ui, Icon::Clock, "Recent\nEdits", t);
+        if big(ui, Icon::Clock, crate::tl_id!("ui.recent_edits_2"), crate::tl_id!("ui.see_the_pages_changed_lately"), t).clicked() {
+            acts.push(Act::RecentEdits);
+        }
         soon(ui, Icon::Search, "Find by\nAuthor", t);
         soon(ui, Icon::Page, "Hide\nAuthors", t);
     });

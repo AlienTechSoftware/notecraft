@@ -2767,6 +2767,55 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
+/// Issue #279: History > Recent Edits was "not built". It lists the pages changed in a range,
+/// newest first, by the time each page keeps of its own, with where each one is; a filter
+/// narrows the list and a title opens that page.
+#[test]
+fn recent_edits_lists_the_pages_changed_lately_and_opens_one() {
+    use egui_kittest::kittest::Queryable as _;
+    let (_t, app, s) = sample_app("ui-recent-edits");
+    // One page last changed long ago, by its own stamp.
+    let file = s.md_page.join("index.md");
+    let text = std::fs::read_to_string(&file).expect("read");
+    let old: String = text
+        .lines()
+        .map(|l| if l.starts_with("updated:") { "updated: 2025-01-02T09:00:00Z".to_string() } else { l.to_string() })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_ne!(old, text, "the page keeps a stamp of its own");
+    std::fs::write(&file, old).expect("write");
+    let old_title = notecraft_store::tree::read_node(&s.md_page).expect("node").title;
+    let new_title = notecraft_store::tree::read_node(&s.html_page).expect("node").title;
+
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let link = |h: &Harness<'_, NoteCraftApp>, title: &str| h.query_by_role_and_label(egui::accesskit::Role::Link, title).is_some();
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Recent Edits").click();
+    settle(&mut h);
+    assert!(link(&h, &new_title), "a page changed now is in the last 7 days");
+    assert!(!link(&h, &old_title), "one changed in 2025 is not");
+    review(&mut h, "recent_edits");
+
+    h.get_by_label("All time").click();
+    settle(&mut h);
+    assert!(link(&h, &old_title) && link(&h, &new_title), "all time has both");
+
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Filter").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Filter").type_text(&old_title[..4]);
+    settle(&mut h);
+    assert!(link(&h, &old_title) && !link(&h, &new_title), "the filter narrows the list");
+
+    h.get_by_role_and_label(egui::accesskit::Role::Link, &old_title).click();
+    settle(&mut h);
+    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"].clone();
+    assert_eq!(page, json!(old_title), "the page chosen is open");
+    assert!(h.query_by_label("Recent edits").is_none(), "and the list is closed");
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.
