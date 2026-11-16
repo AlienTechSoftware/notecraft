@@ -261,6 +261,8 @@ fn draw_spans(
     // The bytes of this block's words that are selected, when a selection reaches into it
     // from a drag that crossed more than one paragraph.
     selected: Option<(usize, usize)>,
+    // The least height of a line (issue #275), already scaled to the zoom; 0 asks for nothing.
+    floor: f32,
 ) {
     let justify = mark.and_then(Mark::strength);
     let align = mark.and_then(Mark::align);
@@ -284,6 +286,7 @@ fn draw_spans(
             return;
         }
         let mut job = job(ui, spans, size, color, tokens, page);
+        crate::pagetext::floor_lines(ui.ctx(), &mut job, floor);
         // Latin has no joins to stretch, so a left-to-right paragraph is justified the way
         // egui does it, by widening the spaces. The strength is about kashidas and has
         // nothing to say here.
@@ -533,6 +536,37 @@ pub fn show(ui: &mut Ui, blocks: &[Block], page_dir: &Path, tokens: &Tokens, pag
 }
 
 /// Draws blocks at a page zoom while keeping the surrounding window unchanged.
+fn line_floor_id() -> egui::Id {
+    egui::Id::new("least-line-height-of-the-next-block")
+}
+
+/// Takes the least line height `make_room` left for the block about to be drawn, so it can
+/// never reach a block drawn after it by some other path.
+fn take_line_floor(ctx: &egui::Context) -> f32 {
+    ctx.data_mut(|d| d.remove_temp::<f32>(line_floor_id())).unwrap_or(0.0)
+}
+
+/// Drops a least line height `make_room` left that no block asked for.
+pub fn clear_room(ctx: &egui::Context) {
+    take_line_floor(ctx);
+}
+
+/// Gets ready to draw the block at `index` of a column whose first block is `first`: leaves the
+/// room the page gave it above (its own space before and the space after the block above,
+/// when that one is in this column) and tells the block how tall its lines must be at least
+/// (issue #275). Every loop that draws a page's blocks calls this, so editing, reading and the
+/// pen view lay a paragraph out the same.
+pub fn make_room(ui: &mut Ui, justified: &Justified, index: usize, first: usize, zoom: f32) {
+    let own = justified.spacing_of(index).unwrap_or_default();
+    let above = if index > first { justified.spacing_of(index - 1).map_or(0, |s| s.after) } else { 0 };
+    let gap = f32::from(own.before) + f32::from(above);
+    if gap > 0.0 {
+        ui.add_space(gap * zoom);
+    }
+    let floor = f32::from(own.line) * zoom;
+    ui.ctx().data_mut(|d| d.insert_temp(line_floor_id(), floor));
+}
+
 pub fn show_zoomed(
     ui: &mut Ui,
     blocks: &[Block],
@@ -544,6 +578,7 @@ pub fn show_zoomed(
 ) -> Option<String> {
     let mut link = None;
     for (i, block) in blocks.iter().enumerate() {
+        make_room(ui, justified, i, 0, zoom);
         let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.mark_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()
@@ -600,6 +635,8 @@ pub(crate) fn show_block_zoomed(
     zoom: f32,
 ) -> BlockResponse {
     let start = ui.cursor().min;
+    // The least height of a line this block was given, left for it by `make_room`.
+    let floor = take_line_floor(ui.ctx());
     let body = ui.style().visuals.text_color();
     let mut task_set = None;
     // Keep the actual painted bounds for rich-object hit testing.  The block's
@@ -618,9 +655,9 @@ pub(crate) fn show_block_zoomed(
                 match tagged(spans) {
                     // A heading is aligned as a paragraph is, but never justified.
                     Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
-                        draw_spans(ui, &spans, size, tokens.strong, tokens, page, aligned_only(justified), selected);
+                        draw_spans(ui, &spans, size, tokens.strong, tokens, page, aligned_only(justified), selected, floor);
                     }),
-                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, aligned_only(justified), selected),
+                    None => draw_spans(ui, spans, size, tokens.strong, tokens, page, aligned_only(justified), selected, floor),
                 }
                 ui.add_space(2.0);
             }
@@ -630,14 +667,14 @@ pub(crate) fn show_block_zoomed(
                     Some((tag, spans)) => {
                         with_tag(ui, tag, tokens, |ui| {
                             draw_inline_images(ui, &spans, page_dir, zoom, i, &mut rendered_object_rect);
-                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected);
+                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected, floor);
                         });
                         ui.add_space(4.0);
                     }
                     None => {
                         draw_inline_images(ui, spans, page_dir, zoom, i, &mut rendered_object_rect);
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
-                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected);
+                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected, floor);
                         }
                         ui.add_space(4.0);
                     }
@@ -673,11 +710,11 @@ pub(crate) fn show_block_zoomed(
                     }
                     ui.vertical(|ui| match tagged(spans) {
                         Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
-                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected);
+                            draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, None, selected, floor);
                             draw_inline_images(ui, &spans, page_dir, zoom, i, &mut rendered_object_rect);
                         }),
                         None => {
-                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected);
+                            draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, None, selected, floor);
                             draw_inline_images(ui, spans, page_dir, zoom, i, &mut rendered_object_rect);
                         }
                     });
@@ -687,7 +724,7 @@ pub(crate) fn show_block_zoomed(
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     let rect = ui.available_rect_before_wrap();
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
-                    draw_spans(ui, spans, 14.5 * zoom, tokens.muted, tokens, page, None, selected);
+                    draw_spans(ui, spans, 14.5 * zoom, tokens.muted, tokens, page, None, selected, floor);
                 });
                 ui.add_space(4.0);
             }

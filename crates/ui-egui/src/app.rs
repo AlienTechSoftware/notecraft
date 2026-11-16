@@ -772,6 +772,16 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
 use pageedit::{TABLE_MAX_COLUMNS, TABLE_MAX_ROWS};
 
 /// The rows and columns typed into Insert Table, when both are whole numbers within the limits.
+/// One value typed into the Paragraph Spacing dialog: a whole number of points up to the most a
+/// page may ask for. `Ok(None)` for an empty field, which keeps what each paragraph has.
+fn spacing_points(text: &str) -> Result<Option<u16>, ()> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    text.parse::<u16>().ok().filter(|v| *v <= notecraft_model::justify::MAX_POINTS).map(Some).ok_or(())
+}
+
 fn table_size(rows: &str, columns: &str) -> Option<(usize, usize)> {
     let r = rows.trim().parse::<usize>().ok().filter(|r| (1..=TABLE_MAX_ROWS).contains(r))?;
     let c = columns.trim().parse::<usize>().ok().filter(|c| (1..=TABLE_MAX_COLUMNS).contains(c))?;
@@ -846,6 +856,16 @@ enum Dialog {
     InsertTable {
         rows: String,
         columns: String,
+        first: bool,
+    },
+    /// Home > Alignment and direction > Paragraph Spacing Options (issue #275): the room before
+    /// and after the paragraphs that were chosen, and the least height of their lines, in
+    /// points. A field left empty keeps what each paragraph has, which is how a mixed value shows.
+    ParagraphSpacing {
+        blocks: Vec<usize>,
+        before: String,
+        after: String,
+        line: String,
         first: bool,
     },
     /// A file in the page's own folder, about to be deleted.
@@ -4596,6 +4616,7 @@ impl NoteCraftApp {
                     self.dialog = Some(Dialog::InsertTable { rows: "3".into(), columns: "3".into(), first: true });
                 }
             }
+            ribbon::Act::ParagraphSpacing => self.open_paragraph_spacing(),
             ribbon::Act::InkSensitivity(v) => {
                 self.sensitivity = v.min(100);
                 let _ = self.session.settings.set(SENSITIVITY_KEY, &self.sensitivity.to_string());
@@ -6400,6 +6421,89 @@ impl NoteCraftApp {
             (false, notecraft_model::justify::Align::Center) => crate::tl_id!("ui.centred"),
             (false, notecraft_model::justify::Align::Right) => crate::tl_id!("ui.aligned_right"),
         });
+    }
+
+    /// Opens the Paragraph Spacing dialog for the paragraphs the caret or the selection is in,
+    /// showing the value they share, or leaving a field empty where they differ (issue #275).
+    fn open_paragraph_spacing(&mut self) {
+        use notecraft_formats::Block;
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let blocks: Vec<usize> = match (ed.across.filter(|a| !a.inside_one_block()), ed.caret.as_ref()) {
+            (Some(across), _) => across.blocks().collect(),
+            (None, Some(caret)) => vec![caret.block],
+            (None, None) => {
+                self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+                self.status_is_error = false;
+                return;
+            }
+        };
+        let text: Vec<usize> = blocks
+            .into_iter()
+            .filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_) | Block::Heading { .. } | Block::Item { .. } | Block::Quote(_))))
+            .collect();
+        if text.is_empty() {
+            self.say(crate::tl_id!("ui.spacing_goes_on_text"));
+            return;
+        }
+        let each: Vec<notecraft_model::justify::Spacing> = text.iter().map(|i| ed.justified.spacing_of(*i).unwrap_or_default()).collect();
+        let shared = |part: fn(&notecraft_model::justify::Spacing) -> u16| -> String {
+            let first = each.first().map(part).unwrap_or(0);
+            if each.iter().map(part).all(|v| v == first) { first.to_string() } else { String::new() }
+        };
+        self.dialog = Some(Dialog::ParagraphSpacing {
+            before: shared(|s| s.before),
+            after: shared(|s| s.after),
+            line: shared(|s| s.line),
+            blocks: text,
+            first: true,
+        });
+    }
+
+    /// Gives the paragraphs among `blocks` the room in `change` (before, after, line height), where
+    /// a part left as `None` keeps what each already has. One undo step, written into the page's own
+    /// file with the rest of its paragraph layout (issue #275).
+    fn apply_spacing(&mut self, blocks: &[usize], change: [Option<u16>; 3]) {
+        use notecraft_model::justify::Spacing;
+        let Some(ed) = self.editor.as_mut() else { return };
+        let mut marked = ed.justified.clone();
+        for i in blocks {
+            let have = marked.spacing_of(*i).unwrap_or_default();
+            let want =
+                Spacing { before: change[0].unwrap_or(have.before), after: change[1].unwrap_or(have.after), line: change[2].unwrap_or(have.line) };
+            marked.set_spacing(*i, Some(want));
+        }
+        if marked == ed.justified {
+            return;
+        }
+        // The step before, with the layout it had, and the step after with the new one: spacing
+        // changes no words, so the usual step taken after a change would not see it.
+        Self::remember_step(ed);
+        if let Some(here) = ed.history.here_mut() {
+            here.justified = Some(ed.justified.clone());
+        }
+        ed.justified = marked;
+        let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
+        ed.history.record(step);
+        if let Some(c) = ed.caret.as_mut() {
+            c.focus = true;
+        }
+        self.save_block_marks((false, true));
+        self.say(crate::tl_id!("ui.paragraph_spacing_set"));
+    }
+
+    /// What is typed into the Paragraph Spacing dialog, for tests and automation: the three
+    /// values, as a person would type them. Does nothing when the dialog is not open.
+    pub fn set_paragraph_spacing_values(&mut self, before: &str, after: &str, line: &str) {
+        if let Some(Dialog::ParagraphSpacing { before: b, after: a, line: l, .. }) = self.dialog.as_mut() {
+            *b = before.to_string();
+            *a = after.to_string();
+            *l = line.to_string();
+        }
     }
 
     /// Writes which paragraphs are justified into the page's own file, and says what `want` now is.
@@ -9164,6 +9268,68 @@ impl NoteCraftApp {
                 if go && let Some((r, c)) = size {
                     keep = false;
                     self.insert_table(r, c);
+                }
+            }
+            Dialog::ParagraphSpacing { blocks, before, after, line, first } => {
+                let values = [spacing_points(before), spacing_points(after), spacing_points(line)];
+                let valid = values.iter().all(Result::is_ok);
+                let mut go = false;
+                let backdrop = modal_backdrop(ctx, "paragraph-spacing-backdrop");
+                egui::Window::new(crate::tl_id!("ui.paragraph_spacing"))
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.paragraph_spacing"));
+                        egui::Grid::new("paragraph-spacing-dialog").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+                            let mixed = crate::tl_id!("ui.spacing_mixed");
+                            for (label, text) in [
+                                (crate::tl_id!("ui.space_before_points"), &mut *before),
+                                (crate::tl_id!("ui.space_after_points"), &mut *after),
+                                (crate::tl_id!("ui.least_line_height_points"), &mut *line),
+                            ] {
+                                let name = ui.label(label);
+                                let field = ui.add(egui::TextEdit::singleline(text).hint_text(mixed).desired_width(80.0)).labelled_by(name.id);
+                                if *first {
+                                    field.request_focus();
+                                    *first = false;
+                                }
+                                ui.end_row();
+                            }
+                        });
+                        if !valid {
+                            let limits =
+                                crate::i18n::format_message_id("ui.spacing_limits", &[("max", &notecraft_model::justify::MAX_POINTS.to_string())]);
+                            ui.colored_label(self.tokens.warn, limits);
+                        }
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                                keep = false;
+                            }
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.spacing_reset"), false).clicked() {
+                                for text in [&mut *before, &mut *after, &mut *line] {
+                                    *text = "0".into();
+                                }
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.ok"), true, valid).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                } else if ctx.input(|input| input.key_pressed(Key::Enter)) && valid {
+                    go = true;
+                }
+                if go && let [Ok(b), Ok(a), Ok(l)] = values {
+                    keep = false;
+                    let blocks = blocks.clone();
+                    self.apply_spacing(&blocks, [b, a, l]);
                 }
             }
             Dialog::DeleteFile { page, name } => {

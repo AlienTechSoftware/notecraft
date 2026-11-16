@@ -384,7 +384,7 @@ fn page_justify(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let marked = notecraft_model::justify::parse(want);
     if marked.is_empty() && !want.trim().is_empty() {
         return Err(EngineError::BadParam(
-            "blocks is the paragraphs' positions among the page's blocks, separated by commas, each with an optional :low, :medium or :high".into(),
+            "blocks is the paragraphs' positions among the page's blocks, separated by commas, each with an optional :low, :medium or :high, or a spacing such as s3=6/12/18".into(),
         ));
     }
     page::set_justified(&path, &marked)?;
@@ -647,7 +647,7 @@ widths (optional): block:w,w,w per table, separated by semicolons, with a ! afte
         id: "page.justify",
         label: "Which paragraphs of a page are stretched to fill the column",
         params: "path (required): the page
-blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; empty draws every paragraph ragged. Without it, the page's own are reported",
+blocks (optional): the justified paragraphs' positions among the page's blocks, separated by commas, each with an optional strength after a colon (low, medium or high; a number on its own is medium), as in '4, 11:high'; a paragraph can instead be aligned (2:center) or given extra room in points, sN=before/after/line, as in 's3=6/12/18' (space before, space after and the least height of a line; at most 200 each); empty draws every paragraph ragged and with no extra room. Without it, the page's own are reported",
         changes_tree: false,
         run: page_justify,
     },

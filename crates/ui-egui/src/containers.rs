@@ -1608,11 +1608,13 @@ pub fn show_ink_view(
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
         child.set_width(container.width * zoom);
         let child_id = child.id();
+        let first = range.start;
         for index in range {
             if pageedit::is_title_echo(blocks, index, shown_title) {
                 continue;
             }
             let Some(block) = blocks.get(index) else { continue };
+            crate::preview::make_room(&mut child, justified, index, first, zoom);
             if matches!(block, Block::Table { .. }) {
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
