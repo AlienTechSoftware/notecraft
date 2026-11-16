@@ -2875,6 +2875,52 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
 }
 
+/// Issue #277: a ribbon tab wider than the window scrolled sideways but showed no sign of it, so
+/// the groups past the edge were never found. An arrow now shows at each end with more beyond
+/// it, and a click brings the hidden groups into view.
+#[test]
+fn ribbon_overflow_arrows_show_and_reach_the_hidden_groups() {
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+    let (_t, app, _s) = sample_app("ui-ribbon-overflow");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let right = "Show more of the ribbon to the right";
+    let left = "Show more of the ribbon to the left";
+    let x_of = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().bounding_box().map_or(f64::MAX, |b| b.x0);
+    assert!(h.query_by_label(right).is_some(), "a narrow window says there is more to the right");
+    assert!(h.query_by_label(left).is_none(), "and nothing to the left at the start");
+    assert!(x_of(&h, "Collect All") > 900.0, "the last group starts out of sight");
+    review(&mut h, "ribbon_overflow_start");
+    // Each click brings the next stretch into view; on the way Collect All comes into sight.
+    let mut seen = false;
+    for _ in 0..8 {
+        if h.query_by_label(right).is_none() {
+            break;
+        }
+        h.get_by_label(right).click();
+        settle(&mut h);
+        let x = x_of(&h, "Collect All");
+        seen |= x > 0.0 && x < 860.0;
+    }
+    review(&mut h, "ribbon_overflow_end");
+    assert!(seen, "Collect All came into view");
+    assert!(h.query_by_label(right).is_none(), "at the far end there is no more to the right");
+    assert!(h.query_by_label(left).is_some(), "but there is to the left");
+    h.get_by_label(left).click();
+    settle(&mut h);
+    assert!(h.query_by_label(right).is_some(), "going back, there is more to the right again");
+
+    // A window wide enough for the whole tab shows no arrows.
+    let (_t2, app2, _s2) = sample_app("ui-ribbon-no-overflow");
+    let mut wide = sized_harness(app2, LIGHT, egui::vec2(2400.0, 700.0));
+    settle(&mut wide);
+    wide.get_by_label("Home").click();
+    settle(&mut wide);
+    assert!(wide.query_by_label(right).is_none() && wide.query_by_label(left).is_none());
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.
