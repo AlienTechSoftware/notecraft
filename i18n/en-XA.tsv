@@ -1018,3 +1018,5 @@
 @id	ui.back_to_the_list	$$$Back to the list@@@
 @id	ui.preview	$$$Preview@@@
 @id	ui.cannot_open_that_version_error	$$$Cannot open that version: {error}@@@
+@id	ui.show_more_of_the_ribbon_to_the_left	$$$Show more of the ribbon to the left@@@
+@id	ui.show_more_of_the_ribbon_to_the_right	$$$Show more of the ribbon to the right@@@
