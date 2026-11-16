@@ -169,7 +169,7 @@
 @id	ui.current_session_id	वर्तमान सत्र: {id}
 @id	ui.custom	कस्टम
 @id	ui.customize_quick_access_toolbar	त्वरित एक्सेस टूलबार को अनुकूलित करें
-@id	ui.customize_tags_not_built	टैग अनुकूलित करें... (निर्मित नहीं)
+@id	ui.customize_tags	टैग अनुकूलित करें...
 @id	ui.cut	काटें
 @id	ui.cut_2	काटा गया
 @id	ui.cut_the_selection	चयन काटें

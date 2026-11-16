@@ -20,6 +20,7 @@ pub mod combo;
 pub mod compact;
 pub mod containers;
 pub mod control;
+pub mod customtags;
 pub mod datetime;
 pub mod update;
 // Android has no `rfd`: app.rs reaches this stand-in under that name there.

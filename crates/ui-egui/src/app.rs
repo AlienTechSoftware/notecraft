@@ -1017,6 +1017,8 @@ pub struct NoteCraftApp {
     hits: Vec<Hit>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
+    /// Home > More tags > Customize Tags, while it is open (issue #259).
+    custom_tags: Option<crate::customtags::Dialog>,
     templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
@@ -1221,6 +1223,7 @@ impl NoteCraftApp {
             searched: String::new(),
             hits: Vec::new(),
             tags_pane: None,
+            custom_tags: None,
             templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
@@ -4509,6 +4512,9 @@ impl NoteCraftApp {
                 self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
                 self.refresh_tags();
             }
+            ribbon::Act::CustomizeTags => {
+                self.custom_tags = Some(crate::customtags::Dialog::new(notecraft_model::tag::custom()));
+            }
             ribbon::Act::CollectAll => {
                 if self.editor.as_ref().is_none_or(|ed| !ed.writable) {
                     self.say(crate::tl_id!("ui.open_a_page_first"));
@@ -7119,7 +7125,7 @@ impl NoteCraftApp {
                 if pane.found.is_empty() {
                     ui.weak(crate::tl_id!("ui.no_tagged_notes_here"));
                 }
-                for tag in notecraft_model::Tag::ALL {
+                for tag in notecraft_model::Tag::all() {
                     let mut lines = pane.found.iter().filter(|f| f.tag == tag).peekable();
                     if lines.peek().is_none() {
                         continue;
@@ -7127,8 +7133,7 @@ impl NoteCraftApp {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-                        let mark = ribbon::mark_for(tag);
-                        crate::ribbon_icons::paint(ui.painter(), rect, mark, mark.color(tokens.text, tokens.accent));
+                        ribbon::paint_tag(ui.painter(), rect, tag, tokens.text, tokens.accent);
                         ui.strong(crate::tl!(tag.label()));
                     });
                     for line in lines {
@@ -8284,6 +8289,23 @@ impl NoteCraftApp {
     // ---------- dialogs ----------
 
     fn dialogs(&mut self, ctx: &Context) {
+        if let Some(mut dialog) = self.custom_tags.take() {
+            let out = dialog.show(ctx, &self.tokens);
+            if let Some(list) = out.changed {
+                if let Err(e) = self.session.settings.set_custom_tags(&list) {
+                    self.say(crate::i18n::format_message_id("ui.could_not_save_your_tags_error", &[("error", &e.to_string())]));
+                }
+                if self.tags_pane.is_some() {
+                    self.refresh_tags();
+                }
+            }
+            if let Some(said) = out.said {
+                self.say(said);
+            }
+            if !out.closed {
+                self.custom_tags = Some(dialog);
+            }
+        }
         while self.dialog.is_none() {
             let Some(next) = self.queued_alerts.pop_front() else { break };
             if !matches!(&next, Dialog::Alert { key, .. } if self.muted_alerts.contains(key)) {

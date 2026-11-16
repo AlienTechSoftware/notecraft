@@ -21,5 +21,5 @@ pub use color::NodeColor;
 pub use container::Container;
 pub use format::{FormatError, PageFormat};
 pub use kind::NodeKind;
-pub use tag::Tag;
+pub use tag::{CustomTag, Tag};
 pub use text::{Dir, direction, direction_in};

@@ -27,6 +27,10 @@ const SEP: char = '|';
 impl Session {
     /// Opens (and creates, if needed) the notebooks folder `root`.
     pub fn new(root: &Path, settings: Settings) -> Result<Session, EngineError> {
+        // The person's own tags are part of how every page is read (issue #259).
+        if let Some(tags) = settings.custom_tags() {
+            notecraft_model::tag::set_custom(&tags);
+        }
         std::fs::create_dir_all(root).map_err(|e| StoreError::io("create", root, e))?;
         let root = std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))?;
         let extra =

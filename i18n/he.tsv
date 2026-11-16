@@ -169,7 +169,7 @@
 @id	ui.current_session_id	הפעלה נוכחית: {id}
 @id	ui.custom	מותאם אישית
 @id	ui.customize_quick_access_toolbar	התאמה אישית של סרגל הגישה המהירה
-@id	ui.customize_tags_not_built	התאמה אישית של תגיות... (לא בנוי)
+@id	ui.customize_tags	התאמה אישית של תגיות...
 @id	ui.cut	גזור
 @id	ui.cut_2	גזור
 @id	ui.cut_the_selection	גזור את הבחירה

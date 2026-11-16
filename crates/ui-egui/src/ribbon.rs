@@ -9,7 +9,7 @@ use crate::floating::{self, Glyph};
 use crate::icons::{self, Icon};
 use crate::ribbon_icons::{self, Mark};
 use crate::theme::Tokens;
-use egui::{Align2, Rect, Sense, Ui, vec2};
+use egui::{Align2, Color32, Rect, Sense, Ui, vec2};
 use notecraft_ink::rack::{self, Nib};
 use notecraft_ink::{Rgb, Tool};
 use notecraft_model::{PageFormat, Tag};
@@ -118,6 +118,8 @@ pub enum Act {
     InsertSpaceTool,
     /// Open the Tags Summary: the tagged notes, and a way to each of them (issue #166).
     FindTags,
+    /// Home > More tags > Customize Tags: the dialog where a person defines their own tags.
+    CustomizeTags,
     /// Gather what has drifted apart on the page, boxes and ink, back together (issue #23).
     CollectAll,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
@@ -1381,14 +1383,21 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                         }
                     } else {
                         ui.label(egui::RichText::new(crate::tl_id!("ui.tags")).strong());
-                        for tag in Tag::ALL {
+                        for tag in Tag::all() {
                             if tag_row(ui, tag, t).clicked() {
                                 acts.push(Act::Tag(tag));
                                 picked = true;
                             }
                         }
                         ui.separator();
-                        ui.add_enabled(false, egui::Label::new(egui::RichText::new(crate::tl_id!("ui.customize_tags_not_built")).color(t.muted)));
+                        if ui
+                            .button(crate::tl_id!("ui.customize_tags"))
+                            .on_hover_text(crate::tl_id!("ui.make_your_own_tags_with_a_name_symbol_and_colour"))
+                            .clicked()
+                        {
+                            acts.push(Act::CustomizeTags);
+                            picked = true;
+                        }
                     }
                 });
             })
@@ -1650,13 +1659,7 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
     if resp.hovered() {
         painter.rect_filled(rect, 3.0, t.row_hover);
     }
-    let mark = mark_for(tag);
-    ribbon_icons::paint(
-        &painter,
-        Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)),
-        mark,
-        mark.color(t.text, t.accent),
-    );
+    paint_tag(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)), tag, t.text, t.accent);
     let label = tag_label(tag);
     painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, &label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
@@ -1665,9 +1668,9 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
     resp
 }
 
-/// OneNote's mark for a tag.
-pub fn mark_for(tag: Tag) -> Mark {
-    match tag {
+/// OneNote's mark for a tag. A custom tag has no mark of its own; it shows its symbol.
+pub fn mark_for(tag: Tag) -> Option<Mark> {
+    Some(match tag {
         Tag::ToDo => Mark::ToDo,
         Tag::Important => Mark::Important,
         Tag::Question => Mark::Question,
@@ -1680,6 +1683,28 @@ pub fn mark_for(tag: Tag) -> Mark {
         Tag::Website => Mark::Website,
         Tag::Idea => Mark::Idea,
         Tag::Critical => Mark::Critical,
+        Tag::Custom(_) => return None,
+    })
+}
+
+/// Draws a tag's mark in `rect`: OneNote's own for a built-in tag, the person's symbol in its
+/// colour for one they defined (issue #259).
+pub fn paint_tag(painter: &egui::Painter, rect: Rect, tag: Tag, text: Color32, accent: Color32) {
+    match (mark_for(tag), tag.custom_look()) {
+        (Some(mark), _) => ribbon_icons::paint(painter, rect, mark, mark.color(text, accent)),
+        (None, Some((symbol, colour))) => paint_symbol(painter, rect, symbol, colour),
+        (None, None) => {}
+    }
+}
+
+/// A custom tag's symbol in its colour; a plain dot when it has none.
+pub fn paint_symbol(painter: &egui::Painter, rect: Rect, symbol: &str, colour: notecraft_model::NodeColor) {
+    let (r, g, b) = colour.rgb(painter.ctx().global_style().visuals.dark_mode);
+    let colour = Color32::from_rgb(r, g, b);
+    if symbol.is_empty() {
+        painter.circle_filled(rect.center(), rect.height() * 0.3, colour);
+    } else {
+        painter.text(rect.center(), Align2::CENTER_CENTER, symbol, egui::FontId::proportional(rect.height() * 0.9), colour);
     }
 }
 

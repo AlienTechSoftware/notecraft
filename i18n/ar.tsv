@@ -169,7 +169,7 @@
 @id	ui.current_session_id	الجلسة الحالية: {id}
 @id	ui.custom	مخصص
 @id	ui.customize_quick_access_toolbar	تخصيص شريط الوصول السريع
-@id	ui.customize_tags_not_built	تخصيص العلامات... (غير مدمج)
+@id	ui.customize_tags	تخصيص العلامات...
 @id	ui.cut	قص
 @id	ui.cut_2	قص
 @id	ui.cut_the_selection	قص التحديد

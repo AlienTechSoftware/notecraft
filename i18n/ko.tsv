@@ -169,7 +169,7 @@
 @id	ui.current_session_id	현재 세션: {id}
 @id	ui.custom	사용자 지정
 @id	ui.customize_quick_access_toolbar	빠른 실행 도구 모음 사용자 지정
-@id	ui.customize_tags_not_built	태그 사용자 지정... (미구현)
+@id	ui.customize_tags	태그 사용자 지정...
 @id	ui.cut	잘라내기
 @id	ui.cut_2	잘라내기
 @id	ui.cut_the_selection	선택 항목 잘라내기

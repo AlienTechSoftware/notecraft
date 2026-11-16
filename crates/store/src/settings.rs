@@ -140,6 +140,18 @@ impl Settings {
         }
     }
 
+    /// The tags the person defined (issue #259), in their order. `None` when none were ever
+    /// saved, so a caller can tell "never set" from "all removed".
+    pub fn custom_tags(&self) -> Option<Vec<notecraft_model::CustomTag>> {
+        self.get("custom_tags").map(|v| notecraft_model::CustomTag::decode_list(&v))
+    }
+
+    /// Saves the person's tags and makes them the ones every page is read with.
+    pub fn set_custom_tags(&self, list: &[notecraft_model::CustomTag]) -> Result<()> {
+        notecraft_model::tag::set_custom(list);
+        self.set("custom_tags", &notecraft_model::CustomTag::encode_list(list))
+    }
+
     /// The format used for new pages when nothing nearer says otherwise.
     pub fn global_format(&self) -> (PageFormat, FormatSource) {
         match self.default_format() {

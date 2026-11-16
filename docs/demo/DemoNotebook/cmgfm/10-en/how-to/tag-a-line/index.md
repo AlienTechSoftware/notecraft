@@ -34,9 +34,12 @@ NoteCraft draws the mark instead of the word, but the word is what is in the fil
 stay readable in any editor and searchable from a terminal. A word that only looks like a tag,
 like #ideas without a space after it, is left alone.
 
-## What is not here yet
+## Tags of your own
 
-Custom tags and a summary page that collects every tagged line are not built. The Find Tags
-button says so.
+Open the whole list of tags and choose Customize Tags to make your own: each has a name, a
+symbol and a colour, and goes on a line from the same list. They are kept in your settings, so
+they work in every notebook, and Find Tags lists them with the rest. The page holds a marker word
+made from the name, like `#asklegal`; renaming the tag keeps it on every line, and removing it
+leaves the marker as ordinary words.
 
 Next: [Pictures and files](../pictures-and-files/).
