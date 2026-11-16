@@ -76,12 +76,11 @@ fn demo_payload(_executable: &std::path::Path) -> Option<PathBuf> {
     let installed = _executable.parent().map(|parent| parent.join("demo").join("welcome-to-notecraft"));
 
     #[cfg(target_os = "linux")]
-    let installed = if let Some(appdir) = std::env::var_os("APPDIR") {
+    let installed: Option<PathBuf> = Some(if let Some(appdir) = std::env::var_os("APPDIR") {
         PathBuf::from(appdir).join("usr/share/notecraft/demo/welcome-to-notecraft")
     } else {
         PathBuf::from("/usr/share/notecraft/demo/welcome-to-notecraft")
-    }
-    .into();
+    });
 
     #[cfg(target_os = "macos")]
     let installed = _executable.parent().and_then(|parent| parent.parent()).map(|parent| parent.join("Resources/demo/welcome-to-notecraft"));
