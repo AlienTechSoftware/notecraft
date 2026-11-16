@@ -447,11 +447,12 @@ fn normalize_ids(root: &Path) -> Result<(), String> {
     let mut nodes = Vec::new();
     collect_nodes(root, &mut nodes)?;
     nodes.sort();
-    for (index, node) in nodes.iter().enumerate() {
+    for node in &nodes {
         let text = fs::read_to_string(node).map_err(|e| format!("cannot read {}: {e}", node.display()))?;
+        let id = notecraft_model::id::new_id();
         let updated = text
             .lines()
-            .map(|line| if line.starts_with("id = ") { format!("id = \"{:020}\"", index + 1) } else { line.to_string() })
+            .map(|line| if line.starts_with("id = ") { format!("id = \"{id}\"") } else { line.to_string() })
             .collect::<Vec<_>>()
             .join("\n")
             + "\n";
@@ -460,9 +461,9 @@ fn normalize_ids(root: &Path) -> Result<(), String> {
     let mut pages = Vec::new();
     collect_pages(root, &mut pages)?;
     pages.sort();
-    for (index, page) in pages.iter().enumerate() {
+    for page in &pages {
         let text = fs::read_to_string(page).map_err(|e| format!("cannot read {}: {e}", page.display()))?;
-        let id = format!("{:020}", nodes.len() + index + 1);
+        let id = notecraft_model::id::new_id();
         let format = if page.file_name().is_some_and(|name| name == "index.html") { Format::Html } else { Format::Cmgfm };
         let updated = page_metadata(&text, format, &id, None);
         fs::write(page, updated).map_err(|e| format!("cannot rewrite {}: {e}", page.display()))?;
@@ -626,6 +627,27 @@ mod tests {
             "the stored body is byte-for-byte unchanged"
         );
         assert_ne!(notecraft_store::tree::read_node(&html).expect("HTML metadata").id, "old");
+    }
+
+    #[test]
+    fn independent_imports_do_not_reuse_notebook_section_or_page_ids() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-independent-ids");
+        let mut seen = std::collections::HashSet::new();
+        for name in ["First", "Second"] {
+            let notebook = t.path().join(name);
+            let section = notebook.join("Section");
+            let page = section.join("Page");
+            fs::create_dir_all(&page).expect("notebook tree");
+            write_node(&notebook, "notebook", name, Format::Html).expect("notebook metadata");
+            write_node(&section, "section", "Section", Format::Html).expect("section metadata");
+            fs::write(page.join("index.html"), "<html><head><title>Page</title></head><body><p>Content</p></body></html>").expect("page");
+            normalize_ids(&notebook).expect("normalize import");
+            for path in [&notebook, &section, &page] {
+                let id = notecraft_store::tree::read_node(path).expect("node").id;
+                assert!(!id.is_empty());
+                assert!(seen.insert(id), "a second import must not reuse an existing node's identity");
+            }
+        }
     }
 
     /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
