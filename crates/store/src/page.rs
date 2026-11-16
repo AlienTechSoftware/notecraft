@@ -398,6 +398,40 @@ pub fn set_appearance(dir: &Path, paper: Option<&str>, colour: Option<&str>) -> 
     write_atomic(&file, &out)
 }
 
+const RULES_KEY: &str = "rule-color";
+const RULES_META: &str = "notecraft:rule-color";
+
+/// The colour a page's rule and grid lines are drawn in (issue #288), as it is written, or
+/// `None` when the page says nothing and its lines are the theme's own grey.
+pub fn rule_colour(dir: &Path) -> Result<Option<String>> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    Ok(match format {
+        PageFormat::Html => html::meta(&text, RULES_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(&text).0, RULES_KEY),
+    }
+    .map(|v| v.trim().to_string())
+    .filter(|v| !v.is_empty()))
+}
+
+/// Writes it into the page's own file, beside the paper. `None` takes the line out again.
+pub fn set_rule_colour(dir: &Path, colour: Option<&str>) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let out = match format {
+        PageFormat::Html => html::set_meta(&text, RULES_META, colour.unwrap_or_default()),
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front = match colour {
+                Some(c) => frontmatter::set_value(&front, RULES_KEY, c),
+                None => frontmatter::remove_value(&front, RULES_KEY),
+            };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
 const COLUMNS_KEY: &str = "columns";
 const COLUMNS_META: &str = "notecraft:columns";
 

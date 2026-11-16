@@ -1,4 +1,4 @@
-//! The context menu for an image: "Save picture as...".
+//! The context menu for an image: "Save picture as...", and Rotate and Flip (issue #273).
 //!
 //! Opened when an image in the note is right-clicked.
 
@@ -66,6 +66,18 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
                 if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
                     acts.push(Act::SavePictureAs(src.clone()));
                     picked = true;
+                }
+                ui.separator();
+                for (glyph, label, how) in [
+                    (Some(Glyph::Icon(Icon::Redo)), crate::tl_id!("ui.rotate_right_90"), crate::turn::Turn::Right),
+                    (Some(Glyph::Icon(Icon::Undo)), crate::tl_id!("ui.rotate_left_90"), crate::turn::Turn::Left),
+                    (None, crate::tl_id!("ui.flip_horizontal"), crate::turn::Turn::FlipHorizontal),
+                    (None, crate::tl_id!("ui.flip_vertical"), crate::turn::Turn::FlipVertical),
+                ] {
+                    if floating::menu_row(ui, glyph, label, t).clicked() {
+                        acts.push(Act::TurnPicture(src.clone(), how));
+                        picked = true;
+                    }
                 }
             });
         })
@@ -225,6 +237,35 @@ mod tests {
 
         assert_eq!(*h.state(), vec![Act::SavePictureAs("assets/my_photo.png".to_string())]);
         assert_eq!(state(&h.ctx), None);
+    }
+
+    /// Issue #273: the menu offers the four turns, each for the picture it was opened on.
+    #[test]
+    fn test_image_menu_offers_rotate_and_flip() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let body = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+        for (label, how) in [
+            ("Rotate Right 90°", crate::turn::Turn::Right),
+            ("Rotate Left 90°", crate::turn::Turn::Left),
+            ("Flip Horizontal", crate::turn::Turn::FlipHorizontal),
+            ("Flip Vertical", crate::turn::Turn::FlipVertical),
+        ] {
+            let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
+                |ui, acts: &mut Vec<Act>| {
+                    show(ui, body, acts, &tokens);
+                },
+                Vec::new(),
+            );
+            h.ctx.data_mut(|d| d.insert_temp(id(), (egui::pos2(100.0, 100.0), "assets/scan.png".to_string())));
+            h.run();
+            h.get_by_label(label).click();
+            h.run();
+            assert_eq!(*h.state(), vec![Act::TurnPicture("assets/scan.png".to_string(), how)], "{label}");
+            assert_eq!(state(&h.ctx), None, "{label} closes the menu");
+        }
     }
 
     #[test]

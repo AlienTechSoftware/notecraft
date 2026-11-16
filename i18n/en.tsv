@@ -955,3 +955,19 @@
 @id	ui.aligned_left	Aligned left
 @id	ui.centred	Centered
 @id	ui.aligned_right	Aligned right
+@id	ui.point_at_the_page_without_drawing_on_it	Point at the page without drawing on it
+@id	ui.laser_pointer_put_down	Laser pointer put down
+@id	ui.rule_line_colour	Rule line colour
+@id	ui.automatic_rule_lines	Automatic lines
+@id	ui.the_lines_are_colour	The page's lines are {colour}
+@id	ui.the_lines_are_the_theme_s_own_colour	The page's lines are the theme's own colour
+@id	ui.colour_lines	{colour} lines
+@id	ui.rotate_right_90	Rotate Right 90°
+@id	ui.rotate_left_90	Rotate Left 90°
+@id	ui.flip_horizontal	Flip Horizontal
+@id	ui.flip_vertical	Flip Vertical
+@id	ui.this_picture_cannot_be_turned_here	This picture cannot be rotated or flipped
+@id	ui.rotated_the_picture	Rotated the picture
+@id	ui.flipped_the_picture	Flipped the picture
+@id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	Rotated the picture. Ink on the page stays where it is
+@id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	Flipped the picture. Ink on the page stays where it is
