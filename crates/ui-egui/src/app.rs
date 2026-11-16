@@ -720,6 +720,9 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
             .desired_rows(1)
             .return_key(None)
             .show(ui);
+        // A text value is not an accessible name. Preserve TextEdit's role, value and
+        // selection while naming the field for screen readers, including an empty title.
+        ui.ctx().accesskit_node_builder(out.response.id, |node| node.set_label(crate::tl_id!("ui.title_2")));
         if ed.title_buf.contains(['\n', '\r']) {
             ed.title_buf = one_line(&ed.title_buf);
         }
@@ -933,6 +936,7 @@ struct ImportJob {
 
 enum ImportMessage {
     Found(usize),
+    Destination(PathBuf),
     Section { index: usize, total: usize, label: String },
     Finished(Result<String, String>),
 }
@@ -1322,7 +1326,6 @@ impl NoteCraftApp {
     /// so a failed install shows the wizard again on the next launch.
     fn finish_first_use_wizard(&mut self, level: &str, format: PageFormat, add_demo: bool) -> Result<(), String> {
         self.session.settings.set("telemetry_level", level).map_err(|error| error.to_string())?;
-        self.session.settings.set("privacy_welcome_seen", "true").map_err(|error| error.to_string())?;
         self.session.settings.set_default_format(format).map_err(|error| error.to_string())?;
         if add_demo {
             self.save_now();
@@ -1342,6 +1345,7 @@ impl NoteCraftApp {
                 return Err(self.status.clone());
             }
         }
+        self.session.settings.set("privacy_welcome_seen", "true").map_err(|error| error.to_string())?;
         Ok(())
     }
 
@@ -1859,6 +1863,10 @@ impl NoteCraftApp {
             }
             return true;
         }
+        if !self.search.is_empty() {
+            self.dismiss_search();
+            return true;
+        }
         if self.ribbon_peek || self.painter.is_some() {
             escape(&mut self.event_frames);
             return true;
@@ -2329,6 +2337,7 @@ impl NoteCraftApp {
 
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
+        self.dismiss_search();
         self.page_opened = true;
         self.save_now();
         // The page being left was read as it now stands, own edits included (issue #291).
@@ -3402,8 +3411,12 @@ impl NoteCraftApp {
         // on a phone it does not run over the Quick Access Toolbar.
         let left_used = left.min_rect().right() - row.left();
         let search_width = (right.available_width() - left_used - 8.0).clamp(60.0, 200.0);
-        let resp =
-            right.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::tl_id!("ui.search_all_pages")).desired_width(search_width));
+        let resp = right.add(
+            egui::TextEdit::singleline(&mut self.search)
+                .id(Id::new("page-search"))
+                .hint_text(crate::tl_id!("ui.search_all_pages"))
+                .desired_width(search_width),
+        );
         if self.focus_search {
             resp.request_focus();
             self.focus_search = false;
@@ -3414,6 +3427,15 @@ impl NoteCraftApp {
                 Ok(Output::Hits(h)) => h,
                 _ => Vec::new(),
             };
+        }
+        // The query box keeps Enter for navigation rather than leaving the user with a
+        // mouse-only result list. This is the same action as clicking the first result.
+        if self.dialog.is_none()
+            && resp.lost_focus()
+            && right.input(|input| input.key_pressed(Key::Enter))
+            && let Some(path) = self.hits.first().map(|hit| hit.path.clone())
+        {
+            self.open_search_result(&path);
         }
         ui.advance_cursor_after_rect(row);
     }
@@ -3700,6 +3722,7 @@ impl NoteCraftApp {
         self.save_now();
         let path_text = path_str(path);
         if let Some(Output::Path(opened)) = self.run("notebook.open", &params(&[("path", &path_text)])) {
+            self.dismiss_search();
             self.remember_recent_notebook(&opened);
             self.open.insert(opened.clone());
             self.selected = Some(opened.clone());
@@ -3723,18 +3746,17 @@ impl NoteCraftApp {
         else {
             return;
         };
+        self.open_notebooks_from_folder(picked);
+    }
+
+    /// Handles the folder returned by the native chooser, using the same notebook operations
+    /// for a notebook itself, a parent containing notebooks, and an empty folder.
+    fn open_notebooks_from_folder(&mut self, picked: PathBuf) {
         let is_notebook = notecraft_store::tree::read_node(&picked).is_some_and(|i| i.kind == NodeKind::Notebook);
         let wanted: Vec<std::path::PathBuf> =
             if is_notebook { vec![picked.clone()] } else { notecraft_store::tree::load_notebooks(&picked).into_iter().map(|n| n.path).collect() };
         if wanted.is_empty() {
-            let p = path_str(&picked);
-            if let Some(Output::Path(opened)) = self.run("notebook.open", &params(&[("path", &p)])) {
-                self.remember_recent_notebook(&opened);
-                self.open.insert(opened.clone());
-                self.selected = Some(opened);
-                self.backstage = None;
-                self.say(crate::i18n::format_message_id("ui.path_opened_as_an_empty_notebook", &[("path", &self.shown(&picked))]));
-            }
+            self.open_notebook_from_path(&picked);
             return;
         }
         let mut opened_count = 0;
@@ -3749,10 +3771,12 @@ impl NoteCraftApp {
             }
         }
         if let Some(path) = first {
-            self.selected = Some(path);
+            self.open_notebook_from_path(&path);
         }
         self.backstage = None;
-        self.say(crate::i18n::format_count_id("ui.n_notebook_opened_n_notebooks_opened", opened_count));
+        if !self.status_is_error {
+            self.say(crate::i18n::format_count_id("ui.n_notebook_opened_n_notebooks_opened", opened_count));
+        }
     }
 
     fn import_notebook_folder(&mut self) {
@@ -3761,7 +3785,7 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_folder() else { return };
-        self.import_officeimo_source(source, true);
+        self.import_officeimo_source(source);
     }
 
     fn import_file(&mut self) {
@@ -3770,12 +3794,10 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_file() else { return };
-        // A OneNote package (.onepkg) is a whole notebook, imported the way a folder is (issue #17).
-        let folder = notecraft_import::package::is_package(&source);
-        self.import_officeimo_source(source, folder);
+        self.import_officeimo_source(source);
     }
 
-    fn import_officeimo_source(&mut self, source: PathBuf, folder: bool) {
+    fn import_officeimo_source(&mut self, source: PathBuf) {
         let format = self
             .session
             .settings
@@ -3786,18 +3808,20 @@ impl NoteCraftApp {
             notecraft_model::PageFormat::Html => notecraft_import::officeimo::Format::Html,
             notecraft_model::PageFormat::Cmgfm => notecraft_import::officeimo::Format::Cmgfm,
         };
-        let destination = self.unique_import_destination(&source);
-        let output = if folder { destination.parent().unwrap_or(self.session.root()) } else { &destination };
+        // All source types produce a new notebook under this parent. Progress reports the
+        // actual chosen path, so the view never guesses names or collision suffixes.
+        let destination = self.session.root().to_path_buf();
         log::info!("OfficeIMO import requested: source={} destination={}", source.display(), destination.display());
         let (tx, rx) = std::sync::mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let source_for_worker = source.clone();
-        let output_for_worker = output.to_path_buf();
+        let output_for_worker = destination.clone();
         std::thread::spawn(move || {
             let mut progress = |event| {
                 let message = match event {
                     notecraft_import::officeimo::Progress::Found { total } => ImportMessage::Found(total),
+                    notecraft_import::officeimo::Progress::Destination { path } => ImportMessage::Destination(path),
                     notecraft_import::officeimo::Progress::Section { index, total, label } => {
                         ImportMessage::Section { index, total, label: label.to_string() }
                     }
@@ -3833,6 +3857,7 @@ impl NoteCraftApp {
                     job.total = total;
                     job.current = label;
                 }
+                Ok(ImportMessage::Destination(path)) => job.destination = path,
                 Ok(ImportMessage::Finished(result)) => {
                     finished = Some(result);
                     break;
@@ -3850,9 +3875,11 @@ impl NoteCraftApp {
                 Ok(message) => {
                     let _ = self.run("tree.refresh", &Params::new());
                     log::info!("OfficeIMO import succeeded: source={} destination={}", job.source.display(), job.destination.display());
-                    self.status = crate::tl!(&message).to_string();
                     self.status_is_error = false;
                     self.open_notebook_from_path(&job.destination);
+                    if !self.status_is_error {
+                        self.say(crate::tl!(&message).to_string());
+                    }
                 }
                 Err(error) => {
                     log::error!("OfficeIMO import failed: source={} destination={} error={error}", job.source.display(), job.destination.display());
@@ -3902,31 +3929,6 @@ impl NoteCraftApp {
             job.cancel.store(true, Ordering::Relaxed);
             job.current = "Cancelling…".into();
         }
-    }
-
-    fn import_notebook_name(source: &Path) -> String {
-        let stem = source.file_stem().and_then(|name| name.to_str()).unwrap_or("Imported notebook");
-        let name = stem.split_once(" (On ").map_or(stem, |(name, _)| name).trim();
-        let cleaned: String =
-            name.chars().map(|c| if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '_' } else { c }).collect();
-        let cleaned = cleaned.trim().trim_end_matches('.');
-        if cleaned.is_empty() { "Imported notebook".to_string() } else { cleaned.to_string() }
-    }
-
-    fn unique_import_destination(&self, source: &Path) -> PathBuf {
-        let base = Self::import_notebook_name(source);
-        let root = self.session.root();
-        let first = root.join(&base);
-        if !first.exists() {
-            return first;
-        }
-        for number in 1..=u32::MAX {
-            let candidate = root.join(format!("{base} ({number})"));
-            if !candidate.exists() {
-                return candidate;
-            }
-        }
-        root.join(format!("{base} ({})", u64::from(u32::MAX) + 1))
     }
 
     fn reveal(&mut self, path: &Path) {
@@ -6901,42 +6903,60 @@ impl NoteCraftApp {
         }
     }
 
+    fn dismiss_search(&mut self) {
+        self.search.clear();
+        self.searched.clear();
+        self.hits.clear();
+    }
+
+    fn open_search_result(&mut self, path: &Path) {
+        self.expand_to(path);
+        self.open_page(path);
+    }
+
     fn search_popup(&mut self, ctx: &Context) {
+        if self.dialog.is_some() {
+            self.dismiss_search();
+            return;
+        }
         if self.search.trim().is_empty() {
             return;
         }
         let mut chosen: Option<PathBuf> = None;
-        egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).anchor(Align2::RIGHT_TOP, vec2(-8.0, 44.0)).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(420.0);
-                if self.hits.is_empty() {
-                    ui.weak(crate::tl_id!("ui.no_pages_match"));
-                }
-                for h in &self.hits {
-                    let r = ui.vertical(|ui| {
-                        ui.strong(&h.title);
-                        ui.label(egui::RichText::new(&h.snippet).small().color(self.tokens.muted));
-                    });
-                    if ui.interact(r.response.rect, Id::new(("hit", &h.path)), Sense::click()).clicked() {
-                        chosen = Some(h.path.clone());
+        let popup =
+            egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).anchor(Align2::RIGHT_TOP, vec2(-8.0, 44.0)).show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width(420.0);
+                    if self.hits.is_empty() {
+                        ui.weak(crate::tl_id!("ui.no_pages_match"));
                     }
-                    ui.separator();
-                }
+                    for h in &self.hits {
+                        let r = ui.vertical(|ui| {
+                            ui.strong(&h.title);
+                            ui.label(egui::RichText::new(&h.snippet).small().color(self.tokens.muted));
+                        });
+                        if ui.interact(r.response.rect, Id::new(("hit", &h.path)), Sense::click()).clicked() {
+                            chosen = Some(h.path.clone());
+                        }
+                        ui.separator();
+                    }
+                });
             });
+        // Keep the query editable while results are open. An outside press dismisses them
+        // without consuming the press, so the clicked ribbon or page control still works.
+        let search_rect = ctx.read_response(Id::new("page-search")).map(|response| response.rect);
+        let outside = ctx.input(|input| {
+            input.pointer.any_pressed()
+                && input
+                    .pointer
+                    .interact_pos()
+                    .is_some_and(|pos| !popup.response.rect.contains(pos) && !search_rect.is_some_and(|rect| rect.contains(pos)))
         });
+        if outside {
+            self.dismiss_search();
+        }
         if let Some(p) = chosen {
-            let mut parent = p.parent();
-            while let Some(d) = parent {
-                if d == self.session.root() {
-                    break;
-                }
-                self.open.insert(d.to_path_buf());
-                parent = d.parent();
-            }
-            self.open_page(&p);
-            self.search.clear();
-            self.searched.clear();
-            self.hits.clear();
+            self.open_search_result(&p);
         }
     }
 
@@ -10106,6 +10126,11 @@ impl NoteCraftApp {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
+        // Search owns Escape before text widgets and the page can consume it.
+        if self.dialog.is_none() && !self.search.is_empty() && ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.dismiss_search();
+            ctx.memory_mut(|memory| memory.surrender_focus(Id::new("page-search")));
+        }
         if !self.loaders_installed {
             crate::pictures::install(ctx);
             self.loaders_installed = true;
@@ -10437,6 +10462,44 @@ mod alert_tests {
     use super::*;
 
     #[test]
+    fn opening_a_notebook_folder_displays_its_page_instead_of_the_previous_notebook() {
+        let t = notecraft_store::testing::TempDir::new("open-folder-content");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let away = notecraft_store::ops::create_notebook(t.path(), "Away", Some(PageFormat::Html), &settings).expect("away notebook");
+        let section = notecraft_store::ops::create_node(&away, "Section", NodeKind::Section, None, &settings).expect("section");
+        let page = notecraft_store::ops::create_node(&section, "Away page", NodeKind::Page, None, &settings).expect("away page");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.md_page.to_string_lossy());
+        assert!(app.editor.is_some());
+        app.open_notebooks_from_folder(away);
+        assert_eq!(
+            app.editor.as_ref().map(|editor| &editor.dir),
+            Some(&std::fs::canonicalize(page).expect("page path")),
+            "the chosen notebook owns the visible page"
+        );
+    }
+
+    #[test]
+    fn opening_an_empty_notebook_folder_clears_the_previous_page() {
+        let t = notecraft_store::testing::TempDir::new("open-empty-folder-content");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let empty = t.path().join("Empty");
+        std::fs::create_dir(&empty).expect("empty folder");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.md_page.to_string_lossy());
+        assert!(app.editor.is_some());
+        app.open_notebooks_from_folder(empty);
+        assert!(app.editor.is_none(), "an empty notebook cannot display another notebook's page");
+        assert!(app.pad.is_none(), "stale ink cannot remain attached to an empty notebook");
+    }
+
+    #[test]
     fn release_builds_default_local_collection_to_off() {
         assert_eq!(default_telemetry_level(false), "none");
         assert_eq!(default_telemetry_level(true), "debug");
@@ -10571,6 +10634,18 @@ mod alert_tests {
 
         assert!(matches!(app.dialog, Some(Dialog::FirstUseWizard { step: 0, .. })), "the wizard opens at the logging step");
         assert!(app.queued_alerts.is_empty(), "the wizard is one window, so nothing waits behind it");
+    }
+
+    #[test]
+    fn an_incomplete_first_use_wizard_is_not_marked_finished() {
+        let t = notecraft_store::testing::TempDir::new("welcome-wizard-incomplete");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let mut app = NoteCraftApp::new(session);
+        assert!(app.finish_first_use_wizard("none", PageFormat::Cmgfm, true).is_err(), "missing bundled content is reported");
+        assert_eq!(settings.get("privacy_welcome_seen"), None, "a failed Finish must not acknowledge incomplete setup");
+        let restarted = Session::new(&t.path().join("notebooks"), settings).expect("restart");
+        assert!(matches!(NoteCraftApp::new(restarted).dialog, Some(Dialog::FirstUseWizard { .. })), "setup remains available on restart");
     }
 
     #[test]

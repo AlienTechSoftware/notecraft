@@ -6,6 +6,24 @@ to `.one` is not planned, and your notes are already plain files you can copy.
 
 ## Quick start
 
+In the desktop window, open **File**, **Open**, then **Import notebook folder** for a
+folder of OneNote `.one` section files. Use **Import File** for one section or a `.onepkg`
+package. These actions use the optional installed OfficeIMO bridge and leave the source intact.
+**Open notebooks folder** opens NoteCraft notebooks; it does not convert OneNote sections.
+
+The imported notebook opens when conversion succeeds. Folder names, including dots and backup
+dates, and any collision suffix come from the importer. A folder with no `.one` sections is
+reported without creating an empty notebook. If some sections fail, check `import-errors.txt`
+inside the generated notebook for the details.
+
+Some installed bridges export a whole section as one combined page. NoteCraft keeps that
+page and its assets together and reports this limitation after import; it cannot reconstruct
+the original page boundaries from that output. HTML that the editor cannot safely rewrite
+opens read-only. Each import creates a new notebook under the destination folder; existing
+notebooks stay intact.
+
+The built-in command-line importer is also available:
+
 ```text
 notecraft-cli import onenote --dry-run          show what would be imported
 notecraft-cli import onenote                    import everything it finds

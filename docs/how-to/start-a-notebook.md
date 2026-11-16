@@ -53,6 +53,13 @@ Everything is a folder, so you can also make one in your file manager: create th
 `_node.toml` in it (or an `index.md` for a page) and NoteCraft picks it up the next time it
 reads the tree.
 
+## Find a page
+
+Press **Ctrl+F** or **Ctrl+E** to search all open notebooks. Type a word from the title or
+page text. Click a result, or press **Enter** in the search field to open the first match.
+Press **Escape** or click outside the results to dismiss them. Opening another page also
+closes the results. In the source view, Ctrl+F searches the displayed file instead.
+
 ## Moving and deleting
 
 Move a notebook, section or page by moving its folder. The page keeps its pictures because they

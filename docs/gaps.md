@@ -69,6 +69,9 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   the folder, is unpacked (LZX or MSZIP cabinet) into a temporary folder named after it and
   imported as a notebook of that name; the window's Import File does the same through the
   OfficeIMO bridge. A package's names are checked so nothing is written outside that folder.
+  Older bundled OfficeIMO bridges export each section as a single HTML or Markdown document.
+  The window and CLI now keep that document as one combined page with its assets, and report
+  that the original page boundaries are unavailable. Unsupported HTML remains read-only.
   Still missing: section order, ink, tags, page dates, password-protected sections, and an
   import command in the window for the built-in importer.
   Underline and equation structure have nowhere to go in the page formats.
