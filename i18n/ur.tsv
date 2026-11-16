@@ -169,7 +169,7 @@
 @id	ui.current_session_id	موجودہ سیشن: {id}
 @id	ui.custom	کسٹم
 @id	ui.customize_quick_access_toolbar	فوری رسائی ٹول بار کو کسٹمائز کریں
-@id	ui.customize_tags_not_built	ٹیکس کو کسٹمائز کریں... (تیار نہیں)
+@id	ui.customize_tags	ٹیکس کو کسٹمائز کریں...
 @id	ui.cut	کاٹیں
 @id	ui.cut_2	کاٹا گیا
 @id	ui.cut_the_selection	منتخب شدہ حصہ کاٹیں

@@ -3578,13 +3578,7 @@ fn lead(ui: &mut Ui, block: &Block, t: &Tokens) -> Option<bool> {
         && tag != Tag::ToDo
     {
         let (rect, resp) = ui.allocate_exact_size(vec2(21.0, 20.0), Sense::hover());
-        let mark = crate::ribbon::mark_for(tag);
-        crate::ribbon_icons::paint(
-            &ui.painter_at(rect),
-            egui::Rect::from_center_size(rect.center(), vec2(17.0, 17.0)),
-            mark,
-            mark.color(t.text, t.accent),
-        );
+        crate::ribbon::paint_tag(&ui.painter_at(rect), egui::Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), tag, t.text, t.accent);
         resp.on_hover_text(crate::tl!(tag.label()));
     }
     match block {

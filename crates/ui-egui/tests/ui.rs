@@ -2875,6 +2875,79 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
 }
 
+/// Issue #259: Home > More tags > Customize Tags makes a tag of one's own, with a symbol and a
+/// colour; it goes on a line from the same gallery, keeps the line when renamed, and when it is
+/// removed the line keeps its words.
+#[test]
+fn customize_tags_makes_a_tag_that_goes_on_a_line() {
+    let (_t, mut app, s) = sample_app("ui-custom-tags");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 760.0));
+    settle(&mut h);
+    h.get_by_label("More tags").click();
+    h.run_steps(2);
+    h.get_by_label("Customize Tags...").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "New tag name").click();
+    pump(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "New tag name").type_text("Ask legal");
+    h.run_steps(2);
+    h.get_by_label("Add tag").click();
+    settle(&mut h);
+    h.get_by_label("Symbol for Ask legal").click();
+    h.run_steps(2);
+    h.get_by_label("♣").click();
+    h.run_steps(2);
+    h.get_by_label("Colour for Ask legal").click();
+    h.run_steps(2);
+    h.get_by_label("Red").click();
+    h.run_steps(2);
+    review(&mut h, "customize_tags");
+    let mine = notecraft_model::tag::custom();
+    assert!(
+        mine.iter().any(|c| c.id == "asklegal" && c.name == "Ask legal" && c.symbol == "♣" && c.color == notecraft_model::NodeColor::Red),
+        "the tag is defined: {mine:?}"
+    );
+    h.get_by_label("Close").click();
+    h.run_steps(2);
+
+    // The tag is in the gallery and goes on the line the caret is in.
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    pump(&mut h);
+    h.get_by_label("More tags").click();
+    h.run_steps(2);
+    h.get_by_label("Ask legal").click();
+    h.run_steps(2);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.lines().any(|l| l.starts_with("#asklegal NoteCraft pages")), "the tag is in the page:\n{body}");
+    review(&mut h, "custom_tag_on_a_line");
+
+    // Renamed, it stays on the line.
+    h.get_by_label("More tags").click();
+    h.run_steps(2);
+    h.get_by_label("Customize Tags...").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Tag name").click();
+    pump(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    pump(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Tag name").type_text("Legal review");
+    h.run_steps(2);
+    assert_eq!(notecraft_model::Tag::parse("asklegal").map(|t| t.label()), Some("Legal review"), "renamed");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("#asklegal NoteCraft pages"), "the line keeps its tag:\n{body}");
+
+    // Removed, the line keeps its words.
+    h.get_by_label("Remove Legal review").click();
+    h.run_steps(2);
+    assert!(notecraft_model::tag::custom().iter().all(|c| c.id != "asklegal"), "removed");
+    assert_eq!(notecraft_model::Tag::split("#asklegal NoteCraft").0, None);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("#asklegal NoteCraft pages"), "nothing is taken out of the page:\n{body}");
+    h.get_by_label("Close").click();
+    h.run_steps(2);
+}
+
 /// Issue #270: Draw > Panning Hand was "not built". It is a pointer mode: a drag with the main
 /// button moves the page the way a middle-button drag does, and draws, picks and writes nothing.
 /// Pressed again (or Type) it is put down, and a drag selects text again.

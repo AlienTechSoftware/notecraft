@@ -170,7 +170,7 @@
 @id	ui.current_session_id	当前会话：{id}
 @id	ui.custom	自定义
 @id	ui.customize_quick_access_toolbar	自定义快速访问工具栏
-@id	ui.customize_tags_not_built	自定义标签...（未构建）
+@id	ui.customize_tags	自定义标签...
 @id	ui.cut	剪切
 @id	ui.cut_2	剪切
 @id	ui.cut_the_selection	剪切所选内容
