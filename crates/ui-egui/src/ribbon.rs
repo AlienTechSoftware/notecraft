@@ -30,6 +30,10 @@ pub enum Act {
     File,
     /// Show the saved versions of the open page.
     PageVersions,
+    /// History > Next Unread (issue #291).
+    NextUnread,
+    /// History > Mark as Read, or as unread when it is read (issue #291).
+    ToggleRead,
     /// History > Recent Edits: the pages changed lately, to go to one (issue #279).
     RecentEdits,
     /// Open the active notebook's recycle bin.
@@ -488,6 +492,8 @@ pub struct View<'a> {
     pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
+    /// The open page was marked unread by hand (issue #291).
+    pub page_marked_unread: bool,
     /// The Format Painter is holding formatting to put on the next words picked.
     pub painting: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
@@ -2686,8 +2692,19 @@ fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
 /// unread flags or authors, so those controls are visible but disabled.
 fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.unread"), t, |ui| {
-        soon(ui, Icon::PageStack, "Next\nUnread", t);
-        soon(ui, Icon::Todo, "Mark as\nRead", t);
+        if big(ui, Icon::PageStack, crate::tl_id!("ui.next_unread_2"), crate::tl_id!("ui.go_to_the_next_page_changed_since_you_last_read_it"), t)
+            .clicked()
+        {
+            acts.push(Act::NextUnread);
+        }
+        let (label, tip) = if view.page_marked_unread {
+            (crate::tl_id!("ui.mark_as_read_2"), crate::tl_id!("ui.mark_this_page_as_read"))
+        } else {
+            (crate::tl_id!("ui.mark_as_unread_2"), crate::tl_id!("ui.mark_this_page_as_unread_to_come_back_to_it"))
+        };
+        if ui.add_enabled_ui(view.has_page, |ui| big(ui, Icon::Todo, label, tip, t)).inner.clicked() {
+            acts.push(Act::ToggleRead);
+        }
     });
     group(ui, crate::tl_id!("ui.authors"), t, |ui| {
         if big(ui, Icon::Clock, crate::tl_id!("ui.recent_edits_2"), crate::tl_id!("ui.see_the_pages_changed_lately"), t).clicked() {
