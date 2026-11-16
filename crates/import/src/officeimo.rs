@@ -476,6 +476,10 @@ fn collect_nodes(dir: &Path, nodes: &mut Vec<PathBuf>) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("cannot read an entry under {}: {e}", dir.display()))?;
         let path = entry.path();
         if entry.file_type().map_err(|e| format!("cannot inspect {}: {e}", path.display()))?.is_dir() {
+            let name = entry.file_name();
+            if name == "assets" || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
             collect_nodes(&path, nodes)?;
         } else if path.file_name().is_some_and(|name| name == "_node.toml") {
             nodes.push(path);
@@ -489,6 +493,10 @@ fn collect_pages(dir: &Path, pages: &mut Vec<PathBuf>) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("cannot read an entry under {}: {e}", dir.display()))?;
         let path = entry.path();
         if entry.file_type().map_err(|e| format!("cannot inspect {}: {e}", path.display()))?.is_dir() {
+            let name = entry.file_name();
+            if name == "assets" || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
             collect_pages(&path, pages)?;
         } else if path.file_name().is_some_and(|name| name == "index.html" || name == "index.md") {
             pages.push(path);
@@ -648,6 +656,27 @@ mod tests {
                 assert!(seen.insert(id), "a second import must not reuse an existing node's identity");
             }
         }
+    }
+
+    #[test]
+    fn normalizing_import_metadata_does_not_rewrite_owned_assets_or_staging_copies() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-owned-file-ids");
+        let page = t.path().join("Page");
+        fs::create_dir(&page).expect("page");
+        fs::write(page.join("index.html"), "<html><head><title>Page</title></head><body><p>Words</p></body></html>").expect("page file");
+        let contents = "---\nid: attachment-identity\n---\nOriginal attachment bytes\n";
+        let node_contents = "kind = \"section\"\nid = \"attachment-identity\"\n";
+        for directory in [page.join("assets"), t.path().join(".officeimo-staging-test")] {
+            fs::create_dir(&directory).expect("owned files");
+            fs::write(directory.join("index.md"), contents).expect("attached document");
+            fs::write(directory.join("_node.toml"), node_contents).expect("attached metadata document");
+        }
+        normalize_ids(t.path()).expect("normalize notebook pages only");
+        for directory in [page.join("assets"), t.path().join(".officeimo-staging-test")] {
+            assert_eq!(fs::read_to_string(directory.join("index.md")).expect("attached document"), contents);
+            assert_eq!(fs::read_to_string(directory.join("_node.toml")).expect("attached metadata document"), node_contents);
+        }
+        assert!(!notecraft_store::tree::read_node(&page).expect("page metadata").id.is_empty());
     }
 
     /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
