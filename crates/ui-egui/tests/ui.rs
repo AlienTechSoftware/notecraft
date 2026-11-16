@@ -2767,6 +2767,47 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     assert_eq!(state(&mut h)["ink"]["pointer"], json!("write"));
 }
 
+/// Issue #301: File > Save a Copy was "not built". It copies the open page, its section or its
+/// notebook into a folder the user names, as content of its own: files and ink come along,
+/// the saved versions do not, and the original stays open and unchanged.
+#[test]
+fn save_a_copy_copies_the_section_into_a_folder_and_leaves_the_original() {
+    use egui_kittest::kittest::Queryable as _;
+    let (t, app, s) = sample_app("ui-save-a-copy");
+    let out = t.path().join("copies");
+    std::fs::create_dir_all(&out).expect("out");
+    let section = s.html_page.parent().expect("section").to_path_buf();
+    let section_title = notecraft_store::tree::read_node(&section).expect("section").title;
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let before = std::fs::read_dir(&section).expect("read").count();
+
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Save a Copy").click();
+    settle(&mut h);
+    h.get_by_label(&format!("This section: {section_title}")).click();
+    settle(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Folder").type_text(&out.to_string_lossy());
+    settle(&mut h);
+    review(&mut h, "save_a_copy");
+    h.get_by_label("Save the copy").click();
+    settle(&mut h);
+
+    let copied = std::fs::canonicalize(&out).expect("out").join(notecraft_store::tree::folder_name(&section));
+    let info = notecraft_store::tree::read_node(&copied).expect("the copy is a section");
+    assert_eq!(info.title, section_title);
+    assert_ne!(info.id, notecraft_store::tree::read_node(&section).expect("original").id, "an id of its own");
+    let page_copy = copied.join(notecraft_store::tree::folder_name(&s.html_page));
+    assert!(notecraft_store::page::load_page(&page_copy).is_ok(), "the open page came along");
+    assert!(!page_copy.join(".notecraft").exists(), "without its saved versions");
+    assert!(h.query_by_label("Open folder").is_some(), "the screen says where the copy went");
+    assert_eq!(std::fs::read_dir(&section).expect("read").count(), before, "the original is as it was");
+    assert!(h.state().body().is_some(), "and the page is still open");
+}
 /// Issue #291: History > Next Unread and Mark as Read were "not built". A page changed after the
 /// user last read it is unread (a dot in the page list), Next Unread opens it, opening it reads
 /// it, Mark as Unread keeps it unread until it is opened again, and the user's own edits never

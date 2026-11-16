@@ -1109,6 +1109,8 @@ pub struct NoteCraftApp {
     keyboard_paste_requested: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
+    /// File > Save a Copy as it is being filled in (issue #301).
+    copy_choice: backstage::CopyChoice,
     /// Which pages the user has read, kept beside their settings (issue #291). Loaded the
     /// first time it is needed.
     read_state: Option<notecraft_store::read_state::ReadState>,
@@ -1270,6 +1272,7 @@ impl NoteCraftApp {
             pending_copy_html: None,
             keyboard_paste_requested: false,
             backstage: None,
+            copy_choice: backstage::CopyChoice::default(),
             read_state: None,
             unread: std::collections::HashSet::new(),
             unread_checked: None,
@@ -3516,6 +3519,9 @@ impl NoteCraftApp {
     /// The File screen: notebooks and what is done to a whole notebook.
     fn backstage_screen(&mut self, ui: &mut Ui) {
         let page = self.backstage.unwrap_or("Info");
+        // Save a Copy counts from the page that is open (issue #301).
+        let mut copy = std::mem::take(&mut self.copy_choice);
+        copy.here = self.editor.as_ref().map(|e| e.dir.clone());
         let tokens = self.tokens;
         let folder = self.shown(self.session.root());
         let recent = self.recent_notebooks();
@@ -3543,6 +3549,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 &update,
+                &mut copy,
                 &tokens,
             );
         });
@@ -3609,6 +3616,17 @@ impl NoteCraftApp {
                         let _ = crate::telemetry_export::export(&session.path(), &destination);
                     }
                 }
+                backstage::Act::ChooseCopyFolder => {
+                    if let Some(folder) = pick_copy_folder() {
+                        copy.folder = folder.to_string_lossy().into_owned();
+                    }
+                }
+                backstage::Act::SaveCopy { node, folder } => {
+                    copy.result = Some(notecraft_store::ops::save_copy(&node, &folder).map_err(|e| e.to_string()));
+                    if let Some(Ok(at)) = &copy.result {
+                        self.say(crate::i18n::format_message_id("ui.saved_a_copy_in_path", &[("path", &self.shown(at))]));
+                    }
+                }
                 backstage::Act::NotBuilt(name) => {
                     self.status =
                         crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(name))]);
@@ -3616,6 +3634,7 @@ impl NoteCraftApp {
                 }
             }
         }
+        self.copy_choice = copy;
     }
 
     fn recent_notebooks(&self) -> Vec<Node> {
@@ -10311,6 +10330,19 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     let label = crate::i18n::format_message_id("ui.accent_accent", &[("accent", accent)]);
     ui.label(egui::RichText::new(label).small());
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
+}
+
+/// File > Save a Copy's folder chooser (issue #301). A browser has no folder dialog, so the web
+/// build chooses nothing and the folder is typed instead. Kept here, below the other choosers,
+/// and gated in its own right: the web build's rules rewrite the dialogs above by where they sit.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_copy_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_folder_for_the_copy")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_copy_folder() -> Option<PathBuf> {
+    None
 }
 
 #[cfg(test)]
