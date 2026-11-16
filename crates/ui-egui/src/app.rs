@@ -363,6 +363,40 @@ fn insert_space_overlay(ctx: &Context, visible: egui::Rect, t: &Tokens) -> Optio
     done
 }
 
+/// How far back History > Recent Edits looks (issue #279).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecentRange {
+    Today,
+    Week,
+    Month,
+    All,
+}
+
+impl RecentRange {
+    pub const ALL: [RecentRange; 4] = [RecentRange::Today, RecentRange::Week, RecentRange::Month, RecentRange::All];
+
+    fn label(self) -> &'static str {
+        match self {
+            RecentRange::Today => crate::tl_id!("ui.today"),
+            RecentRange::Week => crate::tl_id!("ui.last_7_days"),
+            RecentRange::Month => crate::tl_id!("ui.last_30_days"),
+            RecentRange::All => crate::tl_id!("ui.all_time"),
+        }
+    }
+
+    /// The earliest moment in the range, seconds since 1970, for `now` on a clock `offset`
+    /// seconds ahead of UTC: today begins at the user's own midnight.
+    pub fn since(self, now: i64, offset: i32) -> Option<i64> {
+        let midnight = now - (now + i64::from(offset)).rem_euclid(86_400);
+        match self {
+            RecentRange::Today => Some(midnight),
+            RecentRange::Week => Some(midnight - 6 * 86_400),
+            RecentRange::Month => Some(midnight - 29 * 86_400),
+            RecentRange::All => None,
+        }
+    }
+}
+
 fn notebook_for(path: &Path) -> Option<PathBuf> {
     let mut current = path;
     loop {
@@ -827,6 +861,14 @@ enum Dialog {
         path: PathBuf,
     },
     ResetPreferences,
+    /// History > Recent Edits (issue #279).
+    RecentEdits {
+        range: RecentRange,
+        /// Only the notebook the open page is in, rather than every open notebook.
+        this_notebook: bool,
+        filter: String,
+        items: Vec<notecraft_store::recent::Edited>,
+    },
     PageVersions {
         page: PathBuf,
         versions: Vec<notecraft_store::page::Version>,
@@ -2043,6 +2085,34 @@ impl NoteCraftApp {
             self.open_page(&page);
             self.say(crate::tl_id!("ui.new_page"));
         }
+    }
+
+    /// Every notebook that is open: those in the notebooks folder and those opened from
+    /// elsewhere.
+    fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
+        let mut notebooks = notecraft_store::tree::load_notebooks(self.session.root());
+        for dir in self.session.opened_elsewhere() {
+            if let Some(nb) = notecraft_store::tree::load_tree(dir)
+                && !notebooks.iter().any(|n| n.path == nb.path)
+            {
+                notebooks.push(nb);
+            }
+        }
+        notebooks
+    }
+
+    /// The pages changed in `range`, in every open notebook or the open page's own.
+    fn recent_edits(&self, range: RecentRange, this_notebook: bool) -> Vec<notecraft_store::recent::Edited> {
+        let mut notebooks = self.open_notebooks();
+        if this_notebook && let Some(here) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
+            notebooks.retain(|n| n.path == here);
+        }
+        notecraft_store::recent::edited(&notebooks, range.since(notecraft_model::time::now_secs(), notecraft_model::time::local_offset()))
+    }
+
+    fn show_recent_edits(&mut self, range: RecentRange, this_notebook: bool) {
+        let items = self.recent_edits(range, this_notebook);
+        self.dialog = Some(Dialog::RecentEdits { range, this_notebook, filter: String::new(), items });
     }
 
     fn show_page_versions(&mut self, page: &Path) {
@@ -4109,6 +4179,7 @@ impl NoteCraftApp {
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
             ribbon::Act::File => self.backstage = Some("Info"),
+            ribbon::Act::RecentEdits => self.show_recent_edits(RecentRange::Week, false),
             ribbon::Act::PageVersions => {
                 self.save_now();
                 if let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) {
@@ -9028,6 +9099,99 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::RecentEdits { range, this_notebook, filter, items } => {
+                let mut changed = false;
+                let mut go: Option<PathBuf> = None;
+                let t = self.tokens;
+                let has_page = self.editor.is_some();
+                egui::Window::new(crate::tl_id!("ui.recent_edits"))
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(520.0);
+                        ui.horizontal_wrapped(|ui| {
+                            for r in RecentRange::ALL {
+                                if ui.selectable_label(*range == r, r.label()).clicked() && *range != r {
+                                    *range = r;
+                                    changed = true;
+                                }
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(!*this_notebook, crate::tl_id!("ui.all_open_notebooks")).clicked() && *this_notebook {
+                                *this_notebook = false;
+                                changed = true;
+                            }
+                            if ui.add_enabled(has_page, egui::Button::selectable(*this_notebook, crate::tl_id!("ui.this_notebook"))).clicked()
+                                && !*this_notebook
+                            {
+                                *this_notebook = true;
+                                changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            let name = ui.label(crate::tl_id!("ui.filter"));
+                            ui.add(
+                                egui::TextEdit::singleline(filter)
+                                    .hint_text(crate::tl_id!("ui.filter_by_title_section_or_notebook"))
+                                    .desired_width(f32::INFINITY),
+                            )
+                            .labelled_by(name.id);
+                        });
+                        ui.separator();
+                        let needle = filter.trim().to_lowercase();
+                        let shown: Vec<&notecraft_store::recent::Edited> = items
+                            .iter()
+                            .filter(|e| {
+                                needle.is_empty()
+                                    || e.title.to_lowercase().contains(&needle)
+                                    || e.notebook.to_lowercase().contains(&needle)
+                                    || e.section.iter().any(|s| s.to_lowercase().contains(&needle))
+                            })
+                            .collect();
+                        if shown.is_empty() {
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.no_pages_were_changed_in_this_time")).color(t.muted));
+                        }
+                        egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+                            for e in shown {
+                                ui.horizontal(|ui| {
+                                    let title = if e.title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { e.title.clone() };
+                                    if ui.link(title).clicked() {
+                                        go = Some(e.page.clone());
+                                    }
+                                    let mut place = vec![e.notebook.clone()];
+                                    place.extend(e.section.iter().cloned());
+                                    ui.label(
+                                        egui::RichText::new(place.join(&format!(" {} ", crate::tl_id!("ui.place_separator")))).small().color(t.muted),
+                                    );
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let when =
+                                            notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(e.at)).unwrap_or_default();
+                                        let label = egui::RichText::new(when).small().color(t.muted);
+                                        let resp = ui.label(label);
+                                        if !e.stamped {
+                                            resp.on_hover_text(crate::tl_id!(
+                                                "ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"
+                                            ));
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                        ui.add_space(8.0);
+                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
+                            keep = false;
+                        }
+                    });
+                if changed {
+                    *items = self.recent_edits(*range, *this_notebook);
+                }
+                if let Some(page) = go {
+                    self.open_path(&path_str(&page));
+                    keep = false;
+                }
+            }
             Dialog::PageVersions { page, versions, preview } => {
                 let mut restore: Option<String> = None;
                 let mut open: Option<(String, String)> = None;
@@ -11409,5 +11573,24 @@ mod picture_turn_tests {
             assert_eq!((width, height), (Some(40.0), Some(60.0)));
             assert_eq!(size_of(&page, &flipped), (20, 30));
         }
+    }
+}
+
+#[cfg(test)]
+mod recent_range_tests {
+    use super::RecentRange;
+
+    /// Today begins at the user's own midnight, and the week and the month count whole days
+    /// back from it, today included.
+    #[test]
+    fn ranges_begin_at_the_users_midnight() {
+        let now = notecraft_model::time::secs_from_iso("2026-11-15T20:30:00Z").expect("now");
+        let at = |iso: &str| notecraft_model::time::secs_from_iso(iso);
+        assert_eq!(RecentRange::Today.since(now, 0), at("2026-11-15T00:00:00Z"));
+        // Denver, seven hours behind: its midnight is 07:00 UTC.
+        assert_eq!(RecentRange::Today.since(now, -7 * 3600), at("2026-11-15T07:00:00Z"));
+        assert_eq!(RecentRange::Week.since(now, 0), at("2026-11-09T00:00:00Z"));
+        assert_eq!(RecentRange::Month.since(now, 0), at("2026-10-17T00:00:00Z"));
+        assert_eq!(RecentRange::All.since(now, 0), None);
     }
 }

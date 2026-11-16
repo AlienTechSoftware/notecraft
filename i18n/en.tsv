@@ -971,6 +971,20 @@
 @id	ui.flipped_the_picture	Flipped the picture
 @id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	Rotated the picture. Ink on the page stays where it is
 @id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	Flipped the picture. Ink on the page stays where it is
+@id	ui.recent_edits_2	Recent\nEdits
+@id	ui.see_the_pages_changed_lately	See the pages changed lately
+@id	ui.recent_edits	Recent edits
+@id	ui.all_open_notebooks	All open notebooks
+@id	ui.this_notebook	This notebook
+@id	ui.filter_by_title_section_or_notebook	Filter by title, section or notebook
+@id	ui.no_pages_were_changed_in_this_time	No pages were changed in this time.
+@id	ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed	This page keeps no time of its own: this is when its file was last changed.
+@id	ui.last_7_days	Last 7 days
+@id	ui.last_30_days	Last 30 days
+@id	ui.all_time	All time
+@id	ui.untitled_page	Untitled page
+@id	ui.place_separator	›
+@id	ui.filter	Filter
 @id	ui.version_saved_when	Version saved {when}
 @id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	An older version, read-only. The page is not changed unless you restore it.
 @id	ui.this_version	This version
