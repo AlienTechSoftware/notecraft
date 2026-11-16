@@ -13,8 +13,9 @@ package. These actions use the optional installed OfficeIMO bridge and leave the
 
 The imported notebook opens when conversion succeeds. Folder names, including dots and backup
 dates, and any collision suffix come from the importer. A folder with no `.one` sections is
-reported without creating an empty notebook. If some sections fail, check `import-errors.txt`
-inside the generated notebook for the details.
+reported without creating an empty notebook. If every section fails, no notebook is created and
+the error names the files that could not be converted. If some sections fail, the notebook holds
+the readable ones; check `import-errors.txt` inside it for the details.
 
 Some installed bridges export a whole section as one combined page. NoteCraft keeps that
 page and its assets together and reports this limitation after import; it cannot reconstruct
