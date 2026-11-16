@@ -4,6 +4,7 @@
 //! lets releases carry a platform-specific OfficeIMO build, and gives us a stable replacement
 //! point if the importer implementation changes later.
 
+use notecraft_formats::{frontmatter, html, templates};
 use std::ffi::OsString;
 use std::fs;
 #[cfg(windows)]
@@ -22,8 +23,18 @@ pub enum Format {
 /// Progress reported while a folder import is being materialized.
 #[derive(Clone, Debug)]
 pub enum Progress {
-    Found { total: usize },
-    Section { index: usize, total: usize, label: String },
+    Found {
+        total: usize,
+    },
+    /// The actual notebook folder chosen by the importer, including collision suffixes.
+    Destination {
+        path: PathBuf,
+    },
+    Section {
+        index: usize,
+        total: usize,
+        label: String,
+    },
 }
 
 impl Format {
@@ -104,7 +115,39 @@ pub fn run_with_progress(
     if cancelled.load(Ordering::Relaxed) {
         return Err("OfficeIMO import cancelled".to_string());
     }
-    run_one(source, output, format, cancelled)
+    run_section(source, output, format, cancelled, progress)
+}
+
+/// A single section still needs a notebook boundary. Run the bridge in owned scratch space
+/// so a flat export cannot turn the destination itself into a page or overwrite other notes.
+fn run_section(source: &Path, output: &Path, format: Format, cancelled: &AtomicBool, progress: &mut impl FnMut(Progress)) -> Result<String, String> {
+    let scratch = crate::package::Scratch::new()?;
+    let title = section_name(source);
+    progress(Progress::Found { total: 1 });
+    progress(Progress::Section { index: 1, total: 1, label: title.clone() });
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("OfficeIMO import cancelled".to_string());
+    }
+    run_one(source, &scratch.path, format, cancelled)?;
+    let (section, combined) = bridge_section(&scratch.path, format, &title)?;
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("OfficeIMO import cancelled".to_string());
+    }
+    let (notebook_title, notebook) = unique_notebook_path(output, &title);
+    fs::create_dir_all(&notebook).map_err(|e| format!("cannot create imported notebook: {e}"))?;
+    write_node(&notebook, "notebook", &notebook_title, format)?;
+    let destination = notebook.join("imported-section");
+    copy_tree(&section, &destination)?;
+    write_node(&destination, "section", &title, format)?;
+    normalize_ids(&notebook)?;
+    progress(Progress::Destination { path: notebook.clone() });
+    let summary = format!("Imported {} into {}", source.display(), notebook.display());
+    // The bridge's own message names scratch space, not the delivered notebook.
+    Ok(if combined {
+        format!("{summary}\nThis bridge exported the section as one combined page. Original page boundaries are unavailable.")
+    } else {
+        summary
+    })
 }
 
 fn run_one(source: &Path, output: &Path, format: Format, cancelled: &AtomicBool) -> Result<String, String> {
@@ -149,11 +192,9 @@ fn run_folder(
     cancelled: &AtomicBool,
     progress: &mut impl FnMut(Progress),
 ) -> Result<String, String> {
-    let notebook_name = safe_name(source.file_name().and_then(|v| v.to_str()).unwrap_or("Imported notebook"));
-    let (notebook_name, notebook) = unique_notebook_path(notebooks, &notebook_name);
-    fs::create_dir_all(&notebook).map_err(|e| format!("cannot create {}: {e}", notebook.display()))?;
-    write_node(&notebook, "notebook", &notebook_name, format)?;
-
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("OfficeIMO import cancelled".to_string());
+    }
     let mut files = Vec::new();
     collect_sections(source, source, &mut files)?;
     files.sort();
@@ -161,8 +202,18 @@ fn run_folder(
         return Err(format!("no .one section files were found under {}", source.display()));
     }
     progress(Progress::Found { total: files.len() });
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("OfficeIMO import cancelled".to_string());
+    }
+
+    let notebook_name = safe_name(source.file_name().and_then(|v| v.to_str()).unwrap_or("Imported notebook"));
+    let (notebook_name, notebook) = unique_notebook_path(notebooks, &notebook_name);
+    fs::create_dir_all(&notebook).map_err(|e| format!("cannot create {}: {e}", notebook.display()))?;
+    write_node(&notebook, "notebook", &notebook_name, format)?;
+    progress(Progress::Destination { path: notebook.clone() });
 
     let staging = notebook.join(format!(".officeimo-staging-{}", std::process::id()));
+    let mut combined_sections = 0;
     let result = (|| {
         let mut failures = Vec::new();
         for (index, file) in files.iter().enumerate() {
@@ -189,11 +240,16 @@ fn run_folder(
                 failures.push(format!("{}: {}", file.display(), error));
                 continue;
             }
-            let generated = stage.join("Imported section");
-            if !generated.is_dir() {
-                failures.push(format!("{}: OfficeIMO produced no section", file.display()));
-                continue;
-            }
+            let generated = match bridge_section(&stage, format, &section_name) {
+                Ok((generated, combined)) => {
+                    combined_sections += usize::from(combined);
+                    generated
+                }
+                Err(error) => {
+                    failures.push(format!("{}: {error}", file.display()));
+                    continue;
+                }
+            };
             copy_tree(&generated, &destination)?;
             write_node(&destination, "section", &section_name, format)?;
         }
@@ -216,7 +272,104 @@ fn run_folder(
         }
     })();
     let _ = fs::remove_dir_all(&staging);
-    result
+    result.map(|message| {
+        if combined_sections == 0 {
+            message
+        } else {
+            format!(
+                "{message}\nThis bridge exported {combined_sections} section(s) as one combined page each. Original page boundaries are unavailable."
+            )
+        }
+    })
+}
+
+/// Older bundled bridges export a section as one document instead of a native tree. Keep
+/// that document and its relative assets together, and disclose the combined-page fallback.
+fn bridge_section(stage: &Path, format: Format, title: &str) -> Result<(PathBuf, bool), String> {
+    let section = stage.join("Imported section");
+    if section.is_dir() {
+        return Ok((section, false));
+    }
+    let file_name = match format {
+        Format::Html => "index.html",
+        Format::Cmgfm => "index.md",
+    };
+    if !stage.join(file_name).is_file() {
+        return Err("OfficeIMO produced no section or page document".to_string());
+    }
+    // Enumerate before creating the destination; never recursively copy a directory into itself.
+    let entries = fs::read_dir(stage)
+        .map_err(|e| format!("cannot read bridge output: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("cannot read bridge output entry: {e}"))?;
+    let page = section.join("imported-page");
+    fs::create_dir_all(&page).map_err(|e| format!("cannot create imported page: {e}"))?;
+    for entry in entries {
+        fs::rename(entry.path(), page.join(entry.file_name())).map_err(|e| format!("cannot arrange bridge output: {e}"))?;
+    }
+    let file = page.join(file_name);
+    let text = fs::read_to_string(&file).map_err(|e| format!("cannot read imported page: {e}"))?;
+    let text = if format == Format::Html { unwrap_exporter_containers(&text) } else { text };
+    let text = page_metadata(&text, format, "pending", Some(title));
+    fs::write(&file, text).map_err(|e| format!("cannot write imported page metadata: {e}"))?;
+    write_node(&section, "section", title, format)?;
+    Ok((section, true))
+}
+
+/// The semantic bridge adds these transparent containers around supported page blocks.
+/// Remove only exact known wrappers. Attributes or containers we do not understand keep
+/// the original document intact, so the normal read-only protection still applies.
+fn unwrap_exporter_containers(text: &str) -> String {
+    let mut body = html::inner(text);
+    for wrapper in [
+        "<article class=\"markdown-body\">",
+        "<article class=\"officeimo-onenote-semantic\">",
+        "<section class=\"officeimo-onenote-page\">",
+        "<section class=\"officeimo-onenote-outline\">",
+    ] {
+        body = body.replace(wrapper, "");
+    }
+    if body.contains("<article") || body.contains("<section") {
+        return text.to_string();
+    }
+    body = body.replace("</article>", "").replace("</section>", "");
+    html::replace_inner(text, &body)
+}
+
+/// Edit only the metadata boundary. A matching line in the body is page content, and HTML
+/// can put its metadata and all its content on the same line.
+fn page_metadata(text: &str, format: Format, id: &str, title: Option<&str>) -> String {
+    match format {
+        Format::Html => {
+            let mut text = if text.contains("</head>") {
+                text.to_string()
+            } else {
+                html::replace_inner(
+                    &templates::html_page(title.or(Some("Imported page")), id, 0, &notecraft_model::time::iso_now()),
+                    &html::inner(text),
+                )
+            };
+            if let Some(title) = title {
+                let escaped = html::escape(title);
+                text = if html::title(&text).is_some() {
+                    html::replace_between(&text, "<title>", "</title>", &escaped)
+                } else {
+                    text.replacen("</head>", &format!("<title>{escaped}</title>\n</head>"), 1)
+                };
+            }
+            html::set_meta(&text, "notecraft:id", id)
+        }
+        Format::Cmgfm => {
+            let (mut front, body) = frontmatter::split_front(text);
+            if front.is_empty() {
+                front =
+                    frontmatter::split_front(&templates::markdown_page(title.or(Some("Imported page")), id, 0, &notecraft_model::time::iso_now())).0;
+            } else if let Some(title) = title {
+                front = frontmatter::set_value(&front, "title", &notecraft_model::kv::quote(title));
+            }
+            format!("{}{body}", frontmatter::set_value(&front, "id", id))
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -294,11 +447,12 @@ fn normalize_ids(root: &Path) -> Result<(), String> {
     let mut nodes = Vec::new();
     collect_nodes(root, &mut nodes)?;
     nodes.sort();
-    for (index, node) in nodes.iter().enumerate() {
+    for node in &nodes {
         let text = fs::read_to_string(node).map_err(|e| format!("cannot read {}: {e}", node.display()))?;
+        let id = notecraft_model::id::new_id();
         let updated = text
             .lines()
-            .map(|line| if line.starts_with("id = ") { format!("id = \"{:020}\"", index + 1) } else { line.to_string() })
+            .map(|line| if line.starts_with("id = ") { format!("id = \"{id}\"") } else { line.to_string() })
             .collect::<Vec<_>>()
             .join("\n")
             + "\n";
@@ -307,23 +461,11 @@ fn normalize_ids(root: &Path) -> Result<(), String> {
     let mut pages = Vec::new();
     collect_pages(root, &mut pages)?;
     pages.sort();
-    for (index, page) in pages.iter().enumerate() {
+    for page in &pages {
         let text = fs::read_to_string(page).map_err(|e| format!("cannot read {}: {e}", page.display()))?;
-        let id = format!("{:020}", nodes.len() + index + 1);
-        let updated = text
-            .lines()
-            .map(|line| {
-                if line.trim_start().starts_with("id: ") {
-                    format!("id: {id}")
-                } else if line.contains("name=\"notecraft:id\"") {
-                    format!("<meta name=\"notecraft:id\" content=\"{id}\">")
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
+        let id = notecraft_model::id::new_id();
+        let format = if page.file_name().is_some_and(|name| name == "index.html") { Format::Html } else { Format::Cmgfm };
+        let updated = page_metadata(&text, format, &id, None);
         fs::write(page, updated).map_err(|e| format!("cannot rewrite {}: {e}", page.display()))?;
     }
     Ok(())
@@ -334,6 +476,10 @@ fn collect_nodes(dir: &Path, nodes: &mut Vec<PathBuf>) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("cannot read an entry under {}: {e}", dir.display()))?;
         let path = entry.path();
         if entry.file_type().map_err(|e| format!("cannot inspect {}: {e}", path.display()))?.is_dir() {
+            let name = entry.file_name();
+            if name == "assets" || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
             collect_nodes(&path, nodes)?;
         } else if path.file_name().is_some_and(|name| name == "_node.toml") {
             nodes.push(path);
@@ -347,6 +493,10 @@ fn collect_pages(dir: &Path, pages: &mut Vec<PathBuf>) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("cannot read an entry under {}: {e}", dir.display()))?;
         let path = entry.path();
         if entry.file_type().map_err(|e| format!("cannot inspect {}: {e}", path.display()))?.is_dir() {
+            let name = entry.file_name();
+            if name == "assets" || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
             collect_pages(&path, pages)?;
         } else if path.file_name().is_some_and(|name| name == "index.html" || name == "index.md") {
             pages.push(path);
@@ -406,6 +556,129 @@ fn executable_name() -> OsString {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_flat_bridge_export_becomes_a_readable_section_with_its_assets() {
+        for format in [Format::Html, Format::Cmgfm] {
+            let t = notecraft_store::testing::TempDir::new("officeimo-flat-output");
+            let file = if format == Format::Html { "index.html" } else { "index.md" };
+            let text = if format == Format::Html {
+                "<!DOCTYPE html><html><head><title>Document</title></head><body><article><h2>So good</h2><p>This is one note 2016</p><img src=\"assets/pixel.png\"></article></body></html>"
+            } else {
+                "# So good\n\nThis is one note 2016\n\n![pixel](assets/pixel.png)\n"
+            };
+            fs::write(t.path().join(file), text).expect("recorded flat bridge output");
+            fs::create_dir(t.path().join("assets")).expect("assets");
+            fs::write(t.path().join("assets/pixel.png"), include_bytes!("../tests/fixtures/synthetic-pixel.png")).expect("picture");
+            let (section, combined) = bridge_section(t.path(), format, "Section").expect("flat output is supported");
+            assert!(combined, "the caller can disclose combined-page output");
+            normalize_ids(&section).expect("metadata");
+            let tree = notecraft_store::tree::load_tree(&section).expect("section tree");
+            assert_eq!(tree.info.kind, notecraft_model::NodeKind::Section);
+            assert_eq!(tree.children.len(), 1, "the flat bridge's document is one explicit page");
+            let page = &tree.children[0];
+            assert_eq!(page.info.kind, notecraft_model::NodeKind::Page);
+            assert!(!page.info.id.is_empty());
+            let loaded = notecraft_store::page::load_page(&page.path).expect("read imported page");
+            assert!(loaded.body.contains("This is one note 2016"));
+            assert!(loaded.body.contains("assets/pixel.png"));
+            assert_eq!(
+                fs::read(page.path.join("assets/pixel.png")).expect("page-owned picture"),
+                include_bytes!("../tests/fixtures/synthetic-pixel.png")
+            );
+        }
+    }
+
+    #[test]
+    fn flat_html_unwraps_only_known_exporter_containers() {
+        for known in [true, false] {
+            let t = notecraft_store::testing::TempDir::new("officeimo-flat-wrappers");
+            let wrapper = if known { "officeimo-onenote-semantic" } else { "user-container" };
+            let body = format!(
+                "<article class=\"markdown-body\"><article class=\"{wrapper}\"><h1>Section</h1><section class=\"officeimo-onenote-page\"><section class=\"officeimo-onenote-outline\"><p>Keep <b>every</b> word.</p></section></section></article></article>"
+            );
+            fs::write(t.path().join("index.html"), format!("<html><head><title>Document</title></head><body>{body}</body></html>"))
+                .expect("bridge document");
+            let (section, _) = bridge_section(t.path(), Format::Html, "Section").expect("section");
+            let loaded = notecraft_store::page::load_page(&section.join("imported-page")).expect("imported page");
+            assert!(loaded.body.contains("<p>Keep <b>every</b> word.</p>"));
+            if known {
+                assert_eq!(
+                    html::unsupported_tag(&loaded.body),
+                    None,
+                    "exporter-only wrappers must not make ordinary text read-only or duplicate its title"
+                );
+            } else {
+                assert_eq!(loaded.body, body, "unrecognized containers remain intact and read-only");
+            }
+        }
+    }
+
+    #[test]
+    fn normalizing_import_ids_preserves_inline_html_and_markdown_body_text() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-id-content");
+        let html = t.path().join("HTML");
+        let md = t.path().join("Markdown");
+        fs::create_dir(&html).expect("HTML page");
+        fs::create_dir(&md).expect("Markdown page");
+        let html_body = "<p>Keep every word and <b>mark</b>.</p>";
+        let html_text =
+            format!("<html><head><title>Inline</title><meta name=\"notecraft:id\" content=\"old\"></head><body>{html_body}</body></html>");
+        let md_body = "\n```text\nid: this is page content\n```\n";
+        fs::write(html.join("index.html"), &html_text).expect("HTML output");
+        fs::write(md.join("index.md"), format!("---\nid: old\ntitle: Markdown\n---\n{md_body}")).expect("Markdown output");
+        normalize_ids(t.path()).expect("normalize");
+        assert_eq!(notecraft_store::page::load_page(&html).expect("HTML page").body, html_body);
+        assert_eq!(notecraft_store::page::load_page(&md).expect("Markdown page").body, md_body.trim_start_matches('\n'));
+        assert_eq!(
+            frontmatter::split_front(&fs::read_to_string(md.join("index.md")).expect("saved Markdown")).1,
+            md_body,
+            "the stored body is byte-for-byte unchanged"
+        );
+        assert_ne!(notecraft_store::tree::read_node(&html).expect("HTML metadata").id, "old");
+    }
+
+    #[test]
+    fn independent_imports_do_not_reuse_notebook_section_or_page_ids() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-independent-ids");
+        let mut seen = std::collections::HashSet::new();
+        for name in ["First", "Second"] {
+            let notebook = t.path().join(name);
+            let section = notebook.join("Section");
+            let page = section.join("Page");
+            fs::create_dir_all(&page).expect("notebook tree");
+            write_node(&notebook, "notebook", name, Format::Html).expect("notebook metadata");
+            write_node(&section, "section", "Section", Format::Html).expect("section metadata");
+            fs::write(page.join("index.html"), "<html><head><title>Page</title></head><body><p>Content</p></body></html>").expect("page");
+            normalize_ids(&notebook).expect("normalize import");
+            for path in [&notebook, &section, &page] {
+                let id = notecraft_store::tree::read_node(path).expect("node").id;
+                assert!(!id.is_empty());
+                assert!(seen.insert(id), "a second import must not reuse an existing node's identity");
+            }
+        }
+    }
+
+    #[test]
+    fn normalizing_import_metadata_does_not_rewrite_owned_assets_or_staging_copies() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-owned-file-ids");
+        let page = t.path().join("Page");
+        fs::create_dir(&page).expect("page");
+        fs::write(page.join("index.html"), "<html><head><title>Page</title></head><body><p>Words</p></body></html>").expect("page file");
+        let contents = "---\nid: attachment-identity\n---\nOriginal attachment bytes\n";
+        let node_contents = "kind = \"section\"\nid = \"attachment-identity\"\n";
+        for directory in [page.join("assets"), t.path().join(".officeimo-staging-test")] {
+            fs::create_dir(&directory).expect("owned files");
+            fs::write(directory.join("index.md"), contents).expect("attached document");
+            fs::write(directory.join("_node.toml"), node_contents).expect("attached metadata document");
+        }
+        normalize_ids(t.path()).expect("normalize notebook pages only");
+        for directory in [page.join("assets"), t.path().join(".officeimo-staging-test")] {
+            assert_eq!(fs::read_to_string(directory.join("index.md")).expect("attached document"), contents);
+            assert_eq!(fs::read_to_string(directory.join("_node.toml")).expect("attached metadata document"), node_contents);
+        }
+        assert!(!notecraft_store::tree::read_node(&page).expect("page metadata").id.is_empty());
+    }
+
     /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
     /// No bridge is installed for the test, so the run stops at the first section; what it has
     /// found by then is the package's section.
@@ -425,6 +698,58 @@ mod tests {
         assert_eq!(safe_name("2026"), "2026");
         assert_eq!(section_name(Path::new("Work (On 9-29-2026).one")), "Work");
         assert_eq!(safe_name("A:B"), "A_B");
+    }
+
+    #[test]
+    fn a_folder_without_sections_does_not_leave_an_empty_imported_notebook() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-empty-source");
+        let source = t.path().join("Source");
+        let output = t.path().join("Output");
+        fs::create_dir(&source).expect("source");
+        fs::create_dir(&output).expect("output");
+        fs::write(source.join("readme.txt"), "not a OneNote section").expect("source content");
+        assert!(run_with_progress(&source, &output, Format::Html, &AtomicBool::new(false), &mut |_| {}).is_err());
+        assert_eq!(fs::read_dir(&output).expect("output entries").count(), 0, "an invalid source must not create a phantom notebook");
+        assert_eq!(fs::read_to_string(source.join("readme.txt")).expect("source preserved"), "not a OneNote section");
+    }
+
+    #[test]
+    fn an_already_cancelled_folder_import_does_not_create_output() {
+        let t = notecraft_store::testing::TempDir::new("officeimo-cancelled-folder");
+        let source = t.path().join("Source");
+        let output = t.path().join("Output");
+        fs::create_dir(&source).expect("source");
+        fs::create_dir(&output).expect("output");
+        fs::write(source.join("Notes.one"), b"section fixture").expect("source section");
+        let result = run_with_progress(&source, &output, Format::Html, &AtomicBool::new(true), &mut |_| {});
+        assert!(result.is_err());
+        assert_eq!(fs::read_dir(&output).expect("output entries").count(), 0, "cancellation before starting must leave no output");
+    }
+
+    #[test]
+    fn folder_progress_reports_the_actual_notebook_destination() {
+        for name in ["Notebook.v2", "Notes (On 1-2-2026)", "Folder with spaces"] {
+            let t = notecraft_store::testing::TempDir::new("officeimo-reported-destination");
+            let source = t.path().join(name);
+            let output = t.path().join("Output");
+            fs::create_dir(&source).expect("source");
+            fs::create_dir(&output).expect("output");
+            fs::create_dir(output.join(name)).expect("existing notebook stays intact");
+            fs::write(source.join("Notes.one"), []).expect("section");
+            let cancel = AtomicBool::new(false);
+            let mut reported = None;
+            let _ = run_with_progress(&source, &output, Format::Html, &cancel, &mut |event| {
+                if let Progress::Destination { path } = event {
+                    reported = Some(path);
+                    // Exercise real discovery and destination creation without needing a bridge.
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            });
+            let expected = output.join(format!("{name} (1)"));
+            assert_eq!(reported, Some(expected.clone()), "the UI receives the importer's path for {name}");
+            assert!(expected.join("_node.toml").is_file(), "the reported notebook exists");
+            assert_eq!(fs::read(source.join("Notes.one")).expect("source retained"), b"");
+        }
     }
 
     #[test]

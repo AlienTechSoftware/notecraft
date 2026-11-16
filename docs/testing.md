@@ -62,6 +62,12 @@ Tests are not a substitute for looking.
 
 The tests render with egui's bundled fonts, so they do not depend on installed fonts.
 
+The real OfficeIMO bridge acceptance test is opt-in. Set `NOTECRAFT_OFFICEIMO_BRIDGE` to an
+installed bridge, then run `cargo test -p notecraft-cli --test officeimo_bridge -- --ignored`.
+It imports the public fixture in both formats as a section and a folder, repeats each import,
+and checks the notebook tree, source preservation and existing notes. It uses isolated child
+process settings and environment; default CI does not need an installed bridge.
+
 ## Hostile input
 
 Code that reads files, parameters or user text is written to survive junk:

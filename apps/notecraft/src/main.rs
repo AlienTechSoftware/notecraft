@@ -99,18 +99,28 @@ fn choose_demo_payload(installed: Option<&std::path::Path>, fallback: &std::path
 /// The file the MSI leaves beside the app to ask for the first-use wizard once.
 const INSTALL_MARKER: &str = "first-use.pending";
 
-/// Clears the first-use state when the installer left its marker, then removes the marker. The
-/// marker stays if the setting cannot be saved, so the next launch tries again.
-fn take_install_marker(install_dir: &std::path::Path, settings: &Settings) -> bool {
+/// Acknowledge the installer marker in per-user settings before trying to remove it. A normal
+/// user cannot necessarily delete files in the install directory. A retained marker must not
+/// clear completed setup on every launch. A replaced marker starts a new installation cycle.
+fn take_install_marker(install_dir: &std::path::Path, settings: &Settings) -> Result<bool, String> {
     let marker = install_dir.join(INSTALL_MARKER);
-    if !marker.is_file() {
-        return false;
+    let metadata = match std::fs::metadata(&marker) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Could not read the first-use installation marker: {error}")),
+    };
+    let modified = metadata.modified().map_err(|error| format!("Could not read the installation marker timestamp: {error}"))?;
+    let stamp = modified.duration_since(std::time::UNIX_EPOCH).map_err(|error| format!("Invalid installation marker timestamp: {error}"))?;
+    let identity = format!("{}:{}:{}", marker.display(), stamp.as_nanos(), metadata.len());
+    if settings.get("first_use_install_marker").as_deref() == Some(identity.as_str()) {
+        return Ok(false);
     }
-    if settings.set("privacy_welcome_seen", "").is_err() {
-        return false;
-    }
+    settings.set("privacy_welcome_seen", "").map_err(|error| format!("Could not save first-use preferences: {error}"))?;
+    settings.set("first_use_install_marker", &identity).map_err(|error| format!("Could not acknowledge this installation: {error}"))?;
+    // Cleanup is optional once this user has acknowledged the marker.
     let _ = std::fs::remove_file(&marker);
-    true
+    Ok(true)
 }
 
 fn flag_value(args: &[String], name: &str) -> Option<String> {
@@ -218,11 +228,14 @@ fn main() -> eframe::Result {
         let _ = session.settings.set("privacy_welcome_seen", "");
         applog::info("First-use flag set: the first-use wizard will show");
     }
-    // The installer leaves a marker beside the app. The first launch after installing shows the wizard again.
-    if let Some(dir) = executable.parent() {
-        take_install_marker(dir, &session.settings);
-    }
     let mut startup_alerts: Vec<(&str, String)> = Vec::new();
+    // The installer leaves a marker beside the app. Acknowledge it once for this user.
+    if let Some(dir) = executable.parent()
+        && let Err(error) = take_install_marker(dir, &session.settings)
+    {
+        applog::line("ERROR", &error);
+        startup_alerts.push(("install-marker", error));
+    }
 
     // NoteCraft draws its own title bar unless the settings say the system's is wanted.
     let own_frame = session.settings.get("window_frame").as_deref() != Some("system");
@@ -315,18 +328,82 @@ mod tests {
         settings.set("privacy_welcome_seen", "true").expect("seen before install");
         std::fs::write(t.path().join(INSTALL_MARKER), "").expect("installer marker");
 
-        assert!(take_install_marker(t.path(), &settings));
+        assert!(take_install_marker(t.path(), &settings).expect("acknowledge marker"));
         assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some(""), "the wizard shows again");
         assert!(!t.path().join(INSTALL_MARKER).exists(), "the marker is used up");
-        assert!(!take_install_marker(t.path(), &settings), "a second launch does not ask again");
+        assert!(!take_install_marker(t.path(), &settings).expect("read marker"), "a second launch does not ask again");
     }
 
     #[test]
     fn no_installer_marker_is_not_consumed() {
         let t = notecraft_store::testing::TempDir::new("install-marker-absent");
         let settings = Settings::at(t.path().join("settings.toml"));
-        assert!(!take_install_marker(t.path(), &settings));
+        assert!(!take_install_marker(t.path(), &settings).expect("read marker"));
         assert!(!t.path().join(INSTALL_MARKER).exists());
+    }
+
+    #[test]
+    fn an_already_acknowledged_install_marker_does_not_reset_preferences() {
+        let t = notecraft_store::testing::TempDir::new("install-marker-retained");
+        let marker = t.path().join(INSTALL_MARKER);
+        let settings = Settings::at(t.path().join("settings.toml"));
+        std::fs::write(&marker, "installed").expect("installer marker");
+        let modified = std::fs::metadata(&marker).expect("metadata").modified().expect("modified");
+        assert!(take_install_marker(t.path(), &settings).expect("acknowledge marker"));
+        settings.set("privacy_welcome_seen", "true").expect("finish setup");
+
+        // An installer can restore the same marker during repair. Its identity is unchanged.
+        std::fs::write(&marker, "installed").expect("restore installer marker");
+        std::fs::File::options().write(true).open(&marker).expect("open marker").set_modified(modified).expect("restore timestamp");
+        assert!(!take_install_marker(t.path(), &settings).expect("read marker"), "the same installation is acknowledged per user");
+        assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some("true"), "completed preferences stay completed");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_locked_install_marker_only_requests_setup_once() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let t = notecraft_store::testing::TempDir::new("install-marker-locked");
+        let marker = t.path().join(INSTALL_MARKER);
+        let settings = Settings::at(t.path().join("settings.toml"));
+        std::fs::write(&marker, "installed").expect("installer marker");
+        // Permit reads and writes but deny deletion, as an install directory can do.
+        let held = std::fs::OpenOptions::new().read(true).share_mode(3).open(&marker).expect("hold marker without delete sharing");
+        let first = take_install_marker(t.path(), &settings).expect("acknowledge marker");
+        assert!(marker.is_file(), "the real filesystem refuses marker cleanup");
+        settings.set("privacy_welcome_seen", "true").expect("finish setup");
+        let second = take_install_marker(t.path(), &settings).expect("read marker");
+        let seen = settings.get("privacy_welcome_seen");
+        drop(held);
+        assert!(first, "first launch requests setup");
+        assert!(!second, "a marker that cannot be deleted does not reset setup on every launch");
+        assert_eq!(seen.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn a_new_install_marker_and_a_new_user_each_request_setup() {
+        let t = notecraft_store::testing::TempDir::new("install-marker-new-cycle");
+        let marker = t.path().join(INSTALL_MARKER);
+        let first = Settings::at(t.path().join("first-user.toml"));
+        let second = Settings::at(t.path().join("second-user.toml"));
+        std::fs::write(&marker, "installed").expect("installer marker");
+        let modified = std::fs::metadata(&marker).expect("metadata").modified().expect("modified");
+        assert!(take_install_marker(t.path(), &first).expect("first user"));
+        first.set("privacy_welcome_seen", "true").expect("finish setup");
+        std::fs::write(&marker, "installed").expect("restore marker");
+        std::fs::File::options().write(true).open(&marker).expect("marker").set_modified(modified).expect("original timestamp");
+        assert!(take_install_marker(t.path(), &second).expect("second user"), "acknowledgement is per user");
+        assert_eq!(first.get("privacy_welcome_seen").as_deref(), Some("true"));
+        std::fs::write(&marker, "installed").expect("new installer marker");
+        std::fs::File::options()
+            .write(true)
+            .open(&marker)
+            .expect("marker")
+            .set_modified(modified + std::time::Duration::from_secs(2))
+            .expect("new installation timestamp");
+        assert!(take_install_marker(t.path(), &first).expect("new installation"));
+        assert_eq!(first.get("privacy_welcome_seen").as_deref(), Some(""));
     }
 
     #[test]
@@ -338,7 +415,7 @@ mod tests {
         std::fs::write(&settings_parent, "a file where the settings directory should be").expect("block settings directory");
         let settings = Settings::at(settings_parent.join("settings.toml"));
 
-        assert!(!take_install_marker(t.path(), &settings));
+        assert!(take_install_marker(t.path(), &settings).is_err(), "a save failure is actionable at startup");
         assert!(marker.is_file(), "the next launch must retry the first-use wizard");
     }
 

@@ -728,6 +728,124 @@ fn ctrl_f_in_the_page_goes_to_search_and_writes_nothing() {
     }
 }
 
+fn search_for(h: &mut Harness<'_, NoteCraftApp>, query: &str) {
+    ask(h, "ui.key", json!({"key": "F", "ctrl": true})).expect("focus search");
+    settle(h);
+    ask(h, "ui.text", json!({"text": query})).expect("search query");
+    settle(h);
+}
+
+#[test]
+fn the_page_title_has_an_accessible_name_as_well_as_its_text_value() {
+    use egui_kittest::kittest::NodeT;
+
+    let (_t, app, s) = sample_app("ui-title-accessible-name");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|node| node.value().as_deref() == Some("Format ideas"))
+        .expect("page title input");
+    assert!(title.accesskit_node().label().is_some_and(|label| !label.is_empty()), "screen readers need a name for the title input");
+}
+
+/// Issue #346: transient search results must not trap the ribbon or follow page navigation.
+#[test]
+fn search_results_dismiss_on_escape_and_allow_a_new_query() {
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-search-escape");
+        let mut h = harness(app, theme);
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(&mut h);
+        let before = h.state().body().unwrap_or_default().to_string();
+        search_for(&mut h, "findneedle");
+        assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+        review(&mut h, &format!("search_open_{}", theme.mode.is_dark()));
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss search");
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("No pages match.").count(), 0, "Escape dismisses the search panel");
+        review(&mut h, &format!("search_dismissed_{}", theme.mode.is_dark()));
+        search_for(&mut h, "anotherneedle");
+        assert_eq!(h.query_all_by_label("No pages match.").count(), 1, "a new query opens the panel again");
+        assert_eq!(h.state().body().unwrap_or_default(), before, "search does not edit the page");
+    }
+}
+
+#[test]
+fn search_results_dismiss_when_clicking_the_ribbon() {
+    let (_t, app, s) = sample_app("ui-search-outside");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "findneedle");
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 0, "an outside click dismisses the search panel");
+    assert!(h.query_all_by_label("Pictures").count() > 0, "the same click reaches the ribbon tab");
+}
+
+#[test]
+fn search_results_dismiss_when_opening_another_page() {
+    let (_t, app, s) = sample_app("ui-search-navigation");
+    let mut h = harness(app, DARK);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "findneedle");
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 0, "page navigation dismisses stale search results");
+}
+
+#[test]
+fn search_results_stay_open_while_editing_the_query_and_close_on_back() {
+    let (_t, app, _s) = sample_app("ui-search-edit-back");
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    search_for(&mut h, "findneedle");
+    let rect =
+        h.get_all_by_role(egui::accesskit::Role::TextInput).find(|node| node.value().as_deref() == Some("findneedle")).expect("search field").rect();
+    ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("edit query");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1, "clicking the search field keeps its results");
+    ask(&mut h, "ui.text", json!({"text": "more"})).expect("extend query");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+    assert!(h.state_mut().system_back(), "Android Back dismisses the transient search surface");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 0);
+}
+
+#[test]
+fn search_result_click_opens_the_matching_page() {
+    let (_t, app, s) = sample_app("ui-search-choose");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "Kickoff");
+    h.get_by_label_contains("kickoff notes").click();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Kickoff notes"), "the result opens its page");
+    assert_eq!(h.query_all_by_label_contains("kickoff notes for").count(), 0, "the result panel closes");
+}
+
+#[test]
+fn search_enter_opens_the_first_match_without_editing_either_page() {
+    let (_t, app, s) = sample_app("ui-search-enter");
+    let mut h = harness(app, DARK);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    search_for(&mut h, "Kickoff");
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("open first result");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Kickoff notes"), "Enter opens the first matching page");
+    assert_eq!(h.query_all_by_label_contains("kickoff notes for").count(), 0, "keyboard navigation closes results");
+    assert_eq!(notecraft_store::page::load_page(&s.md_page).expect("original page").body, before, "search leaves the original page unchanged");
+}
+
 /// Issue #148: on a new page, a click in the blank space under the date line puts a caret
 /// there, and what is typed is kept, in both formats.
 #[test]

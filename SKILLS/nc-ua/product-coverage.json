@@ -7,6 +7,30 @@
   "coverage_values": ["verified", "demonstrated", "not_covered", "stale", "unknown"],
   "features": [
     {
+      "id": "page-search",
+      "name": "Search open notebooks and navigate results",
+      "product_status": "partial",
+      "discoverability": "title-band-search-and-docs/how-to/start-a-notebook.md",
+      "demo": "not_covered",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "cargo test -p notecraft-ui-egui --test ui search_",
+      "limitation": "Enter opens the first match; arrow-key result navigation is not implemented.",
+      "notes": "Windows semantic tests cover keyboard focus, dismissal, result selection, Android Back routing and unchanged page content. Light and dark captures were inspected. This transient flow is verified through tests instead of authored demo content."
+    },
+    {
+      "id": "onenote-bridge-import",
+      "name": "Import OneNote folders, sections and packages through the installed bridge",
+      "product_status": "partial",
+      "discoverability": "file-open-and-docs/how-to/move-your-notes.md",
+      "demo": "not_covered",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "cargo test -p notecraft-import --lib officeimo::tests",
+      "limitation": "Flat bridge exports remain one combined page per section. Original page boundaries cannot be reconstructed; unsupported HTML remains read-only.",
+      "notes": "Windows local smoke tests use the installed bridge and public OneNote fixtures in both formats. Test data covers actual destination reporting, page-owned assets, cancellation and metadata-only ID updates. Network-share behavior and other delivery targets remain unverified."
+    },
+    {
       "id": "layered-embedded-objects",
       "name": "Layered embedded objects",
       "product_status": "unknown",
