@@ -3617,7 +3617,7 @@ impl NoteCraftApp {
                     }
                 }
                 backstage::Act::ChooseCopyFolder => {
-                    if let Some(folder) = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_folder_for_the_copy")).pick_folder() {
+                    if let Some(folder) = pick_copy_folder() {
                         copy.folder = folder.to_string_lossy().into_owned();
                     }
                 }
@@ -10330,6 +10330,19 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     let label = crate::i18n::format_message_id("ui.accent_accent", &[("accent", accent)]);
     ui.label(egui::RichText::new(label).small());
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
+}
+
+/// File > Save a Copy's folder chooser (issue #301). A browser has no folder dialog, so the web
+/// build chooses nothing and the folder is typed instead. Kept here, below the other choosers,
+/// and gated in its own right: the web build's rules rewrite the dialogs above by where they sit.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_copy_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_folder_for_the_copy")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_copy_folder() -> Option<PathBuf> {
+    None
 }
 
 #[cfg(test)]
