@@ -261,6 +261,70 @@ pub fn copy_node(path: &Path, dest: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// File > Save a Copy (issue #301): copies a page (with its subpages, files and ink), a section,
+/// a section group or a whole notebook into `folder`, anywhere on disk, as content of its own.
+/// The copy leaves out NoteCraft's own records kept beside the content (a page's saved
+/// versions, a notebook's recycle bin and templates: everything under `.notecraft`), and every
+/// node in it gets an id of its own, so opening the copy beside the original confuses neither.
+/// The original is not touched. Returns where the copy is.
+pub fn save_copy(node: &Path, folder: &Path) -> Result<PathBuf> {
+    let node = fs::canonicalize(node).map_err(|e| StoreError::io("open", node, e))?;
+    if read_node(&node).is_none() {
+        return Err(StoreError::invalid("only a page, section, section group or notebook can be copied"));
+    }
+    let folder = fs::canonicalize(folder).map_err(|e| StoreError::io("open", folder, e))?;
+    if !folder.is_dir() {
+        return Err(StoreError::invalid("the copy goes into a folder"));
+    }
+    if folder.starts_with(&node) {
+        return Err(StoreError::invalid("a copy cannot go inside what is being copied"));
+    }
+    let target = unique_child(&folder, &tree::folder_name(&node));
+    if let Err(e) = copy_content(&node, &target) {
+        let _ = fs::remove_dir_all(&target);
+        return Err(StoreError::io("copy", &target, e));
+    }
+    renew_ids(&target)?;
+    // Writing the new ids kept a copy of each page as it was a moment ago: that is history
+    // too, and the copy starts without any.
+    drop_records(&target).map_err(|e| StoreError::io("copy", &target, e))?;
+    Ok(target)
+}
+
+/// Removes every `.notecraft` folder under `dir`.
+fn drop_records(dir: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            if entry.file_name() == ".notecraft" {
+                fs::remove_dir_all(entry.path())?;
+            } else {
+                drop_records(&entry.path())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Copies a folder and everything in it except NoteCraft's `.notecraft` records.
+fn copy_content(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if kind.is_dir() {
+            if entry.file_name() == ".notecraft" {
+                continue;
+            }
+            copy_content(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 /// The order that puts a node last among `parent`'s children.
 fn next_order(parent: &Path) -> u32 {
     node_children(parent).iter().filter_map(|c| read_node(c).map(|n| n.order)).max().unwrap_or(0).saturating_add(10)
@@ -610,6 +674,43 @@ fn retitle_heading(body: &str, was: &str, now: &str, format: PageFormat) -> Stri
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    /// Issue #301: Save a Copy makes content of its own, anywhere, without the history.
+    #[test]
+    fn save_a_copy_copies_content_without_its_history_under_new_ids() {
+        let t = TempDir::new("save-a-copy");
+        let s = Settings::at(t.path().join("s.toml"));
+        let nb = create_notebook(&t.path().join("books"), "Work", None, &s).expect("notebook");
+        let section = create_node(&nb, "Plans", NodeKind::Section, None, &s).expect("section");
+        let page = create_node(&section, "Launch", NodeKind::Page, Some(PageFormat::Html), &s).expect("page");
+        crate::assets::attach_bytes(&page, "pic.png", b"not really a picture").expect("asset");
+        crate::page::save_body(&page, "<p>first</p>").expect("save");
+        crate::page::save_body(&page, "<p>second</p>").expect("save");
+        assert!(page.join(".notecraft").join("versions").is_dir(), "the page has history");
+        fs::create_dir_all(nb.join(".notecraft").join("recycle-bin")).expect("bin");
+        let out = t.path().join("copies");
+        fs::create_dir_all(&out).expect("out");
+
+        for (node, kind) in [(&page, NodeKind::Page), (&section, NodeKind::Section), (&nb, NodeKind::Notebook)] {
+            let copy = save_copy(node, &out).expect("copy");
+            assert!(copy.starts_with(fs::canonicalize(&out).expect("out")));
+            let info = read_node(&copy).expect("a node");
+            assert_eq!(info.kind, kind);
+            assert_ne!(info.id, read_node(node).expect("original").id, "{kind:?}: an id of its own");
+            assert!(!copy.join(".notecraft").exists(), "{kind:?}: no history or recycle bin");
+        }
+        // The copied page is whole: its words and its files.
+        let copied_page = fs::canonicalize(&out).expect("out").join(tree::folder_name(&page));
+        assert!(crate::page::load_page(&copied_page).expect("load").body.contains("second"));
+        assert!(copied_page.join("assets").join("pic.png").is_file());
+        // Copying again picks a free name, and the original is as it was.
+        let again = save_copy(&page, &out).expect("again");
+        assert_ne!(again, copied_page);
+        assert!(page.join(".notecraft").join("versions").is_dir());
+        // Not into itself, and only nodes.
+        assert!(save_copy(&nb, &section).is_err());
+        assert!(save_copy(&out, t.path()).is_err());
+    }
 
     /// A page says its title twice: once where the page records it, once as the heading a
     /// reader sees. Renaming has to move both, or the window shows one and the page the

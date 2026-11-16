@@ -1111,6 +1111,14 @@ pub struct NoteCraftApp {
     keyboard_paste_requested: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
+    /// File > Save a Copy as it is being filled in (issue #301).
+    copy_choice: backstage::CopyChoice,
+    /// Which pages the user has read, kept beside their settings (issue #291). Loaded the
+    /// first time it is needed.
+    read_state: Option<notecraft_store::read_state::ReadState>,
+    /// The pages that are unread now, and when that was last worked out.
+    unread: std::collections::HashSet<PathBuf>,
+    unread_checked: Option<Instant>,
     /// The page fills the window: the notebooks are hidden until it is turned off.
     full_page: bool,
     /// The window is phone-width, so it shows the notebooks or the page, not both
@@ -1267,6 +1275,10 @@ impl NoteCraftApp {
             pending_copy_html: None,
             keyboard_paste_requested: false,
             backstage: None,
+            copy_choice: backstage::CopyChoice::default(),
+            read_state: None,
+            unread: std::collections::HashSet::new(),
+            unread_checked: None,
             full_page: false,
             compact: false,
             compact_full_page: false,
@@ -2090,6 +2102,110 @@ impl NoteCraftApp {
         }
     }
 
+    /// The user's read state, loaded from beside their settings the first time (issue #291).
+    fn read_state(&mut self) -> &mut notecraft_store::read_state::ReadState {
+        let file = self.session.settings.path().parent().unwrap_or(Path::new(".")).join("read-state.tsv");
+        self.read_state.get_or_insert_with(|| notecraft_store::read_state::ReadState::load(&file))
+    }
+
+    /// Records the page at `dir` as read as it stands. `opened` is true when the user opened
+    /// it, which also clears a mark they put on it by hand; leaving or saving a page keeps
+    /// that mark.
+    fn note_read(&mut self, dir: &Path, opened: bool) {
+        let Some(id) = notecraft_store::tree::read_node(dir).filter(|n| n.kind == NodeKind::Page).map(|n| n.id) else { return };
+        let stamp = notecraft_store::read_state::page_stamp(dir);
+        let state = self.read_state();
+        if !opened && state.is_marked_unread(&id) {
+            return;
+        }
+        state.mark_read(&id, stamp.as_deref());
+        if let Err(e) = state.save() {
+            log::warn!("could not keep the read state: {e}");
+        }
+        self.unread.remove(dir);
+    }
+
+    /// Every page in the open notebooks, in the order the page list shows them.
+    fn pages_in_order(&self) -> Vec<(PathBuf, String)> {
+        fn walk(node: &Node, out: &mut Vec<(PathBuf, String)>) {
+            if node.info.kind == NodeKind::Page {
+                out.push((node.path.clone(), node.info.id.clone()));
+            }
+            for child in &node.children {
+                walk(child, out);
+            }
+        }
+        let mut out = Vec::new();
+        for notebook in self.session.tree() {
+            walk(notebook, &mut out);
+        }
+        out
+    }
+
+    /// Works out again which pages are unread: at most every half minute unless `now`.
+    fn refresh_unread(&mut self, now: bool) {
+        if !now && self.unread_checked.is_some_and(|at| at.elapsed() < Duration::from_secs(30)) {
+            return;
+        }
+        self.unread_checked = Some(Instant::now());
+        let here = self.editor.as_ref().map(|e| e.dir.clone());
+        let pages = self.pages_in_order();
+        let state = self.read_state();
+        let mut unread = std::collections::HashSet::new();
+        for (dir, id) in pages {
+            // The page in front of the user is being read.
+            if here.as_deref() == Some(dir.as_path()) && !state.is_marked_unread(&id) {
+                continue;
+            }
+            if state.is_unread(&id, notecraft_store::read_state::page_stamp(&dir).as_deref()) {
+                unread.insert(dir);
+            }
+        }
+        self.unread = unread;
+    }
+
+    /// The unread pages, from the notebooks folder down, for `ui.inspect`.
+    fn unread_list(&self) -> Vec<String> {
+        let mut unread: Vec<String> =
+            self.unread.iter().map(|p| p.strip_prefix(self.session.root()).unwrap_or(p).to_string_lossy().replace('\\', "/")).collect();
+        unread.sort();
+        unread
+    }
+
+    /// History > Next Unread: the next unread page after the open one, in page-list order,
+    /// round to the start (issue #291).
+    fn next_unread(&mut self) {
+        self.refresh_unread(true);
+        let pages = self.pages_in_order();
+        let here = self.editor.as_ref().map(|e| e.dir.clone());
+        let start = here.as_ref().and_then(|h| pages.iter().position(|(p, _)| p == h)).map_or(0, |i| i + 1);
+        let next = pages.iter().cycle().skip(start).take(pages.len()).find(|(p, _)| self.unread.contains(p) && Some(p) != here.as_ref());
+        match next.map(|(p, _)| p.clone()) {
+            Some(page) => self.open_path(&path_str(&page)),
+            None => self.say(crate::tl_id!("ui.there_are_no_unread_pages")),
+        }
+    }
+
+    /// History > Mark as Read / Mark as Unread on the open page (issue #291).
+    fn toggle_read(&mut self) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let Some(id) = notecraft_store::tree::read_node(&dir).map(|n| n.id) else { return };
+        if self.read_state().is_marked_unread(&id) {
+            self.note_read(&dir, true);
+            self.say(crate::tl_id!("ui.marked_as_read"));
+        } else {
+            let state = self.read_state();
+            state.mark_unread(&id);
+            if let Err(e) = state.save() {
+                log::warn!("could not keep the read state: {e}");
+            }
+            self.unread.insert(dir);
+            self.say(crate::tl_id!("ui.marked_as_unread"));
+        }
+    }
     /// Every notebook that is open: those in the notebooks folder and those opened from
     /// elsewhere.
     fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
@@ -2213,6 +2329,10 @@ impl NoteCraftApp {
     fn open_page_inner(&mut self, dir: &Path) {
         self.page_opened = true;
         self.save_now();
+        // The page being left was read as it now stands, own edits included (issue #291).
+        if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()).filter(|d| d != dir) {
+            self.note_read(&left, false);
+        }
         self.code = crate::codeview::State::default();
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
@@ -2317,6 +2437,8 @@ impl NoteCraftApp {
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir);
+            // Opened, so read (issue #291).
+            self.note_read(dir, true);
             self.say(crate::tl_id!("ui.opened"));
         }
     }
@@ -2397,6 +2519,7 @@ impl NoteCraftApp {
         }
         match self.session.run("page.save", &params(&[("path", &path_str(&dir)), ("body", &body)])) {
             Ok(Output::Text(ts)) => {
+                self.note_read(&dir, false);
                 if let Some(ed) = self.editor.as_mut() {
                     ed.dirty_since = None;
                     ed.last_saved = Some(ts);
@@ -2433,9 +2556,11 @@ impl NoteCraftApp {
         }
         let done = if wait { self.saver.wait() } else { self.saver.finished() };
         for saved in done {
-            let here = self.editor.as_mut().filter(|ed| ed.dir == saved.dir);
             match saved.result {
                 Ok(ts) => {
+                    // Saving a page is not a change someone else made: it stays read.
+                    self.note_read(&saved.dir, false);
+                    let here = self.editor.as_mut().filter(|ed| ed.dir == saved.dir);
                     if let Some(ed) = here {
                         ed.last_saved = Some(ts);
                         if ed.saving.as_ref() == Some(&saved.body) {
@@ -2446,7 +2571,7 @@ impl NoteCraftApp {
                     self.say(self.saved_caption(None));
                 }
                 Err(e) => {
-                    if let Some(ed) = here {
+                    if let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == saved.dir) {
                         ed.saving = None;
                         ed.dirty_since.get_or_insert_with(Instant::now);
                     }
@@ -2917,6 +3042,11 @@ impl NoteCraftApp {
         }
         let icon_rect = egui::Rect::from_min_size(egui::pos2(x0 + 18.0, cy - 8.5), vec2(17.0, 17.0));
         icons::paint(&painter, icon_rect, icon, color);
+        // A page changed since the user last read it carries a dot, as unread mail does (#291).
+        let unread = node.info.kind == NodeKind::Page && self.unread.contains(&node.path);
+        if unread {
+            painter.circle_filled(icon_rect.right_top() + vec2(-1.0, 2.0), 3.5, t.accent);
+        }
         let text_pos = egui::pos2(x0 + 40.0, cy);
         let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
         // Pages keep room for the add-page "+" at the end of the row. Organiser rows do not,
@@ -2943,7 +3073,8 @@ impl NoteCraftApp {
             painter.text(plus_rect.center(), Align2::CENTER_CENTER, "+", egui::FontId::proportional(16.0), t.strong);
         }
         let enabled = ui.is_enabled();
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &node.info.title));
+        let spoken = if unread { crate::i18n::format_message_id("ui.title_unread", &[("title", &node.info.title)]) } else { node.info.title.clone() };
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &spoken));
         let resp = resp.on_hover_text(self.shown(&node.path));
         if resp.clicked() {
             let pos = resp.interact_pointer_pos().unwrap_or_default();
@@ -3391,6 +3522,9 @@ impl NoteCraftApp {
     /// The File screen: notebooks and what is done to a whole notebook.
     fn backstage_screen(&mut self, ui: &mut Ui) {
         let page = self.backstage.unwrap_or("Info");
+        // Save a Copy counts from the page that is open (issue #301).
+        let mut copy = std::mem::take(&mut self.copy_choice);
+        copy.here = self.editor.as_ref().map(|e| e.dir.clone());
         let tokens = self.tokens;
         let folder = self.shown(self.session.root());
         let recent = self.recent_notebooks();
@@ -3418,6 +3552,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 &update,
+                &mut copy,
                 &tokens,
             );
         });
@@ -3484,6 +3619,17 @@ impl NoteCraftApp {
                         let _ = crate::telemetry_export::export(&session.path(), &destination);
                     }
                 }
+                backstage::Act::ChooseCopyFolder => {
+                    if let Some(folder) = pick_copy_folder() {
+                        copy.folder = folder.to_string_lossy().into_owned();
+                    }
+                }
+                backstage::Act::SaveCopy { node, folder } => {
+                    copy.result = Some(notecraft_store::ops::save_copy(&node, &folder).map_err(|e| e.to_string()));
+                    if let Some(Ok(at)) = &copy.result {
+                        self.say(crate::i18n::format_message_id("ui.saved_a_copy_in_path", &[("path", &self.shown(at))]));
+                    }
+                }
                 backstage::Act::NotBuilt(name) => {
                     self.status =
                         crate::i18n::format_message_id("ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming", &[("name", crate::tl!(name))]);
@@ -3491,6 +3637,7 @@ impl NoteCraftApp {
                 }
             }
         }
+        self.copy_choice = copy;
     }
 
     fn recent_notebooks(&self) -> Vec<Node> {
@@ -3910,6 +4057,7 @@ impl NoteCraftApp {
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
+            page_marked_unread: self.editor.as_ref().is_some_and(|e| self.unread.contains(&e.dir)),
             painting: self.painter.is_some(),
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
@@ -4182,6 +4330,8 @@ impl NoteCraftApp {
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
             ribbon::Act::File => self.backstage = Some("Info"),
+            ribbon::Act::NextUnread => self.next_unread(),
+            ribbon::Act::ToggleRead => self.toggle_read(),
             ribbon::Act::RecentEdits => self.show_recent_edits(RecentRange::Week, false),
             ribbon::Act::PageVersions => {
                 self.save_now();
@@ -9808,6 +9958,7 @@ impl NoteCraftApp {
             "notebooksFolder": self.shown(self.session.root()),
             "status": {"text": self.status, "error": self.status_is_error},
             "rows": rows,
+            "unread": self.unread_list(),
             "page": self.editor.as_ref().map(|e| json!({
                 "path": e.dir.strip_prefix(self.session.root()).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default(),
                 "title": e.title,
@@ -10011,6 +10162,7 @@ impl NoteCraftApp {
             self.central(ui);
         }
         self.paint_formatting(ctx);
+        self.refresh_unread(false);
         self.laser_keys(ctx);
         self.search_popup(ctx);
         self.dialogs(ctx);
@@ -10200,6 +10352,19 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     let label = crate::i18n::format_message_id("ui.accent_accent", &[("accent", accent)]);
     ui.label(egui::RichText::new(label).small());
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
+}
+
+/// File > Save a Copy's folder chooser (issue #301). A browser has no folder dialog, so the web
+/// build chooses nothing and the folder is typed instead. Kept here, below the other choosers,
+/// and gated in its own right: the web build's rules rewrite the dialogs above by where they sit.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_copy_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_folder_for_the_copy")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_copy_folder() -> Option<PathBuf> {
+    None
 }
 
 #[cfg(test)]
