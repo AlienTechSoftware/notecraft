@@ -454,9 +454,17 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   Alt+1 to Alt+9 pick up the
   pen in that place on the rack, from anywhere, so a tablet's express keys can be bound to
   pens; Alt+0 puts the pen down and goes back to typing. OneNote has no such keys.
-  **Not built:** automatic shapes; the ruler and other stencils;
-  ink replay; ink to text and ink to math; laser pointer; More Colours and the eyedropper
-  in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223
+  Draw > Ruler lays a straightedge on the page (issue #293): drag it to move it, drag its round
+  handle or press [ and ] (Shift for 15 degrees) to turn it, and press the button again to put
+  it away. A stroke begun just outside one of its long edges is laid along that edge, so it
+  comes out straight. The ruler is not page content and is not saved; it lies where it was put
+  until it is put away. Only mouse and pen are handled: there is no two-finger turn yet.
+  When a pen is lifted, the hand's tremor is taken out of the stroke (at most a third of a
+  point, or an eighth of a wide nib), and a wide nib's edges follow the line over a quarter of
+  its width, so a highlighter's edges no longer zigzag (issue #44). Draw > Ink Help opens the
+  Welcome notebook's handwriting page in the interface language, or English (issue #296).
+  **Not built:** automatic shapes; other stencils (protractor);
+  ink replay; ink to text and ink to math; More Colours in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223
   readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
@@ -535,6 +543,15 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   them up, never past the top of the page; a guide shows the line and the band of room, Esc
   puts the tool down, and one drag is one step of Undo. It moves boxes, as OneNote moves its
   containers: it does not open a gap between two lines inside one box.
+- **Insert > Online Video** puts a link to the video at the caret (issue #284): YouTube and
+  Vimeo addresses are tidied to their watch page, any other `https` address is kept as it was
+  pasted. Nothing is embedded, loaded or played in the window; the video opens in the browser
+  when the link is clicked. No preview picture is kept.
+- **View > Immersive Reader** shows the open page as plain reading with text size, line
+  spacing and a line focus (issue #299). Boxes are read in the order the page keeps them;
+  pictures are named by their description and handwriting is said to be there but not shown.
+  **Not built:** reading aloud (no speech service on any platform), reading colours other than
+  the theme's, and a per-word focus.
 - **Unread and author history** are not built. Page version
   history stores snapshots of the page's main file; changes to attached files and drawings
   are not captured by those snapshots. (Tags are: to-do boxes and the other familiar marks,

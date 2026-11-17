@@ -11140,13 +11140,13 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     settle(&mut h);
     h.get_by_label("View").click();
     settle(&mut h);
-    for name in ["Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
+    for name in ["Tabs layout", "Dock to desktop", "New window", "New quick note", "Live captions"] {
         let label = format!("{name} (not built)");
         let nodes: Vec<_> = h.query_all_by_label(&label).collect();
         assert!(!nodes.is_empty(), "{label} is listed");
         assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
     }
-    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size"] {
+    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size", "Immersive reader"] {
         assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
     }
     // Insert's placeholders were already right and stay so.
@@ -12148,4 +12148,210 @@ fn the_soft_keyboard_is_wanted_only_while_a_block_has_the_caret() {
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     settle(&mut h);
     assert!(h.state().keyboard_caret_rect().is_some(), "the caret asks for the keyboard");
+}
+
+/// Issue #293: Draw > Ruler was "not built". It lies on the page while it is out; a stroke
+/// begun just outside one of its long edges is laid along that edge however the hand shakes,
+/// a press on the ruler moves it and draws nothing, [ and ] turn it, and pressing the button
+/// again puts it away. The ruler itself is never written into the page.
+#[test]
+fn the_ruler_lays_a_shaky_stroke_straight_and_moves_without_drawing() {
+    let (_t, app, s) = sample_app("ui-ruler");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let state = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect");
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Ruler").click();
+    settle(&mut h);
+    let v = state(&mut h);
+    assert_eq!(v["ink"]["pointer"], json!("draw"), "the ruler comes out with a pen in hand: {}", v["ink"]);
+    let (rx, ry) = (v["ink"]["ruler"]["x"].as_f64().expect("placed x") as f32, v["ink"]["ruler"]["y"].as_f64().expect("placed y") as f32);
+    assert_eq!(v["ink"]["ruler"]["degrees"], json!(0));
+    review(&mut h, "ruler");
+    let strokes = v["ink"]["strokes"].as_u64().unwrap_or(0);
+
+    // A wobbly line drawn just above the upper edge.
+    let origin = page_origin(&mut h);
+    let edge = ry - notecraft_ink::ruler::WIDTH / 2.0;
+    let at = |x: f32, y: f32| origin + egui::vec2(x, y);
+    let from = at(rx - 120.0, edge - 5.0);
+    ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    pump(&mut h);
+    for k in 1..=8 {
+        let wobble = if k % 2 == 0 { -4.0 } else { 3.0 };
+        let p = at(rx - 120.0 + 30.0 * k as f32, edge - 6.0 + wobble);
+        ask(&mut h, "ui.move", json!({"x": p.x, "y": p.y})).expect("move");
+        pump(&mut h);
+    }
+    let end = at(rx + 120.0, edge - 6.0);
+    ask(&mut h, "ui.release", json!({"x": end.x, "y": end.y})).expect("release");
+    settle(&mut h);
+    let v = state(&mut h);
+    assert_eq!(v["ink"]["strokes"].as_u64(), Some(strokes + 1), "one stroke was drawn");
+    let points: Vec<(f32, f32)> = v["ink"]["lastStroke"]
+        .as_array()
+        .expect("readings")
+        .iter()
+        .map(|p| (p[0].as_f64().unwrap_or(0.0) as f32, p[1].as_f64().unwrap_or(0.0) as f32))
+        .collect();
+    assert!(points.len() >= 3, "{points:?}");
+    let ys: Vec<f32> = points.iter().map(|p| p.1).collect();
+    let spread = ys.iter().cloned().fold(f32::MIN, f32::max) - ys.iter().cloned().fold(f32::MAX, f32::min);
+    assert!(spread < 0.01, "the stroke lies along the edge: {ys:?}");
+    assert!(ys[0] < edge, "beside the ruler, not under it");
+    let reach = points.last().map_or(0.0, |p| p.0) - points[0].0;
+    assert!(reach > 200.0, "and follows the pen along it ({reach})");
+
+    // A drag on the ruler moves it and draws nothing.
+    let grab = at(rx, ry);
+    ask(&mut h, "ui.press", json!({"x": grab.x, "y": grab.y})).expect("press ruler");
+    pump(&mut h);
+    let to = at(rx + 40.0, ry + 60.0);
+    ask(&mut h, "ui.move", json!({"x": to.x, "y": to.y})).expect("move ruler");
+    pump(&mut h);
+    ask(&mut h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release ruler");
+    settle(&mut h);
+    let v = state(&mut h);
+    assert_eq!(v["ink"]["strokes"].as_u64(), Some(strokes + 1), "moving the ruler drew nothing");
+    let moved = (v["ink"]["ruler"]["x"].as_f64().unwrap_or(0.0) as f32, v["ink"]["ruler"]["y"].as_f64().unwrap_or(0.0) as f32);
+    assert!((moved.0 - rx - 40.0).abs() < 1.0 && (moved.1 - ry - 60.0).abs() < 1.0, "the ruler moved with the pointer: {moved:?}");
+
+    // [ turns it anticlockwise a degree at a time, with Shift fifteen.
+    for _ in 0..3 {
+        h.key_press(egui::Key::OpenBracket);
+        pump(&mut h);
+    }
+    assert_eq!(state(&mut h)["ink"]["ruler"]["degrees"], json!(3));
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::CloseBracket);
+    pump(&mut h);
+    assert_eq!(state(&mut h)["ink"]["ruler"]["degrees"], json!(168), "Shift+] turns it fifteen degrees back past flat");
+
+    // Pressed again, it is put away; the page holds the ink and nothing of the ruler.
+    h.get_by_label("Ruler").click();
+    settle(&mut h);
+    assert_eq!(state(&mut h)["ink"]["ruler"], Value::Null);
+    h.state_mut().save();
+    let saved = notecraft_store::page::load_page(&s.html_page).expect("load").body;
+    assert!(!saved.to_ascii_lowercase().contains("ruler"), "the ruler is not page content:\n{saved}");
+    assert!(h.state().body().unwrap_or_default().len() >= body.len());
+}
+
+/// Issue #284: Insert > Online Video was "not built". It asks for the address of a video on
+/// the web, refuses what is not one, and puts a link to it at the caret: nothing is loaded
+/// until the link is clicked. The link is ordinary page text, so both formats keep it.
+#[test]
+fn online_video_puts_a_link_to_the_video_at_the_caret() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-online-video");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p>Watch this: </p>" } else { "Watch this: " }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
+        settle(&mut h);
+        h.get_by_label("Insert").click();
+        settle(&mut h);
+        h.get_by_label("Online Video").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Video address").next().is_some(), "html={html}: the dialog asks for the address");
+        ask(&mut h, "ui.text", json!({"text": "javascript:alert(1)"})).expect("type");
+        settle(&mut h);
+        assert!(
+            h.query_all_by_label("Paste the address of a video on the web, starting with https://").next().is_some(),
+            "html={html}: what is not a web address is refused"
+        );
+        for _ in 0.."javascript:alert(1)".len() {
+            ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("erase");
+            pump(&mut h);
+        }
+        ask(&mut h, "ui.text", json!({"text": "https://youtu.be/dQw4w9WgXcQ"})).expect("type");
+        settle(&mut h);
+        review(&mut h, "online_video");
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        let address = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        let made = if html { format!("href=\"{address}\"") } else { format!("]({address})") };
+        assert!(body.contains(&made), "html={html}: a link to the video is in the page:\n{body}");
+        assert!(body.contains("Video (YouTube)"), "html={html}: it says what it is:\n{body}");
+        assert!(body.contains("Watch this:"), "html={html}: the words before it are kept:\n{body}");
+        // One Undo takes it out again.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        assert!(!h.state().body().unwrap_or_default().contains("youtube.com"), "html={html}: undo takes the video out");
+    }
+}
+
+/// Issue #299: View > Immersive Reader was "not built". It shows the open page as plain
+/// reading over the window, with text size, line spacing and a line focus, and leaves the
+/// page as it was when it is closed.
+#[test]
+fn the_immersive_reader_shows_the_page_as_reading_and_changes_nothing() {
+    let (_t, app, s) = sample_app("ui-immersive-reader");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.run();
+    notecraft_store::page::save_body(&s.md_page, "# Plan\n\nFirst **thing** to read.\n\n- an item\n").expect("fixture");
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("open");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Immersive reader").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let lines: Vec<String> = v["reader"]["lines"].as_array().expect("open").iter().map(|l| l.as_str().unwrap_or("").to_string()).collect();
+    assert!(lines.iter().any(|l| l == "Plan"), "{lines:?}");
+    assert!(lines.iter().any(|l| l == "First thing to read."), "plain words, no markup: {lines:?}");
+    assert!(lines.iter().any(|l| l == "- an item"), "{lines:?}");
+    assert!(h.query_all_by_label_contains("Read aloud is not built yet").next().is_some(), "the missing speech is said");
+    h.get_by_label("Larger").click();
+    settle(&mut h);
+    h.get_by_label("More").click();
+    settle(&mut h);
+    h.get_by_label("3 lines").click();
+    settle(&mut h);
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v["reader"]["size"], json!(24.0));
+    assert!((v["reader"]["spacing"].as_f64().unwrap_or(0.0) - 1.8).abs() < 1e-4, "{}", v["reader"]);
+    assert_eq!(v["reader"]["at"], json!(1), "Down moves the line focus");
+    review(&mut h, "immersive_reader");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v["reader"], Value::Null, "Escape closes it");
+    assert_eq!(h.state().body().unwrap_or_default(), body, "the page is unchanged");
+    assert_eq!(v["page"]["dirty"], json!(false));
+}
+
+/// Issue #296: Draw > Ink Help was "not built". It opens the Welcome notebook's handwriting and
+/// drawing page, and with no Welcome notebook open it says where the help is instead.
+#[test]
+fn ink_help_opens_the_drawing_page_of_the_welcome_notebook() {
+    let (t, app, _s) = sample_app("ui-ink-help");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2200.0, 900.0));
+    h.run();
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Ink Help").click();
+    settle(&mut h);
+    assert!(h.state().status().contains("Welcome notebook, which is not open"), "{}", h.state().status());
+
+    let demo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook/html");
+    copy_tree(&demo, &t.path().join("notebooks").join("welcome-to-notecraft"));
+    h.get_by_label("Ink Help").click();
+    settle(&mut h);
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let path = v["page"]["path"].as_str().unwrap_or_default().to_string();
+    assert!(path.ends_with("10-en/how-to/handwriting-and-drawing"), "the English drawing page opened: {path}");
+    assert_eq!(v["page"]["dirty"], json!(false), "and nothing was changed");
 }

@@ -1096,6 +1096,42 @@
 @id	ui.portable_saved	$$$Export saved in {path}@@@
 @id	ui.portable_no_snapshot	$$$Review the export before writing it.@@@
 @id	ui.portable_send_hint	$$$Review a portable copy of this page before sharing it@@@
+@id	ui.ink_help_2	$$$Ink\nHelp@@@
+@id	ui.ink_help_tip	$$$Open the Welcome notebook's page on handwriting and drawing@@@
+@id	ui.ink_help_missing	$$$The drawing help is in the Welcome notebook, which is not open. Add it again from the first-use prompt, or open its folder from File > Open.@@@
+@id	ui.online_video_2	$$$Online\nVideo@@@
+@id	ui.online_video_tip	$$$Put a link to a video on the web into the page@@@
+@id	ui.online_video_title	$$$Online Video@@@
+@id	ui.online_video_address	$$$Video address@@@
+@id	ui.online_video_line	$$$Video ({site}): {address}@@@
+@id	ui.online_video_explain	$$$The page keeps a link. Nothing is loaded until you click it, and then it opens in your browser.@@@
+@id	ui.online_video_bad_address	$$$Paste the address of a video on the web, starting with https://@@@
+@id	ui.online_video_inserted	$$$Added a link to the video.@@@
+@id	ui.ruler_2	$$$Ruler@@@
+@id	ui.ruler_tip	$$$Lay a ruler on the page: ink drawn along its edge comes out straight. Drag it to move it, drag its round handle to turn it, or press [ and ] (with Shift, 15 degrees). Press again to put it away.@@@
+@id	ui.reader_focus_off	$$$Off@@@
+@id	ui.reader_focus_one	$$$1 line@@@
+@id	ui.reader_focus_three	$$$3 lines@@@
+@id	ui.reader_focus_five	$$$5 lines@@@
+@id	ui.reader_picture_without_description	$$$Picture (no description)@@@
+@id	ui.reader_picture_alt	$$$Picture: {alt}@@@
+@id	ui.reader_handwriting_not_shown	$$$This page has handwriting, which the reader does not show. Close the reader to see it.@@@
+@id	ui.reader_text_size	$$$Text size@@@
+@id	ui.reader_smaller	$$$Smaller@@@
+@id	ui.reader_larger	$$$Larger@@@
+@id	ui.reader_smaller_text	$$$Make the text smaller@@@
+@id	ui.reader_larger_text	$$$Make the text larger@@@
+@id	ui.reader_line_spacing	$$$Line spacing@@@
+@id	ui.reader_less	$$$Less@@@
+@id	ui.reader_more	$$$More@@@
+@id	ui.reader_less_space	$$$Less room between lines@@@
+@id	ui.reader_more_space	$$$More room between lines@@@
+@id	ui.reader_line_focus	$$$Line focus@@@
+@id	ui.reader_close	$$$Close@@@
+@id	ui.reader_close_tip	$$$Back to the page (Escape)@@@
+@id	ui.reader_read_aloud_not_available	$$$Up and Down move the line focus. Read aloud is not built yet: NoteCraft has no speech service on any platform.@@@
+@id	ui.immersive_reader_tip	$$$Read the page in large, plain type with a line focus. The page is not changed.@@@
+@id	ui.reader_open_a_page	$$$Open a page to read it in the Immersive Reader.@@@
 @id	ui.notebooks_folder	$$$Notebooks folder@@@
 @id	ui.notebooks_folder_hint	$$$Notebooks already in the folder you choose open now. New notebooks go there from the next start. Nothing is moved.@@@
 @id	ui.change_notebooks_folder	$$$Change notebooks folder...@@@

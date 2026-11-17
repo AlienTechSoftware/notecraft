@@ -852,6 +852,14 @@ enum Dialog {
         editing: bool,
         first: bool,
     },
+    /// Insert > Online Video: the address of a video to link to at the caret (issue #284).
+    OnlineVideo {
+        block: usize,
+        cell: Option<(usize, usize)>,
+        range: (usize, usize),
+        address: String,
+        first: bool,
+    },
     /// Insert > Table > Insert Table...: a table of any size up to the limits, typed in.
     InsertTable {
         rows: String,
@@ -1093,6 +1101,10 @@ pub struct NoteCraftApp {
     page_scroll_strip: Option<egui::Rect>,
     /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
     space_tool: bool,
+    /// Draw > Ruler is out on the page (issue #293). Where it lies is the ink layer's.
+    ruler: bool,
+    /// View > Immersive Reader, while it is open (issue #299).
+    reader: Option<crate::reader::Reader>,
     /// What the pointer does on the page (the Draw tab).
     pointer: ribbon::Pointer,
     /// The tools on the rack, as the owner has arranged them, and which is in hand. Both
@@ -1278,6 +1290,8 @@ impl NoteCraftApp {
             page_hbar: None,
             page_scroll_strip: None,
             space_tool: false,
+            ruler: false,
+            reader: None,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
             typed_wait: 0,
@@ -1621,6 +1635,20 @@ impl NoteCraftApp {
             }
             self.open.insert(d.to_path_buf());
             parent = d.parent();
+        }
+    }
+
+    /// Draw > Ink Help (issue #296): the Welcome notebook's handwriting and drawing page, in
+    /// the interface language when the notebook has it and in English otherwise. Only opens a
+    /// page; the note that was open is not changed.
+    fn open_ink_help(&mut self) {
+        let notebooks: Vec<PathBuf> = self.open_notebooks().into_iter().map(|n| n.path).collect();
+        match drawing_help_page(&notebooks, &crate::i18n::current_code()) {
+            Some(page) => {
+                self.expand_to(&page);
+                self.open_page(&page);
+            }
+            None => self.say(crate::tl_id!("ui.ink_help_missing")),
         }
     }
 
@@ -4184,6 +4212,7 @@ impl NoteCraftApp {
             nib: self.nib,
             in_table: self.caret_in_table(),
             space_tool: self.space_tool,
+            ruler: self.ruler,
             table_borders: self.caret_table_has_borders(),
             table_align: self.caret_cells_align(),
             table_shade: self.caret_cells_shade(),
@@ -4535,6 +4564,7 @@ impl NoteCraftApp {
                     self.save_block_marks(marks);
                 }
                 "link" => self.open_link_dialog(),
+                "online-video" => self.open_online_video_dialog(),
                 "equation" => self.insert_in_page("$E = mc^2$"),
                 "date" | "time" | "datetime" => {
                     let now = notecraft_model::time::iso_now();
@@ -4661,6 +4691,18 @@ impl NoteCraftApp {
             }
             ribbon::Act::CustomizeTags => {
                 self.custom_tags = Some(crate::customtags::Dialog::new(notecraft_model::tag::custom()));
+            }
+            ribbon::Act::InkHelp => self.open_ink_help(),
+            ribbon::Act::ImmersiveReader => match self.editor.as_ref() {
+                Some(ed) => self.reader = Some(crate::reader::Reader::new(&ed.title_buf, &ed.blocks, !ed.ink_files.is_empty())),
+                None => self.say(crate::tl_id!("ui.reader_open_a_page")),
+            },
+            ribbon::Act::ToggleRuler => {
+                self.ruler = !self.ruler;
+                // The ruler is for drawing: with the caret in hand, the pen last used comes up.
+                if self.ruler && self.pointer == ribbon::Pointer::Write {
+                    self.ribbon_act(ribbon::Act::InkPen(self.nib));
+                }
             }
             ribbon::Act::CollectAll => {
                 if self.editor.as_ref().is_none_or(|ed| !ed.writable) {
@@ -6971,6 +7013,26 @@ impl NoteCraftApp {
         self.dialog = Some(Dialog::Link { block: caret.block, cell: caret.cell, range, text, address, editing, first: true });
     }
 
+    /// Opens Insert > Online Video (issue #284): the video goes in at the caret, in place of
+    /// any words selected in one line.
+    pub fn open_online_video_dialog(&mut self) {
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.writable) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        if ed.across.is_some_and(|a| !a.inside_one_block()) {
+            self.say(crate::tl_id!("ui.select_words_in_one_line_for_a_link"));
+            return;
+        }
+        Self::place_caret_for_format(ed);
+        let Some(caret) = ed.caret.as_ref() else {
+            self.say(crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon"));
+            return;
+        };
+        let range = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+        self.dialog = Some(Dialog::OnlineVideo { block: caret.block, cell: caret.cell, range, address: String::new(), first: true });
+    }
+
     /// Puts `replacement` in place of the characters `range` of the caret's line, when the
     /// caret is still in the line the Link dialog was opened for. One step of the history.
     fn replace_in_caret_line(&mut self, block: usize, cell: Option<(usize, usize)>, range: (usize, usize), replacement: &str) {
@@ -8065,6 +8127,7 @@ impl NoteCraftApp {
                                     .filter(|bar| bar.min.x > ink_area.min.x)
                                     .map_or(ink_area, |bar| ink_area.with_max_x(ink_area.max.x.min(bar.min.x)));
                                 let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(ink_area));
+                                crate::inkpad::set_ruler(ink_ui.ctx(), self.ruler);
                                 ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, hit, top, pad, pen, pressure, &tokens, zoom_scale);
                             }
                             // A press lets go of whatever was selected: the drag that may
@@ -8586,6 +8649,12 @@ impl NoteCraftApp {
     // ---------- dialogs ----------
 
     fn dialogs(&mut self, ctx: &Context) {
+        // View > Immersive Reader (issue #299) covers the window until it is closed.
+        if let Some(reader) = self.reader.as_mut()
+            && crate::reader::show(ctx, reader, &self.tokens) == Some(crate::reader::Act::Close)
+        {
+            self.reader = None;
+        }
         if let Some(mut dialog) = self.custom_tags.take() {
             let out = dialog.show(ctx, &self.tokens);
             if let Some(list) = out.changed {
@@ -9313,6 +9382,52 @@ impl NoteCraftApp {
                     // Removing keeps the words and lets go of the address.
                     let replacement = if remove { text.trim().to_string() } else { pageedit::link_markup(text, address) };
                     self.replace_in_caret_line(block, cell, range, &replacement);
+                    keep = false;
+                }
+            }
+            Dialog::OnlineVideo { block, cell, range, address, first } => {
+                let mut go = false;
+                let video = crate::onlinevideo::read(address);
+                let backdrop = modal_backdrop(ctx, "online-video-backdrop");
+                egui::Window::new(crate::tl_id!("ui.online_video_title"))
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .fixed_size(vec2(420.0, 0.0))
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.online_video_title"));
+                        ui.label(crate::tl_id!("ui.online_video_address"));
+                        let field = ui.add(egui::TextEdit::singleline(address).desired_width(400.0).hint_text("https://"));
+                        if *first {
+                            field.request_focus();
+                            *first = false;
+                        }
+                        if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && video.is_some() {
+                            go = true;
+                        }
+                        if !address.trim().is_empty() && video.is_none() {
+                            ui.colored_label(self.tokens.warn, crate::tl_id!("ui.online_video_bad_address"));
+                        }
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.online_video_explain")).size(11.5).color(self.tokens.muted));
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                            {
+                                keep = false;
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.ok"), true, video.is_some()).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if go && let Some(video) = video {
+                    let (block, cell, range) = (*block, *cell, *range);
+                    self.replace_in_caret_line(block, cell, range, &crate::onlinevideo::line(&video));
+                    self.say(crate::tl_id!("ui.online_video_inserted"));
                     keep = false;
                 }
             }
@@ -10316,7 +10431,22 @@ impl NoteCraftApp {
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
+                // The readings of the newest stroke, in page points (issues #44, #293).
+                "lastStroke": self.pad.as_ref().map(crate::inkpad::Pad::last_stroke),
+                // Draw > Ruler (issue #293): where it lies once it is out, in page points.
+                "ruler": match crate::inkpad::ruler(ctx) {
+                    Some(crate::inkpad::RulerState::Placed(r)) => json!({"x": r.x, "y": r.y, "angle": r.angle, "degrees": r.shown_degrees()}),
+                    Some(crate::inkpad::RulerState::Unplaced) => json!({}),
+                    None => Value::Null,
+                },
             },
+            // View > Immersive Reader (issue #299), while it is open.
+            "reader": self.reader.as_ref().map(|r| json!({
+                "lines": r.lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>(),
+                "size": r.size,
+                "spacing": r.spacing,
+                "at": r.at,
+            })),
             // What a pen has told this window. `pen` is false until a device reports a
             // pressure at all, and `hardest` is the hardest press since the window opened.
             "pen": {"seen": self.stylus.sample().pen, "pressure": self.stylus.sample().pressure, "hardest": self.stylus.seen().0, "readings": self.stylus.seen().1},
@@ -10759,6 +10889,24 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
 }
 
+/// The Welcome notebook's handwriting and drawing page among `notebooks` (issue #296): the
+/// one in the section for `language` (`10-en`, `20-ar`, ...), else the English one. The
+/// notebook is found by its contents, so a renamed or moved copy still works.
+fn drawing_help_page(notebooks: &[PathBuf], language: &str) -> Option<PathBuf> {
+    let base = language.split(['-', '_']).next().unwrap_or("en").to_ascii_lowercase();
+    let find = |code: &str| {
+        notebooks.iter().find_map(|notebook| {
+            let sections = std::fs::read_dir(notebook).ok()?;
+            sections.flatten().map(|e| e.path()).find_map(|section| {
+                let name = section.file_name()?.to_string_lossy().to_ascii_lowercase();
+                let page = section.join("how-to").join("handwriting-and-drawing");
+                (name.ends_with(&format!("-{code}")) && page.is_dir()).then_some(page)
+            })
+        })
+    };
+    find(&base).or_else(|| find("en"))
+}
+
 /// The notebooks folder chooser. The web build has no native folder dialog, so it chooses nothing.
 #[cfg(not(target_arch = "wasm32"))]
 fn pick_notebooks_folder() -> Option<PathBuf> {
@@ -10786,6 +10934,22 @@ fn pick_copy_folder() -> Option<PathBuf> {
 #[cfg(test)]
 mod alert_tests {
     use super::*;
+
+    #[test]
+    fn ink_help_finds_the_drawing_page_in_the_welcome_notebook() {
+        // Issue #296, against the checked-in Welcome notebook in both formats.
+        let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
+        for format in ["html", "cmgfm"] {
+            let notebook = demo.join(format);
+            let english = drawing_help_page(std::slice::from_ref(&notebook), "en").expect("english page");
+            assert!(english.ends_with(Path::new("10-en/how-to/handwriting-and-drawing")), "{english:?}");
+            let arabic = drawing_help_page(std::slice::from_ref(&notebook), "ar-XB").expect("arabic page");
+            assert!(arabic.ends_with(Path::new("20-ar/how-to/handwriting-and-drawing")), "{arabic:?}");
+            let unknown = drawing_help_page(std::slice::from_ref(&notebook), "xx").expect("falls back");
+            assert_eq!(unknown, english, "a language with no section falls back to English");
+        }
+        assert_eq!(drawing_help_page(&[demo.join("no-such-notebook")], "en"), None);
+    }
 
     #[test]
     fn portable_control_snapshots_unsaved_text_without_saving_the_source() {

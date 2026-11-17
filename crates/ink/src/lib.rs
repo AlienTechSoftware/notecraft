@@ -28,6 +28,7 @@
 
 pub mod pick;
 pub mod rack;
+pub mod ruler;
 pub mod shape;
 pub mod shapes;
 pub mod svg;
@@ -246,6 +247,37 @@ impl Stroke {
         self.dabs.is_empty()
     }
 
+    /// The stroke with the hand's tremor taken out, for when the pen is lifted (issue #44).
+    ///
+    /// A pen reports where it is to a fraction of a point, and a hand shakes by about that
+    /// much. The spline that draws a stroke passes through every reading, so each wobble
+    /// became a kink, and on a wide highlighter a kink turns the ribbon's edges into a zigzag.
+    /// Each reading between the ends is drawn towards the average of itself and its
+    /// neighbours, but never further than a tremor: at most a third of a point, or an eighth of
+    /// the stroke's width for a wide one. A deliberate corner moves less than that relative to
+    /// its size, so writing keeps its shape. The first and last readings and every pressure
+    /// stay exactly as they were.
+    #[must_use]
+    pub fn settled(mut self) -> Self {
+        if self.dabs.len() < 3 {
+            return self;
+        }
+        let limit = (self.width / 8.0).max(0.35);
+        for _ in 0..2 {
+            let before = self.dabs.clone();
+            for (i, dab) in self.dabs.iter_mut().enumerate().skip(1) {
+                let (Some(prev), Some(next)) = (before.get(i - 1), before.get(i + 1)) else { continue };
+                let (ax, ay) = ((prev.x + 2.0 * dab.x + next.x) / 4.0, (prev.y + 2.0 * dab.y + next.y) / 4.0);
+                let (dx, dy) = (ax - dab.x, ay - dab.y);
+                let len = dx.hypot(dy);
+                let scale = if len > limit { limit / len } else { 1.0 };
+                dab.x += dx * scale;
+                dab.y += dy * scale;
+            }
+        }
+        self
+    }
+
     /// The box the ink covers, including smoothing and the selected full-width padding.
     /// `None` for a stroke with no readings.
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
@@ -379,6 +411,35 @@ mod tests {
         assert!(Tool::Pencil.floor() < Tool::Highlighter.floor());
         assert!(Tool::Highlighter.opacity() < Tool::Pen.opacity(), "a highlighter is see-through");
         assert_eq!(Tool::Highlighter.floor(), 1.0, "and it is a flat chisel, so pressure does not thin it");
+    }
+
+    #[test]
+    fn settling_a_stroke_takes_out_tremor_but_keeps_corners_and_ends() {
+        // Issue #44: a straight line drawn by a shaking hand.
+        let mut shaky = Stroke::new(Tool::Highlighter, Rgb::BLACK, 12.0);
+        for i in 0..60 {
+            let wobble = if i % 2 == 0 { 0.6 } else { -0.6 };
+            shaky.add(Dab::new(i as f32 * 2.0, 50.0 + wobble, 0.7));
+        }
+        let worst = |s: &Stroke| s.dabs.iter().skip(1).take(s.dabs.len() - 2).map(|d| (d.y - 50.0).abs()).fold(0.0_f32, f32::max);
+        let settled = shaky.clone().settled();
+        assert!(worst(&settled) < worst(&shaky) / 3.0, "{} then {}", worst(&shaky), worst(&settled));
+        assert_eq!(settled.dabs.first(), shaky.dabs.first(), "the start stays put");
+        assert_eq!(settled.dabs.last(), shaky.dabs.last(), "the end stays put");
+        assert!(settled.dabs.iter().zip(&shaky.dabs).all(|(a, b)| a.pressure == b.pressure), "pressure is untouched");
+
+        // A V written with a fine pen: the corner moves no further than a tremor.
+        let mut vee = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        for (x, y) in [(0.0, 0.0), (5.0, 10.0), (10.0, 20.0), (15.0, 10.0), (20.0, 0.0)] {
+            vee.add(Dab::new(x, y, 0.5));
+        }
+        let corner = vee.clone().settled().dabs[2];
+        assert!((corner.y - 20.0).abs() <= 0.35 * 2.0 + 1e-4, "{corner:?}");
+        // Too short to have a middle: left alone.
+        let mut two = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        two.add(Dab::new(0.0, 0.0, 0.5));
+        two.add(Dab::new(9.0, 1.0, 0.5));
+        assert_eq!(two.clone().settled(), two);
     }
 
     #[test]

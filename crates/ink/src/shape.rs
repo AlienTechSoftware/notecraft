@@ -78,6 +78,14 @@ pub fn width_at(stroke: &Stroke, pressure: f32) -> f32 {
     (stroke.width * share).max(crate::MIN_WIDTH)
 }
 
+/// How many points of the smoothed middle apart the direction of a stroke is read from:
+/// one for a fine pen, more for a wide one, so that it covers about a quarter of the width.
+pub fn heading_reach(stroke: &Stroke) -> usize {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let reach = (stroke.width / 4.0 / STEP).round() as usize;
+    reach.clamp(1, 12)
+}
+
 /// The two edges of the ribbon, left and right of the smoothed middle, point for point
 /// with it. A painter that fills triangles wants these; SVG wants them joined up, which is
 /// what [`outline`] does. Both come from here, so the file and the screen agree.
@@ -85,11 +93,14 @@ pub fn sides(stroke: &Stroke) -> (Vec<(f32, f32)>, Vec<(f32, f32)>) {
     let line = centre(stroke);
     let mut left: Vec<(f32, f32)> = Vec::with_capacity(line.len());
     let mut right: Vec<(f32, f32)> = Vec::with_capacity(line.len());
+    let reach = heading_reach(stroke);
     for (i, d) in line.iter().enumerate() {
         // The direction here is the way the line is going, taken from the points either
-        // side so a corner leans the right way.
-        let before = line.get(i.saturating_sub(1)).copied().unwrap_or(*d);
-        let after = line.get(i + 1).copied().unwrap_or(*d);
+        // side so a corner leans the right way. For a wide nib the points are taken a little
+        // further off, about a quarter of its width: the edges are that far from the middle,
+        // so a wobble the eye cannot see in the middle would swing them into a zigzag (#44).
+        let before = line.get(i.saturating_sub(reach)).copied().unwrap_or(*d);
+        let after = line.get((i + reach).min(line.len().saturating_sub(1))).copied().unwrap_or(*d);
         let (dx, dy) = (after.x - before.x, after.y - before.y);
         let len = (dx * dx + dy * dy).sqrt();
         // Two readings in the same place say nothing about direction; the ends are round
@@ -115,14 +126,16 @@ pub fn outline(stroke: &Stroke) -> Vec<(f32, f32)> {
     let mut out = left;
     // Where the readings give no direction, `sides` assumed the pen was going across the
     // page, left to right; each end assumes the same, so a tap still closes into a dot.
+    // The ends face the way the ribbon's edges arrive there, read over the same reach.
+    let reach = heading_reach(stroke).min(line.len() - 1);
     out.extend(half_circle(
         last,
         width_at(stroke, last.pressure) / 2.0,
-        line.get(line.len().saturating_sub(2)).copied().unwrap_or(first),
+        line.get(line.len().saturating_sub(1 + reach)).copied().unwrap_or(first),
         (1.0, 0.0),
     ));
     out.extend(right.into_iter().rev());
-    out.extend(half_circle(first, width_at(stroke, first.pressure) / 2.0, line.get(1).copied().unwrap_or(last), (-1.0, 0.0)));
+    out.extend(half_circle(first, width_at(stroke, first.pressure) / 2.0, line.get(reach).copied().unwrap_or(last), (-1.0, 0.0)));
     out
 }
 
@@ -237,6 +250,25 @@ mod tests {
             s.dabs.push(Dab::new(*x, *y, *p));
         }
         s
+    }
+
+    #[test]
+    fn a_wide_highlighter_edge_does_not_fold_back_on_a_shaky_line() {
+        // Issue #44: a highlighter drawn left to right by a hand that shakes a little. Each
+        // edge must keep going the same way; an edge that steps backwards is a fold, which a
+        // see-through highlighter paints twice, and that is the zigzag users saw.
+        let mut s = Stroke::new(Tool::Highlighter, Rgb::BLACK, 14.0);
+        for i in 0..40 {
+            let wobble = [0.0, 0.5, -0.3, 0.4, -0.5][i % 5];
+            s.dabs.push(Dab::new(i as f32 * 1.5, 40.0 + wobble, 1.0));
+        }
+        let folds = |s: &Stroke| {
+            let (left, right) = sides(s);
+            [left, right].iter().map(|edge| edge.windows(2).filter(|w| w[1].0 < w[0].0 - 0.05).count()).sum::<usize>()
+        };
+        assert!(folds(&s) > 0, "the shaky readings as they came do fold");
+        // As the pen lays it down: settled when lifted, then given its width.
+        assert_eq!(folds(&s.clone().settled()), 0, "a settled stroke's edges do not fold");
     }
 
     #[test]
