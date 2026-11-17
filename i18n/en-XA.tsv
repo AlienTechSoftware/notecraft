@@ -1132,3 +1132,11 @@
 @id	ui.reader_read_aloud_not_available	$$$Up and Down move the line focus. Read aloud is not built yet: NoteCraft has no speech service on any platform.@@@
 @id	ui.immersive_reader_tip	$$$Read the page in large, plain type with a line focus. The page is not changed.@@@
 @id	ui.reader_open_a_page	$$$Open a page to read it in the Immersive Reader.@@@
+@id	ui.notebooks_folder	$$$Notebooks folder@@@
+@id	ui.notebooks_folder_hint	$$$Notebooks already in the folder you choose open now. New notebooks go there from the next start. Nothing is moved.@@@
+@id	ui.change_notebooks_folder	$$$Change notebooks folder...@@@
+@id	ui.use_the_default_notebooks_folder	$$$Use the default folder@@@
+@id	ui.choose_the_notebooks_folder	$$$Choose the notebooks folder@@@
+@id	ui.notebooks_folder_next_start	$$$The notebooks folder changes the next time NoteCraft starts.@@@
+@id	ui.could_not_save_the_notebooks_folder_error	$$$Could not save the notebooks folder: {error}@@@
+@id	ui.notebooks_folder_current	$$$NoteCraft keeps new notebooks in {folder}.@@@
