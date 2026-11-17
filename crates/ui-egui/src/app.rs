@@ -1526,6 +1526,30 @@ impl NoteCraftApp {
 
     /// Draws the whole window larger or smaller, for a screen where the system's own scale
     /// leaves the ribbon and the menus too small to read, and remembers the choice.
+    /// Saves the notebooks folder NoteCraft uses from the next start. `None` goes back to the
+    /// default folder. The current session keeps its folder until then.
+    pub fn save_notebooks_root(&mut self, folder: Option<&std::path::Path>) -> Result<(), String> {
+        let value = folder.map(|path| path.to_string_lossy().into_owned()).unwrap_or_default();
+        self.session.settings.set("last_notebooks_root", &value).map_err(|error| error.to_string())
+    }
+
+    fn choose_default_notebooks_folder(&mut self) {
+        let Some(picked) = pick_notebooks_folder() else {
+            return;
+        };
+        self.apply_notebooks_root_choice(Some(&picked));
+    }
+
+    fn apply_notebooks_root_choice(&mut self, folder: Option<&std::path::Path>) {
+        match self.save_notebooks_root(folder) {
+            Ok(()) => self.say(crate::tl_id!("ui.notebooks_folder_next_start")),
+            Err(error) => {
+                let message = crate::i18n::format_message_id("ui.could_not_save_the_notebooks_folder_error", &[("error", &error)]);
+                self.complain(&message);
+            }
+        }
+    }
+
     pub fn set_ui_scale(&mut self, percent: u16) {
         if let Err(error) = self.session.settings.set(UI_SCALE_KEY, &percent.to_string()) {
             let error = error.to_string();
@@ -3658,6 +3682,8 @@ impl NoteCraftApp {
                     self.set_ui_language(language);
                 }
                 backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
+                backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
+                backstage::Act::UseDefaultNotebooksFolder => self.apply_notebooks_root_choice(None),
                 backstage::Act::OpenTelemetryFolder(path) => {
                     // The folder is made on first use: it does not exist until a session has
                     // written to it, and Explorer opens Documents for a folder it cannot find.
@@ -8600,6 +8626,7 @@ impl NoteCraftApp {
                 let mut clear = false;
                 let mut cancel = false;
                 egui::Window::new(crate::tl_id!("ui.clear_telemetry"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
@@ -10732,6 +10759,17 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
 }
 
+/// The notebooks folder chooser. The web build has no native folder dialog, so it chooses nothing.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_notebooks_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_notebooks_folder")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_notebooks_folder() -> Option<PathBuf> {
+    None
+}
+
 /// File > Save a Copy's folder chooser (issue #301). A browser has no folder dialog, so the web
 /// build chooses nothing and the folder is typed instead. Kept here, below the other choosers,
 /// and gated in its own right: the web build's rules rewrite the dialogs above by where they sit.
@@ -10920,6 +10958,25 @@ mod alert_tests {
 
         // Dialog should not be shown because privacy_welcome_seen is set
         assert!(app.dialog.is_none(), "PrivacyWelcome dialog should not show after being dismissed");
+    }
+
+    #[test]
+    fn choosing_a_notebooks_folder_saves_it_for_the_next_start() {
+        let t = notecraft_store::testing::TempDir::new("notebooks-folder-choice");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        app.save_notebooks_root(Some(std::path::Path::new("Notes/Research"))).expect("save the folder");
+        assert_eq!(
+            notecraft_store::settings::configured_notebooks_dir(&settings),
+            Some(std::path::PathBuf::from("Notes/Research")),
+            "the chosen folder is used at the next start"
+        );
+
+        app.save_notebooks_root(None).expect("use the default folder");
+        assert_eq!(notecraft_store::settings::configured_notebooks_dir(&settings), None, "the default folder is used again");
     }
 
     #[test]
