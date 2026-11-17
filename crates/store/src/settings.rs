@@ -38,6 +38,12 @@ pub fn default_notebooks_dir() -> PathBuf {
     default_notebooks_dir_for_home(home)
 }
 
+/// The notebooks folder this build starts with: the development folder in a debug build, and the
+/// per-user folder in a production build. "Use the default folder" goes back to this.
+pub fn build_default_notebooks_dir() -> PathBuf {
+    if cfg!(debug_assertions) { PathBuf::from("my-notebooks") } else { default_notebooks_dir() }
+}
+
 /// The per-user notebook folder, kept separate so every platform can test the same contract.
 pub fn default_notebooks_dir_for_home(home: impl AsRef<Path>) -> PathBuf {
     home.as_ref().join("Documents").join("NoteCraft")
@@ -189,6 +195,12 @@ mod tests {
         let s = Settings::at(t.path().join("settings.toml"));
         s.set("last_notebooks_root", "Notes/Research").expect("save notebooks root");
         assert_eq!(configured_notebooks_dir(&s), Some(PathBuf::from("Notes/Research")));
+    }
+
+    #[test]
+    fn a_debug_build_defaults_to_the_development_folder() {
+        let expected = if cfg!(debug_assertions) { PathBuf::from("my-notebooks") } else { default_notebooks_dir() };
+        assert_eq!(build_default_notebooks_dir(), expected);
     }
 
     #[test]

@@ -1555,8 +1555,6 @@ impl NoteCraftApp {
         self.ui_scale
     }
 
-    /// Draws the whole window larger or smaller, for a screen where the system's own scale
-    /// leaves the ribbon and the menus too small to read, and remembers the choice.
     /// Saves the notebooks folder NoteCraft uses from the next start. `None` goes back to the
     /// default folder. The current session keeps its folder until then.
     pub fn save_notebooks_root(&mut self, folder: Option<&std::path::Path>) -> Result<(), String> {
@@ -1571,16 +1569,29 @@ impl NoteCraftApp {
         self.apply_notebooks_root_choice(Some(&picked));
     }
 
+    /// Moves NoteCraft to the chosen notebooks folder now, or to the default folder for this build
+    /// when `folder` is None, and remembers the choice for the next start.
     fn apply_notebooks_root_choice(&mut self, folder: Option<&std::path::Path>) {
-        match self.save_notebooks_root(folder) {
-            Ok(()) => self.say(crate::tl_id!("ui.notebooks_folder_next_start")),
-            Err(error) => {
-                let message = crate::i18n::format_message_id("ui.could_not_save_the_notebooks_folder_error", &[("error", &error)]);
-                self.complain(&message);
-            }
+        let target = folder.map_or_else(notecraft_store::settings::build_default_notebooks_dir, std::path::Path::to_path_buf);
+        if let Err(error) = self.save_notebooks_root(folder) {
+            let message = crate::i18n::format_message_id("ui.could_not_save_the_notebooks_folder_error", &[("error", &error)]);
+            self.complain(&message);
+            return;
         }
+        if let Err(error) = self.session.set_root(&target) {
+            let error = error.to_string();
+            let message = crate::i18n::format_message_id("ui.could_not_open_the_notebooks_folder_error", &[("error", &error)]);
+            self.complain(&message);
+            return;
+        }
+        self.editor = None;
+        self.pad = None;
+        let shown = target.display().to_string();
+        self.say(crate::i18n::format_message_id("ui.notebooks_folder_changed", &[("folder", &shown)]));
     }
 
+    /// Draws the whole window larger or smaller, for a screen where the system's own scale
+    /// leaves the ribbon and the menus too small to read, and remembers the choice.
     pub fn set_ui_scale(&mut self, percent: u16) {
         if let Err(error) = self.session.settings.set(UI_SCALE_KEY, &percent.to_string()) {
             let error = error.to_string();
@@ -11264,22 +11275,18 @@ mod alert_tests {
     }
 
     #[test]
-    fn choosing_a_notebooks_folder_saves_it_for_the_next_start() {
+    fn choosing_a_notebooks_folder_moves_to_it_now() {
         let t = notecraft_store::testing::TempDir::new("notebooks-folder-choice");
         let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
         settings.set("privacy_welcome_seen", "true").expect("settings");
         let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
         let mut app = NoteCraftApp::new(session);
+        let chosen = t.path().join("chosen");
 
-        app.save_notebooks_root(Some(std::path::Path::new("Notes/Research"))).expect("save the folder");
-        assert_eq!(
-            notecraft_store::settings::configured_notebooks_dir(&settings),
-            Some(std::path::PathBuf::from("Notes/Research")),
-            "the chosen folder is used at the next start"
-        );
+        app.apply_notebooks_root_choice(Some(&chosen));
 
-        app.save_notebooks_root(None).expect("use the default folder");
-        assert_eq!(notecraft_store::settings::configured_notebooks_dir(&settings), None, "the default folder is used again");
+        assert_eq!(app.session().root(), std::fs::canonicalize(&chosen).expect("canonical").as_path(), "the window moves to the chosen folder");
+        assert_eq!(settings.get("last_notebooks_root"), Some(chosen.to_string_lossy().into_owned()), "the choice is remembered");
     }
 
     #[test]
