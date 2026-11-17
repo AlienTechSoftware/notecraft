@@ -613,7 +613,8 @@ fn options_page(
     let current = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", notebooks_folder)]);
     ui.label(egui::RichText::new(current).size(12.0).color(t.text));
     ui.horizontal(|ui| {
-        if open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 230.0, 34.0, t, true).clicked() {
+        // The web build has no folder dialog, so the change button is shown only where one exists.
+        if !cfg!(target_arch = "wasm32") && open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 230.0, 34.0, t, true).clicked() {
             acts.push(Act::ChooseNotebooksFolder);
         }
         if open_action(ui, crate::tl_id!("ui.use_the_default_notebooks_folder"), 260.0, 34.0, t, false).clicked() {

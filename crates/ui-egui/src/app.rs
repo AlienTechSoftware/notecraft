@@ -1534,7 +1534,7 @@ impl NoteCraftApp {
     }
 
     fn choose_default_notebooks_folder(&mut self) {
-        let Some(picked) = rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_notebooks_folder")).pick_folder() else {
+        let Some(picked) = pick_notebooks_folder() else {
             return;
         };
         self.apply_notebooks_root_choice(Some(&picked));
@@ -10757,6 +10757,17 @@ fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, fo
     let label = crate::i18n::format_message_id("ui.accent_accent", &[("accent", accent)]);
     ui.label(egui::RichText::new(label).small());
     ui.checkbox(follow, crate::tl_id!("ui.follow_the_system_light_or_dark_setting"));
+}
+
+/// The notebooks folder chooser. The web build has no native folder dialog, so it chooses nothing.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_notebooks_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_notebooks_folder")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_notebooks_folder() -> Option<PathBuf> {
+    None
 }
 
 /// File > Save a Copy's folder chooser (issue #301). A browser has no folder dialog, so the web
