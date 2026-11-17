@@ -180,6 +180,23 @@ cargo xtask demo-copy html
 cargo run -p notecraft -- --notebooks ./my-notebooks --expand-all
 ```
 
+### Local diagnostics paths
+
+`cargo run -p notecraft` from a development checkout normally uses
+`local/settings.toml`. The app log is `local/notecraft.log` (and may rotate to
+`local/notecraft.log.old`); telemetry session files are under
+`local/telemetry/<session-id>/`. The Options page's Folder value points to the
+telemetry directory, not to `notecraft.log`.
+
+An installed Windows build normally uses `%APPDATA%\\NoteCraft\\settings.toml`,
+with its app log and telemetry directory beside that settings file. These are
+defaults, not profile guarantees: `NOTECRAFT_SETTINGS` overrides the settings
+path, and a release binary launched from a checkout may use `local/settings.toml`.
+When diagnosing, copy the path shown by the running app or verify its resolved
+settings path before searching. See
+[`nc-runtime-diagnostics`](../nc-runtime-diagnostics/SKILL.md) for the full
+precedence and platform paths.
+
 ### Running Tests
 
 ```bash

@@ -18,6 +18,25 @@ The settings file is not stored in a notebook. It is a key/value text file and
 may contain `telemetry_level`, `telemetry_session_id`, privacy state, the last
 notebooks root, and other preferences. Treat it as personal configuration.
 
+## Development and installed paths
+
+The location is selected by the settings-path precedence above, not by the build
+profile alone. In a development checkout, `cargo run -p notecraft` normally
+selects `local/settings.toml`. An installed Windows build normally selects
+`%APPDATA%\\NoteCraft\\settings.toml`. `NOTECRAFT_SETTINGS` can override either
+default, and a release binary launched from a checkout can still use its local
+settings file.
+
+| Run context | Settings | App log | Telemetry sessions |
+|---|---|---|---|
+| Development checkout on Windows | `local/settings.toml` | `local/notecraft.log` | `local/telemetry/<session-id>/` |
+| Installed Windows app | `%APPDATA%\\NoteCraft\\settings.toml` | `%APPDATA%\\NoteCraft\\notecraft.log` | `%APPDATA%\\NoteCraft\\telemetry/<session-id>/` |
+| Linux/WSL or another override | Resolved by the precedence above | Beside settings | `telemetry/` beside settings |
+
+The Options page's Folder value is the telemetry root. It does not show the
+application log file. Confirm the actual path displayed by the running app and
+resolve relative development paths from the process working directory.
+
 ## Files beside settings
 
 The desktop app initializes the log beside the settings file:

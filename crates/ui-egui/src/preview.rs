@@ -47,6 +47,12 @@ pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
 /// apart and a replaced picture is drawn anew.
 /// A picture's last change, where the platform reports one. The browser build's file shim has no
 /// modification time, so there the stamp is the size alone.
+/// The number column of a numbered code block: each line's number and a bar after it, one line per
+/// line of code. The bar is the separator the owner asked for (SUP-004).
+pub(crate) fn line_numbers(lines: usize) -> String {
+    (1..=lines).map(|n| format!("{n} |")).collect::<Vec<_>>().join("\n")
+}
+
 fn file_time(path: &Path) -> Option<std::time::SystemTime> {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -769,7 +775,7 @@ pub(crate) fn show_block_zoomed(
                     if numbered {
                         // Numbers are for reading: the block being written in shows none (pageedit.rs).
                         let lines = text.trim_end_matches('\n').split('\n').count();
-                        let numbers = (1..=lines).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
+                        let numbers = line_numbers(lines);
                         ui.horizontal_top(|ui| {
                             ui.label(RichText::new(numbers).monospace().size(14.5 * zoom).color(tokens.muted));
                             ui.label(RichText::new(text.trim_end_matches('\n')).monospace().size(14.5 * zoom));
@@ -909,7 +915,8 @@ pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
     match block {
         Block::Image { .. } => Some("image"),
         Block::Code { lang, .. } if lang == "mermaid" => Some("diagram"),
-        Block::Code { .. } => Some("code"),
+        // Code is page text like a paragraph: a click places the caret in it (owner, 2026-11-11).
+        Block::Code { .. } => None,
         Block::MathBlock(_) => Some("math"),
         Block::Table { .. } => Some("table"),
         Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans)
@@ -1031,6 +1038,21 @@ mod tests {
         assert_eq!(super::picture_max_height("assets/photo.png", 1.0), 480.0);
         assert_eq!(super::picture_max_height("assets/photo.png", 0.5), 240.0);
         assert_eq!(super::picture_max_height("assets/printout.png", 1.0), 480.0);
+    }
+
+    #[test]
+    fn numbered_lines_have_a_bar_after_each_number() {
+        assert_eq!(super::line_numbers(3), "1 |\n2 |\n3 |");
+    }
+
+    #[test]
+    fn the_bar_follows_every_number_including_two_digit_ones() {
+        let column = super::line_numbers(12);
+        let lines: Vec<&str> = column.split('\n').collect();
+        assert_eq!(lines.len(), 12);
+        assert!(lines.iter().all(|l| l.ends_with(" |")), "{column}");
+        assert_eq!(lines[9], "10 |");
+        assert_eq!(lines[11], "12 |");
     }
 
     /// Issue: the page read every picture from disk on every frame (a page of printouts on a
@@ -1209,7 +1231,7 @@ mod tests {
     fn rich_blocks_share_object_selection_kinds() {
         assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None }), Some("image"));
         assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
-        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), Some("code"));
+        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), None, "a code block is page text, not an object");
         assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));
         assert_eq!(object_kind(&Block::Table { head: vec![], rows: vec![] }), Some("table"));
         assert_eq!(object_kind(&Block::Paragraph(vec![Span { image: Some("assets/a.png".into()), ..Span::default() }])), Some("image"));
