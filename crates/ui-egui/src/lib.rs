@@ -57,14 +57,17 @@ pub mod preview;
 pub(crate) mod printout;
 pub mod quickaccess;
 pub mod reader;
+pub mod replay;
 pub mod ribbon;
 pub mod ribbon_icons;
 pub mod saver;
+pub mod sectiontabs;
 pub mod snippets;
 pub mod stylus;
 pub mod telemetry_export;
 #[cfg(test)]
 mod testing_dir;
+pub mod textcolour;
 pub mod theme;
 
 pub use app::NoteCraftApp;

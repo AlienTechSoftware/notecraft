@@ -45,6 +45,10 @@ pub enum Act {
     Mark(&'static str),
     /// Apply a point size to the selected text.
     FontSize(u8),
+    /// Home > Font Colour: `#rrggbb`, or `None` for Automatic (issue #260).
+    TextColour(Option<String>),
+    /// Home > Text Highlight Colour: `#rrggbb`, or `None` for No Colour (issue #260).
+    TextHighlight(Option<String>),
     /// Apply an installed font family to the selected text.
     FontFamily(String),
     /// Make the block under the caret this kind: `p`, `h1`, `h2`, `h3`, `quote`, `bullet`,
@@ -127,6 +131,12 @@ pub enum Act {
     InkHelp,
     /// Draw > Ruler: put the ruler out on the page, or away (issue #293).
     ToggleRuler,
+    /// Draw > Automatic Shapes: turn shape recognition on or off (issue #294).
+    ToggleAutoShapes,
+    /// Draw > Ink Replay: replay the page's ink in the order it was drawn, or stop (issue #295).
+    ToggleReplay,
+    /// View > Tabs layout: sections as tabs across the top of the page, or not (#268, #33).
+    ToggleTabsLayout,
     /// View > Immersive Reader: the page as plain, large reading (issue #299).
     ImmersiveReader,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
@@ -486,6 +496,12 @@ pub struct View<'a> {
     pub space_tool: bool,
     /// True while Draw > Ruler is out on the page (issue #293).
     pub ruler: bool,
+    /// True while Draw > Automatic Shapes is on (issue #294).
+    pub auto_shapes: bool,
+    /// True while Draw > Ink Replay is playing the page's ink (issue #295).
+    pub replaying: bool,
+    /// True while View > Tabs layout shows the sections as tabs (issues #268, #33).
+    pub tabs_layout: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
@@ -526,6 +542,10 @@ pub struct View<'a> {
     /// buttons show as pressed (issue #255).
     pub marks: crate::pageedit::Marks,
     pub font_size: Option<&'a str>,
+    /// The text colour and highlight of the words at the caret or the whole selection, when
+    /// they are all the same (issue #260). `Some(None)` is Automatic or No Colour.
+    pub text_colour: Option<Option<&'a str>>,
+    pub text_highlight: Option<Option<&'a str>>,
 }
 
 impl View<'_> {
@@ -1150,6 +1170,9 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
                     acts.push(Act::Insert("link"));
                 }
+                // Last in the row, so the controls before it keep their places (#260).
+                colour_palette(ui, false, view.text_colour, t, acts);
+                colour_palette(ui, true, view.text_highlight, t, acts);
             });
             ui.horizontal(|ui| {
                 if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
@@ -1838,6 +1861,73 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
     resp.on_hover_text(tip)
+}
+
+/// Home's Font Colour (`highlight` false) or Text Highlight Colour palette (issue #260): a
+/// small button with the letter or the marker and the colour now in use, which opens the
+/// palette: Automatic or No Colour first, then the colours by name.
+fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t: &Tokens, acts: &mut Vec<Act>) {
+    let (label, tip) = if highlight {
+        (crate::tl_id!("ui.text_highlight_colour"), crate::tl_id!("ui.text_highlight_colour_tip"))
+    } else {
+        (crate::tl_id!("ui.font_colour"), crate::tl_id!("ui.font_colour_tip"))
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() || resp.has_focus() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    let bar_colour = current.flatten().and_then(crate::textcolour::parse);
+    let glyph = rect.center() - vec2(0.0, 3.0);
+    if highlight {
+        // A marker nib: a slanted block over the bar.
+        let nib = [glyph + vec2(-5.0, 4.0), glyph + vec2(1.0, -6.0), glyph + vec2(5.0, -3.0), glyph + vec2(-1.0, 7.0)];
+        painter.add(egui::Shape::convex_polygon(nib.to_vec(), egui::Color32::TRANSPARENT, egui::Stroke::new(1.3, t.text)));
+    } else {
+        painter.text(glyph, Align2::CENTER_CENTER, "A", egui::FontId::proportional(13.0), t.text);
+    }
+    let bar = Rect::from_center_size(egui::pos2(rect.center().x, rect.max.y - 5.0), vec2(14.0, 3.5));
+    match bar_colour {
+        Some(c) => {
+            painter.rect_filled(bar, 1.0, c);
+        }
+        None => {
+            painter.rect_stroke(bar, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        }
+    }
+    let name = label.to_string();
+    let enabled = ui.is_enabled();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    let resp = resp.on_hover_text(tip);
+    egui::Popup::menu(&resp).id(ui.id().with(("colour-palette", highlight))).show(|ui| {
+        ui.set_min_width(180.0);
+        let none = if highlight { crate::tl_id!("ui.no_colour") } else { crate::tl_id!("ui.automatic_colour") };
+        if ui.selectable_label(current == Some(None), none).clicked() {
+            acts.push(if highlight { Act::TextHighlight(None) } else { Act::TextColour(None) });
+            ui.close();
+        }
+        let list = if highlight { crate::textcolour::highlights().to_vec() } else { crate::textcolour::font_colours().to_vec() };
+        egui::Grid::new(("colour-grid", highlight)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+            for (i, (name, hex)) in list.iter().enumerate() {
+                let chosen = current.flatten() == Some(*hex);
+                let (r, swatch) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                let fill = crate::textcolour::parse(hex).unwrap_or(t.text);
+                ui.painter().rect_filled(r.shrink(2.0), 3.0, fill);
+                let edge = if chosen || swatch.hovered() || swatch.has_focus() { t.accent } else { t.container_border };
+                ui.painter().rect_stroke(r.shrink(1.0), 3.0, egui::Stroke::new(if chosen { 2.0 } else { 1.0 }, edge), egui::StrokeKind::Inside);
+                let n = (*name).to_string();
+                swatch.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, n.clone()));
+                if swatch.on_hover_text(*name).clicked() {
+                    let value = Some((*hex).to_string());
+                    acts.push(if highlight { Act::TextHighlight(value) } else { Act::TextColour(value) });
+                    ui.close();
+                }
+                if i % 5 == 4 {
+                    ui.end_row();
+                }
+            }
+        });
+    });
 }
 
 // i18n-ui-text: label,tip
@@ -3079,13 +3169,9 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     });
     shapes_group(ui, view, t, acts);
     group(ui, crate::tl_id!("ui.shapes"), t, |ui| {
-        soon(
-            ui,
-            Icon::Shapes,
-            "Automatic
-Shapes",
-            t,
-        );
+        if big_on(ui, Icon::Shapes, crate::tl_id!("ui.automatic_shapes_2"), crate::tl_id!("ui.automatic_shapes_tip"), view.auto_shapes, t).clicked() {
+            acts.push(Act::ToggleAutoShapes);
+        }
     });
     group(ui, crate::tl_id!("ui.text"), t, |ui| {
         soon(
@@ -3106,13 +3192,9 @@ Math",
         );
     });
     group(ui, crate::tl_id!("ui.replay"), t, |ui| {
-        soon(
-            ui,
-            Icon::Replay,
-            "Ink
-Replay",
-            t,
-        );
+        if big_on(ui, Icon::Replay, crate::tl_id!("ui.ink_replay_2"), crate::tl_id!("ui.ink_replay_tip"), view.replaying, t).clicked() {
+            acts.push(Act::ToggleReplay);
+        }
     });
     group(ui, crate::tl_id!("ui.mode"), t, |ui| {
         if big(ui, Icon::FullPage, crate::tl_id!("ui.full_page_view_2"), crate::tl_id!("ui.hide_everything_but_the_page"), t).clicked() {
@@ -3290,7 +3372,20 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::TogglePanes);
             }
-            not_built(ui, crate::tl_id!("ui.tabs_layout"), t);
+            // Sections as coloured tabs across the top of the page (#268, #33).
+            if small(
+                ui,
+                None,
+                crate::tl_id!("ui.tabs_layout"),
+                crate::tl_id!("ui.tabs_layout"),
+                crate::tl_id!("ui.tabs_layout_tip"),
+                view.tabs_layout,
+                t,
+            )
+            .clicked()
+            {
+                acts.push(Act::ToggleTabsLayout);
+            }
         });
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {

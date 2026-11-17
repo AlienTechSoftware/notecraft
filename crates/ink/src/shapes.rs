@@ -135,6 +135,12 @@ pub fn trace(shape: Shape, from: (f32, f32), to: (f32, f32), pressure: f32) -> V
     along(&points, pressure)
 }
 
+/// The dabs tracing the straight lines between `points`, corners kept sharp: for a shape that
+/// is not one of the drawn set, such as a triangle the pen drew (`recognise`).
+pub fn polygon(points: &[(f32, f32)], pressure: f32) -> Vec<Dab> {
+    along(points, pressure)
+}
+
 /// The dabs along a traced outline: a sample every few points, and each corner repeated.
 ///
 /// A stroke is drawn through its dabs with a curve, which is what makes handwriting look

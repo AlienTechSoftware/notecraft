@@ -165,13 +165,17 @@ fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> Text
     let mono = s.code || s.math;
     let size = s.font_size.map_or(size, |points| size * f32::from(points) / 11.0);
     let size = if s.script.is_some() { size * 0.7 } else { size };
-    let c = if s.link.is_some() {
+    let c = if let Some(chosen) = s.colour.as_deref().and_then(|hex| crate::textcolour::shown_text(hex, tokens.editor, tokens.text)) {
+        // A colour the writer chose, kept readable on this theme (#260).
+        chosen
+    } else if s.link.is_some() {
         tokens.link
     } else if s.bold {
         tokens.strong
     } else {
         color
     };
+    let marked = s.highlight.as_deref().and_then(|hex| crate::textcolour::shown_highlight(hex, tokens));
     TextFormat {
         font_id: if mono { FontId::monospace(size * 0.92) } else { FontId::proportional(size) },
         color: c,
@@ -179,7 +183,7 @@ fn format_of(s: &Span, size: f32, color: egui::Color32, tokens: &Tokens) -> Text
         underline: if s.link.is_some() || s.underline { Stroke::new(1.0, c) } else { Stroke::NONE },
         strikethrough: if s.strike { Stroke::new(1.0, c) } else { Stroke::NONE },
         valign: if s.script == Some(notecraft_formats::markdown::Script::Superscript) { egui::Align::TOP } else { egui::Align::BOTTOM },
-        background: if s.code { tokens.code_bg } else { egui::Color32::TRANSPARENT },
+        background: if s.code { tokens.code_bg } else { marked.unwrap_or(egui::Color32::TRANSPARENT) },
         ..TextFormat::default()
     }
 }

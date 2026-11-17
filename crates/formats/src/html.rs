@@ -330,6 +330,15 @@ fn font_size(attrs: &str) -> Option<u8> {
     })
 }
 
+/// The text colour or highlight of an HTML span, when it is a colour NoteCraft writes (#260).
+fn span_colour(attrs: &str, wanted: &str) -> Option<String> {
+    let style = attr(attrs, "style")?;
+    crate::markdown::style_declarations(&style).into_iter().find_map(|declaration| {
+        let (property, value) = declaration.split_once(':')?;
+        property.trim().eq_ignore_ascii_case(wanted).then(|| crate::markdown::css_colour(value)).flatten()
+    })
+}
+
 fn font_family(attrs: &str) -> Option<String> {
     let style = attr(attrs, "style")?;
     crate::markdown::style_declarations(&style).into_iter().find_map(|declaration| {
@@ -603,14 +612,23 @@ impl Writer {
             ("span", false) => {
                 let size = font_size(attrs);
                 let family = font_family(attrs);
-                self.span_sizes.push(size.is_some() || family.is_some());
-                if size.is_some() || family.is_some() {
+                let colour = span_colour(attrs, "color");
+                let highlight = span_colour(attrs, "background-color");
+                let styled = size.is_some() || family.is_some() || colour.is_some() || highlight.is_some();
+                self.span_sizes.push(styled);
+                if styled {
                     let mut styles = Vec::new();
                     if let Some(family) = family {
                         styles.push(format!("font-family: {}", escape(&crate::markdown::font_family_css(&family))));
                     }
                     if let Some(size) = size {
                         styles.push(format!("font-size: {size}pt"));
+                    }
+                    if let Some(colour) = colour {
+                        styles.push(format!("color: {colour}"));
+                    }
+                    if let Some(colour) = highlight {
+                        styles.push(format!("background-color: {colour}"));
                     }
                     self.push(&format!("<span style=\"{}\">", styles.join("; ")));
                 }

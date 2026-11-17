@@ -166,7 +166,7 @@ fn inline(text: &str, from: usize, to: usize, out: &mut Vec<(std::ops::Range<usi
         if rest.starts_with("<span ")
             && tag_end.is_some_and(|end| {
                 let tag = rest.get(..end).unwrap_or("");
-                tag_font_size(tag).is_some() || tag_font_family(tag).is_some()
+                tag_font_size(tag).is_some() || tag_font_family(tag).is_some() || tag_colours(tag).is_some()
             })
         {
             let end = tag_end.unwrap_or(0);
@@ -268,6 +268,35 @@ fn tag_font_family(tag: &str) -> Option<String> {
     let spans = notecraft_formats::markdown::parse_inline(&source);
     let span = spans.first()?;
     (spans.len() == 1 && span.text == "x").then(|| span.font_family.clone()).flatten()
+}
+
+/// The text colour and highlight a NoteCraft `<span style>` sets, when it sets either (#260).
+fn tag_colours(tag: &str) -> Option<(Option<String>, Option<String>)> {
+    let source = format!("{tag}x</span>");
+    let spans = notecraft_formats::markdown::parse_inline(&source);
+    let span = spans.first()?;
+    (spans.len() == 1 && span.text == "x" && (span.colour.is_some() || span.highlight.is_some()))
+        .then(|| (span.colour.clone(), span.highlight.clone()))
+}
+
+/// Where the text colours and highlights of the line's spans apply, by byte range.
+fn colour_ranges(text: &str) -> Vec<(std::ops::Range<usize>, (Option<String>, Option<String>))> {
+    let mut out = Vec::new();
+    let mut spans: Vec<Option<((Option<String>, Option<String>), usize)>> = Vec::new();
+    let mut at = 0;
+    while let Some(start) = text.get(at..).and_then(|rest| rest.find('<')).map(|n| at + n) {
+        let Some(end) = text.get(start..).and_then(|rest| rest.find('>')).map(|n| start + n + 1) else { break };
+        let tag = text.get(start..end).unwrap_or("");
+        if tag.eq_ignore_ascii_case("</span>") {
+            if let Some((colours, content_start)) = spans.pop().flatten() {
+                out.push((content_start..start, colours));
+            }
+        } else if tag.to_ascii_lowercase().starts_with("<span ") {
+            spans.push(tag_colours(tag).map(|c| (c, end)));
+        }
+        at = end;
+    }
+    out
 }
 
 fn font_family_ranges(text: &str) -> Vec<(std::ops::Range<usize>, String)> {
@@ -459,6 +488,7 @@ fn inline_job_inner(
     };
     let font_sizes = font_size_ranges(text);
     let font_families = font_family_ranges(text);
+    let colours = colour_ranges(text);
     let pieces = inline_pieces(text);
     let (tag_markers, tag_ranges) = inline_tag_ranges(text, &pieces);
     for (range, style) in pieces {
@@ -467,6 +497,7 @@ fn inline_job_inner(
             .iter()
             .map(|(r, _)| r)
             .chain(font_families.iter().map(|(r, _)| r))
+            .chain(colours.iter().map(|(r, _)| r))
             .chain(tag_ranges.iter().map(|(r, _)| r))
             .chain(tag_markers.iter())
         {
@@ -516,6 +547,20 @@ fn inline_job_inner(
             }
             if strong && style == Style::Body {
                 format.color = t.strong;
+            }
+            // Font Colour and Text Highlight Colour (#260): the innermost span that sets each.
+            if !marker && style != Style::Code {
+                let inside = || colours.iter().filter(|(r, _)| r.start <= *start && r.end >= *end);
+                if let Some(hex) = inside().filter(|(_, c)| c.0.is_some()).min_by_key(|(r, _)| r.len()).and_then(|(_, c)| c.0.as_deref())
+                    && let Some(colour) = crate::textcolour::shown_text(hex, t.editor, t.text)
+                {
+                    format.color = colour;
+                }
+                if let Some(hex) = inside().filter(|(_, c)| c.1.is_some()).min_by_key(|(r, _)| r.len()).and_then(|(_, c)| c.1.as_deref())
+                    && let Some(mark) = crate::textcolour::shown_highlight(hex, t)
+                {
+                    format.background = mark;
+                }
             }
             job.append(part, 0.0, format);
         }

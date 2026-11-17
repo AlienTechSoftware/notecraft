@@ -502,6 +502,10 @@ struct PendingFormat {
     strike: bool,
     underline: bool,
     script: Option<notecraft_formats::markdown::Script>,
+    /// Font Colour and Text Highlight Colour chosen at the caret (#260). The outer `Some`
+    /// means one was chosen; Automatic and No Colour add nothing to new words.
+    colour: Option<Option<String>>,
+    highlight: Option<Option<String>>,
 }
 
 struct Editor {
@@ -667,6 +671,8 @@ impl Editor {
             strike: pending.strike,
             underline: pending.underline,
             script: pending.script,
+            colour: pending.colour.flatten(),
+            highlight: pending.highlight.flatten(),
             ..Default::default()
         };
         let template = notecraft_formats::render::spans_to_markdown(&[span]);
@@ -1103,6 +1109,12 @@ pub struct NoteCraftApp {
     space_tool: bool,
     /// Draw > Ruler is out on the page (issue #293). Where it lies is the ink layer's.
     ruler: bool,
+    /// Draw > Automatic Shapes is on (issue #294). Kept in the settings.
+    auto_shapes: bool,
+    /// Draw > Ink Replay is showing (issue #295). Its progress is the ink layer's.
+    replaying: bool,
+    /// View > Tabs layout: the sections as tabs over the page (issues #268, #33). Kept.
+    tabs_layout: bool,
     /// View > Immersive Reader, while it is open (issue #299).
     reader: Option<crate::reader::Reader>,
     /// What the pointer does on the page (the Draw tab).
@@ -1212,6 +1224,8 @@ impl NoteCraftApp {
         let session_rules = session.settings.get("rule_lines").and_then(|v| ribbon::RuleLines::parse(&v)).unwrap_or_default();
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
+        let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
+        let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. This is the product's default navigation layout; the one-tree view remains
@@ -1291,6 +1305,9 @@ impl NoteCraftApp {
             page_scroll_strip: None,
             space_tool: false,
             ruler: false,
+            auto_shapes: session_auto_shapes,
+            replaying: false,
+            tabs_layout: session_tabs_layout,
             reader: None,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
@@ -4187,6 +4204,9 @@ impl NoteCraftApp {
             in_table: self.caret_in_table(),
             space_tool: self.space_tool,
             ruler: self.ruler,
+            auto_shapes: self.auto_shapes,
+            replaying: self.replaying,
+            tabs_layout: self.tabs_layout,
             table_borders: self.caret_table_has_borders(),
             table_align: self.caret_cells_align(),
             table_shade: self.caret_cells_shade(),
@@ -4206,6 +4226,14 @@ impl NoteCraftApp {
             font_family: family.as_deref(),
             font_size: size.as_deref(),
             marks: font_selection.marks,
+            text_colour: match &font_selection.colour {
+                pageedit::FontValue::Value(v) => Some(v.as_deref()),
+                _ => None,
+            },
+            text_highlight: match &font_selection.highlight {
+                pageedit::FontValue::Value(v) => Some(v.as_deref()),
+                _ => None,
+            },
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -4512,6 +4540,8 @@ impl NoteCraftApp {
             ribbon::Act::ToggleRibbon => self.toggle_ribbon(),
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
+            ribbon::Act::TextColour(colour) => self.apply_text_colour(pageedit::InlineFormat::Colour(colour)),
+            ribbon::Act::TextHighlight(colour) => self.apply_text_colour(pageedit::InlineFormat::Highlight(colour)),
             ribbon::Act::FontFamily(family) => self.apply_font_family(&family),
             ribbon::Act::Block(kind) => self.apply_block_kind(kind),
             ribbon::Act::Insert(what) => match what {
@@ -4671,6 +4701,23 @@ impl NoteCraftApp {
                 Some(ed) => self.reader = Some(crate::reader::Reader::new(&ed.title_buf, &ed.blocks, !ed.ink_files.is_empty())),
                 None => self.say(crate::tl_id!("ui.reader_open_a_page")),
             },
+            ribbon::Act::ToggleTabsLayout => {
+                self.tabs_layout = !self.tabs_layout;
+                let _ = self.session.settings.set("tabs_layout", if self.tabs_layout { "true" } else { "false" });
+                self.say(if self.tabs_layout { crate::tl_id!("ui.tabs_layout_on") } else { crate::tl_id!("ui.tabs_layout_off") });
+            }
+            ribbon::Act::ToggleReplay => {
+                if !self.replaying && self.pad.as_ref().is_none_or(crate::inkpad::Pad::is_empty) {
+                    self.say(crate::tl_id!("ui.replay_nothing_to_replay"));
+                } else {
+                    self.replaying = !self.replaying;
+                }
+            }
+            ribbon::Act::ToggleAutoShapes => {
+                self.auto_shapes = !self.auto_shapes;
+                let _ = self.session.settings.set("auto_shapes", if self.auto_shapes { "true" } else { "false" });
+                self.say(if self.auto_shapes { crate::tl_id!("ui.automatic_shapes_on") } else { crate::tl_id!("ui.automatic_shapes_off") });
+            }
             ribbon::Act::ToggleRuler => {
                 self.ruler = !self.ruler;
                 // The ruler is for drawing: with the caret in hand, the pen last used comes up.
@@ -4996,6 +5043,7 @@ impl NoteCraftApp {
             // control reach the same four-times full-width range as the pressure canvas.
             width: nib.width() * Self::sensitivity_width(self.sensitivity),
             gain: self.gain(),
+            auto_shapes: self.auto_shapes,
         }
     }
 
@@ -6325,6 +6373,41 @@ impl NoteCraftApp {
         ed.history.record(step);
         self.status.clear();
         self.status_is_error = false;
+    }
+
+    /// Home > Font Colour and Text Highlight Colour (issue #260): to the selected words, as
+    /// font size does; with no selection, to what is typed next at the caret.
+    fn apply_text_colour(&mut self, format: pageedit::InlineFormat) {
+        if self.editor.as_ref().and_then(|ed| ed.across).is_some_and(|selection| !selection.inside_one_block()) {
+            self.apply_across_format(format);
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::place_caret_for_format(ed);
+        let Some(caret) = ed.caret.as_ref() else {
+            self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
+            self.status_is_error = false;
+            return;
+        };
+        if caret.selection.0 == caret.selection.1 {
+            let pending = ed.pending_format.get_or_insert_with(|| PendingFormat { block: caret.block, at: caret.selection.0, ..Default::default() });
+            if pending.block != caret.block || pending.at != caret.selection.0 {
+                *pending = PendingFormat { block: caret.block, at: caret.selection.0, ..Default::default() };
+            }
+            match format {
+                pageedit::InlineFormat::Colour(c) => pending.colour = Some(c),
+                pageedit::InlineFormat::Highlight(c) => pending.highlight = Some(c),
+                _ => {}
+            }
+            if let Some(caret) = ed.caret.as_mut() {
+                caret.focus = true;
+                caret.place = Some(caret.selection.0);
+            }
+            self.status.clear();
+            self.status_is_error = false;
+            return;
+        }
+        self.apply_partial_inline_format(format);
     }
 
     fn apply_font_size(&mut self, size: u8) {
@@ -7827,6 +7910,36 @@ impl NoteCraftApp {
         }
     }
 
+    /// View > Tabs layout (issues #268, #33): the open notebook's sections as tabs over the
+    /// page. Choosing one opens its first page.
+    fn section_tabs(&mut self, ui: &mut Ui) {
+        if !self.tabs_layout || self.compact {
+            return;
+        }
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        let notebooks = self.open_notebooks();
+        let Some(notebook) = notebook_for(&dir).and_then(|nb| notebooks.iter().find(|n| n.path == nb)) else { return };
+        let tabs = crate::sectiontabs::tabs(notebook);
+        let here = section_for(&dir);
+        let tokens = self.tokens;
+        let mut chosen = None;
+        egui::Panel::top("section-tabs")
+            .frame(egui::Frame::NONE.fill(tokens.panel).inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 0 }))
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                chosen = crate::sectiontabs::show(ui, &tabs, here.as_deref(), &tokens);
+            });
+        if let Some(section) = chosen {
+            match first_page_under(&notebooks, &section) {
+                Some(page) => {
+                    self.expand_to(&page);
+                    self.open_page(&page);
+                }
+                None => self.say(crate::tl_id!("ui.this_section_has_no_pages_yet")),
+            }
+        }
+    }
+
     fn central(&mut self, ui: &mut Ui) {
         egui::CentralPanel::default().show(ui, |ui| {
             if self.editor.is_none() {
@@ -7966,6 +8079,8 @@ impl NoteCraftApp {
         let (pen, pressure) = (self.pen(), self.stylus.sample().pressure);
         let mut pad = self.pad.take();
         let mut ink_changed = false;
+        // What Automatic Shapes made of a stroke this frame, to say after the save (#294).
+        let mut recognised: Option<&'static str> = None;
         let mut page_rect = None;
         let mut hbar = crate::hscroll::Shown::default();
         // What the page's right-click menu asked for, run once the page's borrow is over.
@@ -8102,7 +8217,14 @@ impl NoteCraftApp {
                                     .map_or(ink_area, |bar| ink_area.with_max_x(ink_area.max.x.min(bar.min.x)));
                                 let mut ink_ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(ink_area));
                                 crate::inkpad::set_ruler(ink_ui.ctx(), self.ruler);
+                                if crate::inkpad::take_replay_closed(ink_ui.ctx()) {
+                                    self.replaying = false;
+                                }
+                                crate::inkpad::set_replay(ink_ui.ctx(), self.replaying);
                                 ink_changed |= crate::inkpad::show(&mut ink_ui, ink_area, hit, top, pad, pen, pressure, &tokens, zoom_scale);
+                                if let Some(kind) = pad.take_recognised() {
+                                    recognised = Some(kind);
+                                }
                             }
                             // A press lets go of whatever was selected: the drag that may
                             // follow it builds a new one. Done here, once a frame, rather
@@ -8522,6 +8644,14 @@ impl NoteCraftApp {
             }
             self.tell_kept_ink();
             self.sync_ink_reference();
+        }
+        if let Some(kind) = recognised {
+            self.say(match kind {
+                "line" => crate::tl_id!("ui.recognised_line"),
+                "rectangle" => crate::tl_id!("ui.recognised_rectangle"),
+                "ellipse" => crate::tl_id!("ui.recognised_ellipse"),
+                _ => crate::tl_id!("ui.recognised_triangle"),
+            });
         }
         if let Some(href) = follow {
             self.follow_link(ui.ctx(), &href);
@@ -10406,6 +10536,14 @@ impl NoteCraftApp {
                 "inked": self.pad.as_ref().is_some_and(|p| !p.is_empty()),
                 // The readings of the newest stroke, in page points (issues #44, #293).
                 "lastStroke": self.pad.as_ref().map(crate::inkpad::Pad::last_stroke),
+                // Draw > Ink Replay (issue #295): how far it is, in strokes drawn whole.
+                "replay": crate::inkpad::replay(ctx).map(|r| json!({
+                    "shown": self.pad.as_ref().map_or(0, |p| crate::replay::shown(p.drawing(), r.at).0),
+                    "playing": r.playing,
+                    "speed": r.speed,
+                })),
+                "autoShapes": self.auto_shapes,
+                "tabsLayout": self.tabs_layout,
                 // Draw > Ruler (issue #293): where it lies once it is out, in page points.
                 "ruler": match crate::inkpad::ruler(ctx) {
                     Some(crate::inkpad::RulerState::Placed(r)) => json!({"x": r.x, "y": r.y, "angle": r.angle, "degrees": r.shown_degrees()}),
@@ -10666,6 +10804,7 @@ impl NoteCraftApp {
         self.templates_panel(ui);
         // In a phone-width window a pane that fills it leaves no room for the page.
         if !self.compact_list_fills() && !(self.compact && (self.tags_pane.is_some() || self.templates_pane.is_some())) {
+            self.section_tabs(ui);
             self.central(ui);
         }
         self.paint_formatting(ctx);
