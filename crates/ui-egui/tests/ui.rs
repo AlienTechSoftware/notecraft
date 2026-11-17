@@ -10618,10 +10618,8 @@ fn normal_on_a_selected_code_line_splits_only_that_line() {
     settle(&mut h);
     ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of code line");
     settle(&mut h);
-    for key in ["End"] {
-        ask(&mut h, "ui.key", json!({"key": key, "shift": true})).expect("select code line");
-        settle(&mut h);
-    }
+    ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select code line");
+    settle(&mut h);
     let selection = ask(&mut h, "ui.inspect", json!({})).expect("inspect selected line");
     let caret = selection.pointer("/page/caret").expect("caret remains in code");
     assert_eq!(caret["text"], "line one\nline two\nline three", "selection belongs to the code block");
