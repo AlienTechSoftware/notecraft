@@ -43,10 +43,10 @@ quadrantChart
     title Impact vs Urgency
     x-axis Low Urgency --> High Urgency
     y-axis Low Impact --> High Impact
-    quadrant-1 P0: Fix now
-    quadrant-2 P1: Next release
-    quadrant-3 P3: Someday
-    quadrant-4 P2: Planned backlog
+    quadrant-1 P0 Fix now
+    quadrant-2 P1 Next release
+    quadrant-3 P3 Someday
+    quadrant-4 P2 Planned backlog
 ```
 
 Reading the chart:
