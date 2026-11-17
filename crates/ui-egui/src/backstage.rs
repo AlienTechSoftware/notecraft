@@ -609,6 +609,19 @@ fn options_page(
     acts: &mut Vec<Act>,
 ) {
     heading(ui, crate::tl_id!("ui.options"), t);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder")).strong().size(15.0).color(t.strong));
+    let current = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", notebooks_folder)]);
+    ui.label(egui::RichText::new(current).size(12.0).color(t.text));
+    ui.horizontal(|ui| {
+        if open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 230.0, 34.0, t, true).clicked() {
+            acts.push(Act::ChooseNotebooksFolder);
+        }
+        if open_action(ui, crate::tl_id!("ui.use_the_default_notebooks_folder"), 260.0, 34.0, t, false).clicked() {
+            acts.push(Act::UseDefaultNotebooksFolder);
+        }
+    });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder_hint")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
     let automatic = crate::tl_id!("ui.automatic_system_language");
     let selected = if ui_language == crate::i18n::AUTO {
         automatic.to_string()
@@ -692,20 +705,6 @@ fn options_page(
     });
     ui.add_space(12.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400")).size(11.5).color(t.muted));
-    ui.add_space(12.0);
-    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder")).strong().size(15.0).color(t.strong));
-    let label = crate::i18n::format_message_id("ui.folder_folder", &[("folder", notebooks_folder)]);
-    ui.label(egui::RichText::new(label).strong().size(11.0).color(t.text));
-    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder_hint")).size(11.5).color(t.muted));
-    ui.horizontal(|ui| {
-        if open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 220.0, 34.0, t, true).clicked() {
-            acts.push(Act::ChooseNotebooksFolder);
-        }
-        if open_action(ui, crate::tl_id!("ui.use_the_default_notebooks_folder"), 260.0, 34.0, t, false).clicked() {
-            acts.push(Act::UseDefaultNotebooksFolder);
-        }
-    });
-    ui.add_space(18.0);
     ui.separator();
     ui.label(egui::RichText::new(crate::tl_id!("ui.application_preferences")).strong().size(15.0).color(t.strong));
     ui.label(egui::RichText::new(crate::tl_id!("ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb")).size(11.5).color(t.muted));
