@@ -1139,6 +1139,7 @@ pub struct NoteCraftApp {
     backstage: Option<&'static str>,
     /// File > Save a Copy as it is being filled in (issue #301).
     copy_choice: backstage::CopyChoice,
+    portable: crate::portable::Choice,
     /// Which pages the user has read, kept beside their settings (issue #291). Loaded the
     /// first time it is needed.
     read_state: Option<notecraft_store::read_state::ReadState>,
@@ -1302,6 +1303,7 @@ impl NoteCraftApp {
             keyboard_paste_requested: false,
             backstage: None,
             copy_choice: backstage::CopyChoice::default(),
+            portable: crate::portable::Choice::default(),
             read_state: None,
             unread: std::collections::HashSet::new(),
             unread_checked: None,
@@ -1460,6 +1462,7 @@ impl NoteCraftApp {
 
     /// Opens a File/backstage page for deterministic UI captures and integration harnesses.
     pub fn open_backstage_page(&mut self, page: &'static str) {
+        let _ = self.session.run("export.cancel", &Params::new());
         self.backstage = Some(page);
     }
 
@@ -1892,6 +1895,7 @@ impl NoteCraftApp {
             return true;
         }
         if self.backstage.is_some() {
+            let _ = self.session.run("export.cancel", &Params::new());
             self.backstage = None;
             return true;
         }
@@ -3570,6 +3574,15 @@ impl NoteCraftApp {
         // Save a Copy counts from the page that is open (issue #301).
         let mut copy = std::mem::take(&mut self.copy_choice);
         copy.here = self.editor.as_ref().map(|e| e.dir.clone());
+        let mut portable = std::mem::take(&mut self.portable);
+        if portable.selection.here != copy.here {
+            let _ = self.session.run("export.cancel", &Params::new());
+            portable.selection.result = None;
+            portable.downloaded = false;
+        }
+        portable.selection.here = copy.here.clone();
+        portable.download = self.file_downloads.is_some();
+        let mut export_acts = Vec::new();
         let tokens = self.tokens;
         let folder = self.shown(self.session.root());
         let recent = self.recent_notebooks();
@@ -3598,13 +3611,22 @@ impl NoteCraftApp {
                 self.ui_scale,
                 &update,
                 &mut copy,
+                &mut portable,
+                self.session.reviewed_export(),
+                &mut export_acts,
                 &tokens,
             );
         });
         for a in acts {
             match a {
-                backstage::Act::Close => self.backstage = None,
-                backstage::Act::Page(name) => self.backstage = Some(name),
+                backstage::Act::Close => {
+                    let _ = self.session.run("export.cancel", &Params::new());
+                    self.backstage = None;
+                }
+                backstage::Act::Page(name) => {
+                    let _ = self.session.run("export.cancel", &Params::new());
+                    self.backstage = Some(name);
+                }
                 backstage::Act::NewNotebook => {
                     self.backstage = None;
                     self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
@@ -3682,7 +3704,74 @@ impl NoteCraftApp {
                 }
             }
         }
+        for act in export_acts {
+            match act {
+                crate::portable::Act::Cancel => {
+                    let _ = self.session.run("export.cancel", &Params::new());
+                }
+                crate::portable::Act::ChooseFolder => {
+                    if let Some(folder) = pick_copy_folder() {
+                        portable.selection.folder = path_str(&folder);
+                    }
+                }
+                crate::portable::Act::Review(node) => {
+                    portable.selection.result = None;
+                    portable.downloaded = false;
+                    let p = self.export_snapshot_params(&node);
+                    if let Err(e) = self.session.run("export.prepare", &p) {
+                        portable.selection.result = Some(Err(e.to_string()));
+                    }
+                }
+                crate::portable::Act::Write => {
+                    if let Some(downloads) = self.file_downloads.as_mut() {
+                        if let Some(prepared) = self.session.reviewed_export() {
+                            match crate::portable::archive(prepared) {
+                                Ok(bytes) => {
+                                    downloads.push(FileDownload {
+                                        name: format!("{}-export.zip", prepared.notebook_name()),
+                                        mime: "application/zip",
+                                        bytes,
+                                    });
+                                    portable.downloaded = true;
+                                }
+                                Err(e) => portable.selection.result = Some(Err(e.to_string())),
+                            }
+                        }
+                    } else {
+                        portable.selection.result =
+                            Some(match self.session.run("export.write", &params(&[("folder", portable.selection.folder.trim())])) {
+                                Ok(Output::Path(path)) => Ok(path),
+                                Ok(_) => Err(crate::tl_id!("ui.portable_no_snapshot").to_string()),
+                                Err(e) => Err(e.to_string()),
+                            });
+                    }
+                }
+                crate::portable::Act::Reveal(path) => self.reveal(&path),
+            }
+        }
+        self.portable = portable;
         self.copy_choice = copy;
+    }
+
+    /// The current editor contributes text and live ink without a source save. Explicit
+    /// export commands and the three UI entry points use the same snapshot boundary.
+    fn export_snapshot_params(&self, node: &Path) -> Params {
+        let mut p = params(&[("path", &path_str(node))]);
+        if let Some(ed) = self.editor.as_ref().filter(|ed| ed.dir.starts_with(node)) {
+            p.insert("snapshot_path".into(), path_str(&ed.dir));
+            let mut body = ed.body_to_save();
+            if let Some(pad) = self.pad.as_ref().filter(|pad| pad.dirty) {
+                p.insert("ink".into(), notecraft_ink::svg::write(&pad.drawing, notecraft_ink::svg::Flavour::Editable));
+                if !notecraft_formats::references::in_text(ed.format, &body).iter().any(|r| r.target == "ink.svg") {
+                    body.push_str(match ed.format {
+                        PageFormat::Html => "\n<img src=\"ink.svg\" alt=\"Ink\">\n",
+                        PageFormat::Cmgfm => "\n\n![Ink](ink.svg)\n",
+                    });
+                }
+            }
+            p.insert("body".into(), body);
+        }
+        p
     }
 
     fn recent_notebooks(&self) -> Vec<Node> {
@@ -4355,6 +4444,13 @@ impl NoteCraftApp {
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
             ribbon::Act::File => self.backstage = Some("Info"),
+            ribbon::Act::SendPage => {
+                let _ = self.session.run("export.cancel", &Params::new());
+                self.portable.selection.scope = backstage::CopyScope::Page;
+                self.portable.selection.result = None;
+                self.portable.downloaded = false;
+                self.backstage = Some("Share");
+            }
             ribbon::Act::NextUnread => self.next_unread(),
             ribbon::Act::ToggleRead => self.toggle_read(),
             ribbon::Act::RecentEdits => self.show_recent_edits(RecentRange::Week, false),
@@ -9921,8 +10017,16 @@ impl NoteCraftApp {
             "engine.commands" => Ok(notecraft_engine::commands_json()),
             "engine.execute" => {
                 let id = text("command").ok_or("missing command")?;
-                let params = notecraft_engine::params_from_json(p.get("params"));
-                self.save_now();
+                let mut params = notecraft_engine::params_from_json(p.get("params"));
+                if id == "export.prepare" && !params.contains_key("body") && !params.contains_key("snapshot_path") {
+                    if let Some(path) = params.get("path")
+                        && let Ok(node) = self.session.resolve(path)
+                    {
+                        params.extend(self.export_snapshot_params(&node));
+                    }
+                } else if !id.starts_with("export.") {
+                    self.save_now();
+                }
                 let out = self.session.run(id, &params).map_err(|e| e.to_string())?;
                 if self.editor.as_ref().is_some_and(|ed| !ed.dir.exists()) {
                     self.editor = None;
@@ -10406,6 +10510,13 @@ impl NoteCraftApp {
         self.hierarchy_keys(ctx);
         self.restore_last_page();
         self.attach_dropped(ctx);
+        if matches!(self.backstage, Some("Export" | "Share"))
+            && self.dialog.is_none()
+            && ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape))
+        {
+            let _ = self.session.run("export.cancel", &Params::new());
+            self.backstage = None;
+        }
         // The File screen takes the whole window while it is open, as it does in Office.
         if self.backstage.is_some() {
             self.title_band(ui, false);
@@ -10637,6 +10748,37 @@ fn pick_copy_folder() -> Option<PathBuf> {
 #[cfg(test)]
 mod alert_tests {
     use super::*;
+
+    #[test]
+    fn portable_control_snapshots_unsaved_text_without_saving_the_source() {
+        let t = notecraft_store::testing::TempDir::new("portable-control");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("books"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, Some(crate::LOGO_PNG)).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        let before = std::fs::read(sample.html_page.join("index.html")).expect("source");
+        let editor = app.editor.as_mut().expect("editor");
+        editor.body = "<p>Unsaved review text</p>".into();
+        editor.arranged = false;
+        editor.dirty_since = Some(Instant::now());
+        let ctx = egui::Context::default();
+        app.control_method(&ctx, "engine.execute", &json!({"command":"export.prepare", "params":{"path":sample.html_page}})).expect("review");
+        assert_eq!(std::fs::read(sample.html_page.join("index.html")).expect("source unchanged"), before);
+        assert!(
+            app.session
+                .reviewed_export()
+                .expect("snapshot")
+                .entries()
+                .any(|(_, b)| std::str::from_utf8(b).is_ok_and(|s| s.contains("Unsaved review text")))
+        );
+        app.control_method(&ctx, "engine.execute", &json!({"command":"export.cancel"})).expect("cancel");
+        assert_eq!(std::fs::read(sample.html_page.join("index.html")).expect("source unchanged after cancel"), before);
+        assert!(app.session.reviewed_export().is_none());
+        // Prevent the app's normal exit autosave from becoming part of this read-only check.
+        app.editor.as_mut().expect("editor").dirty_since = None;
+    }
 
     #[test]
     fn opening_a_notebook_folder_displays_its_page_instead_of_the_previous_notebook() {

@@ -28,6 +28,7 @@ pub const TABLE_TAB: &str = "Table";
 pub enum Act {
     /// The File tab: open the File screen.
     File,
+    SendPage,
     /// Show the saved versions of the open page.
     PageVersions,
     /// History > Next Unread (issue #291).
@@ -1314,8 +1315,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.email"), t, |ui| {
-        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.not_built"), t).clicked() {
-            acts.push(Act::NotBuilt("Send Page"));
+        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.portable_send_hint"), t).clicked() {
+            acts.push(Act::SendPage);
         }
     });
     group(ui, crate::tl_id!("ui.meetings"), t, |ui| {

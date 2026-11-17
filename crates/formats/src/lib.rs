@@ -15,6 +15,7 @@ pub mod csv;
 pub mod frontmatter;
 pub mod html;
 pub mod markdown;
+pub mod references;
 pub mod render;
 pub mod templates;
 

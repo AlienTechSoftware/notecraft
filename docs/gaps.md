@@ -46,6 +46,12 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
 
 ## Product
 
+- **Portable sharing uses a save-and-share fallback.** File > Export, File > Share and
+  Home > Send Page share a reviewed, original-format folder export. Download-enabled
+  browser hosts receive a ZIP. Native share sheets and automatic mail attachments are
+  not integrated yet on any native platform. No OneNote or PDF writer is advertised.
+  See [portable-export.md](portable-export.md) for scope, dependencies and limits.
+
 - **Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V reach the words**, from 2026-10-19. None of them was
   bound anywhere in the window before that: a left-to-right paragraph is an egui text box
   and egui answered them by itself, so the gap only showed where egui was not drawing. That
