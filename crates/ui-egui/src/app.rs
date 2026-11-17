@@ -8626,6 +8626,7 @@ impl NoteCraftApp {
                 let mut clear = false;
                 let mut cancel = false;
                 egui::Window::new(crate::tl_id!("ui.clear_telemetry"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
