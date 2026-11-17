@@ -123,6 +123,12 @@ pub enum Act {
     CustomizeTags,
     /// Gather what has drifted apart on the page, boxes and ink, back together (issue #23).
     CollectAll,
+    /// Draw > Ink Help: open the drawing page of the Welcome notebook (issue #296).
+    InkHelp,
+    /// Draw > Ruler: put the ruler out on the page, or away (issue #293).
+    ToggleRuler,
+    /// View > Immersive Reader: the page as plain, large reading (issue #299).
+    ImmersiveReader,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
     /// (issue #173).
     PageTemplates,
@@ -478,6 +484,8 @@ pub struct View<'a> {
     pub nib: usize,
     /// True while the Insert Space tool is in hand.
     pub space_tool: bool,
+    /// True while Draw > Ruler is out on the page (issue #293).
+    pub ruler: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
@@ -1907,7 +1915,9 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.media"), t, |ui| {
-        soon(ui, Icon::Video, "Online\nVideo", t);
+        if big(ui, Icon::Video, crate::tl_id!("ui.online_video_2"), crate::tl_id!("ui.online_video_tip"), t).clicked() {
+            acts.push(Act::Insert("online-video"));
+        }
     });
     group(ui, crate::tl_id!("ui.links"), t, |ui| {
         if big(ui, Icon::Link, crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link_to_a_page_or_an_address"), t).clicked() {
@@ -3035,7 +3045,9 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.stencils"), t, |ui| {
-        soon(ui, Icon::Ruler, "Ruler", t);
+        if big_on(ui, Icon::Ruler, crate::tl_id!("ui.ruler_2"), crate::tl_id!("ui.ruler_tip"), view.ruler, t).clicked() {
+            acts.push(Act::ToggleRuler);
+        }
     });
     group(ui, crate::tl_id!("ui.edit"), t, |ui| {
         if big(ui, Icon::Pen, crate::tl_id!("ui.draw_here_2"), crate::tl_id!("ui.put_a_sheet_to_draw_on_into_the_page"), t).clicked() {
@@ -3108,13 +3120,9 @@ Replay",
         }
     });
     group(ui, crate::tl_id!("ui.help"), t, |ui| {
-        soon(
-            ui,
-            Icon::Help,
-            "Ink
-Help",
-            t,
-        );
+        if big(ui, Icon::Help, crate::tl_id!("ui.ink_help_2"), crate::tl_id!("ui.ink_help_tip"), t).clicked() {
+            acts.push(Act::InkHelp);
+        }
     });
 }
 
@@ -3287,7 +3295,19 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {
         rows(ui, |ui| {
-            not_built(ui, crate::tl_id!("ui.immersive_reader"), t);
+            if small(
+                ui,
+                None,
+                crate::tl_id!("ui.immersive_reader"),
+                crate::tl_id!("ui.immersive_reader"),
+                crate::tl_id!("ui.immersive_reader_tip"),
+                false,
+                t,
+            )
+            .clicked()
+            {
+                acts.push(Act::ImmersiveReader);
+            }
             not_built(ui, crate::tl_id!("ui.live_captions"), t);
         });
     });

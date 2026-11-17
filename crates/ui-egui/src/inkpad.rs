@@ -290,6 +290,11 @@ impl Pad {
         self.drawing.strokes.len()
     }
 
+    /// The readings of the newest stroke, as `[x, y]` in page points, for `ui.inspect`.
+    pub fn last_stroke(&self) -> Vec<[f32; 2]> {
+        self.drawing.strokes.last().map(|s| s.dabs.iter().map(|d| [d.x, d.y]).collect()).unwrap_or_default()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.drawing.is_empty() && self.drawing_now.is_none()
     }
@@ -567,6 +572,12 @@ pub fn show(
         painter.add(egui::Shape::line(path, egui::Stroke::new(1.2, t.accent)));
     }
 
+    // The ruler is drawn whatever is in hand, and handled only while an ink tool owns the
+    // page: with the caret as the pointer a press belongs to the words (issue #293).
+    if pen.pointer == Pointer::Write {
+        ruler_frame(ui, &painter, body, origin, zoom, t, false);
+    }
+
     if pen.pointer == Pointer::Write {
         // A selection box being drawn: the writing it would take is outlined, so it can be aimed.
         if let Some(shown) = crate::containers::selection_preview(ui.ctx()) {
@@ -607,6 +618,10 @@ pub fn show(
         ui.ctx().set_dragged_id(layer);
     }
     let resp = ui.interact(hit, layer, Sense::click_and_drag());
+    // A press on the ruler moves or turns it, and draws nothing.
+    if ruler_frame(ui, &painter, body, origin, zoom, t, matches!(pen.pointer, Pointer::Draw | Pointer::Shape(_))) {
+        return false;
+    }
     if pen.pointer == Pointer::Laser {
         laser(ui, &painter, body, origin, zoom, resp.is_pointer_button_down_on());
         return false;
@@ -638,6 +653,19 @@ pub fn show(
         Pointer::Draw => {
             if down && pad.drawing_now.is_none() {
                 pad.drawing_now = Some(Stroke::with_gain(pen.tool, pen.colour, pen.width, pen.gain));
+                // Begun just outside one of the ruler's edges: the stroke is laid along it.
+                let edge = match (ruler(ui.ctx()), at) {
+                    (Some(RulerState::Placed(r)), Some((x, y))) => r.edge_near(x, y, notecraft_ink::ruler::REACH / zoom.max(0.25)),
+                    _ => None,
+                };
+                ui.ctx().data_mut(|d| match edge {
+                    Some(e) => {
+                        d.insert_temp(ruler_edge_id(), e);
+                    }
+                    None => {
+                        d.remove::<notecraft_ink::ruler::Edge>(ruler_edge_id());
+                    }
+                });
             }
             if let Some(stroke) = pad.drawing_now.as_mut() {
                 // Every movement the pointer made this frame, not only where it ended: a pen
@@ -647,18 +675,21 @@ pub fn show(
                 // frame the pen is lifted in still counts the movements made before it lifted.
                 let moves = frame_moves(ui, body, origin, zoom, pressure);
                 for (x, y, force) in &moves {
-                    stroke.add(Dab::new(*x, *y, *force));
+                    let (x, y) = along_ruler(ui.ctx(), *x, *y, pen.width);
+                    stroke.add(Dab::new(x, y, *force));
                 }
                 // A pen put down and held still moves nowhere: where it rests is the point.
                 if let Some((x, y)) = at.filter(|_| down && moves.is_empty()) {
+                    let (x, y) = along_ruler(ui.ctx(), x, y, pen.width);
                     stroke.add(Dab::new(x, y, pressure));
                 }
                 // The stroke is painted as it grows, so the line follows the pen rather than
                 // appearing when it is lifted.
                 ui.ctx().request_repaint();
             }
+            // Lifted: the hand's tremor is taken out before the stroke is kept (#44).
             if !down && let Some(stroke) = pad.drawing_now.take() {
-                changed = pad.drawing.add(stroke);
+                changed = pad.drawing.add(stroke.settled());
             }
         }
         Pointer::Shape(shape) => {
@@ -849,6 +880,182 @@ pub const LASER: egui::Color32 = egui::Color32::from_rgb(235, 30, 45);
 /// How long a laser trail takes to fade, in seconds.
 pub const LASER_FADE: f64 = 0.8;
 
+fn ruler_id() -> egui::Id {
+    egui::Id::new("ink-ruler")
+}
+
+fn ruler_grab_id() -> egui::Id {
+    egui::Id::new("ink-ruler-grab")
+}
+
+fn ruler_edge_id() -> egui::Id {
+    egui::Id::new("ink-ruler-edge")
+}
+
+/// What a press on the ruler took hold of (issue #293).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RulerGrab {
+    /// The ruler itself, this far (page points) from where the press landed.
+    Move(f32, f32),
+    /// Its round handle, which turns it about its middle.
+    Turn,
+}
+
+/// Draw > Ruler's state (issue #293): whether it is on, and once it has been drawn, where it
+/// lies. Kept in the window's memory, never in the page.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RulerState {
+    /// Turned on, but not yet placed: the next frame puts it in the middle of the view.
+    Unplaced,
+    Placed(notecraft_ink::ruler::Ruler),
+}
+
+/// The ruler, if it is out.
+pub fn ruler(ctx: &egui::Context) -> Option<RulerState> {
+    ctx.data(|d| d.get_temp::<RulerState>(ruler_id()))
+}
+
+/// Puts the ruler out or away, as the window's Draw > Ruler button says (issue #293). Putting
+/// it out again after it was put away places it afresh in the middle of the view.
+pub fn set_ruler(ctx: &egui::Context, on: bool) {
+    if ruler(ctx).is_some() == on {
+        return;
+    }
+    ctx.data_mut(|d| {
+        if on {
+            d.insert_temp(ruler_id(), RulerState::Unplaced);
+        } else {
+            d.remove::<RulerState>(ruler_id());
+        }
+        d.remove::<RulerGrab>(ruler_grab_id());
+        d.remove::<notecraft_ink::ruler::Edge>(ruler_edge_id());
+    });
+}
+
+/// Paints the ruler at `ruler`, with its scale, the angle and the turning handle.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn paint_ruler(painter: &egui::Painter, origin: egui::Pos2, zoom: f32, ruler: &notecraft_ink::ruler::Ruler, t: &Tokens) {
+    use notecraft_ink::ruler::{HANDLE_R, LENGTH, WIDTH};
+    let put = |(x, y): (f32, f32)| origin + vec2(x * zoom, y * zoom);
+    let corners: Vec<egui::Pos2> = ruler.corners().into_iter().map(put).collect();
+    let body = crate::theme::mix(t.panel, t.text, 0.08).gamma_multiply(0.86);
+    painter.add(egui::Shape::convex_polygon(corners, body, egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.55))));
+    // A scale in centimetres along both edges: a long mark each centimetre, a short one
+    // each half.
+    let cm = 72.0 / 2.54;
+    let marks = (LENGTH / cm * 2.0) as i32;
+    let ink = crate::theme::mix(t.panel, t.text, 0.75);
+    for i in 0..=marks {
+        let along = -LENGTH / 2.0 + i as f32 * cm / 2.0;
+        if along > LENGTH / 2.0 {
+            break;
+        }
+        let long = i % 2 == 0;
+        let depth = if long { 9.0 } else { 5.0 };
+        for (edge, inward) in [(-WIDTH / 2.0, 1.0), (WIDTH / 2.0, -1.0)] {
+            painter.line_segment([put(ruler.to_page(along, edge)), put(ruler.to_page(along, edge + inward * depth))], egui::Stroke::new(1.0, ink));
+        }
+    }
+    // The angle, in the middle, turned with the ruler so it reads along it.
+    let label = format!("{}\u{b0}", ruler.shown_degrees());
+    let galley = painter.layout_no_wrap(label, egui::FontId::proportional((13.0 * zoom).clamp(9.0, 22.0)), t.text);
+    let size = galley.size();
+    let angle = ruler.angle.to_radians();
+    let centre = put((ruler.x, ruler.y));
+    let rot = egui::emath::Rot2::from_angle(angle);
+    let at = centre - rot * (size / 2.0);
+    painter.add(egui::epaint::TextShape::new(at, galley, t.text).with_angle(angle));
+    let (hx, hy) = ruler.handle();
+    painter.circle(put((hx, hy)), HANDLE_R * zoom, t.accent.gamma_multiply(0.35), egui::Stroke::new(1.5, t.accent));
+}
+
+/// The ruler's part of a frame while an ink tool is in hand (issue #293). Returns true when
+/// the ruler took the pointer this frame (it is being moved or turned), so nothing draws.
+fn ruler_frame(ui: &Ui, painter: &egui::Painter, body: egui::Rect, origin: egui::Pos2, zoom: f32, t: &Tokens, owns_pointer: bool) -> bool {
+    use notecraft_ink::ruler::Ruler;
+    let Some(state) = ruler(ui.ctx()) else { return false };
+    let zoom = zoom.max(0.01);
+    let to_page = |p: egui::Pos2| ((p.x - origin.x) / zoom, (p.y - origin.y) / zoom);
+    let mut placed = match state {
+        RulerState::Placed(r) => r,
+        RulerState::Unplaced => {
+            let (x, y) = to_page(body.center());
+            Ruler::at(x, y)
+        }
+    };
+    let mut took = false;
+    if owns_pointer {
+        let (pressed, down, at) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos()));
+        let at = at.filter(|p| body.contains(*p)).map(to_page);
+        if pressed && let Some((x, y)) = at {
+            let grab = if placed.on_handle(x, y) {
+                Some(RulerGrab::Turn)
+            } else if placed.contains(x, y) {
+                Some(RulerGrab::Move(placed.x - x, placed.y - y))
+            } else {
+                None
+            };
+            ui.ctx().data_mut(|d| match grab {
+                Some(g) => {
+                    d.insert_temp(ruler_grab_id(), g);
+                }
+                None => {
+                    d.remove::<RulerGrab>(ruler_grab_id());
+                }
+            });
+        }
+        let grab = ui.ctx().data(|d| d.get_temp::<RulerGrab>(ruler_grab_id()));
+        if let Some(grab) = grab {
+            took = true;
+            if down {
+                if let Some((x, y)) = at {
+                    match grab {
+                        RulerGrab::Move(dx, dy) => (placed.x, placed.y) = (x + dx, y + dy),
+                        RulerGrab::Turn => placed.point_at(x, y),
+                    }
+                }
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            } else {
+                ui.ctx().data_mut(|d| d.remove::<RulerGrab>(ruler_grab_id()));
+            }
+        } else if let Some((x, y)) = at.filter(|&(x, y)| placed.contains(x, y)) {
+            ui.ctx().set_cursor_icon(if placed.on_handle(x, y) { egui::CursorIcon::Alias } else { egui::CursorIcon::Grab });
+        }
+        // [ and ] turn it a degree, with Shift fifteen; nothing else uses these keys while
+        // an ink tool is in hand.
+        let focus_free = ui.ctx().memory(|m| m.focused().is_none());
+        if focus_free {
+            let turn = ui.input(|i| {
+                let step = if i.modifiers.shift { 15.0 } else { 1.0 };
+                let mut turn = 0.0;
+                if i.key_pressed(egui::Key::OpenBracket) {
+                    turn -= step;
+                }
+                if i.key_pressed(egui::Key::CloseBracket) {
+                    turn += step;
+                }
+                turn
+            });
+            if turn != 0.0 {
+                placed.turn(turn);
+            }
+        }
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(ruler_id(), RulerState::Placed(placed)));
+    paint_ruler(painter, origin, zoom, &placed, t);
+    took
+}
+
+/// Where a reading lands with the ruler out: along the edge the stroke began beside, or
+/// where the pen is when the stroke did not begin beside it (issue #293).
+fn along_ruler(ctx: &egui::Context, x: f32, y: f32, width: f32) -> (f32, f32) {
+    let edge = ctx.data(|d| d.get_temp::<notecraft_ink::ruler::Edge>(ruler_edge_id()));
+    match (ruler(ctx), edge) {
+        (Some(RulerState::Placed(r)), Some(edge)) => r.along(edge, x, y, width),
+        _ => (x, y),
+    }
+}
+
 fn laser_trail_id() -> egui::Id {
     egui::Id::new("laser-trail")
 }
@@ -959,8 +1166,10 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
     }
     // Only the outward halves belong to the caps. Full circles would paint translucent
     // ink twice over the ribbon's ends, leaving darker patches within one highlighter stroke.
+    // Facing the way the edges arrive, read over the same reach as `shape::sides` (#44).
     let line = shape::centre(stroke);
-    if let [first, next, ..] = line.as_slice() {
+    let reach = shape::heading_reach(stroke).min(line.len().saturating_sub(1)).max(1);
+    if let (Some(first), Some(next)) = (line.first(), line.get(reach)) {
         round_cap(
             &mut mesh,
             put(first.x, first.y),
@@ -971,7 +1180,7 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
             colour,
         );
     }
-    if let [.., before, last] = line.as_slice() {
+    if let (Some(before), Some(last)) = (line.len().checked_sub(1 + reach).and_then(|i| line.get(i)), line.last()) {
         round_cap(
             &mut mesh,
             put(last.x, last.y),

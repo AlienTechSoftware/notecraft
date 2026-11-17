@@ -46,6 +46,7 @@ pub mod input_language {
 pub mod inkpad;
 pub mod mathview;
 pub mod navhistory;
+pub mod onlinevideo;
 pub mod pageedit;
 pub mod pagemenu;
 pub mod pagetext;
@@ -55,6 +56,7 @@ pub mod portable;
 pub mod preview;
 pub(crate) mod printout;
 pub mod quickaccess;
+pub mod reader;
 pub mod ribbon;
 pub mod ribbon_icons;
 pub mod saver;
