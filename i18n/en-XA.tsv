@@ -1132,6 +1132,57 @@
 @id	ui.reader_read_aloud_not_available	$$$Up and Down move the line focus. Read aloud is not built yet: NoteCraft has no speech service on any platform.@@@
 @id	ui.immersive_reader_tip	$$$Read the page in large, plain type with a line focus. The page is not changed.@@@
 @id	ui.reader_open_a_page	$$$Open a page to read it in the Immersive Reader.@@@
+@id	ui.automatic_shapes_2	$$$Automatic\nShapes@@@
+@id	ui.automatic_shapes_tip	$$$When on, a line, rectangle, ellipse or triangle drawn by hand is redrawn clean as the pen lifts. Undo brings back what you drew.@@@
+@id	ui.automatic_shapes_on	$$$Automatic Shapes is on: plain lines, rectangles, ellipses and triangles are redrawn clean.@@@
+@id	ui.automatic_shapes_off	$$$Automatic Shapes is off.@@@
+@id	ui.recognised_line	$$$Drawn as a straight line. Undo brings back what you drew.@@@
+@id	ui.recognised_rectangle	$$$Drawn as a rectangle. Undo brings back what you drew.@@@
+@id	ui.recognised_ellipse	$$$Drawn as an ellipse. Undo brings back what you drew.@@@
+@id	ui.recognised_triangle	$$$Drawn as a triangle. Undo brings back what you drew.@@@
+@id	ui.ink_replay_2	$$$Ink\nReplay@@@
+@id	ui.ink_replay_tip	$$$Draw the page's ink again, stroke by stroke, in the order it was drawn. The page is not changed.@@@
+@id	ui.ink_replay_title	$$$Ink Replay@@@
+@id	ui.replay_restart	$$$Restart@@@
+@id	ui.replay_previous	$$$Previous stroke@@@
+@id	ui.replay_previous_tip	$$$Back one stroke@@@
+@id	ui.replay_pause	$$$Pause@@@
+@id	ui.replay_pause_tip	$$$Pause (Space)@@@
+@id	ui.replay_play	$$$Play@@@
+@id	ui.replay_play_tip	$$$Play (Space)@@@
+@id	ui.replay_next	$$$Next stroke@@@
+@id	ui.replay_next_tip	$$$Forward one stroke@@@
+@id	ui.replay_speed	$$$Speed {speed}x@@@
+@id	ui.replay_speed_tip	$$$Change the speed: 0.5x, 1x, 2x, 4x@@@
+@id	ui.replay_count	$$${shown} of {total} strokes@@@
+@id	ui.replay_close_tip	$$$Stop the replay and go back to the page (Escape)@@@
+@id	ui.replay_order_note	$$$Strokes come back in the order they were drawn, each at an even speed: NoteCraft keeps the order, not the times.@@@
+@id	ui.replay_nothing_to_replay	$$$This page has no ink to replay.@@@
+@id	ui.tabs_layout_tip	$$$Show this notebook's sections as coloured tabs across the top of the page. The tree stays in the side panel.@@@
+@id	ui.tabs_layout_on	$$$Sections are shown as tabs over the page.@@@
+@id	ui.tabs_layout_off	$$$Sections are shown in the tree only.@@@
+@id	ui.section_group_tab	$$${name} (group)@@@
+@id	ui.this_group_has_no_sections	$$$This group has no sections.@@@
+@id	ui.this_section_has_no_pages_yet	$$$This section has no pages yet.@@@
+@id	ui.colour_dark_red	$$$Dark Red@@@
+@id	ui.colour_red	$$$Red@@@
+@id	ui.colour_orange	$$$Orange@@@
+@id	ui.colour_yellow	$$$Yellow@@@
+@id	ui.colour_light_green	$$$Light Green@@@
+@id	ui.colour_green	$$$Green@@@
+@id	ui.colour_light_blue	$$$Light Blue@@@
+@id	ui.colour_blue	$$$Blue@@@
+@id	ui.colour_dark_blue	$$$Dark Blue@@@
+@id	ui.colour_purple	$$$Purple@@@
+@id	ui.colour_bright_green	$$$Bright Green@@@
+@id	ui.colour_turquoise	$$$Turquoise@@@
+@id	ui.colour_pink	$$$Pink@@@
+@id	ui.colour_gray	$$$Gray@@@
+@id	ui.font_colour	$$$Font Colour@@@
+@id	ui.font_colour_tip	$$$Colour the selected words, or what you type next@@@
+@id	ui.text_highlight_colour	$$$Text Highlight Colour@@@
+@id	ui.text_highlight_colour_tip	$$$Mark the selected words with a highlight colour, or what you type next@@@
+@id	ui.automatic_colour	$$$Automatic@@@
 @id	ui.notebooks_folder	$$$Notebooks folder@@@
 @id	ui.notebooks_folder_hint	$$$Notebooks already in the folder you choose open now. New notebooks go there from the next start. Nothing is moved.@@@
 @id	ui.change_notebooks_folder	$$$Change notebooks folder...@@@

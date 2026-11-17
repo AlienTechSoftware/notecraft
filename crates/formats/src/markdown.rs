@@ -21,6 +21,10 @@ pub struct Span {
     /// Font size in points, carried by a NoteCraft inline `<span>`.
     pub font_size: Option<u8>,
     pub font_family: Option<String>,
+    /// Text colour, as `#rrggbb`, from a NoteCraft inline `<span style="color: ...">` (#260).
+    pub colour: Option<String>,
+    /// Highlight behind the text, as `#rrggbb`, from `background-color` (#260).
+    pub highlight: Option<String>,
     /// Link target, if this span is part of a link.
     pub link: Option<String>,
     /// Image source, if this span is an inline image (the text is the alt text).
@@ -69,6 +73,8 @@ struct Style {
     script: Option<Script>,
     font_size: Option<u8>,
     font_family: Option<String>,
+    colour: Option<String>,
+    highlight: Option<String>,
 }
 
 /// Parses inline Markdown into styled spans.
@@ -131,6 +137,8 @@ fn push_text(out: &mut Vec<Span>, buf: &mut String, st: &Style, link: &Option<St
             script: st.script,
             font_size: st.font_size,
             font_family: st.font_family.clone(),
+            colour: st.colour.clone(),
+            highlight: st.highlight.clone(),
             link: link.clone(),
             ..Span::default()
         });
@@ -206,31 +214,56 @@ pub(crate) fn style_declarations(style: &str) -> Vec<&str> {
     result
 }
 
-fn font_style_open(chars: &[char], start: usize) -> Option<(Option<u8>, Option<String>, usize)> {
+/// What a NoteCraft inline `<span style="...">` sets. Every declaration must be one NoteCraft
+/// writes, or the span is not one of ours and is left as text.
+struct SpanStyle {
+    size: Option<u8>,
+    family: Option<String>,
+    colour: Option<String>,
+    highlight: Option<String>,
+}
+
+/// A colour as NoteCraft writes it, `#rrggbb` in lower case; `#rgb` is widened (#260).
+pub fn css_colour(value: &str) -> Option<String> {
+    let hex = value.trim().strip_prefix('#')?;
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    match hex.len() {
+        6 => Some(format!("#{}", hex.to_ascii_lowercase())),
+        3 => Some(format!("#{}", hex.chars().flat_map(|c| [c, c]).collect::<String>().to_ascii_lowercase())),
+        _ => None,
+    }
+}
+
+fn font_style_open(chars: &[char], start: usize) -> Option<(SpanStyle, usize)> {
     let end = span_open_end(chars, start)?;
     let tag: String = chars.get(start..end)?.iter().collect();
     let lower = tag.to_ascii_lowercase();
     let style_start = lower.find("style=\"")? + "style=\"".len();
     let style_end = lower.get(style_start..)?.find('"')? + style_start;
     let style = crate::html::unescape(tag.get(style_start..style_end)?);
-    let mut size = None;
-    let mut family = None;
+    let mut found = SpanStyle { size: None, family: None, colour: None, highlight: None };
     for declaration in style_declarations(&style).into_iter().filter(|part| !part.trim().is_empty()) {
         let (property, value) = declaration.split_once(':')?;
         let value = value.trim();
-        if property.trim().eq_ignore_ascii_case("font-size") {
-            let points = value.strip_suffix("pt")?.parse::<u8>().ok()?;
-            if !(8..=72).contains(&points) {
-                return None;
+        let property = property.trim().to_ascii_lowercase();
+        match property.as_str() {
+            "font-size" => {
+                let points = value.strip_suffix("pt")?.parse::<u8>().ok()?;
+                if !(8..=72).contains(&points) {
+                    return None;
+                }
+                found.size = Some(points);
             }
-            size = Some(points);
-        } else if property.trim().eq_ignore_ascii_case("font-family") {
-            family = Some(font_family_from_css(value)?);
-        } else {
-            return None;
+            "font-family" => found.family = Some(font_family_from_css(value)?),
+            "color" => found.colour = Some(css_colour(value)?),
+            "background-color" => found.highlight = Some(css_colour(value)?),
+            _ => return None,
         }
     }
-    (size.is_some() || family.is_some()).then_some((size, family, end))
+    let any = found.size.is_some() || found.family.is_some() || found.colour.is_some() || found.highlight.is_some();
+    any.then_some((found, end))
 }
 
 fn font_size_close(chars: &[char], start: usize) -> Option<usize> {
@@ -300,16 +333,22 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize, cell_br
         }
         if c == '<'
             && depth < MAX_DEPTH
-            && let Some((font_size, font_family, content_start)) = font_style_open(chars, i)
+            && let Some((found, content_start)) = font_style_open(chars, i)
             && let Some(content_end) = font_size_close(chars, content_start)
         {
             push_text(&mut out, &mut buf, &st, &link);
             let mut sized = st.clone();
-            if font_size.is_some() {
-                sized.font_size = font_size;
+            if found.size.is_some() {
+                sized.font_size = found.size;
             }
-            if font_family.is_some() {
-                sized.font_family = font_family;
+            if found.family.is_some() {
+                sized.font_family = found.family;
+            }
+            if found.colour.is_some() {
+                sized.colour = found.colour;
+            }
+            if found.highlight.is_some() {
+                sized.highlight = found.highlight;
             }
             out.extend(inline(slice(chars, content_start, content_end), sized, link.clone(), depth + 1, cell_breaks));
             i = content_end + "</span>".chars().count();
@@ -369,6 +408,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize, cell_br
                         script: st.script,
                         font_size: st.font_size,
                         font_family: st.font_family.clone(),
+                        colour: st.colour.clone(),
+                        highlight: st.highlight.clone(),
                         link: link.clone(),
                         ..Span::default()
                     });
@@ -432,6 +473,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize, cell_br
                         math: true,
                         font_size: st.font_size,
                         font_family: st.font_family.clone(),
+                        colour: st.colour.clone(),
+                        highlight: st.highlight.clone(),
                         underline: st.underline,
                         script: st.script,
                         link: link.clone(),
@@ -454,6 +497,8 @@ fn inline(chars: &[char], st: Style, link: Option<String>, depth: usize, cell_br
                         image: Some(url),
                         font_size: st.font_size,
                         font_family: st.font_family.clone(),
+                        colour: st.colour.clone(),
+                        highlight: st.highlight.clone(),
                         underline: st.underline,
                         script: st.script,
                         link: link.clone(),

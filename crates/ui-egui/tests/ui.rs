@@ -11140,13 +11140,13 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     settle(&mut h);
     h.get_by_label("View").click();
     settle(&mut h);
-    for name in ["Tabs layout", "Dock to desktop", "New window", "New quick note", "Live captions"] {
+    for name in ["Dock to desktop", "New window", "New quick note", "Live captions"] {
         let label = format!("{name} (not built)");
         let nodes: Vec<_> = h.query_all_by_label(&label).collect();
         assert!(!nodes.is_empty(), "{label} is listed");
         assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
     }
-    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size", "Immersive reader"] {
+    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size", "Immersive reader", "Tabs layout"] {
         assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
     }
     // Insert's placeholders were already right and stay so.
@@ -12354,4 +12354,253 @@ fn ink_help_opens_the_drawing_page_of_the_welcome_notebook() {
     let path = v["page"]["path"].as_str().unwrap_or_default().to_string();
     assert!(path.ends_with("10-en/how-to/handwriting-and-drawing"), "the English drawing page opened: {path}");
     assert_eq!(v["page"]["dirty"], json!(false), "and nothing was changed");
+}
+
+/// Picks up the first pen on the rack, as Alt+1 does.
+fn pick_up_first_pen(h: &mut Harness<'_, NoteCraftApp>) {
+    let alt = egui::Modifiers { alt: true, ..Default::default() };
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Num1, physical_key: None, pressed: true, repeat: false, modifiers: alt });
+    h.step();
+    settle(h);
+}
+
+/// Draws one stroke through `points`, in page points from the page's origin.
+fn draw_through(h: &mut Harness<'_, NoteCraftApp>, points: &[(f32, f32)]) {
+    let origin = page_origin(h);
+    let at = |p: &(f32, f32)| origin + egui::vec2(p.0, p.1);
+    let Some(first) = points.first() else { return };
+    let start = at(first);
+    ask(h, "ui.press", json!({"x": start.x, "y": start.y})).expect("press");
+    pump(h);
+    for p in &points[1..] {
+        let q = at(p);
+        ask(h, "ui.move", json!({"x": q.x, "y": q.y})).expect("move");
+        pump(h);
+    }
+    let end = at(points.last().unwrap_or(first));
+    ask(h, "ui.release", json!({"x": end.x, "y": end.y})).expect("release");
+    settle(h);
+}
+
+/// The readings of the newest stroke, as `ui.inspect` reports them.
+fn last_stroke(h: &mut Harness<'_, NoteCraftApp>) -> Vec<(f32, f32)> {
+    let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+    v["ink"]["lastStroke"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|p| (p[0].as_f64().unwrap_or(0.0) as f32, p[1].as_f64().unwrap_or(0.0) as f32))
+        .collect()
+}
+
+/// Issue #294: Draw > Automatic Shapes was "not built". With it on, a box drawn by hand is
+/// redrawn as a clean rectangle in the same place, the status says so, Undo brings back the
+/// hand-drawn stroke and Redo the rectangle. Handwriting-like strokes are left alone, and the
+/// setting is remembered.
+#[test]
+fn automatic_shapes_redraws_a_hand_drawn_box_and_undo_brings_it_back() {
+    let (_t, app, s) = sample_app("ui-auto-shapes");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    h.get_by_label("Automatic Shapes").click();
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["autoShapes"], json!(true));
+    assert_eq!(h.state().session().settings.get("auto_shapes").as_deref(), Some("true"), "the choice is kept");
+    pick_up_first_pen(&mut h);
+    let strokes = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64().unwrap_or(0);
+    let before = strokes(&mut h);
+
+    // A wobbly box, corner to corner.
+    let mut boxed = Vec::new();
+    for (k, (a, b)) in
+        [((200.0, 300.0), (420.0, 300.0)), ((420.0, 300.0), (420.0, 420.0)), ((420.0, 420.0), (200.0, 420.0)), ((200.0, 420.0), (202.0, 303.0))]
+            .into_iter()
+            .enumerate()
+    {
+        for i in 0..8 {
+            let t = i as f32 / 8.0;
+            let wobble = if (i + k) % 2 == 0 { 1.5 } else { -1.5 };
+            let (x, y): (f32, f32) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+            boxed.push(if a.1 == b.1 { (x, y + wobble) } else { (x + wobble, y) });
+        }
+    }
+    boxed.push((202.0, 303.0));
+    draw_through(&mut h, &boxed);
+    assert_eq!(strokes(&mut h), before + 1, "one stroke");
+    assert!(h.state().status().contains("rectangle"), "{}", h.state().status());
+    let clean = last_stroke(&mut h);
+    let xs: std::collections::BTreeSet<i32> = clean.iter().map(|p| p.0.round() as i32).collect();
+    let left = xs.iter().next().copied().unwrap_or(0);
+    let right = xs.iter().last().copied().unwrap_or(0);
+    let on_sides = clean.iter().filter(|p| (p.0.round() as i32 == left) || (p.0.round() as i32 == right)).count();
+    assert!(on_sides >= clean.len() / 3, "the sides are straight up and down: {clean:?}");
+    assert!((left - 200).abs() <= 4 && (right - 420).abs() <= 4, "and where the hand drew them: {left}..{right}");
+    review(&mut h, "automatic_shapes");
+
+    h.get_by_label("Undo stroke").click();
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), before + 1, "undo puts back what the hand drew, not nothing");
+    assert_ne!(last_stroke(&mut h), clean, "the hand-drawn stroke");
+    h.get_by_label("Redo stroke").click();
+    settle(&mut h);
+    assert_eq!(last_stroke(&mut h), clean, "redo gives the rectangle again");
+
+    // A squiggle like writing is left as it was drawn.
+    let squiggle: Vec<(f32, f32)> = (0..30).map(|i| (500.0 + i as f32 * 4.0, 300.0 + 12.0 * (i as f32 * 0.8).sin())).collect();
+    draw_through(&mut h, &squiggle);
+    assert_eq!(strokes(&mut h), before + 2);
+    assert!(!h.state().status().contains("Drawn as"), "{}", h.state().status());
+}
+
+/// Issue #295: Draw > Ink Replay was "not built". It draws the page's strokes again in the
+/// order they were drawn, can be paused and stepped, and closing it leaves the ink and the
+/// page as they were.
+#[test]
+fn ink_replay_plays_the_strokes_in_order_and_changes_nothing() {
+    let (_t, app, s) = sample_app("ui-ink-replay");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    pump(&mut h);
+    // Nothing to replay on a page with no ink.
+    h.get_by_label("Ink Replay").click();
+    settle(&mut h);
+    assert!(h.state().status().contains("no ink to replay"), "{}", h.state().status());
+
+    pick_up_first_pen(&mut h);
+    draw_through(&mut h, &[(200.0, 300.0), (260.0, 310.0), (320.0, 300.0)]);
+    draw_through(&mut h, &[(200.0, 360.0), (260.0, 370.0), (320.0, 360.0)]);
+    draw_through(&mut h, &[(200.0, 420.0), (260.0, 430.0), (320.0, 420.0)]);
+    let ink_file = s.html_page.join("ink.svg");
+    let saved = std::fs::read_to_string(&ink_file).expect("ink saved");
+    let replay = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["replay"].clone();
+
+    h.get_by_label("Ink Replay").click();
+    settle(&mut h);
+    let r = replay(&mut h);
+    assert!(r.is_object(), "the replay is open: {r}");
+    review(&mut h, "ink_replay");
+    h.get_by_label("Restart").click();
+    pump(&mut h);
+    h.get_by_label("Pause").click();
+    pump(&mut h);
+    assert_eq!(replay(&mut h)["shown"], json!(0), "back at the start");
+    h.get_by_label("Next stroke").click();
+    pump(&mut h);
+    assert_eq!(replay(&mut h)["shown"], json!(1), "one stroke at a time");
+    h.get_by_label("Next stroke").click();
+    pump(&mut h);
+    assert_eq!(replay(&mut h)["shown"], json!(2));
+    h.get_by_label("Previous stroke").click();
+    pump(&mut h);
+    assert_eq!(replay(&mut h)["shown"], json!(1));
+    h.get_by_label("Speed 1x").click();
+    pump(&mut h);
+    assert_eq!(replay(&mut h)["speed"], json!(2.0));
+    h.get_by_label("Play").click();
+    for _ in 0..240 {
+        pump(&mut h);
+    }
+    let r = replay(&mut h);
+    assert_eq!((r["shown"].clone(), r["playing"].clone()), (json!(3), json!(false)), "it plays to the end and stops: {r}");
+
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(replay(&mut h), Value::Null, "Escape closes it");
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v["ink"]["strokes"], json!(3), "the ink is all there");
+    assert_eq!(std::fs::read_to_string(&ink_file).expect("ink"), saved, "and its file is unchanged");
+}
+
+/// Issues #268 and #33: View > Tabs layout was "not built". It shows the notebook's sections
+/// as tabs over the page; a section group is a tab with a list; choosing opens the section's
+/// first page; the choice is remembered.
+#[test]
+fn tabs_layout_shows_sections_as_tabs_and_opens_them() {
+    let (_t, app, s) = sample_app("ui-tabs-layout");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    assert_eq!(h.state().session().settings.get("tabs_layout").as_deref(), Some("true"));
+    review(&mut h, "tabs_layout");
+    let page =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["path"].as_str().unwrap_or("").to_string();
+    assert!(page(&mut h).ends_with("projects/project-x") || page(&mut h).contains("project"), "{}", page(&mut h));
+    h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Ideas").last().expect("an Ideas tab").click();
+    settle(&mut h);
+    assert!(page(&mut h).contains("ideas"), "the Ideas tab opened its page: {}", page(&mut h));
+    h.get_by_label("Work (group)").click();
+    h.run_steps(2);
+    h.query_all_by_label("Projects").last().expect("the group's list").click();
+    settle(&mut h);
+    assert!(page(&mut h).contains("projects"), "the group's section opened: {}", page(&mut h));
+}
+
+/// Issue #260: Home had no Font Colour or Text Highlight Colour. Both palettes colour the
+/// selected words with exact colours that save the same in HTML and CMGFM, Automatic and No
+/// Colour take them off, and Undo puts things back.
+#[test]
+fn font_colour_and_highlight_colour_the_selected_words_in_both_formats() {
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-text-colour");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+        h.run();
+        let page = if html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, if html { "<p>colour these words</p>" } else { "colour these words" }).expect("fixture");
+        ask(&mut h, "ui.open", json!({"path": page.to_string_lossy()})).expect("open");
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        pump(&mut h);
+        for _ in 0..7 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("right");
+            pump(&mut h);
+        }
+        for _ in 0..5 {
+            ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("pick");
+            pump(&mut h);
+        }
+        settle(&mut h);
+        h.get_by_label("Home").click();
+        settle(&mut h);
+        h.get_by_label("Font Colour").click();
+        h.run_steps(2);
+        review(&mut h, &format!("font_colour_{html}"));
+        h.get_by_label("Dark Red").click();
+        settle(&mut h);
+        h.get_by_label("Text Highlight Colour").click();
+        h.run_steps(2);
+        h.get_by_label("Yellow").click();
+        settle(&mut h);
+        h.state_mut().save();
+        let body = notecraft_store::page::load_page(page).expect("load").body;
+        assert!(body.contains("color: #c00000") && body.contains("background-color: #ffff00"), "html={html}: both colours saved:\n{body}");
+        assert!(body.contains("these"), "html={html}:\n{body}");
+        let blocks = notecraft_formats::markdown::parse(&if html { notecraft_formats::html::to_markdown(&body) } else { body.clone() });
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("html={html}: a paragraph") };
+        let coloured: String = spans.iter().filter(|s| s.colour.as_deref() == Some("#c00000")).map(|s| s.text.as_str()).collect();
+        assert_eq!(coloured, "these", "html={html}: only the picked word");
+        assert!(spans.iter().filter(|s| s.colour.is_some()).all(|s| s.highlight.as_deref() == Some("#ffff00")));
+
+        // Automatic takes the colour off and leaves the highlight; Undo brings it back.
+        h.get_by_label("Font Colour").click();
+        h.run_steps(2);
+        h.get_by_label("Automatic").click();
+        settle(&mut h);
+        let now = h.state().body().unwrap_or_default().to_string();
+        assert!(!now.contains("color: #c00000") && now.contains("#ffff00"), "html={html}:\n{now}");
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        assert!(h.state().body().unwrap_or_default().contains("#c00000"), "html={html}: undo brings the colour back");
+    }
 }

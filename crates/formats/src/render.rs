@@ -444,6 +444,12 @@ fn inline_style(s: &Span, text: String) -> String {
     if let Some(size) = s.font_size {
         styles.push(format!("font-size: {size}pt"));
     }
+    if let Some(colour) = s.colour.as_deref().and_then(crate::markdown::css_colour) {
+        styles.push(format!("color: {colour}"));
+    }
+    if let Some(colour) = s.highlight.as_deref().and_then(crate::markdown::css_colour) {
+        styles.push(format!("background-color: {colour}"));
+    }
     if styles.is_empty() { text } else { format!("<span style=\"{}\">{text}</span>", styles.join("; ")) }
 }
 
@@ -912,6 +918,38 @@ fn b() {}"
         let html = blocks_to_html(&blocks);
         assert!(html.contains("<span style=\"font-size: 18pt\">larger text</span>"), "{html}");
         assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML retains the size");
+    }
+
+    #[test]
+    fn text_colour_and_highlight_round_trip_through_cmgfm_and_html() {
+        // Issue #260: exact colours, nested with a size, and a short colour widened.
+        let source = "plain <span style=\"color: #C00000\">red <span style=\"background-color: #ff0\">marked</span></span> \
+                      <span style=\"font-size: 18pt; color: #1a5fd0; background-color: #ccffcc\">all three</span>";
+        let blocks = parse(source);
+        let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+        let span = |text: &str| spans.iter().find(|s| s.text == text).cloned().unwrap_or_default();
+        assert_eq!(span("red ").colour.as_deref(), Some("#c00000"));
+        assert_eq!(span("red ").highlight, None);
+        assert_eq!((span("marked").colour.as_deref(), span("marked").highlight.as_deref()), (Some("#c00000"), Some("#ffff00")));
+        let all = span("all three");
+        assert_eq!((all.font_size, all.colour.as_deref(), all.highlight.as_deref()), (Some(18), Some("#1a5fd0"), Some("#ccffcc")));
+        assert_eq!(blocks_to_text(&blocks), "plain red marked all three", "colours are not visible page text");
+
+        let markdown = blocks_to_markdown(&blocks);
+        assert_eq!(parse(&markdown), blocks, "CMGFM keeps the colours:\n{markdown}");
+        let html = blocks_to_html(&blocks);
+        assert!(html.contains("color: #c00000"), "{html}");
+        assert!(html.contains("background-color: #ffff00"), "{html}");
+        assert_eq!(parse(&html::to_markdown(&html)), blocks, "HTML keeps the colours:\n{html}");
+    }
+
+    #[test]
+    fn a_colour_that_is_not_a_plain_hex_value_is_not_taken() {
+        for style in ["color: red", "color: rgb(1,2,3)", "color: #12345", "background-color: url(x)"] {
+            let blocks = parse(&format!("<span style=\"{style}\">x</span>"));
+            let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+            assert!(spans.iter().all(|s| s.colour.is_none() && s.highlight.is_none()), "{style}: {spans:?}");
+        }
     }
 
     #[test]

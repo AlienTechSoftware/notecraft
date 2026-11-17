@@ -463,8 +463,17 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   point, or an eighth of a wide nib), and a wide nib's edges follow the line over a quarter of
   its width, so a highlighter's edges no longer zigzag (issue #44). Draw > Ink Help opens the
   Welcome notebook's handwriting page in the interface language, or English (issue #296).
-  **Not built:** automatic shapes; other stencils (protractor);
-  ink replay; ink to text and ink to math; More Colours in the tool editor. Pressure is real and measured on Windows (hardest 0.930 over 1223
+  Draw > Automatic Shapes (issue #294), when on, redraws a plain line, a rectangle with sides
+  along the page, an ellipse with axes along the page, or a triangle as a clean shape when the
+  pen is lifted, keeping the pen, colour, width and place. Recognition is strict: anything in
+  doubt (writing, a star, a rounded or turned box) stays as drawn, and one Undo brings back
+  what the hand drew. A stroke laid along the ruler is not reread. The choice is kept.
+  Draw > Ink Replay (issue #295) draws the page's strokes again in the order they were drawn,
+  with play and pause (Space), restart, a stroke back or forward, and 0.5x to 4x. The ink file
+  keeps the order of strokes but no times, so every stroke replays at an even speed; the replay
+  changes nothing and takes no part in undo. It replays the whole page, not a selection.
+  **Not built:** other stencils (protractor); ink to text and ink to math; More Colours in the
+  tool editor; replaying only selected ink. Pressure is real and measured on Windows (hardest 0.930 over 1223
   readings, 2026-10-18); on macOS, Linux and Wayland winit drops the tablet fields, so a
   pen there draws at full pressure like a mouse, and tilt and the eraser end are on no
   platform. `cargo run -p notecraft --example pen_check` shows what a pen reports.
@@ -552,6 +561,17 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   pictures are named by their description and handwriting is said to be there but not shown.
   **Not built:** reading aloud (no speech service on any platform), reading colours other than
   the theme's, and a per-word focus.
+- **Font Colour and Text Highlight Colour** (issue #260) on Home colour the selected words, or
+  what is typed next at the caret, with ten text colours and six highlights; Automatic and No
+  Colour take them off. The exact `#rrggbb` is kept in both formats as a NoteCraft inline
+  `<span style="color: ...; background-color: ...">`; other colour notations from other
+  programs (names, `rgb()`) are not read. On screen a colour too faint for the theme is moved
+  towards the theme's text colour and a highlight is washed on dark themes; the file keeps the
+  chosen value. Not built: More Colors, and colours inside table cells.
+- **View > Tabs layout** (issues #268, #33) shows the open notebook's sections as coloured tabs
+  over the page, with a section group as a tab that lists its sections. The tree stays in the
+  side panel. Not built: OneNote's vertical tabs on the right and a notebook list across the
+  top; the tabs are hidden in the narrow phone layout.
 - **Unread and author history** are not built. Page version
   history stores snapshots of the page's main file; changes to attached files and drawings
   are not captured by those snapshots. (Tags are: to-do boxes and the other familiar marks,

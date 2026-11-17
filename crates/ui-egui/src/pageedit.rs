@@ -250,6 +250,10 @@ pub enum InlineFormat {
     Code,
     Size(u8),
     Family(String),
+    /// Text colour `#rrggbb`, or `None` for Automatic (issue #260).
+    Colour(Option<String>),
+    /// Highlight `#rrggbb` behind the text, or `None` for No Colour (issue #260).
+    Highlight(Option<String>),
 }
 
 /// Formats text in a visible-character range without splitting atomic images or maths.
@@ -273,6 +277,8 @@ pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, f
         InlineFormat::Code => span.code,
         InlineFormat::Size(size) => span.font_size == Some(*size),
         InlineFormat::Family(family) => span.font_family.as_ref() == Some(family),
+        InlineFormat::Colour(colour) => span.colour == *colour,
+        InlineFormat::Highlight(colour) => span.highlight == *colour,
     };
     let mut at = 0usize;
     let mut any = false;
@@ -285,7 +291,7 @@ pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, f
         }
         at += len;
     }
-    if !any || (all && matches!(format, InlineFormat::Size(_) | InlineFormat::Family(_))) {
+    if !any || (all && matches!(format, InlineFormat::Size(_) | InlineFormat::Family(_) | InlineFormat::Colour(_) | InlineFormat::Highlight(_))) {
         return false;
     }
     let mut output = Vec::new();
@@ -313,6 +319,8 @@ pub fn format_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, f
                         InlineFormat::Code => piece.code = !all,
                         InlineFormat::Size(size) => piece.font_size = Some(*size),
                         InlineFormat::Family(family) => piece.font_family = Some(family.clone()),
+                        InlineFormat::Colour(colour) => piece.colour = colour.clone(),
+                        InlineFormat::Highlight(colour) => piece.highlight = colour.clone(),
                     }
                 }
                 output.push(piece);
@@ -358,6 +366,9 @@ pub enum FontValue<T> {
 pub struct FontSelection {
     pub family: FontValue<String>,
     pub size: FontValue<u8>,
+    /// The text colour and highlight of the words, for Home's palettes (issue #260).
+    pub colour: FontValue<String>,
+    pub highlight: FontValue<String>,
     /// The marks Home shows as pressed (issue #255).
     pub marks: Marks,
 }
@@ -415,6 +426,8 @@ impl FontSelection {
         }
         merge_value(&mut self.family, other.family);
         merge_value(&mut self.size, other.size);
+        merge_value(&mut self.colour, other.colour);
+        merge_value(&mut self.highlight, other.highlight);
         self.marks = self.marks.and(other.marks);
     }
 
@@ -438,6 +451,8 @@ impl FontSelection {
             }
             add(&mut result.family, span.font_family.clone());
             add(&mut result.size, span.font_size);
+            add(&mut result.colour, span.colour.clone());
+            add(&mut result.highlight, span.highlight.clone());
         }
         result.marks = marks.unwrap_or_default();
         result
@@ -535,6 +550,8 @@ pub fn paint_span_range(spans: &mut Vec<Span>, range: std::ops::Range<usize>, st
                     piece.code = style.code;
                     piece.font_size = style.font_size;
                     piece.font_family = style.font_family.clone();
+                    piece.colour = style.colour.clone();
+                    piece.highlight = style.highlight.clone();
                 }
                 output.push(piece);
             }

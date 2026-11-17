@@ -303,7 +303,11 @@ fn styled_spans_in(block: &Block) -> usize {
         Block::Table { head, rows } => head.iter().chain(rows.iter().flatten()).collect(),
         Block::Code { .. } | Block::MathBlock(_) | Block::Rule | Block::Image { .. } => Vec::new(),
     };
-    lines.iter().flat_map(|spans| spans.iter()).filter(|span| span.font_size.is_some() || span.font_family.is_some()).count()
+    lines
+        .iter()
+        .flat_map(|spans| spans.iter())
+        .filter(|span| span.font_size.is_some() || span.font_family.is_some() || span.colour.is_some() || span.highlight.is_some())
+        .count()
 }
 
 #[cfg(test)]

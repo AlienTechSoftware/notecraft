@@ -28,6 +28,7 @@
 
 pub mod pick;
 pub mod rack;
+pub mod recognise;
 pub mod ruler;
 pub mod shape;
 pub mod shapes;

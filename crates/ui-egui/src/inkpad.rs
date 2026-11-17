@@ -28,11 +28,14 @@ pub struct Pen {
     pub width: f32,
     /// How readily this pen answers pressure; 1 leaves the readings as they came.
     pub gain: f32,
+    /// Draw > Automatic Shapes is on: a plain line, box, ellipse or triangle drawn by hand
+    /// is redrawn clean when the pen is lifted (issue #294).
+    pub auto_shapes: bool,
 }
 
 impl Default for Pen {
     fn default() -> Self {
-        Self { pointer: crate::ribbon::Pointer::Write, tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, gain: 1.0 }
+        Self { pointer: crate::ribbon::Pointer::Write, tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, gain: 1.0, auto_shapes: false }
     }
 }
 
@@ -113,6 +116,8 @@ pub struct Pad {
     redo_steps: Vec<Vec<Stroke>>,
     /// Changed since the last finished change was kept.
     touched: bool,
+    /// What Automatic Shapes last made of a stroke, for the window to say (issue #294).
+    recognised: Option<&'static str>,
 }
 
 /// How many changes to the ink undo can go back through.
@@ -158,6 +163,7 @@ impl Pad {
             undo_steps: Vec::new(),
             redo_steps: Vec::new(),
             touched: false,
+            recognised: None,
         }
         .with_kept()
     }
@@ -290,6 +296,11 @@ impl Pad {
         self.drawing.strokes.len()
     }
 
+    /// The strokes on the page, as drawn.
+    pub fn drawing(&self) -> &Drawing {
+        &self.drawing
+    }
+
     /// The readings of the newest stroke, as `[x, y]` in page points, for `ui.inspect`.
     pub fn last_stroke(&self) -> Vec<[f32; 2]> {
         self.drawing.strokes.last().map(|s| s.dabs.iter().map(|d| [d.x, d.y]).collect()).unwrap_or_default()
@@ -333,6 +344,30 @@ impl Pad {
         if self.undo_steps.len() > INK_UNDO_STEPS {
             self.undo_steps.remove(0);
         }
+    }
+
+    /// Keeps a stroke the hand drew and then the shape it was read as, as two steps (issue
+    /// #294): undo puts back what the hand drew, and redo the shape again.
+    fn add_recognised(&mut self, hand: Stroke, shape: Stroke, kind: &'static str) -> bool {
+        if !self.drawing.add(hand) {
+            return false;
+        }
+        let before = std::mem::replace(&mut self.kept, self.drawing.strokes.clone());
+        self.undo_steps.push((before, std::time::Instant::now()));
+        self.redo_steps.clear();
+        if self.undo_steps.len() > INK_UNDO_STEPS {
+            self.undo_steps.remove(0);
+        }
+        if let Some(last) = self.drawing.strokes.last_mut() {
+            *last = shape;
+        }
+        self.recognised = Some(kind);
+        true
+    }
+
+    /// What Automatic Shapes made of the last stroke, once.
+    pub fn take_recognised(&mut self) -> Option<&'static str> {
+        self.recognised.take()
     }
 
     /// When the change undo would take back was made, if there is one.
@@ -541,6 +576,31 @@ pub fn show(
     // where the view ends as well as the page: a scrolled page reaches above the view, and this
     // layer sits above the ribbon.
     let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(body.intersect(ui.clip_rect()));
+    // Draw > Ink Replay (#295): the strokes drawn so far in the replay, and nothing else; the
+    // page belongs to the replay until it is closed, so nothing is drawn or picked up.
+    if let Some(mut replay) = ui.ctx().data(|d| d.get_temp::<crate::replay::Replay>(replay_id())) {
+        pad.drawing_now = None;
+        pad.let_go();
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        replay.tick(&pad.drawing, dt);
+        let (whole, part) = crate::replay::shown(&pad.drawing, replay.at);
+        for stroke in pad.drawing.strokes.iter().take(whole).chain(part.iter()) {
+            let mut scaled = stroke.clone();
+            scaled.colour = shown_colour(scaled.colour, dark_page);
+            scaled.width *= zoom;
+            for dab in &mut scaled.dabs {
+                dab.x *= zoom;
+                dab.y *= zoom;
+            }
+            paint_stroke(&painter, origin, &scaled);
+        }
+        replay_bar(ui, body, &mut replay, &pad.drawing, t);
+        if replay.playing {
+            ui.ctx().request_repaint();
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(replay_id(), replay));
+        return false;
+    }
     for stroke in pad.drawing.strokes.iter().chain(pad.drawing_now.iter()) {
         let mut scaled = stroke.clone();
         scaled.colour = shown_colour(scaled.colour, dark_page);
@@ -689,7 +749,18 @@ pub fn show(
             }
             // Lifted: the hand's tremor is taken out before the stroke is kept (#44).
             if !down && let Some(stroke) = pad.drawing_now.take() {
-                changed = pad.drawing.add(stroke.settled());
+                let hand = stroke.settled();
+                // Automatic Shapes (#294): not for a stroke laid along the ruler, which is
+                // straight already, and only when the stroke is plainly a shape.
+                let along_ruler = ui.ctx().data(|d| d.get_temp::<notecraft_ink::ruler::Edge>(ruler_edge_id())).is_some();
+                let shape = if pen.auto_shapes && !along_ruler { notecraft_ink::recognise::recognise(&hand) } else { None };
+                changed = match shape {
+                    Some(shape) => {
+                        let clean = notecraft_ink::recognise::redraw(&hand, shape);
+                        pad.add_recognised(hand, clean, shape.id())
+                    }
+                    None => pad.drawing.add(hand),
+                };
             }
         }
         Pointer::Shape(shape) => {
@@ -879,6 +950,97 @@ pub const LASER: egui::Color32 = egui::Color32::from_rgb(235, 30, 45);
 
 /// How long a laser trail takes to fade, in seconds.
 pub const LASER_FADE: f64 = 0.8;
+
+fn replay_id() -> egui::Id {
+    egui::Id::new("ink-replay")
+}
+
+fn replay_closed_id() -> egui::Id {
+    egui::Id::new("ink-replay-closed")
+}
+
+/// Starts Draw > Ink Replay from the beginning, or stops it (issue #295).
+pub fn set_replay(ctx: &egui::Context, on: bool) {
+    let running = ctx.data(|d| d.get_temp::<crate::replay::Replay>(replay_id())).is_some();
+    if running == on {
+        return;
+    }
+    ctx.data_mut(|d| {
+        if on {
+            d.insert_temp(replay_id(), crate::replay::Replay::default());
+        } else {
+            d.remove::<crate::replay::Replay>(replay_id());
+        }
+    });
+}
+
+/// The replay in progress, if there is one.
+pub fn replay(ctx: &egui::Context) -> Option<crate::replay::Replay> {
+    ctx.data(|d| d.get_temp::<crate::replay::Replay>(replay_id()))
+}
+
+/// Whether the replay's own Close (or Escape) was used since this was last asked.
+pub fn take_replay_closed(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|d| d.remove_temp::<bool>(replay_closed_id())).unwrap_or(false)
+}
+
+/// The replay's controls, along the bottom of the page.
+fn replay_bar(ui: &Ui, body: egui::Rect, replay: &mut crate::replay::Replay, drawing: &Drawing, t: &Tokens) {
+    let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if ui.input(|i| i.key_pressed(egui::Key::Space)) {
+        replay.toggle(drawing);
+    }
+    let at = egui::pos2(body.center().x, body.max.y.min(ui.clip_rect().max.y) - 16.0);
+    egui::Area::new(egui::Id::new("ink-replay-bar")).order(egui::Order::Foreground).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(at).show(
+        ui.ctx(),
+        |ui| {
+            egui::Frame::NONE
+                .fill(t.panel)
+                .stroke(egui::Stroke::new(1.0, t.container_border))
+                .corner_radius(6.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.ink_replay_title")).strong().color(t.strong));
+                        if ui.button(crate::tl_id!("ui.replay_restart")).clicked() {
+                            replay.restart();
+                        }
+                        if ui.button(crate::tl_id!("ui.replay_previous")).on_hover_text(crate::tl_id!("ui.replay_previous_tip")).clicked() {
+                            replay.previous(drawing);
+                        }
+                        let (label, tip) = if replay.playing {
+                            (crate::tl_id!("ui.replay_pause"), crate::tl_id!("ui.replay_pause_tip"))
+                        } else {
+                            (crate::tl_id!("ui.replay_play"), crate::tl_id!("ui.replay_play_tip"))
+                        };
+                        if ui.button(label).on_hover_text(tip).clicked() {
+                            replay.toggle(drawing);
+                        }
+                        if ui.button(crate::tl_id!("ui.replay_next")).on_hover_text(crate::tl_id!("ui.replay_next_tip")).clicked() {
+                            replay.next(drawing);
+                        }
+                        let speed = crate::i18n::format_message_id("ui.replay_speed", &[("speed", &format!("{}", replay.speed))]);
+                        if ui.button(speed).on_hover_text(crate::tl_id!("ui.replay_speed_tip")).clicked() {
+                            replay.faster();
+                        }
+                        let (whole, _) = crate::replay::shown(drawing, replay.at);
+                        let count = crate::i18n::format_message_id(
+                            "ui.replay_count",
+                            &[("shown", &whole.to_string()), ("total", &drawing.strokes.len().to_string())],
+                        );
+                        ui.label(egui::RichText::new(count).color(t.muted));
+                        if ui.button(crate::tl_id!("ui.reader_close")).on_hover_text(crate::tl_id!("ui.replay_close_tip")).clicked() {
+                            close = true;
+                        }
+                    });
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.replay_order_note")).size(11.0).color(t.muted));
+                });
+        },
+    );
+    if close {
+        ui.ctx().data_mut(|d| d.insert_temp(replay_closed_id(), true));
+    }
+}
 
 fn ruler_id() -> egui::Id {
     egui::Id::new("ink-ruler")
