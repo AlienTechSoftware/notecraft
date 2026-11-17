@@ -9296,6 +9296,77 @@ fn paragraph_spacing_opens_room_around_a_paragraph_saves_and_undoes() {
     }
 }
 
+/// Issue #275, the part left over from the first change: a paragraph the bidi painter draws (one
+/// that reads right to left, and one that mixes the two directions) and a paragraph with inline
+/// maths take the least line height too. The paragraph under each one is pushed down by the
+/// lines that were opened up, in both formats, and Reset puts the page back where it was.
+#[test]
+fn a_least_line_height_opens_up_right_to_left_and_inline_math_paragraphs() {
+    use egui_kittest::kittest::NodeT as _;
+    const ARABIC: &str = "هذا اختبار بسيط لعرض الجمل العربية بشكل صحيح في عمود ضيق حتى تلتف الأسطر وتظهر عدة أسطر في الفقرة الواحدة";
+    let long = [ARABIC; 6].join(" ");
+    let mixed = format!("{ARABIC} 123 and some English words {ARABIC}");
+    for (format, body, label) in [
+        (notecraft_model::PageFormat::Html, format!("<p>{long}</p><p>tail</p><p>end</p>"), "Arabic"),
+        (notecraft_model::PageFormat::Cmgfm, format!("{long}\n\ntail\n\nend"), "Arabic"),
+        (notecraft_model::PageFormat::Html, format!("<p>{mixed}</p><p>tail</p><p>end</p>"), "mixed"),
+        (notecraft_model::PageFormat::Cmgfm, format!("{mixed}\n\ntail\n\nend"), "mixed"),
+        (notecraft_model::PageFormat::Cmgfm, "alpha $x$ bravo $y$ charlie\n\ntail\n\nend".to_string(), "inline maths"),
+        (notecraft_model::PageFormat::Cmgfm, "$x$\n\ntail\n\nend".to_string(), "formula only"),
+    ] {
+        let (_t, app, s) = sample_app("ui-spacing-bidi");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, &body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let tail_of = |h: &Harness<'_, NoteCraftApp>| h.get_by_label("tail").accesskit_node().bounding_box().expect("drawn").y0 as f32;
+        // The caret in the last paragraph, so the first two are shown finished, the way they are read.
+        let caret = |h: &mut Harness<'_, NoteCraftApp>, block: usize| {
+            ask(h, "ui.caret", json!({"block": block})).expect("caret");
+            settle(h);
+        };
+        caret(&mut h, 2);
+        let start = tail_of(&h);
+        // What writing in the first paragraph does to the page below it before it was given anything.
+        caret(&mut h, 0);
+        let written_in0 = tail_of(&h);
+        h.get_by_label("Alignment and direction").click();
+        h.run_steps(2);
+        h.get_by_label("Paragraph Spacing Options…").click();
+        h.run_steps(3);
+        h.state_mut().set_paragraph_spacing_values("0", "0", "60");
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        assert_eq!(
+            notecraft_store::page::justified(page).expect("read").spacing_of(0).map(|s| s.line),
+            Some(60),
+            "{format:?} {label}: the file says so"
+        );
+        caret(&mut h, 2);
+        let opened = tail_of(&h);
+        let rows = if label == "inline maths" || label == "formula only" { 1.0 } else { 2.0 };
+        assert!(opened - start > 20.0 * rows, "{format:?} {label}: the paragraph under it is pushed down by the opened lines: {start} -> {opened}");
+        review(&mut h, &format!("least_line_height_{format:?}_{label}").replace(' ', "_"));
+        // Written in, the paragraph keeps its lines: the caret's own text box is not shorter.
+        caret(&mut h, 0);
+        let writing = tail_of(&h);
+        assert!(writing - written_in0 > 20.0 * rows, "{format:?} {label}: and under the caret too: {written_in0} -> {writing}");
+        // Reset puts the page back as it was.
+        h.get_by_label("Alignment and direction").click();
+        h.run_steps(2);
+        h.get_by_label("Paragraph Spacing Options…").click();
+        h.run_steps(3);
+        h.get_by_label("Reset").click();
+        h.run_steps(2);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        caret(&mut h, 2);
+        assert!((tail_of(&h) - start).abs() < 1.5, "{format:?} {label}: Reset gives the page its own lines back: {start} vs {}", tail_of(&h));
+    }
+}
+
 /// Issue #255: Home's mark buttons always showed as not pressed. They now show the marks of
 /// the words at the caret, or of the whole selection: on only when all of it carries the mark,
 /// so a partly bold selection shows Bold off, as a click on it makes all of it bold. Both formats.

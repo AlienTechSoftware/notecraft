@@ -19,11 +19,43 @@ use egui::text::{LayoutJob, TextFormat};
 use egui::{Align, Align2, Color32, Pos2, Rect, Ui, Vec2, pos2, vec2};
 use notecraft_model::justify::Strength;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 thread_local! {
     /// One text engine per thread: it holds the font collection, which is not cheap to build.
     static TEXT: RefCell<notecraft_text::Text> = RefCell::new(notecraft_text::Text::new());
+    /// The least height of a line in the paragraph being drawn or clicked on (issue #275).
+    /// Zero asks for nothing. It is set by [`floor`] for as long as the paragraph is the one
+    /// being worked on, so `runs`, the caret, the selection and the hit tests all lay it out
+    /// with the same lines and a click lands on the word that was drawn under it.
+    static FLOOR: Cell<f32> = const { Cell::new(0.0) };
+}
+
+/// Holds a least line height in force until it is dropped, and puts the one before it back.
+pub struct Floor(f32);
+
+impl Drop for Floor {
+    fn drop(&mut self) {
+        FLOOR.with(|f| f.set(self.0));
+    }
+}
+
+/// Makes every line the painter lays out at least `points` tall (0 for the font's own), for as
+/// long as the returned guard lives. Lines are only opened up, never shortened.
+pub fn floor(points: f32) -> Floor {
+    let points = if points.is_finite() && points > 0.0 { points } else { 0.0 };
+    Floor(FLOOR.with(|f| f.replace(points)))
+}
+
+/// The least line height now in force, for the layouts that are not parley's (a click on a
+/// finished block asks egui the same question and has to ask it with the same lines).
+pub fn current_floor() -> f32 {
+    FLOOR.with(Cell::get)
+}
+
+/// A line laid out the way the painter does it: with the least line height in force.
+fn laid_out(engine: &mut notecraft_text::Text, text: &str, size: f32, max_width: f32) -> notecraft_text::Laid {
+    engine.layout_floored(text, size, Some(max_width), current_floor())
 }
 
 /// True when this painter should draw `text` rather than egui.
@@ -150,7 +182,7 @@ pub fn runs(ui: &Ui, text: &str, pieces: &[Piece], size: f32, max_width: f32, pa
         for (x, galley, range, rtl) in placed {
             let width = galley.rect.width();
             size_used.x = size_used.x.max(x + width);
-            size_used.y = size_used.y.max(line.y + line.height);
+            size_used.y = size_used.y.max(line.bottom);
             out.push(Drawn { at: vec2(x, line.y), galley, text: range, rtl });
         }
     }
@@ -224,7 +256,7 @@ fn split(text: &str, size: f32, max_width: f32, page: Option<notecraft_model::Di
     let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let mut engine = t.try_borrow_mut().ok()?;
-        let layout = engine.layout(&laid, size, Some(max_width));
+        let layout = laid_out(&mut engine, &laid, size, max_width);
         let mut lines = notecraft_text::lines(&layout);
         for line in &mut lines {
             line.text = unmarked(line.text.clone(), shift);
@@ -680,7 +712,7 @@ pub fn step(text: &str, at: usize, right: bool, size: f32, max_width: f32, page:
     let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return at };
-        let layout = engine.layout(&laid, size, Some(max_width));
+        let layout = laid_out(&mut engine, &laid, size, max_width);
         let place = |b: usize| {
             let r = notecraft_text::caret_rect(&layout, notecraft_text::Caret::at(b + shift), 1.0);
             (r.x0, r.y0)
@@ -744,7 +776,7 @@ pub fn word_at(text: &str, at: Vec2, size: f32, max_width: f32, page: Option<not
     let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return 0..0 };
-        let layout = engine.layout(&laid, size, Some(max_width));
+        let layout = laid_out(&mut engine, &laid, size, max_width);
         unmarked(notecraft_text::word_at(&layout, at.x, at.y), shift)
     })
 }
@@ -754,7 +786,7 @@ pub fn hit(text: &str, at: Vec2, size: f32, max_width: f32, page: Option<notecra
     let (laid, shift) = based(text, page);
     TEXT.with(|t| {
         let Ok(mut engine) = t.try_borrow_mut() else { return 0 };
-        let layout = engine.layout(&laid, size, Some(max_width));
+        let layout = laid_out(&mut engine, &laid, size, max_width);
         let index = notecraft_text::caret_at(&layout, at.x, at.y).index().saturating_sub(shift);
         // A click near a letter that carries a haraka can land between the two; the caret
         // belongs before the letter, not inside it.
@@ -1056,5 +1088,53 @@ mod tests {
 
         // A line that was not stretched at all comes back as it was.
         assert_eq!(moved_pieces(&pieces, text, text), pieces);
+    }
+
+    /// A paragraph given a least line height (issue #275) is drawn, measured and clicked on
+    /// with those lines, in the painter that draws right-to-left and mixed paragraphs.
+    #[test]
+    fn a_least_line_height_reaches_the_painter_and_its_hit_tests() {
+        const LONG: &str = "هذا اختبار بسيط لعرض الجمل العربية بشكل صحيح في عمود ضيق جدا حتى تلتف الأسطر";
+        let t = Theme::DEFAULT.tokens();
+        let ctx = ctx_with_fonts();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::fonts::install_once(ui.ctx());
+            let pieces = plain(LONG, 16.0, &t);
+            let (natural, natural_size) = runs(ui, LONG, &pieces, 16.0, 140.0, None);
+            let rows = |drawn: &[Drawn]| {
+                let mut ys: Vec<f32> = drawn.iter().map(|d| d.at.y).collect();
+                ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+                ys
+            };
+            let before = rows(&natural);
+            assert!(before.len() >= 3, "wraps: {before:?}");
+            let own = (natural_size.y / before.len() as f32).max(1.0);
+            {
+                let _floor = floor(own + 12.0);
+                let (tall, tall_size) = runs(ui, LONG, &pieces, 16.0, 140.0, None);
+                let after = rows(&tall);
+                assert_eq!(after.len(), before.len(), "the same lines");
+                assert!(
+                    (tall_size.y - (own + 12.0) * before.len() as f32).abs() < 1.5,
+                    "{} for {} lines of {}",
+                    tall_size.y,
+                    before.len(),
+                    own + 12.0
+                );
+                // The words sit inside the room, and the caret and a click on the second line
+                // are measured against it.
+                assert!(after[0] > before[0] + 4.0, "{after:?} vs {before:?}");
+                let second_start = tall.iter().find(|d| d.at.y > after[0] + 1.0).map(|d| d.text.start).unwrap_or(0);
+                let bar = caret(ui, LONG, &pieces, second_start, 16.0, 140.0, None).expect("a caret");
+                assert!(bar.min.y > after[0] + own * 0.5, "the caret is on the second line: {bar:?} vs {after:?}");
+                let at = hit(LONG, vec2(bar.min.x, bar.min.y + 2.0), 16.0, 140.0, None);
+                assert_eq!(at, second_start, "a click on the second line lands on its first word");
+            }
+            // The guard puts the old floor back when it is dropped.
+            assert_eq!(current_floor(), 0.0);
+            let (again, _) = runs(ui, LONG, &pieces, 16.0, 140.0, None);
+            assert_eq!(rows(&again), before, "nothing is left behind");
+        });
+        frame.textures_delta.clear();
     }
 }
