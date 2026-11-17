@@ -53,26 +53,19 @@ pub(crate) fn line_numbers(lines: usize) -> String {
     (1..=lines).map(|n| format!("{n} |")).collect::<Vec<_>>().join("\n")
 }
 
-fn file_time(path: &Path) -> Option<std::time::SystemTime> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::fs::metadata(path).ok()?.modified().ok()
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = path;
-        None
-    }
-}
-
 fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(String, egui::load::Bytes)> {
     let rel = src.strip_prefix("assets/")?;
     if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
         return None;
     }
     let path = page_dir.join("assets").join(rel);
-    let meta = std::fs::metadata(&path).ok()?;
-    let stamp = (meta.len(), file_time(&path));
+    // Asked every frame for every picture drawn: kept a moment, so a page of printouts on a
+    // synced folder does not ask its mount hundreds of times a frame.
+    let seen = crate::fscache::seen(&path);
+    if !seen.file {
+        return None;
+    }
+    let stamp = (seen.len, seen.modified);
     let cache = ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone());
     let mut cache = cache.lock().ok()?;
     if let Some((had, uri, bytes)) = cache.get(&path)
@@ -968,7 +961,7 @@ pub(crate) fn object_link(block: &Block, page_dir: &std::path::Path) -> Option<S
             if !matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg") {
                 return None;
             }
-            page_dir.join("assets").join(source).is_file().then(|| format!("assets/{source}"))
+            crate::fscache::is_file(&page_dir.join("assets").join(source)).then(|| format!("assets/{source}"))
         }
         _ => None,
     }
@@ -1109,6 +1102,9 @@ mod tests {
         let before = image_reads();
         let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
         std::fs::write(&file, b"a different, longer picture").expect("replaced");
+        // What the window knew about the file is kept a moment (see `fscache`); a change made
+        // by a command lets it go at once, as here, and one made elsewhere shows within the moment.
+        crate::fscache::forget_all();
         let second = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
         assert_eq!(image_reads() - before, 2, "read again once it changed");
         assert_ne!(first.0, second.0, "a new name, so egui does not keep showing the old picture");
