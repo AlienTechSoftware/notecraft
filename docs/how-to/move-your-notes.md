@@ -1,6 +1,8 @@
 # Move your notes in
 
-NoteCraft imports the section files (`.one`) the Office note taking app writes on Windows. It
+NoteCraft imports the section files (`.one`) the Office note taking app writes on Windows,
+both the desktop app's own files and the ones downloaded from OneDrive or written by
+OneNote for Windows 10. It
 reads them, never changes them, and writes a tree of plain folders. Import only: exporting back
 to `.one` is not planned, and your notes are already plain files you can copy.
 

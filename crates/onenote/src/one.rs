@@ -149,22 +149,29 @@ pub fn section(store: &Store) -> Section {
         series_list = root.objects.values().filter(|o| o.kind() == PAGE_SERIES_NODE).collect();
         series_list.sort_by_key(|o| (o.oid.n, o.oid.guid));
     }
+    // The pages: one object space each, with metadata beside them in the same order. Each
+    // series lists some of both. They are paired across the whole section rather than within
+    // each series: a section OneNote saved on OneDrive can list a page's space in one series
+    // and its metadata in the one before, which pairing within a series would give the
+    // following page's title and level. Where every series lists as many of one as of the
+    // other, as desktop files do, both ways give the same pages.
+    let mut spaces: Vec<CompactId> = Vec::new();
+    let mut metas: Vec<CompactId> = Vec::new();
     for series in series_list {
         if series.kind() != PAGE_SERIES_NODE {
             continue;
         }
         let Some(series_props) = series.props() else { continue };
-        // The pages of this series: one object space each, with metadata beside them.
-        let spaces = series_props.object_space_ids(CHILD_GRAPH_SPACE_ELEMENT_NODES);
-        let metas = series_props.object_ids(META_DATA_OBJECTS_ABOVE_GRAPH_SPACE);
-        for (i, space_id) in spaces.iter().enumerate() {
-            if pages.len() >= MAX_PAGES {
-                return Section { pages, recovered, color };
-            }
-            let meta = metas.get(i).and_then(|m| resolve(root, *m)).and_then(Object::props);
-            if let Some(page) = page_of(store, root, *space_id, meta) {
-                pages.push(page);
-            }
+        spaces.extend_from_slice(series_props.object_space_ids(CHILD_GRAPH_SPACE_ELEMENT_NODES));
+        metas.extend_from_slice(series_props.object_ids(META_DATA_OBJECTS_ABOVE_GRAPH_SPACE));
+    }
+    for (i, space_id) in spaces.iter().enumerate() {
+        if pages.len() >= MAX_PAGES {
+            break;
+        }
+        let meta = metas.get(i).and_then(|m| resolve(root, *m)).and_then(Object::props);
+        if let Some(page) = page_of(store, root, *space_id, meta) {
+            pages.push(page);
         }
     }
     Section { pages, recovered, color }

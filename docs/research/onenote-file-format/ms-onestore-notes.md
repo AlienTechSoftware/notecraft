@@ -143,9 +143,37 @@ case. The details of the algorithm are not in the parts read so far.
 ## Alternative packaging (sections 2.7 and 2.8)
 
 The same revision store can travel over the FSSHTTP protocol (OneNote over
-OneDrive and SharePoint) in a different, packaged encoding. This is the form the
-Rust crate `onenote_parser` handles. Desktop files, like the owner's backup, are
-the on-disk revision store described above.
+OneDrive and SharePoint) in a different, packaged encoding. Files downloaded from
+OneDrive and written by OneNote for Windows 10 are in it: the header's
+`guidFileFormat` is `{638DE92F-A6D4-4BC1-9A36-B3FC2511A5B7}` instead of the desktop
+one. Desktop files, like the owner's backup, are the on-disk revision store
+described above.
+
+How NoteCraft reads it (`crates/onenote/src/packaged.rs`, from [MS-ONESTORE] 2.7
+and 2.8 and [MS-FSSHTTPB] 2.2.1):
+
+- After the 64-byte GUID header and 4 reserved bytes: a 32-bit stream object
+  header of type 0x7A, the storage index extended GUID, the cell schema GUID
+  (`{1F937CB4-...}` for a section, `{E4DBFD38-...}` for a table of contents), and
+  one data element package (stream object 0x15).
+- Variable-width fields put their type in the low bits: a compact integer's width
+  is the position of the lowest set bit of its first byte; extended GUIDs and
+  stream object headers likewise.
+- The storage index maps cells (context, object space) to cell manifests and
+  revisions to revision manifests. Only the default context
+  `{84DEFAB9-AAA3-4A0D-A3A8-520C77AC7073}, 1` is read; the header cell is skipped.
+- A cell's current revision and its base revisions are read oldest first, so a
+  later declaration of an object replaces an earlier one. A revision's root
+  declares, `{4A3717F8-...}, role`, give the roots.
+- An object is declared in parts: partition 4 holds its JCID (sent only with its
+  first version), partition 1 its `ObjectSpaceObjectPropSet`, partition 2 (file
+  data objects) a reference to the object data BLOB with the file's bytes.
+- A property's object references take the object's extended GUID array in order;
+  its object space references take the cell ID array (the space is EXGUID2), then
+  its context references the rest (the context is EXGUID1). Section 2.7.8.
+- Real files list a page's space in one page series and its metadata in the
+  series before it. Pages are therefore paired with their metadata across the
+  whole section, not per series.
 
 ## What an importer needs beyond this spec
 

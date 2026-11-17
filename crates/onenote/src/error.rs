@@ -22,6 +22,8 @@ pub enum OneError {
     /// SharePoint, and in files downloaded from there ([MS-ONESTORE] 2.8, carried in
     /// [MS-FSSHTTPB] data elements). This reader reads the desktop revision store only.
     Packaged,
+    /// A file in the OneDrive packaging that could not be read: what went wrong.
+    PackagedUnreadable(String),
 }
 
 impl fmt::Display for OneError {
@@ -38,6 +40,7 @@ impl fmt::Display for OneError {
                 f,
                 "the file is in OneNote's OneDrive packaging (FSSHTTPB), which this reader does not read yet; only the desktop format is read"
             ),
+            OneError::PackagedUnreadable(why) => write!(f, "the file is in OneNote's OneDrive packaging (FSSHTTPB) and could not be read: {why}"),
         }
     }
 }

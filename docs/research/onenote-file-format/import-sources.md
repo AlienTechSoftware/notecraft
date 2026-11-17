@@ -15,7 +15,7 @@ personal data.
 | 3 | Notebooks stored by OneDrive | Not usable as files | Secondary sources say the OneDrive desktop client does not sync notebook files. It leaves a web-link stub (`.url`) in the synced folder. OneNote syncs the notebook with its own logic. |
 | 4 | Cloud access through Microsoft Graph | Later, needs a sign-in app | Secondary sources say app-only access to the OneNote Graph APIs was retired on 2025-03-31. Delegated (signed-in user) access remains. Page content format and fidelity (ink, layout) not checked. |
 | 5 | `.onepkg` export from OneNote | Possible | Wikipedia says it is a CAB archive of `.one` files. Rust CAB support not checked. |
-| 6 | Files downloaded from OneDrive (FSSHTTP packaging) | Possible | The format the Rust crate `onenote_parser` is built for. Not checked whether it matches the cache `.bin` files. |
+| 6 | Files downloaded from OneDrive (FSSHTTP packaging) | Read (issue #19) | [MS-ONESTORE] 2.8 over [MS-FSSHTTPB] data elements, read by `crates/onenote/src/packaged.rs` from Microsoft's specifications. Most of the onenote.rs sample corpus is in this format. Not checked whether it matches the cache `.bin` files. |
 
 ## What the owner's machine shows (structure only)
 
