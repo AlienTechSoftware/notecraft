@@ -31,7 +31,7 @@ document states the default and names the exception.
    still completes is P3 unless measurement shows the experience has
    crossed into a slower latency bucket.
 6. Parity is measured against OneNote. A parity gap in a core OneNote
-   function is P1, because the function is the reason the user is here.
+   scenario is P1, because the scenario is the reason the user is here.
 7. A broken build is a blocker. If the build or the test suite is broken
    on main, that is P0 and it is fixed immediately, before anything
    else. Nothing merges and nothing ships until main is green again.
@@ -64,7 +64,7 @@ Section 10 and summarized here:
 
 - Data loss and crashes are S0, which forces P0 or P1 regardless of
   frequency.
-- A parity issue that fails to reproduce a OneNote P1 function is P1.
+- A parity issue that fails to reproduce a OneNote P1 scenario is P1.
 - A performance issue is P3 by default. Its measured latency percentile
   can raise it to P2 or P1.
 - A broken build or test suite on main is P0. Nothing merges and
@@ -208,7 +208,7 @@ flowchart TD
     D -->|No| P1a["P1: Next release"]
     B -->|No| B2{"Build or tests<br/>broken on main?"}
     B2 -->|Yes| P0c["P0: Fix now"]
-    B2 -->|No| E{"Parity issue failing<br/>a OneNote P1 function?"}
+    B2 -->|No| E{"Parity issue failing<br/>a OneNote P1 scenario?"}
     E -->|Yes| P1b["P1: Next release"]
     E -->|No| F{"Performance issue?"}
     F -->|Yes| G["Measure p95 latency"]
@@ -239,19 +239,23 @@ Crashes are grouped with data loss in S0.
   recover their work after the crash, the severity of future crashes of
   the same kind drops.
 
-### 10.2 Parity issues and OneNote P1 functions
+### 10.2 Parity issues and OneNote P1 scenarios
 
-A parity issue that fails to reproduce a OneNote P1 function is P1.
+A parity issue that fails to reproduce a OneNote P1 scenario is P1.
 
-- A P1 function is a core OneNote function: one the user relies on daily
+- Parity issues are linked to OneNote. Each one reproduces a OneNote
+  scenario: a task the user performs in OneNote.
+- If the scenario is P1 in OneNote, missing it in NoteCraft is a P1
+  issue. P1 in OneNote means a core scenario the user relies on daily
   and would notice immediately if it were missing or broken.
-- Proposed P1 function list (open question, Section 13): text editing,
-  saving, sync, search, and insert. The owner confirms or replaces this
-  list.
-- A parity gap in a P1 function is P1 even if the Severity and Frequency
+- The P1 scenario list is decided by the owner, not assumed. Until the
+  owner confirms the list, a parity issue whose scenario is not clearly
+  P1 is scored normally through Impact and Urgency, and the question is
+  raised at triage.
+- A parity gap in a P1 scenario is P1 even if the Severity and Frequency
   scores alone would give P2. Parity is the product promise, and a gap in
-  a core function breaks that promise directly.
-- A parity gap in a function outside the P1 list is scored normally
+  a core scenario breaks that promise directly.
+- A parity gap in a scenario outside the P1 list is scored normally
   through Impact and Urgency. Most such gaps land at P2 or P3.
 - A parity issue that also loses data or crashes is scored under
   Section 10.1, not here. Data loss outranks parity.
@@ -452,8 +456,8 @@ as of 2026-11-17 and will change as the issues change.
 These points are proposed in this document and need an owner decision
 before the system is adopted.
 
-1. P1 function list. Which OneNote functions count as P1? Proposed:
-   text editing, saving, sync, search, and insert.
+1. P1 scenario list. Which OneNote scenarios count as P1? The owner
+   decides. No list is assumed.
 2. B1 name. "Responsive" is proposed for the 1-3 second bucket.
 3. B2 range. B2 was extended from 5-10 seconds to 3-10 seconds to close
    the gap between B1 and B2. Confirm the range.
