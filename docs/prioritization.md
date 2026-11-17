@@ -32,6 +32,9 @@ document states the default and names the exception.
    crossed into a slower latency bucket.
 6. Parity is measured against OneNote. A parity gap in a core OneNote
    function is P1, because the function is the reason the user is here.
+7. A broken build is a blocker. If the build or the test suite is broken
+   on main, that is P0 and it is fixed immediately, before anything
+   else. Nothing merges and nothing ships until main is green again.
 
 ## 3. The model at a glance
 
@@ -56,7 +59,7 @@ Reading the chart:
 - Low Impact and High Urgency is P2. Planned backlog, ahead of P3.
 - Low Impact and Low Urgency is P3. Someday.
 
-Three special rules override the matrix. They are stated in full in
+Four special rules override the matrix. They are stated in full in
 Section 10 and summarized here:
 
 - Data loss and crashes are S0, which forces P0 or P1 regardless of
@@ -64,6 +67,8 @@ Section 10 and summarized here:
 - A parity issue that fails to reproduce a OneNote P1 function is P1.
 - A performance issue is P3 by default. Its measured latency percentile
   can raise it to P2 or P1.
+- A broken build or test suite on main is P0. Nothing merges and
+  nothing ships until main is green again.
 
 ## 4. Severity
 
@@ -148,7 +153,7 @@ this waits?
 
 | Level | Name | Definition |
 |-------|------|------------|
-| U3 | Blocking | Blocks a release, is a regression in the current release, or is a security defect with live exposure. Waiting has a concrete cost now. |
+| U3 | Blocking | Blocks a release, is a regression in the current release, is a security defect with live exposure, or is a broken build or test suite on main. Waiting has a concrete cost now. |
 | U2 | Rising | Users are reporting it now, reports are growing, or a deadline depends on it. Waiting makes it worse. |
 | U1 | None | No time pressure. The issue has waited this long without getting worse, and waiting longer changes nothing. |
 
@@ -201,7 +206,9 @@ flowchart TD
     C --> D{"Reproducible on<br/>a common path?"}
     D -->|Yes| P0["P0: Fix now"]
     D -->|No| P1a["P1: Next release"]
-    B -->|No| E{"Parity issue failing<br/>a OneNote P1 function?"}
+    B -->|No| B2{"Build or tests<br/>broken on main?"}
+    B2 -->|Yes| P0c["P0: Fix now"]
+    B2 -->|No| E{"Parity issue failing<br/>a OneNote P1 function?"}
     E -->|Yes| P1b["P1: Next release"]
     E -->|No| F{"Performance issue?"}
     F -->|Yes| G["Measure p95 latency"]
@@ -299,6 +306,25 @@ flowchart TD
     D -->|No| P1["Rises to P1"]
 ```
 
+### 10.4 Build and test breaks
+
+A broken build or test suite on main is P0.
+
+- It is a blocker by definition. Nothing can merge and nothing can ship
+  until main is green again.
+- It is fixed immediately, ahead of all other work. If a data-loss fix
+  is also in progress, both are P0 and both are worked at once.
+- The matrix already gives P0: Severity is S1 (merging and shipping are
+  impossible), Frequency is F3 (every contributor is affected), so
+  Impact is High, and Urgency is U3. This rule states it explicitly so
+  there is no debate at triage.
+- A broken build on a feature branch is not P0. It blocks one branch,
+  not the project. It is scored normally, usually P1 or P2 depending on
+  what the branch carries.
+- A flaky test that fails intermittently on main is P1 until it is
+  shown to be a real break, then P0. Flakes hide real breaks, so they
+  are not P3.
+
 ## 11. Labels and triage process
 
 ### Labels
@@ -395,6 +421,15 @@ as of 2026-11-17 and will change as the issues change.
 - Impact: Medium. S2 at F1 is Medium.
 - Urgency: U1. No time pressure.
 - Priority: P2. Medium Impact with U1.
+
+### Hypothetical: CI fails on main
+
+- Severity: S1. Merging and shipping are impossible. No user content is
+  at risk.
+- Frequency: F3. Every contributor is blocked.
+- Impact: High. S1 at F3 is High.
+- Urgency: U3. It blocks all work.
+- Priority: P0. Fixed immediately, before anything else.
 
 ### Hypothetical: crash on save that loses the page
 
