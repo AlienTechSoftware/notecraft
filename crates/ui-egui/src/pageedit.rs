@@ -2492,6 +2492,8 @@ pub fn show_blocks(
                     } else {
                         action = adjacent_writable(blocks, i, true, shown_title).map(Action::MoveStart);
                     }
+                } else if multiline && left && selection.is_some_and(|(a, b)| a == 0 && b == 0) {
+                    action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
                 } else if right {
                     let at_end = selection.is_some_and(|(a, b)| a == b && a == c.text.chars().count());
                     let boundary = ui.data(|data| data.get_temp::<(usize, usize)>(image_boundary_id()));

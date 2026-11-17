@@ -10454,6 +10454,12 @@ fn down_into_a_code_block_lands_at_its_first_line() {
     for _ in 0..4 {
         pump(&mut h);
     }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the code block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("```123|rust\n\nline one\nline two\n```"), "Down did not land at the start of the first line:\n{file}");
 }
@@ -10474,6 +10480,16 @@ fn up_from_the_first_line_leaves_a_code_block_with_lines_above_it() {
     ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
     for _ in 0..4 {
         pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    for _ in 0..2 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+        for _ in 0..4 {
+            pump(&mut h);
+        }
     }
     ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("up");
     for _ in 0..6 {
@@ -10523,6 +10539,14 @@ fn up_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
     for _ in 0..4 {
         pump(&mut h);
     }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
     ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("up");
     for _ in 0..4 {
         pump(&mut h);
@@ -10530,6 +10554,12 @@ fn up_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
     ask(&mut h, "ui.text", json!({"text": "X"})).expect("type");
     for _ in 0..4 {
         pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the paragraph so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("Para two.X"), "Up did not land at the end of the paragraph above:\n{file}");
@@ -10551,6 +10581,14 @@ fn left_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
     for _ in 0..4 {
         pump(&mut h);
     }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
     ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
     for _ in 0..4 {
         pump(&mut h);
@@ -10558,6 +10596,12 @@ fn left_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
     ask(&mut h, "ui.text", json!({"text": "Y"})).expect("type");
     for _ in 0..4 {
         pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the paragraph so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("Para two.Y"), "Left did not land at the end of the paragraph above:\n{file}");
