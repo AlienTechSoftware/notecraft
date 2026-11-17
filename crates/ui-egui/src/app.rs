@@ -1564,7 +1564,7 @@ impl NoteCraftApp {
 
     fn choose_default_notebooks_folder(&mut self) {
         // The dialog opens where the notebooks are now, not in Documents.
-        let Some(picked) = pick_notebooks_folder(&self.session.root().to_path_buf()) else {
+        let Some(picked) = pick_notebooks_folder(self.session.root()) else {
             return;
         };
         self.apply_notebooks_root_choice(Some(&picked));
@@ -11288,6 +11288,24 @@ mod alert_tests {
 
         assert_eq!(app.session().root(), std::fs::canonicalize(&chosen).expect("canonical").as_path(), "the window moves to the chosen folder");
         assert_eq!(settings.get("last_notebooks_root"), Some(chosen.to_string_lossy().into_owned()), "the choice is remembered");
+    }
+
+    #[test]
+    fn after_a_change_the_window_lists_the_notebooks_in_the_new_folder() {
+        let t = notecraft_store::testing::TempDir::new("notebooks-folder-list");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let mut app = NoteCraftApp::new(session);
+        let chosen = t.path().join("chosen");
+        notecraft_store::ops::create_notebook(&chosen, "Research", None, &settings).expect("a notebook in the chosen folder");
+
+        app.apply_notebooks_root_choice(Some(&chosen));
+
+        assert!(
+            app.session().tree().iter().any(|n| n.path.ends_with("research")),
+            "the notebook in the chosen folder is listed at once, not after a restart"
+        );
     }
 
     #[test]

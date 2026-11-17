@@ -204,6 +204,13 @@ mod tests {
     }
 
     #[test]
+    fn a_debug_build_never_resets_to_the_production_folder() {
+        if cfg!(debug_assertions) {
+            assert_ne!(build_default_notebooks_dir(), default_notebooks_dir(), "a dev build resets to my-notebooks, not Documents");
+        }
+    }
+
+    #[test]
     fn a_cleared_notebooks_root_means_the_default_folder() {
         let t = TempDir::new("settings-notebook-root-cleared");
         let s = Settings::at(t.path().join("settings.toml"));
