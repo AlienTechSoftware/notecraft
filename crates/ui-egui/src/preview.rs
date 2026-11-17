@@ -633,10 +633,10 @@ pub fn show_zoomed(
         let resp = out.response;
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
-            && let Some(href) = crate::pageedit::link_under(ui, block, &resp, p, tokens, page)
+            && let Some(href) = crate::pageedit::link_under(ui, block, &resp, p, tokens, page, zoom)
         {
             link = Some(href);
-        } else if resp.hovered() && resp.hover_pos().and_then(|p| crate::pageedit::link_under(ui, block, &resp, p, tokens, page)).is_some() {
+        } else if resp.hovered() && resp.hover_pos().and_then(|p| crate::pageedit::link_under(ui, block, &resp, p, tokens, page, zoom)).is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
     }

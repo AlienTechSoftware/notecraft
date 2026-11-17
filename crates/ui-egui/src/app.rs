@@ -1179,6 +1179,12 @@ pub struct NoteCraftApp {
     collect_pending: bool,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
+    /// The part of the page the window shows, and how far the page's content reaches sideways on
+    /// screen, as last drawn: where a pinch or a wheel acts on the page, and how far a sideways
+    /// wheel may pan it. `page_rect` is one view tall from the top of the page, which a page
+    /// scrolled down leaves above the window.
+    page_view: Option<egui::Rect>,
+    page_hspan: Option<(f32, f32)>,
     /// The page ScrollArea's vertical bar hit strip from last frame, kept out of the ink layer.
     page_scroll_strip: Option<egui::Rect>,
     /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
@@ -1396,6 +1402,8 @@ impl NoteCraftApp {
             canvas_pan: egui::Vec2::ZERO,
             collect_pending: false,
             page_hbar: None,
+            page_view: None,
+            page_hspan: None,
             page_scroll_strip: None,
             space_tool: false,
             ruler: false,
@@ -8478,7 +8486,9 @@ impl NoteCraftApp {
         if modifiers.shift {
             return egui::vec2(delta.y, 0.0);
         }
-        if canvas_pan_enabled { delta } else { egui::Vec2::ZERO }
+        // With the caret's pointer the page's own scroll bar takes the wheel up and down, and a
+        // sideways swipe pans the page sideways, as the horizontal scroll bar does.
+        if canvas_pan_enabled { delta } else { egui::vec2(delta.x, 0.0) }
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
@@ -8493,7 +8503,8 @@ impl NoteCraftApp {
                 self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
             }
         }
-        let page_input_rect = self.page_rect;
+        // Where a pinch or a wheel acts on the page: the part of it the window shows.
+        let page_input_rect = self.page_view.or(self.page_rect);
         let wheel_canvas_pan_enabled = self.pointer != ribbon::Pointer::Write;
         if self.editor.is_some() && !self.show_source {
             // Draw > Panning Hand: the main button drags the page as the middle one always does
@@ -8521,6 +8532,12 @@ impl NoteCraftApp {
                 self.canvas_pan += wheel;
                 self.canvas_pan.x = self.canvas_pan.x.clamp(-1.0e6, 1.0e6);
                 self.canvas_pan.y = self.canvas_pan.y.clamp(-1.0e6, 1.0e6);
+            } else if wheel.x != 0.0
+                && let (Some(span), Some(view)) = (self.page_hspan, self.page_view)
+                && let Some(thumb) = crate::hscroll::thumb(span, (view.min.x, view.max.x), view.width())
+            {
+                // Sideways, as far as the page reaches past the view and no further, as the bar.
+                self.canvas_pan.x += crate::hscroll::clamp_pan(wheel.x, &thumb);
             }
             if middle_pressed {
                 self.canvas_drag = pointer;
@@ -9024,6 +9041,8 @@ impl NoteCraftApp {
                     .then(|| egui::Rect::from_x_y_ranges((max_cross - scroll_style.bar_width)..=max_cross, shown.inner_rect.y_range()));
                 // Sideways the page is a canvas: when what is on it reaches past the view's
                 // sides, a bar along the bottom shows it and moves the canvas (issue #188).
+                self.page_view = Some(shown.inner_rect);
+                self.page_hspan = page_span;
                 if let Some(span) = page_span {
                     let view = shown.inner_rect;
                     let vertical = shown.content_size.y > view.height() + 0.5;

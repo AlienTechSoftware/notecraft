@@ -5686,6 +5686,98 @@ fn a_selection_box_shows_what_it_takes_and_ctrl_click_leaves_a_box_out() {
     assert_eq!(back["page"]["containers"].as_array().map_or(0, Vec::len), 1, "and the box is as it was: {}", back["page"]);
 }
 
+/// A click in the words puts the caret under the pointer at any zoom. The words are drawn at their
+/// size times the zoom, but the click was measured against them at their own size, so zoomed in
+/// the caret landed further along the line than the pointer, and zoomed out short of it.
+#[test]
+fn a_click_puts_the_caret_under_the_pointer_when_zoomed_in() {
+    let (_t, app, s) = sample_app("ui-zoomed-click");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\" style=\"position:absolute;left:0px;top:0px;width:400px\">\n<p>hello world and more</p>\n</div>\n";
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Zoomed click", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let caret_after_click = |h: &mut Harness<'_, NoteCraftApp>, rel: egui::Vec2| {
+        let page = ask(h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
+        let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
+        ask(h, "ui.click", json!({"x": ox + rel.x, "y": oy + rel.y})).expect("click the words");
+        settle(h);
+        let caret = ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["caret"].clone();
+        ask(h, "ui.key", json!({"key": "Escape"})).expect("leave");
+        settle(h);
+        caret["at"].as_u64().unwrap_or(u64::MAX)
+    };
+    let at_100 = caret_after_click(&mut h, egui::vec2(57.0, 18.0));
+    assert!(at_100 > 0 && at_100 < 18, "at 100 % the click is inside the words: {at_100}");
+    h.get_by_label("View").click();
+    settle(&mut h);
+    for _ in 0..10 {
+        h.get_by_label("Zoom In").click();
+        settle(&mut h);
+    }
+    let zoom = h.state().zoom_percent() as f32 / 100.0;
+    assert!((zoom - 2.0).abs() < 0.01, "zoomed to 200 %: {zoom}");
+    let at_200 = caret_after_click(&mut h, egui::vec2(57.0, 18.0) * zoom);
+    assert!(at_200.abs_diff(at_100) <= 1, "the same place on the page puts the caret at the same letter: {at_100} at 100 %, {at_200} at 200 %");
+}
+
+/// Pinch zoom and sideways panning work wherever the pointer is over the page, however far down
+/// it is scrolled. They answered only over a rectangle one view tall from the top of the page,
+/// which a page scrolled down had left above the window, so they seemed to stop working until
+/// another page was opened.
+#[test]
+fn pinch_zoom_and_panning_work_low_in_a_scrolled_page() {
+    let (_t, app, s) = sample_app("ui-gestures-scrolled");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n} of a long printout</p>")).collect();
+    // A box far to the right, past the window's edge, so there is somewhere to pan to.
+    let html = format!(
+        "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"760\">{lines}</div>\n<div class=\"nc-box\" data-x=\"1500\" data-y=\"1400\" data-width=\"600\"><p>far right</p></div>\n"
+    );
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Gestures", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 400.0})).expect("pointer onto the page");
+    settle(&mut h);
+    for _ in 0..4 {
+        ask(&mut h, "ui.scroll", json!({"y": -400.0})).expect("scroll down");
+        settle(&mut h);
+    }
+    let oy = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"][1].as_f64().unwrap_or(0.0);
+    assert!(oy < -800.0, "the page is scrolled well down: {oy}");
+    // Low in the window, over the page.
+    ask(&mut h, "ui.move", json!({"x": 800.0, "y": 700.0})).expect("pointer low on the page");
+    settle(&mut h);
+    let before = h.state().zoom_percent();
+    h.input_mut().events.push(egui::Event::Zoom(1.5));
+    settle(&mut h);
+    assert!(h.state().zoom_percent() > before, "a pinch there zooms: {before} -> {}", h.state().zoom_percent());
+    let offset =
+        |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["canvas"]["viewOffset"][0].as_f64().unwrap_or(0.0);
+    let x0 = offset(&mut h);
+    ask(&mut h, "ui.scroll", json!({"y": -120.0, "shift": true})).expect("scroll sideways");
+    settle(&mut h);
+    assert!((offset(&mut h) - x0).abs() > 10.0, "and a sideways scroll there pans: {x0} -> {}", offset(&mut h));
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
