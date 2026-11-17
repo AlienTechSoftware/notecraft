@@ -727,12 +727,12 @@ mod tests {
     }
 
     /// Issue #17: a package is unpacked and imported as a folder of sections named after it.
-    /// No bridge is installed for the test, so every section fails; the reported destination is
-    /// still named after the package, and the failed run leaves nothing behind (issue #347).
+    /// The test machine may or may not have the optional bridge installed.
     #[test]
     fn a_package_is_unpacked_and_its_sections_imported_as_a_folder() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/3p/officeimo/makecab-lzx-notebook.onepkg");
         let out = notecraft_store::testing::TempDir::new("officeimo-onepkg");
+        let bridge_available = locate().is_ok();
         let mut seen = Vec::new();
         let mut destination = None;
         let result = run_with_progress(&source, out.path(), Format::Html, &AtomicBool::new(false), &mut |p| {
@@ -741,11 +741,11 @@ mod tests {
             }
             seen.push(format!("{p:?}"));
         });
-        assert!(result.is_err(), "no bridge is available for the package's section");
+        assert_eq!(result.is_ok(), bridge_available, "package import outcome should match bridge availability: {result:?}");
         assert!(seen.first().is_some_and(|p| p.contains("Found { total: 1 }")), "the package's one section was found: {seen:?}");
         assert!(seen.iter().any(|p| p.contains("Compressed section.one")), "{seen:?}");
         assert_eq!(destination, Some(out.path().join("makecab-lzx-notebook")), "the notebook is named after the package");
-        assert!(!out.path().join("makecab-lzx-notebook").exists(), "a failed import leaves no empty notebook");
+        assert_eq!(out.path().join("makecab-lzx-notebook").exists(), bridge_available, "only a successful import leaves the notebook folder");
     }
 
     /// Issue #347: a folder of sections that all fail to convert must not leave a notebook with
