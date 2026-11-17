@@ -16,6 +16,8 @@ pub struct Session {
     closed: Vec<PathBuf>,
     pub settings: Settings,
     tree: Vec<Node>,
+    /// The content explicitly prepared for review; writes always use this exact snapshot.
+    pub(crate) export: Option<notecraft_store::export::Prepared>,
 }
 
 /// How the settings file keeps the list. A vertical bar cannot appear in a Windows path and
@@ -37,13 +39,17 @@ impl Session {
             settings.get(OPEN_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
         let closed =
             settings.get(CLOSED_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default();
-        let mut s = Session { root, extra, closed, settings, tree: Vec::new() };
+        let mut s = Session { root, extra, closed, settings, tree: Vec::new(), export: None };
         s.refresh();
         Ok(s)
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn reviewed_export(&self) -> Option<&notecraft_store::export::Prepared> {
+        self.export.as_ref()
     }
 
     /// The notebooks, as last read from disk. Commands that change the tree refresh it.

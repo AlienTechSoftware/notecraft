@@ -100,6 +100,35 @@ fn node_copy(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::copy_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
 }
 
+fn export_prepare(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    s.export = None;
+    let node = s.resolve(req(p, "path")?)?;
+    let snapshot_path = p.get("snapshot_path").map(|path| s.resolve(path)).transpose()?;
+    let snapshot = match (snapshot_path.as_deref(), p.get("body")) {
+        (Some(path), Some(body)) => Some(notecraft_store::export::Snapshot { path, body, ink: p.get("ink").map(String::as_str) }),
+        (None, None) => None,
+        _ => return Err(EngineError::BadParam("snapshot_path and body must be supplied together".into())),
+    };
+    let prepared = notecraft_store::export::prepare(&node, snapshot)?;
+    let summary = serde_json::json!({
+        "title": prepared.title, "pages": prepared.pages, "bytes": prepared.bytes,
+        "files": prepared.files, "formats": prepared.formats,
+        "dependencies": prepared.dependencies, "externalLinks": prepared.warnings,
+    });
+    s.export = Some(prepared);
+    Ok(Output::Text(summary.to_string()))
+}
+
+fn export_write(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let prepared = s.export.as_ref().ok_or_else(|| EngineError::BadParam("review an export before writing it".into()))?;
+    Ok(Output::Path(prepared.write(std::path::Path::new(req(p, "folder")?))?))
+}
+
+fn export_cancel(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
+    s.export = None;
+    Ok(Output::None)
+}
+
 fn page_templates_list(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(page_templates::describe(&page_templates::list(s.root()))))
 }
@@ -487,6 +516,19 @@ to (required): where the copy goes; it is put last there, and every node in it g
         run: node_copy,
     },
     CommandSpec {
+        id: "export.prepare", label: "Review portable export",
+        params: "path (required): page, section, group or notebook\nsnapshot_path (optional): open page inside this scope\nbody (optional): unsaved body paired with snapshot_path, in its original format\nink (optional): changed live ink.svg paired with the editor snapshot",
+        changes_tree: false, run: export_prepare,
+    },
+    CommandSpec {
+        id: "export.write", label: "Write reviewed export",
+        params: "folder (required): existing destination outside the source notebook; creates a new export folder without overwriting",
+        changes_tree: false, run: export_write,
+    },
+    CommandSpec {
+        id: "export.cancel", label: "Cancel export", params: "", changes_tree: false, run: export_cancel,
+    },
+    CommandSpec {
         id: "page.templates",
         label: "List the page templates, built in and saved: one line each, with the id, the category and the name, separated by tabs",
         params: "",
@@ -762,6 +804,41 @@ mod tests {
     use super::*;
     use notecraft_store::Settings;
     use notecraft_store::testing::TempDir;
+
+    /// A reviewed export is independent of later source edits and cancellation writes nothing.
+    #[test]
+    fn portable_export_reviews_snapshots_and_cancels_without_writing() {
+        let t = TempDir::new("portable-command");
+        let mut s = session(&t);
+        let nb = path_of(s.run("notebook.create", &p(&[("name", "Travel")])).expect("notebook"));
+        let page = nb.join("new-section-1/untitled-page");
+        let file = page.join("index.html");
+        let before = std::fs::read(&file).expect("source");
+        let path = page.to_string_lossy().to_string();
+        let out = t.path().join("out");
+        std::fs::create_dir(&out).expect("destination");
+        let dest = out.to_string_lossy().to_string();
+        let ink = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"https://notecraft.org/ns/ink\"><path d=\"M0 0 L2 2\"/></svg>";
+        s.run(
+            "export.prepare",
+            &p(&[("path", &path), ("snapshot_path", &path), ("body", "<p><strong>Unsaved</strong></p><img src=\"ink.svg\">"), ("ink", ink)]),
+        )
+        .expect("prepare");
+        assert_eq!(std::fs::read_dir(&out).expect("out").count(), 0);
+        assert_eq!(std::fs::read(&file).expect("source"), before);
+        page::save_body(&page, "<p>Later edit</p>").expect("later");
+        let exported = path_of(s.run("export.write", &p(&[("folder", &dest)])).expect("write"));
+        assert_eq!(std::fs::read_to_string(exported.join("new-section-1/untitled-page/ink.svg")).expect("unsaved ink"), ink);
+        assert!(!page.join("ink.svg").exists(), "the live drawing was not saved to the source");
+        assert!(page::load_page(&exported.join(page.strip_prefix(&nb).expect("relative"))).expect("reopen").body.contains("Unsaved"));
+        assert!(page::load_page(&page).expect("source").body.contains("Later edit"));
+        let again = path_of(s.run("export.write", &p(&[("folder", &dest)])).expect("collision safe"));
+        assert_ne!(exported, again);
+        s.run("export.cancel", &Params::new()).expect("cancel");
+        assert!(s.run("export.write", &p(&[("folder", &dest)])).is_err());
+        assert!(s.run("export.prepare", &p(&[("path", &path), ("snapshot_path", "../outside"), ("body", "bad")])).is_err());
+        assert!(s.run("export.write", &p(&[("folder", &dest)])).is_err());
+    }
 
     #[test]
     fn commands_doc_matches_the_registry() {

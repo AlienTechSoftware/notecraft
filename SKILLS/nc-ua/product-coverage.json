@@ -7,6 +7,18 @@
   "coverage_values": ["verified", "demonstrated", "not_covered", "stale", "unknown"],
   "features": [
     {
+      "id": "portable-export-sharing",
+      "name": "Review portable folders through Export, Share and Send Page",
+      "product_status": "implemented",
+      "discoverability": "file-export-file-share-home-send-page-and-docs/portable-export.md",
+      "demo": "not_covered",
+      "redmesa": "unknown",
+      "online": "unknown",
+      "verification_path": "cargo test -p notecraft-ui-egui --test ui portable_export_",
+      "limitation": "Original HTML/CMGFM only. Native share sheets use a visible save-and-share fallback. Download-enabled hosts receive ZIP. Outside or missing local references stop preparation.",
+      "notes": "Transient review and handoff are verified through engine and UI tests instead of authored demo content. Windows tests cover preparation, cancellation, Back, keyboard activation, accessible narrow light/dark layouts, source preservation, desktop output and browser ZIP delivery. Store tests export both complete official demo editions. RedMesa and deployed online builds were not checked."
+    },
+    {
       "id": "page-search",
       "name": "Search open notebooks and navigate results",
       "product_status": "partial",

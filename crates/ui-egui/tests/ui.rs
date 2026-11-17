@@ -41,6 +41,146 @@ fn press_copy(h: &mut Harness<'_, NoteCraftApp>, board: &MemoryBoard, key: &str)
 const LIGHT: Theme = Theme { mode: Mode::Light, accent: Accent::Default };
 const DARK: Theme = Theme { mode: Mode::Dark, accent: Accent::Default };
 
+/// The three entry points share a review surface and never export just by opening it.
+#[test]
+fn portable_export_share_and_send_page_require_review() {
+    let _pixels = support::gui::pixel_test();
+    for entry in ["Export", "Share", "Send Page"] {
+        let (t, mut app, sample) = sample_app("portable-entry");
+        app.open_path(&sample.html_page.to_string_lossy());
+        let before = std::fs::read(sample.html_page.join("index.html")).expect("source");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 1000.0));
+        settle(&mut h);
+        if entry != "Send Page" {
+            h.get_by_label("File").click();
+            settle(&mut h);
+        }
+        h.get_by_label(entry).click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Review export").count() > 0, "{entry} must open export review");
+        h.get_by_label("Review export").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Write reviewed export").count() > 0);
+        review(&mut h, &format!("portable-{}", entry.replace(' ', "-")));
+        assert_eq!(std::fs::read(sample.html_page.join("index.html")).expect("source"), before);
+        h.get_by_label("Cancel export").click();
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("Write reviewed export").count(), 0);
+        assert!(!t.path().join("export").exists());
+    }
+}
+
+#[test]
+fn portable_export_writes_the_reviewed_section_and_download_hosts_get_the_same_files() {
+    for download in [false, true] {
+        let (t, mut app, sample) = sample_app("portable-write");
+        app.open_path(&sample.md_page.to_string_lossy());
+        if download {
+            app.enable_file_downloads();
+        }
+        let out = t.path().join("exports");
+        std::fs::create_dir(&out).expect("destination");
+        let section = sample.md_page.parent().expect("section");
+        let section_title = notecraft_store::tree::read_node(section).expect("section").title;
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1000.0));
+        settle(&mut h);
+        h.get_by_label("File").click();
+        settle(&mut h);
+        h.get_by_label("Export").click();
+        settle(&mut h);
+        h.get_by_label(&format!("This section: {section_title}")).click();
+        settle(&mut h);
+        if !download {
+            h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Export destination folder").click();
+            settle(&mut h);
+            h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Export destination folder").type_text(&out.to_string_lossy());
+            settle(&mut h);
+        }
+        h.get_by_label("Review export").click();
+        settle(&mut h);
+        assert!(h.state_mut().take_file_downloads().is_empty());
+        assert_eq!(std::fs::read_dir(&out).expect("not yet").count(), 0);
+        h.get_by_label("Write reviewed export").click();
+        settle(&mut h);
+        if download {
+            let downloads = h.state_mut().take_file_downloads();
+            assert_eq!(downloads.len(), 1);
+            assert_eq!(downloads[0].mime, "application/zip");
+            let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&downloads[0].bytes)).expect("portable ZIP");
+            assert!(zip.len() > 2);
+            let md = zip.file_names().find(|n| n.ends_with("index.md")).expect("CMGFM page").to_string();
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut zip.by_name(&md).expect("page"), &mut text).expect("body");
+            assert!(text.contains("plain files"));
+            assert!(h.state_mut().take_file_downloads().is_empty(), "host output is delivered once");
+            assert_eq!(std::fs::read_dir(&out).expect("no disk writes").count(), 0);
+        } else {
+            let container = std::fs::read_dir(&out).expect("output").next().expect("export folder").expect("entry").path();
+            let notebook = std::fs::read_dir(&container).expect("container").next().expect("notebook").expect("entry").path();
+            assert_eq!(notecraft_store::tree::read_node(&notebook).expect("independent notebook").kind, notecraft_model::NodeKind::Notebook);
+            assert!(!notebook.join(".notecraft").exists());
+        }
+    }
+}
+
+#[test]
+fn portable_export_back_discards_the_reviewed_snapshot() {
+    let (_t, mut app, sample) = sample_app("portable-back");
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Export").click();
+    settle(&mut h);
+    h.get_by_label("Review export").click();
+    settle(&mut h);
+    assert!(h.state().session().reviewed_export().is_some());
+    h.state_mut().session_mut().run("export.cancel", &Params::new()).expect("drop snapshot while the Review button keeps focus");
+    h.get_by_label("Review export").focus();
+    settle(&mut h);
+    h.key_press(egui::Key::Space);
+    settle(&mut h);
+    assert!(h.state().session().reviewed_export().is_some(), "the focused Review button supports keyboard activation");
+    assert!(h.state_mut().system_back());
+    settle(&mut h);
+    assert!(h.state().session().reviewed_export().is_none(), "Back must discard retained outgoing content");
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Export").click();
+    settle(&mut h);
+    h.get_by_label("Review export").click();
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.state().session().reviewed_export().is_none(), "Escape must discard the review too");
+    assert_eq!(h.query_all_by_label("Write reviewed export").count(), 0, "Escape returns to the page");
+}
+
+#[test]
+fn portable_export_review_is_accessible_in_a_narrow_window_in_light_and_dark() {
+    let _pixels = support::gui::pixel_test();
+    for theme in [LIGHT, DARK] {
+        let (_t, mut app, sample) = sample_app("portable-accessibility");
+        app.open_path(&sample.md_page.to_string_lossy());
+        app.set_theme(theme);
+        app.open_backstage_page("Export");
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(820.0, 760.0))
+            .with_accessibility_check(true)
+            .renderer(support::gui::renderer())
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        settle(&mut h);
+        h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Export destination folder");
+        h.get_by_label("Review export").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Write reviewed export").count() > 0);
+        h.get_by_label("Page text preview").click();
+        settle(&mut h);
+        review(&mut h, &format!("portable-narrow-{}", theme.id()));
+    }
+}
+
 // The system clipboard is shared by parallel UI tests, even when each test has its own window.
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
