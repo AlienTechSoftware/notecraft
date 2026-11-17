@@ -122,7 +122,9 @@ the window. Where real files differ from the specification, see
 section file at a time, so memory is bounded by the largest file, and a file that cannot be
 read costs that file and not the run. The tree it writes comes from `store` (notebook, section
 group, section, page, and sub-pages nested to any depth), and the pages from `formats`, so an
-imported page is the same as a typed one. Run it with `notecraft-cli import onenote`; see
+imported page is the same as a typed one. The window's Import runs it through
+`import::notebook`, which brings one notebook folder in as one notebook and hands only the
+sections it cannot read to the OfficeIMO bridge. Run it with `notecraft-cli import onenote`; see
 [`how-to/move-your-notes.md`](how-to/move-your-notes.md).
 
 The optional OfficeIMO path is an external bridge, not a Rust dependency. The resolver looks

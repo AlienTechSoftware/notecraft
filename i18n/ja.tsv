@@ -460,7 +460,6 @@
 @id	ui.office_document	オフィス文書
 @id	ui.office_text_inspection	オフィステキストの検査
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO インポートワーカーが予期せず停止しました
 @id	ui.ok	OK
 @id	ui.one_tree_of_notebooks	ノートブックの単一ツリー
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive および SharePoint: 構築されていません。NoteCraft をすでに同期ツールが監視しているフォルダを指すように設定すると、同じようになります。
@@ -634,7 +633,6 @@
 @id	ui.standard	標準
 @id	ui.standard_ruled	罫線付き標準
 @id	ui.star	星
-@id	ui.starting_officeimo	OfficeIMOを起動中…
 @id	ui.stencils	ステンシル
 @id	ui.strike_through	取り消し線
 @id	ui.strikethrough	取り消し線

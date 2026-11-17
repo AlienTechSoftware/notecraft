@@ -461,7 +461,6 @@
 @id	ui.office_document	Office 文档
 @id	ui.office_text_inspection	Office 文本检查
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO 导入进程意外停止
 @id	ui.ok	确定
 @id	ui.one_tree_of_notebooks	一个笔记本树
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive 和 SharePoint：未内置。将 NoteCraft 指向同步工具已监控的文件夹即可实现相同效果。
@@ -637,7 +636,6 @@
 @id	ui.standard	标准
 @id	ui.standard_ruled	标准横线
 @id	ui.star	星形
-@id	ui.starting_officeimo	正在启动 OfficeIMO…
 @id	ui.stencils	模板
 @id	ui.strike_through	删除线
 @id	ui.strikethrough	删除线

@@ -460,7 +460,6 @@
 @id	ui.office_document	מסמך אופיס
 @id	ui.office_text_inspection	בדיקת טקסט אופיס
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	עובד הייבוא OfficeIMO הופסק באופן בלתי צפוי
 @id	ui.ok	אישור
 @id	ui.one_tree_of_notebooks	עץ מחברות אחד
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive ו-SharePoint: טרם נבנו. הפנה את NoteCraft לתיקייה שכבר מופקחת על ידי כלי הסינכרון שלך והיא תהיה אותו הדבר.
@@ -634,7 +633,6 @@
 @id	ui.standard	סטנדרטי
 @id	ui.standard_ruled	סטנדרטי עם שורות
 @id	ui.star	כוכב
-@id	ui.starting_officeimo	טוען את OfficeIMO…
 @id	ui.stencils	סטנסילים
 @id	ui.strike_through	קו חוצה
 @id	ui.strikethrough	קו חוצה

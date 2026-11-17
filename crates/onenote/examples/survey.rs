@@ -143,6 +143,7 @@ fn main() {
                     OneError::Corrupt(_) => "corrupt",
                     OneError::Encrypted => "encrypted",
                     OneError::TooLarge(_) => "too-large",
+                    OneError::Packaged => "packaged",
                 };
                 *errs.entry(kind.to_string()).or_default() += 1;
                 let msg: String = e.to_string().chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();

@@ -460,7 +460,6 @@
 @id	ui.office_document	سند اداری
 @id	ui.office_text_inspection	بازرسی متن اداری
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	کارگر وارد کردن OfficeIMO به طور غیرمنتظره متوقف شد
 @id	ui.ok	تأیید
 @id	ui.one_tree_of_notebooks	یک درخت از دفترچه‌ها
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive و SharePoint: ساخته نشده است. NoteCraft را به پوشه‌ای که ابزار همگام‌سازی شما نظارت می‌کند هدایت کنید؛ همان کار را انجام می‌دهد.
@@ -634,7 +633,6 @@
 @id	ui.standard	استاندارد
 @id	ui.standard_ruled	خط‌کشی استاندارد
 @id	ui.star	ستاره
-@id	ui.starting_officeimo	در حال شروع OfficeIMO…
 @id	ui.stencils	الگوها
 @id	ui.strike_through	خط خوردگی
 @id	ui.strikethrough	خط‌خورده

@@ -3805,7 +3805,7 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_folder() else { return };
-        self.import_officeimo_source(source);
+        self.import_onenote_source(source);
     }
 
     fn import_file(&mut self) {
@@ -3814,24 +3814,24 @@ impl NoteCraftApp {
             dialog = dialog.set_directory(backup);
         }
         let Some(source) = dialog.pick_file() else { return };
-        self.import_officeimo_source(source);
+        self.import_onenote_source(source);
     }
 
-    fn import_officeimo_source(&mut self, source: PathBuf) {
+    /// Imports a OneNote notebook folder, section, table of contents or package as a new
+    /// notebook (issue #19). NoteCraft's own reader brings the pages over, and a section it
+    /// cannot read goes to the OfficeIMO bridge when one is installed; any other file goes to
+    /// the bridge as before. Runs on a thread, so the window stays usable.
+    fn import_onenote_source(&mut self, source: PathBuf) {
         let format = self
             .session
             .settings
             .get("page_format")
             .and_then(|v| notecraft_model::PageFormat::parse(&v).ok())
             .unwrap_or(notecraft_model::PageFormat::Html);
-        let bridge_format = match format {
-            notecraft_model::PageFormat::Html => notecraft_import::officeimo::Format::Html,
-            notecraft_model::PageFormat::Cmgfm => notecraft_import::officeimo::Format::Cmgfm,
-        };
         // All source types produce a new notebook under this parent. Progress reports the
         // actual chosen path, so the view never guesses names or collision suffixes.
         let destination = self.session.root().to_path_buf();
-        log::info!("OfficeIMO import requested: source={} destination={}", source.display(), destination.display());
+        log::info!("OneNote import requested: source={} destination={}", source.display(), destination.display());
         let (tx, rx) = std::sync::mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
@@ -3848,8 +3848,7 @@ impl NoteCraftApp {
                 };
                 let _ = tx.send(message);
             };
-            let result =
-                notecraft_import::officeimo::run_with_progress(&source_for_worker, &output_for_worker, bridge_format, &worker_cancel, &mut progress);
+            let result = notecraft_import::notebook::import(&source_for_worker, &output_for_worker, format, &worker_cancel, &mut progress);
             let _ = tx.send(ImportMessage::Finished(result));
         });
         self.import_job = Some(ImportJob {
@@ -3858,7 +3857,7 @@ impl NoteCraftApp {
             cancel,
             source,
             destination,
-            current: crate::tl_id!("ui.starting_officeimo").into(),
+            current: crate::tl_id!("ui.reading_the_onenote_files").into(),
             index: 0,
             total: 0,
         });
@@ -3884,7 +3883,7 @@ impl NoteCraftApp {
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    finished = Some(Err(crate::tl_id!("ui.officeimo_import_worker_stopped_unexpectedly").into()));
+                    finished = Some(Err(crate::tl_id!("ui.the_import_stopped_unexpectedly").into()));
                     break;
                 }
             }
@@ -3894,7 +3893,7 @@ impl NoteCraftApp {
             match result {
                 Ok(message) => {
                     let _ = self.run("tree.refresh", &Params::new());
-                    log::info!("OfficeIMO import succeeded: source={} destination={}", job.source.display(), job.destination.display());
+                    log::info!("OneNote import succeeded: source={} destination={}", job.source.display(), job.destination.display());
                     self.status_is_error = false;
                     self.open_notebook_from_path(&job.destination);
                     if !self.status_is_error {
@@ -3902,7 +3901,7 @@ impl NoteCraftApp {
                     }
                 }
                 Err(error) => {
-                    log::error!("OfficeIMO import failed: source={} destination={} error={error}", job.source.display(), job.destination.display());
+                    log::error!("OneNote import failed: source={} destination={} error={error}", job.source.display(), job.destination.display());
                     self.status = crate::i18n::format_message_id("ui.could_not_import_the_notebook_error", &[("error", &error)]);
                     self.status_is_error = true;
                 }

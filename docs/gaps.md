@@ -67,13 +67,19 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   `.onetoc2` when available and section colors from `.one` metadata; arbitrary source colors
   map lossily to NoteCraft's named palette. A `.onepkg` package, given on its own or found in
   the folder, is unpacked (LZX or MSZIP cabinet) into a temporary folder named after it and
-  imported as a notebook of that name; the window's Import File does the same through the
-  OfficeIMO bridge. A package's names are checked so nothing is written outside that folder.
+  imported as a notebook of that name. A package's names are checked so nothing is written
+  outside that folder. The window's Import notebook folder and Import File use the same reader
+  (issue #19): the chosen folder is one notebook, its subfolders section groups, and only a
+  section the reader cannot read goes to the optional OfficeIMO bridge.
   Older bundled OfficeIMO bridges export each section as a single HTML or Markdown document.
   The window and CLI now keep that document as one combined page with its assets, and report
   that the original page boundaries are unavailable. Unsupported HTML remains read-only.
-  Still missing: section order, ink, tags, page dates, password-protected sections, and an
-  import command in the window for the built-in importer.
+  Sections keep the order the notebook's `.onetoc2` gives them, and OneNote's
+  `OneNote_RecycleBin` of deleted sections is left out.
+  Still missing: ink, tags, page dates, password-protected sections, and files in OneNote's
+  OneDrive packaging ([MS-ONESTORE] 2.8 over [MS-FSSHTTPB]): the format of notebooks
+  downloaded from OneDrive and of OneNote for Windows 10. Such a section is named in the
+  report as being in that format, and is given to the OfficeIMO bridge when one is installed.
   Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to

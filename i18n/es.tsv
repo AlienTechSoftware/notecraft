@@ -460,7 +460,6 @@
 @id	ui.office_document	Documento de oficina
 @id	ui.office_text_inspection	Inspección de texto de oficina
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	El trabajador de importación de OfficeIMO se detuvo inesperadamente
 @id	ui.ok	Aceptar
 @id	ui.one_tree_of_notebooks	Un árbol de cuadernos
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive y SharePoint: no compilados. Señala NoteCraft a una carpeta que tu herramienta de sincronización ya vigila y es lo mismo.
@@ -634,7 +633,6 @@
 @id	ui.standard	Estándar
 @id	ui.standard_ruled	Cuadriculado estándar
 @id	ui.star	Star
-@id	ui.starting_officeimo	Iniciando OfficeIMO…
 @id	ui.stencils	Plantillas
 @id	ui.strike_through	Tachar
 @id	ui.strikethrough	Tachado

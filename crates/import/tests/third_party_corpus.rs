@@ -29,7 +29,7 @@ fn verify_source(
     assert_eq!(report.sections_planned, expected_sections, "{report}");
     assert_eq!(report.sections_imported, expected_imported, "{report}");
     assert_eq!(report.skipped.len(), expected_skipped, "{report}");
-    assert!(report.skipped.iter().all(|skipped| skipped.reason == "not a OneNote section file"), "skips are explicit and bounded: {report}");
+    assert!(report.skipped.iter().all(|skipped| skipped.reason == notecraft_import::PACKAGED), "skips are explicit and bounded: {report}");
     assert_eq!(report.ignored, expected_ignored, "{report}");
     assert_eq!((report.images, report.files, report.tables), expected_assets_and_tables, "{report}");
     assert!(report.pages > 0, "the source corpus contains pages: {report}");
@@ -55,8 +55,10 @@ fn run_full_small_rust_corpus(source: &Path, format: PageFormat, destination: &P
     options.format = format;
     let report = run(&options, &mut quiet).expect("import small onenote.rs fixtures");
 
-    let one_files = 32;
-    let toc_files = 20;
+    // Three sections and three tables of contents sit in OneNote_RecycleBin folders: deleted
+    // sections, which the importer leaves out (issue #19).
+    let one_files = 29;
+    let toc_files = 17;
     assert_eq!(report.files_found, one_files, "all non-large .one fixtures are discovered: {report}");
     assert_eq!(report.toc_files_found, toc_files, "all .onetoc2 fixtures are discovered: {report}");
     assert_eq!(

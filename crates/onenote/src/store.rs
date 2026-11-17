@@ -235,6 +235,9 @@ fn read_header_inner(data: &[u8], allow_toc: bool) -> Result<Header> {
         let message = format!("the file starts with {file_type}");
         return Err(if allow_toc { OneError::NotAToc(message) } else { OneError::NotASection(message) });
     }
+    if format == crate::guid::FILE_FORMAT_PACKAGED {
+        return Err(OneError::Packaged);
+    }
     if format != FILE_FORMAT {
         let message = format!("unknown format {format}");
         return Err(if allow_toc { OneError::NotAToc(message) } else { OneError::NotASection(message) });
@@ -1292,6 +1295,11 @@ mod tests {
         let mut wrong_format = simple();
         wrong_format.splice(48..64, [0u8; 16]);
         assert!(matches!(read_header(&wrong_format), Err(OneError::NotASection(_))));
+        // A section in OneNote's OneDrive packaging is named for what it is (issue #19).
+        let mut packaged = simple();
+        packaged.splice(48..64, crate::guid::FILE_FORMAT_PACKAGED.0);
+        assert_eq!(read_header(&packaged).err(), Some(OneError::Packaged));
+        assert_eq!(read(&packaged).err(), Some(OneError::Packaged));
     }
 
     #[test]

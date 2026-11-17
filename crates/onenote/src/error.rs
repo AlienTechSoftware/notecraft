@@ -18,6 +18,10 @@ pub enum OneError {
     Encrypted,
     /// The file is larger than the reader's memory budget.
     TooLarge(u64),
+    /// The file is in the packaging OneNote uses to store and sync notebooks on OneDrive and
+    /// SharePoint, and in files downloaded from there ([MS-ONESTORE] 2.8, carried in
+    /// [MS-FSSHTTPB] data elements). This reader reads the desktop revision store only.
+    Packaged,
 }
 
 impl fmt::Display for OneError {
@@ -30,6 +34,10 @@ impl fmt::Display for OneError {
             OneError::Corrupt(what) => write!(f, "the file is damaged: {what}"),
             OneError::Encrypted => write!(f, "the section is password protected; password protected sections are not supported"),
             OneError::TooLarge(n) => write!(f, "the file is too large to import ({n} bytes)"),
+            OneError::Packaged => write!(
+                f,
+                "the file is in OneNote's OneDrive packaging (FSSHTTPB), which this reader does not read yet; only the desktop format is read"
+            ),
         }
     }
 }

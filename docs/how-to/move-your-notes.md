@@ -7,15 +7,21 @@ to `.one` is not planned, and your notes are already plain files you can copy.
 ## Quick start
 
 In the desktop window, open **File**, **Open**, then **Import notebook folder** for a
-folder of OneNote `.one` section files. Use **Import File** for one section or a `.onepkg`
-package. These actions use the optional installed OfficeIMO bridge and leave the source intact.
+notebook's folder of OneNote `.one` section files. Use **Import File** for one section, the
+notebook's `Open Notebook.onetoc2`, or a `.onepkg` package. The source is never changed.
 **Open notebooks folder** opens NoteCraft notebooks; it does not convert OneNote sections.
 
-The imported notebook opens when conversion succeeds. Folder names, including dots and backup
-dates, and any collision suffix come from the importer. A folder with no `.one` sections is
-reported without creating an empty notebook. If every section fails, no notebook is created and
-the error names the files that could not be converted. If some sections fail, the notebook holds
-the readable ones; check `import-errors.txt` inside it for the details.
+The chosen folder becomes one new notebook of the same name (`Name (2)` if you already have
+one), its subfolders become section groups, and each `.one` file a section with its pages,
+sub-pages, pictures and attached files. NoteCraft's own reader does this, the same one as the
+command line below. OneNote's `OneNote_RecycleBin` folder of deleted sections is left out, and
+of several backup copies of a section only the newest comes in.
+
+A section NoteCraft cannot read is given to the OfficeIMO bridge, when one is installed. A
+notebook or section group is made only when a section arrives in it, so nothing empty appears.
+If no section can be imported, no notebook is made and the message names the files and why.
+If some cannot, the notebook holds the rest and lists the others in `import-errors.txt` inside
+it. The imported notebook opens when the import ends.
 
 Some installed bridges export a whole section as one combined page. NoteCraft keeps that
 page and its assets together and reports this limitation after import; it cannot reconstruct

@@ -460,7 +460,6 @@
 @id	ui.office_document	ऑफिस दस्तावेज़
 @id	ui.office_text_inspection	ऑफिस पाठ निरीक्षण
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO आयात कार्यकर्ता अप्रत्याशित रूप से रुक गया
 @id	ui.ok	ठीक है
 @id	ui.one_tree_of_notebooks	नोटबुक्स का एक वृक्ष
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive और SharePoint: बनाया नहीं गया। NoteCraft को उस फ़ोल्डर की ओर इशारा करें जो आपका सिंक टूल पहले से देख रहा है, तो यह वही है।
@@ -634,7 +633,6 @@
 @id	ui.standard	मानक
 @id	ui.standard_ruled	मानक रेखांकित
 @id	ui.star	तारा
-@id	ui.starting_officeimo	OfficeIMO लोड हो रहा है…
 @id	ui.stencils	स्टेन्सिल
 @id	ui.strike_through	काटा हुआ पाठ
 @id	ui.strikethrough	काटा हुआ

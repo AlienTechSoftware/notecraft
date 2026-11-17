@@ -460,7 +460,6 @@
 @id	ui.office_document	مستند Office
 @id	ui.office_text_inspection	فحص نص Office
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	توقف عامل استيراد OfficeIMO بشكل غير متوقع
 @id	ui.ok	موافق
 @id	ui.one_tree_of_notebooks	شجرة واحدة من الدفترة
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive و SharePoint: غير مبنين. وجه NoteCraft إلى مجلد يراقه أداة المزامنة الخاصة بك بالفعل، وسيكون الأمر نفسه.
@@ -634,7 +633,6 @@
 @id	ui.standard	قياسي
 @id	ui.standard_ruled	قياسي مخطَّط
 @id	ui.star	نجمة
-@id	ui.starting_officeimo	جارٍ بدء OfficeIMO…
 @id	ui.stencils	قوالب
 @id	ui.strike_through	شطب
 @id	ui.strikethrough	شطب
