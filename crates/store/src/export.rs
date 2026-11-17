@@ -363,13 +363,18 @@ mod tests {
         let page = ops::create_node(&section, &"p".repeat(200), NodeKind::Page, None, &settings).expect("page");
         fs::write(page.join("assets").join("a".repeat(200)), b"asset").expect("long nested asset");
         let mut destination = t.path().join("destination");
-        for _ in 0..18 {
-            destination.push("d".repeat(200));
+        // Titles become 40-character slugs, so title length cannot force failure.
+        // Keep the destination and staging directories below Linux's 4096-byte
+        // path limit, while the nested 200-byte asset name crosses it.
+        while destination.as_os_str().len() < 3900 {
+            let remaining = 3900 - destination.as_os_str().len();
+            destination.push("d".repeat((remaining - 1).min(200)));
         }
         fs::create_dir_all(&destination).expect("long destination");
         fs::write(destination.join("keep.txt"), b"unrelated").expect("existing file");
         let prepared = prepare(&nb, None).expect("prepare");
-        assert!(prepared.write(&destination).is_err(), "nested output exceeds the filesystem path limit");
+        let error = prepared.write(&destination).expect_err("nested output exceeds the filesystem path limit");
+        assert!(matches!(&error, StoreError::Io { action: "write export", .. }), "{error}");
         assert_eq!(fs::read_dir(&destination).expect("cleaned destination").count(), 1);
         assert_eq!(fs::read(destination.join("keep.txt")).expect("existing file"), b"unrelated");
         assert!(page.join("index.html").is_file());
