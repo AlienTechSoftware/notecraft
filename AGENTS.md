@@ -226,9 +226,15 @@ and `Debug`. `None` is the default for release and production unless the user ch
 level. `Debug` is the default for debug builds. Collection is local only; NoteCraft does not
 upload logs or telemetry automatically.
 
-On Windows, settings are stored at `%APPDATA%\\NoteCraft\\settings.toml`, not beside the
-executable. The `telemetry` folder is stored beside that settings file. The first-run privacy
-dialog is an in-app themed modal and persists the user's choice in the settings file.
+Diagnostic paths depend on the active settings file, not just the build profile. In a development
+checkout, the app normally selects `local/settings.toml`; `notecraft.log` and the `telemetry`
+directory are siblings there. The Options page's Folder value is the telemetry directory, not
+`notecraft.log`. An installed Windows build normally selects `%APPDATA%\\NoteCraft\\settings.toml`,
+with both diagnostics beside it. `NOTECRAFT_SETTINGS` overrides the default, and a release binary
+launched from a development checkout may still use `local/settings.toml`. See
+[`SKILLS/nc-runtime-diagnostics/references/paths-and-files.md`](SKILLS/nc-runtime-diagnostics/references/paths-and-files.md).
+The first-run privacy dialog is an in-app themed modal and persists the user's choice in the
+active settings file.
 
 ## Rules
 

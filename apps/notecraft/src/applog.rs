@@ -1,8 +1,10 @@
 //! The app's log file. A release build on Windows has no console, so without this a crash, a
 //! GPU error or a failed start leaves nothing behind.
 //!
-//! `notecraft.log` sits next to the settings file (`%APPDATA%\NoteCraft` on Windows). Each line
-//! is `UTC time, level, text`. The file is opened for every line and never held open, so the last
+//! `notecraft.log` sits next to the active settings file: normally `local/` in a development
+//! checkout and `%APPDATA%\NoteCraft` for an installed Windows build. Each line is
+//! `UTC time, level, text`. Structured telemetry sessions are stored separately under the sibling
+//! `telemetry/` directory. The file is opened for every line and never held open, so the last
 //! line before a hard crash is on disk. When it passes 1 MB it is renamed to `notecraft.log.old`.
 //! Warnings and errors from every library are kept, and so is the information from NoteCraft,
 //! eframe and the window and GPU glue, which is where start-up problems show.
