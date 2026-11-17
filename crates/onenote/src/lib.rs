@@ -14,6 +14,7 @@ mod bytes;
 mod error;
 mod guid;
 mod one;
+mod packaged;
 mod props;
 mod store;
 mod toc;

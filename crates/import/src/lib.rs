@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 
 /// What to do when the destination already holds a section with the same name.
 /// Why a section saved in OneNote's OneDrive packaging is left out (issue #19).
-pub const PACKAGED: &str = "saved in OneNote's OneDrive format (FSSHTTPB), which NoteCraft cannot read yet";
+pub const PACKAGED: &str = "saved in OneNote's OneDrive format (FSSHTTPB) and could not be read";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Existing {
@@ -374,6 +374,7 @@ fn import_section(
         Err(OneError::Encrypted) => return Err("password protected".to_string()),
         Err(OneError::NotASection(_)) => return Err("not a OneNote section file".to_string()),
         Err(OneError::Packaged) => return Err(PACKAGED.to_string()),
+        Err(OneError::PackagedUnreadable(why)) => return Err(format!("{PACKAGED}: {why}")),
         Err(OneError::TooLarge(_)) => return Err("larger than the importer can read".to_string()),
         Err(e) => return Err(format!("cannot be read: {e}")),
     };

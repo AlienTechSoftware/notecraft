@@ -74,6 +74,14 @@ fn run_full_small_rust_corpus(source: &Path, format: PageFormat, destination: &P
     assert!(report.skipped.iter().all(|skipped| !skipped.reason.is_empty()), "all skipped samples explain why: {report}");
     assert!(report.pages > 0, "the source corpus contains imported pages: {report}");
     assert!(destination.is_dir(), "the importer creates its output tree");
+    // Since issue #19 the sections in OneNote's OneDrive packaging, most of this corpus, are
+    // read as well: every section comes in, and the tables of contents give their colours and
+    // order (the three left are desktop ones this reader does not take).
+    assert!(report.skipped.is_empty(), "every section imports: {:?}", report.skipped);
+    assert_eq!(report.sections_imported, one_files, "{report}");
+    assert_eq!((report.toc_files_read, report.toc_files_failed), (14, 3), "{report}");
+    assert_eq!((report.pages, report.subpages, report.deepest), (54, 7, 3), "{report}");
+    assert_eq!((report.images, report.files, report.tables), (11, 3, 13), "{report}");
 }
 
 fn run_large_rust_fixture(name: &str) {
@@ -124,9 +132,10 @@ fn officeimo_and_tika_corpus_imports_in_both_page_formats() {
     assert!(source.join("NOTICE.txt").is_file());
 
     // The five sections, and the one inside the OfficeIMO package, which is now unpacked and
-    // imported (issue #17) rather than left aside.
+    // imported (issue #17) rather than left aside. The two from Office 365 are in the OneDrive
+    // packaging, which is read too (issue #19).
     for format in [PageFormat::Html, PageFormat::Cmgfm] {
-        verify_source(&source, 6, 4, 2, 0, (3, 1, 0), format);
+        verify_source(&source, 6, 6, 0, 0, (3, 1, 0), format);
     }
 }
 
@@ -233,4 +242,70 @@ fn large_desktop_fixture_import_is_reported() {
 #[ignore = "manual import of the 161 MB Git LFS fixture"]
 fn large_onedrive_fixture_import_is_reported() {
     run_large_rust_fixture("Large OneDrive.one");
+}
+
+/// Issue #19: sections in OneNote's OneDrive packaging ([MS-ONESTORE] 2.8) are read with their
+/// pages in order, sub-pages at their levels, titles, text and pictures.
+#[test]
+fn sections_in_the_onedrive_packaging_read_with_their_pages() {
+    let samples = Path::new(FIXTURES).join("onenote.rs").join("samples");
+    let read = |path: &Path| {
+        let data = fs::read(path).expect("fixture");
+        let store = notecraft_onenote::read(&data).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        notecraft_onenote::section(&store)
+    };
+    let text_of = |page: &notecraft_onenote::Page| {
+        page.blocks
+            .iter()
+            .filter_map(|b| match b {
+                notecraft_onenote::Content::Text { runs, .. } => Some(runs.iter().map(|r| r.text.as_str()).collect::<String>()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" / ")
+    };
+
+    // Pages and sub-pages, three deep. The section lists one page's space in one page series
+    // and its metadata in the series before; each page still gets its own title and level.
+    let section = read(&samples.join("joplin/Notebook with subsections and subpages/Section 1.one"));
+    let shape: Vec<(u8, String, String)> = section.pages.iter().map(|p| (p.level, p.title.clone(), text_of(p))).collect();
+    let want = [
+        (1, "Page 1"),
+        (2, "Page 1-a"),
+        (2, "Page 1-b"),
+        (1, "Page 2"),
+        (2, "Page 2-a"),
+        (3, "Page 2-a-a"),
+        (3, "Page 2-a-b"),
+        (2, "Page 2-b"),
+        (3, "Page 2-b-a"),
+    ];
+    assert_eq!(shape.len(), want.len(), "{shape:?}");
+    for ((level, title, text), (want_level, want_title)) in shape.iter().zip(want) {
+        assert_eq!((*level, title.as_str()), (want_level, want_title), "{shape:?}");
+        assert_eq!(text, &format!("{want_title} content"), "{shape:?}");
+    }
+
+    // Text, and a picture whose bytes are in the package.
+    let section = read(&samples.join("New Section 1.one"));
+    let page = section.pages.first().expect("a page");
+    assert_eq!(page.title, "Test Page");
+    assert!(text_of(page).starts_with("ABCDEF / ABCDEF"), "{}", text_of(page));
+    assert!(page.blocks.iter().any(|b| matches!(b, notecraft_onenote::Content::Picture { file: Some(_), .. })), "{:?}", page.blocks);
+
+    // A section saved by Office 365, from the OfficeIMO corpus.
+    let section = read(&Path::new(FIXTURES).join("officeimo").join("testOneNoteFromOffice365.one"));
+    let pages: Vec<(String, String)> = section.pages.iter().map(|p| (p.title.clone(), text_of(p))).collect();
+    assert_eq!(
+        pages,
+        [("Section1Page1".to_string(), "Section1Page1Content".to_string()), ("Section1Page2".to_string(), "Section1Page2Content".to_string())]
+    );
+
+    // A notebook's table of contents in the packaging: its colour and its sections in order,
+    // section groups included.
+    let toc = fs::read(samples.join("joplin/Notebook created on OneNote App/Abrir Bloco de Anota\u{e7}\u{f5}es.onetoc2")).expect("toc");
+    let toc = notecraft_onenote::read_toc(&toc).expect("read the table of contents");
+    assert!(toc.color.is_some());
+    let names: Vec<&str> = toc.sections.iter().map(|s| s.filename.as_str()).collect();
+    assert_eq!(names, ["Section.one", "OneNote_RecycleBin", "Section A", "Section D"]);
 }

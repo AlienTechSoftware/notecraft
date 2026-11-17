@@ -76,10 +76,12 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   that the original page boundaries are unavailable. Unsupported HTML remains read-only.
   Sections keep the order the notebook's `.onetoc2` gives them, and OneNote's
   `OneNote_RecycleBin` of deleted sections is left out.
-  Still missing: ink, tags, page dates, password-protected sections, and files in OneNote's
-  OneDrive packaging ([MS-ONESTORE] 2.8 over [MS-FSSHTTPB]): the format of notebooks
-  downloaded from OneDrive and of OneNote for Windows 10. Such a section is named in the
-  report as being in that format, and is given to the OfficeIMO bridge when one is installed.
+  Sections and tables of contents in OneNote's OneDrive packaging ([MS-ONESTORE] 2.8 over
+  [MS-FSSHTTPB]), the format of notebooks downloaded from OneDrive and of OneNote for
+  Windows 10, are read too (`crates/onenote/src/packaged.rs`). Only the current version of
+  each page is read; a data element split into fragments is skipped, and a cloud file card
+  (a link to a file on OneDrive) has no bytes in the file to bring over.
+  Still missing: ink, tags, page dates and password-protected sections.
   Underline and equation structure have nowhere to go in the page formats.
 - **Equations are KaTeX's TeX, not all of LaTeX.** No packages, no chemistry (`\ce`), no TikZ, and
   no visual formula editor. The engine (RaTeX) is young and has one main author; it is pinned to

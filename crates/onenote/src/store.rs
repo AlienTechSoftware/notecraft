@@ -40,6 +40,14 @@ pub struct ChunkRef {
     cb: u64,
 }
 
+impl Header {
+    /// The header of a file in the OneDrive packaging, which has no file node lists.
+    pub(crate) fn packaged(file_type: Guid, file: Guid, ancestor: Guid, length: u64) -> Header {
+        let none = ChunkRef { stp: 0, cb: 0 };
+        Header { file_type, file, ancestor, transactions: 0, expected_length: length, root_list: none, transaction_log: none }
+    }
+}
+
 impl ChunkRef {
     /// "Nil" (all pointer bits set) and "zero" both mean there is nothing there.
     fn is_empty(self, stp_bits: u32) -> bool {
@@ -102,9 +110,27 @@ pub struct ObjectSpace {
     /// The index this space gave each GUID in `ids`, so a reference read under one group's
     /// table can be rewritten to an index that means the same thing everywhere in the space.
     canon: BTreeMap<Guid, u32>,
+    /// Whole identities by index, for a file in the OneDrive packaging, where a reference
+    /// names its object exactly rather than through a GUID table ([`crate::packaged`]).
+    exact: BTreeMap<u32, ExtendedGuid>,
+    exact_of: BTreeMap<ExtendedGuid, u32>,
 }
 
+/// Indexes for exact identities start above any a desktop file can use (24 bits).
+const EXACT_BASE: u32 = 0x0100_0000;
+
 impl ObjectSpace {
+    /// The index of a compact id that names `identity` exactly, allocated on first use.
+    pub(crate) fn exact_index(&mut self, identity: ExtendedGuid) -> u32 {
+        if let Some(i) = self.exact_of.get(&identity) {
+            return *i;
+        }
+        let index = EXACT_BASE + self.exact.len() as u32;
+        self.exact.insert(index, identity);
+        self.exact_of.insert(identity, index);
+        index
+    }
+
     /// The space-wide index for a GUID, allocated on first use.
     fn canonical_index(&mut self, guid: Guid) -> u32 {
         if let Some(i) = self.canon.get(&guid) {
@@ -155,6 +181,9 @@ impl ObjectSpace {
     pub fn identity(&self, id: CompactId) -> Option<ExtendedGuid> {
         if id.is_zero() {
             return None;
+        }
+        if let Some(exact) = self.exact.get(&id.index) {
+            return Some(*exact);
         }
         Some(ExtendedGuid { guid: *self.ids.get(&id.index)?, n: u32::from(id.n) })
     }
@@ -274,6 +303,13 @@ pub(crate) fn read_toc_store(data: &[u8]) -> Result<Store> {
 fn read_store(data: &[u8], allow_toc: bool) -> Result<Store> {
     if data.len() as u64 > MAX_FILE {
         return Err(OneError::TooLarge(data.len() as u64));
+    }
+    // The OneDrive packaging carries the same revision store in another envelope.
+    if data.get(48..64) == Some(&crate::guid::FILE_FORMAT_PACKAGED.0[..]) {
+        return crate::packaged::read(data, allow_toc).map_err(|e| match e {
+            OneError::NotesetFile | OneError::NotAToc(_) | OneError::TooLarge(_) => e,
+            other => OneError::PackagedUnreadable(other.to_string()),
+        });
     }
     let header = read_header_inner(data, allow_toc)?;
     let mut w = Walk { data, limits: Limits::default(), counts: BTreeMap::new(), file_data: BTreeMap::new() };
@@ -1299,7 +1335,9 @@ mod tests {
         let mut packaged = simple();
         packaged.splice(48..64, crate::guid::FILE_FORMAT_PACKAGED.0);
         assert_eq!(read_header(&packaged).err(), Some(OneError::Packaged));
-        assert_eq!(read(&packaged).err(), Some(OneError::Packaged));
+        // Read in full, it is taken to the packaging reader, which finds no package after
+        // this header.
+        assert!(matches!(read(&packaged), Err(OneError::PackagedUnreadable(_))));
     }
 
     #[test]

@@ -124,7 +124,9 @@ read costs that file and not the run. The tree it writes comes from `store` (not
 group, section, page, and sub-pages nested to any depth), and the pages from `formats`, so an
 imported page is the same as a typed one. The window's Import runs it through
 `import::notebook`, which brings one notebook folder in as one notebook and hands only the
-sections it cannot read to the OfficeIMO bridge. Run it with `notecraft-cli import onenote`; see
+sections it cannot read to the OfficeIMO bridge. `crates/onenote` reads both encodings of a section: the desktop
+revision store, and the OneDrive packaging ([MS-ONESTORE] 2.8) through
+`packaged.rs`, into the same object spaces, so nothing after the reader knows which it was. Run it with `notecraft-cli import onenote`; see
 [`how-to/move-your-notes.md`](how-to/move-your-notes.md).
 
 The optional OfficeIMO path is an external bridge, not a Rust dependency. The resolver looks
