@@ -1188,6 +1188,7 @@
 @id	ui.change_notebooks_folder	Change notebooks folder...
 @id	ui.use_the_default_notebooks_folder	Use the default folder
 @id	ui.choose_the_notebooks_folder	Choose the notebooks folder
-@id	ui.notebooks_folder_next_start	The notebooks folder changes the next time NoteCraft starts.
 @id	ui.could_not_save_the_notebooks_folder_error	Could not save the notebooks folder: {error}
 @id	ui.notebooks_folder_current	NoteCraft keeps new notebooks in {folder}.
+@id	ui.notebooks_folder_changed	The notebooks folder is now {folder}.
+@id	ui.could_not_open_the_notebooks_folder_error	Could not open the notebooks folder: {error}

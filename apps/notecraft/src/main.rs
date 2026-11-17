@@ -56,8 +56,9 @@ impl eframe::App for Shell {
 
 fn notebooks_dir(args: &[String]) -> PathBuf {
     let configured = notecraft_store::settings::configured_notebooks_dir(&Settings::default_location());
+    // The development folder counts only in a debug build; a production install never reads it.
     let local = PathBuf::from("my-notebooks");
-    let local = local.is_dir().then_some(local);
+    let local = (cfg!(debug_assertions) && local.is_dir()).then_some(local);
     notebooks_dir_from(args, configured, local, notecraft_store::settings::default_notebooks_dir())
 }
 
