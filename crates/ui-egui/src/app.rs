@@ -1563,7 +1563,8 @@ impl NoteCraftApp {
     }
 
     fn choose_default_notebooks_folder(&mut self) {
-        let Some(picked) = pick_notebooks_folder() else {
+        // The dialog opens where the notebooks are now, not in Documents.
+        let Some(picked) = pick_notebooks_folder(&self.session.root().to_path_buf()) else {
             return;
         };
         self.apply_notebooks_root_choice(Some(&picked));
@@ -11059,12 +11060,12 @@ fn drawing_help_page(notebooks: &[PathBuf], language: &str) -> Option<PathBuf> {
 
 /// The notebooks folder chooser. The web build has no native folder dialog, so it chooses nothing.
 #[cfg(not(target_arch = "wasm32"))]
-fn pick_notebooks_folder() -> Option<PathBuf> {
-    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_notebooks_folder")).pick_folder()
+fn pick_notebooks_folder(start: &std::path::Path) -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_notebooks_folder")).set_directory(start).pick_folder()
 }
 
 #[cfg(target_arch = "wasm32")]
-fn pick_notebooks_folder() -> Option<PathBuf> {
+fn pick_notebooks_folder(_start: &std::path::Path) -> Option<PathBuf> {
     None
 }
 
