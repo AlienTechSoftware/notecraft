@@ -59,6 +59,31 @@ Parameters:
 - path (required): the page, section or section group to copy
 - to (required): where the copy goes; it is put last there, and every node in it gets a new id
 
+## `export.prepare`
+
+Review portable export.
+
+Parameters:
+
+- path (required): page, section, group or notebook
+- snapshot_path (optional): open page inside this scope
+- body (optional): unsaved body paired with snapshot_path, in its original format
+- ink (optional): changed live ink.svg paired with the editor snapshot
+
+## `export.write`
+
+Write reviewed export.
+
+Parameters:
+
+- folder (required): existing destination outside the source notebook; creates a new export folder without overwriting
+
+## `export.cancel`
+
+Cancel export.
+
+No parameters.
+
 ## `page.templates`
 
 List the page templates, built in and saved: one line each, with the id, the category and the name, separated by tabs.

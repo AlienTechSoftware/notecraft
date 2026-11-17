@@ -51,6 +51,7 @@ pub mod pagemenu;
 pub mod pagetext;
 pub mod paper;
 pub mod pictures;
+pub mod portable;
 pub mod preview;
 pub(crate) mod printout;
 pub mod quickaccess;

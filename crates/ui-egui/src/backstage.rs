@@ -106,8 +106,8 @@ pub const SIDE: [(&str, bool); 10] = [
     ("Open", true),
     ("Save a Copy", true),
     ("Print", false),
-    ("Share", false),
-    ("Export", false),
+    ("Share", true),
+    ("Export", true),
     ("Account", false),
     ("Options", true),
     ("About", true),
@@ -174,6 +174,9 @@ pub fn show(
     ui_scale: u16,
     update: &crate::update::Status,
     copy: &mut CopyChoice,
+    export: &mut crate::portable::Choice,
+    review: Option<&notecraft_store::export::Prepared>,
+    export_acts: &mut Vec<crate::portable::Act>,
     t: &Tokens,
 ) -> Vec<Act> {
     let mut acts = Vec::new();
@@ -187,6 +190,9 @@ pub fn show(
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
                     "Save a Copy" => save_copy_page(ui, copy, show_path, t, &mut acts),
+                    "Share" | "Export" => {
+                        *export_acts = crate::portable::show(ui, export, review, t);
+                    }
                     "About" => about_page(ui, telemetry_root, session_id, update, t, &mut acts),
                     "Options" => options_page(
                         ui,
@@ -735,7 +741,7 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Options", "About"]);
+        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Share", "Export", "Options", "About"]);
         assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
         assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
     }
@@ -761,6 +767,9 @@ mod tests {
                 100,
                 &crate::update::Status::Idle,
                 &mut CopyChoice::default(),
+                &mut crate::portable::Choice::default(),
+                None,
+                &mut Vec::new(),
                 &t,
             );
         });

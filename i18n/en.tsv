@@ -1082,3 +1082,24 @@
 @id	ui.choose_the_notebooks_folder	Choose the notebooks folder
 @id	ui.notebooks_folder_next_start	The notebooks folder changes the next time NoteCraft starts.
 @id	ui.could_not_save_the_notebooks_folder_error	Could not save the notebooks folder: {error}
+@id	ui.portable_export_title	Portable export and sharing
+@id	ui.portable_export_explanation	Review a portable notebook folder with the selected content, its assets and linked local pages. Preparation never sends data or changes the source.
+@id	ui.portable_share_fallback	System sharing is not integrated yet. Save the export, then share the whole folder with your chosen app. A local path does not grant remote access. No account is required.
+@id	ui.portable_open_page	Open a page to choose its page, section or notebook.
+@id	ui.portable_original_formats	Format: original HTML / CMGFM files, with no conversion. This is an export snapshot, not Save a Copy or Print. OneNote and PDF export are not offered here.
+@id	ui.portable_download_destination	Destination: your browser download folder. The reviewed files will be packaged as ZIP. Unzip the whole folder before opening it in NoteCraft.
+@id	ui.portable_destination	Export destination folder
+@id	ui.portable_no_overwrite	A new export folder is created. Existing files are never overwritten. Saved versions, recycle bins and templates are excluded.
+@id	ui.portable_review	Review export
+@id	ui.portable_cancel	Cancel export
+@id	ui.portable_review_summary	{title} | Pages: {pages} | Files: {files} | Bytes: {bytes}
+@id	ui.portable_dependencies	Included linked content outside the selected scope. Review these additional files before exporting:
+@id	ui.portable_external_links	External links are preserved. Their content is not downloaded and may need a network connection or another app:
+@id	ui.portable_included_files	Included files
+@id	ui.portable_page_contents	Page text preview
+@id	ui.portable_review_snapshot	Writing uses this reviewed snapshot, including unsaved page text. Review again to include later edits. Share every exported file together.
+@id	ui.portable_write	Write reviewed export
+@id	ui.portable_download_ready	The reviewed archive was handed to your browser for download.
+@id	ui.portable_saved	Export saved in {path}
+@id	ui.portable_no_snapshot	Review the export before writing it.
+@id	ui.portable_send_hint	Review a portable copy of this page before sharing it

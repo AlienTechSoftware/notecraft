@@ -68,7 +68,10 @@ returns `{}`); later requests on the same connection may leave it out. Replies:
 
 Coordinates are in points, not pixels. Middle-button drag pans the canvas in both directions.
 Ordinary wheel movement scrolls vertically; Shift+wheel scrolls horizontally. When the page's content reaches past the sides of the view, a scroll bar along the bottom of the page moves the canvas sideways too; it stops at the ends of the content. `engine.execute`
-saves the open page before it runs, so a command sees what the user sees. Paths in replies from
+saves the open page before it runs, so a command sees what the user sees. The `export.*`
+commands are an exception: preparing, writing or cancelling an export never saves the source.
+`export.prepare` includes the open editor's unsaved text and changed ink when it is inside
+the requested scope, unless an explicit editor snapshot is supplied. Paths in replies from
 the headless runner are redacted.
 
 ### What `pen` reports
