@@ -11140,13 +11140,13 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     settle(&mut h);
     h.get_by_label("View").click();
     settle(&mut h);
-    for name in ["Tabs layout", "Dock to desktop", "New window", "New quick note", "Immersive reader", "Live captions"] {
+    for name in ["Dock to desktop", "New window", "New quick note", "Live captions"] {
         let label = format!("{name} (not built)");
         let nodes: Vec<_> = h.query_all_by_label(&label).collect();
         assert!(!nodes.is_empty(), "{label} is listed");
         assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
     }
-    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size"] {
+    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size", "Immersive reader", "Tabs layout"] {
         assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
     }
     // Insert's placeholders were already right and stay so.

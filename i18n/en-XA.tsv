@@ -1183,3 +1183,11 @@
 @id	ui.text_highlight_colour	$$$Text Highlight Colour@@@
 @id	ui.text_highlight_colour_tip	$$$Mark the selected words with a highlight colour, or what you type next@@@
 @id	ui.automatic_colour	$$$Automatic@@@
+@id	ui.notebooks_folder	$$$Notebooks folder@@@
+@id	ui.notebooks_folder_hint	$$$Notebooks already in the folder you choose open now. New notebooks go there from the next start. Nothing is moved.@@@
+@id	ui.change_notebooks_folder	$$$Change notebooks folder...@@@
+@id	ui.use_the_default_notebooks_folder	$$$Use the default folder@@@
+@id	ui.choose_the_notebooks_folder	$$$Choose the notebooks folder@@@
+@id	ui.notebooks_folder_next_start	$$$The notebooks folder changes the next time NoteCraft starts.@@@
+@id	ui.could_not_save_the_notebooks_folder_error	$$$Could not save the notebooks folder: {error}@@@
+@id	ui.notebooks_folder_current	$$$NoteCraft keeps new notebooks in {folder}.@@@
