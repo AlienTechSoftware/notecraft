@@ -1202,6 +1202,9 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
                     }
                 };
+                // Recently used families, most recent first. Kept for this session in egui memory.
+                let recent_key = egui::Id::new("notecraft-recent-fonts");
+                let recent_families: Vec<String> = ui.data(|d| d.get_temp(recent_key)).unwrap_or_default();
                 let family_out = crate::combo::show(
                     ui,
                     t.text,
@@ -1215,9 +1218,13 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         empty_note: families_note.as_deref(),
                         accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
                         filter: true,
+                        recent: &recent_families,
                     },
                 );
                 if let Some(name) = family_out.chosen {
+                    let mut recent = recent_families.clone();
+                    crate::font_picker::remember(&mut recent, &name);
+                    ui.data_mut(|d| d.insert_temp(recent_key, recent));
                     acts.push(Act::FontFamily(name));
                 }
                 // OneNote's size control: an editable box showing the size, and a drop-down arrow.
@@ -1241,8 +1248,9 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         width: 38.0,
                         items: &sizes,
                         empty_note: None,
-                        accept: &|typed| typed.parse::<u8>().is_ok_and(|size| FONT_SIZES.contains(&size)),
+                        accept: &|typed| crate::font_picker::size_is_usable(typed, &FONT_SIZES),
                         filter: false,
+                        recent: &[],
                     },
                 );
                 let boxes = crate::floating::FontBoxes {
@@ -1251,6 +1259,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     families: families.clone(),
                     families_note: families_note.clone(),
                     sizes: sizes.clone(),
+                    recent: recent_families.clone(),
                 };
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

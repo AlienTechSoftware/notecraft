@@ -9588,7 +9588,9 @@ fn installed_font_family_can_be_applied_and_undone_in_both_formats() {
         pump(&mut h);
         h.get_by_label("Font Family").click();
         h.run();
-        h.get_by_label(&family).click();
+        // After the first page, this family is also under Recently Used Fonts. The All Fonts
+        // entry comes last in the list, so pick that one.
+        h.query_all_by_label(&family).last().expect("the family is listed").click();
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);

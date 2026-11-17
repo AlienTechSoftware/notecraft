@@ -39,12 +39,9 @@ pub struct Spec<'a> {
     pub accept: &'a dyn Fn(&str) -> bool,
     /// Whether typing lists only the items that contain the text, with Up/Down/Enter to pick.
     pub filter: bool,
-}
-
-/// The items that contain `query` (ignoring case), in list order. Every item when `query` is empty.
-fn matching<'a>(items: &'a [String], query: &str) -> Vec<&'a String> {
-    let query = query.trim().to_lowercase();
-    items.iter().filter(|item| query.is_empty() || item.to_lowercase().contains(&query)).collect()
+    /// Families used lately, most recent first. Shown under Recently Used Fonts above All Fonts
+    /// when the box is not being typed in. Empty for the size box.
+    pub recent: &'a [String],
 }
 
 /// Shows the combo box and returns what was chosen this frame.
@@ -74,7 +71,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     }
     // Typing lists the matches while the box has focus and its text is not the shown value.
     let typing = spec.filter && typed.trim() != spec.shown && (was_focused || value_box.has_focus());
-    let hits = if typing { matching(spec.items, &typed) } else { Vec::new() };
+    let hits: Vec<&String> =
+        if typing { crate::font_picker::matches(&typed, spec.items).into_iter().map(|i| &spec.items[i]).collect() } else { Vec::new() };
     if down {
         highlight = (highlight + 1).min(hits.len().saturating_sub(1));
     }
@@ -141,6 +139,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let mut list_rect = None;
     if show_list {
         let rows: Vec<&String> = if typing { hits } else { spec.items.iter().collect() };
+        // Recently used families go above the full list, when the box is not being typed in.
+        let recent_rows: Vec<&String> = if typing { Vec::new() } else { spec.recent.iter().collect() };
         let list = Area::new(spec.id.with("list")).order(Order::Foreground).fixed_pos(value_box.rect.left_bottom()).show(ui.ctx(), |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(value_box.rect.width());
@@ -151,6 +151,23 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                     return;
                 }
                 ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                    if !recent_rows.is_empty() {
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
+                        for item in &recent_rows {
+                            let current = item.as_str() == spec.shown;
+                            let row = ui.selectable_label(current, item.as_str());
+                            if current && scroll {
+                                row.scroll_to_me(Some(Align::Center));
+                            }
+                            if row.clicked() {
+                                outcome.chosen = Some((*item).clone());
+                                open = false;
+                                ui.memory_mut(|m| m.surrender_focus(typed_id));
+                            }
+                        }
+                        ui.separator();
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
+                    }
                     for (index, item) in rows.iter().enumerate() {
                         let current = if typing { index == highlight } else { item.as_str() == spec.shown };
                         let row = ui.selectable_label(current, item.as_str());

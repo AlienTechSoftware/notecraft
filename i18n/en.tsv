@@ -82,6 +82,8 @@
 @id	ui.font_size_box	Font size
 @id	ui.font_family	Font Family
 @id	ui.font_family_box	Font name
+@id	ui.recent_fonts	Recently Used Fonts
+@id	ui.all_fonts	All Fonts
 @id	ui.pick_date	Pick a date
 @id	ui.pick_time	Pick a time
 @id	ui.am	AM

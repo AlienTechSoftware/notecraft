@@ -31,6 +31,7 @@ pub mod diagramview;
 #[path = "filepicker.android.rs"]
 pub(crate) mod filepicker;
 pub mod floating;
+pub mod font_picker;
 pub mod fonts;
 pub mod gridcraft;
 pub mod highlight;
