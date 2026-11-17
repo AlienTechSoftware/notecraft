@@ -460,7 +460,6 @@
 @id	ui.office_document	Документ Office
 @id	ui.office_text_inspection	Анализ текста Office
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	Рабочий процесс импорта OfficeIMO неожиданно остановился
 @id	ui.ok	ОК
 @id	ui.one_tree_of_notebooks	Одно дерево блокнотов
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive и SharePoint: не реализовано. Укажите NoteCraft на папку, которую уже отслеживает ваш инструмент синхронизации, и всё будет работать.
@@ -634,7 +633,6 @@
 @id	ui.standard	Стандартный
 @id	ui.standard_ruled	Стандартная линейка
 @id	ui.star	Звезда
-@id	ui.starting_officeimo	Запуск OfficeIMO…
 @id	ui.stencils	Шаблоны
 @id	ui.strike_through	Зачеркнуть
 @id	ui.strikethrough	Зачеркнутый

@@ -460,7 +460,6 @@
 @id	ui.office_document	Office-Dokument
 @id	ui.office_text_inspection	Inspektion von Office-Texten
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO-Importarbeiter wurde unerwartet gestoppt
 @id	ui.ok	OK
 @id	ui.one_tree_of_notebooks	Ein Baum von Notizbüchern
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive und SharePoint: nicht implementiert. Verweisen Sie NoteCraft auf einen Ordner, den Ihr Synchronisierungstool bereits überwacht, und es ist dasselbe.
@@ -634,7 +633,6 @@
 @id	ui.standard	Standard
 @id	ui.standard_ruled	Standard liniert
 @id	ui.star	Stern
-@id	ui.starting_officeimo	OfficeIMO wird gestartet…
 @id	ui.stencils	Schablonen
 @id	ui.strike_through	Durchgestrichen
 @id	ui.strikethrough	Durchstreichen

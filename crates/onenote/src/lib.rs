@@ -27,7 +27,7 @@ pub mod testing {
 }
 
 pub use error::{OneError, Result};
-pub use guid::{CompactId, ExtendedGuid, Guid};
+pub use guid::{CompactId, ExtendedGuid, FILE_FORMAT_PACKAGED, Guid};
 pub use one::{Content, List, Page, Run, Section, section};
 pub use props::{Property, PropertySet, Value};
 pub use store::{Header, Object, ObjectData, ObjectSpace, Store, read, read_header};

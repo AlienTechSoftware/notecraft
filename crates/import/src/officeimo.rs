@@ -159,8 +159,11 @@ fn run_section(source: &Path, output: &Path, format: Format, cancelled: &AtomicB
 }
 
 fn run_one(source: &Path, output: &Path, format: Format, cancelled: &AtomicBool) -> Result<String, String> {
-    let bridge = locate()?;
-    let mut command = Command::new(&bridge);
+    run_bridge(&locate()?, source, output, format, cancelled)
+}
+
+fn run_bridge(bridge: &Path, source: &Path, output: &Path, format: Format, cancelled: &AtomicBool) -> Result<String, String> {
+    let mut command = Command::new(bridge);
     command
         .arg("--source")
         .arg(source)
@@ -236,17 +239,7 @@ fn run_folder(
             let label = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "section".to_string());
             progress(Progress::Section { index: index + 1, total: files.len(), label });
             let relative_parent = file.parent().and_then(|p| p.strip_prefix(source).ok()).unwrap_or(Path::new(""));
-            let mut destination = notebook.clone();
-            for component in relative_parent.components() {
-                let group_name = safe_name(&component.as_os_str().to_string_lossy());
-                destination.push(&group_name);
-                if !destination.join("_node.toml").is_file() {
-                    fs::create_dir_all(&destination).map_err(|e| format!("cannot create {}: {e}", destination.display()))?;
-                    write_node(&destination, "group", &group_name, format)?;
-                }
-            }
             let section_name = section_name(file);
-            destination.push(section_name.clone());
             let stage = staging.join(format!("{index}"));
             fs::create_dir_all(&stage).map_err(|e| format!("cannot create {}: {e}", stage.display()))?;
             if let Err(error) = run_one(file, &stage, format, cancelled) {
@@ -263,6 +256,18 @@ fn run_folder(
                     continue;
                 }
             };
+            // The section groups are made only now that a section has arrived for them, so a
+            // section that failed leaves no empty group behind (issue #19).
+            let mut destination = notebook.clone();
+            for component in relative_parent.components() {
+                let group_name = safe_name(&component.as_os_str().to_string_lossy());
+                destination.push(&group_name);
+                if !destination.join("_node.toml").is_file() {
+                    fs::create_dir_all(&destination).map_err(|e| format!("cannot create {}: {e}", destination.display()))?;
+                    write_node(&destination, "group", &group_name, format)?;
+                }
+            }
+            destination.push(section_name.clone());
             copy_tree(&generated, &destination)?;
             write_node(&destination, "section", &section_name, format)?;
             imported_sections += 1;
@@ -300,6 +305,29 @@ fn run_folder(
             )
         }
     })
+}
+
+/// Converts one section file with the bridge, for a section NoteCraft's own reader could not
+/// read (issue #19). The converted section is in the returned scratch folder, which is removed
+/// when it is dropped; `true` means the bridge gave one combined page for the whole section.
+pub(crate) fn convert_section(
+    bridge: &Path,
+    file: &Path,
+    format: Format,
+    cancelled: &AtomicBool,
+) -> Result<(crate::package::Scratch, PathBuf, bool), String> {
+    let scratch = crate::package::Scratch::new()?;
+    run_bridge(bridge, file, &scratch.path, format, cancelled)?;
+    let (section, combined) = bridge_section(&scratch.path, format, &section_name(file))?;
+    Ok((scratch, section, combined))
+}
+
+/// Puts a section `convert_section` made into `destination`, an empty section folder the
+/// caller made, with fresh ids for it and every page in it.
+pub(crate) fn place_section(converted: &Path, destination: &Path, title: &str, format: Format) -> Result<(), String> {
+    copy_tree(converted, destination)?;
+    write_node(destination, "section", title, format)?;
+    normalize_ids(destination)
 }
 
 /// Older bundled bridges export a section as one document instead of a native tree. Keep

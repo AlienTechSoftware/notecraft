@@ -99,6 +99,10 @@ fn walk(root: &Path, dir: &Path, out: &mut Scan, depth: usize) {
             continue;
         }
         if kind.is_dir() {
+            // OneNote keeps deleted sections and pages here. They are not the notebook's.
+            if entry.file_name().to_string_lossy().eq_ignore_ascii_case("OneNote_RecycleBin") {
+                continue;
+            }
             walk(root, &path, out, depth + 1);
         } else if let Some(name) = path.file_name().map(|name| name.to_string_lossy().to_lowercase()) {
             if name == ".onetoc2" {

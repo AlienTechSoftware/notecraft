@@ -460,7 +460,6 @@
 @id	ui.office_document	Document de bureau
 @id	ui.office_text_inspection	Inspection du texte de bureau
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	Le travailleur d'import OfficeIMO s'est arrêté de manière inattendue
 @id	ui.ok	OK
 @id	ui.one_tree_of_notebooks	Un seul arbre de cahiers
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive et SharePoint ne sont pas encore pris en charge. Indiquez à NoteCraft un dossier déjà surveillé par votre outil de synchronisation : le résultat est le même.
@@ -634,7 +633,6 @@
 @id	ui.standard	Standard
 @id	ui.standard_ruled	Lignes standard
 @id	ui.star	Star
-@id	ui.starting_officeimo	Démarrage d'OfficeIMO…
 @id	ui.stencils	Pochoirs
 @id	ui.strike_through	Barrer
 @id	ui.strikethrough	Barré

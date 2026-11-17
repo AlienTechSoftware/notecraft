@@ -460,7 +460,6 @@
 @id	ui.office_document	오피스 문서
 @id	ui.office_text_inspection	오피스 텍스트 검사
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO 가져오기 작업자가 예기치 않게 중지되었습니다
 @id	ui.ok	확인
 @id	ui.one_tree_of_notebooks	노트북의 단일 트리
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive 및 SharePoint: 구축되지 않았습니다. 동기화 도구가 이미 감시하는 폴더를 NoteCraft에 지정하면 동일한 효과를 얻습니다.
@@ -634,7 +633,6 @@
 @id	ui.standard	표준
 @id	ui.standard_ruled	표준 선
 @id	ui.star	별
-@id	ui.starting_officeimo	OfficeIMO 시작 중…
 @id	ui.stencils	스텐실
 @id	ui.strike_through	취소선
 @id	ui.strikethrough	취소선

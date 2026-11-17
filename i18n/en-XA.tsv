@@ -517,7 +517,6 @@
 @id	ui.office_document	$$$Office document@@@
 @id	ui.office_text_inspection	$$$Office text inspection@@@
 @id	ui.officeimo	$$$OfficeIMO@@@
-@id	ui.officeimo_import_worker_stopped_unexpectedly	$$$OfficeIMO import worker stopped unexpectedly@@@
 @id	ui.ok	$$$OK@@@
 @id	ui.one_tree_of_notebooks	$$$One tree of notebooks@@@
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	$$$OneDrive and SharePoint: not built. Point NoteCraft at a folder your sync tool already watches and it is the same thing.@@@
@@ -700,7 +699,6 @@
 @id	ui.standard	$$$Standard@@@
 @id	ui.standard_ruled	$$$Standard ruled@@@
 @id	ui.star	$$$Star@@@
-@id	ui.starting_officeimo	$$$Starting OfficeIMO…@@@
 @id	ui.stencils	$$$Stencils@@@
 @id	ui.strike_through	$$$Strike through@@@
 @id	ui.strikethrough	$$$Strikethrough@@@
@@ -1075,3 +1073,5 @@
 @id	ui.spacing_limits	$$$Each value is a whole number of points from 0 to {max}. Leave one empty to keep what each paragraph has.@@@
 @id	ui.spacing_goes_on_text	$$$Spacing goes on a paragraph, a heading, a list item or a quote@@@
 @id	ui.paragraph_spacing_set	$$$Paragraph spacing set@@@
+@id	ui.reading_the_onenote_files	$$$Reading the OneNote files…@@@
+@id	ui.the_import_stopped_unexpectedly	$$$The import stopped unexpectedly@@@

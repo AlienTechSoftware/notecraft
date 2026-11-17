@@ -460,7 +460,6 @@
 @id	ui.office_document	آفس دستاویز
 @id	ui.office_text_inspection	آفس ٹیکسٹ معائنہ
 @id	ui.officeimo	OfficeIMO
-@id	ui.officeimo_import_worker_stopped_unexpectedly	OfficeIMO امپورٹ ورکر غیر متوقع طور پر رک گیا
 @id	ui.ok	ٹھیک ہے
 @id	ui.one_tree_of_notebooks	نوٹ بکس کا ایک درخت
 @id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive اور SharePoint: تیار نہیں۔ NoteCraft کو اس فولڈر کی طرف اشارہ کریں جسے آپ کا سنک ٹول پہلے سے دیکھ رہا ہے، یہ وہی چیز ہے۔
@@ -634,7 +633,6 @@
 @id	ui.standard	معیاری
 @id	ui.standard_ruled	معیاری لکیریں
 @id	ui.star	ستارہ
-@id	ui.starting_officeimo	OfficeIMO شروع ہو رہا ہے…
 @id	ui.stencils	اسٹینسلز
 @id	ui.strike_through	خط پر لکیر
 @id	ui.strikethrough	اسٹرائک تھرو

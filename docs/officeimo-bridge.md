@@ -15,9 +15,14 @@ It must return exit code zero only after the output folder is complete. Its stan
 diagnostic JSON or text for the caller. A failure must use a non-zero exit code and write a useful
 diagnostic to standard error.
 
+The window's import reads OneNote files with NoteCraft's own reader and calls the bridge only
+for a section that reader cannot read, and for files that are not OneNote files (issue #19).
+`notecraft-cli import officeimo` runs the bridge for every section.
+
 The NoteCraft caller accepts either one `.one` section file or a folder tree. For a folder tree,
 NoteCraft uses the selected folder name as the notebook, nested folders as section groups, and
-each `.one` file as a section. The bridge itself remains a single-section converter.
+each `.one` file as a section. A section group is made only once a section in it has been
+converted. The bridge itself remains a single-section converter.
 
 ## Installation
 

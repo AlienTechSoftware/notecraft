@@ -12,6 +12,7 @@
 
 pub mod convert;
 pub mod discover;
+pub mod notebook;
 pub mod officeimo;
 pub mod package;
 
@@ -27,9 +28,14 @@ use notecraft_store::{Settings, assets, ops, page};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// What to do when the destination already holds a section with the same name.
+/// Why a section saved in OneNote's OneDrive packaging is left out (issue #19).
+pub const PACKAGED: &str = "saved in OneNote's OneDrive format (FSSHTTPB), which NoteCraft cannot read yet";
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Existing {
     /// Leave it alone, so running the import twice changes nothing.
@@ -57,6 +63,12 @@ pub struct Options {
     /// Only sections whose notebook, group or section name contains one of these words
     /// (ignoring case). Empty means all.
     pub only: Vec<String>,
+    /// Everything goes into one notebook of this title, and every folder under the source
+    /// becomes a section group in it (issue #19: the window imports one notebook folder at a
+    /// time). `None` is the backup layout, where each top folder is a notebook of its own.
+    pub notebook: Option<String>,
+    /// Set from another thread to stop before the next section.
+    pub cancelled: Option<Arc<AtomicBool>>,
 }
 
 impl Options {
@@ -69,6 +81,8 @@ impl Options {
             dry_run: false,
             existing: Existing::default(),
             only: Vec::new(),
+            notebook: None,
+            cancelled: None,
         }
     }
 }
@@ -86,6 +100,8 @@ pub enum Event<'a> {
 pub struct Skipped {
     pub label: String,
     pub reason: String,
+    /// The section file that was left out, when it was one.
+    pub file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -116,6 +132,8 @@ pub struct Report {
     pub tables: usize,
     pub loss: Loss,
     pub skipped: Vec<Skipped>,
+    /// The run was stopped before every section was read.
+    pub cancelled: bool,
     pub elapsed: Duration,
 }
 
@@ -205,7 +223,9 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
                 scan.tocs.extend(inner.tocs);
                 unpacked += 1;
             }
-            Err(reason) => failed.push(Skipped { label: pkg.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), reason }),
+            Err(reason) => {
+                failed.push(Skipped { label: pkg.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), reason, file: None })
+            }
         }
     }
     let mut report = Report {
@@ -233,7 +253,14 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
         .collect();
     let all = discover::plan(&scan.files, options.all_versions);
     report.older_copies_left = scan.files.len().saturating_sub(all.len());
-    let planned: Vec<Planned> = all.into_iter().filter(|p| wanted(p, &options.only)).collect();
+    let mut planned: Vec<Planned> = all.into_iter().filter(|p| wanted(p, &options.only)).collect();
+    // Within a folder, sections are made in the order the notebook's table of contents gives
+    // them, which is the order OneNote showed them in; a section it does not list comes after,
+    // by name. Each new section is placed after the last, so this is the order they keep.
+    planned.sort_by_cached_key(|p| {
+        let folders: Vec<String> = p.file.folders.iter().map(|f| f.to_lowercase()).collect();
+        (folders, section_order_for(&p.file, &loaded_tocs).unwrap_or(u64::MAX), p.file.name.to_lowercase())
+    });
     report.sections_planned = planned.len();
     progress(&Event::Found {
         sections: planned.len(),
@@ -249,13 +276,17 @@ pub fn run(options: &Options, progress: &mut dyn FnMut(&Event)) -> Result<Report
     }
     let total = planned.len();
     for (i, item) in planned.iter().enumerate() {
+        if options.cancelled.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
+            report.cancelled = true;
+            break;
+        }
         let label = label_of(item, &fallback);
         progress(&Event::Section { index: i + 1, total, label: &label });
         if options.dry_run {
             continue;
         }
         if let Err(reason) = import_section(options, &settings, item, &fallback, &loaded_tocs, &mut report) {
-            report.skipped.push(Skipped { label, reason });
+            report.skipped.push(Skipped { label, reason, file: Some(item.file.path.clone()) });
         }
     }
     progress(&Event::Done);
@@ -278,6 +309,31 @@ fn loose_notebook_name(source: &Path) -> String {
     let dir = if source.is_file() { source.parent().unwrap_or(source) } else { source };
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     if name.trim().is_empty() || name.eq_ignore_ascii_case("backup") { "OneNote import".to_string() } else { name }
+}
+
+/// The notebook folder a section reaches, made the first time one does, and the section
+/// group folders under it. Nothing is made for a section that is never written, so a
+/// notebook or group that holds nothing never appears (issue #19).
+pub(crate) fn notebook_and_groups(
+    dest: &Path,
+    notebook_title: &str,
+    groups: &[String],
+    format: PageFormat,
+    settings: &Settings,
+) -> Result<(PathBuf, PathBuf), String> {
+    let notebook = match child_by_title(dest, notebook_title, NodeKind::Notebook) {
+        Some(p) => p,
+        None => ops::create_notebook(dest, notebook_title, Some(format), settings).map_err(|e| e.to_string())?,
+    };
+    let mut parent = notebook.clone();
+    for group in groups {
+        let title = clean_title(group, "Section group");
+        parent = match child_by_title(&parent, &title, NodeKind::SectionGroup) {
+            Some(p) => p,
+            None => ops::create_node(&parent, &title, NodeKind::SectionGroup, None, settings).map_err(|e| e.to_string())?,
+        };
+    }
+    Ok((notebook, parent))
 }
 
 fn label_of(p: &Planned, fallback: &str) -> String {
@@ -317,6 +373,7 @@ fn import_section(
         Ok(s) => s,
         Err(OneError::Encrypted) => return Err("password protected".to_string()),
         Err(OneError::NotASection(_)) => return Err("not a OneNote section file".to_string()),
+        Err(OneError::Packaged) => return Err(PACKAGED.to_string()),
         Err(OneError::TooLarge(_)) => return Err("larger than the importer can read".to_string()),
         Err(e) => return Err(format!("cannot be read: {e}")),
     };
@@ -328,8 +385,15 @@ fn import_section(
 
     // The notebook and its section groups.
     let mut folders = item.file.folders.clone();
-    let notebook_title = clean_title(&if folders.is_empty() { fallback.to_string() } else { folders.remove(0) }, "Notebook");
-    let notebook_color = notebook_color_for(&item.file.folders, tocs);
+    let (notebook_title, notebook_color) = match &options.notebook {
+        // One notebook: the source folder is the notebook, so its own table of contents
+        // (the one at the top) has the notebook's colour, and every folder is a group.
+        Some(title) => (clean_title(title, "Notebook"), notebook_color_for(&[], tocs)),
+        None => (
+            clean_title(&if folders.is_empty() { fallback.to_string() } else { folders.remove(0) }, "Notebook"),
+            notebook_color_for(&item.file.folders, tocs),
+        ),
+    };
     let notebook = match child_by_title(&options.dest, &notebook_title, NodeKind::Notebook) {
         Some(p) => p,
         None => {
@@ -379,6 +443,7 @@ fn import_section(
         report.skipped.push(Skipped {
             label: format!("{} / {}", item.file.folders.join(" / "), item.file.name),
             reason: format!("{encrypted} password protected pages left out"),
+            file: None,
         });
     }
     Ok(())
@@ -403,6 +468,17 @@ fn section_color_for(file: &discover::SectionFile, identity: notecraft_onenote::
         }
     }
     None
+}
+
+/// Where the notebook's table of contents puts a section among its siblings, if it lists it.
+fn section_order_for(file: &discover::SectionFile, tocs: &[LoadedToc]) -> Option<u64> {
+    let filename = file.path.file_name()?.to_string_lossy();
+    tocs.iter().filter(|toc| same_folders(&toc.folders, &file.folders)).find_map(|toc| {
+        toc.toc.sections.iter().enumerate().find(|(_, entry)| toc_filename_matches(&entry.filename, &filename)).map(|(i, entry)| {
+            // The entry's own ordering number when it has one, else its place in the list.
+            entry.order.map_or(i as u64, u64::from)
+        })
+    })
 }
 
 fn same_folders(a: &[String], b: &[String]) -> bool {
@@ -588,6 +664,28 @@ mod tests {
             assert!(text.contains(want), "{want} is in the tree: {text}");
         }
         assert!(!text.contains("Old"), "the older copy was left out");
+    }
+
+    /// Sections come in the order the notebook's table of contents gives, not by name.
+    #[test]
+    fn sections_keep_the_order_the_notebook_gave_them() {
+        let t = TempDir::new("import-order");
+        let (src, dest) = (t.path().join("Life"), t.path().join("dest"));
+        for name in ["Zebra", "Apple", "Mango", "Unlisted"] {
+            section_file(&src, &[], &format!("{name}.one"), OneNote::new().with_page(name, &[OneNote::line("x")]));
+        }
+        let toc = notecraft_onenote::testing::Toc::new()
+            .section_without_identity("Zebra.one", None)
+            .section_without_identity("Mango.one", None)
+            .section_without_identity("Apple.one", None)
+            .finish();
+        fs::write(src.join("Open Notebook.onetoc2"), toc).expect("toc");
+        let mut o = Options::new(&src, &dest);
+        o.notebook = Some("Life".to_string());
+        run(&o, &mut quiet).expect("import");
+        let notebook = child_by_title(&dest, "Life", NodeKind::Notebook).expect("notebook");
+        let order: Vec<String> = child_dirs(&notebook).iter().filter_map(|d| read_node(d)).map(|n| n.title).collect();
+        assert_eq!(order, ["Zebra", "Mango", "Apple", "Unlisted"]);
     }
 
     #[test]
