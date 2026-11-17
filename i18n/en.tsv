@@ -1075,3 +1075,10 @@
 @id	ui.paragraph_spacing_set	Paragraph spacing set
 @id	ui.reading_the_onenote_files	Reading the OneNote files…
 @id	ui.the_import_stopped_unexpectedly	The import stopped unexpectedly
+@id	ui.notebooks_folder	Notebooks folder
+@id	ui.notebooks_folder_hint	Where NoteCraft keeps new notebooks. The change applies the next time NoteCraft starts. Existing notebooks are not moved.
+@id	ui.change_notebooks_folder	Change folder...
+@id	ui.use_the_default_notebooks_folder	Use the default folder
+@id	ui.choose_the_notebooks_folder	Choose the notebooks folder
+@id	ui.notebooks_folder_next_start	The notebooks folder changes the next time NoteCraft starts.
+@id	ui.could_not_save_the_notebooks_folder_error	Could not save the notebooks folder: {error}

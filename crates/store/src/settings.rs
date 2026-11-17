@@ -46,6 +46,10 @@ pub fn default_notebooks_dir_for_home(home: impl AsRef<Path>) -> PathBuf {
 /// The notebook root the app should use when no explicit command-line root is supplied.
 pub fn configured_notebooks_dir(settings: &Settings) -> Option<PathBuf> {
     let saved = settings.get("last_notebooks_root")?;
+    // An empty value is what "Use the default folder" saves.
+    if saved.trim().is_empty() {
+        return None;
+    }
     #[cfg(not(target_os = "windows"))]
     if saved.starts_with("\\\\?\\") || saved.contains(":\\") {
         return None;
@@ -185,6 +189,15 @@ mod tests {
         let s = Settings::at(t.path().join("settings.toml"));
         s.set("last_notebooks_root", "Notes/Research").expect("save notebooks root");
         assert_eq!(configured_notebooks_dir(&s), Some(PathBuf::from("Notes/Research")));
+    }
+
+    #[test]
+    fn a_cleared_notebooks_root_means_the_default_folder() {
+        let t = TempDir::new("settings-notebook-root-cleared");
+        let s = Settings::at(t.path().join("settings.toml"));
+        s.set("last_notebooks_root", "Notes/Research").expect("save notebooks root");
+        s.set("last_notebooks_root", "").expect("clear notebooks root");
+        assert_eq!(configured_notebooks_dir(&s), None, "an empty value is not a folder");
     }
 
     #[test]
