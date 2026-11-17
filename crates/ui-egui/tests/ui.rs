@@ -10597,6 +10597,55 @@ fn normal_on_the_current_code_line_closes_the_block_before_it() {
     );
 }
 
+/// Applying Normal to the selected middle code line keeps the lines around it in the code block.
+#[test]
+fn normal_on_a_selected_code_line_splits_only_that_line() {
+    let (_t, app, s) = sample_app("ui-code-split-selected-normal");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into code");
+    settle(&mut h);
+    for _ in 0..1 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+        settle(&mut h);
+    }
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of code line");
+    settle(&mut h);
+    for key in ["End"] {
+        ask(&mut h, "ui.key", json!({"key": key, "shift": true})).expect("select code line");
+        settle(&mut h);
+    }
+    let selection = ask(&mut h, "ui.inspect", json!({})).expect("inspect selected line");
+    let caret = selection.pointer("/page/caret").expect("caret remains in code");
+    assert_eq!(caret["text"], "line one\nline two\nline three", "selection belongs to the code block");
+    assert_eq!(caret["anchor"], 9, "selection starts at line two");
+    assert_eq!(caret["at"], 17, "selection ends at line two");
+    let more = h.get_by_label("More styles").rect();
+    ask(&mut h, "ui.click", json!({"x": more.center().x, "y": more.center().y})).expect("open Styles gallery");
+    settle(&mut h);
+    let normal = h.query_all_by_label("Normal").last().expect("Normal style").rect();
+    ask(&mut h, "ui.click", json!({"x": normal.center().x, "y": normal.center().y})).expect("apply Normal");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the code block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(
+        file.contains("```123|rust\nline one\n```\n\nline two\n\n```123|rust\nline three\n```"),
+        "Normal should split only the selected code line:\n{file}"
+    );
+}
+
 /// Up inside a numbered code block moves the caret one line up and keeps the block in edit mode.
 /// It leaves the block only from its first line (owner, 2026-11-11).
 #[test]

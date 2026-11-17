@@ -774,8 +774,8 @@ pub(crate) fn caret_on_last_line(text: &str, at: usize) -> bool {
 }
 
 /// The character the caret is at in the text box `id`, or 0 when it has no caret yet.
-fn caret_char(ctx: &egui::Context, _id: egui::Id) -> usize {
-    ctx.data(|d| d.get_temp::<usize>(pre_key_caret_id())).unwrap_or(0)
+fn caret_char(ctx: &egui::Context, id: egui::Id) -> usize {
+    ctx.data(|d| d.get_temp::<(egui::Id, usize)>(pre_key_caret_id())).and_then(|(field, at)| (field == id).then_some(at)).unwrap_or(0)
 }
 
 /// Where the caret was before this frame's key presses: the text field applies the keys, so the
@@ -2250,7 +2250,7 @@ pub fn show_blocks(
                         c.selection = (at, at);
                     }
                     let pre_key = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range().map(|r| r.primary.index.0)).unwrap_or(0);
-                    ui.data_mut(|d| d.insert_temp(pre_key_caret_id(), pre_key));
+                    ui.data_mut(|d| d.insert_temp(pre_key_caret_id(), (id, pre_key)));
                     let out = if multiline {
                         // The same box the finished block is drawn in (preview.rs), so the block does not
                         // change its look when the caret arrives in it.
@@ -2480,7 +2480,7 @@ pub fn show_blocks(
                     action = Some(Action::Indent(i, !shift));
                 } else if escape {
                     action = Some(Action::Leave);
-                } else if up && multiline && caret_on_first_line(&c.text, caret_char(ui.ctx(), id)) {
+                } else if up && caret_on_first_line(&c.text, caret_char(ui.ctx(), id)) {
                     if let Some(image) = previous_whole_block_image(blocks, i, shown_title) {
                         changed.select_object = Some((image, "image".to_string()));
                     } else {
@@ -3349,8 +3349,17 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         }
         Action::MoveTo(to, at) => {
             let text = text_for_caret(blocks, to);
-            *caret =
-                blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: at, cell: None, span: None, inline: None });
+            let end = text.chars().count();
+            *caret = blocks.get(to).map(|_| Caret {
+                block: to,
+                text,
+                focus: true,
+                selection: (end, end),
+                place: at.or(Some(end)),
+                cell: None,
+                span: None,
+                inline: None,
+            });
             changed.caret = true;
         }
         Action::Leave => {

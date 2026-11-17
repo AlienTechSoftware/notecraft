@@ -6581,8 +6581,11 @@ impl NoteCraftApp {
         // A style on a line of a code block applies to that line only: the block splits around it.
         let line = caret.text.get(..caret.selection.1.min(caret.text.len())).map_or(0, |t| t.matches('\n').count());
         let in_code = matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Code { .. }));
-        let split = in_code && !matches!(kind, "codeblock" | "codenumbers") && pageedit::split_code_line(&mut ed.blocks, at, line, kind);
-        if !split && !pageedit::set_kind(&mut ed.blocks, at, kind) {
+        if in_code && !matches!(kind, "codeblock" | "codenumbers") {
+            if !pageedit::split_code_line(&mut ed.blocks, at, line, kind) {
+                return;
+            }
+        } else if !pageedit::set_kind(&mut ed.blocks, at, kind) {
             return;
         }
         ed.rebuild_body();
