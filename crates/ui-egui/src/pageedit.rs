@@ -739,6 +739,51 @@ pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (
 
 /// Makes the block at `at` a heading, a list item, a quote or ordinary text, keeping its
 /// words. Returns false when there is nothing to change.
+/// Applies `kind` to one line of a code block: the lines before and after stay code.
+pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &str) -> bool {
+    let Some(Block::Code { lang, text }) = blocks.get(at).cloned() else { return false };
+    let lines: Vec<&str> = text.trim_end_matches('\n').split('\n').collect();
+    if line >= lines.len() {
+        return false;
+    }
+    // The caret's line becomes the new kind; the lines around it stay code with the same language.
+    let mut current = vec![Block::Paragraph(parse_inline(lines[line]))];
+    if !set_kind(&mut current, 0, kind) {
+        return false;
+    }
+    let mut out = Vec::new();
+    if line > 0 {
+        out.push(Block::Code { lang: lang.clone(), text: lines[..line].join("\n") });
+    }
+    out.extend(current);
+    if line + 1 < lines.len() {
+        out.push(Block::Code { lang, text: lines[line + 1..].join("\n") });
+    }
+    blocks.splice(at..at + 1, out);
+    true
+}
+
+/// Whether the caret, at character `at` of a code block's `text`, is on its first line.
+pub(crate) fn caret_on_first_line(text: &str, at: usize) -> bool {
+    !text.chars().take(at).any(|c| c == '\n')
+}
+
+/// Whether the caret, at character `at` of a code block's `text`, is on its last line.
+pub(crate) fn caret_on_last_line(text: &str, at: usize) -> bool {
+    !text.chars().skip(at).any(|c| c == '\n')
+}
+
+/// The character the caret is at in the text box `id`, or 0 when it has no caret yet.
+fn caret_char(ctx: &egui::Context, id: egui::Id) -> usize {
+    ctx.data(|d| d.get_temp::<(egui::Id, usize)>(pre_key_caret_id())).and_then(|(field, at)| (field == id).then_some(at)).unwrap_or(0)
+}
+
+/// Where the caret was before this frame's key presses: the text field applies the keys, so the
+/// key handling must read the position it had before that.
+fn pre_key_caret_id() -> egui::Id {
+    egui::Id::new("pageedit-pre-key-caret")
+}
+
 pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     let Some(block) = blocks.get(at) else { return false };
     if !is_one_line_of_words(block) {
@@ -768,7 +813,8 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         "h5" => Block::Heading { level: 5, spans },
         "h6" => Block::Heading { level: 6, spans },
         "quote" => Block::Quote(spans),
-        "codeblock" => Block::Code { lang: String::new(), text: spans.iter().map(|s| s.text.as_str()).collect() },
+        // Code blocks number their lines by default (owner, 2026-11-11).
+        "codeblock" => Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() },
         "codenumbers" => {
             Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() }
         }
@@ -2135,6 +2181,15 @@ pub fn show_blocks(
                         i.key_pressed(Key::ArrowDown),
                     )
                 });
+                if up || down || enter || backspace || escape {
+                    let caret_at = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range().map(|r| r.primary.index.0));
+                    log::debug!(
+                        "caret keys (multiline path): block={i} kind={} focus={} caret_char={caret_at:?} lines={} up={up} down={down} enter={enter} backspace={backspace} escape={escape}",
+                        block_kind(&block),
+                        resp.has_focus(),
+                        c.text.lines().count(),
+                    );
+                }
                 if resp.has_focus() || resp.lost_focus() {
                     if enter {
                         action = Some(Action::Split(i));
@@ -2144,17 +2199,17 @@ pub fn show_blocks(
                         action = Some(Action::Indent(i, !shift));
                     } else if escape {
                         action = Some(Action::Leave);
-                    } else if up {
+                    } else if up && caret_on_first_line(&c.text, caret_char(ui.ctx(), id)) {
                         if let Some(image) = previous_whole_block_image(blocks, i, shown_title) {
                             changed.select_object = Some((image, "image".to_string()));
                         } else {
                             action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
                         }
-                    } else if down {
+                    } else if down && caret_on_last_line(&c.text, caret_char(ui.ctx(), id)) {
                         if let Some(image) = next_whole_block_image(blocks, i, shown_title) {
                             changed.select_object = Some((image, "image".to_string()));
                         } else {
-                            action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
+                            action = adjacent_writable(blocks, i, true, shown_title).map(Action::MoveStart);
                         }
                     }
                 }
@@ -2178,6 +2233,24 @@ pub fn show_blocks(
                         ticked = Some(done);
                     }
                     let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
+                    // A caret moved into this block by a key lands where the move asked (the start from Down),
+                    // not at the end the text field kept from before.
+                    // The text field moves its cursor to the end when it gains focus, a frame after the
+                    // placement, so the placement is kept until the field shows the caret where it was put.
+                    if let Some(at) = c.place.filter(|_| multiline) {
+                        let at = at.min(c.text.chars().count());
+                        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+                        let shown = state.cursor.char_range().map(|r| r.primary.index.0);
+                        if shown != Some(at) {
+                            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(at))));
+                            state.store(ui.ctx(), id);
+                        } else if ui.memory(|m| m.has_focus(id)) {
+                            c.place = None;
+                        }
+                        c.selection = (at, at);
+                    }
+                    let pre_key = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range().map(|r| r.primary.index.0)).unwrap_or(0);
+                    ui.data_mut(|d| d.insert_temp(pre_key_caret_id(), (id, pre_key)));
                     let out = if multiline {
                         // The same box the finished block is drawn in (preview.rs), so the block does not
                         // change its look when the caret arrives in it.
@@ -2391,6 +2464,13 @@ pub fn show_blocks(
                 )
             });
             let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
+            if up || down || left || right || enter || backspace || escape {
+                log::debug!(
+                    "caret keys: block={i} kind={} multiline={multiline} focus={} up={up} down={down} left={left} right={right} enter={enter} backspace={backspace} escape={escape}",
+                    block_kind(&block),
+                    resp.has_focus(),
+                );
+            }
             if resp.has_focus() || resp.lost_focus() {
                 if enter && !multiline {
                     action = Some(Action::Split(i));
@@ -2400,18 +2480,20 @@ pub fn show_blocks(
                     action = Some(Action::Indent(i, !shift));
                 } else if escape {
                     action = Some(Action::Leave);
-                } else if up {
+                } else if up && caret_on_first_line(&c.text, caret_char(ui.ctx(), id)) {
                     if let Some(image) = previous_whole_block_image(blocks, i, shown_title) {
                         changed.select_object = Some((image, "image".to_string()));
                     } else {
                         action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
                     }
-                } else if down {
+                } else if down && (!multiline || caret_on_last_line(&c.text, caret_char(ui.ctx(), id))) {
                     if let Some(image) = next_whole_block_image(blocks, i, shown_title) {
                         changed.select_object = Some((image, "image".to_string()));
                     } else {
-                        action = adjacent_writable(blocks, i, true, shown_title).map(Action::Move);
+                        action = adjacent_writable(blocks, i, true, shown_title).map(Action::MoveStart);
                     }
+                } else if multiline && left && selection.is_some_and(|(a, b)| a == 0 && b == 0) {
+                    action = adjacent_writable(blocks, i, false, shown_title).map(Action::Move);
                 } else if right {
                     let at_end = selection.is_some_and(|(a, b)| a == b && a == c.text.chars().count());
                     let boundary = ui.data(|data| data.get_temp::<(usize, usize)>(image_boundary_id()));
@@ -2775,6 +2857,8 @@ fn drag_began_in(ui: &Ui, rect: egui::Rect) -> Option<egui::Pos2> {
 /// What a key or a click asked for.
 enum Action {
     Move(usize),
+    /// Down into a block: the caret goes to the start of its first line.
+    MoveStart(usize),
     /// Put the caret in a block at a character, from a click.
     MoveTo(usize, Option<usize>),
     /// Tick or clear the to-do box on a line.
@@ -3246,6 +3330,20 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
             changed.caret = true;
         }
+        Action::MoveStart(to) => {
+            let text = text_for_caret(blocks, to);
+            *caret = blocks.get(to).map(|_| Caret {
+                block: to,
+                text,
+                focus: true,
+                selection: (0, 0),
+                place: Some(0),
+                cell: None,
+                span: None,
+                inline: None,
+            });
+            changed.caret = true;
+        }
         Action::SetTask(at, done) => {
             if set_task(blocks, at, done) {
                 changed.blocks = true;
@@ -3253,8 +3351,17 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         }
         Action::MoveTo(to, at) => {
             let text = text_for_caret(blocks, to);
-            *caret =
-                blocks.get(to).map(|_| Caret { block: to, text, focus: true, selection: (0, 0), place: at, cell: None, span: None, inline: None });
+            let end = text.chars().count();
+            *caret = blocks.get(to).map(|_| Caret {
+                block: to,
+                text,
+                focus: true,
+                selection: (end, end),
+                place: at.or(Some(end)),
+                cell: None,
+                span: None,
+                inline: None,
+            });
             changed.caret = true;
         }
         Action::Leave => {
@@ -4519,6 +4626,47 @@ A note to self.
 
     /// The two code styles are one block with its lines numbered or not; changing between them keeps the words and the language.
     #[test]
+    fn a_new_code_block_numbers_its_lines_by_default() {
+        let mut b = blocks("plain words\n");
+        assert!(set_kind(&mut b, 0, "codeblock"));
+        assert!(matches!(&b[0], Block::Code { lang, .. } if lang == notecraft_formats::markdown::NUMBERED), "{:?}", b[0]);
+        assert_eq!(block_kind(&b[0]), "codenumbers");
+    }
+
+    #[test]
+    fn up_and_down_leave_a_code_block_only_from_its_first_and_last_line() {
+        let text = "first\nsecond\nthird";
+        assert!(caret_on_first_line(text, 0));
+        assert!(caret_on_first_line(text, 4));
+        assert!(!caret_on_first_line(text, 6), "second line");
+        assert!(!caret_on_first_line(text, 14), "third line");
+        assert!(caret_on_last_line(text, 14));
+        assert!(caret_on_last_line(text, 20));
+        assert!(!caret_on_last_line(text, 0));
+        assert!(!caret_on_last_line(text, 6), "second line");
+    }
+
+    #[test]
+    fn applying_normal_to_one_code_line_splits_the_block_around_it() {
+        let mut b = blocks("```rust\nfirst\nsecond\nthird\n```\n");
+        assert!(split_code_line(&mut b, 0, 1, "p"));
+        assert_eq!(b.len(), 3, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "rust" && text == "first"), "{:?}", b[0]);
+        assert_eq!(block_kind(&b[1]), "p");
+        assert_eq!(block_text(&b[1]), "second");
+        assert!(matches!(&b[2], Block::Code { lang, text } if lang == "rust" && text == "third"), "{:?}", b[2]);
+    }
+
+    #[test]
+    fn applying_normal_to_the_first_code_line_leaves_no_code_before_it() {
+        let mut b = blocks("```rust\nfirst\nsecond\n```\n");
+        assert!(split_code_line(&mut b, 0, 0, "p"));
+        assert_eq!(b.len(), 2, "{b:?}");
+        assert_eq!(block_text(&b[0]), "first");
+        assert!(matches!(&b[1], Block::Code { text, .. } if text == "second"), "{:?}", b[1]);
+    }
+
+    #[test]
     fn code_changes_between_plain_and_numbered_and_keeps_its_words() {
         let mut b = blocks(
             "```rust
@@ -4655,7 +4803,8 @@ code
             ("h4", "h4"),
             ("h5", "h5"),
             ("h6", "h6"),
-            ("codeblock", "codeblock"),
+            ("codeblock", "codenumbers"),
+            ("p", "p"),
             ("codenumbers", "codenumbers"),
             ("p", "p"),
         ] {

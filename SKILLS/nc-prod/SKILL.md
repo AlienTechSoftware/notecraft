@@ -26,8 +26,17 @@ There are three supported runtime environments: `debug`, `release`, and `product
 five user-visible local logging levels: `None`, `Usage`, `Warning`, `Error`, and `Debug`. Debug
 builds default to `Debug`; release and production default to `None` unless the user chooses a
 level. Logs and usage telemetry remain on the user's device. NoteCraft does not send them
-automatically. Settings belong in the platform configuration directory (`%APPDATA%\\NoteCraft`
-on Windows), while session data belongs in its local telemetry subfolder.
+automatically.
+
+Do not conflate a build environment with its diagnostics path. The active settings file determines
+where diagnostics are written. `NOTECRAFT_SETTINGS` overrides the default. In a development
+checkout, the app normally uses `local/settings.toml`; its app log is `local/notecraft.log`, and
+its telemetry sessions are under `local/telemetry/<session-id>/`. An installed Windows build
+normally uses `%APPDATA%\\NoteCraft\\settings.toml`, with `notecraft.log` and `telemetry/` beside
+it. A release binary launched from a development checkout can still resolve to the checkout's
+`local/` path. The Options page's Folder value is the telemetry directory, not the app log file.
+See [`nc-runtime-diagnostics`](../nc-runtime-diagnostics/SKILL.md) for path precedence and the
+other platform locations.
 
 **These are non-negotiable requirements set by the product owner (2026-10-17).** Every feature, design decision, and code change must respect these principles or get explicit written approval to deviate.
 

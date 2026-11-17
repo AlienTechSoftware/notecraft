@@ -8738,7 +8738,7 @@ fn a_selected_box_takes_the_ribbon_as_a_whole() {
     click(&mut h, row.center().x, row.center().y);
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
-    assert!(body.contains("```\nFormat ideas\n```"), "the blocks of the box became code:\n{body}");
+    assert!(body.contains("```123|\nFormat ideas\n```"), "the blocks of the box became numbered code:\n{body}");
     assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "still picked after the list");
 
     // Cut takes the whole box away with what is in it.
@@ -10557,16 +10557,304 @@ fn numbered_code_shows_its_numbers_in_view_and_hides_them_in_edit() {
     app.open_path(&s.md_page.to_string_lossy());
     let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
     settle(&mut h);
-    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 1, "the numbers are drawn beside the code");
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 1, "the numbers are drawn beside the code");
     assert!(h.query_all_by_label("123|rust").count() == 0 && h.query_all_by_label("rust").count() >= 1, "the label is the language alone");
     let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
     ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret");
     for _ in 0..4 {
         pump(&mut h);
     }
-    assert_eq!(h.query_all_by_label("1\n2\n3").count(), 0, "no numbers while it is written in");
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 0, "no numbers while it is written in");
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("```123|rust"), "the page keeps saying so");
+}
+
+/// Down from the paragraph above a numbered code block puts the caret at the start of the block's
+/// first line (owner, 2026-11-11). Enter then adds a line before "line one".
+#[test]
+fn down_into_a_code_block_lands_at_its_first_line() {
+    let (_t, app, s) = sample_app("ui-code-down-start");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\nA paragraph above.\n\n```123|rust\nline one\nline two\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 2})).expect("caret into the paragraph");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("enter");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the code block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("```123|rust\n\nline one\nline two\n```"), "Down did not land at the start of the first line:\n{file}");
+}
+
+/// Lines are inserted above a numbered code block. Up from its first line leaves it (the numbers
+/// come back) instead of getting stuck.
+#[test]
+fn up_from_the_first_line_leaves_a_code_block_with_lines_above_it() {
+    let (_t, app, s) = sample_app("ui-code-edge-up");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\nPara one.\n\nPara two.\n\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    for _ in 0..2 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+        for _ in 0..4 {
+            pump(&mut h);
+        }
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("up");
+    for _ in 0..6 {
+        pump(&mut h);
+    }
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 1, "Up from the first line left the block: the numbers are back");
+}
+
+/// Down from the last line of a numbered code block leaves it with lines below it.
+#[test]
+fn down_from_the_last_line_leaves_a_code_block_with_lines_below_it() {
+    let (_t, app, s) = sample_app("ui-code-edge-down");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n\nPara after.\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 2})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    for key in ["ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown"] {
+        ask(&mut h, "ui.key", json!({"key": key})).expect("key");
+        for _ in 0..6 {
+            pump(&mut h);
+        }
+    }
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 1, "Down from the last line did not leave the block");
+}
+
+/// Up from the first line of a code block lands at the end of the paragraph above it.
+#[test]
+fn up_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
+    let (_t, app, s) = sample_app("ui-code-up-end");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\nPara two.\n\n```123|rust\nline one\nline two\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("up");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": "X"})).expect("type");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the paragraph so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("Para two.X"), "Up did not land at the end of the paragraph above:\n{file}");
+}
+
+/// Left at the start of a code block lands at the end of the text before it.
+#[test]
+fn left_from_a_code_block_lands_at_the_end_of_the_paragraph_above() {
+    let (_t, app, s) = sample_app("ui-code-left-end");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\nPara two.\n\n```123|rust\nline one\nline two\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of last code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": "Y"})).expect("type");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the paragraph so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("Para two.Y"), "Left did not land at the end of the paragraph above:\n{file}");
+}
+
+/// Normal on the current (last) line of a numbered code block closes the block before it: the line
+/// becomes ordinary text (owner, 2026-11-12).
+#[test]
+fn normal_on_the_current_code_line_closes_the_block_before_it() {
+    let (_t, app, s) = sample_app("ui-code-split-normal");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.block", json!({"kind": "p"})).expect("normal");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(
+        file.contains("```123|rust\nline one\nline two\n```\n\nline three"),
+        "Normal did not turn the current line into text and close the block before it:\n{file}"
+    );
+}
+
+/// Applying Normal to the selected middle code line keeps the lines around it in the code block.
+#[test]
+fn normal_on_a_selected_code_line_splits_only_that_line() {
+    let (_t, app, s) = sample_app("ui-code-split-selected-normal");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into code");
+    settle(&mut h);
+    for _ in 0..1 {
+        ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("first code line");
+        settle(&mut h);
+    }
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start of code line");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select code line");
+    settle(&mut h);
+    let selection = ask(&mut h, "ui.inspect", json!({})).expect("inspect selected line");
+    let caret = selection.pointer("/page/caret").expect("caret remains in code");
+    assert_eq!(caret["text"], "line one\nline two\nline three", "selection belongs to the code block");
+    assert_eq!(caret["anchor"], 9, "selection starts at line two");
+    assert_eq!(caret["at"], 17, "selection ends at line two");
+    let more = h.get_by_label("More styles").rect();
+    ask(&mut h, "ui.click", json!({"x": more.center().x, "y": more.center().y})).expect("open Styles gallery");
+    settle(&mut h);
+    let normal = h.query_all_by_label("Normal").last().expect("Normal style").rect();
+    ask(&mut h, "ui.click", json!({"x": normal.center().x, "y": normal.center().y})).expect("apply Normal");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave the code block so it saves");
+    settle(&mut h);
+    for _ in 0..60 {
+        pump(&mut h);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(
+        file.contains("```123|rust\nline one\n```\n\nline two\n\n```123|rust\nline three\n```"),
+        "Normal should split only the selected code line:\n{file}"
+    );
+}
+
+/// Up inside a numbered code block moves the caret one line up and keeps the block in edit mode.
+/// It leaves the block only from its first line (owner, 2026-11-11).
+#[test]
+fn up_in_a_code_block_moves_a_line_and_stays_in_edit_mode() {
+    let (_t, app, s) = sample_app("ui-code-up-lines");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let blocks = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into the code block");
+    for _ in 0..4 {
+        pump(&mut h);
+    }
+    // First line to third line, then Up: the caret must move to the second line, not leave the block.
+    for key in ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"] {
+        ask(&mut h, "ui.key", json!({"key": key})).expect("key");
+        for _ in 0..4 {
+            pump(&mut h);
+        }
+    }
+    assert_eq!(h.query_all_by_label("1 |\n2 |\n3 |").count(), 0, "Up left the block: the view with numbers came back");
+    let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
+    assert!(file.contains("```123|rust\nline one\nline two\nline three\n```"), "the words are unchanged");
 }
 
 /// Direction, tags and the lists reach every line of a selected box, not only the line the caret was in.

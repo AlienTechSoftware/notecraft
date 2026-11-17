@@ -63,6 +63,13 @@ process ID as a security boundary.
 ## UI operations
 
 The Options/About surfaces expose the current level, session ID, and telemetry
-folder. The Options surface also offers open-folder, export-current-session,
-and clear-telemetry actions. Verify the current UI and implementation before
+folder. The displayed folder is the telemetry root; it is not the path to
+`notecraft.log`. The app log is a separate file beside the active settings file.
+For example, a development checkout normally has `local/notecraft.log` and
+`local/telemetry/<session-id>/`, while an installed Windows app normally has
+`%APPDATA%\\NoteCraft\\notecraft.log` and
+`%APPDATA%\\NoteCraft\\telemetry/<session-id>/`.
+
+The Options surface also offers open-folder, export-current-session, and
+clear-telemetry actions. Verify the current UI and implementation before
 describing side effects in a user report.

@@ -64,7 +64,11 @@ When a runtime issue is reported:
 1. Identify the build and platform. Ask whether it is debug, release, or an
    installed production build.
 2. Find the active settings file and its sibling `notecraft.log` and `telemetry`
-   directory. Do not assume the Windows path when running Linux or WSL.
+   directory. These are separate outputs: `notecraft.log` is the application log;
+   `telemetry/<session-id>/` contains structured session events. The Options page's
+   Folder value is the telemetry directory, not the application log. Do not assume
+   the installed-production path for a development checkout or the Windows path
+   when running Linux or WSL.
 3. Record the visible Session ID from About or Options, or read
    `telemetry_session_id` from settings if the UI cannot open.
 4. Inspect `notecraft.log` from startup through the failure, including the
