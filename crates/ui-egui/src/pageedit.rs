@@ -2304,11 +2304,7 @@ pub fn show_blocks(
         // when the picture is lifted out of the box (see `containers`). Only these are noted, so
         // a long page does not pay for it.
         if i > 0 && matches!(blocks.get(i - 1), Some(Block::Image { .. })) {
-            ui.data_mut(|d| {
-                let mut tops = d.get_temp::<Vec<(usize, f32)>>(after_picture_tops_id()).unwrap_or_default();
-                tops.push((i, top));
-                d.insert_temp(after_picture_tops_id(), tops);
-            });
+            ui.data_mut(|d| d.get_temp_mut_or_default::<Vec<(usize, f32)>>(after_picture_tops_id()).push((i, top)));
         }
         // Except the one blank line of a box just clicked into: there the cursor alone shows
         // where the words will go, until the first is written.
