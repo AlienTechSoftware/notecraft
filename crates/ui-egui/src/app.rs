@@ -6192,24 +6192,21 @@ impl NoteCraftApp {
         let Some(block) = ed.blocks.get(caret.block) else { return };
         let Some(caret) = ed.caret.as_mut() else { return };
         let Some((text, selection)) = caret.paint(block, &held.style) else {
-            self.say(crate::tl_id!("ui.inline_mark_whole_line"));
             return;
         };
-        if text != caret.text {
-            Self::remember_step(ed);
-            let Some(caret) = ed.caret.as_mut() else { return };
-            caret.text = text;
-            caret.selection = selection;
-            caret.place = Some(selection.0);
-            caret.focus = true;
-            if let Some(block) = ed.blocks.get_mut(caret.block) {
-                caret.write(block);
-            }
-            ed.pending_format = None;
-            ed.rebuild_body();
-            Self::mark_dirty_from_blocks(ed);
-            Self::remember_edit(ed);
+        Self::remember_step(ed);
+        let Some(caret) = ed.caret.as_mut() else { return };
+        caret.text = text;
+        caret.selection = selection;
+        caret.place = Some(selection.0);
+        caret.focus = true;
+        if let Some(block) = ed.blocks.get_mut(caret.block) {
+            caret.write(block);
         }
+        ed.pending_format = None;
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
         if !held.sticky {
             self.painter = None;
         }
@@ -6238,13 +6235,8 @@ impl NoteCraftApp {
         let Some(caret) = ed.caret.as_mut() else { return };
         let Some(block) = ed.blocks.get(caret.block) else { return };
         let Some((text, selection)) = caret.format(block, format) else {
-            self.status = crate::tl_id!("ui.inline_mark_whole_line").into();
-            self.status_is_error = false;
             return;
         };
-        if text == caret.text {
-            return;
-        }
         Self::remember_step(ed);
         let Some(caret) = ed.caret.as_mut() else { return };
         caret.text = text;
@@ -7101,7 +7093,8 @@ impl NoteCraftApp {
             return;
         };
         let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
-        let (range, text, address, editing) = match pageedit::link_at(&caret.text, lo, hi) {
+        let found = ed.blocks.get(caret.block).and_then(|block| pageedit::link_at_caret(block, caret));
+        let (range, text, address, editing) = match found {
             Some((start, end, words, address)) => ((start, end), words, address, true),
             None => ((lo, hi), caret.text.chars().skip(lo).take(hi - lo).collect(), String::new(), false),
         };
@@ -7138,18 +7131,12 @@ impl NoteCraftApp {
         }
         Self::remember_step(ed);
         let Some(caret) = ed.caret.as_mut() else { return };
-        let chars: Vec<char> = caret.text.chars().collect();
-        let (a, b) = (range.0.min(chars.len()), range.1.min(chars.len()));
-        let mut text: String = chars[..a].iter().collect();
-        text.push_str(replacement);
-        let at = text.chars().count();
-        text.extend(&chars[b..]);
-        caret.text = text;
-        caret.selection = (at, at);
-        caret.place = Some(at);
-        caret.focus = true;
-        // Read again from the words, so the new link is a link and not text that looks like one.
-        caret.inline = None;
+        let (a, b) = (range.0.min(range.1), range.0.max(range.1));
+        // On the spans, not the text: removing a link leaves the same words behind, and a
+        // text diff could never tell the link's words from plain ones.
+        if let Some(block) = ed.blocks.get(block) {
+            caret.replace_range(block, (a, b), replacement);
+        }
         if let Some(b) = ed.blocks.get_mut(block) {
             caret.write(b);
         }
