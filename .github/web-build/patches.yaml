@@ -91,6 +91,13 @@
   find: '(?![\s\S])'
   after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
 
+# fscache.rs answers preview.rs's "is this picture there, and what size and time" for every frame. It asks
+# std::fs::metadata, so in the browser it must ask the in-memory notebook too, and its SystemTime must be the
+# same web-time one preview.rs keys pictures by. The same one-line rule.
+- file: crates/ui-egui/src/fscache.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+
 # File::open in the browser must read from the same in-memory notebook as read_to_string and read_dir.
 - file: crates/model/src/playground.rs
   find: 'pub\s+mod\s+fs\s*\{'

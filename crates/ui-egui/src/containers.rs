@@ -396,8 +396,8 @@ pub fn show(
             && !selection_was_up
             && let Some(at) = empty_paper.interact_pointer_pos()
         {
-            let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-            start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+            let where_ = paper_spot(at, area, zoom);
+            start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
             out.changed.caret = true;
             out.changed.blocks = true;
             out.boxes = true;
@@ -442,6 +442,10 @@ pub fn show(
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width * zoom, area.height()))).layout(*ui.layout()));
         child.set_width(b.width * zoom);
+        // The gap egui leaves between one block and the next grows with the page like
+        // everything else on it: left as it was, it was the same few screen points at every zoom,
+        // so the page's blocks crept against its ink as it was zoomed.
+        child.spacing_mut().item_spacing.y *= zoom;
         let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), cols, justified, across, shown_title, zoom);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
@@ -1366,8 +1370,8 @@ pub fn show(
         && at.y < bottom
         && !frames.iter().any(|f| f.expand(3.0).contains(at))
     {
-        let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-        start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+        let where_ = paper_spot(at, area, zoom);
+        start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
         out.changed.caret = true;
         out.changed.blocks = true;
         out.boxes = true;
@@ -1389,8 +1393,8 @@ pub fn show(
         out.changed.caret = true;
         match below.interact_pointer_pos() {
             Some(at) => {
-                let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-                start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+                let where_ = paper_spot(at, area, zoom);
+                start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
                 out.boxes = true;
                 out.changed.blocks = true;
             }
@@ -1616,6 +1620,8 @@ pub fn show_ink_view(
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
         child.set_width(container.width * zoom);
+        // Spaced as the ordinary view spaces them, at every zoom (see `show`).
+        child.spacing_mut().item_spacing.y *= zoom;
         let child_id = child.id();
         let first = range.start;
         for index in range {
@@ -1628,19 +1634,25 @@ pub fn show_ink_view(
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
             }
-            let _ = crate::preview::show_block_zoomed(
-                &mut child,
-                block,
-                index,
-                page_dir,
-                t,
-                false,
-                page,
-                justified.mark_of(index),
-                None,
-                child_id.with(("ink-view-block", index)),
-                zoom,
-            );
+            // In a scope of its own, as the ordinary view draws a finished block: egui spaces a
+            // scope from the next block as it spaces the block itself, and drawn straight into
+            // the column the blocks sat a little closer, so the page jumped when the pen was
+            // picked up or put down.
+            let _ = child.scope(|ui| {
+                crate::preview::show_block_zoomed(
+                    ui,
+                    block,
+                    index,
+                    page_dir,
+                    t,
+                    false,
+                    page,
+                    justified.mark_of(index),
+                    None,
+                    child_id.with(("ink-view-block", index)),
+                    zoom,
+                )
+            });
         }
         let used = child.min_rect().height().max(18.0);
         bottom = bottom.max(area.min.y + container.y * zoom + HANDLE * zoom + used + PAD * zoom);
@@ -1939,6 +1951,20 @@ fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
 }
 
+/// Where a box started by a click at `at` on open paper goes, in the page's own points: its words
+/// begin under the pointer. The page is drawn at `zoom` from `area`'s corner, so the distance on
+/// the screen is divided by it; taken as it was, a click at any zoom but 100 % put the box (and the
+/// caret) further from the corner than the pointer, the more so the further out it was.
+fn paper_spot(at: Pos2, area: Rect, zoom: f32) -> Pos2 {
+    let zoom = zoom.max(0.01);
+    pos2(((at.x - area.min.x) / zoom - PAD).max(0.0), ((at.y - area.min.y) / zoom - HANDLE).max(0.0))
+}
+
+/// How wide the page is for a box started on it, in page points.
+fn paper_room(area: Rect, zoom: f32) -> f32 {
+    (area.width() / zoom.max(0.01) - 2.0 * PAD).max(container::MIN_WIDTH)
+}
+
 /// Starts an empty box at `at`, in the page's own coordinates, and puts the caret in it.
 ///
 /// The block goes on the end of the page's blocks, because the file keeps its blocks in
@@ -1969,6 +1995,20 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
 
 #[cfg(test)]
 mod tests {
+    /// A box started on open paper begins under the pointer at every zoom.
+    #[test]
+    fn a_click_on_open_paper_starts_its_box_under_the_pointer_at_any_zoom() {
+        let area = Rect::from_min_size(pos2(100.0, 50.0), vec2(800.0, 600.0));
+        for zoom in [0.5_f32, 1.0, 1.05, 2.0] {
+            let click = pos2(100.0 + 400.0, 50.0 + 300.0);
+            let at = super::paper_spot(click, area, zoom);
+            // Where the box's words begin, drawn back on the screen.
+            let words = pos2(area.min.x + (at.x + PAD) * zoom, area.min.y + (at.y + HANDLE) * zoom);
+            assert!((words - click).length() < 0.01, "at {zoom}: clicked {click:?}, words at {words:?}");
+        }
+        assert_eq!(super::paper_room(area, 2.0), 400.0 - 2.0 * PAD, "the page is half as many points wide at twice the zoom");
+    }
+
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};
