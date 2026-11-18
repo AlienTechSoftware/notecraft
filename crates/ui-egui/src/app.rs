@@ -44,6 +44,14 @@ const PLAIN_SNAP_STEP: f32 = 12.0;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
+/// How long after the last change to the ink it is written, once the pen is up. A write on a
+/// synced folder waits on the mount; made after every stroke on the window's thread, the next
+/// stroke waited for it.
+const INK_SAVE_AFTER: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// A write of the ink under way: the file, how many changes it holds, whether the file was there
+/// before, and where its result comes back.
+type InkSaving = (PathBuf, u64, bool, std::sync::mpsc::Receiver<std::io::Result<crate::inkpad::Written>>);
 /// The three-bar button: what OneNote puts at the top left of the navigation pane.
 const BARS: &str = "\u{2630}";
 /// The ArtCraft community chat. Opened in the browser, never fetched by the app.
@@ -1104,6 +1112,13 @@ pub struct NoteCraftApp {
     qat: quickaccess::Config,
     /// When the pen last changed the page, to tell which Undo should take back.
     last_ink_change: Option<Instant>,
+    /// The ink being written off the window's thread: the file, how many changes the write
+    /// holds, whether the file was there before, and where the result comes back.
+    ink_saving: Option<InkSaving>,
+    /// How many changes have been made to the ink, so a write knows whether it holds them all.
+    ink_changes: u64,
+    /// When the ink is next written: a moment after the last change, once the pen is lifted.
+    ink_save_at: Option<Instant>,
     /// What each Undo took back, newest last, so Redo puts it back the same way.
     undone: Vec<Undone>,
     /// Two columns in the side panel (organisers, then pages) instead of one tree.
@@ -1340,6 +1355,9 @@ impl NoteCraftApp {
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
+            ink_saving: None,
+            ink_changes: 0,
+            ink_save_at: None,
             undone: Vec::new(),
             open: HashSet::new(),
             selected: None,
@@ -2873,6 +2891,9 @@ impl NoteCraftApp {
     /// written: what comes next (another page, closing, a command) may read the file.
     fn save_now(&mut self) {
         self.take_saves(true);
+        // Ink written off the window's thread is finished first, so the change check below sees
+        // the file as this window left it.
+        self.take_ink_save(true);
         self.check_page_changes();
         if self.page_conflict {
             return;
@@ -2909,6 +2930,8 @@ impl NoteCraftApp {
                 }
             }
         }
+        // The ink waits a moment after a stroke to be written; it is written now.
+        self.save_ink_here();
         self.save_pending_title();
     }
 
@@ -5412,6 +5435,100 @@ impl NoteCraftApp {
     /// page without it does not. Without this the source pane showed a page of text while
     /// the page itself was covered in handwriting, and another program opening the folder
     /// would never have known the drawing was there.
+    /// The page names its ink file as the write about to be made will leave it: there once
+    /// something is drawn, gone once the last stroke is. Done in the frame of the change, not
+    /// when the write finishes, so the line in the page changes in the same step as the ink and
+    /// one Undo takes back both.
+    fn expect_ink_file(&mut self) {
+        let (Some(ed), Some(pad)) = (self.editor.as_mut(), self.pad.as_ref()) else { return };
+        let Some(name) = pad.file.file_name().map(|n| n.to_string_lossy().into_owned()) else { return };
+        let drawn = pad.strokes() > 0;
+        let named = ed.ink_files.contains(&name);
+        if drawn && !named {
+            ed.ink_files.push(name);
+            ed.ink_files.sort();
+        } else if !drawn && named {
+            ed.ink_files.retain(|n| *n != name);
+        } else {
+            return;
+        }
+        if Self::name_ink(ed) {
+            Self::mark_dirty_from_blocks(ed);
+        }
+    }
+
+    /// Starts writing the ink off the window's thread, if it has changes.
+    fn start_ink_save(&mut self) {
+        let Some(pad) = self.pad.as_ref().filter(|p| p.dirty) else { return };
+        let write = pad.prepare_save();
+        let (file, had) = (write.file.clone(), pad.on_disk());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("notecraft-ink-save".into()).spawn(move || {
+            let _ = tx.send(write.run());
+        });
+        match spawned {
+            Ok(_) => self.ink_saving = Some((file, self.ink_changes, had, rx)),
+            // No thread to be had: written here, as it always was.
+            Err(_) => self.save_ink_here(),
+        }
+    }
+
+    /// Takes in the ink write under way once it is done, or, with `wait`, waits for it.
+    fn take_ink_save(&mut self, wait: bool) {
+        let Some((file, changes, had, rx)) = self.ink_saving.take() else { return };
+        let result = if wait {
+            rx.recv().ok()
+        } else {
+            match rx.try_recv() {
+                Ok(result) => Some(result),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    self.ink_saving = Some((file, changes, had, rx));
+                    return;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
+            }
+        };
+        let Some(result) = result else {
+            self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", "the write stopped")]));
+            return;
+        };
+        // The page may have changed meanwhile: a write is taken in only by the drawing it was of.
+        let current = changes == self.ink_changes;
+        let Some(pad) = self.pad.as_mut().filter(|p| p.file == file) else { return };
+        let now = result.as_ref().ok().map(crate::inkpad::Written::on_disk);
+        // Written in the background, quietly: what the window said about the stroke (a shape
+        // it was taken for) is not written over a moment later. A write that failed says so.
+        if let Err(e) = pad.apply_save(result, current) {
+            self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())]));
+        }
+        self.tell_kept_ink();
+        // The page names its ink file: only a file that came or went changes that.
+        if now.is_some_and(|now| now != had) {
+            self.sync_ink_reference();
+        }
+    }
+
+    /// Writes the ink now, on this thread, after any write under way: for when it must be on
+    /// disk before something else happens (another page, closing, a command).
+    fn save_ink_here(&mut self) {
+        self.take_ink_save(true);
+        self.ink_save_at = None;
+        if self.page_conflict {
+            return;
+        }
+        let Some(pad) = self.pad.as_mut().filter(|p| p.dirty) else { return };
+        let had = pad.on_disk();
+        let strokes = pad.strokes();
+        match pad.save() {
+            Ok(()) => self.say(crate::i18n::format_message_id("ui.drawing_saved_count_strokes", &[("count", &strokes.to_string())])),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
+        }
+        self.tell_kept_ink();
+        if self.pad.as_ref().is_some_and(|p| p.on_disk() != had) {
+            self.sync_ink_reference();
+        }
+    }
+
     fn sync_ink_reference(&mut self) {
         let Some(ed) = self.editor.as_mut() else { return };
         // The folder is asked again: the pen has just written or deleted a file.
@@ -5511,6 +5628,8 @@ impl NoteCraftApp {
 
     /// Puts back the change to the drawing that undo last took back.
     fn ink_redo(&mut self) {
+        // A write of the ink under way is finished before the drawing changes under it.
+        self.take_ink_save(true);
         let Some(pad) = self.pad.as_mut() else {
             self.say(crate::tl_id!("ui.nothing_to_redo"));
             return;
@@ -5529,6 +5648,8 @@ impl NoteCraftApp {
 
     /// Takes the last stroke back out of the drawing on this page.
     fn ink_undo(&mut self) {
+        // A write of the ink under way is finished before the drawing changes under it.
+        self.take_ink_save(true);
         let Some(pad) = self.pad.as_mut() else {
             self.say(crate::tl_id!("ui.there_is_no_drawing_on_this_page"));
             return;
@@ -9152,14 +9273,21 @@ impl NoteCraftApp {
         {
             pad.settle();
         }
-        if ink_changed && let Some(pad) = self.pad.as_mut() {
-            let strokes = pad.strokes();
-            match pad.save() {
-                Ok(()) => self.say(crate::i18n::format_message_id("ui.drawing_saved_count_strokes", &[("count", &strokes.to_string())])),
-                Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
-            }
-            self.tell_kept_ink();
-            self.sync_ink_reference();
+        // The ink is written a moment after the last change, off the window's thread, once the
+        // pen is lifted: the pen never waits for the disk.
+        if ink_changed {
+            self.ink_changes += 1;
+            self.ink_save_at = Some(Instant::now() + INK_SAVE_AFTER);
+            self.expect_ink_file();
+        }
+        self.take_ink_save(false);
+        let pen_down = ui.input(|i| i.pointer.any_down());
+        if self.ink_saving.is_none() && !pen_down && !self.page_conflict && self.ink_save_at.is_some_and(|at| Instant::now() >= at) {
+            self.ink_save_at = None;
+            self.start_ink_save();
+        }
+        if self.ink_save_at.is_some() || self.ink_saving.is_some() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(kind) = recognised {
             self.say(match kind {
@@ -11354,6 +11482,7 @@ impl NoteCraftApp {
             self.check_page_changes();
         }
         if !self.saver.busy()
+            && self.ink_saving.is_none()
             && !self.page_conflict
             && let Some(current) = self.editor.as_ref().and_then(|ed| crate::windows::Revision::read(&ed.dir).ok())
             && let Some(previous) = &self.page_revision
