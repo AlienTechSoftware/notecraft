@@ -10666,7 +10666,17 @@ fn missing_page_fonts_are_visible_in_both_formats() {
         notecraft_store::page::save_body(page, body).expect("write fixture");
         h.state_mut().open_path(&page.to_string_lossy());
         settle(&mut h);
-        assert!(h.query_all_by_label_contains("These fonts could not be loaded").count() > 0, "a missing family is reported for {}", page.display());
+        // The font is looked up on a background thread, so the notice appears a few frames later.
+        let mut reported = false;
+        for _ in 0..400 {
+            settle(&mut h);
+            if h.query_all_by_label_contains("These fonts could not be loaded").count() > 0 {
+                reported = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(reported, "a missing family is reported for {}", page.display());
         assert!(h.state().body().unwrap_or_default().contains("NoteCraft Missing Font 928474"), "the name stays on the page");
     }
 }
