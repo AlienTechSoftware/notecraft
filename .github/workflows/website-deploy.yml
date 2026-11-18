@@ -1,0 +1,130 @@
+name: Deploy verified website
+
+on:
+  workflow_call:
+    inputs:
+      artifact-id:
+        required: true
+        type: string
+      site-sha256:
+        required: true
+        type: string
+      source-sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    secrets:
+      AZURE_STATIC_WEB_APPS_API_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-website-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Require one site artifact ID
+        env:
+          SITE_ARTIFACT_ID: ${{ inputs.artifact-id }}
+        run: |
+          [[ "$SITE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.artifact-id }}
+          # ID-based downloads otherwise add a directory named after the artifact.
+          merge-multiple: true
+          path: ${{ runner.temp }}/website-artifact
+
+      - name: Verify the site archive and its source
+        env:
+          SITE_SHA256: ${{ inputs.site-sha256 }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+          NOTECRAFT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SITE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ -n "$NOTECRAFT_VERSION" ]]
+          cd "$RUNNER_TEMP/website-artifact"
+          [[ "$(cat source-sha.txt)" == "$SOURCE_SHA" ]]
+          [[ "$(cat version.txt)" == "$NOTECRAFT_VERSION" ]]
+          printf '%s  site.tar\n' "$SITE_SHA256" | sha256sum -c -
+          mkdir "$GITHUB_WORKSPACE/website"
+          tar -xf site.tar -C "$GITHUB_WORKSPACE/website"
+          test -f "$GITHUB_WORKSPACE/website/index.html"
+          test -f "$GITHUB_WORKSPACE/website/demo/index.html"
+          test -f "$GITHUB_WORKSPACE/website/demo/welcome-notebook.zip"
+
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: "website"
+          output_location: ""
+          skip_app_build: true
+
+      - name: Verify deployed production demo version
+        env:
+          NOTECRAFT_VERSION: ${{ inputs.version }}
+          VERIFY_QUERY: ${{ inputs.source-sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          import time
+          import zipfile
+          from io import BytesIO
+          from urllib.error import URLError
+          from urllib.parse import urljoin
+          from urllib.request import urlopen
+
+          base = "https://notecraft.cloud/demo/"
+          version = os.environ["NOTECRAFT_VERSION"].encode()
+          query = "?release-check=" + os.environ["VERIFY_QUERY"]
+          last_error = "no attempt made"
+          for attempt in range(1, 13):
+              try:
+                  with urlopen(base + query, timeout=30) as response:
+                      html = response.read().decode("utf-8")
+                  match = re.search(r"['\"](\./[^'\"]+\.wasm)['\"]", html)
+                  if not match:
+                      raise RuntimeError("deployed demo index does not reference a WASM file")
+                  wasm_url = urljoin(base, match.group(1)) + query
+                  with urlopen(wasm_url, timeout=60) as response:
+                      wasm = response.read()
+                  if version not in wasm:
+                      last_error = f"live WASM does not contain NoteCraft {version.decode()}"
+                      raise RuntimeError(last_error)
+                  with urlopen(base + "welcome-notebook.zip" + query, timeout=60) as response:
+                      archive_bytes = response.read()
+                  with zipfile.ZipFile(BytesIO(archive_bytes)) as notebook:
+                      html = notebook.read("html/00-start/welcome/index.html").decode("utf-8")
+                      cmgfm = notebook.read("cmgfm/00-start/welcome/index.md").decode("utf-8")
+                      names = notebook.namelist()
+                  title = f"Welcome to NoteCraft (Ver {version.decode()})"
+                  if title not in html or title not in cmgfm:
+                      last_error = f"live Welcome notebook formats do not match NoteCraft {version.decode()}"
+                      raise RuntimeError(last_error)
+                  if not all(name in names for name in (
+                      "html/_node.toml", "cmgfm/_node.toml",
+                      "html/00-start/welcome/index.html", "cmgfm/00-start/welcome/index.md",
+                  )):
+                      last_error = "live Welcome notebook must contain both generated formats"
+                      raise RuntimeError(last_error)
+                  print(f"Live demo at {wasm_url} and both Welcome notebook formats embed NoteCraft {version.decode()}")
+                  sys.exit(0)
+              except (URLError, TimeoutError, RuntimeError, zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
+                  last_error = str(error)
+              if attempt < 12:
+                  time.sleep(10)
+          sys.exit(f"Live demo version verification failed after {attempt} attempts: {last_error}")
+          PY
