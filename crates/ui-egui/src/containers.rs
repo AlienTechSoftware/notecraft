@@ -592,8 +592,23 @@ pub fn show(
                     out.changed.caret = true;
                     log::debug!("picture in a shared box hit: container={i} block={block}");
                 }
-                if body.drag_started() && lift_picture.is_none() {
-                    lift_picture = Some(PictureLift { container: i, block: *block, rect: *rect });
+                // A printout page brings the rest of its printout along. When the printout is
+                // all the box holds, the box itself is what moves.
+                let printout = printout_blocks(blocks, &range, *block);
+                if printout.as_ref() == Some(&range) {
+                    if body.dragged() {
+                        let pull = scroll_at_edges(ui, area.min.y, zoom);
+                        if let Some(c) = boxes.get_mut(i) {
+                            let to = moved_to(ui, picture_grab_id(ui, *block), area.min, (c.x, c.y), body.drag_started(), zoom, pull, snap);
+                            *c = Container::new(to.0, to.1, c.width, c.blocks);
+                        }
+                        out.boxes = true;
+                    }
+                } else if body.drag_started() && lift_picture.is_none() {
+                    let lifted = printout.unwrap_or(*block..*block + 1);
+                    // The whole of what is lifted, as drawn: every page and the card above them.
+                    let drawn = hits.iter().filter(|(b, ..)| lifted.contains(b)).fold(*rect, |all, (_, r, _)| all.union(*r));
+                    lift_picture = Some(PictureLift { container: i, block: *block, blocks: lifted, rect: drawn });
                 }
             }
         }
@@ -936,11 +951,11 @@ pub fn show(
         && let Some(whole) = boxes.get(lift.container).copied()
     {
         let range = container::blocks_of(boxes, lift.container);
-        if range.len() > 1 && range.contains(&lift.block) {
+        if range.len() > lift.blocks.len() && range.start <= lift.blocks.start && lift.blocks.end <= range.end {
             let next_top = ui
                 .data(|d| d.get_temp::<Vec<(usize, f32)>>(pageedit::after_picture_tops_id()))
-                .and_then(|tops| tops.iter().find(|(block, _)| *block == lift.block + 1).map(|(_, y)| *y));
-            let (parts, picture_at) = lift_out(whole, range, lift.block, area.min, zoom, lift.rect, next_top);
+                .and_then(|tops| tops.iter().find(|(block, _)| *block == lift.blocks.end).map(|(_, y)| *y));
+            let (parts, picture_at) = lift_out(whole, range, lift.blocks.clone(), area.min, zoom, lift.rect, next_top);
             boxes.splice(lift.container..=lift.container, parts);
             let picture_box = lift.container + picture_at;
             let pull = scroll_at_edges(ui, area.min.y, zoom);
@@ -1852,14 +1867,54 @@ fn moved_to(ui: &Ui, id: egui::Id, page_min: egui::Pos2, at: (f32, f32), started
 }
 
 /// A picture that was taken hold of in a box shared with other blocks.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct PictureLift {
     /// The box it is in.
     container: usize,
-    /// The picture's block.
+    /// The picture's block, the one the pointer took hold of.
     block: usize,
-    /// Where the picture is drawn, on screen.
+    /// The blocks that go with it: the picture alone, or the whole of a printout.
+    blocks: std::ops::Range<usize>,
+    /// Where they are drawn, on screen.
     rect: Rect,
+}
+
+/// The file a printout page was made from, read from the page's picture: `assets/a.pdf` for
+/// `assets/a.pdf.printout-003.png`. `None` for any other block.
+fn printout_source(block: &Block) -> Option<&str> {
+    let Block::Image { src, .. } = block else { return None };
+    let (source, page) = src.rsplit_once(".printout-")?;
+    let number = page.strip_suffix(".png")?;
+    (!number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())).then_some(source)
+}
+
+/// The blocks of the printout that `block` is a page of, within `range`: every page made from
+/// the same file next to it, and the attachment card above the first page when it is the card
+/// of that file. A printout is one thing on the page, as in OneNote: taking hold of any page
+/// moves all of it. `None` when `block` is not a printout page.
+fn printout_blocks(blocks: &[Block], range: &std::ops::Range<usize>, block: usize) -> Option<std::ops::Range<usize>> {
+    let source = printout_source(blocks.get(block)?)?;
+    let same = |i: usize| blocks.get(i).and_then(printout_source) == Some(source);
+    let mut start = block;
+    while start > range.start && same(start - 1) {
+        start -= 1;
+    }
+    let mut end = block + 1;
+    while end < range.end && same(end) {
+        end += 1;
+    }
+    // The card is the file's icon, `assets/a.pdf.svg`, or words linking to the file.
+    let card = |b: &Block| match b {
+        Block::Image { src, .. } => src.strip_suffix(".svg") == Some(source),
+        Block::Paragraph(spans) => {
+            spans.iter().any(|s| s.link.as_deref() == Some(source) || s.image.as_deref().and_then(|i| i.strip_suffix(".svg")) == Some(source))
+        }
+        _ => false,
+    };
+    if start > range.start && blocks.get(start - 1).is_some_and(card) {
+        start -= 1;
+    }
+    Some(start..end)
 }
 
 /// Where a picture being moved was taken hold of, kept for the length of the drag. Keyed by the
@@ -1885,8 +1940,9 @@ fn picture_clicked(ui: &Ui, blocks: &[Block], page_dir: &std::path::Path, block:
     }
 }
 
-/// The boxes that replace `whole`, which holds `range`, when the picture `block` in it is taken
-/// out into a box of its own: the blocks before it, the picture, the blocks after it. A part
+/// The boxes that replace `whole`, which holds `range`, when the picture in `lifted` (one block,
+/// or a printout's card and pages) is taken out into a box of its own: the blocks before it, the
+/// picture, the blocks after it. A part
 /// with nothing in it is left out. Also says which of the boxes is the picture's.
 ///
 /// Every part keeps the place it was drawn at, so the page looks the same afterwards. The
@@ -1896,7 +1952,7 @@ fn picture_clicked(ui: &Ui, blocks: &[Block], page_dir: &std::path::Path, block:
 fn lift_out(
     whole: Container,
     range: std::ops::Range<usize>,
-    block: usize,
+    lifted: std::ops::Range<usize>,
     origin: Pos2,
     zoom: f32,
     picture: Rect,
@@ -1906,14 +1962,19 @@ fn lift_out(
     const BETWEEN: f32 = 6.0;
     let zoom = zoom.max(0.01);
     let mut parts = Vec::with_capacity(3);
-    let before = block - range.start;
+    let before = lifted.start - range.start;
     if before > 0 {
         parts.push(Container::new(whole.x, whole.y, whole.width, before));
     }
     let picture_at = parts.len();
     // The box's inside starts a pad in from its left edge and a handle's height below its top.
-    parts.push(Container::new((picture.min.x - origin.x) / zoom - PAD, (picture.min.y - origin.y) / zoom - HANDLE, picture.width() / zoom, 1));
-    let after = range.end - block - 1;
+    parts.push(Container::new(
+        (picture.min.x - origin.x) / zoom - PAD,
+        (picture.min.y - origin.y) / zoom - HANDLE,
+        picture.width() / zoom,
+        lifted.len(),
+    ));
+    let after = range.end - lifted.end;
     if after > 0 {
         let top = next_top.map_or(picture.max.y + BETWEEN * zoom, |y| y.max(picture.max.y));
         parts.push(Container::new(whole.x, (top - origin.y) / zoom - HANDLE, whole.width, after));
@@ -1961,6 +2022,27 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
 
 #[cfg(test)]
 mod tests {
+    /// A printout's card and pages go together; a picture of another printout, or none, does not.
+    #[test]
+    fn a_printout_is_its_card_and_every_page() {
+        use notecraft_formats::markdown::Block;
+        let image = |src: &str| Block::Image { alt: String::new(), src: src.into(), width: None, height: None };
+        let blocks = vec![
+            Block::Paragraph(Vec::new()),
+            image("assets/a.pdf.svg"),
+            image("assets/a.pdf.printout-001.png"),
+            image("assets/a.pdf.printout-002.png"),
+            image("assets/b.pdf.printout-001.png"),
+            image("assets/photo.png"),
+        ];
+        assert_eq!(super::printout_blocks(&blocks, &(0..6), 3), Some(1..4));
+        assert_eq!(super::printout_blocks(&blocks, &(0..6), 2), Some(1..4));
+        assert_eq!(super::printout_blocks(&blocks, &(2..6), 2), Some(2..4), "not past the box it is in");
+        assert_eq!(super::printout_blocks(&blocks, &(0..6), 4), Some(4..5));
+        assert_eq!(super::printout_blocks(&blocks, &(0..6), 5), None);
+        assert_eq!(super::printout_blocks(&blocks, &(0..6), 1), None, "the card alone is a picture");
+    }
+
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};
@@ -2342,7 +2424,7 @@ more
         // The page's corner is at (100, 50); the box's inside starts at 100+40+6, 50+20+14.
         let origin = pos2(100.0, 50.0);
         let picture = Rect::from_min_size(pos2(146.0, 154.0), vec2(200.0, 120.0));
-        let (parts, at) = lift_out(whole, 0..5, 2, origin, 1.0, picture, Some(290.0));
+        let (parts, at) = lift_out(whole, 0..5, 2..3, origin, 1.0, picture, Some(290.0));
         assert_eq!(parts.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![2, 1, 2], "words, picture, words");
         assert_eq!(at, 1);
         assert_eq!(parts[0], Container::new(40.0, 20.0, 400.0, 2), "the words before keep the box's place and width");
@@ -2354,9 +2436,9 @@ more
     fn lifting_the_first_or_last_picture_leaves_no_empty_box() {
         let whole = Container::new(0.0, 0.0, 300.0, 3);
         let picture = Rect::from_min_size(pos2(6.0, 14.0), vec2(150.0, 80.0));
-        let (first, at) = lift_out(whole, 0..3, 0, pos2(0.0, 0.0), 1.0, picture, Some(100.0));
+        let (first, at) = lift_out(whole, 0..3, 0..1, pos2(0.0, 0.0), 1.0, picture, Some(100.0));
         assert_eq!((first.iter().map(|c| c.blocks).collect::<Vec<_>>(), at), (vec![1, 2], 0));
-        let (last, at) = lift_out(whole, 0..3, 2, pos2(0.0, 0.0), 1.0, picture, None);
+        let (last, at) = lift_out(whole, 0..3, 2..3, pos2(0.0, 0.0), 1.0, picture, None);
         assert_eq!((last.iter().map(|c| c.blocks).collect::<Vec<_>>(), at), (vec![2, 1], 1));
     }
 
@@ -2365,12 +2447,12 @@ more
         let whole = Container::new(0.0, 0.0, 300.0, 4);
         // At 200 % the picture is drawn twice as far from the corner and twice as big.
         let picture = Rect::from_min_size(pos2(24.0, 68.0), vec2(300.0, 160.0));
-        let (parts, _) = lift_out(whole, 0..4, 1, pos2(0.0, 0.0), 2.0, picture, Some(260.0));
+        let (parts, _) = lift_out(whole, 0..4, 1..2, pos2(0.0, 0.0), 2.0, picture, Some(260.0));
         assert_eq!((parts[1].x, parts[1].y, parts[1].width), (6.0, 20.0, 150.0), "page points, not screen points");
         assert_eq!(parts[2].y, 116.0);
         assert_eq!(parts.iter().map(|c| c.blocks).sum::<usize>(), 4);
         // A box that is only a picture and a line, lifted below a range that starts later.
-        let (parts, _) = lift_out(Container::new(0.0, 0.0, 300.0, 2), 3..5, 4, pos2(0.0, 0.0), 1.0, picture, None);
+        let (parts, _) = lift_out(Container::new(0.0, 0.0, 300.0, 2), 3..5, 4..5, pos2(0.0, 0.0), 1.0, picture, None);
         assert_eq!(parts.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![1, 1]);
     }
 }

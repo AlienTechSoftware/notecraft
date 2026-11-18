@@ -5835,14 +5835,14 @@ impl NoteCraftApp {
     /// Letters going into the block the caret was already in fold into the step before
     /// them, so Ctrl+Z takes back a run of writing rather than one character.
     fn remember_step(ed: &mut Editor) {
-        Self::remember(ed, false);
+        Self::remember(ed, false, None);
     }
 
     /// Remembers a change made from the ribbon rather than by writing, such as Insert Space
     /// or a row put into a table, as a step of its own. It never folds into the writing
     /// before it, even when the caret stays in the same block (issue #153).
     fn remember_edit(ed: &mut Editor) {
-        Self::remember(ed, true);
+        Self::remember(ed, true, None);
     }
 
     /// Remembers a change to how a table is laid out that may leave its words as they were,
@@ -5858,7 +5858,9 @@ impl NoteCraftApp {
         ed.history.record(step);
     }
 
-    fn remember(ed: &mut Editor, edit: bool) {
+    /// `moving`: boxes moved by the press of the pointer that went down then, and nothing else
+    /// changed. The frames of one drag fold into one step.
+    fn remember(ed: &mut Editor, edit: bool, moving: Option<u64>) {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same || {
             // Only the cursor's place on open paper came or went: the page is the one remembered.
@@ -5876,8 +5878,9 @@ impl NoteCraftApp {
         let here = ed.caret.as_ref().map(|c| c.block);
         let was = ed.history.here().and_then(|s| s.caret.as_ref().map(|c| c.block));
         let shape = ed.history.here().is_some_and(|s| s.blocks.len() == ed.blocks.len());
-        let kind = match (shape, here, was) {
-            (true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
+        let kind = match (moving, shape, here, was) {
+            (Some(press), ..) => crate::history::Kind::Moving(press),
+            (None, true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
             _ => crate::history::Kind::Edit,
         };
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
@@ -9042,15 +9045,19 @@ impl NoteCraftApp {
             if (changed || from_blocks) && Self::name_ink(ed) {
                 from_blocks = true;
             }
-            if changed || from_blocks || boxes_moved {
-                Self::remember_step(ed);
-            }
             // A container was dragged or resized: the arrangement is the page's own, so it
-            // is written into the page's file rather than kept in the window.
+            // is written into the page's file rather than kept in the window. Done before the
+            // step is taken, so the step's text holds the boxes where they now are.
             if boxes_moved {
                 ed.arranged = true;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+            }
+            if changed || from_blocks || boxes_moved {
+                // Boxes moved while the pointer is held: one drag, one step.
+                let press = ui.input(|i| (i.pointer.any_down() || i.pointer.any_released()).then(|| i.pointer.press_start_time()).flatten());
+                let moving = (boxes_moved && !changed && !from_blocks).then_some(press).flatten().map(f64::to_bits);
+                Self::remember(ed, false, moving);
             }
             // A column was dragged wider or narrower. Widths are layout, like the boxes,
             // so they go into the page's own file beside them.
