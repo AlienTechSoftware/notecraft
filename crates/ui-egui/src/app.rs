@@ -1268,6 +1268,8 @@ pub struct NoteCraftApp {
     /// scrolled once it is drawn, coming back to where the window was left, with how many
     /// frames that is still tried for (a page's height is known only once it is drawn).
     page_scroll: f32,
+    /// How far down the page could be scrolled, as last drawn.
+    page_offset_max: f32,
     restore_scroll: Option<(f32, u32)>,
     /// Recovery warnings that were already shown during this run.
     icon_recovery_reported: HashSet<String>,
@@ -1430,6 +1432,7 @@ impl NoteCraftApp {
             band_bottom: 0.0,
             zoom_percent: 100,
             page_scroll: 0.0,
+            page_offset_max: 0.0,
             restore_scroll: None,
             fit_page_width: false,
             theme_window: false,
@@ -1573,7 +1576,9 @@ impl NoteCraftApp {
         self.open_page(&path);
         // Scrolled to where it was.
         if let Some(y) = self.session.settings.get(LAST_SCROLL_KEY).and_then(|y| y.trim().parse::<f32>().ok()).filter(|y| y.is_finite() && *y > 0.0) {
-            self.restore_scroll = Some((y, 60));
+            // Pictures may take a while to arrive from a synced folder, and the page is only as
+            // tall as what has arrived: it is tried for a few seconds.
+            self.restore_scroll = Some((y, 300));
         }
     }
 
@@ -9050,7 +9055,12 @@ impl NoteCraftApp {
                 };
                 let page_outer = ui.available_rect_before_wrap();
                 let mut area = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll);
-                if let Some((y, _)) = restore_scroll {
+                // Only once the page is tall enough to be scrolled that far: put past its end while
+                // it is still being laid out, the page sprang back from the end with a great speed,
+                // coasted on, and ended up far from where it was left, and the window kept drawing.
+                if let Some((y, _)) = restore_scroll
+                    && y <= self.page_offset_max + 1.0
+                {
                     area = area.vertical_scroll_offset(y);
                 }
                 let shown = area.show(ui, |ui| {
@@ -9087,6 +9097,7 @@ impl NoteCraftApp {
                     hbar = crate::hscroll::show(ui.ctx(), egui::Id::new("page-hscroll"), view, span, reserve);
                 }
                 scroll_now = Some(shown.state.offset().y);
+                self.page_offset_max = (shown.content_size.y - shown.inner_rect.height()).max(0.0);
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -12384,6 +12395,34 @@ mod alert_tests {
     /// notebooks folder (the one in a synced folder, say), at the same zoom and scrolled to the
     /// same place. A page outside the notebooks folder was never remembered at all, so the window
     /// always came back to whatever page it had last remembered inside it.
+    /// Coming back to a place further down than the page reaches yet (its pictures still on their
+    /// way, or the page made shorter meanwhile) does not throw the page past its end. Put there,
+    /// it sprang back with a great speed, coasted far from where it was left, and the window went
+    /// on drawing frame after frame with nothing happening.
+    #[test]
+    fn coming_back_further_down_than_the_page_reaches_leaves_the_window_still() {
+        let t = notecraft_store::testing::TempDir::new("reopen-past-the-end");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let lines: String = (1..=60).map(|n| format!("<p>line {n}</p>")).collect();
+        let page = sample.html_page.to_string_lossy().into_owned();
+        session.run("page.save", &params(&[("path", &page), ("body", &lines)])).expect("a page");
+        settings.set("last_page", &page).expect("last page");
+        settings.set(LAST_SCROLL_KEY, "100000").expect("far down");
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1200.0, 760.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), NoteCraftApp::new(session));
+        for _ in 0..20 {
+            h.step();
+        }
+        let (at, end) = (h.state().page_scroll, h.state().page_offset_max);
+        assert!(at <= end + 1.0, "the page is not past its end: {at} of {end}");
+        assert!(!h.ctx.has_requested_repaint(), "and with nothing happening the window asks for no more frames");
+    }
+
     #[test]
     fn the_window_opens_where_it_was_left() {
         let t = notecraft_store::testing::TempDir::new("reopen-where-left");
