@@ -2724,6 +2724,8 @@ fn a_click_on_blank_paper_starts_writing_under_the_pointer_when_zoomed() {
     // The box's words begin a pad in and a handle's height down from its corner (6 and 14 points).
     let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 14.0) * 2.0);
     assert!((words - click).length() < 3.0, "clicked at {click:?}, the box's words begin at {words:?}");
+}
+
 /// With a pen in hand the page is drawn by the ink view, which did not let go of last frame's
 /// list of the pictures it drew: the list grew by every picture on the page each frame, and each
 /// picture went through all of it, so the longer the pen was held the slower drawing, panning and
