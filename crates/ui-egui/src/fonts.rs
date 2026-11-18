@@ -49,92 +49,137 @@ pub fn page_families(blocks: &[notecraft_formats::Block]) -> BTreeSet<String> {
     families
 }
 
-/// The latest read of the installed fonts. Each read is leaked once, so a reader can keep its
-/// `&'static` reference while a newer read replaces it (a font was added).
+/// One read of the installed fonts: the catalogue, or why it could not be read.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-static CATALOG: std::sync::Mutex<Option<&'static Result<system::Catalog, String>>> = std::sync::Mutex::new(None);
+type CatalogRead = Result<std::sync::Arc<system::Catalog>, String>;
+
+/// The latest read, with the ticket it was started under. A read publishes only when its ticket is
+/// newer than the one published, so a slow older read cannot replace a newer font list.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+static CATALOG: std::sync::Mutex<Option<(u64, std::sync::Arc<CatalogRead>)>> = std::sync::Mutex::new(None);
+
+/// Hands out the tickets: each read takes the next one when it starts.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+static NEXT_TICKET: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-fn current() -> Option<&'static Result<system::Catalog, String>> {
-    *CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+fn current() -> Option<std::sync::Arc<CatalogRead>> {
+    CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().map(|(_, read)| read.clone())
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-fn publish(result: Result<system::Catalog, String>) -> &'static Result<system::Catalog, String> {
-    let leaked: &'static Result<system::Catalog, String> = Box::leak(Box::new(result));
-    *CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(leaked);
-    leaked
+fn take_ticket() -> u64 {
+    NEXT_TICKET.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Publishes a read unless a newer one is already published. Returns the read that is current
+/// afterwards.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn publish(ticket: u64, result: CatalogRead) -> std::sync::Arc<CatalogRead> {
+    let read = std::sync::Arc::new(result);
+    let mut published = CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    match published.as_ref() {
+        Some((newer, current)) if *newer > ticket => current.clone(),
+        _ => {
+            *published = Some((ticket, read.clone()));
+            read
+        }
+    }
 }
 
 /// Reads the installed fonts on a background thread, so the window never waits for it. Listing
 /// every font takes a while on some machines.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn start_catalog() {
-    std::thread::spawn(|| {
-        if current().is_none() {
-            publish(system::Catalog::discover());
-        }
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let ticket = take_ticket();
+        std::thread::spawn(move || {
+            if current().is_none() {
+                publish(ticket, system::Catalog::discover().map(std::sync::Arc::new));
+            }
+        });
     });
 }
 
 /// Reads the installed fonts again on a background thread, after a font was added. The list shows
-/// the previous read until this one is ready.
+/// the previous read until this one is ready, then asks the window to draw again.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn rescan_in_background(ctx: egui::Context) {
+    let ticket = take_ticket();
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
-        let result = system::Catalog::discover();
+        let result = system::Catalog::discover().map(std::sync::Arc::new);
         let families = result.as_ref().map_or(0, |catalog| catalog.families().len());
         crate::usage::record(
             crate::usage::Level::Usage,
             "font_catalog_read",
             &[("families", &families.to_string()), ("ms", &started.elapsed().as_millis().to_string())],
         );
-        publish(result);
+        publish(ticket, result);
         ctx.request_repaint();
     });
 }
 
 /// The installed fonts, or `None` while they are still being read. Never blocks.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-pub fn catalog_if_ready() -> Option<Result<&'static system::Catalog, &'static str>> {
-    current().map(|result| result.as_ref().map_err(String::as_str))
+pub fn catalog_if_ready() -> Option<Result<std::sync::Arc<system::Catalog>, String>> {
+    current().map(|read| (*read).clone())
 }
 
 /// The installed fonts. Waits for the background read if it is not finished (used when a font is
 /// installed, which is rare).
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-pub fn system_catalog() -> Result<&'static system::Catalog, &'static str> {
-    let result = match current() {
-        Some(result) => result,
-        None => publish(system::Catalog::discover()),
-    };
-    result.as_ref().map_err(String::as_str)
+pub fn system_catalog() -> Result<std::sync::Arc<system::Catalog>, String> {
+    if let Some(read) = current() {
+        return (*read).clone();
+    }
+    let ticket = take_ticket();
+    (*publish(ticket, system::Catalog::discover().map(std::sync::Arc::new))).clone()
 }
 
+/// Faces read by background threads and not yet added to the font set: (family, loaded bytes or the
+/// reason it failed). Added in one batch by the window, on its own thread.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-fn load_family(family: &str, definitions: &mut egui::FontDefinitions) -> Result<(), String> {
-    system_catalog().map_err(str::to_string)?.install(family, definitions)?;
-    Ok(())
+static FINISHED: std::sync::Mutex<Vec<(String, Result<egui::FontData, String>)>> = std::sync::Mutex::new(Vec::new());
+
+/// Families whose bytes a background thread is reading now, so they are not requested twice.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+static LOADING: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+
+/// Reads the bytes of each family on a background thread. Only the window's thread changes the font
+/// set, so this does not stall scrolling: the bytes are read off the UI thread, and the faces are
+/// added in one batch per frame (`ensure_page_fonts`).
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn start_loading(ctx: &egui::Context, catalog: std::sync::Arc<system::Catalog>, families: Vec<String>) {
+    {
+        let mut loading = LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loading.extend(families.iter().cloned());
+    }
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        for family in families {
+            let loaded = catalog.load(&family);
+            FINISHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((family.clone(), loaded));
+            LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&family);
+            ctx.request_repaint();
+        }
+    });
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-fn load_family(_family: &str, _definitions: &mut egui::FontDefinitions) -> Result<(), String> {
-    Err("Installed font access is not available on this platform".to_string())
-}
-
-/// Register fonts used by a page once per context, returning names that could not be loaded.
+/// Register fonts used by a page once per context, returning names that could not be loaded. Never
+/// blocks: a family not yet read is asked for now and drawn in its own font from a later frame.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Vec<String> {
     let id = egui::Id::new("notecraft-page-font-results");
     let mut results = ctx.data(|data| data.get_temp::<BTreeMap<String, bool>>(id).unwrap_or_default());
-    let missing: Vec<_> = families.iter().filter(|family| !results.contains_key(*family)).cloned().collect();
-    if !missing.is_empty() {
+    // Faces the background threads have read join the font set together, once for the frame.
+    let finished = std::mem::take(&mut *FINISHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+    if !finished.is_empty() {
         let mut definitions = ctx.fonts(|fonts| fonts.definitions().clone());
-        let mut changed = false;
-        for family in missing {
-            match load_family(&family, &mut definitions) {
-                Ok(()) => {
-                    changed = true;
+        for (family, loaded) in finished {
+            match loaded.and_then(|data| system::insert_face(&mut definitions, &family, data)) {
+                Ok(_) => {
                     results.insert(family, true);
                 }
                 Err(error) => {
@@ -143,13 +188,28 @@ pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Ve
                 }
             }
         }
-        if changed {
-            ctx.set_fonts(definitions);
-            ctx.request_repaint();
-        }
-        ctx.data_mut(|data| data.insert_temp(id, results.clone()));
+        ctx.set_fonts(definitions);
+        ctx.request_repaint();
     }
+    let loading = LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let wanted: Vec<String> = families.iter().filter(|family| !results.contains_key(*family) && !loading.contains(*family)).cloned().collect();
+    if !wanted.is_empty() {
+        match catalog_if_ready() {
+            Some(Ok(catalog)) => start_loading(ctx, catalog, wanted),
+            // The installed fonts are not read yet: start that (once), and ask for these names later.
+            None => start_catalog(),
+            Some(Err(_)) => {}
+        }
+    }
+    ctx.data_mut(|data| data.insert_temp(id, results.clone()));
     families.iter().filter(|family| results.get(*family) == Some(&false)).cloned().collect()
+}
+
+/// Off the desktop there are no installed fonts to add.
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Vec<String> {
+    let _ = ctx;
+    families.iter().cloned().collect()
 }
 
 /// egui's own definitions plus the faces NoteCraft adds.
@@ -209,14 +269,21 @@ mod tests {
         let families = page_families(&blocks);
         assert_eq!(families.len(), 1);
         let ctx = egui::Context::default();
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            install_once(ui.ctx());
-            let failures = ensure_page_fonts(ui.ctx(), &families);
-            assert_eq!(failures.len(), 1);
-            assert!(failures[0].contains("No such NoteCraft family 928474"));
-            assert_eq!(failures, ensure_page_fonts(ui.ctx(), &families), "failure remains visible in later frames");
-        });
-        output.textures_delta.clear();
+        // Fonts load on background threads now, so the frames are run until the failure shows.
+        let mut failures = Vec::new();
+        for _ in 0..400 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                install_once(ui.ctx());
+                failures = ensure_page_fonts(ui.ctx(), &families);
+            });
+            output.textures_delta.clear();
+            if !failures.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].contains("No such NoteCraft family 928474"));
     }
 
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
@@ -268,11 +335,18 @@ mod tests {
         let family = catalog.families().first().expect("a discovered catalog is not empty").clone();
         let wanted = std::collections::BTreeSet::from([family.clone()]);
         let ctx = egui::Context::default();
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            install_once(ui.ctx());
-            assert!(ensure_page_fonts(ui.ctx(), &wanted).is_empty(), "the page's installed font loads");
-        });
-        output.textures_delta.clear();
+        // The bytes load on a background thread; run frames until the family is registered.
+        for _ in 0..400 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                install_once(ui.ctx());
+                assert!(ensure_page_fonts(ui.ctx(), &wanted).is_empty(), "the page's installed font loads");
+            });
+            output.textures_delta.clear();
+            if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&named_family(&family))) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             assert!(ui.ctx().fonts(|fonts| fonts.definitions().families.contains_key(&named_family(&family))));
             for (name, _) in BUNDLED {

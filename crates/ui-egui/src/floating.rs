@@ -120,7 +120,7 @@ pub struct FontBoxes {
     /// The family shown is not installed, so the box shows its warning mark.
     pub family_missing: bool,
     /// The installed families grouped by script, with a heading for each.
-    pub sections: Vec<(String, Vec<String>)>,
+    pub sections: std::sync::Arc<Vec<(String, Vec<String>)>>,
 }
 
 /// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
@@ -232,6 +232,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                         }
                     }
                     if let Some(name) = families.chosen {
+                        crate::ribbon::remember_family(ui.ctx(), &name);
                         acts.push(Act::FontFamily(name));
                         picked = true;
                     }

@@ -75,7 +75,9 @@ impl Catalog {
     }
 
     /// Add the regular face to its own egui family, retaining the proportional fallback chain.
-    pub fn install(&self, family: &str, definitions: &mut egui::FontDefinitions) -> Result<egui::FontFamily, String> {
+    /// The font bytes of a family's regular face. Reading them can take a while, so the window
+    /// does this on a background thread (see `fonts::ensure_page_fonts`).
+    pub fn load(&self, family: &str) -> Result<egui::FontData, String> {
         if !self.families.iter().any(|name| name == family) {
             return Err(format!("Font family {family:?} is not in the installed font catalog"));
         }
@@ -87,16 +89,27 @@ impl Catalog {
             .ok_or_else(|| format!("Could not read the font data for family {family:?}"))?;
         let mut data = egui::FontData::from_owned(bytes);
         data.index = index;
-        let name = format!("notecraft-system-font:{family}");
-        let key = super::named_family(family);
-        let mut chain = vec![name.clone()];
-        let fallbacks =
-            definitions.families.get(&egui::FontFamily::Proportional).ok_or_else(|| "The proportional font fallback chain is missing".to_string())?;
-        chain.extend(fallbacks.iter().cloned());
-        definitions.font_data.insert(name, Arc::new(data));
-        definitions.families.insert(key.clone(), chain);
-        Ok(key)
+        Ok(data)
     }
+
+    pub fn install(&self, family: &str, definitions: &mut egui::FontDefinitions) -> Result<egui::FontFamily, String> {
+        let data = self.load(family)?;
+        insert_face(definitions, family, data)
+    }
+}
+
+/// Adds loaded face bytes to the font set under the family's own name, with the proportional
+/// fallback chain after it. Cheap; must run where the font set is changed (the UI thread).
+pub fn insert_face(definitions: &mut egui::FontDefinitions, family: &str, data: egui::FontData) -> Result<egui::FontFamily, String> {
+    let name = format!("notecraft-system-font:{family}");
+    let key = super::named_family(family);
+    let mut chain = vec![name.clone()];
+    let fallbacks =
+        definitions.families.get(&egui::FontFamily::Proportional).ok_or_else(|| "The proportional font fallback chain is missing".to_string())?;
+    chain.extend(fallbacks.iter().cloned());
+    definitions.font_data.insert(name, Arc::new(data));
+    definitions.families.insert(key.clone(), chain);
+    Ok(key)
 }
 
 #[cfg(test)]

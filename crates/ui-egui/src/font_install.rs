@@ -38,6 +38,15 @@ pub fn is_font_file(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| FONT_EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(ext)))
 }
 
+/// True when both paths name the same file on disk. A target that does not exist yet is never the
+/// same file.
+fn same_file(source: &Path, target: &Path) -> bool {
+    match (std::fs::canonicalize(source), std::fs::canonicalize(target)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// Copies each font file into `dir`, creating it when needed. A file that is not a font, or that
 /// cannot be copied, is skipped and reported with its reason.
 pub fn install(files: &[PathBuf], dir: &Path) -> Report {
@@ -55,7 +64,18 @@ pub fn install(files: &[PathBuf], dir: &Path) -> Report {
             report.skipped.push((name, "not a font file".to_owned()));
             continue;
         }
-        match std::fs::copy(file, dir.join(&name)) {
+        let target = dir.join(&name);
+        // The file is already in the fonts folder: copying it onto itself would empty it.
+        if same_file(file, &target) {
+            report.skipped.push((name, "already in the fonts folder".to_owned()));
+            continue;
+        }
+        // Another font with this name is installed: refuse rather than overwrite it.
+        if target.exists() {
+            report.skipped.push((name, "a different font with this name is already installed".to_owned()));
+            continue;
+        }
+        match std::fs::copy(file, &target) {
             Ok(_) => report.copied.push(name),
             Err(error) => report.skipped.push((name, error.to_string())),
         }
@@ -135,6 +155,33 @@ mod tests {
         assert_eq!(report.copied, vec!["Demo.ttf".to_owned()]);
         assert_eq!(report.skipped, vec![("readme.txt".to_owned(), "not a font file".to_owned())]);
         assert_eq!(std::fs::read(target.join("Demo.ttf")).expect("copied"), b"font bytes");
+    }
+
+    #[test]
+    fn a_font_already_in_the_folder_is_not_emptied() {
+        let folder = scratch("in-place");
+        let font = folder.join("Kept.otf");
+        std::fs::write(&font, b"keep these bytes").expect("font");
+
+        let report = install(std::slice::from_ref(&font), &folder);
+
+        assert!(report.copied.is_empty());
+        assert_eq!(report.skipped[0].1, "already in the fonts folder");
+        assert_eq!(std::fs::read(&font).expect("still there"), b"keep these bytes");
+    }
+
+    #[test]
+    fn a_different_font_with_the_same_name_is_not_overwritten() {
+        let source = scratch("clash-source");
+        let folder = scratch("clash-target");
+        std::fs::write(folder.join("Same.ttf"), b"installed").expect("installed");
+        let incoming = source.join("Same.ttf");
+        std::fs::write(&incoming, b"incoming").expect("incoming");
+
+        let report = install(&[incoming], &folder);
+
+        assert!(report.copied.is_empty());
+        assert_eq!(std::fs::read(folder.join("Same.ttf")).expect("kept"), b"installed");
     }
 
     #[test]

@@ -81,9 +81,11 @@ fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut 
     // as it always was.
     const INDENT: f32 = 24.0;
     let row = if preview {
-        ui.horizontal(|ui| {
+        // A fixed-size slot: the name is laid out from the left inside it, so a taller face does not
+        // push the rows below it.
+        let width = ui.available_width().max(0.0);
+        ui.allocate_ui_with_layout(egui::vec2(width, height), egui::Layout::left_to_right(Align::Center), |ui| {
             ui.add_space(INDENT);
-            // selectable_label lays its text out from the left; a Button centres it.
             ui.selectable_label(current, name_text(ui, name, preview))
         })
         .inner
@@ -215,12 +217,16 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         };
         if !cancelled && !on_list {
             let exact = spec.items.iter().find(|item| item.eq_ignore_ascii_case(typed.trim()));
-            let value = match (spec.filter && entered, exact, hits.get(highlight)) {
-                (true, Some(item), _) => item.clone(),
-                (true, None, Some(hit)) => (*hit).clone(),
-                _ => typed.trim().to_owned(),
+            // Enter takes the match. A click away takes only an exact family name: half-typed text
+            // ("geo") is not applied as a font just because the box lost focus.
+            let value: Option<String> = match (spec.filter, entered, exact, hits.get(highlight)) {
+                (true, true, Some(item), _) => Some(item.clone()),
+                (true, true, None, Some(hit)) => Some((*hit).clone()),
+                (true, false, Some(item), _) => Some(item.clone()),
+                (true, false, None, _) => None,
+                _ => Some(typed.trim().to_owned()),
             };
-            if value != spec.shown && (spec.accept)(&value) {
+            if let Some(value) = value.filter(|value| value != spec.shown && (spec.accept)(value)) {
                 how = "typed";
                 outcome.chosen = Some(value);
             }

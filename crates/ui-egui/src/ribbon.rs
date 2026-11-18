@@ -18,6 +18,59 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
+/// The families grouped by script, with a translated heading for each, and the families of no
+/// listed script under Other. Built once for each catalogue read and kept in egui memory; rebuilding
+/// them on every frame cloned thousands of names while the list was closed.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn script_sections(ctx: &egui::Context, families: &[String]) -> std::sync::Arc<Vec<(String, Vec<String>)>> {
+    let Some(Ok(catalog)) = crate::fonts::catalog_if_ready() else {
+        return std::sync::Arc::new(Vec::new());
+    };
+    let key = egui::Id::new("notecraft-font-sections");
+    // The cache holds the catalogue it was built from, so a newer catalogue is never mistaken for it.
+    let cached = ctx.data(|d| d.get_temp::<(std::sync::Arc<crate::fonts::system::Catalog>, std::sync::Arc<Vec<(String, Vec<String>)>>)>(key));
+    if let Some((built_from, sections)) = cached
+        && std::sync::Arc::ptr_eq(&built_from, &catalog)
+    {
+        return sections;
+    }
+    let mut sections: Vec<(String, Vec<String>)> = crate::font_picker::sections(families, |name| catalog.scripts(name))
+        .into_iter()
+        .map(|(script, names)| (script_heading(script), names))
+        .collect();
+    // A family that covers none of the scripts (a symbol or decorative face) still needs a place in
+    // the list, so it is listed under Other.
+    if !sections.is_empty() {
+        let placed: std::collections::BTreeSet<&String> = sections.iter().flat_map(|(_, names)| names.iter()).collect();
+        let other: Vec<String> = families.iter().filter(|name| !placed.contains(name)).cloned().collect();
+        if !other.is_empty() {
+            sections.push((crate::tl_id!("ui.script_other").to_string(), other));
+        }
+    }
+    let sections = std::sync::Arc::new(sections);
+    ctx.data_mut(|d| d.insert_temp(key, (catalog.clone(), sections.clone())));
+    sections
+}
+
+/// Without the desktop font catalogue there are no script sections.
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn script_sections(_ctx: &egui::Context, _families: &[String]) -> std::sync::Arc<Vec<(String, Vec<String>)>> {
+    std::sync::Arc::new(Vec::new())
+}
+
+/// The families used lately, most recent first, shared by the ribbon and the floating toolbar. Kept
+/// for this session in egui memory.
+pub fn recent_families(ctx: &egui::Context) -> Vec<String> {
+    ctx.data(|d| d.get_temp(egui::Id::new("notecraft-recent-fonts"))).unwrap_or_default()
+}
+
+/// Records a family as used now, from either toolbar.
+pub fn remember_family(ctx: &egui::Context, name: &str) {
+    let mut recent = recent_families(ctx);
+    crate::font_picker::remember(&mut recent, name);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("notecraft-recent-fonts"), recent));
+}
+
 /// The translated heading of a script's section in the font list.
 pub fn script_heading(script: crate::font_picker::Script) -> String {
     use crate::font_picker::Script;
@@ -1232,29 +1285,10 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 } else {
                     ui.data_mut(|d| d.remove::<String>(missing_key));
                 }
-                // The list grouped by script, with a translated heading for each.
-                #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-                let mut sections: Vec<(String, Vec<String>)> = match crate::fonts::catalog_if_ready() {
-                    Some(Ok(catalog)) => crate::font_picker::sections(&families, |name| catalog.scripts(name))
-                        .into_iter()
-                        .map(|(script, names)| (script_heading(script), names))
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                // A family that covers none of the scripts (a symbol or decorative face) still needs
-                // a place in the list, so it is listed under Other.
-                #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-                let mut sections: Vec<(String, Vec<String>)> = Vec::new();
-                if !sections.is_empty() {
-                    let placed: std::collections::BTreeSet<&String> = sections.iter().flat_map(|(_, names)| names.iter()).collect();
-                    let other: Vec<String> = families.iter().filter(|name| !placed.contains(name)).cloned().collect();
-                    if !other.is_empty() {
-                        sections.push((crate::tl_id!("ui.script_other").to_string(), other));
-                    }
-                }
+                // The list grouped by script, with a translated heading for each. Built once per catalogue read.
+                let sections = script_sections(ui.ctx(), &families);
                 // Recently used families, most recent first. Kept for this session in egui memory.
-                let recent_key = egui::Id::new("notecraft-recent-fonts");
-                let recent_families: Vec<String> = ui.data(|d| d.get_temp(recent_key)).unwrap_or_default();
+                let recent_families: Vec<String> = recent_families(ui.ctx());
                 let family_out = crate::combo::show(
                     ui,
                     t.text,
@@ -1286,9 +1320,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     }
                 }
                 if let Some(name) = family_out.chosen {
-                    let mut recent = recent_families.clone();
-                    crate::font_picker::remember(&mut recent, &name);
-                    ui.data_mut(|d| d.insert_temp(recent_key, recent));
+                    remember_family(ui.ctx(), &name);
                     acts.push(Act::FontFamily(name));
                 }
                 // OneNote's size control: an editable box showing the size, and a drop-down arrow.
