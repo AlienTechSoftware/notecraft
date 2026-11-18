@@ -1174,6 +1174,8 @@ pub struct NoteCraftApp {
     /// How far down the page is scrolled, as last drawn, and where to scroll it in the next pass:
     /// a fling going down the page, or a zoom keeping the spot under the pointer.
     page_offset_y: f32,
+    /// How far down the page could be scrolled, as last drawn.
+    page_offset_max: f32,
     scroll_to: Option<f32>,
     /// A pinch or Ctrl+wheel zoom keeps the spot under the pointer where it is: the pointer, and
     /// the point of the page under it in page points, from the frame the zoom changed in.
@@ -1414,6 +1416,7 @@ impl NoteCraftApp {
             canvas_pan: egui::Vec2::ZERO,
             fling: crate::fling::Fling::default(),
             page_offset_y: 0.0,
+            page_offset_max: 0.0,
             scroll_to: None,
             zoom_anchor: None,
             zoom_rest: 0.0,
@@ -9082,8 +9085,10 @@ impl NoteCraftApp {
                 };
                 let page_outer = ui.available_rect_before_wrap();
                 let mut area = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll);
+                // Within the page: past its end egui springs the page back, with a speed it then
+                // coasts on, and goes on asking for frames.
                 if let Some(y) = self.scroll_to.take() {
-                    area = area.vertical_scroll_offset(y);
+                    area = area.vertical_scroll_offset(y.clamp(0.0, self.page_offset_max));
                 }
                 let shown = area.show(ui, |ui| {
                     // On a touch screen two fingers scroll the page. One finger writes,
@@ -9121,6 +9126,7 @@ impl NoteCraftApp {
                     hbar = crate::hscroll::show(ui.ctx(), egui::Id::new("page-hscroll"), view, span, reserve);
                 }
                 self.page_offset_y = shown.state.offset().y;
+                self.page_offset_max = (shown.content_size.y - shown.inner_rect.height()).max(0.0);
                 // Zoomed with the pointer on the page: the spot that was under it is moved back
                 // under it, down by scrolling and sideways by the canvas when the page is wider
                 // than the view. This pass, drawn about the corner, is thrown away and drawn again.
