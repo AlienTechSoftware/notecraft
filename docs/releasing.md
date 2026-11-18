@@ -22,8 +22,10 @@ One run:
 5. Runs the Packaging workflow on the tagged commit: Windows x64 (MSI and portable zip), Linux
    x86_64 and aarch64 (tar.gz, AppImage, deb and rpm), macOS Apple Silicon and Intel (DMG and
    command line zip), and Android arm64 (APK; see Android signing below).
-6. Runs the Website pipeline on the tagged commit and deploys it to notecraft.cloud, including
-   `/demo/`. The built web app is kept as `notecraft-web-<version>.zip`.
+6. Builds and verifies the website for the same tagged commit while Linux tests and packaging
+   run. Once all three pass, the deploy job downloads the site's artifact, verifies its source
+   commit, version and checksum, and deploys it to notecraft.cloud. It checks the live `/demo/`
+   and both Welcome notebook formats. The built web app is kept as `notecraft-web-<version>.zip`.
 7. Publishes GitHub Release `v<version>` as a regular release marked latest, with every file above and
    one `SHA256SUMS.txt`. The notes are a fixed alpha notice plus GitHub's list of merged pull
    requests.
