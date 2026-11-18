@@ -75,6 +75,10 @@ pub enum Act {
     ToggleRead,
     /// History > Recent Edits: the pages changed lately, to go to one (issue #279).
     RecentEdits,
+    /// History > Find by Author: the pages each person changed (issue #292).
+    FindByAuthor,
+    /// History > Hide Authors: who changed a page is shown under its title, or not.
+    ToggleHideAuthors,
     /// Open the active notebook's recycle bin.
     RecycleBin,
     /// Open the built-in symbol picker.
@@ -186,6 +190,16 @@ pub enum Act {
     Table(crate::pageedit::TableEdit),
     /// Table > Delete Table: the whole table the caret is in.
     DeleteTable,
+    /// View > Dock to Desktop: a narrow window at the side of the screen, or back (issue #267).
+    ToggleDock,
+    /// Home > Meeting Details: pick a meeting from a calendar file (issue #283).
+    MeetingDetails,
+    /// Insert > Stickers: put this sticker on the page (issue #286).
+    Sticker(&'static str),
+    /// Table > Merge Cells: the picked cells become one (issue #298).
+    MergeCells,
+    /// Table > Split Cells: the merged cell the caret is in becomes its cells again (issue #298).
+    SplitCells,
     /// Pick a block of cells of the table the caret is in.
     TableSelect(crate::pageedit::TableSpan),
     /// Draw the lines round the cells of a table, or stop drawing them.
@@ -519,6 +533,8 @@ pub struct View<'a> {
     pub split_panes: bool,
     /// True when the window is kept above the others.
     pub always_on_top: bool,
+    /// View > Dock to Desktop is on (issue #267).
+    pub docked: bool,
     pub full_page: bool,
     pub rules: RuleLines,
     pub hide_title: bool,
@@ -571,6 +587,8 @@ pub struct View<'a> {
     pub has_page: bool,
     /// The open page was marked unread by hand (issue #291).
     pub page_marked_unread: bool,
+    /// History > Hide Authors is on (issue #292).
+    pub hide_authors: bool,
     /// The Format Painter is holding formatting to put on the next words picked.
     pub painting: bool,
     /// The style of the block the caret is in (a [`STYLES`] kind), or "" when there is no caret.
@@ -1434,8 +1452,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
-        if big(ui, Icon::Page, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.not_built"), t).clicked() {
-            acts.push(Act::NotBuilt("Meeting Details"));
+        if big(ui, Icon::Calendar, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.meeting_details_tip"), t).clicked() {
+            acts.push(Act::MeetingDetails);
         }
     });
 }
@@ -1676,6 +1694,58 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                             picked = true;
                         }
                     }
+                });
+            })
+            .response;
+        if picked || away(ui, &area, &resp) {
+            open = false;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+/// Insert > Stickers (issue #286): a grid of the stickers, each a button named for screen
+/// readers. Picking one puts it on the page and closes the gallery.
+fn sticker_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Sticker, crate::tl_id!("ui.stickers"), crate::tl_id!("ui.stickers_tip"), t);
+    let open_id = egui::Id::new("ribbon-sticker-gallery");
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    if resp.clicked() {
+        open = !open;
+    }
+    if open {
+        let mut picked = false;
+        const CELL: f32 = 56.0;
+        const COLUMNS: usize = 4;
+        let width = CELL * COLUMNS as f32 + 24.0;
+        let at = egui::pos2(resp.rect.left().min(ui.ctx().content_rect().right() - width - 6.0).max(4.0), resp.rect.bottom());
+        let area = egui::Area::new(open_id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.stickers_gallery")).strong().color(t.text));
+                    egui::Grid::new(open_id.with("grid")).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+                        for (n, sticker) in crate::stickers::ALL.iter().enumerate() {
+                            let (rect, cell) = ui.allocate_exact_size(vec2(CELL, CELL), Sense::click());
+                            if cell.hovered() {
+                                ui.painter().rect_filled(rect, 6.0, t.row_hover);
+                            }
+                            egui::Image::from_bytes(format!("bytes://sticker-{}.svg", sticker.id), sticker.svg)
+                                .fit_to_exact_size(vec2(CELL - 12.0, CELL - 12.0))
+                                .paint_at(ui, rect.shrink(6.0));
+                            let label = crate::tl!(sticker.label);
+                            let enabled = ui.is_enabled();
+                            cell.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+                            if cell.on_hover_text(label).clicked() {
+                                acts.push(Act::Sticker(sticker.id));
+                                picked = true;
+                            }
+                            if n % COLUMNS == COLUMNS - 1 {
+                                ui.end_row();
+                            }
+                        }
+                    });
                 });
             })
             .response;
@@ -2129,7 +2199,7 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big(ui, Icon::Diagram, crate::tl_id!("ui.diagram"), crate::tl_id!("ui.a_mermaid_diagram_kept_as_its_source"), t).clicked() {
             acts.push(Act::Insert("diagram"));
         }
-        soon(ui, Icon::Sticker, "Stickers", t);
+        sticker_gallery(ui, t, acts);
     });
 }
 
@@ -3082,8 +3152,7 @@ fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
     resp.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[(crate::tl_id!("ui.label"), crate::tl!(label))]));
 }
 
-/// OneNote's History tab, with the same groups and controls. NoteCraft does not yet keep
-/// unread flags or authors, so those controls are visible but disabled.
+/// OneNote's History tab, with the same groups and controls.
 fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.unread"), t, |ui| {
         if big(ui, Icon::PageStack, crate::tl_id!("ui.next_unread_2"), crate::tl_id!("ui.go_to_the_next_page_changed_since_you_last_read_it"), t)
@@ -3104,8 +3173,12 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         if big(ui, Icon::Clock, crate::tl_id!("ui.recent_edits_2"), crate::tl_id!("ui.see_the_pages_changed_lately"), t).clicked() {
             acts.push(Act::RecentEdits);
         }
-        soon(ui, Icon::Search, "Find by\nAuthor", t);
-        soon(ui, Icon::Page, "Hide\nAuthors", t);
+        if big(ui, Icon::Search, crate::tl_id!("ui.find_by_author"), crate::tl_id!("ui.find_by_author_tip"), t).clicked() {
+            acts.push(Act::FindByAuthor);
+        }
+        if big_on(ui, Icon::Page, crate::tl_id!("ui.hide_authors"), crate::tl_id!("ui.hide_authors_tip"), view.hide_authors, t).clicked() {
+            acts.push(Act::ToggleHideAuthors);
+        }
     });
     group(ui, crate::tl_id!("ui.history"), t, |ui| {
         if ui
@@ -3333,8 +3406,12 @@ fn table_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.merge"), t, |ui| {
-        soon(ui, Icon::Table, "Merge\nCells", t);
-        soon(ui, Icon::Table, "Split\nCells", t);
+        if big(ui, Icon::Table, crate::tl_id!("ui.merge_cells"), crate::tl_id!("ui.merge_cells_tip"), t).clicked() {
+            acts.push(Act::MergeCells);
+        }
+        if big(ui, Icon::Table, crate::tl_id!("ui.split_cells"), crate::tl_id!("ui.split_cells_tip"), t).clicked() {
+            acts.push(Act::SplitCells);
+        }
     });
     group(ui, crate::tl_id!("ui.format"), t, |ui| {
         // One button that says what it will do, the way OneNote's does: it reads Hide
@@ -3435,7 +3512,9 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleFullPage);
         }
         rows(ui, |ui| {
-            not_built(ui, crate::tl_id!("ui.dock_to_desktop"), t);
+            if small(ui, None, "", crate::tl_id!("ui.dock_to_desktop"), crate::tl_id!("ui.dock_to_desktop_tip"), view.docked, t).clicked() {
+                acts.push(Act::ToggleDock);
+            }
         });
     });
     group(ui, crate::tl_id!("ui.layout"), t, |ui| {

@@ -214,6 +214,29 @@ Parameters:
 
 - path (required): the page
 
+## `calendar.events`
+
+The meetings in a calendar file on one day.
+
+Parameters:
+
+- file (required): an iCalendar (.ics) file, which is only read
+- day (optional): the day, as 2026-11-23; today without it
+
+## `authors.list`
+
+Who changed the pages of the open notebooks.
+
+No parameters.
+
+## `authors.find`
+
+The pages one person changed.
+
+Parameters:
+
+- author (optional): a name from authors.list; left out, the pages whose author is unknown
+
 ## `page.save`
 
 Save a page.
@@ -223,6 +246,7 @@ Parameters:
 - path (required): the page
 - body (required): the editable part (inside of the HTML body, or the Markdown after the front matter)
 - expected_body (optional): refuse a save if the editable part changed since loading
+- author (optional): the name of who made the change, noted in the page beside the others who changed it
 
 ## `page.versions`
 
@@ -281,12 +305,12 @@ Parameters:
 
 ## `page.columns`
 
-How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded.
+How wide the columns of a page's tables are, which tables have their borders hidden, how their cells are aligned and shaded, and which are merged.
 
 Parameters:
 
 - path (required): the page
-- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported
+- widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, and block+row.column=RxC for a merged cell R rows by C columns from that cell, as in 2+1.0=1x2, with the heading as row 0; empty puts every table back to the usual width, borders, alignment, shading and cells. Without it, the current layout is reported
 
 ## `page.justify`
 

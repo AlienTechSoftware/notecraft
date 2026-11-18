@@ -1316,3 +1316,88 @@
 @id	voice.layout_would_shift	$$$This insertion would move paragraph or table layout. Insert one line, or click below the page to append the words.@@@
 @id	voice.target_changed_review_required	$$$The page or cursor changed. Review the words and choose Insert to use the current position.@@@
 @id	voice.multiline_needs_line_end	$$$Multiple lines need the cursor at the end of a paragraph. Move there, or click below the page to append the words.@@@
+@id	ui.merge_cells	$$$Merge\nCells@@@
+@id	ui.merge_cells_tip	$$$Make the picked cells one cell. Their words are kept, in reading order.@@@
+@id	ui.split_cells	$$$Split\nCells@@@
+@id	ui.split_cells_tip	$$$Make the merged cell the caret is in its cells again. Its words stay in the first one.@@@
+@id	ui.pick_two_or_more_cells_to_merge	$$$Pick two or more cells to merge: drag across them first.@@@
+@id	ui.these_cells_cannot_be_merged	$$$These cells cannot be merged.@@@
+@id	ui.the_cells_are_merged	$$$The cells are merged.@@@
+@id	ui.this_cell_is_not_merged	$$$This cell is not a merged cell.@@@
+@id	ui.the_merged_cell_is_split	$$$The merged cell is split.@@@
+@id	ui.account	$$$Account@@@
+@id	ui.account_signed_out	$$$You are not signed in, and you do not need to be.@@@
+@id	ui.account_no_account_needed	$$$NoteCraft needs no account. Your notebooks are folders on this computer, and everything works without signing in.@@@
+@id	ui.account_no_online_services	$$$This build connects to no online service: there are no accounts to add, connect or sign out of. Online notebooks are not built yet.@@@
+@id	ui.your_name_on_your_changes	$$$Your name on your changes@@@
+@id	ui.your_name_on_your_changes_hint	$$$With a name kept here, every page you change from now on notes it, so History > Find by Author can find your pages. The name is kept in this computer's settings and written into the pages you change, so a copy of a page carries it. Pages changed before keep what they had.@@@
+@id	ui.your_name	$$$Name@@@
+@id	ui.keep_this_name	$$$Keep this name@@@
+@id	ui.keep_no_name	$$$Keep no name@@@
+@id	ui.your_changes_are_marked_name	$$$Your changes are marked {name}.@@@
+@id	ui.your_changes_are_marked_with_no_name	$$$Your changes are marked with no name.@@@
+@id	ui.find_by_author	$$$Find by\nAuthor@@@
+@id	ui.find_by_author_tip	$$$List the pages each person changed@@@
+@id	ui.hide_authors	$$$Hide\nAuthors@@@
+@id	ui.hide_authors_tip	$$$Hide who changed a page from under its title. The names stay in the page.@@@
+@id	ui.who_changed_a_page_is_hidden	$$$Who changed a page is hidden. The pages still keep the names.@@@
+@id	ui.who_changed_a_page_is_shown_under_its_title	$$$Who changed a page is shown under its title.@@@
+@id	ui.find_by_author_title	$$$Find by Author@@@
+@id	ui.find_by_author_hint	$$$A page notes the name of each person who saved a change to it with a name kept in File > Account. Choose a name to see their pages.@@@
+@id	ui.no_page_keeps_a_name_yet	$$$No page in the open notebooks keeps a name yet. Keep a name in File > Account, and the pages you change from then on will.@@@
+@id	ui.name_n_pages	$$${name} ({n})@@@
+@id	ui.unknown_author_n_pages	$$$Unknown author ({n})@@@
+@id	ui.unknown_author_tip	$$$Pages that no save with a name has changed: written before names were kept, imported, or changed by another program.@@@
+@id	ui.pages_changed_by_name	$$$Pages changed by {name}@@@
+@id	ui.pages_whose_author_is_unknown	$$$Pages whose author is unknown@@@
+@id	ui.back_to_the_names	$$$Back to the names@@@
+@id	ui.changed_by_names	$$$Changed by {names}@@@
+@id	ui.changed_by_names_last_by_name	$$$Changed by {names}; last by {name}@@@
+@id	ui.stickers	$$$Stickers@@@
+@id	ui.stickers_tip	$$$Put a sticker on the page@@@
+@id	ui.stickers_gallery	$$$Stickers@@@
+@id	ui.sticker_star	$$$Star sticker@@@
+@id	ui.sticker_heart	$$$Heart sticker@@@
+@id	ui.sticker_check	$$$Check mark sticker@@@
+@id	ui.sticker_smile	$$$Smiling face sticker@@@
+@id	ui.sticker_sun	$$$Sun sticker@@@
+@id	ui.sticker_lightbulb	$$$Light bulb sticker@@@
+@id	ui.sticker_warning	$$$Warning sticker@@@
+@id	ui.sticker_question	$$$Question sticker@@@
+@id	ui.sticker_flower	$$$Flower sticker@@@
+@id	ui.sticker_trophy	$$$Trophy sticker@@@
+@id	ui.sticker_rainbow	$$$Rainbow sticker@@@
+@id	ui.sticker_pin	$$$Pin sticker@@@
+@id	ui.cannot_add_the_sticker_error	$$$Cannot add the sticker: {error}@@@
+@id	ui.added_the_name_sticker	$$$Added: {name}.@@@
+@id	ui.meeting_details_tip	$$$Put the details of a meeting from a calendar file on the page@@@
+@id	ui.meeting_details_title	$$$Meeting Details@@@
+@id	ui.meetings_from_file	$$$Meetings from the calendar file {file}@@@
+@id	ui.meeting_details_privacy	$$$NoteCraft only reads this file. It connects to no calendar service and sends nothing anywhere.@@@
+@id	ui.previous_day	$$$Previous day@@@
+@id	ui.next_day	$$$Next day@@@
+@id	ui.no_meetings_on_this_day	$$$No meetings on this day.@@@
+@id	ui.meeting_details_preview	$$$What will be put on the page:@@@
+@id	ui.insert_meeting_details	$$$Insert details@@@
+@id	ui.choose_another_calendar_file	$$$Choose another calendar file@@@
+@id	ui.choose_a_calendar_file	$$$Choose a calendar file@@@
+@id	ui.calendar_files	$$$Calendar files@@@
+@id	ui.meeting_details_added	$$$The meeting's details are on the page.@@@
+@id	ui.meeting_file_too_large	$$$This calendar file is too large to read.@@@
+@id	ui.meeting_file_has_no_events	$$$This file holds no events NoteCraft can read. Is it an iCalendar (.ics) file?@@@
+@id	ui.meeting_file_unreadable_error	$$$Cannot read the calendar file: {error}@@@
+@id	ui.meeting_to	$$$to@@@
+@id	ui.meeting_with_no_title	$$$Meeting with no title@@@
+@id	ui.meeting_when	$$$When@@@
+@id	ui.meeting_where	$$$Where@@@
+@id	ui.meeting_link	$$$Link@@@
+@id	ui.meeting_organizer	$$$Organizer@@@
+@id	ui.meeting_participants	$$$Participants@@@
+@id	ui.meeting_recurrence	$$$Repeats@@@
+@id	ui.meeting_repeats	$$$Yes, this is one of its meetings@@@
+@id	ui.meeting_repeats_not_followed	$$$Yes, in a way NoteCraft does not lay out; this is its first meeting@@@
+@id	ui.meeting_agenda	$$$Agenda@@@
+@id	ui.dock_to_desktop_tip	$$$Make the window a narrow column at the side of the screen, kept above other windows, to take notes beside them. Again puts it back.@@@
+@id	ui.the_window_is_docked	$$$Docked at the right of the screen. Other windows are not moved aside; Dock to desktop again puts the window back.@@@
+@id	ui.the_window_is_undocked	$$$The window is back as it was.@@@
+@id	ui.the_screen_size_is_not_known_so_the_window_cannot_be_docked	$$$The screen's size is not known here, so the window cannot be docked.@@@

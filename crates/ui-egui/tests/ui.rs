@@ -11148,13 +11148,13 @@ fn not_built_placeholders_are_disabled_for_accessibility() {
     settle(&mut h);
     h.get_by_label("View").click();
     settle(&mut h);
-    for name in ["Dock to desktop", "Live captions"] {
-        let label = format!("{name} (not built)");
-        let nodes: Vec<_> = h.query_all_by_label(&label).collect();
-        assert!(!nodes.is_empty(), "{label} is listed");
-        assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
-    }
-    for working in ["Zoom In", "Zoom Out", "Always on top", "Paper size", "Immersive reader", "Tabs layout", "New window", "New quick note"] {
+    let label = "Live captions (not built)";
+    let nodes: Vec<_> = h.query_all_by_label(label).collect();
+    assert!(!nodes.is_empty(), "{label} is listed");
+    assert!(nodes.iter().all(|n| n.accesskit_node().is_disabled()), "{label} is reported as unavailable");
+    for working in
+        ["Zoom In", "Zoom Out", "Always on top", "Dock to desktop", "Paper size", "Immersive reader", "Tabs layout", "New window", "New quick note"]
+    {
         assert!(!h.get_by_label(working).accesskit_node().is_disabled(), "{working} still works");
     }
     // Insert's placeholders were already right and stay so.
@@ -11177,7 +11177,7 @@ fn the_view_tab_has_one_window_group_and_one_entry_per_action() {
     assert_eq!(h.query_all_by_label("Window").count(), 1, "one Window group");
     assert_eq!(h.query_all_by_label("Always on top (not built)").count(), 0, "Always on top is not called unbuilt");
     assert_eq!(h.query_all_by_label("New window").count(), 1, "New window is listed once");
-    assert_eq!(h.query_all_by_label("Dock to desktop (not built)").count(), 1, "Dock to desktop is listed once, in Views");
+    assert_eq!(h.query_all_by_label("Dock to desktop").count(), 1, "Dock to desktop is listed once, in Views");
     h.get_by_label("Always on top").click();
     settle(&mut h);
     let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
@@ -12803,4 +12803,262 @@ fn window_capture_metadata_commands_and_background_body_saves_keep_both_edits() 
     let saved = notecraft_store::page::load_page(&page).expect("page");
     assert_eq!(saved.title, "Retained title");
     assert!(saved.body.contains("background words"));
+}
+
+/// Issues #304 and #292: File > Account says plainly that no account is needed and keeps the
+/// name changes are marked with. A save then notes that name in the page, in both formats;
+/// the page shows who changed it under its title until History > Hide Authors hides it, and
+/// History > Find by Author lists the people and opens their pages. Pages nobody saved with a
+/// name stay unknown.
+#[test]
+fn a_name_kept_in_account_marks_saves_and_find_by_author_lists_them() {
+    use egui_kittest::kittest::Queryable as _;
+    for html in [false, true] {
+        let (t, app, s) = sample_app("ui-authors");
+        let page = if html { s.html_page.clone() } else { s.md_page.clone() };
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label_contains("Changed by").count(), 0, "html={html}: a page nobody saved with a name shows no author");
+
+        h.state_mut().open_backstage_page("Account");
+        settle(&mut h);
+        assert!(h.query_by_label("You are not signed in, and you do not need to be.").is_some(), "html={html}: an honest signed-out state");
+        h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Name").click();
+        h.run();
+        h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Name").type_text("Ada, Lovelace");
+        settle(&mut h);
+        h.get_by_label("Keep this name").click();
+        settle(&mut h);
+        assert_eq!(h.state().author_name(), Some("Ada Lovelace"), "html={html}: kept on one line, without the comma");
+        let saved = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+        assert!(saved.contains("author_name = \"Ada Lovelace\""), "html={html}: kept in the settings:\n{saved}");
+        review(&mut h, &format!("account_page_{html}"));
+        h.state_mut().close_backstage();
+        settle(&mut h);
+
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "Written by Ada. "})).expect("type");
+        pump(&mut h);
+        h.state_mut().save_page_now();
+        settle(&mut h);
+        let who = notecraft_store::authors::of(&page);
+        assert_eq!(who.names, ["Ada Lovelace"], "html={html}: the save noted the name");
+        assert_eq!(who.last.as_deref(), Some("Ada Lovelace"));
+        assert!(h.query_by_label("Changed by Ada Lovelace").is_some(), "html={html}: shown under the title");
+        let other = if html { s.md_page.clone() } else { s.html_page.clone() };
+        assert!(notecraft_store::authors::of(&other).unknown(), "html={html}: a page not changed keeps no name");
+
+        h.get_by_label("History").click();
+        settle(&mut h);
+        h.get_by_label("Hide Authors").click();
+        settle(&mut h);
+        assert!(h.query_by_label("Changed by Ada Lovelace").is_none(), "html={html}: hidden");
+        assert_eq!(notecraft_store::authors::of(&page).names, ["Ada Lovelace"], "html={html}: hiding keeps the names in the page");
+
+        h.get_by_label("Find by Author").click();
+        settle(&mut h);
+        review(&mut h, &format!("find_by_author_{html}"));
+        assert!(h.query_by_role_and_label(egui::accesskit::Role::Link, "Ada Lovelace (1)").is_some(), "html={html}: the name and its count");
+        assert!(h.query_all_by_label_contains("Unknown author").count() > 0, "html={html}: the rest are unknown");
+        h.get_by_role_and_label(egui::accesskit::Role::Link, "Ada Lovelace (1)").click();
+        settle(&mut h);
+        let title = notecraft_store::tree::read_node(&page).expect("node").title;
+        h.get_by_role_and_label(egui::accesskit::Role::Link, &title).click();
+        settle(&mut h);
+        let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"].clone();
+        assert_eq!(open, json!(title), "html={html}: the page chosen is open");
+
+        // Keep no name: later saves note nobody, and what the page has stays.
+        h.state_mut().set_author(None);
+        ask(&mut h, "ui.text", json!({"text": "more "})).expect("type");
+        pump(&mut h);
+        h.state_mut().save_page_now();
+        settle(&mut h);
+        assert_eq!(notecraft_store::authors::of(&page).names, ["Ada Lovelace"], "html={html}");
+    }
+}
+
+/// Issue #286: Insert > Stickers opens a gallery of named stickers; one picked is copied into
+/// the page's folder and put on the page as a picture, in both formats, and the same sticker
+/// twice is one file.
+#[test]
+fn a_sticker_from_the_gallery_goes_on_the_page_as_a_picture_it_owns() {
+    use egui_kittest::kittest::Queryable as _;
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-stickers");
+        let page = if html { s.html_page.clone() } else { s.md_page.clone() };
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        h.get_by_label("Insert").click();
+        settle(&mut h);
+        h.get_by_label("Stickers").click();
+        settle(&mut h);
+        review(&mut h, &format!("sticker_gallery_{html}"));
+        assert!(h.query_by_label("Heart sticker").is_some(), "html={html}: each sticker is named");
+        h.get_by_label("Star sticker").click();
+        settle(&mut h);
+        let images = |h: &Harness<'_, NoteCraftApp>| {
+            h.state()
+                .editor_blocks()
+                .into_iter()
+                .filter_map(|b| match b {
+                    notecraft_formats::Block::Image { src, alt, .. } => Some((src, alt)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(images(&h).contains(&("assets/sticker-star.svg".to_string(), "Star sticker".to_string())), "html={html}: {:?}", images(&h));
+        assert!(h.query_by_label("Heart sticker").is_none(), "html={html}: the gallery closed");
+        let file = page.join("assets/sticker-star.svg");
+        assert!(std::fs::read_to_string(&file).is_ok_and(|t| t.starts_with("<svg")), "html={html}: the page owns the file");
+        h.get_by_label("Stickers").click();
+        settle(&mut h);
+        h.get_by_label("Star sticker").click();
+        settle(&mut h);
+        assert_eq!(images(&h).iter().filter(|(src, _)| src == "assets/sticker-star.svg").count(), 2, "html={html}");
+        assert!(!page.join("assets/sticker-star-2.svg").exists(), "html={html}: one file for both");
+        h.state_mut().save_page_now();
+        settle(&mut h);
+        let written = std::fs::read_to_string(if html { page.join("index.html") } else { page.join("index.md") }).expect("page");
+        assert!(written.contains("assets/sticker-star.svg"), "html={html}: saved with the page:\n{written}");
+    }
+}
+
+/// Issue #283: Home > Meeting Details reads a calendar file, shows the day's meetings and what
+/// will be put on the page, and inserts the one picked as editable lines. Cancel changes
+/// nothing, and the file is only read.
+#[test]
+fn meeting_details_from_a_calendar_file_go_on_the_page_as_lines() {
+    use egui_kittest::kittest::Queryable as _;
+    let (t, app, s) = sample_app("ui-meeting-details");
+    let today = notecraft_model::time::iso_now()[..10].replace('-', "");
+    let ics = t.path().join("work.ics");
+    let text = format!(
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Budget review\r\nDTSTART:{today}T150000Z\r\nDTEND:{today}T160000Z\r\nLOCATION:Room 4\r\nATTENDEE;CN=Ada:mailto:ada@example.org\r\nDESCRIPTION:Numbers\\nPlans\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+    std::fs::write(&ics, &text).expect("fixture");
+    Settings::at(t.path().join("settings.toml")).set("meeting_calendar_file", &ics.to_string_lossy()).expect("setting");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    let before = h.state().editor_blocks();
+
+    h.get_by_label("Meeting Details").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("work.ics").count() > 0, "the dialog names the file it reads");
+    h.get_by_label("Cancel").click();
+    settle(&mut h);
+    assert_eq!(h.state().editor_blocks(), before, "cancel changes nothing");
+
+    h.get_by_label("Meeting Details").click();
+    settle(&mut h);
+    h.get_by_label_contains("Budget review").click();
+    settle(&mut h);
+    review(&mut h, "meeting_details");
+    assert!(h.query_by_label("Where: Room 4").is_some(), "what will go on the page is shown first");
+    h.get_by_label("Insert details").click();
+    settle(&mut h);
+    let lines: Vec<String> = h.state().editor_blocks().iter().map(notecraft_ui_egui::meeting::plain_text).collect();
+    let at = lines.iter().position(|l| l == "Budget review").expect("the title is on the page");
+    assert!(lines[at + 1].starts_with("When: ") && lines[at + 1].ends_with("15:00 to 16:00"), "{lines:?}");
+    assert_eq!(&lines[at + 2..at + 7], ["Where: Room 4", "Participants: Ada", "Agenda", "Numbers", "Plans"]);
+    assert_eq!(std::fs::read_to_string(&ics).expect("read"), text, "the calendar file is only read");
+    assert!(h.state_mut().meeting_choice().is_none(), "the dialog closed");
+}
+
+/// Steps a few frames and gives every window command the app sent in them, as text.
+fn steps_with_commands(h: &mut Harness<'_, NoteCraftApp>) -> Vec<String> {
+    let mut out = Vec::new();
+    for _ in 0..4 {
+        h.step();
+        if let Some(v) = h.output().viewport_output.get(&egui::ViewportId::ROOT) {
+            out.extend(v.commands.iter().map(|c| format!("{c:?}")));
+        }
+    }
+    out
+}
+
+/// Issue #267: View > Dock to Desktop makes the window a narrow column at the right of the
+/// screen, above other windows, with the notebooks and ribbon folded away; again puts the
+/// window and both back. With no screen size known it says so and changes nothing.
+#[test]
+fn dock_to_desktop_docks_the_window_and_puts_it_back() {
+    let (_t, app, s) = sample_app("ui-dock");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Dock to desktop").click();
+    settle(&mut h);
+    assert!(!h.state().is_docked(), "no screen size, no dock");
+    assert!(h.state().status().contains("screen's size is not known"), "{}", h.state().status());
+
+    if let Some(root) = h.input_mut().viewports.get_mut(&egui::ViewportId::ROOT) {
+        root.monitor_size = Some(egui::vec2(1920.0, 1080.0));
+        root.outer_rect = Some(egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(1800.0, 800.0)));
+        root.inner_rect = Some(egui::Rect::from_min_size(egui::pos2(100.0, 80.0), egui::vec2(1800.0, 770.0)));
+    }
+    h.get_by_label("Dock to desktop").click();
+    let commands = steps_with_commands(&mut h);
+    settle(&mut h);
+    assert!(h.state().is_docked(), "{}", h.state().status());
+    assert!(commands.iter().any(|c| c.contains("InnerSize") && c.contains("420")), "{commands:?}");
+    assert!(commands.iter().any(|c| c.contains("OuterPosition") && c.contains("1500")), "{commands:?}");
+    assert!(commands.iter().any(|c| c.contains("AlwaysOnTop")), "{commands:?}");
+    let settings = std::fs::read_to_string(_t.path().join("settings.toml")).unwrap_or_default();
+    assert!(!settings.contains("ribbon_collapsed = \"true\""), "folding the ribbon for the dock is not saved:\n{settings}");
+
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Dock to desktop").click();
+    let commands = steps_with_commands(&mut h);
+    settle(&mut h);
+    assert!(!h.state().is_docked());
+    assert!(commands.iter().any(|c| c.contains("OuterPosition") && c.contains("100")), "put back where it was: {commands:?}");
+    assert!(commands.iter().any(|c| c.contains("Normal")), "and no longer on top: {commands:?}");
+}
+
+/// Issue #298: a merged cell is drawn once, across the columns it takes in, with no border
+/// through it, in both formats; the cells beside it keep theirs.
+#[test]
+fn a_merged_cell_is_drawn_across_its_columns_without_a_line_through_it() {
+    use egui_kittest::kittest::NodeT as _;
+    for html in [false, true] {
+        let (_t, app, s) = sample_app("ui-merged-cell");
+        let page = if html { s.html_page.clone() } else { s.md_page.clone() };
+        let body = if html {
+            "<p>Alpha</p><table><tr><th>A</th><th>B</th><th>C</th></tr><tr><td>merged words</td><td></td><td>z</td></tr></table>"
+        } else {
+            "Alpha\n\n| A | B | C |\n|---|---|---|\n| merged words |  | z |\n"
+        };
+        notecraft_store::page::save_body(&page, body).expect("fixture");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 800.0));
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let table = h.state().editor_blocks().iter().position(|b| matches!(b, notecraft_formats::Block::Table { .. })).expect("a table");
+        let other = if html { s.md_page.clone() } else { s.html_page.clone() };
+        h.state_mut().open_path(&other.to_string_lossy());
+        settle(&mut h);
+        notecraft_store::page::set_table_columns(&page, &notecraft_model::tablecols::parse(&format!("{table}:120,120,120; {table}+1.0=1x2")))
+            .expect("layout");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        review(&mut h, &format!("merged_cell_{html}"));
+        let words = h.get_by_label("merged words").accesskit_node().bounding_box().expect("drawn");
+        let z = h.get_by_label("z").accesskit_node().bounding_box().expect("drawn");
+        assert!(z.x0 - words.x0 > 230.0, "html={html}: the next cell starts after both merged columns: {words:?} {z:?}");
+        let (y0, y1) = (words.y0 as f32, words.y1 as f32);
+        let mid_x = words.x0 as f32 - 6.0 + 120.0;
+        let through =
+            painted_segments(&h).iter().any(|[a, b]| (a.x - b.x).abs() < 0.5 && (a.x - mid_x).abs() < 3.0 && a.y.min(b.y) < y1 && a.y.max(b.y) > y0);
+        assert!(!through, "html={html}: no line between the merged columns in the merged row");
+    }
 }
