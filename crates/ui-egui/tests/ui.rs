@@ -2572,6 +2572,59 @@ fn the_ribbon_theme_button_opens_the_chooser() {
     assert_eq!(h.state().theme(), Theme { mode: Mode::Dark, accent: Accent::Green });
     review(&mut h, "ribbon_theme");
 }
+/// A stroke is not written in the frame the pen is lifted: the drawing is written a moment later,
+/// off the window's thread, so the next stroke never waits for the disk (on a synced folder a
+/// write waits on the mount). Opening another page straight after still finds it written.
+#[test]
+fn ink_is_written_a_moment_after_the_pen_lifts_and_before_another_page_opens() {
+    for leave_at_once in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-ink-later");
+        app.open_path(&s.md_page.to_string_lossy());
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        h.get_by_label("Draw").click();
+        h.run();
+        h.get_by_label("Pen red").click();
+        h.run();
+        let file = s.md_page.join("ink.svg");
+        let body = h.state().page_rect().expect("the page is on the screen");
+        let y = body.min.y + 160.0;
+        ask(&mut h, "ui.press", json!({"x": body.min.x + 40.0, "y": y})).expect("down");
+        pump(&mut h);
+        for step in 1..=6 {
+            ask(&mut h, "ui.move", json!({"x": body.min.x + 40.0 + step as f32 * 30.0, "y": y})).expect("move");
+            pump(&mut h);
+        }
+        ask(&mut h, "ui.release", json!({"x": body.min.x + 220.0, "y": y})).expect("up");
+        pump(&mut h);
+        pump(&mut h);
+        let strokes = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["strokes"].as_u64();
+        assert_eq!(strokes, Some(1), "the stroke is on the page");
+        assert!(!file.exists(), "and not yet written in the frames the pen was lifted in");
+        if leave_at_once {
+            ask(&mut h, "ui.open", json!({"path": s.html_page.to_string_lossy()})).expect("another page");
+            assert!(file.exists(), "opening another page writes it first");
+        } else {
+            for _ in 0..40 {
+                settle(&mut h);
+                if file.exists() {
+                    break;
+                }
+            }
+            assert!(file.exists(), "it is written a moment later");
+            // The page's own line naming the ink goes with the page's autosave, a little later.
+            for _ in 0..40 {
+                if !h.state().is_dirty() {
+                    break;
+                }
+                settle(&mut h);
+            }
+            assert!(!h.state().is_dirty(), "and then the page has nothing left to save");
+        }
+        let written = std::fs::read_to_string(&file).expect("the ink");
+        assert!(written.contains("fill=\"#d02121\""), "the stroke as drawn:\n{written}");
+    }
+}
 
 /// With a pen in hand the page is drawn by the ink view, which did not let go of last frame's
 /// list of the pictures it drew: the list grew by every picture on the page each frame, and each
