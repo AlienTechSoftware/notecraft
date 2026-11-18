@@ -168,6 +168,30 @@ impl Session {
 
     /// Runs a command by id. A panic inside the command becomes `EngineError::Panicked`.
     pub fn run(&mut self, id: &str, params: &Params) -> Result<Output, EngineError> {
+        let writer = notecraft_store::coordination::writer(&self.root)?;
+        let _write = writer.lock().map_err(|_| StoreError::invalid("the notebook writer is unavailable"))?;
+        self.run_locked(id, params)
+    }
+
+    /// Execute against the view's loaded body and return the exact page state after the command.
+    /// The check, command and receipt share the same writer lock as background saves.
+    pub fn run_with_page(
+        &mut self,
+        id: &str,
+        params: &Params,
+        page: &Path,
+        expected: &str,
+    ) -> Result<(Output, Option<notecraft_store::coordination::Snapshot>), EngineError> {
+        let writer = notecraft_store::coordination::writer(&self.root)?;
+        let _write = writer.lock().map_err(|_| StoreError::invalid("the notebook writer is unavailable"))?;
+        if notecraft_store::page::load_page(page)?.body != expected {
+            return Err(StoreError::invalid("This page changed in another window or on disk. Keep your edits as a copy or reload.").into());
+        }
+        let output = self.run_locked(id, params)?;
+        Ok((output, notecraft_store::coordination::Snapshot::read(page).ok()))
+    }
+
+    fn run_locked(&mut self, id: &str, params: &Params) -> Result<Output, EngineError> {
         let spec = commands::registry().iter().find(|c| c.id == id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         let result = guarded(|| (spec.run)(self, params))?;
         if spec.changes_tree && result.is_ok() {

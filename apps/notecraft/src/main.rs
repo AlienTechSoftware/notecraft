@@ -19,7 +19,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::path::PathBuf;
 
 struct Shell {
-    app: NoteCraftApp,
+    windows: notecraft_ui_egui::windows::Host,
     _input_language_watcher: Option<notecraft_ui_egui::input_language::Watcher>,
 }
 
@@ -44,13 +44,17 @@ impl eframe::App for Shell {
         });
         if keyboard_paste {
             log::debug!("raw keyboard paste captured before egui clipboard handling");
-            self.app.queue_keyboard_paste();
+            self.windows.queue_keyboard_paste(raw_input.viewport_id);
         }
-        raw_input.events.extend(self.app.take_events());
+        raw_input.events.extend(self.windows.take_events(raw_input.viewport_id));
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.windows.logic(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.app.show(ui);
+        self.windows.show(ui);
     }
 }
 
@@ -313,7 +317,7 @@ fn main() -> eframe::Result {
                 app.open_path(p);
             }
             applog::info("window ready");
-            Ok(Box::new(Shell { app, _input_language_watcher: input_language_watcher }))
+            Ok(Box::new(Shell { windows: notecraft_ui_egui::windows::Host::new(app), _input_language_watcher: input_language_watcher }))
         }),
     );
     match &result {

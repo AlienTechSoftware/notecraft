@@ -553,7 +553,24 @@ pub fn set_justified(dir: &Path, marked: &justify::Justified) -> Result<()> {
 
 /// Saves the editable part of a page, keeping its metadata and updating `updated`.
 /// Returns the new `updated` timestamp.
+/// Compare and save under the same in-process write lock. A stale editor keeps its input.
+pub fn save_body_checked(dir: &Path, body: &str, expected: &str) -> Result<String> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
+    let current = load_page(dir)?;
+    if current.body != expected {
+        return Err(StoreError::invalid("This page changed in another window or on disk. Keep your edits as a copy or reload the newer page."));
+    }
+    save_body_inner(dir, body)
+}
+
 pub fn save_body(dir: &Path, body: &str) -> Result<String> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
+    save_body_inner(dir, body)
+}
+
+fn save_body_inner(dir: &Path, body: &str) -> Result<String> {
     if body.len() > MAX_PAGE_BYTES {
         return Err(StoreError::invalid("this page is too large to save"));
     }

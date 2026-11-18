@@ -26,6 +26,8 @@ pub const TABLE_TAB: &str = "Table";
 /// What a ribbon control asks the window to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
+    NewWindow,
+    QuickNote,
     /// The File tab: open the File screen.
     File,
     SendPage,
@@ -3489,8 +3491,12 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleAlwaysOnTop);
             }
-            not_built(ui, crate::tl_id!("ui.new_window"), t);
-            not_built(ui, crate::tl_id!("ui.new_quick_note"), t);
+            if small_labeled_icon(ui, Icon::PageStack, crate::tl_id!("ui.new_window"), crate::tl_id!("ui.window_new_tip"), t).clicked() {
+                acts.push(Act::NewWindow);
+            }
+            if small_labeled_icon(ui, Icon::Page, crate::tl_id!("ui.new_quick_note"), crate::tl_id!("ui.window_quick_tip"), t).clicked() {
+                acts.push(Act::QuickNote);
+            }
         });
     });
     group(ui, crate::tl_id!("ui.appearance"), t, |ui| {

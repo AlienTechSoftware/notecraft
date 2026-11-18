@@ -93,3 +93,4 @@ pub const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-256.
 /// The brand banner for the first-use wizard, light and dark variants.
 pub const BANNER_LIGHT_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-social-light.png");
 pub const BANNER_DARK_PNG: &[u8] = include_bytes!("../../../assets/brand/notecraft-social-dark.png");
+pub mod windows;

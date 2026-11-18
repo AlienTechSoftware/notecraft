@@ -31,3 +31,5 @@ pub use error::{Result, StoreError};
 pub use notecraft_model::{NodeKind, PageFormat};
 pub use settings::{FormatSource, Settings};
 pub use tree::{Node, NodeInfo};
+
+pub mod coordination;

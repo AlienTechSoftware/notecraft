@@ -141,7 +141,8 @@ fn replacing_a_selected_literal_uses_the_new_characters_identity() {
     let mut caret = Some(Caret { text: caret_text(&blocks[0]), focus: true, ..Default::default() });
     let ctx = egui::Context::default();
     frame(&ctx, &mut blocks, &mut caret, vec![]);
-    ctx.data_mut(|data| data.insert_temp(restore_selection_id(), (0usize, 0usize, 9usize)));
+    let restore_id = restore_selection_id(&ctx);
+    ctx.data_mut(|data| data.insert_temp(restore_id, (0usize, 0usize, 9usize)));
     frame(&ctx, &mut blocks, &mut caret, vec![]);
     frame(&ctx, &mut blocks, &mut caret, vec![egui::Event::Text("**bold**".into())]);
     let Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
