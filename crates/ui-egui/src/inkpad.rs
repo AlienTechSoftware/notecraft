@@ -182,37 +182,40 @@ impl Pad {
 
     /// Writes the ink, with its readings, which is what the page keeps.
     pub fn save(&mut self) -> std::io::Result<()> {
-        let current = match std::fs::read(&self.file) {
-            Ok(bytes) => Some(bytes),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(e),
-        };
-        if current != self.saved_bytes {
-            return Err(std::io::Error::other("This drawing changed in another window or on disk. Keep your edits as a copy or reload."));
+        let write = self.prepare_save();
+        let written = write.run();
+        self.apply_save(written, true)
+    }
+
+    /// What writing the ink now would write, taken from the drawing as it is. The writing itself
+    /// ([`InkWrite::run`]) needs nothing more from the pad, so it can be done off the window's
+    /// thread: on a synced folder a write waits on the mount, and the pen waited with it.
+    pub fn prepare_save(&self) -> InkWrite {
+        InkWrite {
+            file: self.file.clone(),
+            expected: self.saved_bytes.clone(),
+            text: (!self.drawing.is_empty()).then(|| svg::write(&self.drawing, svg::Flavour::Editable)),
+            keep_first: self.incomplete,
         }
-        if let Some(parent) = self.file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        // The file holds what this drawing does not: it is kept, as it was, before it is
-        // written over or taken away, and only then (issue #157).
-        if self.incomplete && self.file.is_file() {
-            let kept = self.keep_original()?;
-            self.kept_original = Some(kept);
-        }
+    }
+
+    /// Whether the page had an ink file when it was read or last written.
+    pub fn on_disk(&self) -> bool {
+        self.saved_bytes.is_some()
+    }
+
+    /// Takes in a write made from [`Pad::prepare_save`]. `still_current`: nothing was drawn
+    /// since it was prepared, so the drawing is now all on disk.
+    pub fn apply_save(&mut self, written: std::io::Result<Written>, still_current: bool) -> std::io::Result<()> {
+        let written = written?;
+        self.saved_bytes = written.bytes;
         self.incomplete = false;
-        // A page drawn on and then rubbed clean loses its file rather than keeping an
-        // empty one, so a page with no ink has no ink in its folder either.
-        if self.drawing.is_empty() {
-            match std::fs::remove_file(&self.file) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-        } else {
-            std::fs::write(&self.file, svg::write(&self.drawing, svg::Flavour::Editable))?;
+        if written.kept.is_some() {
+            self.kept_original = written.kept;
         }
-        self.saved_bytes = std::fs::read(&self.file).ok();
-        self.dirty = false;
+        if still_current {
+            self.dirty = false;
+        }
         Ok(())
     }
 
@@ -222,26 +225,6 @@ impl Pad {
         copy.file = page.join(FILE);
         copy.saved_bytes = std::fs::read(&copy.file).ok();
         copy.save()
-    }
-
-    /// Copies the ink file as it is to `ink.svg.bak`, or the first free `ink-N.svg.bak`, beside
-    /// it. Not an `.svg`, so nothing takes the copy for the page's ink or for a picture of it.
-    fn keep_original(&self) -> std::io::Result<PathBuf> {
-        let folder = self.file.parent().map(Path::to_path_buf).unwrap_or_default();
-        for n in 1usize..=10_000 {
-            let name = if n == 1 { format!("{FILE}.bak") } else { format!("ink-{n}.svg.bak") };
-            let kept = folder.join(name);
-            match std::fs::OpenOptions::new().write(true).create_new(true).open(&kept) {
-                Ok(mut out) => {
-                    let mut original = std::fs::File::open(&self.file)?;
-                    std::io::copy(&mut original, &mut out)?;
-                    return Ok(kept);
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e),
-            }
-        }
-        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "every name for keeping the original ink file is taken"))
     }
 
     /// Writes it again as a plain picture, beside the ink, for sending somewhere else.
@@ -1441,6 +1424,84 @@ fn frame_moves(ui: &Ui, body: egui::Rect, origin: egui::Pos2, zoom: f32, pressur
         }
         moves
     })
+}
+
+/// One write of the ink, prepared on the window's thread and made anywhere ([`Pad::prepare_save`]).
+pub struct InkWrite {
+    pub file: PathBuf,
+    /// What the file held when the drawing was read or last written: anything else there now
+    /// was written by another window or program, and is not written over.
+    expected: Option<Vec<u8>>,
+    /// The drawing as the file keeps it, or `None` when nothing is drawn and the file goes.
+    text: Option<String>,
+    /// The file holds more than the drawing does: it is kept beside it first (issue #157).
+    keep_first: bool,
+}
+
+/// What a write left: the file as it now is, and where the original was kept if it was.
+pub struct Written {
+    bytes: Option<Vec<u8>>,
+    kept: Option<PathBuf>,
+}
+
+impl Written {
+    /// Whether the page has an ink file now.
+    pub fn on_disk(&self) -> bool {
+        self.bytes.is_some()
+    }
+}
+
+impl InkWrite {
+    /// Writes the ink, or takes the file away when nothing is drawn.
+    pub fn run(self) -> std::io::Result<Written> {
+        let current = match std::fs::read(&self.file) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e),
+        };
+        if current != self.expected {
+            return Err(std::io::Error::other("This drawing changed in another window or on disk. Keep your edits as a copy or reload."));
+        }
+        if let Some(parent) = self.file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        // The file holds what this drawing does not: it is kept, as it was, before it is
+        // written over or taken away, and only then (issue #157).
+        let kept = if self.keep_first && self.file.is_file() { Some(keep_original(&self.file)?) } else { None };
+        // A page drawn on and then rubbed clean loses its file rather than keeping an
+        // empty one, so a page with no ink has no ink in its folder either.
+        match &self.text {
+            None => match std::fs::remove_file(&self.file) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            },
+            Some(text) => std::fs::write(&self.file, text)?,
+        }
+        // What is now on disk is what was written: it is not read back over a slow mount.
+        Ok(Written { bytes: self.text.map(String::into_bytes), kept })
+    }
+}
+
+/// Copies the ink file `file` as it is to `ink.svg.bak`, or the first free `ink-N.svg.bak`,
+/// beside it. Not an `.svg`, so nothing takes the copy for the page's ink or for a picture of it.
+fn keep_original(file: &Path) -> std::io::Result<PathBuf> {
+    let folder = file.parent().map(Path::to_path_buf).unwrap_or_default();
+
+    for n in 1usize..=10_000 {
+        let name = if n == 1 { format!("{FILE}.bak") } else { format!("ink-{n}.svg.bak") };
+        let kept = folder.join(name);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&kept) {
+            Ok(mut out) => {
+                let mut original = std::fs::File::open(file)?;
+                std::io::copy(&mut original, &mut out)?;
+                return Ok(kept);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "every name for keeping the original ink file is taken"))
 }
 
 #[cfg(test)]
