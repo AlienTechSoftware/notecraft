@@ -13062,3 +13062,108 @@ fn a_merged_cell_is_drawn_across_its_columns_without_a_line_through_it() {
         assert!(!through, "html={html}: no line between the merged columns in the merged row");
     }
 }
+
+/// Dragging in the navigation pane, as in OneNote: a page up or down its section, onto another
+/// page to make it a subpage, onto a section in the other column to move it there; notebooks
+/// among notebooks. Escape while dragging puts it back, and a short press is still a click.
+#[test]
+fn notebooks_sections_and_pages_are_dragged_where_they_go() {
+    let (_t, app, s) = sample_app("ui-nav-drag");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let run = |h: &mut Harness<'_, NoteCraftApp>, command: &str, p: Value| -> String {
+        ask(h, "engine.execute", json!({"command": command, "params": p})).expect(command).as_str().expect("a path").to_string()
+    };
+    let root = s.notebook.parent().expect("the notebooks folder").to_path_buf();
+    let course = run(&mut h, "notebook.create", json!({"name": "Course"}));
+    let lectures = run(&mut h, "node.create", json!({"parent": course, "kind": "section", "title": "Lectures"}));
+    let archive = run(&mut h, "node.create", json!({"parent": course, "kind": "section", "title": "Old lectures"}));
+    let pages: Vec<String> =
+        ["Alpha", "Beta", "Gamma"].iter().map(|t| run(&mut h, "node.create", json!({"parent": lectures, "kind": "page", "title": t}))).collect();
+    ask(&mut h, "ui.open", json!({"path": pages[0]})).expect("open Alpha");
+    settle(&mut h);
+    let titles = |h: &Harness<'_, NoteCraftApp>, parent: &str| -> Vec<String> {
+        fn find<'a>(nodes: &'a [notecraft_store::tree::Node], p: &std::path::Path) -> Option<&'a notecraft_store::tree::Node> {
+            nodes.iter().find_map(|n| if n.path == p { Some(n) } else { find(&n.children, p) })
+        }
+        let p = std::fs::canonicalize(parent).unwrap_or_else(|_| PathBuf::from(parent));
+        find(h.state().session().tree(), &p)
+            .map(|n| n.children.iter().filter(|c| c.info.kind == notecraft_model::NodeKind::Page).map(|c| c.info.title.clone()).collect())
+            .unwrap_or_default()
+    };
+    // The rows a title names, last first: the pages column is drawn after the organisers.
+    let row = |h: &Harness<'_, NoteCraftApp>, title: &str| -> egui::Rect {
+        h.get_all_by_label(title).last().unwrap_or_else(|| panic!("a row for {title}")).rect()
+    };
+    let drag = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, to: egui::Pos2, escape: bool| {
+        ask(h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+        pump(h);
+        for step in 1..=8 {
+            let at = from + (to - from) * (step as f32 / 8.0);
+            ask(h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move");
+            pump(h);
+        }
+        if escape {
+            ask(h, "ui.key", json!({"key": "Escape"})).expect("escape");
+            pump(h);
+        }
+        ask(h, "ui.release", json!({"x": to.x, "y": to.y})).expect("release");
+        settle(h);
+    };
+    assert_eq!(titles(&h, &lectures), ["Alpha", "Beta", "Gamma"]);
+
+    // Gamma dragged to the top edge of Alpha goes first.
+    let (gamma, alpha) = (row(&h, "Gamma"), row(&h, "Alpha"));
+    drag(&mut h, gamma.center(), egui::pos2(alpha.center().x, alpha.min.y + 2.0), false);
+    assert_eq!(titles(&h, &lectures), ["Gamma", "Alpha", "Beta"], "dropped above Alpha");
+
+    // Escape while carrying it leaves everything where it was.
+    let (gamma, beta) = (row(&h, "Gamma"), row(&h, "Beta"));
+    drag(&mut h, gamma.center(), egui::pos2(beta.center().x, beta.max.y - 2.0), true);
+    assert_eq!(titles(&h, &lectures), ["Gamma", "Alpha", "Beta"], "Escape put it back");
+
+    // Beta dropped on the middle of Alpha becomes its subpage.
+    let (beta, alpha) = (row(&h, "Beta"), row(&h, "Alpha"));
+    drag(&mut h, beta.center(), alpha.center(), false);
+    assert_eq!(titles(&h, &lectures), ["Gamma", "Alpha"], "Beta left the top level");
+    let alpha_path = std::fs::canonicalize(&pages[0]).expect("alpha");
+    assert_eq!(titles(&h, &alpha_path.to_string_lossy()), ["Beta"], "and is Alpha's subpage");
+
+    // Gamma dragged onto another section moves there.
+    let (gamma, archive_row) = (row(&h, "Gamma"), h.get_all_by_label("Old lectures").next().expect("the section's row").rect());
+    drag(&mut h, gamma.center(), archive_row.center(), false);
+    assert_eq!(titles(&h, &archive), ["Gamma"], "Gamma is in Old lectures");
+    assert_eq!(titles(&h, &lectures), ["Alpha"]);
+
+    // Sections among sections: Old lectures dragged above Lectures.
+    let sections = |h: &Harness<'_, NoteCraftApp>| {
+        let c = std::fs::canonicalize(&course).expect("course");
+        h.state()
+            .session()
+            .tree()
+            .iter()
+            .find(|n| n.path == c)
+            .map(|n| n.children.iter().map(|c| c.info.title.clone()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    assert_eq!(sections(&h), ["New Section 1", "Lectures", "Old lectures"]);
+    let (old, lect) = (h.get_all_by_label("Old lectures").next().expect("row").rect(), h.get_all_by_label("Lectures").next().expect("row").rect());
+    drag(&mut h, old.center(), egui::pos2(lect.center().x, lect.min.y + 2.0), false);
+    assert_eq!(sections(&h), ["New Section 1", "Old lectures", "Lectures"], "the section went above");
+
+    // The notebooks: Course dragged above the sample notebook goes first, and stays first.
+    let notebooks = |h: &Harness<'_, NoteCraftApp>| h.state().session().tree().iter().map(|n| n.info.title.clone()).collect::<Vec<_>>();
+    let first = notebooks(&h)[0].clone();
+    assert_ne!(first, "Course");
+    let (course_row, first_row) =
+        (h.get_all_by_label("Course").next().expect("Course").rect(), h.get_all_by_label(first.as_str()).next().expect("first").rect());
+    drag(&mut h, course_row.center(), egui::pos2(first_row.center().x, first_row.min.y + 2.0), false);
+    assert_eq!(notebooks(&h)[0], "Course", "Course is first: {:?}", notebooks(&h));
+    let _ = root;
+
+    // A press that hardly moves is still a click: it opens the page.
+    let alpha = row(&h, "Alpha");
+    ask(&mut h, "ui.click", json!({"x": alpha.center().x, "y": alpha.center().y})).expect("click");
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"], json!("Alpha"), "the click opened Alpha");
+}

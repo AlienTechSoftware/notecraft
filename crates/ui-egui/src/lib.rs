@@ -45,6 +45,7 @@ pub mod input_language {
 }
 pub mod inkpad;
 pub mod mathview;
+pub mod navdrag;
 pub mod navhistory;
 pub mod onlinevideo;
 pub mod pageedit;

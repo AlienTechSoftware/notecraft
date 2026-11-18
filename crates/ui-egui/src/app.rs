@@ -1037,6 +1037,8 @@ enum Act {
     PromoteSubpage(PathBuf),
     MovePageUp(PathBuf),
     MovePageDown(PathBuf),
+    /// A row dragged in the navigation pane and let go: where it goes.
+    Place(PathBuf, crate::navdrag::Drop),
     PageVersions(PathBuf),
     Delete(PathBuf, String, usize),
     Color(PathBuf, Option<NodeColor>),
@@ -3354,6 +3356,7 @@ impl NoteCraftApp {
                     self.session.refresh();
                 }
             }
+            Act::Place(path, drop) => self.place_dropped(&path, &drop),
             Act::PageVersions(path) => self.show_page_versions(&path),
             Act::Delete(path, title, count) => self.dialog = Some(Dialog::Delete { path, title, count }),
             Act::Color(path, color) => {
@@ -3379,6 +3382,135 @@ impl NoteCraftApp {
         }
     }
 
+    /// Dragging rows in the navigation pane: taking hold of `node`'s row, showing where a carried
+    /// row would go over this one, and letting go (see `navdrag`).
+    fn drag_row(&self, ui: &Ui, node: &Node, rect: egui::Rect, resp: &egui::Response, acts: &mut Vec<Act>) {
+        use crate::navdrag::{Carried, Drop, carried_id, drop_at, drop_id};
+        let ctx = ui.ctx();
+        let frame = ctx.cumulative_frame_nr();
+        if resp.drag_started() {
+            ctx.data_mut(|d| {
+                d.insert_temp(carried_id(), Carried { path: node.path.clone(), kind: node.info.kind, title: node.info.title.clone() });
+                d.remove::<(u64, Option<Drop>)>(drop_id());
+            });
+        }
+        let Some(carried) = ctx.data(|d| d.get_temp::<Carried>(carried_id())) else { return };
+        // Escape puts it back: nothing is moved when the button comes up.
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ctx.data_mut(|d| {
+                d.remove::<Carried>(carried_id());
+                d.remove::<(u64, Option<Drop>)>(drop_id());
+            });
+            return;
+        }
+        let t = &self.tokens;
+        // Over this row: where it would go, shown on the row.
+        if let Some(p) = ctx.pointer_latest_pos().filter(|p| rect.contains(*p))
+            && carried.path != node.path
+        {
+            let drop = drop_at(&carried, &node.path, node.info.kind, rect.min.y, rect.max.y, p.y);
+            let painter = ui.painter_at(rect.expand(2.0));
+            match &drop {
+                Some(Drop::Before(_)) => {
+                    painter.line_segment([rect.left_top() + vec2(4.0, 0.0), rect.right_top() - vec2(4.0, 0.0)], egui::Stroke::new(2.0, t.accent));
+                }
+                Some(Drop::After(_)) => {
+                    painter
+                        .line_segment([rect.left_bottom() + vec2(4.0, 0.0), rect.right_bottom() - vec2(4.0, 0.0)], egui::Stroke::new(2.0, t.accent));
+                }
+                Some(Drop::Into(_)) => {
+                    painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+                }
+                None => {}
+            }
+            ctx.data_mut(|d| d.insert_temp(drop_id(), (frame, drop)));
+        }
+        if resp.dragged() && carried.path == node.path {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            // What is carried follows the pointer, faintly, above everything else.
+            if let Some(p) = ctx.pointer_latest_pos() {
+                let layer = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("nav-drag-ghost")));
+                let galley = ui.painter().layout_no_wrap(carried.title.clone(), egui::FontId::proportional(13.0), t.text);
+                let at = p + vec2(14.0, -galley.size().y / 2.0);
+                let back = egui::Rect::from_min_size(at - vec2(6.0, 3.0), galley.size() + vec2(12.0, 6.0));
+                layer.rect_filled(back, 4.0, t.panel.gamma_multiply(0.92));
+                layer.rect_stroke(back, 4.0, egui::Stroke::new(1.0, t.container_border), egui::StrokeKind::Inside);
+                layer.galley(at, galley, t.text);
+            }
+        }
+        if resp.drag_stopped() && carried.path == node.path {
+            // Only where the pointer is now, or was a frame ago: a row it has left has no say.
+            let drop = ctx.data_mut(|d| {
+                d.remove::<Carried>(carried_id());
+                d.remove_temp::<(u64, Option<Drop>)>(drop_id())
+            });
+            if let Some((when, Some(drop))) = drop
+                && when + 1 >= frame
+                && ctx.pointer_latest_pos().is_some_and(|p| ctx.viewport_rect().contains(p))
+            {
+                acts.push(Act::Place(node.path.clone(), drop));
+            }
+        }
+    }
+
+    /// Puts a row dragged in the navigation pane where it was let go: above or below another row,
+    /// among the rows beside it, or into one. The window stays on the page it was on, wherever
+    /// that page went.
+    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) {
+        use crate::navdrag::Drop;
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let kind = notecraft_store::tree::read_node(path).map(|n| n.kind);
+        let target = crate::navdrag::target(drop).to_path_buf();
+        // The nodes beside the target, in their order: the notebooks, or what its parent holds.
+        let beside: Vec<PathBuf> = {
+            fn holding<'a>(nodes: &'a [Node], child: &Path) -> Option<&'a [Node]> {
+                if nodes.iter().any(|n| n.path == child) {
+                    return Some(nodes);
+                }
+                nodes.iter().find(|n| child.starts_with(&n.path)).and_then(|n| holding(&n.children, child))
+            }
+            holding(self.session.tree(), &target).map(|nodes| nodes.iter().map(|n| n.path.clone()).collect()).unwrap_or_default()
+        };
+        let (to, before) = match drop {
+            Drop::Into(into) => (into.clone(), None),
+            Drop::Before(row) => (row.parent().map(Path::to_path_buf).unwrap_or_default(), Some(row.clone())),
+            Drop::After(row) => {
+                // Before whatever follows the row, not counting what is carried: below the row
+                // just above where it already is, it stays where it is.
+                let next = beside.iter().position(|p| p == row).and_then(|i| beside.iter().skip(i + 1).find(|p| *p != path)).cloned();
+                (row.parent().map(Path::to_path_buf).unwrap_or_default(), next)
+            }
+        };
+        let mut p = vec![("path", path_str(path))];
+        if kind != Some(NodeKind::Notebook) {
+            p.push(("to", path_str(&to)));
+        }
+        if let Some(before) = &before {
+            p.push(("before", path_str(before)));
+        }
+        let pairs: Vec<(&str, &str)> = p.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
+        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return };
+        self.session.refresh();
+        if matches!(drop, Drop::Into(_)) {
+            self.open.insert(to);
+        }
+        if new_path != path {
+            self.nav.relocate(path, &new_path);
+            let remap = |candidate: &Path| candidate.strip_prefix(path).map_or_else(|_| candidate.to_path_buf(), |suffix| new_path.join(suffix));
+            self.open = self.open.iter().map(|branch| remap(branch)).collect();
+            self.selected = self.selected.as_deref().map(remap);
+            if let Some(editor_path) = editor_path.filter(|editor_path| editor_path.starts_with(path)) {
+                let relocated = remap(&editor_path);
+                self.open_page_inner(&relocated);
+            }
+        }
+        self.say(crate::tl_id!("ui.moved"));
+    }
+
     fn draw_node(&self, ui: &mut Ui, node: &Node, depth: usize, acts: &mut Vec<Act>) {
         self.draw_row(ui, node, depth, acts, true);
     }
@@ -3390,9 +3522,12 @@ impl NoteCraftApp {
         let open = self.open.contains(&node.path);
         let selected = self.selected.as_deref() == Some(node.path.as_path());
         let width = ui.available_width();
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
+        // A row can be taken hold of and dragged elsewhere in the pane (see `navdrag`); a press
+        // that hardly moves is still a click.
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let t = &self.tokens;
+        self.drag_row(ui, node, rect, &resp, acts);
         if selected {
             painter.rect_filled(rect, 4.0, t.row_selected);
         } else if resp.hovered() {
