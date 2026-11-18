@@ -9001,7 +9001,7 @@ fn font_family_applies_to_a_selection_across_paragraphs() {
     ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
     ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
     settle(&mut h);
-    h.get_by_label(&family).click();
+    h.get_by_label(family.as_str()).click();
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
     assert_eq!(body.matches("font-family:").count(), 2, "both paragraphs took the family:\n{body}");
