@@ -2724,6 +2724,35 @@ fn a_click_on_blank_paper_starts_writing_under_the_pointer_when_zoomed() {
     // The box's words begin a pad in and a handle's height down from its corner (6 and 14 points).
     let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 14.0) * 2.0);
     assert!((words - click).length() < 3.0, "clicked at {click:?}, the box's words begin at {words:?}");
+/// With a pen in hand the page is drawn by the ink view, which did not let go of last frame's
+/// list of the pictures it drew: the list grew by every picture on the page each frame, and each
+/// picture went through all of it, so the longer the pen was held the slower drawing, panning and
+/// zooming became. However long the pen is held, the list is this frame's pictures only.
+#[test]
+fn holding_the_pen_does_not_slow_the_page_down_frame_by_frame() {
+    let t = TempDir::new("ui-pen-lists");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    s.attach_bytes(&path, "one.png", LOGO_PNG).expect("picture");
+    s.attach_bytes(&path, "two.png", LOGO_PNG).expect("picture");
+    s.run("page.save", &params(&[("path", &path), ("body", "Words\n\n![one](assets/one.png)\n\n![two](assets/two.png)\n")])).expect("page");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    h.run();
+    for _ in 0..40 {
+        h.step();
+    }
+    let drawn = h
+        .ctx
+        .data(|d| d.get_temp::<Vec<notecraft_ui_egui::preview::RenderedImage>>(notecraft_ui_egui::preview::rendered_images_id()))
+        .map_or(0, |v| v.len());
+    assert!(drawn <= 2, "forty frames with the pen in hand keep {drawn} pictures in the list, not forty frames' worth");
 }
 
 /// The Draw tab end to end: pick a pen off the rack, write on the page itself, and the

@@ -1597,6 +1597,14 @@ pub fn show_ink_view(
     zoom: f32,
 ) -> Moved {
     let mut out = Moved::default();
+    // What was drawn last frame is let go, as the ordinary view does: kept, the list of pictures
+    // drawn grew by every picture on the page each frame the pen was in hand, and each picture
+    // drawn went through all of it, so the page grew slower the longer the pen was held.
+    ui.data_mut(|d| {
+        d.remove::<Vec<crate::preview::RenderedImage>>(crate::preview::rendered_images_id());
+        d.remove::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id());
+        d.remove::<Vec<(usize, f32)>>(pageedit::after_picture_tops_id());
+    });
     let area = ui.available_rect_before_wrap();
     out.origin = area.min;
     *boxes = container::fit(boxes, blocks.len(), (area.width() / zoom - 2.0 * PAD).max(container::MIN_WIDTH));
