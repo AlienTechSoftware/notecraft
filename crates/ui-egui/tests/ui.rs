@@ -2626,6 +2626,106 @@ fn ink_is_written_a_moment_after_the_pen_lifts_and_before_another_page_opens() {
     }
 }
 
+/// The page keeps its shape as it is zoomed, and as a pen is picked up or put down: a block sits
+/// at the same place on the page, in page points, at every zoom and in both views. The gaps
+/// between blocks were screen points that did not grow with the zoom, so a long page of
+/// printouts crept against its ink as it was zoomed; and the pen view spaced blocks a little
+/// closer than the ordinary view, so the page jumped when the tool changed.
+#[test]
+fn blocks_keep_their_place_on_the_page_at_every_zoom_and_with_the_pen() {
+    let t = TempDir::new("ui-zoom-places");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    let mut body = String::from("Words before the pictures\n\n");
+    for n in 1..=6 {
+        s.attach_bytes(&path, &format!("p{n}.png"), LOGO_PNG).expect("picture");
+        body += &format!("A line about picture {n}\n\n![p{n}](assets/p{n}.png)\n\n");
+    }
+    s.run("page.save", &params(&[("path", &path), ("body", &body)])).expect("page");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    // Where each picture is, in page points, as drawn this frame.
+    let places = |h: &mut Harness<'_, NoteCraftApp>| -> Vec<(usize, f32)> {
+        let st = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let oy = st["page"]["origin"][1].as_f64().unwrap_or(0.0) as f32;
+        let z = h.state().zoom_percent() as f32 / 100.0;
+        let mut hits = h.ctx.data(|d| d.get_temp::<Vec<(usize, egui::Rect, String)>>(egui::Id::unique("embedded-object-hits"))).unwrap_or_default();
+        hits.sort_by_key(|(b, ..)| *b);
+        // Each picture once: the list is this frame's, but a picture is the same wherever it is listed.
+        hits.dedup_by_key(|(b, ..)| *b);
+        hits.into_iter().filter(|(_, _, kind)| kind == "image").map(|(b, r, _)| (b, (r.min.y - oy) / z)).collect()
+    };
+    let at_100 = places(&mut h);
+    assert!(at_100.len() >= 4, "the pictures are drawn: {at_100:?}");
+    let on_page = h.state().page_rect().expect("the page is on the screen").center();
+    ask(&mut h, "ui.move", json!({"x": on_page.x, "y": on_page.y})).expect("pointer on the page");
+    settle(&mut h);
+    h.input_mut().events.push(egui::Event::Zoom(2.0));
+    settle(&mut h);
+    assert_eq!(h.state().zoom_percent(), 200);
+    let at_200 = places(&mut h);
+    // Text is laid out on whole pixels, so a line is not exactly twice as tall at twice the zoom:
+    // a little is allowed for that, well under the few points a block the gaps used to add.
+    for ((b, a), (_, z)) in at_100.iter().zip(&at_200) {
+        assert!((a - z).abs() < 1.0 + a * 0.005, "block {b} is at {a} at 100 % and {z} at 200 %: {at_100:?} / {at_200:?}");
+    }
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    let with_pen = places(&mut h);
+    for ((b, a), (_, p)) in at_200.iter().zip(&with_pen) {
+        assert!((a - p).abs() < 1.0, "block {b} is at {a} and at {p} with the pen in hand: {at_200:?} / {with_pen:?}");
+    }
+}
+
+/// A click on blank paper puts the caret where the pointer is at any zoom, not further out from
+/// the page's corner the more the page is zoomed.
+#[test]
+fn a_click_on_blank_paper_starts_writing_under_the_pointer_when_zoomed() {
+    let (_t, app, s) = sample_app("ui-blank-click-zoomed");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Blank", "format": "cmgfm"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": "# Blank\n\nA few words.\n"}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let area = h.state().page_rect().expect("the page is on the screen");
+    let middle = area.center();
+    ask(&mut h, "ui.move", json!({"x": middle.x, "y": middle.y})).expect("pointer on the page");
+    settle(&mut h);
+    h.input_mut().events.push(egui::Event::Zoom(2.0));
+    settle(&mut h);
+    assert_eq!(h.state().zoom_percent(), 200);
+    let st = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let before = st["page"]["containers"].as_array().map_or(0, Vec::len);
+    let click = egui::pos2(area.min.x + area.width() * 0.6, area.min.y + area.height() * 0.45);
+    ask(&mut h, "ui.click", json!({"x": click.x, "y": click.y})).expect("click on blank paper");
+    settle(&mut h);
+    // The box stays once something is written in it.
+    ask(&mut h, "ui.text", json!({"text": "x"})).expect("type");
+    settle(&mut h);
+    let st = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let boxes = st["page"]["containers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), before + 1, "the click started a box: {boxes:?}");
+    let new = boxes.last().expect("the new box");
+    let (ox, oy) = (st["page"]["origin"][0].as_f64().unwrap_or(0.0) as f32, st["page"]["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let (x, y) = (new["x"].as_f64().unwrap_or(0.0) as f32, new["y"].as_f64().unwrap_or(0.0) as f32);
+    // The box's words begin a pad in and a handle's height down from its corner (6 and 14 points).
+    let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 14.0) * 2.0);
+    assert!((words - click).length() < 3.0, "clicked at {click:?}, the box's words begin at {words:?}");
+}
+
 /// With a pen in hand the page is drawn by the ink view, which did not let go of last frame's
 /// list of the pictures it drew: the list grew by every picture on the page each frame, and each
 /// picture went through all of it, so the longer the pen was held the slower drawing, panning and
