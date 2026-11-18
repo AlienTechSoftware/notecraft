@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a NoteCraft.app, a separate notebook setup app, DMG and CLI archive on macOS.
-# Default: universal. Options: --arch aarch64|x86_64|universal, --out DIR, --no-build.
+# Default: universal. Options: --arch aarch64|x86_64|universal, --out DIR, --no-build, --voice.
 # CARGO_TARGET_DIR and DIST may override the build and distribution directories.
 set -euo pipefail
 
@@ -8,11 +8,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCH=universal
 OUT="${DIST:-$ROOT/dist/macos}"
 BUILD=1
+VOICE_FEATURE=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch) [[ $# -ge 2 ]] || { echo "--arch needs a value" >&2; exit 2; }; ARCH="$2"; shift 2 ;;
     --out) [[ $# -ge 2 ]] || { echo "--out needs a value" >&2; exit 2; }; OUT="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
+    --voice) VOICE_FEATURE=(--features notecraft/voice); shift ;;
     -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -58,7 +60,7 @@ echo "==> NoteCraft $VERSION ($ARCH)"
 if [[ "$BUILD" = 1 ]]; then
   rustup target add "${targets[@]}"
   for target in "${targets[@]}"; do
-    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli)
+    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli "${VOICE_FEATURE[@]}")
   done
 fi
 # Both slices must be built from the same inputs, including local uncommitted work.

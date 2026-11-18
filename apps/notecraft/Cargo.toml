@@ -11,6 +11,10 @@ description = "NoteCraft desktop app"
 [lints]
 workspace = true
 
+[features]
+default = []
+voice = ["notecraft-ui-egui/voice"]
+
 [dependencies]
 notecraft-engine = { workspace = true }
 notecraft-store = { workspace = true }
