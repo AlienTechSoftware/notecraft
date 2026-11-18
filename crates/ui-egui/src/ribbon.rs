@@ -1202,6 +1202,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
                     }
                 };
+                // Warn only once the installed list is known; while it loads, nothing is missing yet.
+                let family_missing = !families.is_empty() && crate::font_picker::is_missing(view.font_family.unwrap_or(""), &families);
                 // Recently used families, most recent first. Kept for this session in egui memory.
                 let recent_key = egui::Id::new("notecraft-recent-fonts");
                 let recent_families: Vec<String> = ui.data(|d| d.get_temp(recent_key)).unwrap_or_default();
@@ -1219,6 +1221,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
                         filter: true,
                         recent: &recent_families,
+                        missing: family_missing,
                     },
                 );
                 if let Some(name) = family_out.chosen {
@@ -1251,6 +1254,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         accept: &|typed| crate::font_picker::size_is_usable(typed, &FONT_SIZES),
                         filter: false,
                         recent: &[],
+                        missing: false,
                     },
                 );
                 let boxes = crate::floating::FontBoxes {
@@ -1260,6 +1264,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     families_note: families_note.clone(),
                     sizes: sizes.clone(),
                     recent: recent_families.clone(),
+                    family_missing,
                 };
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

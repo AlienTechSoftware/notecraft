@@ -84,6 +84,7 @@
 @id	ui.font_family_box	Font name
 @id	ui.recent_fonts	Recently Used Fonts
 @id	ui.all_fonts	All Fonts
+@id	ui.font_missing	This font is not installed. The page shows a fallback font.
 @id	ui.pick_date	Pick a date
 @id	ui.pick_time	Pick a time
 @id	ui.am	AM

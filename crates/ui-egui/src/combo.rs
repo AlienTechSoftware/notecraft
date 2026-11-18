@@ -42,6 +42,9 @@ pub struct Spec<'a> {
     /// Families used lately, most recent first. Shown under Recently Used Fonts above All Fonts
     /// when the box is not being typed in. Empty for the size box.
     pub recent: &'a [String],
+    /// The shown value is not an installed font: a warning mark shows beside the box, with the
+    /// tooltip `ui.font_missing`.
+    pub missing: bool,
 }
 
 /// Shows the combo box and returns what was chosen this frame.
@@ -65,6 +68,14 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let cancelled = ui.input(|i| i.key_pressed(Key::Escape));
     let entered = ui.input(|i| i.key_pressed(Key::Enter));
     let value_box = ui.add(egui::TextEdit::singleline(&mut typed).id(typed_id).desired_width(spec.width));
+    if spec.missing {
+        // An amber triangle inside the box's right edge, as WordCraft draws it.
+        let c = egui::pos2(value_box.rect.right() - 8.0, value_box.rect.center().y);
+        let points = vec![c + vec2(-5.0, 4.0), c + vec2(5.0, 4.0), c + vec2(0.0, -5.0)];
+        ui.painter().add(Shape::convex_polygon(points, Color32::from_rgb(0xE0, 0x8A, 0x00), Stroke::NONE));
+        let warning = value_box.rect.with_min_x(value_box.rect.right() - 18.0);
+        ui.interact(warning, value_box.id.with("missing"), egui::Sense::hover()).on_hover_text(crate::tl_id!("ui.font_missing"));
+    }
     value_box.widget_info(|| WidgetInfo::labeled(WidgetType::TextInput, true, spec.box_label));
     if value_box.changed() {
         highlight = 0;

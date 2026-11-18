@@ -84,6 +84,7 @@
 @id	ui.font_family_box	[[RLI]]$$$Font name@@@[[PDI]]
 @id	ui.recent_fonts	[[RLI]]$$$Recently Used Fonts@@@[[PDI]]
 @id	ui.all_fonts	[[RLI]]$$$All Fonts@@@[[PDI]]
+@id	ui.font_missing	[[RLI]]$$$This font is not installed. The page shows a fallback font.@@@[[PDI]]
 @id	ui.pick_date	[[RLI]]$$$Pick a date@@@[[PDI]]
 @id	ui.pick_time	[[RLI]]$$$Pick a time@@@[[PDI]]
 @id	ui.am	[[RLI]]$$$AM@@@[[PDI]]

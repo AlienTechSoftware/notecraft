@@ -117,6 +117,8 @@ pub struct FontBoxes {
     pub sizes: Vec<String>,
     /// Recently used families, most recent first, shared with the ribbon's family box.
     pub recent: Vec<String>,
+    /// The family shown is not installed, so the box shows its warning mark.
+    pub family_missing: bool,
 }
 
 /// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
@@ -211,6 +213,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
                             filter: true,
                             recent: &fonts.recent,
+                            missing: fonts.family_missing,
                         },
                     );
                     if let Some(name) = families.chosen {
@@ -231,6 +234,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             accept: &|typed| crate::font_picker::size_is_usable(typed, &crate::ribbon::FONT_SIZES),
                             filter: false,
                             recent: &[],
+                            missing: false,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
