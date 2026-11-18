@@ -13,8 +13,8 @@
 #   2. test: builds and runs the workspace tests on the tagged commit.
 #   3. packaging: the Packaging workflow on the tagged commit (Windows, Linux x86_64 and aarch64,
 #      macOS Apple Silicon and Intel, Android arm64).
-#   4. website: the Website pipeline on the tagged commit, deployed to production. Its web build
-#      is also kept as a release asset.
+#   4. website: build the tagged commit alongside tests and packaging. After all three pass,
+#      deploy the verified site to production. The web ZIP is also a release asset.
 #   5. release: publishes GitHub Release v<version>, marked latest, with every package and one
 #      SHA256SUMS.txt.
 #
@@ -58,6 +58,7 @@ jobs:
       release: ${{ steps.decide.outputs.release }}
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -151,6 +152,7 @@ jobs:
           git status --short
 
       - name: Commit and push the tag (main is not touched)
+        id: tag
         if: steps.decide.outputs.release == 'true'
         env:
           TAG: ${{ steps.decide.outputs.tag }}
@@ -163,6 +165,7 @@ jobs:
           git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
           git tag -f -a "$TAG" -m "NoteCraft $TAG"
           git push --force origin "refs/tags/$TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "### NoteCraft $TAG (\`$(git rev-parse --short HEAD)\`, main at \`$(git rev-parse --short HEAD~1)\`)" >>"$GITHUB_STEP_SUMMARY"
 
   test:
@@ -176,7 +179,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.sha }}
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -203,26 +206,40 @@ jobs:
       attestations: write
     uses: ./.github/workflows/packaging.yml
     with:
-      ref: ${{ needs.prepare.outputs.tag }}
+      ref: ${{ needs.prepare.outputs.sha }}
     # The Android release key, when the repository has one (packaging.yml).
     secrets: inherit
 
   website:
-    name: Website
-    needs: [prepare, test, packaging]
+    name: Build website
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/website-pipeline.yml
     with:
-      deploy: true
-      ref: ${{ needs.prepare.outputs.tag }}
+      deploy: false
+      ref: ${{ needs.prepare.outputs.sha }}
       artifact-name: notecraft-web
+      upload-site: true
+
+  website-deploy:
+    name: Deploy website
+    needs: [prepare, test, packaging, website]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/website-deploy.yml
+    with:
+      artifact-id: ${{ needs.website.outputs.site-artifact-id }}
+      site-sha256: ${{ needs.website.outputs.site-sha256 }}
+      source-sha: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
     secrets:
       AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
 
   release:
     name: Publish the GitHub Release
-    needs: [prepare, test, packaging, website]
+    needs: [prepare, test, packaging, website-deploy]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

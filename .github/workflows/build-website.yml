@@ -9,6 +9,7 @@ on:
       - ".github/workflows/build-website.yml"
       - ".github/workflows/deploy-website.yml"
       - ".github/workflows/website-pipeline.yml"
+      - ".github/workflows/website-deploy.yml"
       - ".github/web-build/**"
       - "Cargo.toml"
       - "Cargo.lock"
