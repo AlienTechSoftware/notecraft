@@ -396,8 +396,8 @@ pub fn show(
             && !selection_was_up
             && let Some(at) = empty_paper.interact_pointer_pos()
         {
-            let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-            start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+            let where_ = paper_spot(at, area, zoom);
+            start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
             out.changed.caret = true;
             out.changed.blocks = true;
             out.boxes = true;
@@ -1370,8 +1370,8 @@ pub fn show(
         && at.y < bottom
         && !frames.iter().any(|f| f.expand(3.0).contains(at))
     {
-        let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-        start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+        let where_ = paper_spot(at, area, zoom);
+        start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
         out.changed.caret = true;
         out.changed.blocks = true;
         out.boxes = true;
@@ -1393,8 +1393,8 @@ pub fn show(
         out.changed.caret = true;
         match below.interact_pointer_pos() {
             Some(at) => {
-                let where_ = pos2((at.x - area.min.x - PAD).max(0.0), (at.y - area.min.y - HANDLE).max(0.0));
-                start_a_box(blocks, boxes, caret, where_, (area.width() - 2.0 * PAD).max(container::MIN_WIDTH));
+                let where_ = paper_spot(at, area, zoom);
+                start_a_box(blocks, boxes, caret, where_, paper_room(area, zoom));
                 out.boxes = true;
                 out.changed.blocks = true;
             }
@@ -1943,6 +1943,20 @@ fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
     ui.ctx().pointer_latest_pos().is_some_and(|p| !frames.iter().any(|f| f.expand(3.0).contains(p)))
 }
 
+/// Where a box started by a click at `at` on open paper goes, in the page's own points: its words
+/// begin under the pointer. The page is drawn at `zoom` from `area`'s corner, so the distance on
+/// the screen is divided by it; taken as it was, a click at any zoom but 100 % put the box (and the
+/// caret) further from the corner than the pointer, the more so the further out it was.
+fn paper_spot(at: Pos2, area: Rect, zoom: f32) -> Pos2 {
+    let zoom = zoom.max(0.01);
+    pos2(((at.x - area.min.x) / zoom - PAD).max(0.0), ((at.y - area.min.y) / zoom - HANDLE).max(0.0))
+}
+
+/// How wide the page is for a box started on it, in page points.
+fn paper_room(area: Rect, zoom: f32) -> f32 {
+    (area.width() / zoom.max(0.01) - 2.0 * PAD).max(container::MIN_WIDTH)
+}
+
 /// Starts an empty box at `at`, in the page's own coordinates, and puts the caret in it.
 ///
 /// The block goes on the end of the page's blocks, because the file keeps its blocks in
@@ -1973,6 +1987,20 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
 
 #[cfg(test)]
 mod tests {
+    /// A box started on open paper begins under the pointer at every zoom.
+    #[test]
+    fn a_click_on_open_paper_starts_its_box_under_the_pointer_at_any_zoom() {
+        let area = Rect::from_min_size(pos2(100.0, 50.0), vec2(800.0, 600.0));
+        for zoom in [0.5_f32, 1.0, 1.05, 2.0] {
+            let click = pos2(100.0 + 400.0, 50.0 + 300.0);
+            let at = super::paper_spot(click, area, zoom);
+            // Where the box's words begin, drawn back on the screen.
+            let words = pos2(area.min.x + (at.x + PAD) * zoom, area.min.y + (at.y + HANDLE) * zoom);
+            assert!((words - click).length() < 0.01, "at {zoom}: clicked {click:?}, words at {words:?}");
+        }
+        assert_eq!(super::paper_room(area, 2.0), 400.0 - 2.0 * PAD, "the page is half as many points wide at twice the zoom");
+    }
+
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};

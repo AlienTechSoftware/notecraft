@@ -2601,6 +2601,8 @@ fn blocks_keep_their_place_on_the_page_at_every_zoom_and_with_the_pen() {
         let z = h.state().zoom_percent() as f32 / 100.0;
         let mut hits = h.ctx.data(|d| d.get_temp::<Vec<(usize, egui::Rect, String)>>(egui::Id::unique("embedded-object-hits"))).unwrap_or_default();
         hits.sort_by_key(|(b, ..)| *b);
+        // Each picture once: the list is this frame's, but a picture is the same wherever it is listed.
+        hits.dedup_by_key(|(b, ..)| *b);
         hits.into_iter().filter(|(_, _, kind)| kind == "image").map(|(b, r, _)| (b, (r.min.y - oy) / z)).collect()
     };
     let at_100 = places(&mut h);
@@ -2625,6 +2627,50 @@ fn blocks_keep_their_place_on_the_page_at_every_zoom_and_with_the_pen() {
     for ((b, a), (_, p)) in at_200.iter().zip(&with_pen) {
         assert!((a - p).abs() < 1.0, "block {b} is at {a} and at {p} with the pen in hand: {at_200:?} / {with_pen:?}");
     }
+}
+
+/// A click on blank paper puts the caret where the pointer is at any zoom, not further out from
+/// the page's corner the more the page is zoomed.
+#[test]
+fn a_click_on_blank_paper_starts_writing_under_the_pointer_when_zoomed() {
+    let (_t, app, s) = sample_app("ui-blank-click-zoomed");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Blank", "format": "cmgfm"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": "# Blank\n\nA few words.\n"}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let area = h.state().page_rect().expect("the page is on the screen");
+    let middle = area.center();
+    ask(&mut h, "ui.move", json!({"x": middle.x, "y": middle.y})).expect("pointer on the page");
+    settle(&mut h);
+    h.input_mut().events.push(egui::Event::Zoom(2.0));
+    settle(&mut h);
+    assert_eq!(h.state().zoom_percent(), 200);
+    let st = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let before = st["page"]["containers"].as_array().map_or(0, Vec::len);
+    let click = egui::pos2(area.min.x + area.width() * 0.6, area.min.y + area.height() * 0.45);
+    ask(&mut h, "ui.click", json!({"x": click.x, "y": click.y})).expect("click on blank paper");
+    settle(&mut h);
+    // The box stays once something is written in it.
+    ask(&mut h, "ui.text", json!({"text": "x"})).expect("type");
+    settle(&mut h);
+    let st = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let boxes = st["page"]["containers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(boxes.len(), before + 1, "the click started a box: {boxes:?}");
+    let new = boxes.last().expect("the new box");
+    let (ox, oy) = (st["page"]["origin"][0].as_f64().unwrap_or(0.0) as f32, st["page"]["origin"][1].as_f64().unwrap_or(0.0) as f32);
+    let (x, y) = (new["x"].as_f64().unwrap_or(0.0) as f32, new["y"].as_f64().unwrap_or(0.0) as f32);
+    // The box's words begin a pad in and a handle's height down from its corner (6 and 14 points).
+    let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 14.0) * 2.0);
+    assert!((words - click).length() < 3.0, "clicked at {click:?}, the box's words begin at {words:?}");
 }
 
 /// The Draw tab end to end: pick a pen off the rack, write on the page itself, and the
