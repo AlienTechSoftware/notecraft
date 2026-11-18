@@ -12,7 +12,7 @@
 //! present the letters join and a run of one direction is ordered correctly. A mixed line
 //! goes through the bidi painter; see `docs/how-to/write-right-to-left.md`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
@@ -172,7 +172,7 @@ fn start_loading(ctx: &egui::Context, catalog: std::sync::Arc<system::Catalog>, 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Vec<String> {
     let id = egui::Id::new("notecraft-page-font-results");
-    let mut results = ctx.data(|data| data.get_temp::<BTreeMap<String, bool>>(id).unwrap_or_default());
+    let mut results = ctx.data(|data| data.get_temp::<std::collections::BTreeMap<String, bool>>(id).unwrap_or_default());
     // Faces the background threads have read join the font set together, once for the frame.
     let finished = std::mem::take(&mut *FINISHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     if !finished.is_empty() {
