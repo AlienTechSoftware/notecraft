@@ -49,29 +49,67 @@ pub fn page_families(blocks: &[notecraft_formats::Block]) -> BTreeSet<String> {
     families
 }
 
+/// The latest read of the installed fonts. Each read is leaked once, so a reader can keep its
+/// `&'static` reference while a newer read replaces it (a font was added).
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-static CATALOG: std::sync::OnceLock<Result<system::Catalog, String>> = std::sync::OnceLock::new();
+static CATALOG: std::sync::Mutex<Option<&'static Result<system::Catalog, String>>> = std::sync::Mutex::new(None);
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn current() -> Option<&'static Result<system::Catalog, String>> {
+    *CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn publish(result: Result<system::Catalog, String>) -> &'static Result<system::Catalog, String> {
+    let leaked: &'static Result<system::Catalog, String> = Box::leak(Box::new(result));
+    *CATALOG.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(leaked);
+    leaked
+}
 
 /// Reads the installed fonts on a background thread, so the window never waits for it. Listing
 /// every font takes a while on some machines.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn start_catalog() {
     std::thread::spawn(|| {
-        let _ = CATALOG.get_or_init(system::Catalog::discover);
+        if current().is_none() {
+            publish(system::Catalog::discover());
+        }
+    });
+}
+
+/// Reads the installed fonts again on a background thread, after a font was added. The list shows
+/// the previous read until this one is ready.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub fn rescan_in_background(ctx: egui::Context) {
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let result = system::Catalog::discover();
+        let families = result.as_ref().map_or(0, |catalog| catalog.families().len());
+        crate::usage::record(
+            crate::usage::Level::Usage,
+            "font_catalog_read",
+            &[("families", &families.to_string()), ("ms", &started.elapsed().as_millis().to_string())],
+        );
+        publish(result);
+        ctx.request_repaint();
     });
 }
 
 /// The installed fonts, or `None` while they are still being read. Never blocks.
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn catalog_if_ready() -> Option<Result<&'static system::Catalog, &'static str>> {
-    CATALOG.get().map(|result| result.as_ref().map_err(String::as_str))
+    current().map(|result| result.as_ref().map_err(String::as_str))
 }
 
 /// The installed fonts. Waits for the background read if it is not finished (used when a font is
 /// installed, which is rare).
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub fn system_catalog() -> Result<&'static system::Catalog, &'static str> {
-    CATALOG.get_or_init(system::Catalog::discover).as_ref().map_err(String::as_str)
+    let result = match current() {
+        Some(result) => result,
+        None => publish(system::Catalog::discover()),
+    };
+    result.as_ref().map_err(String::as_str)
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]

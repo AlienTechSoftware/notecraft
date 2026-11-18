@@ -16,6 +16,8 @@ use egui::{Align, Area, Color32, Frame, Id, Key, Modifiers, Order, Rect, ScrollA
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
     pub chosen: Option<String>,
+    /// The Add Font row was picked: the caller opens the file picker.
+    pub add_font: bool,
 }
 
 /// The parts of one combo box that the caller supplies.
@@ -51,6 +53,19 @@ pub struct Spec<'a> {
     /// The list grouped by script: each heading with its families. Empty when there is no
     /// grouping (the size box, or while the catalog loads).
     pub sections: &'a [(String, Vec<String>)],
+    /// The label of the Add Font row under the list, or `None` when the box has none.
+    pub add_font: Option<&'a str>,
+    /// Which box this is, for usage events (for example "ribbon-family"). Never a name or a path.
+    pub usage: &'static str,
+}
+
+/// A script heading in the font list: bold, on a band, so the list scrolls from one script to the
+/// next and the eye finds each one.
+fn section_heading(ui: &mut Ui, text: &str) {
+    ui.add_space(4.0);
+    egui::Frame::default().fill(ui.visuals().faint_bg_color).inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+        ui.label(egui::RichText::new(text).strong());
+    });
 }
 
 /// One row of a font list. Records a visible name so its font loads, and scrolls to the row when
@@ -85,6 +100,8 @@ fn name_text(ui: &Ui, name: &str, preview: bool) -> egui::RichText {
 /// Shows the combo box and returns what was chosen this frame.
 pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let mut outcome = Outcome::default();
+    // How the value was chosen, for usage events: typed, or picked from the list.
+    let mut how: &str = "";
     let typed_id = spec.id.with("typed");
     let open_id = spec.id.with("open");
     let scroll_id = spec.id.with("scroll");
@@ -130,8 +147,35 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let released = ui.input(|i| i.pointer.primary_released());
     let keep_typing = (pressing_list && last_typing) || armed;
     let typing = spec.filter && ((typed.trim() != spec.shown && (was_focused || value_box.has_focus())) || keep_typing);
-    let hits: Vec<&String> =
-        if typing { crate::font_picker::matches(&typed, spec.items).into_iter().map(|i| &spec.items[i]).collect() } else { Vec::new() };
+    // Typing lists the families whose names match, and also every family of a script whose heading
+    // matches (typing "arabic" lists the Arabic fonts). Each heading's families come first.
+    let query = typed.trim().to_lowercase();
+    let mut heading_starts: Vec<(usize, &String)> = Vec::new();
+    let hits: Vec<&String> = if typing {
+        let mut placed = std::collections::BTreeSet::new();
+        let mut flat: Vec<&String> = Vec::new();
+        if !query.is_empty() {
+            for (heading, names) in spec.sections {
+                if heading.to_lowercase().contains(&query) {
+                    heading_starts.push((flat.len(), heading));
+                    for name in names {
+                        if placed.insert(name.clone()) {
+                            flat.push(name);
+                        }
+                    }
+                }
+            }
+        }
+        for index in crate::font_picker::matches(&typed, spec.items) {
+            let name = &spec.items[index];
+            if !placed.contains(name) {
+                flat.push(name);
+            }
+        }
+        flat
+    } else {
+        Vec::new()
+    };
     if down {
         highlight = (highlight + 1).min(hits.len().saturating_sub(1));
     }
@@ -162,6 +206,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 _ => typed.trim().to_owned(),
             };
             if value != spec.shown && (spec.accept)(&value) {
+                how = "typed";
                 outcome.chosen = Some(value);
             }
         }
@@ -191,6 +236,9 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     if arrow.clicked() {
         open = !open;
         scroll = open;
+        if open {
+            crate::usage::record(crate::usage::Level::Usage, "combo_opened", &[("box", spec.usage)]);
+        }
     }
 
     // The list: the matches while typing, otherwise all items when the arrow has opened it.
@@ -220,6 +268,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                             let current = item.as_str() == spec.shown;
                             let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
                             if row.clicked() {
+                                how = "list";
                                 outcome.chosen = Some((*item).clone());
                                 open = false;
                                 ui.memory_mut(|m| m.surrender_focus(typed_id));
@@ -230,11 +279,12 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                     if by_script {
                         // One heading per script, so the list scrolls from language to language.
                         for (heading, names) in spec.sections {
-                            ui.label(egui::RichText::new(heading).small().weak());
+                            section_heading(ui, heading);
                             for item in names {
                                 let current = item.as_str() == spec.shown;
                                 let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
                                 if row.clicked() {
+                                    how = "list";
                                     outcome.chosen = Some(item.clone());
                                     open = false;
                                     ui.memory_mut(|m| m.surrender_focus(typed_id));
@@ -246,13 +296,25 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                             ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
                         }
                         for (index, item) in rows.iter().enumerate() {
+                            if let Some((_, heading)) = heading_starts.iter().find(|(start, _)| *start == index) {
+                                section_heading(ui, heading);
+                            }
                             let current = if typing { index == highlight } else { item.as_str() == spec.shown };
                             let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll || typing);
                             if row.clicked() {
+                                how = "list";
                                 outcome.chosen = Some((*item).clone());
                                 open = false;
                                 ui.memory_mut(|m| m.surrender_focus(typed_id));
                             }
+                        }
+                    }
+                    if let Some(label) = spec.add_font {
+                        ui.separator();
+                        if ui.selectable_label(false, label).clicked() {
+                            outcome.add_font = true;
+                            open = false;
+                            ui.memory_mut(|m| m.surrender_focus(typed_id));
                         }
                     }
                 });
@@ -280,5 +342,12 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
             d.remove::<Rect>(list_rect_id);
         }
     });
+    if let Some(name) = &outcome.chosen {
+        crate::usage::record(
+            crate::usage::Level::Usage,
+            "combo_chosen",
+            &[("box", spec.usage), ("how", how), ("chars", &name.chars().count().to_string())],
+        );
+    }
     outcome
 }

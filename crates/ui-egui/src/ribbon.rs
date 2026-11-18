@@ -1221,6 +1221,17 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 };
                 // Warn only once the installed list is known; while it loads, nothing is missing yet.
                 let family_missing = !families.is_empty() && crate::font_picker::is_missing(view.font_family.unwrap_or(""), &families);
+                // Record a missing font once, when it first shows, not on every frame.
+                let missing_key = egui::Id::new("notecraft-missing-font-reported");
+                if family_missing {
+                    let shown = view.font_family.unwrap_or("");
+                    if ui.data(|d| d.get_temp::<String>(missing_key)).as_deref() != Some(shown) {
+                        crate::usage::record(crate::usage::Level::Warning, "font_missing_shown", &[("family", shown)]);
+                        ui.data_mut(|d| d.insert_temp(missing_key, shown.to_owned()));
+                    }
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(missing_key));
+                }
                 // The list grouped by script, with a translated heading for each.
                 let mut sections: Vec<(String, Vec<String>)> = match crate::fonts::catalog_if_ready() {
                     Some(Ok(catalog)) => crate::font_picker::sections(&families, |name| catalog.scripts(name))
@@ -1258,8 +1269,18 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         missing: family_missing,
                         preview: true,
                         sections: &sections,
+                        add_font: Some(crate::tl_id!("ui.add_font")),
+                        usage: "ribbon-family",
                     },
                 );
+                if family_out.add_font {
+                    // The Add Font row: pick font files, install them, and read the list again.
+                    if let Some(report) = crate::font_install::pick_and_install()
+                        && !report.copied.is_empty()
+                    {
+                        crate::fonts::rescan_in_background(ui.ctx().clone());
+                    }
+                }
                 if let Some(name) = family_out.chosen {
                     let mut recent = recent_families.clone();
                     crate::font_picker::remember(&mut recent, &name);
@@ -1293,6 +1314,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         missing: false,
                         preview: false,
                         sections: &[],
+                        add_font: None,
+                        usage: "ribbon-size",
                     },
                 );
                 let boxes = crate::floating::FontBoxes {

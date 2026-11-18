@@ -199,6 +199,19 @@ fn main() -> eframe::Result {
         let _ = Settings::default_location().set("telemetry_session_id", session.id());
         let _ = session.record(telemetry::Level::Usage, "app_start", &[("version", env!("CARGO_PKG_VERSION"))]);
     }
+    // The interface records its usage events through this sink: each one goes to the telemetry
+    // session when the level allows it, and always to the local log.
+    if let Some(session) = telemetry {
+        notecraft_ui_egui::usage::install(Box::new(move |level, event, fields| {
+            let level = match level {
+                notecraft_ui_egui::usage::Level::Usage => telemetry::Level::Usage,
+                notecraft_ui_egui::usage::Level::Warning => telemetry::Level::Warning,
+                notecraft_ui_egui::usage::Level::Error => telemetry::Level::Error,
+            };
+            let _ = session.record(level, event, fields);
+            applog::info(&format!("event {event} {fields:?}"));
+        }));
+    }
     applog::info(&format!(
         "start: NoteCraft {} exe={:?} args={args:?} settings={:?}",
         env!("CARGO_PKG_VERSION"),

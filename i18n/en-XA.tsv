@@ -96,6 +96,9 @@
 @id	ui.script_kana	$$$Japanese@@@
 @id	ui.script_hangul	$$$Korean@@@
 @id	ui.script_other	$$$Other scripts@@@
+@id	ui.add_font	$$$Add Font…@@@
+@id	ui.add_font_dialog_title	$$$Choose font files to add@@@
+@id	ui.font_files_filter	$$$Font files@@@
 @id	ui.pick_date	$$$Pick a date@@@
 @id	ui.pick_time	$$$Pick a time@@@
 @id	ui.am	$$$AM@@@

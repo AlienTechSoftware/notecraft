@@ -13604,3 +13604,34 @@ fn a_merged_cell_is_drawn_across_its_columns_without_a_line_through_it() {
         assert!(!through, "html={html}: no line between the merged columns in the merged row");
     }
 }
+
+/// Typing a script's name lists the fonts of that script, so an Arabic font is found by typing
+/// "Arabic" rather than by scrolling to it.
+#[test]
+fn typing_a_script_name_lists_its_fonts() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog
+        .families()
+        .iter()
+        .find(|n| {
+            notecraft_formats::markdown::valid_font_family(n)
+                && catalog.scripts(n).contains(&notecraft_ui_egui::font_picker::Script::Arabic)
+                && !n.to_lowercase().contains("arabic")
+        })
+        .cloned()
+    else {
+        return;
+    };
+    let (_t, app, s) = sample_app("ui-font-script-search");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font name").click();
+    h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": "Arabic"})).expect("type the script name");
+    settle(&mut h);
+    h.get_by_label(name.as_str());
+}

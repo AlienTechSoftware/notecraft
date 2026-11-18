@@ -218,8 +218,18 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             missing: fonts.family_missing,
                             preview: true,
                             sections: &fonts.sections,
+                            add_font: Some(crate::tl_id!("ui.add_font")),
+                            usage: "floating-family",
                         },
                     );
+                    if families.add_font {
+                        // The Add Font row: pick font files, install them, and read the list again.
+                        if let Some(report) = crate::font_install::pick_and_install()
+                            && !report.copied.is_empty()
+                        {
+                            crate::fonts::rescan_in_background(ui.ctx().clone());
+                        }
+                    }
                     if let Some(name) = families.chosen {
                         acts.push(Act::FontFamily(name));
                         picked = true;
@@ -241,6 +251,8 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             missing: false,
                             preview: false,
                             sections: &[],
+                            add_font: None,
+                            usage: "floating-size",
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
