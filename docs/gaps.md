@@ -149,11 +149,40 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
 - **Rule lines are a window setting, not a page setting.** View, Rule Lines draws none, lines
   or squares behind every page, and the choice is remembered; the page itself carries no
   setting, so it does not travel with the notebook.
+- **Authors and the account (issues #292, #304).** NoteCraft has no online accounts.
+  File > Account says so, and keeps one thing: a name, in the settings, that every save
+  made with it notes in the page it changed (`notecraft:authors` and `notecraft:edited-by`
+  metas in HTML, `authors:` and `edited-by:` in CMGFM front matter), in the same write as the
+  words. A page no save with a name has changed keeps none and is "unknown author"; nothing is
+  labelled after the fact. History > Find by Author lists the names in the open notebooks
+  with their page counts, then the unknown pages, and opens a page from the list; Hide Authors
+  takes the "Changed by" line from under the title and leaves the names in the page. **Not
+  built:** authors per paragraph, as OneNote marks them (a page knows who changed it, not
+  which lines); a CMGFM page without front matter has nowhere to keep names and keeps none.
+- **Meeting Details (issue #283)** reads a calendar file the person chooses (`.ics`, as calendars
+  export and invitations carry) and remembers it for next time; it connects to no calendar
+  service. It shows one day's meetings, earliest first (previous day, today, next day), what
+  will go on the page, and inserts the one picked as ordinary lines: the title, when, where,
+  the link (web addresses only), the organizer, who was asked, whether it repeats, and the
+  agenda. A UTC time is shown on the person's clock; a time on a named zone's clock is shown
+  as written with the zone's name, because NoteCraft has no zone database to move it; a
+  whole-day event shows its days. Repeats are laid out for daily, weekly (with weekdays),
+  monthly (by date) and yearly rules with intervals, counts, end dates and taken-out days;
+  any other rule shows the meeting on its first day and says so. **Not built:** reading a
+  calendar app or account directly, and a time on a named zone placed on the person's own day
+  when the zones differ.
+- **Dock to Desktop (issue #267)** makes the window a column up to 420 points wide down the
+  right of the screen, as tall as the screen and kept above other windows, folds the
+  notebooks and the ribbon away, and puts the window, the panes, the ribbon and the window's
+  level back when pressed again. The page, its caret and the autosave carry on. Window state
+  only: nothing is saved. **Not built:** moving other windows aside (no platform reserves the
+  space yet; Windows' application bar would), the taskbar's room (the screen's whole height is
+  used), docking to the left, and the browser build, which has no window to move.
 - **The ribbon is a first pass.** Home, Insert, Draw, History and View with Office-style
   groups, a Styles gallery, a Tags gallery and a File screen. Page Versions now keeps and
   restores snapshots of a page's main file; assets beside the page are not versioned. The
   notebook recycle bin can restore or permanently remove pages, sections and groups; deleting
-  an entire notebook is not supported. The Unread and Authors controls remain disabled. Missing tabs:
+  an entire notebook is not supported. History's Authors group works (below). Missing tabs:
   Review and Help. Other controls that are not built say so rather than doing nothing.
   Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
   gives the page its room; a tab clicked while it is folded shows its commands over the page
@@ -508,8 +537,15 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   section can carry behind the caret's cell or every picked cell (`block@row.column=~yellow`, or
   `=c~yellow` beside an alignment), washed so the words keep their contrast in light and dark
   themes, and No Colour takes it away; it follows its cell the way alignment does, and the pen's
-  view does not draw it yet either. Not built, and greyed where a OneNote user looks for them:
-  merging and splitting cells; and the Insert Table dialog. Sort Ascending
+  view does not draw it yet either. Merge Cells makes the picked block of cells one cell
+  (a block that cuts through a merged cell grows to take it in); the words of every cell go
+  into the first, in reading order with a space between, so none are lost, and the others are
+  left empty. Split Cells makes it its cells again and leaves the words in the first. Both are
+  one Undo step. The page keeps a merged cell on the same line as the widths
+  (`block+row.column=RxC`), so both formats carry it and an older NoteCraft reads past it; it
+  grows and shrinks with rows and columns put in or taken out inside it. A merged cell's words
+  sit in its first row, which is as tall as they need; sorting splits a cell merged across rows
+  (its words stay in its first cell) and keeps one merged along its row with that row. Sort Ascending
   and Sort Descending reorder whole rows by the caret's column (only the picked rows when a
   block of cells spans several), numbers as numbers, empty cells last, the heading on top.
   A row has no height of its own on purpose: OneNote sizes a row by the text in it and
@@ -547,8 +583,13 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   can put there.
 - **The Insert tab** carries OneNote's groups. Working: tables, a file attachment, a
   picture, a link, the three time stamps, an equation, a symbol picker, insert space, and
-  NoteCraft's own Mermaid diagram. File printout, screen clipping, online video,
-  transcription, recording and stickers remain unbuilt. Page Templates opens a pane
+  NoteCraft's own Mermaid diagram. Screen clipping, transcription and recording remain
+  unbuilt. Stickers opens a gallery of twelve stickers drawn for NoteCraft (plain SVG shapes,
+  no text; `ATTRIBUTION.md`); the one picked is copied into the page's folder
+  (`assets/sticker-<name>.svg`, one file however often it is used) and put under the caret's
+  line as a picture 96 points wide, so it moves, resizes, deletes and undoes as any picture
+  does. **Not built:** stickers of the person's own, and a sticker placed at the pointer
+  rather than under the line. Page Templates opens a pane
   of templates by category (Academic, Blank, Business, Planners and the user's own); a click
   adds a page to the open section from one, and the open page can be saved as a template.
   **Not built:** previews of the templates, a default template for new pages, and removing a

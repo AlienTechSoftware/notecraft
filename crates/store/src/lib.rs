@@ -11,6 +11,7 @@
 //! user interface. The layout is described in `docs/folder-format.md`.
 
 pub mod assets;
+pub mod authors;
 pub mod check;
 pub mod error;
 pub mod export;

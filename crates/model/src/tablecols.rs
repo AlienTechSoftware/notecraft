@@ -24,6 +24,21 @@ const MAX_COLUMNS: usize = 64;
 /// many aligned cells was not aligned by hand, cell by cell.
 const MAX_CELLS: usize = 4096;
 
+/// How many merged cells one table keeps (issue #298).
+const MAX_SPANS: usize = 1024;
+
+/// Why Table > Merge Cells said no (issue #298).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MergeRefusal {
+    /// One cell is already one cell: there is nothing to merge it with.
+    OneCell,
+    /// The cells picked cut through a merged cell. Merging them would leave part of it
+    /// outside the new one, which is not a rectangle any more.
+    CutsAMergedCell,
+    /// The table keeps no more merged cells.
+    TooMany,
+}
+
 /// Which way the words in a table cell are aligned (issue #170). A cell with none is aligned
 /// the way the table's words always were, to the start of the line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,16 +92,48 @@ struct Layout {
     borderless: bool,
     /// Sorted by cell, so the written line is the same every time.
     cells: Vec<((usize, usize), Cell)>,
+    /// Merged cells (issue #298): the top-left cell of each, with how many rows and columns
+    /// it takes in. Never 1 by 1, never overlapping, sorted by cell.
+    spans: Vec<((usize, usize), (usize, usize))>,
 }
 
 impl Layout {
     fn new(block: usize) -> Layout {
-        Layout { block, widths: Vec::new(), borderless: false, cells: Vec::new() }
+        Layout { block, widths: Vec::new(), borderless: false, cells: Vec::new(), spans: Vec::new() }
     }
 
     /// True when it says nothing the table would not do anyway, so it need not be kept.
     fn is_bare(&self) -> bool {
-        self.widths.is_empty() && !self.borderless && self.cells.is_empty()
+        self.widths.is_empty() && !self.borderless && self.cells.is_empty() && self.spans.is_empty()
+    }
+}
+
+/// The rows and columns a merged cell takes in, as `(first row, first column, last row, last column)`.
+fn reach(((r, c), (h, w)): ((usize, usize), (usize, usize))) -> (usize, usize, usize, usize) {
+    (r, c, r + h - 1, c + w - 1)
+}
+
+/// Where a merged cell is after a row or a column was put in at `at`: one longer when `at`
+/// falls inside it, one further on when it is at or after it.
+fn grow((start, len): (usize, usize), at: usize) -> (usize, usize) {
+    if at <= start {
+        (start + 1, len)
+    } else if at < start + len {
+        (start, len + 1)
+    } else {
+        (start, len)
+    }
+}
+
+/// Where a merged cell is after row or column `at` was taken out: one shorter when it took
+/// `at` in, one back when it came after it, gone when `at` was all it had.
+fn shrink((start, len): (usize, usize), at: usize) -> Option<(usize, usize)> {
+    if at < start {
+        Some((start - 1, len))
+    } else if at < start + len {
+        (len > 1).then_some((start, len - 1))
+    } else {
+        Some((start, len))
     }
 }
 
@@ -168,24 +215,137 @@ impl Widths {
     /// A row was put into the table at block `block`, at row `at`. The rows from there on keep
     /// their cells' alignments, moved down one. True when anything changed.
     pub fn insert_row(&mut self, block: usize, at: usize) -> bool {
-        self.move_cells(block, |(r, c)| Some((if r >= at { r + 1 } else { r }, c)))
+        let spans = self.move_spans(block, |((r, c), (h, w))| {
+            let (r, h) = grow((r, h), at);
+            Some(((r, c), (h, w)))
+        });
+        self.move_cells(block, |(r, c)| Some((if r >= at { r + 1 } else { r }, c))) || spans
     }
 
     /// Row `at` was taken out of the table at block `block`. Its cells' alignments go with it,
     /// and the rows after it keep theirs. True when anything changed.
     pub fn remove_row(&mut self, block: usize, at: usize) -> bool {
-        self.move_cells(block, |(r, c)| match r.cmp(&at) {
-            std::cmp::Ordering::Less => Some((r, c)),
-            std::cmp::Ordering::Equal => None,
-            std::cmp::Ordering::Greater => Some((r - 1, c)),
-        })
+        let spans = self.move_spans(block, |((r, c), (h, w))| shrink((r, h), at).map(|(r, h)| ((r, c), (h, w))));
+        spans
+            | self.move_cells(block, |(r, c)| match r.cmp(&at) {
+                std::cmp::Ordering::Less => Some((r, c)),
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some((r - 1, c)),
+            })
     }
 
     /// The rows of the table at block `block` were put in a new order: `order[new] = old`, both
     /// counting the heading as row 0. Each row's cells keep their alignments. True when anything
     /// changed.
+    /// A cell merged across rows cannot follow its rows to two places, so it is split; the
+    /// words it held stay in its first cell, and nothing is lost (issue #298). A cell merged
+    /// along one row goes with that row.
     pub fn reorder_rows(&mut self, block: usize, order: &[usize]) -> bool {
-        self.move_cells(block, |(r, c)| Some((order.iter().position(|old| *old == r).unwrap_or(r), c)))
+        let spans = self.move_spans(block, |((r, c), (h, w))| (h == 1).then(|| ((order.iter().position(|old| *old == r).unwrap_or(r), c), (h, w))));
+        self.move_cells(block, |(r, c)| Some((order.iter().position(|old| *old == r).unwrap_or(r), c))) || spans
+    }
+
+    /// Moves, stretches or drops the merged cells of one table, by `to`. A merged cell that
+    /// comes out 1 by 1 is an ordinary cell again and is not kept.
+    fn move_spans(&mut self, block: usize, to: impl Fn(((usize, usize), (usize, usize))) -> Option<((usize, usize), (usize, usize))>) -> bool {
+        let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return false };
+        let before = layout.spans.clone();
+        layout.spans = before.iter().filter_map(|s| to(*s)).filter(|(_, (h, w))| *h * *w > 1).collect();
+        layout.spans.sort_by_key(|(at, _)| *at);
+        let changed = layout.spans != before;
+        self.tidy();
+        changed
+    }
+
+    /// The merged cell that cell `(row, column)` of the table at block `block` is part of:
+    /// its top-left cell, and how many rows and columns it takes in (issue #298).
+    pub fn span(&self, block: usize, cell: (usize, usize)) -> Option<((usize, usize), (usize, usize))> {
+        self.layout(block)?.spans.iter().copied().find(|s| {
+            let (r0, c0, r1, c1) = reach(*s);
+            (r0..=r1).contains(&cell.0) && (c0..=c1).contains(&cell.1)
+        })
+    }
+
+    /// Every merged cell of the table at block `block`, top-left cell first.
+    pub fn spans(&self, block: usize) -> &[((usize, usize), (usize, usize))] {
+        self.layout(block).map_or(&[], |l| l.spans.as_slice())
+    }
+
+    /// The cell that holds the words for `cell`: the top-left of the merged cell it is part
+    /// of, or `cell` itself.
+    pub fn owner(&self, block: usize, cell: (usize, usize)) -> (usize, usize) {
+        self.span(block, cell).map_or(cell, |(at, _)| at)
+    }
+
+    /// True when `cell` is covered by a merged cell whose words are kept in another cell.
+    pub fn covered(&self, block: usize, cell: (usize, usize)) -> bool {
+        self.owner(block, cell) != cell
+    }
+
+    /// The smallest block of cells that holds both `a` and `b` and cuts through no merged cell.
+    pub fn whole_block(&self, block: usize, a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
+        let (mut r0, mut c0, mut r1, mut c1) = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+        // A merged cell reaching out of the block makes it bigger, which may take in another.
+        loop {
+            let mut grew = false;
+            for s in self.spans(block) {
+                let (sr0, sc0, sr1, sc1) = reach(*s);
+                let meets = sr0 <= r1 && sr1 >= r0 && sc0 <= c1 && sc1 >= c0;
+                if meets && (sr0 < r0 || sc0 < c0 || sr1 > r1 || sc1 > c1) {
+                    (r0, c0, r1, c1) = (r0.min(sr0), c0.min(sc0), r1.max(sr1), c1.max(sc1));
+                    grew = true;
+                }
+            }
+            if !grew {
+                return ((r0, c0), (r1, c1));
+            }
+        }
+    }
+
+    /// Merges the cells from `a` to `b` (any two corners) of the table at block `block` into
+    /// one (issue #298). Merged cells wholly inside become part of it. The words are the
+    /// caller's to move: this keeps only which cells are one.
+    pub fn merge(&mut self, block: usize, a: (usize, usize), b: (usize, usize)) -> Result<((usize, usize), (usize, usize)), MergeRefusal> {
+        let (r0, c0, r1, c1) = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+        if r0 == r1 && c0 == c1 {
+            return Err(MergeRefusal::OneCell);
+        }
+        let inside = |s: &((usize, usize), (usize, usize))| {
+            let (sr0, sc0, sr1, sc1) = reach(*s);
+            sr0 >= r0 && sc0 >= c0 && sr1 <= r1 && sc1 <= c1
+        };
+        let meets = |s: &((usize, usize), (usize, usize))| {
+            let (sr0, sc0, sr1, sc1) = reach(*s);
+            sr0 <= r1 && sr1 >= r0 && sc0 <= c1 && sc1 >= c0
+        };
+        if self.spans(block).iter().any(|s| meets(s) && !inside(s)) {
+            return Err(MergeRefusal::CutsAMergedCell);
+        }
+        if self.layout(block).is_none() {
+            if self.tables.len() >= MAX_TABLES {
+                return Err(MergeRefusal::TooMany);
+            }
+            self.put(Layout::new(block));
+        }
+        let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return Err(MergeRefusal::TooMany) };
+        layout.spans.retain(|s| !inside(s));
+        if layout.spans.len() >= MAX_SPANS {
+            return Err(MergeRefusal::TooMany);
+        }
+        let span = ((r0, c0), (r1 - r0 + 1, c1 - c0 + 1));
+        layout.spans.push(span);
+        layout.spans.sort_by_key(|(at, _)| *at);
+        Ok(span)
+    }
+
+    /// Splits the merged cell that `cell` is part of back into its cells (issue #298). True
+    /// when there was one.
+    pub fn split(&mut self, block: usize, cell: (usize, usize)) -> bool {
+        let Some(span) = self.span(block, cell) else { return false };
+        let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return false };
+        layout.spans.retain(|s| *s != span);
+        self.tidy();
+        true
     }
 
     /// Moves or drops the aligned cells of one table, by `to`.
@@ -267,7 +427,11 @@ impl Widths {
     /// changed; a table never dragged has nothing kept and stays that way.
     pub fn insert_column(&mut self, block: usize, at: usize, width: f32) -> bool {
         // An aligned cell keeps its alignment, moved along with its column (issue #170).
-        let cells = self.move_cells(block, |(r, c)| Some((r, if c >= at { c + 1 } else { c })));
+        let spans = self.move_spans(block, |((r, c), (h, w))| {
+            let (c, w) = grow((c, w), at);
+            Some(((r, c), (h, w)))
+        });
+        let cells = self.move_cells(block, |(r, c)| Some((r, if c >= at { c + 1 } else { c }))) || spans;
         let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return cells };
         if layout.widths.is_empty() || layout.widths.len() >= MAX_COLUMNS {
             return cells;
@@ -280,11 +444,13 @@ impl Widths {
     /// Column `at` was taken out of the table at block `block`. Its width goes with it and
     /// the columns after it keep theirs. True when anything changed.
     pub fn remove_column(&mut self, block: usize, at: usize) -> bool {
-        let cells = self.move_cells(block, |(r, c)| match c.cmp(&at) {
-            std::cmp::Ordering::Less => Some((r, c)),
-            std::cmp::Ordering::Equal => None,
-            std::cmp::Ordering::Greater => Some((r, c - 1)),
-        });
+        let spans = self.move_spans(block, |((r, c), (h, w))| shrink((c, w), at).map(|(c, w)| ((r, c), (h, w))));
+        let cells = spans
+            | self.move_cells(block, |(r, c)| match c.cmp(&at) {
+                std::cmp::Ordering::Less => Some((r, c)),
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some((r, c - 1)),
+            });
         let Some(layout) = self.tables.iter_mut().find(|l| l.block == block) else { return cells };
         if at >= layout.widths.len() {
             return cells;
@@ -324,7 +490,45 @@ impl Widths {
 pub fn parse(text: &str) -> Widths {
     let mut tables: Vec<Layout> = Vec::new();
     let mut aligned: Vec<(usize, Vec<((usize, usize), Cell)>)> = Vec::new();
-    for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()).take(MAX_TABLES * 2) {
+    let mut merged: Vec<(usize, Vec<((usize, usize), (usize, usize))>)> = Vec::new();
+    for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()).take(MAX_TABLES * 3) {
+        // Merged cells (issue #298): `block+row.column=RxC`. No `:` and no `@`, so a NoteCraft
+        // from before reads past it. Not `#`, which front matter reads as a comment.
+        if !part.contains(':')
+            && !part.contains('@')
+            && let Some((at, list)) = part.split_once('+')
+        {
+            let Ok(at) = at.trim().parse::<usize>() else { continue };
+            if merged.iter().any(|(have, _)| *have == at) {
+                continue;
+            }
+            let mut spans: Vec<((usize, usize), (usize, usize))> = Vec::new();
+            for entry in list.split(',').take(MAX_SPANS) {
+                let read = || -> Option<((usize, usize), (usize, usize))> {
+                    let (cell, size) = entry.split_once('=')?;
+                    let (r, c) = cell.trim().split_once('.')?;
+                    let (h, w) = size.trim().split_once('x')?;
+                    let span = ((r.trim().parse().ok()?, c.trim().parse().ok()?), (h.trim().parse().ok()?, w.trim().parse().ok()?));
+                    let ((_, _), (h, w)): ((usize, usize), (usize, usize)) = span;
+                    (h >= 1 && w >= 1 && h * w > 1 && h <= 10_000 && w <= MAX_COLUMNS).then_some(span)
+                };
+                let Some(span) = read() else { continue };
+                // Two merged cells that overlap cannot both be: the first one read is kept.
+                let (r0, c0, r1, c1) = reach(span);
+                let clash = spans.iter().any(|s| {
+                    let (sr0, sc0, sr1, sc1) = reach(*s);
+                    sr0 <= r1 && sr1 >= r0 && sc0 <= c1 && sc1 >= c0
+                });
+                if !clash {
+                    spans.push(span);
+                }
+            }
+            if !spans.is_empty() {
+                spans.sort_by_key(|(cell, _)| *cell);
+                merged.push((at, spans));
+            }
+            continue;
+        }
         if !part.contains(':')
             && let Some((at, list)) = part.split_once('@')
         {
@@ -382,6 +586,15 @@ pub fn parse(text: &str) -> Widths {
             None => tables.push(Layout { cells, ..Layout::new(at) }),
         }
     }
+    for (at, spans) in merged {
+        if tables.len() >= MAX_TABLES && !tables.iter().any(|l| l.block == at) {
+            continue;
+        }
+        match tables.iter_mut().find(|l| l.block == at) {
+            Some(layout) => layout.spans = spans,
+            None => tables.push(Layout { spans, ..Layout::new(at) }),
+        }
+    }
     tables.sort_by_key(|l| l.block);
     Widths { tables }
 }
@@ -405,6 +618,10 @@ pub fn write(widths: &Widths) -> String {
                 })
                 .collect();
             parts.push(format!("{}@{}", l.block, list.join(",")));
+        }
+        if !l.spans.is_empty() {
+            let list: Vec<String> = l.spans.iter().map(|((r, c), (h, w))| format!("{r}.{c}={h}x{w}")).collect();
+            parts.push(format!("{}+{}", l.block, list.join(",")));
         }
     }
     parts.join("; ")
@@ -656,5 +873,69 @@ mod tests {
         assert!(parse("2:").is_empty(), "a table with no widths is no entry");
         assert_eq!(parse("1:bad,200").of(1), Some([200.0].as_slice()), "what can be read is kept");
         assert_eq!(parse("1:100; 1:200").of(1), Some([100.0].as_slice()), "the first entry for a table wins");
+    }
+
+    /// Issue #298: a merged cell is kept with its table, read back the same, and skipped by a
+    /// NoteCraft that knows nothing of it.
+    #[test]
+    fn merged_cells_are_written_and_read_back() {
+        let mut widths = parse("2:100,120,140");
+        assert_eq!(widths.merge(2, (1, 2), (0, 1)), Ok(((0, 1), (2, 2))), "any two corners make the same block");
+        assert_eq!(write(&widths), "2:100,120,140; 2+0.1=2x2");
+        assert_eq!(parse(&write(&widths)), widths);
+        // Front matter cuts a value at `#`, so the line must not need one.
+        assert_eq!(parse(&crate::kv::unquote(&write(&widths))), widths, "survives being read from front matter");
+        assert_eq!(widths.owner(2, (1, 2)), (0, 1));
+        assert!(widths.covered(2, (1, 1)) && !widths.covered(2, (0, 1)) && !widths.covered(2, (0, 0)));
+        assert_eq!(widths.of(2), Some([100.0, 120.0, 140.0].as_slice()), "the widths stay");
+        // Junk, a 1 by 1 and an overlap are dropped; the page still opens.
+        let odd = parse("4+0.0=1x1,0.0=1x2,0.1=2x1,x.y=2x2,3.3=0x4");
+        assert_eq!(odd.spans(4), &[((0, 0), (1, 2))]);
+        assert!(widths.split(2, (1, 1)), "split from any of its cells");
+        assert!(widths.spans(2).is_empty());
+        assert!(!widths.split(2, (1, 1)), "nothing left to split");
+        assert_eq!(write(&widths), "2:100,120,140");
+    }
+
+    #[test]
+    fn a_merge_that_cuts_through_a_merged_cell_is_refused_and_one_that_holds_it_takes_it_in() {
+        let mut widths = Widths::default();
+        assert_eq!(widths.merge(1, (1, 1), (1, 1)), Err(MergeRefusal::OneCell));
+        assert!(widths.is_empty(), "a refused merge keeps nothing");
+        assert_eq!(widths.merge(1, (1, 1), (2, 2)), Ok(((1, 1), (2, 2))));
+        assert_eq!(widths.merge(1, (0, 0), (1, 1)), Err(MergeRefusal::CutsAMergedCell));
+        assert_eq!(widths.whole_block(1, (0, 0), (1, 1)), ((0, 0), (2, 2)), "the block a drag picks grows to hold it");
+        assert_eq!(widths.merge(1, (0, 0), (2, 3)), Ok(((0, 0), (3, 4))));
+        assert_eq!(widths.spans(1), &[((0, 0), (3, 4))], "the one inside became part of the new one");
+    }
+
+    #[test]
+    fn merged_cells_follow_rows_and_columns_put_in_and_taken_out() {
+        let mut widths = Widths::default();
+        widths.merge(3, (1, 1), (2, 2)).expect("merge");
+        assert!(widths.insert_row(3, 2), "a row inside makes it taller");
+        assert_eq!(widths.spans(3), &[((1, 1), (3, 2))]);
+        assert!(widths.insert_row(3, 0));
+        assert_eq!(widths.spans(3), &[((2, 1), (3, 2))], "a row above moves it down");
+        assert!(widths.insert_column(3, 2, 100.0));
+        assert_eq!(widths.spans(3), &[((2, 1), (3, 3))], "a column inside makes it wider");
+        assert!(widths.remove_column(3, 0));
+        assert_eq!(widths.spans(3), &[((2, 0), (3, 3))], "a column before it taken out moves it back");
+        assert!(widths.remove_row(3, 2));
+        assert!(widths.remove_row(3, 2));
+        assert_eq!(widths.spans(3), &[((2, 0), (1, 3))]);
+        assert!(widths.remove_column(3, 0) && widths.remove_column(3, 0));
+        assert!(widths.spans(3).is_empty(), "1 by 1 is an ordinary cell again");
+        assert!(widths.is_empty());
+    }
+
+    #[test]
+    fn sorting_keeps_a_cell_merged_along_its_row_and_splits_one_across_rows() {
+        let mut widths = Widths::default();
+        widths.merge(0, (1, 0), (1, 1)).expect("merge");
+        widths.merge(0, (2, 2), (3, 2)).expect("merge");
+        // Rows 1, 2, 3 become 3, 1, 2.
+        assert!(widths.reorder_rows(0, &[0, 3, 1, 2]));
+        assert_eq!(widths.spans(0), &[((2, 0), (1, 2))]);
     }
 }

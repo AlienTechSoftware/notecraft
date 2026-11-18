@@ -555,22 +555,34 @@ pub fn set_justified(dir: &Path, marked: &justify::Justified) -> Result<()> {
 /// Returns the new `updated` timestamp.
 /// Compare and save under the same in-process write lock. A stale editor keeps its input.
 pub fn save_body_checked(dir: &Path, body: &str, expected: &str) -> Result<String> {
+    save_body_checked_by(dir, body, expected, None)
+}
+
+/// [`save_body_checked`], noting `author` as having changed the page when a name is given
+/// (issue #292).
+pub fn save_body_checked_by(dir: &Path, body: &str, expected: &str, author: Option<&str>) -> Result<String> {
     let writer = crate::coordination::page_writer(dir)?;
     let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let current = load_page(dir)?;
     if current.body != expected {
         return Err(StoreError::invalid("This page changed in another window or on disk. Keep your edits as a copy or reload the newer page."));
     }
-    save_body_inner(dir, body)
+    save_body_inner(dir, body, author)
 }
 
 pub fn save_body(dir: &Path, body: &str) -> Result<String> {
-    let writer = crate::coordination::page_writer(dir)?;
-    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
-    save_body_inner(dir, body)
+    save_body_by(dir, body, None)
 }
 
-fn save_body_inner(dir: &Path, body: &str) -> Result<String> {
+/// [`save_body`], noting `author` as having changed the page when a name is given. The name
+/// goes into the same write as the words, so the page is written once (issue #292).
+pub fn save_body_by(dir: &Path, body: &str, author: Option<&str>) -> Result<String> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
+    save_body_inner(dir, body, author)
+}
+
+fn save_body_inner(dir: &Path, body: &str, author: Option<&str>) -> Result<String> {
     if body.len() > MAX_PAGE_BYTES {
         return Err(StoreError::invalid("this page is too large to save"));
     }
@@ -587,6 +599,10 @@ fn save_body_inner(dir: &Path, body: &str) -> Result<String> {
     };
     // A body with its boxes in the text says everything the older line said, so the line goes.
     let out = if boxes::read(format, body).1.is_some() { without_old_boxes(format, &out) } else { out };
+    let out = match author {
+        Some(name) => crate::authors::note(format, &out, name),
+        None => out,
+    };
     write_atomic(&file, &out)?;
     Ok(now)
 }

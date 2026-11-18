@@ -1341,7 +1341,15 @@ fn table(
             // Tab off the last cell adds a row and lands in it, the way OneNote grows a
             // table as it is filled in. Shift+Tab off the front leaves instead: going
             // back from the first cell has nowhere to go.
-            action = Some(match (next_cell(block, cell, shift), shift) {
+            // A cell covered by a merged cell is stepped over: its words live in the merged
+            // cell's first cell (issue #298).
+            let mut to = next_cell(block, cell, shift);
+            while let Some(at) = to
+                && cols.covered(i, at)
+            {
+                to = next_cell(block, at, shift);
+            }
+            action = Some(match (to, shift) {
                 (Some(to), _) => Action::EnterCell(i, to),
                 (None, false) => Action::AddRow(i),
                 (None, true) => Action::Leave,
@@ -1381,6 +1389,18 @@ fn table(
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for (c, &w) in screen_widths.iter().enumerate() {
                     let cell = (r, c);
+                    // A merged cell (issue #298) is drawn once, as wide as the columns it takes
+                    // in, in its first row. In the rows under that it is an empty space as wide,
+                    // and the cells it covers take no room of their own.
+                    let (w, covered) = match cols.span(i, cell) {
+                        Some(((ar, ac), (_, sw))) if ac == c => (screen_widths.iter().skip(c).take(sw).sum::<f32>(), ar != r),
+                        Some(_) => continue,
+                        None => (w, false),
+                    };
+                    if covered {
+                        ui.allocate_space(vec2(w, 0.0));
+                        continue;
+                    }
                     // The cell's own alignment, if it was given one (issue #170). Only its words
                     // move: the column keeps its width and the table its place.
                     let halign = match cols.align(i, cell) {
@@ -1478,13 +1498,16 @@ fn table(
     };
     // Every cell, as a rectangle that touches its neighbours: a pointer anywhere in the
     // table is in exactly one cell, borders and gaps included.
+    // A cell under a merged cell answers as the merged cell, whose words are in its first cell,
+    // and is shaded the way that cell is (issue #298).
     let mut where_ = Vec::with_capacity((rows.len() + 1) * columns);
     let mut shaded = Vec::new();
     for r in 0..=rows.len() {
         for c in 0..columns {
             if let Some(rect) = cell_rect(r, c) {
-                where_.push(((r, c), rect));
-                if let Some(colour) = cols.shade(i, (r, c)) {
+                let owner = cols.owner(i, (r, c));
+                where_.push((owner, rect));
+                if let Some(colour) = cols.shade(i, owner) {
                     shaded.push(egui::Shape::rect_filled(rect, 0.0, cell_shade(t, colour)));
                 }
             }
@@ -1494,7 +1517,7 @@ fn table(
 
     if !live {
         if borders {
-            table_borders(ui, &edge_x, &edge_y, t, zoom);
+            table_borders(ui, &edge_x, &edge_y, t, zoom, cols.spans(i));
         }
         ui.add_space(6.0);
         return None;
@@ -1547,7 +1570,7 @@ fn table(
     }
 
     if borders {
-        table_borders(ui, &edge_x, &edge_y, t, zoom);
+        table_borders(ui, &edge_x, &edge_y, t, zoom, cols.spans(i));
     }
 
     // The borders are handles as well as lines: a drag on one changes the width of the
@@ -1602,16 +1625,77 @@ fn table(
 /// The borders of a table, which it has unless they are turned off: OneNote draws a plain grey
 /// line round every cell, and a table with none reads as loose columns of words rather than as
 /// a table. `edge_x` and `edge_y` are where the cells begin and end.
-fn table_borders(ui: &Ui, edge_x: &[f32], edge_y: &[f32], t: &Tokens, zoom: f32) {
+///
+/// A merged cell (issue #298) has no lines inside it: each line is drawn a cell long, and a
+/// piece that would cross a merged cell is left out.
+fn table_borders(ui: &Ui, edge_x: &[f32], edge_y: &[f32], t: &Tokens, zoom: f32, spans: &[((usize, usize), (usize, usize))]) {
     let (Some(&x0), Some(&x1), Some(&y0), Some(&y1)) = (edge_x.first(), edge_x.last(), edge_y.first(), edge_y.last()) else { return };
     let line = egui::Stroke::new(1.0 * zoom, t.table_line);
     let paint = ui.painter();
-    for x in edge_x {
-        paint.vline(*x, y0..=y1, line);
+    if spans.is_empty() {
+        for x in edge_x {
+            paint.vline(*x, y0..=y1, line);
+        }
+        for y in edge_y {
+            paint.hline(x0..=x1, *y, line);
+        }
+        return;
     }
-    for y in edge_y {
-        paint.hline(x0..=x1, *y, line);
+    // True when a merged cell takes in both (r, c) and (r2, c2).
+    let joined = |(r, c): (usize, usize), (r2, c2): (usize, usize)| {
+        spans.iter().any(|((sr, sc), (h, w))| {
+            let inside = |r: usize, c: usize| r >= *sr && r < sr + h && c >= *sc && c < sc + w;
+            inside(r, c) && inside(r2, c2)
+        })
+    };
+    let (rows, columns) = (edge_y.len().saturating_sub(1), edge_x.len().saturating_sub(1));
+    for (k, x) in edge_x.iter().enumerate() {
+        for r in 0..rows {
+            let inner = k > 0 && k < columns && joined((r, k - 1), (r, k));
+            if !inner {
+                paint.vline(*x, edge_y[r]..=edge_y[r + 1], line);
+            }
+        }
     }
+    for (k, y) in edge_y.iter().enumerate() {
+        for c in 0..columns {
+            let inner = k > 0 && k < rows && joined((k - 1, c), (k, c));
+            if !inner {
+                paint.hline(edge_x[c]..=edge_x[c + 1], *y, line);
+            }
+        }
+    }
+}
+
+/// Table > Merge Cells (issue #298): the words of every cell from `a` to `b` go into the
+/// top-left one, in reading order, a space between each cell's words, so nothing is lost; the
+/// other cells are left empty. Each cell's own formatting stays with its words. True when any
+/// words moved.
+pub fn merge_cell_words(block: &mut Block, a: (usize, usize), b: (usize, usize)) -> bool {
+    let (top_left, bottom_right) = ((a.0.min(b.0), a.1.min(b.1)), (a.0.max(b.0), a.1.max(b.1)));
+    let mut joined: Vec<Span> = cell_spans(block, top_left).map(<[Span]>::to_vec).unwrap_or_default();
+    let mut moved = false;
+    for r in top_left.0..=bottom_right.0 {
+        for c in top_left.1..=bottom_right.1 {
+            if (r, c) == top_left {
+                continue;
+            }
+            let Some(words) = cell_spans_mut(block, (r, c)) else { continue };
+            if words.iter().all(|s| s.text.trim().is_empty() && s.image.is_none()) {
+                words.clear();
+                continue;
+            }
+            if !joined.is_empty() {
+                joined.push(Span { text: " ".into(), ..Span::default() });
+            }
+            joined.append(words);
+            moved = true;
+        }
+    }
+    if moved && let Some(first) = cell_spans_mut(block, top_left) {
+        *first = joined;
+    }
+    moved
 }
 
 /// egui blinks a text cursor from the last time the field itself was clicked or typed in. A field

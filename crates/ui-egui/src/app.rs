@@ -527,6 +527,8 @@ struct Editor {
     dirty_since: Option<Instant>,
     blocks: Vec<notecraft_formats::Block>,
     last_saved: Option<String>,
+    /// Who the page says changed it, as its file keeps it (issue #292).
+    authors: notecraft_store::authors::Authors,
     attachments: Vec<(String, u64)>,
     /// Where the caret is in the page, and the text of that block while it is written in.
     caret: Option<pageedit::Caret>,
@@ -778,6 +780,24 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
     ui.add_space(8.0);
 }
 
+/// Who changed the page, under its title, the way OneNote shows an author beside what they
+/// wrote (issue #292). Only a page that keeps names shows the line, so a page nobody saved
+/// with a name looks as it always did; History > Hide Authors takes the line away and leaves
+/// the names in the page.
+fn page_authors(ui: &mut Ui, authors: &notecraft_store::authors::Authors, tokens: &Tokens, zoom: f32) {
+    if authors.unknown() {
+        return;
+    }
+    let text = match &authors.last {
+        Some(last) if authors.names.len() > 1 => {
+            crate::i18n::format_message_id("ui.changed_by_names_last_by_name", &[("names", &authors.names.join(", ")), ("name", last)])
+        }
+        _ => crate::i18n::format_message_id("ui.changed_by_names", &[("names", &authors.names.join(", "))]),
+    };
+    ui.label(egui::RichText::new(text).size(11.5 * zoom).color(tokens.muted));
+    ui.add_space(4.0);
+}
+
 use pageedit::{TABLE_MAX_COLUMNS, TABLE_MAX_ROWS};
 
 /// The rows and columns typed into Insert Table, when both are whole numbers within the limits.
@@ -904,6 +924,15 @@ enum Dialog {
     },
     ResetPreferences,
     /// History > Recent Edits (issue #279).
+    /// Home > Meeting Details (issue #283): the meetings of one day in the chosen calendar file,
+    /// one to look over and put on the page.
+    MeetingDetails(crate::meeting::Choice),
+    /// History > Find by Author (issue #292): everyone named in the open notebooks, and the
+    /// pages of the one chosen. `Some(None)` is the pages nobody is named on.
+    FindByAuthor {
+        pages: Vec<notecraft_store::authors::Page>,
+        chosen: Option<Option<String>>,
+    },
     RecentEdits {
         range: RecentRange,
         /// Only the notebook the open page is in, rather than every open notebook.
@@ -1023,6 +1052,29 @@ pub struct FileDownload {
     pub bytes: Vec<u8>,
 }
 
+/// What View > Dock to Desktop changed, kept to put the window back as it was (issue #267).
+#[derive(Clone, Debug, PartialEq)]
+struct Docked {
+    /// The window's place and size on the screen before, when the system said.
+    outer: Option<egui::Rect>,
+    inner: Option<egui::Vec2>,
+    maximized: bool,
+    organisers: bool,
+    ribbon_collapsed: bool,
+    always_on_top: bool,
+}
+
+/// How wide a docked window is, in points, at most and at least.
+const DOCK_WIDTH: f32 = 420.0;
+const DOCK_MIN_WIDTH: f32 = 320.0;
+
+/// The settings key for the name File > Account keeps (issue #304).
+pub const AUTHOR_KEY: &str = "author_name";
+/// The settings key for the calendar file Home > Meeting Details read last (issue #283).
+const MEETING_FILE_KEY: &str = "meeting_calendar_file";
+/// The settings key for History > Hide Authors (issue #292).
+const HIDE_AUTHORS_KEY: &str = "hide_authors";
+
 pub struct NoteCraftApp {
     window_requests: Vec<crate::windows::Request>,
     secondary_window: bool,
@@ -1033,6 +1085,12 @@ pub struct NoteCraftApp {
     session: Session,
     /// Writes autosaves off the window's thread (see [`crate::saver`]).
     saver: crate::saver::Saver,
+    /// The name File > Account keeps, which every save notes in the page it changed (issues
+    /// #292, #304). `None`: no name is kept and pages record nobody.
+    author_name: Option<String>,
+    /// History > Hide Authors: who changed a page is not shown under its title. What the page
+    /// keeps is not touched (issue #292).
+    hide_authors: bool,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     /// The pages visited, for Back and Forward.
@@ -1051,6 +1109,10 @@ pub struct NoteCraftApp {
     always_on_top: bool,
     /// Set when that has just changed and the window manager has not been told yet.
     window_level_pending: bool,
+    /// View > Dock to Desktop (issue #267): what docking changed, to put back on undocking.
+    docked: Option<Docked>,
+    /// Set when docking was asked for and the window manager has not been told yet.
+    dock_pending: bool,
     /// True when the window has no frame of the system's own (the app asked for none), so
     /// the band across the top draws the window's buttons and moves and resizes it.
     frameless: bool,
@@ -1172,6 +1234,8 @@ pub struct NoteCraftApp {
     backstage: Option<&'static str>,
     /// File > Save a Copy as it is being filled in (issue #301).
     copy_choice: backstage::CopyChoice,
+    /// File > Account as it is being filled in (issue #304).
+    account_choice: backstage::AccountChoice,
     portable: crate::portable::Choice,
     /// Which pages the user has read, kept beside their settings (issue #291). Loaded the
     /// first time it is needed.
@@ -1257,9 +1321,15 @@ impl NoteCraftApp {
             .filter(|percent| backstage::UI_SCALES.contains(percent))
             .unwrap_or(100);
         let wizard_level = session.settings.get("telemetry_level").unwrap_or_else(|| "debug".to_string());
+        let author_name = session.settings.get(AUTHOR_KEY).and_then(|n| notecraft_store::authors::clean(&n));
+        let hide_authors = session.settings.get(HIDE_AUTHORS_KEY).is_some_and(|v| v.trim() == "true");
+        let saver = crate::saver::Saver::default();
+        saver.set_author(author_name.clone());
         NoteCraftApp {
             session,
-            saver: crate::saver::Saver::default(),
+            saver,
+            author_name,
+            hide_authors,
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
@@ -1270,6 +1340,8 @@ impl NoteCraftApp {
             organisers: true,
             always_on_top: false,
             window_level_pending: false,
+            docked: None,
+            dock_pending: false,
             frameless: false,
             editor: None,
             dialog: if privacy_welcome {
@@ -1349,6 +1421,7 @@ impl NoteCraftApp {
             keyboard_paste_requested: false,
             backstage: None,
             copy_choice: backstage::CopyChoice::default(),
+            account_choice: backstage::AccountChoice::default(),
             portable: crate::portable::Choice::default(),
             read_state: None,
             unread: std::collections::HashSet::new(),
@@ -1513,6 +1586,12 @@ impl NoteCraftApp {
     pub fn open_backstage_page(&mut self, page: &'static str) {
         let _ = self.session.run("export.cancel", &Params::new());
         self.backstage = Some(page);
+    }
+
+    /// Leaves the File screen, as its Back arrow does.
+    pub fn close_backstage(&mut self) {
+        let _ = self.session.run("export.cancel", &Params::new());
+        self.backstage = None;
     }
 
     /// Shows a deterministic progress state for documentation screenshots.
@@ -2396,6 +2475,89 @@ impl NoteCraftApp {
         notebooks
     }
 
+    /// View > Dock to Desktop (issue #267): the window becomes a narrow column down the right
+    /// side of the screen, kept above other windows, with the page and nothing else, for notes
+    /// taken beside something else. Again puts the window, its panes, the ribbon and its level
+    /// back as they were. The open page, its caret and the autosave carry on through both.
+    ///
+    /// Other windows are not moved aside: no platform branch reserves the space yet, and the
+    /// status line says so.
+    fn toggle_dock(&mut self, ctx: &Context) {
+        use egui::ViewportCommand as V;
+        if let Some(was) = self.docked.take() {
+            self.organisers = was.organisers;
+            self.ribbon_collapsed = was.ribbon_collapsed;
+            self.always_on_top = was.always_on_top;
+            let level = if was.always_on_top { egui::viewport::WindowLevel::AlwaysOnTop } else { egui::viewport::WindowLevel::Normal };
+            ctx.send_viewport_cmd(V::WindowLevel(level));
+            if was.maximized {
+                ctx.send_viewport_cmd(V::Maximized(true));
+            } else {
+                if let Some(size) = was.inner {
+                    ctx.send_viewport_cmd(V::InnerSize(size));
+                }
+                if let Some(outer) = was.outer {
+                    ctx.send_viewport_cmd(V::OuterPosition(outer.min));
+                }
+            }
+            self.say(crate::tl_id!("ui.the_window_is_undocked"));
+            return;
+        }
+        let info = ctx.input(|i| i.viewport().clone());
+        let Some(screen) = info.monitor_size.filter(|s| s.x > DOCK_MIN_WIDTH && s.y > 200.0) else {
+            self.say(crate::tl_id!("ui.the_screen_size_is_not_known_so_the_window_cannot_be_docked"));
+            return;
+        };
+        self.docked = Some(Docked {
+            outer: info.outer_rect,
+            inner: info.inner_rect.map(|r| r.size()),
+            maximized: info.maximized.unwrap_or(false),
+            organisers: self.organisers,
+            ribbon_collapsed: self.ribbon_collapsed,
+            always_on_top: self.always_on_top,
+        });
+        let width = DOCK_WIDTH.min(screen.x / 3.0).max(DOCK_MIN_WIDTH);
+        if info.maximized == Some(true) {
+            ctx.send_viewport_cmd(V::Maximized(false));
+        }
+        ctx.send_viewport_cmd(V::InnerSize(egui::vec2(width, screen.y)));
+        ctx.send_viewport_cmd(V::OuterPosition(egui::pos2(screen.x - width, 0.0)));
+        ctx.send_viewport_cmd(V::WindowLevel(egui::viewport::WindowLevel::AlwaysOnTop));
+        // The page gets the narrow window: the notebooks fold away and so does the ribbon,
+        // whose tabs still open it. Neither is written to the settings: undocking puts them back.
+        self.organisers = false;
+        self.ribbon_collapsed = true;
+        self.ribbon_peek = false;
+        self.always_on_top = true;
+        self.say(crate::tl_id!("ui.the_window_is_docked"));
+    }
+
+    /// True while View > Dock to Desktop is on.
+    pub fn is_docked(&self) -> bool {
+        self.docked.is_some()
+    }
+
+    /// File > Account (issue #304): the name the pages changed from now on are marked with,
+    /// or none. Kept in the settings, not in any notebook; pages changed before keep what they
+    /// had.
+    pub fn set_author(&mut self, name: Option<String>) {
+        // What was written before is saved under the name it was written with.
+        self.save_now();
+        let name = name.as_deref().and_then(notecraft_store::authors::clean);
+        let _ = self.session.settings.set(AUTHOR_KEY, name.as_deref().unwrap_or(""));
+        self.saver.set_author(name.clone());
+        self.say(match &name {
+            Some(n) => crate::i18n::format_message_id("ui.your_changes_are_marked_name", &[("name", n)]),
+            None => crate::tl_id!("ui.your_changes_are_marked_with_no_name").to_string(),
+        });
+        self.author_name = name;
+    }
+
+    /// The name File > Account keeps, if any.
+    pub fn author_name(&self) -> Option<&str> {
+        self.author_name.as_deref()
+    }
+
     /// The pages changed in `range`, in every open notebook or the open page's own.
     fn recent_edits(&self, range: RecentRange, this_notebook: bool) -> Vec<notecraft_store::recent::Edited> {
         let mut notebooks = self.open_notebooks();
@@ -2403,6 +2565,13 @@ impl NoteCraftApp {
             notebooks.retain(|n| n.path == here);
         }
         notecraft_store::recent::edited(&notebooks, range.since(notecraft_model::time::now_secs(), notecraft_model::time::local_offset()))
+    }
+
+    fn show_find_by_author(&mut self) {
+        // What is on screen is what is searched: the open page's last words are saved first.
+        self.save_now();
+        let pages = notecraft_store::authors::pages(&self.open_notebooks());
+        self.dialog = Some(Dialog::FindByAuthor { pages, chosen: None });
     }
 
     fn show_recent_edits(&mut self, range: RecentRange, this_notebook: bool) {
@@ -2564,6 +2733,7 @@ impl NoteCraftApp {
             // change" rather than a rename to the fallback word itself.
             let title_buf = if page.has_title { page.title.clone() } else { String::new() };
             self.editor = Some(Editor {
+                authors: notecraft_store::authors::of(dir),
                 dir: dir.to_path_buf(),
                 format: page.format,
                 title_buf,
@@ -2698,9 +2868,10 @@ impl NoteCraftApp {
             if body == ed.saved_body {
                 ed.dirty_since = None;
             } else {
+                let author = self.author_name.clone().unwrap_or_default();
                 match self.session.run_with_page(
                     "page.save",
-                    &params(&[("path", &path_str(&dir)), ("body", &body), ("expected_body", &expected)]),
+                    &params(&[("path", &path_str(&dir)), ("body", &body), ("expected_body", &expected), ("author", &author)]),
                     &dir,
                     &expected,
                 ) {
@@ -2709,6 +2880,7 @@ impl NoteCraftApp {
                         if let Some(ed) = self.editor.as_mut() {
                             ed.dirty_since = None;
                             ed.last_saved = Some(ts);
+                            ed.authors = notecraft_store::authors::of(&ed.dir);
                             ed.saved_body = snapshot.as_ref().map(|s| s.body.clone()).unwrap_or(body);
                         }
                         self.page_revision = snapshot.and_then(|s| s.revision);
@@ -2764,6 +2936,7 @@ impl NoteCraftApp {
                     let here = self.editor.as_mut().filter(|ed| ed.dir == saved.dir);
                     if let Some(ed) = here {
                         ed.last_saved = Some(ts);
+                        ed.authors = notecraft_store::authors::of(&ed.dir);
                         if ed.saving.as_ref() == Some(&saved.body) {
                             ed.saving = None;
                         }
@@ -3740,6 +3913,11 @@ impl NoteCraftApp {
         // Save a Copy counts from the page that is open (issue #301).
         let mut copy = std::mem::take(&mut self.copy_choice);
         copy.here = self.editor.as_ref().map(|e| e.dir.clone());
+        let mut account = std::mem::take(&mut self.account_choice);
+        if account.kept != self.author_name {
+            account.kept = self.author_name.clone();
+            account.typed = self.author_name.clone().unwrap_or_default();
+        }
         let mut portable = std::mem::take(&mut self.portable);
         if portable.selection.here != copy.here {
             let _ = self.session.run("export.cancel", &Params::new());
@@ -3777,6 +3955,7 @@ impl NoteCraftApp {
                 self.ui_scale,
                 &update,
                 &mut copy,
+                &mut account,
                 &mut portable,
                 self.session.reviewed_export(),
                 &mut export_acts,
@@ -3859,6 +4038,7 @@ impl NoteCraftApp {
                         copy.folder = folder.to_string_lossy().into_owned();
                     }
                 }
+                backstage::Act::SetAuthor(name) => self.set_author(name),
                 backstage::Act::SaveCopy { node, folder } => {
                     copy.result = Some(notecraft_store::ops::save_copy(&node, &folder).map_err(|e| e.to_string()));
                     if let Some(Ok(at)) = &copy.result {
@@ -3919,6 +4099,7 @@ impl NoteCraftApp {
         }
         self.portable = portable;
         self.copy_choice = copy;
+        self.account_choice = account;
     }
 
     /// The current editor contributes text and live ink without a source save. Explicit
@@ -4316,6 +4497,7 @@ impl NoteCraftApp {
         let view = ribbon::View {
             split_panes: self.split_panes,
             always_on_top: self.always_on_top,
+            docked: self.docked.is_some(),
             full_page: self.full_page,
             rules: self.rules,
             hide_title: self.hide_title,
@@ -4344,6 +4526,7 @@ impl NoteCraftApp {
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
             page_marked_unread: self.editor.as_ref().is_some_and(|e| self.unread.contains(&e.dir)),
+            hide_authors: self.hide_authors,
             painting: self.painter.is_some(),
             style: self.caret_style(ui.ctx()),
             font_family: family.as_deref(),
@@ -4636,6 +4819,16 @@ impl NoteCraftApp {
             ribbon::Act::NextUnread => self.next_unread(),
             ribbon::Act::ToggleRead => self.toggle_read(),
             ribbon::Act::RecentEdits => self.show_recent_edits(RecentRange::Week, false),
+            ribbon::Act::FindByAuthor => self.show_find_by_author(),
+            ribbon::Act::ToggleHideAuthors => {
+                self.hide_authors = !self.hide_authors;
+                let _ = self.session.settings.set(HIDE_AUTHORS_KEY, if self.hide_authors { "true" } else { "false" });
+                self.say(if self.hide_authors {
+                    crate::tl_id!("ui.who_changed_a_page_is_hidden")
+                } else {
+                    crate::tl_id!("ui.who_changed_a_page_is_shown_under_its_title")
+                });
+            }
             ribbon::Act::PageVersions => {
                 self.save_now();
                 if let Some(page) = self.editor.as_ref().map(|e| e.dir.clone()) {
@@ -4752,6 +4945,7 @@ impl NoteCraftApp {
                     other => crate::i18n::format_message_id("ui.paper_behind_the_page", &[("paper", crate::tl!(other.label()))]),
                 });
             }
+            ribbon::Act::ToggleDock => self.dock_pending = true,
             ribbon::Act::ToggleAlwaysOnTop => {
                 self.always_on_top = !self.always_on_top;
                 // Asked for on the next frame, where the context is at hand.
@@ -4883,6 +5077,10 @@ impl NoteCraftApp {
             ribbon::Act::InkRack(edit) => self.edit_rack(edit),
             ribbon::Act::Table(what) => self.edit_table(what),
             ribbon::Act::DeleteTable => self.delete_table(),
+            ribbon::Act::Sticker(id) => self.insert_sticker(id),
+            ribbon::Act::MeetingDetails => self.open_meeting_details(None),
+            ribbon::Act::MergeCells => self.merge_table_cells(),
+            ribbon::Act::SplitCells => self.split_table_cell(),
             ribbon::Act::TableSort(descending) => self.sort_table(descending),
             ribbon::Act::TableSelect(what) => self.select_in_table(what),
             ribbon::Act::TableBorders(on) => self.set_table_borders(on),
@@ -5059,6 +5257,98 @@ impl NoteCraftApp {
         if let Some(line) = justified {
             self.run("page.justify", &params(&[("path", &path), ("blocks", &line)]));
         }
+    }
+
+    /// Home > Meeting Details (issue #283). Opens on today, from `file`, the calendar file used
+    /// last time, or one asked for. Nothing on the page changes until a meeting is inserted.
+    pub fn open_meeting_details(&mut self, file: Option<PathBuf>) {
+        if self.editor.as_ref().is_none_or(|e| !e.writable) {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        }
+        let file = file
+            .or_else(|| self.session.settings.get(MEETING_FILE_KEY).filter(|f| !f.trim().is_empty()).map(PathBuf::from).filter(|f| f.is_file()))
+            .or_else(pick_calendar_file);
+        let Some(file) = file else { return };
+        let mut choice = crate::meeting::Choice {
+            day: (notecraft_model::time::now_secs() + i64::from(notecraft_model::time::local_offset())).div_euclid(86_400),
+            ..Default::default()
+        };
+        choice.read(&file);
+        if choice.error.is_none() {
+            let _ = self.session.settings.set(MEETING_FILE_KEY, &path_str(&file));
+        }
+        self.dialog = Some(Dialog::MeetingDetails(choice));
+    }
+
+    /// The meeting picked in an open Meeting Details dialog, put on the page under the caret's
+    /// line as editable lines, as one Undo step. For the dialog's Insert button, tests and
+    /// automation.
+    pub fn insert_meeting(&mut self, event: &notecraft_formats::ics::Event, occurrence: &notecraft_formats::ics::Occurrence) {
+        let lines = crate::meeting::details(event, occurrence, notecraft_model::time::local_offset());
+        let Some(ed) = self.editor.as_mut().filter(|e| e.writable) else { return };
+        Self::remember_step(ed);
+        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+        let n = lines.len();
+        for (i, b) in lines.into_iter().enumerate() {
+            ed.blocks.insert(at + i, b);
+        }
+        let marks = ed.blocks_inserted(at, n);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks(marks);
+        self.say(crate::tl_id!("ui.meeting_details_added"));
+    }
+
+    /// The Meeting Details dialog's state, for tests.
+    pub fn meeting_choice(&mut self) -> Option<&mut crate::meeting::Choice> {
+        match self.dialog.as_mut() {
+            Some(Dialog::MeetingDetails(c)) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Insert > Stickers (issue #286): the sticker is copied into the page's own folder and
+    /// put on the page as a picture under the caret's line, so it moves, resizes, deletes and
+    /// undoes as any picture does, and the page owns it in both formats.
+    pub fn insert_sticker(&mut self, id: &str) {
+        let Some(sticker) = crate::stickers::find(id) else { return };
+        let Some(dir) = self.editor.as_ref().filter(|e| e.writable).map(|e| e.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        // The same sticker twice on a page is one file, not a copy for each.
+        let file = format!("sticker-{}.svg", sticker.id);
+        let have = std::fs::read(dir.join("assets").join(&file)).is_ok_and(|b| b == sticker.svg);
+        let attached = if have { Ok(format!("assets/{file}")) } else { notecraft_store::assets::attach_bytes(&dir, &file, sticker.svg) };
+        let link = match attached {
+            Ok(link) => link,
+            Err(e) => {
+                self.complain(&crate::i18n::format_message_id("ui.cannot_add_the_sticker_error", &[("error", &e.to_string())]));
+                return;
+            }
+        };
+        let name = crate::tl!(sticker.label).to_string();
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::remember_step(ed);
+        let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
+        ed.blocks.insert(
+            at,
+            notecraft_formats::markdown::Block::Image {
+                alt: name.clone(),
+                src: link,
+                width: Some(crate::stickers::WIDTH),
+                height: Some(crate::stickers::WIDTH),
+            },
+        );
+        let marks = ed.blocks_inserted(at, 1);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        ed.attachments = notecraft_store::assets::list(&dir);
+        Self::remember_edit(ed);
+        self.save_block_marks(marks);
+        self.say(crate::i18n::format_message_id("ui.added_the_name_sticker", &[("name", &name)]));
     }
 
     fn paste_picture(&mut self, dir: &std::path::Path, picture: crate::clipboard::Picture) {
@@ -5525,6 +5815,19 @@ impl NoteCraftApp {
         Self::remember(ed, true);
     }
 
+    /// Remembers a change to how a table is laid out that may leave its words as they were,
+    /// such as cells merged or split (issue #298), as a step of its own, so Undo takes back
+    /// that change alone. `remember_step` must have noted the layout from before.
+    fn remember_layout(ed: &mut Editor) {
+        if ed.history.here().is_some_and(|s| s.columns.as_ref() == Some(&ed.columns) && s.body == ed.body && s.blocks == ed.blocks) {
+            return;
+        }
+        let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
+        step.columns = Some(ed.columns.clone());
+        step.justified = Some(ed.justified.clone());
+        ed.history.record(step);
+    }
+
     fn remember(ed: &mut Editor, edit: bool) {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same || {
@@ -5804,6 +6107,72 @@ impl NoteCraftApp {
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
         self.save_block_marks((cols_moved, false));
+    }
+
+    /// Table > Merge Cells (issue #298): the picked block of cells becomes one cell. A block
+    /// that cuts through a merged cell grows to take it in. The words of every cell go into
+    /// the first, in reading order, so none are lost. One step of Undo for the words and the
+    /// merge together.
+    fn merge_table_cells(&mut self) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, a, b)) = ed.caret.as_ref().filter(|c| c.cell.is_some()).and_then(|c| {
+            let (a, b) = pageedit::cell_range(c).unwrap_or((c.cell?, c.cell?));
+            Some((c.block, a, b))
+        }) else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        if !ed.writable || !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Table { .. })) {
+            return;
+        }
+        let (a, b) = ed.columns.whole_block(at, a, b);
+        let mut columns = ed.columns.clone();
+        match columns.merge(at, a, b) {
+            Ok(_) => {}
+            Err(notecraft_model::tablecols::MergeRefusal::OneCell) => {
+                self.say(crate::tl_id!("ui.pick_two_or_more_cells_to_merge"));
+                return;
+            }
+            Err(_) => {
+                self.say(crate::tl_id!("ui.these_cells_cannot_be_merged"));
+                return;
+            }
+        }
+        // Before anything changes, so Undo puts back the words and the cells as they were.
+        Self::remember_step(ed);
+        ed.columns = columns;
+        if let Some(block) = ed.blocks.get_mut(at) {
+            pageedit::merge_cell_words(block, a, b);
+        }
+        let text = ed.blocks.get(at).and_then(|b| pageedit::cell_text(b, a)).unwrap_or_default();
+        ed.rebuild_body();
+        ed.caret = Some(pageedit::Caret { block: at, text, focus: true, selection: (0, 0), place: None, cell: Some(a), span: None, inline: None });
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_layout(ed);
+        self.save_block_marks((true, false));
+        self.say(crate::tl_id!("ui.the_cells_are_merged"));
+    }
+
+    /// Table > Split Cells (issue #298): the merged cell the caret is in is its cells again.
+    /// Its words stay in the first of them.
+    fn split_table_cell(&mut self) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some((at, cell)) = ed.caret.as_ref().and_then(|c| Some((c.block, c.cell?))) else {
+            self.say(crate::tl_id!("ui.click_in_the_table_first"));
+            return;
+        };
+        if !ed.writable {
+            return;
+        }
+        if ed.columns.span(at, cell).is_none() {
+            self.say(crate::tl_id!("ui.this_cell_is_not_merged"));
+            return;
+        }
+        Self::remember_step(ed);
+        ed.columns.split(at, cell);
+        Self::remember_layout(ed);
+        self.save_block_marks((true, false));
+        self.say(crate::tl_id!("ui.the_merged_cell_is_split"));
     }
 
     /// The sizes typed into an open Insert Table dialog, as a person would type them. For tests
@@ -8161,6 +8530,7 @@ impl NoteCraftApp {
         let show_source = self.show_source;
         let full_page = self.full_page;
         let (hide_title, rules) = (self.hide_title, self.paper_now());
+        let hide_authors = self.hide_authors;
         // The grid a moved or resized box snaps to: the paper's own lines, or 12 points on plain
         // paper. None while snapping is off (issue #79).
         let snap = self.snap_to_grid.then(|| if rules.on() { rules.step() } else { PLAIN_SNAP_STEP });
@@ -8307,6 +8677,9 @@ impl NoteCraftApp {
                         // and a drawing stays beside the words it was made next to.
                         if !hide_title {
                             page_title(ui, ed, &tokens, title_id, rename, zoom_scale);
+                            if !hide_authors {
+                                page_authors(ui, &ed.authors, &tokens, zoom_scale);
+                            }
                         }
                         if wide && ed.writable {
                             // The caret lives in the page: every block is drawn the way it
@@ -9977,6 +10350,167 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::MeetingDetails(choice) => {
+                let t = self.tokens;
+                let offset = notecraft_model::time::local_offset();
+                let mut insert: Option<(notecraft_formats::ics::Event, notecraft_formats::ics::Occurrence)> = None;
+                let mut other_file = false;
+                egui::Window::new(crate::tl_id!("ui.meeting_details_title"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .fixed_size(vec2(560.0, 0.0))
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        let source = choice.file.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                        ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.meetings_from_file", &[("file", &source)])).color(t.muted));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.meeting_details_privacy")).small().color(t.muted));
+                        ui.separator();
+                        if let Some(error) = &choice.error {
+                            ui.label(egui::RichText::new(error).color(t.strong));
+                        } else {
+                            ui.horizontal(|ui| {
+                                if ui.button(crate::tl_id!("ui.previous_day")).clicked() {
+                                    choice.day -= 1;
+                                    choice.picked = None;
+                                }
+                                if ui.button(crate::tl_id!("ui.today")).clicked() {
+                                    choice.day = (notecraft_model::time::now_secs() + i64::from(offset)).div_euclid(86_400);
+                                    choice.picked = None;
+                                }
+                                if ui.button(crate::tl_id!("ui.next_day")).clicked() {
+                                    choice.day += 1;
+                                    choice.picked = None;
+                                }
+                                let day = crate::meeting::when_text(&notecraft_formats::ics::When::Day(choice.day), 0);
+                                ui.label(egui::RichText::new(day).strong().color(t.strong));
+                            });
+                            ui.add_space(4.0);
+                            let today = choice.today(offset);
+                            if today.is_empty() {
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.no_meetings_on_this_day")).color(t.muted));
+                            }
+                            egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+                                for (n, o) in today.iter().enumerate() {
+                                    let Some(event) = choice.events.get(o.event) else { continue };
+                                    let title = if event.summary.is_empty() {
+                                        crate::tl_id!("ui.meeting_with_no_title").to_string()
+                                    } else {
+                                        event.summary.clone()
+                                    };
+                                    let label = format!("{}  {title}", crate::meeting::span_text(o, offset));
+                                    if ui.selectable_label(choice.picked == Some(n), label).clicked() {
+                                        choice.picked = Some(n);
+                                    }
+                                }
+                            });
+                            if let Some(o) = choice.picked.and_then(|n| today.get(n))
+                                && let Some(event) = choice.events.get(o.event)
+                            {
+                                ui.separator();
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.meeting_details_preview")).small().color(t.muted));
+                                for b in crate::meeting::details(event, o, offset) {
+                                    ui.label(crate::meeting::plain_text(&b));
+                                }
+                                ui.add_space(6.0);
+                                if modal_button(ui, &t, crate::tl_id!("ui.insert_meeting_details"), true).clicked() {
+                                    insert = Some((event.clone(), o.clone()));
+                                }
+                            }
+                        }
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &t, crate::tl_id!("ui.choose_another_calendar_file"), false).clicked() {
+                                other_file = true;
+                            }
+                            if modal_button(ui, &t, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                keep = false;
+                            }
+                        });
+                    });
+                if let Some((event, o)) = insert {
+                    self.dialog = None;
+                    self.insert_meeting(&event, &o);
+                    return;
+                }
+                if other_file && let Some(file) = pick_calendar_file() {
+                    self.dialog = None;
+                    self.open_meeting_details(Some(file));
+                    return;
+                }
+            }
+            Dialog::FindByAuthor { pages, chosen } => {
+                let mut go: Option<PathBuf> = None;
+                let t = self.tokens;
+                egui::Window::new(crate::tl_id!("ui.find_by_author_title"))
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(520.0);
+                        let (named, unknown) = notecraft_store::authors::names(pages);
+                        match chosen.clone() {
+                            None => {
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.find_by_author_hint")).color(t.text));
+                                ui.separator();
+                                if named.is_empty() {
+                                    ui.label(egui::RichText::new(crate::tl_id!("ui.no_page_keeps_a_name_yet")).color(t.muted));
+                                }
+                                egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+                                    for (name, n) in &named {
+                                        let label = crate::i18n::format_message_id("ui.name_n_pages", &[("name", name), ("n", &n.to_string())]);
+                                        if ui.link(label).clicked() {
+                                            *chosen = Some(Some(name.clone()));
+                                        }
+                                    }
+                                    if unknown > 0 {
+                                        let label = crate::i18n::format_message_id("ui.unknown_author_n_pages", &[("n", &unknown.to_string())]);
+                                        if ui.link(label).on_hover_text(crate::tl_id!("ui.unknown_author_tip")).clicked() {
+                                            *chosen = Some(None);
+                                        }
+                                    }
+                                });
+                            }
+                            Some(who) => {
+                                let heading = match &who {
+                                    Some(name) => crate::i18n::format_message_id("ui.pages_changed_by_name", &[("name", name)]),
+                                    None => crate::tl_id!("ui.pages_whose_author_is_unknown").to_string(),
+                                };
+                                ui.label(egui::RichText::new(heading).strong().color(t.strong));
+                                ui.separator();
+                                egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+                                    for p in notecraft_store::authors::by(pages, who.as_deref()) {
+                                        ui.horizontal(|ui| {
+                                            let title =
+                                                if p.title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { p.title.clone() };
+                                            if ui.link(title).clicked() {
+                                                go = Some(p.page.clone());
+                                            }
+                                            let mut place = vec![p.notebook.clone()];
+                                            place.extend(p.section.iter().cloned());
+                                            ui.label(
+                                                egui::RichText::new(place.join(&format!(" {} ", crate::tl_id!("ui.place_separator"))))
+                                                    .small()
+                                                    .color(t.muted),
+                                            );
+                                        });
+                                    }
+                                });
+                                ui.add_space(6.0);
+                                if modal_button(ui, &t, crate::tl_id!("ui.back_to_the_names"), false).clicked() {
+                                    *chosen = None;
+                                }
+                            }
+                        }
+                        ui.add_space(8.0);
+                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
+                            keep = false;
+                        }
+                    });
+                if let Some(page) = go {
+                    self.open_path(&path_str(&page));
+                    keep = false;
+                }
+            }
             Dialog::RecentEdits { range, this_notebook, filter, items } => {
                 let mut changed = false;
                 let mut go: Option<PathBuf> = None;
@@ -10856,6 +11390,10 @@ impl NoteCraftApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
             self.window_level_pending = false;
         }
+        if self.dock_pending {
+            self.dock_pending = false;
+            self.toggle_dock(ctx);
+        }
         if let Some(text) = self.pending_copy.take() {
             if let Some(html) = self.pending_copy_html.take() {
                 if self.clipboard.set_html(&html, &text).is_err() {
@@ -11190,6 +11728,21 @@ fn pick_copy_folder() -> Option<PathBuf> {
 
 #[cfg(target_arch = "wasm32")]
 fn pick_copy_folder() -> Option<PathBuf> {
+    None
+}
+
+/// Home > Meeting Details asks for a calendar file (issue #283). Below the other choosers, and
+/// gated in its own right, for the same reason as the one above.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_calendar_file() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title(crate::tl_id!("ui.choose_a_calendar_file"))
+        .add_filter(crate::tl_id!("ui.calendar_files"), &["ics", "ical", "ifb", "icalendar"])
+        .pick_file()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_calendar_file() -> Option<PathBuf> {
     None
 }
 
@@ -12354,6 +12907,87 @@ mod structural_undo_tests {
         h.state_mut().undo();
         settle(&mut h);
         assert_eq!(blocks(&h), typed, "undo takes back the column and keeps what was written");
+    }
+
+    /// Issue #298: Merge Cells makes the picked cells one, keeps every word in the first cell
+    /// in reading order, and is one Undo step; Split Cells is one more. Both formats keep the
+    /// merged cell when the page is saved and opened again.
+    #[test]
+    fn merge_and_split_cells_keep_the_words_and_can_be_undone() {
+        use notecraft_formats::Block;
+        for html in [false, true] {
+            let (_t, mut h) = page_with_table(html, "merge-cells");
+            let table = blocks(&h).iter().position(|b| matches!(b, Block::Table { .. })).expect("a table");
+            // The whole body row: "one" and "two".
+            put_caret(&mut h, table, Some((1, 0)));
+            if let Some(c) = h.state_mut().editor.as_mut().and_then(|e| e.caret.as_mut()) {
+                c.span = Some((1, 1));
+            }
+            let before = blocks(&h);
+            h.state_mut().ribbon_act(ribbon::Act::MergeCells);
+            settle(&mut h);
+            let ed = h.state().editor.as_ref().expect("editor");
+            assert_eq!(ed.columns.spans(table), &[((1, 0), (1, 2))], "html={html}: one merged cell");
+            assert_eq!(pageedit::cell_text(&ed.blocks[table], (1, 0)).as_deref(), Some("one two"), "html={html}: both cells' words, in order");
+            assert_eq!(pageedit::cell_text(&ed.blocks[table], (1, 1)).as_deref(), Some(""), "html={html}: the covered cell is empty");
+            assert_eq!(ed.caret.as_ref().and_then(|c| c.cell), Some((1, 0)), "html={html}: the caret is in the merged cell");
+            h.state_mut().save_page_now();
+            let dir = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("dir");
+            let kept = notecraft_store::page::table_columns(&dir).expect("columns");
+            let file = std::fs::read_to_string(if html { dir.join("index.html") } else { dir.join("index.md") }).unwrap_or_default();
+            assert_eq!(kept.spans(table), &[((1, 0), (1, 2))], "html={html}: saved with the page; status {:?}\n{file}", h.state().status());
+
+            h.state_mut().undo();
+            settle(&mut h);
+            assert_eq!(blocks(&h), before, "html={html}: one undo puts the words back");
+            assert!(h.state().editor.as_ref().expect("editor").columns.spans(table).is_empty(), "html={html}: and the cells");
+            h.state_mut().redo();
+            settle(&mut h);
+            assert_eq!(h.state().editor.as_ref().expect("editor").columns.spans(table), &[((1, 0), (1, 2))], "html={html}: redo merges again");
+
+            // Split from the cell it covered: the words stay in the first cell.
+            put_caret(&mut h, table, Some((1, 0)));
+            let merged = blocks(&h);
+            h.state_mut().ribbon_act(ribbon::Act::SplitCells);
+            settle(&mut h);
+            assert!(h.state().editor.as_ref().expect("editor").columns.spans(table).is_empty(), "html={html}: split");
+            assert_eq!(blocks(&h), merged, "html={html}: splitting moves no words");
+            h.state_mut().undo();
+            settle(&mut h);
+            assert_eq!(
+                h.state().editor.as_ref().expect("editor").columns.spans(table),
+                &[((1, 0), (1, 2))],
+                "html={html}: undo of a split merges again"
+            );
+        }
+    }
+
+    /// Issue #286: a sticker put on the page is one Undo step, in both formats.
+    #[test]
+    fn a_sticker_can_be_undone() {
+        for html in [false, true] {
+            let (_t, mut h) = page_with_table(html, "undo-sticker");
+            put_caret(&mut h, 0, None);
+            assert_undoable(&mut h, &format!("html={html} sticker"), ribbon::Act::Sticker("star"));
+        }
+    }
+
+    /// Merging one cell, or with the caret outside a table, changes nothing and says why.
+    #[test]
+    fn merge_cells_needs_two_cells() {
+        let (_t, mut h) = page_with_table(false, "merge-one-cell");
+        let table = blocks(&h).iter().position(|b| matches!(b, notecraft_formats::Block::Table { .. })).expect("a table");
+        put_caret(&mut h, table, Some((1, 0)));
+        let before = blocks(&h);
+        let could_undo = h.state().editor.as_ref().expect("editor").history.can_undo();
+        h.state_mut().ribbon_act(ribbon::Act::MergeCells);
+        settle(&mut h);
+        assert_eq!(blocks(&h), before);
+        assert!(h.state().editor.as_ref().expect("editor").columns.spans(table).is_empty());
+        h.state_mut().ribbon_act(ribbon::Act::SplitCells);
+        settle(&mut h);
+        assert_eq!(h.state().editor.as_ref().expect("editor").history.can_undo(), could_undo, "no step was added");
+        assert!(h.state().status().contains("not a merged cell"), "{}", h.state().status());
     }
 }
 

@@ -31,6 +31,9 @@ struct Job {
 }
 
 pub struct Saver {
+    /// Who the window's own saves name as having changed a page (issue #292): the name set in
+    /// File > Account, or nobody.
+    author: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     jobs: Option<mpsc::Sender<Job>>,
     done: mpsc::Receiver<Saved>,
     in_flight: usize,
@@ -39,13 +42,18 @@ pub struct Saver {
 
 impl Default for Saver {
     fn default() -> Self {
-        Self::with_job_writer(|dir, body, expected| {
+        let author: std::sync::Arc<std::sync::Mutex<Option<String>>> = std::sync::Arc::default();
+        let named = author.clone();
+        let mut saver = Self::with_job_writer(move |dir, body, expected| {
+            let who = named.lock().ok().and_then(|n| n.clone());
             match expected {
-                Some(expected) => notecraft_store::page::save_body_checked(dir, body, expected),
-                None => notecraft_store::page::save_body(dir, body),
+                Some(expected) => notecraft_store::page::save_body_checked_by(dir, body, expected, who.as_deref()),
+                None => notecraft_store::page::save_body_by(dir, body, who.as_deref()),
             }
             .map_err(|e| e.to_string())
-        })
+        });
+        saver.author = author;
+        saver
     }
 }
 
@@ -107,7 +115,14 @@ impl Saver {
                 }
             })
             .ok();
-        Self { jobs: Some(jobs), done, in_flight: 0, worker }
+        Self { author: std::sync::Arc::default(), jobs: Some(jobs), done, in_flight: 0, worker }
+    }
+
+    /// The name the saves made from now on note as having changed a page, or `None` for none.
+    pub fn set_author(&self, name: Option<String>) {
+        if let Ok(mut who) = self.author.lock() {
+            *who = name;
+        }
     }
 
     /// Asks for `body` to be written as the page in `dir`, and returns at once.

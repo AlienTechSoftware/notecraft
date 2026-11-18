@@ -14,6 +14,7 @@ pub mod boxes;
 pub mod csv;
 pub mod frontmatter;
 pub mod html;
+pub mod ics;
 pub mod markdown;
 pub mod references;
 pub mod render;

@@ -259,12 +259,66 @@ fn page_load(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Page(page::load_page(&s.resolve(req(p, "path")?)?)?))
 }
 
+/// The meetings in a calendar file on one day (issue #283), one a line: when it starts, on the
+/// clock the file gives (UTC, a named zone, or the day for a whole day), then its title. The
+/// file is only read.
+fn calendar_events(_s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let file = std::path::PathBuf::from(req(p, "file")?);
+    let size = std::fs::metadata(&file).map_err(|e| EngineError::BadParam(format!("{}: {e}", file.display())))?.len();
+    if size > 8 * 1024 * 1024 {
+        return Err(EngineError::BadParam("the calendar file is too large".into()));
+    }
+    let text = std::fs::read(&file).map_err(|e| EngineError::BadParam(format!("{}: {e}", file.display())))?;
+    let events = notecraft_formats::ics::parse(&String::from_utf8_lossy(&text));
+    let day = match p.get("day") {
+        Some(d) => notecraft_model::time::secs_from_iso(&format!("{}T00:00:00Z", d.trim()))
+            .ok_or_else(|| EngineError::BadParam(format!("not a day: {d} (write it as 2026-11-23)")))?,
+        None => (notecraft_model::time::now_secs() + i64::from(notecraft_model::time::local_offset())).div_euclid(86_400) * 86_400,
+    };
+    let offset = notecraft_model::time::local_offset();
+    let lines: Vec<String> = notecraft_formats::ics::between(&events, day, day + 86_400, offset)
+        .iter()
+        .map(|o| {
+            let at = match &o.start {
+                notecraft_formats::ics::When::Utc(s) => notecraft_model::time::iso_from_secs(*s),
+                notecraft_formats::ics::When::Local { secs, zone } => {
+                    let iso = notecraft_model::time::iso_from_secs(*secs);
+                    format!("{} {}", iso.trim_end_matches('Z'), zone.as_deref().unwrap_or("floating"))
+                }
+                notecraft_formats::ics::When::Day(d) => notecraft_model::time::iso_from_secs(d * 86_400).chars().take(10).collect(),
+            };
+            format!("{at}\t{}", events.get(o.event).map(|e| e.summary.as_str()).unwrap_or_default())
+        })
+        .collect();
+    Ok(Output::Text(lines.join("\n")))
+}
+
+/// Everyone named as having changed a page in the open notebooks, with how many pages each
+/// changed, then the pages nobody named (issue #292).
+fn authors_list(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
+    let pages = notecraft_store::authors::pages(&notecraft_store::tree::load_notebooks(s.root()));
+    let (named, unknown) = notecraft_store::authors::names(&pages);
+    let mut lines: Vec<String> = named.iter().map(|(name, n)| format!("{name}\t{n}")).collect();
+    lines.push(format!("(unknown)\t{unknown}"));
+    Ok(Output::Text(lines.join("\n")))
+}
+
+/// The pages one person changed, or with `author` left out the pages whose author is unknown.
+fn authors_find(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let pages = notecraft_store::authors::pages(&notecraft_store::tree::load_notebooks(s.root()));
+    let who = p.get("author").map(String::as_str).filter(|a| !a.trim().is_empty());
+    let found = notecraft_store::authors::by(&pages, who);
+    Ok(Output::Text(found.iter().map(|p| p.page.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n")))
+}
+
 fn page_save(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     let body = req(p, "body")?;
+    // A name given notes who saved the change, in the same write (issue #292).
+    let author = p.get("author").map(String::as_str).filter(|a| !a.trim().is_empty());
     let timestamp = match p.get("expected_body") {
-        Some(expected) => page::save_body_checked(&path, body, expected)?,
-        None => page::save_body(&path, body)?,
+        Some(expected) => page::save_body_checked_by(&path, body, expected, author)?,
+        None => page::save_body_by(&path, body, author)?,
     };
     Ok(Output::Text(timestamp))
 }
@@ -669,9 +723,30 @@ name (required): the template's name",
     CommandSpec { id: "window.quick-note", label: "Create a persistent Quick Note", params: "", changes_tree: true, run: window_quick_note },
     CommandSpec { id: "page.load", label: "Open a page", params: "path (required): the page", changes_tree: false, run: page_load },
     CommandSpec {
+        id: "calendar.events",
+        label: "The meetings in a calendar file on one day",
+        params: "file (required): an iCalendar (.ics) file, which is only read\nday (optional): the day, as 2026-11-23; today without it",
+        changes_tree: false,
+        run: calendar_events,
+    },
+    CommandSpec {
+        id: "authors.list",
+        label: "Who changed the pages of the open notebooks",
+        params: "",
+        changes_tree: false,
+        run: authors_list,
+    },
+    CommandSpec {
+        id: "authors.find",
+        label: "The pages one person changed",
+        params: "author (optional): a name from authors.list; left out, the pages whose author is unknown",
+        changes_tree: false,
+        run: authors_find,
+    },
+    CommandSpec {
         id: "page.save",
         label: "Save a page",
-        params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)\nexpected_body (optional): refuse a save if the editable part changed since loading",
+        params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)\nexpected_body (optional): refuse a save if the editable part changed since loading\nauthor (optional): the name of who made the change, noted in the page beside the others who changed it",
         changes_tree: false,
         run: page_save,
     },
@@ -725,9 +800,9 @@ size (optional): auto, or a size (letter, legal, tabloid, executive, a3, a4, a5,
     },
     CommandSpec {
         id: "page.columns",
-        label: "How wide the columns of a page's tables are, which tables have their borders hidden, and how their cells are aligned and shaded",
+        label: "How wide the columns of a page's tables are, which tables have their borders hidden, how their cells are aligned and shaded, and which are merged",
         params: "path (required): the page
-widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, with the heading as row 0; empty puts every table back to the usual width, borders, alignment and shading. Without it, the current layout is reported",
+widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, and block+row.column=RxC for a merged cell R rows by C columns from that cell, as in 2+1.0=1x2, with the heading as row 0; empty puts every table back to the usual width, borders, alignment, shading and cells. Without it, the current layout is reported",
         changes_tree: false,
         run: page_columns,
     },
@@ -927,6 +1002,44 @@ mod tests {
             assert!(!c.label.is_empty());
             assert!(c.id.contains('.'), "ids are namespaced: {}", c.id);
         }
+    }
+
+    /// Issue #292: a save with a name notes it in the page, and the names and their pages can
+    /// be listed; a page nobody saved with a name is unknown.
+    #[test]
+    fn authors_are_noted_by_saves_and_listed() {
+        let t = TempDir::new("authors-command");
+        let mut s = session(&t);
+        let nb = path_of(s.run("notebook.create", &p(&[("name", "Work")])).expect("notebook"));
+        let page = nb.join("new-section-1/untitled-page");
+        let path = page.to_string_lossy().to_string();
+        assert_eq!(text_of(s.run("authors.list", &Params::new()).expect("list")), "(unknown)\t1");
+        s.run("page.save", &p(&[("path", &path), ("body", "<p>Hello</p>"), ("author", "Ada")])).expect("save");
+        assert_eq!(text_of(s.run("authors.list", &Params::new()).expect("list")), "Ada\t1\n(unknown)\t0");
+        assert_eq!(text_of(s.run("authors.find", &p(&[("author", "Ada")])).expect("find")), path);
+        assert_eq!(text_of(s.run("authors.find", &Params::new()).expect("find")), "", "no page is unknown now");
+        s.run("page.save", &p(&[("path", &path), ("body", "<p>Hello again</p>")])).expect("save without a name");
+        assert_eq!(notecraft_store::authors::of(&page).names, ["Ada"], "a save with no name leaves the names as they were");
+    }
+
+    /// Issue #283: the meetings of one day in a calendar file, read and nothing written.
+    #[test]
+    fn calendar_events_lists_one_days_meetings() {
+        let t = TempDir::new("calendar-command");
+        let mut s = session(&t);
+        let file = t.path().join("work.ics");
+        std::fs::write(
+            &file,
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Review\nDTSTART:20261123T150000Z\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Stand-up\nDTSTART;TZID=Europe/Berlin:20261123T091500\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Later\nDTSTART:20261124T090000Z\nEND:VEVENT\nEND:VCALENDAR\n",
+        )
+        .expect("fixture");
+        let before = std::fs::read(&file).expect("read");
+        let f = file.to_string_lossy().to_string();
+        let out = text_of(s.run("calendar.events", &p(&[("file", &f), ("day", "2026-11-23")])).expect("events"));
+        assert_eq!(out, "2026-11-23T09:15:00 Europe/Berlin\tStand-up\n2026-11-23T15:00:00Z\tReview");
+        assert_eq!(std::fs::read(&file).expect("read"), before, "the file is only read");
+        assert!(s.run("calendar.events", &p(&[("file", &f), ("day", "23 Nov")])).is_err());
+        assert!(s.run("calendar.events", &p(&[("file", "/no/such/file.ics")])).is_err());
     }
 
     #[test]

@@ -31,6 +31,26 @@ is missing. Last reviewed: 2026-10-18.
 | `assets/demo/banner-ur.png` | The banner on the Urdu welcome page of the Welcome notebook, 720 x 300: the koala tile and the name on a faint ruled page, wordmark only; Urdu needs text shaping Pillow does not have here, so that page carries the line as words | Drawn in the private planning repo on 2026-10-19, from `notecraft-512.png` and the theme colours. Text set in Inter and Noto Sans CJK SC (both SIL OFL 1.1); only rendered glyphs are in the picture, no font file is shipped with it | Same as the koala source for the artwork. The rest is NoteCraft's own work |
 | `assets/brand/notecraft-social-dark.png` | Same, dark | Same | Same |
 
+
+## Stickers
+
+The Insert > Stickers gallery (issue #286). Each is a 128 x 128 SVG of plain shapes, no text, fonts or embedded pictures.
+
+| File | What | Origin | Licence status |
+|---|---|---|---|
+| `assets/stickers/star.svg` | A gold star | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/heart.svg` | A red heart | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/check.svg` | A white check mark on a green disc | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/smile.svg` | A smiling yellow face | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/sun.svg` | A sun with eight rays | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/lightbulb.svg` | A lit light bulb | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/warning.svg` | A warning triangle with an exclamation mark | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/question.svg` | A blue speech bubble with a question mark | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/flower.svg` | A pink flower on a stem | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/trophy.svg` | A gold trophy cup | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/rainbow.svg` | A rainbow between two clouds | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+| `assets/stickers/pin.svg` | A red push pin | Drawn for NoteCraft by a Python script that writes the SVG shapes, 2026-11-18. Not traced or copied from any other artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
+
 ## Fonts
 
 | File | What | Origin | Licence status |
