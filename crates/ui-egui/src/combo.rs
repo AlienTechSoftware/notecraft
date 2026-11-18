@@ -57,6 +57,9 @@ pub struct Spec<'a> {
     pub add_font: Option<&'a str>,
     /// Which box this is, for usage events (for example "ribbon-family"). Never a name or a path.
     pub usage: &'static str,
+    /// The theme of the surrounding window. The list takes the same popup look as the language
+    /// pickers, so its text is never the ribbon's foreground on a light list.
+    pub tokens: crate::theme::Tokens,
 }
 
 /// A script heading in the font list: bold, on a band, so the list scrolls from one script to the
@@ -74,7 +77,19 @@ fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut 
     // A fixed row height: a row drawn in its own font would otherwise change size as its font loads,
     // and move under the pointer.
     let height = ui.spacing().interact_size.y;
-    let row = ui.add_sized(egui::vec2(ui.available_width(), height), egui::Button::selectable(current, name_text(ui, name, preview)).truncate());
+    // The family list: names left-aligned and indented under their heading. The size list is drawn
+    // as it always was.
+    const INDENT: f32 = 24.0;
+    let row = if preview {
+        ui.horizontal(|ui| {
+            ui.add_space(INDENT);
+            // selectable_label lays its text out from the left; a Button centres it.
+            ui.selectable_label(current, name_text(ui, name, preview))
+        })
+        .inner
+    } else {
+        ui.add_sized(egui::vec2(ui.available_width(), height), egui::Button::selectable(current, name_text(ui, name, preview)).truncate())
+    };
     if preview && ui.is_rect_visible(row.rect) {
         wanted.push(name.to_owned());
     }
@@ -253,6 +268,10 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         // Names whose rows are on screen this frame; their fonts load after the list is drawn.
         let mut wanted: Vec<String> = Vec::new();
         let list = Area::new(spec.id.with("list")).order(Order::Foreground).fixed_pos(value_box.rect.left_bottom()).show(ui.ctx(), |ui| {
+            // The family list takes the picker colours, so its text reads on the light list.
+            if spec.preview {
+                crate::theme::picker_popup_style(spec.tokens).apply(ui.style_mut());
+            }
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(value_box.rect.width());
                 if rows.is_empty() {

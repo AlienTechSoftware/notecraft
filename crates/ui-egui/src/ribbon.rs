@@ -1271,6 +1271,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         sections: &sections,
                         add_font: Some(crate::tl_id!("ui.add_font")),
                         usage: "ribbon-family",
+                        tokens: *t,
                     },
                 );
                 if family_out.add_font {
@@ -1316,6 +1317,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         sections: &[],
                         add_font: None,
                         usage: "ribbon-size",
+                        tokens: *t,
                     },
                 );
                 let boxes = crate::floating::FontBoxes {

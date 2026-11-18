@@ -220,6 +220,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             sections: &fonts.sections,
                             add_font: Some(crate::tl_id!("ui.add_font")),
                             usage: "floating-family",
+                            tokens: *t,
                         },
                     );
                     if families.add_font {
@@ -253,6 +254,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             sections: &[],
                             add_font: None,
                             usage: "floating-size",
+                            tokens: *t,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
