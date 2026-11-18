@@ -1191,6 +1191,20 @@ pub struct NoteCraftApp {
     page_rect: Option<egui::Rect>,
     /// The canvas translation in screen points. It is UI state, so it never changes page data.
     canvas_pan: egui::Vec2,
+    /// The page carrying on after a swipe on a touchpad.
+    fling: crate::fling::Fling,
+    /// How far down the page is scrolled, as last drawn, and where to scroll it in the next pass:
+    /// a fling going down the page, or a zoom keeping the spot under the pointer.
+    page_offset_y: f32,
+    /// How far down the page could be scrolled, as last drawn.
+    page_offset_max: f32,
+    scroll_to: Option<f32>,
+    /// A pinch or Ctrl+wheel zoom keeps the spot under the pointer where it is: the pointer, and
+    /// the point of the page under it in page points, from the frame the zoom changed in.
+    zoom_anchor: Option<(egui::Pos2, egui::Vec2)>,
+    /// What a pinch moved the zoom by that is less than a whole percent, kept for the next
+    /// update of the pinch, so a slow pinch zooms as a quick one does instead of not at all.
+    zoom_rest: f32,
     /// Last middle-button position while panning the canvas.
     canvas_drag: Option<egui::Pos2>,
     /// Words typed while a pen was in hand, held for the caret's line until it has the keyboard
@@ -1201,6 +1215,12 @@ pub struct NoteCraftApp {
     collect_pending: bool,
     /// The page's sideways scroll bar and its thumb, when one was drawn last frame (issue #188).
     page_hbar: Option<(egui::Rect, egui::Rect)>,
+    /// The part of the page the window shows, and how far the page's content reaches sideways on
+    /// screen, as last drawn: where a pinch or a wheel acts on the page, and how far a sideways
+    /// wheel may pan it. `page_rect` is one view tall from the top of the page, which a page
+    /// scrolled down leaves above the window.
+    page_view: Option<egui::Rect>,
+    page_hspan: Option<(f32, f32)>,
     /// The page ScrollArea's vertical bar hit strip from last frame, kept out of the ink layer.
     page_scroll_strip: Option<egui::Rect>,
     /// True while Insert Space is in hand: the next drag on the page adds or takes away room.
@@ -1283,12 +1303,9 @@ pub struct NoteCraftApp {
     focus_search: bool,
     /// The page the window closed on has been opened again (once per run).
     restored: bool,
-    /// How far down the open page is scrolled, as last drawn, and how far down it should be
-    /// scrolled once it is drawn, coming back to where the window was left, with how many
-    /// frames that is still tried for (a page's height is known only once it is drawn).
-    page_scroll: f32,
-    /// How far down the page could be scrolled, as last drawn.
-    page_offset_max: f32,
+    /// How far down the open page should be scrolled once it is drawn, coming back to where the
+    /// window was left, with how many frames that is still tried for (a page's height is known
+    /// only once it is drawn).
     restore_scroll: Option<(f32, u32)>,
     /// Recovery warnings that were already shown during this run.
     icon_recovery_reported: HashSet<String>,
@@ -1427,8 +1444,16 @@ impl NoteCraftApp {
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
+            fling: crate::fling::Fling::default(),
+            page_offset_y: 0.0,
+            page_offset_max: 0.0,
+            scroll_to: None,
+            zoom_anchor: None,
+            zoom_rest: 0.0,
             collect_pending: false,
             page_hbar: None,
+            page_view: None,
+            page_hspan: None,
             page_scroll_strip: None,
             space_tool: false,
             ruler: false,
@@ -1454,8 +1479,6 @@ impl NoteCraftApp {
             ribbon_peek: false,
             band_bottom: 0.0,
             zoom_percent: 100,
-            page_scroll: 0.0,
-            page_offset_max: 0.0,
             restore_scroll: None,
             fit_page_width: false,
             theme_window: false,
@@ -1613,7 +1636,7 @@ impl NoteCraftApp {
             return;
         }
         let _ = self.session.settings.set(LAST_ZOOM_KEY, &self.zoom_percent.to_string());
-        let _ = self.session.settings.set(LAST_SCROLL_KEY, &format!("{:.0}", self.page_scroll.max(0.0)));
+        let _ = self.session.settings.set(LAST_SCROLL_KEY, &format!("{:.0}", self.page_offset_y.max(0.0)));
     }
 
     /// Remembers which page is open, for the next time the window starts.
@@ -1631,7 +1654,7 @@ impl NoteCraftApp {
         let _ = self.session.settings.set("last_page", &value);
         // A new page starts at its top.
         if self.restore_scroll.is_none() {
-            self.page_scroll = 0.0;
+            self.page_offset_y = 0.0;
         }
     }
 
@@ -8678,7 +8701,9 @@ impl NoteCraftApp {
         if modifiers.shift {
             return egui::vec2(delta.y, 0.0);
         }
-        if canvas_pan_enabled { delta } else { egui::Vec2::ZERO }
+        // With the caret's pointer the page's own scroll bar takes the wheel up and down, and a
+        // sideways swipe pans the page sideways, as the horizontal scroll bar does.
+        if canvas_pan_enabled { delta } else { egui::vec2(delta.x, 0.0) }
     }
 
     fn editor_ui(&mut self, ui: &mut Ui) {
@@ -8693,34 +8718,76 @@ impl NoteCraftApp {
                 self.dialog = Some(Dialog::MissingAttachmentIcon { page: ed.dir.clone(), name });
             }
         }
-        let page_input_rect = self.page_rect;
+        // Where a pinch or a wheel acts on the page: the part of it the window shows.
+        let page_input_rect = self.page_view.or(self.page_rect);
         let wheel_canvas_pan_enabled = self.pointer != ribbon::Pointer::Write;
         if self.editor.is_some() && !self.show_source {
             // Draw > Panning Hand: the main button drags the page as the middle one always does
             // (issue #270), but not from the scroll bar, which keeps its own drag.
             let hand = self.pointer == ribbon::Pointer::Pan;
             let bar = self.page_scroll_strip;
+            let view_height = page_input_rect.map_or(600.0, |r| r.height());
+            let line = ui.ctx().options(|o| o.input_options.line_scroll_speed);
+            let fling = &mut self.fling;
             let (pointer, middle_pressed, middle_down, wheel) = ui.input(|i| {
                 let pointer = page_input_rect.and_then(|rect| i.pointer.interact_pos().filter(|p| rect.contains(*p)));
-                let wheel = if page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p))) {
-                    i.events.iter().fold(egui::Vec2::ZERO, |sum, event| match event {
-                        egui::Event::MouseWheel { delta, modifiers, .. } => {
-                            sum + Self::wheel_canvas_pan_delta(*delta, *modifiers, wheel_canvas_pan_enabled)
+                // A click, a pinch or a key stops a fling where it is.
+                if i.pointer.any_pressed() || (i.zoom_delta() - 1.0).abs() > 0.0001 {
+                    fling.stop();
+                }
+                let over = page_input_rect.is_some_and(|rect| i.pointer.hover_pos().is_some_and(|p| rect.contains(p)));
+                let mut wheel = egui::Vec2::ZERO;
+                for event in &i.events {
+                    let egui::Event::MouseWheel { unit, delta, phase, modifiers, .. } = event else { continue };
+                    // A notch of a mouse wheel is a line, not a point: a line is as far as the
+                    // page's own scroll bar takes it, so the wheel pans as fast as it scrolls.
+                    let delta = match unit {
+                        egui::MouseWheelUnit::Point => *delta,
+                        egui::MouseWheelUnit::Line => *delta * line,
+                        egui::MouseWheelUnit::Page => *delta * view_height,
+                    };
+                    if over {
+                        wheel += Self::wheel_canvas_pan_delta(delta, *modifiers, wheel_canvas_pan_enabled);
+                    }
+                    // Fingers on a touchpad: the page carries on when they lift.
+                    if *unit == egui::MouseWheelUnit::Point && !modifiers.ctrl && !modifiers.command {
+                        match phase {
+                            egui::TouchPhase::End => fling.lift(i.time),
+                            egui::TouchPhase::Cancel => fling.stop(),
+                            _ if over && delta != egui::Vec2::ZERO => {
+                                fling.finger(i.time, if modifiers.shift { egui::vec2(delta.y, 0.0) } else { delta })
+                            }
+                            _ => {}
                         }
-                        _ => sum,
-                    })
-                } else {
-                    egui::Vec2::ZERO
-                };
+                    }
+                }
                 let pointer = pointer.filter(|p| !(hand && bar.is_some_and(|b| b.contains(*p))));
                 let pressed = i.pointer.button_pressed(egui::PointerButton::Middle) || (hand && i.pointer.primary_pressed());
                 let down = i.pointer.button_down(egui::PointerButton::Middle) || (hand && i.pointer.primary_down());
                 (pointer, pressed, down, wheel)
             });
+            // The fling goes where the fingers took the page: down it by its scroll bar with the
+            // caret's pointer, and sideways the way a sideways swipe goes.
+            let now = ui.input(|i| i.time);
+            let carried = self.fling.step(now);
+            if self.fling.moving() {
+                ui.ctx().request_repaint();
+            }
+            let carried_down = if wheel_canvas_pan_enabled { 0.0 } else { carried.y };
+            let wheel = wheel + egui::vec2(carried.x, carried.y - carried_down);
+            if carried_down != 0.0 {
+                self.scroll_to = Some((self.page_offset_y - carried_down).max(0.0));
+            }
             if wheel_canvas_pan_enabled {
                 self.canvas_pan += wheel;
                 self.canvas_pan.x = self.canvas_pan.x.clamp(-1.0e6, 1.0e6);
                 self.canvas_pan.y = self.canvas_pan.y.clamp(-1.0e6, 1.0e6);
+            } else if wheel.x != 0.0
+                && let (Some(span), Some(view)) = (self.page_hspan, self.page_view)
+                && let Some(thumb) = crate::hscroll::thumb(span, (view.min.x, view.max.x), view.width())
+            {
+                // Sideways, as far as the page reaches past the view and no further, as the bar.
+                self.canvas_pan.x += crate::hscroll::clamp_pan(wheel.x, &thumb);
             }
             if middle_pressed {
                 self.canvas_drag = pointer;
@@ -8735,14 +8802,29 @@ impl NoteCraftApp {
         } else {
             self.canvas_drag = None;
         }
-        let wheel_zoom =
-            ui.input(|i| page_input_rect.and_then(|rect| i.pointer.hover_pos().filter(|p| rect.contains(*p))).map_or(1.0, |_| i.zoom_delta()));
-        if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.001 {
+        let zoom_at = ui.input(|i| page_input_rect.and_then(|rect| i.pointer.hover_pos().filter(|p| rect.contains(*p))));
+        let wheel_zoom = ui.input(|i| zoom_at.map_or(1.0, |_| i.zoom_delta()));
+        if wheel_zoom.is_finite() && (wheel_zoom - 1.0).abs() > 0.0001 {
+            let before = self.zoom_percent;
+            // A pinch comes as many small steps. Each is kept whole, the part of a percent too,
+            // so a slow pinch zooms: rounded at every step, steps under half a percent were lost.
             #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             {
-                self.zoom_percent = (self.zoom_percent as f32 * wheel_zoom).round().clamp(50.0, 250.0) as u32;
+                let exact = ((before as f32 + self.zoom_rest) * wheel_zoom).clamp(50.0, 250.0);
+                self.zoom_percent = exact.round() as u32;
+                self.zoom_rest = exact - self.zoom_percent as f32;
             }
             self.fit_page_width = false;
+            // The page grows or shrinks about the pointer, not about its top left corner.
+            if self.zoom_percent != before
+                && let (Some(at), Some(ed)) = (zoom_at, self.editor.as_ref())
+            {
+                #[allow(clippy::cast_precision_loss)]
+                let old = before as f32 / 100.0;
+                // A zoom already waiting to be put right is measured from where it was.
+                let spot = self.zoom_anchor.filter(|(was, _)| *was == at).map_or((at - ed.origin) / old, |(_, spot)| spot);
+                self.zoom_anchor = Some((at, spot));
+            }
         }
         if self.fit_page_width {
             let width = ui.available_width();
@@ -9201,10 +9283,13 @@ impl NoteCraftApp {
                 };
                 let page_outer = ui.available_rect_before_wrap();
                 let mut area = egui::ScrollArea::vertical().id_salt("page-main").auto_shrink([false, false]).scroll_source(scroll);
-                // Only once the page is tall enough to be scrolled that far: put past its end while
-                // it is still being laid out, the page sprang back from the end with a great speed,
-                // coasted on, and ended up far from where it was left, and the window kept drawing.
-                if let Some((y, _)) = restore_scroll
+                // Within the page: past its end egui springs the page back, with a speed it then
+                // coasts on, and goes on asking for frames.
+                if let Some(y) = self.scroll_to.take() {
+                    area = area.vertical_scroll_offset(y.clamp(0.0, self.page_offset_max));
+                } else if let Some((y, _)) = restore_scroll
+                    // Coming back to where the window was left: only once the page is tall enough
+                    // to be scrolled that far, for the same reason.
                     && y <= self.page_offset_max + 1.0
                 {
                     area = area.vertical_scroll_offset(y);
@@ -9236,6 +9321,8 @@ impl NoteCraftApp {
                     .then(|| egui::Rect::from_x_y_ranges((max_cross - scroll_style.bar_width)..=max_cross, shown.inner_rect.y_range()));
                 // Sideways the page is a canvas: when what is on it reaches past the view's
                 // sides, a bar along the bottom shows it and moves the canvas (issue #188).
+                self.page_view = Some(shown.inner_rect);
+                self.page_hspan = page_span;
                 if let Some(span) = page_span {
                     let view = shown.inner_rect;
                     let vertical = shown.content_size.y > view.height() + 0.5;
@@ -9243,7 +9330,29 @@ impl NoteCraftApp {
                     hbar = crate::hscroll::show(ui.ctx(), egui::Id::new("page-hscroll"), view, span, reserve);
                 }
                 scroll_now = Some(shown.state.offset().y);
+                self.page_offset_y = shown.state.offset().y;
                 self.page_offset_max = (shown.content_size.y - shown.inner_rect.height()).max(0.0);
+                // Zoomed with the pointer on the page: the spot that was under it is moved back
+                // under it, down by scrolling and sideways by the canvas when the page is wider
+                // than the view. This pass, drawn about the corner, is thrown away and drawn again.
+                if let Some((at, spot)) = self.zoom_anchor.take()
+                    && page_span.is_some()
+                {
+                    let off = ed.origin + spot * zoom_scale - at;
+                    if off.y.abs() > 0.5 {
+                        self.scroll_to = Some((shown.state.offset().y + off.y).max(0.0));
+                    }
+                    let view = shown.inner_rect;
+                    if off.x.abs() > 0.5
+                        && let Some(span) = page_span
+                        && let Some(thumb) = crate::hscroll::thumb(span, (view.min.x, view.max.x), view.width())
+                    {
+                        self.canvas_pan.x += crate::hscroll::clamp_pan(-off.x, &thumb);
+                    }
+                    if off.length() > 0.5 {
+                        ui.ctx().request_discard("zoom about the pointer");
+                    }
+                }
             }
             if changed {
                 Self::mark_dirty(ed);
@@ -9354,7 +9463,6 @@ impl NoteCraftApp {
             self.space_tool = false;
         }
         if let Some(y) = scroll_now {
-            self.page_scroll = y;
             // Tried until the page is there, which may take a frame or two to be tall enough.
             self.restore_scroll = self.restore_scroll.and_then(|(want, left)| ((y - want).abs() > 1.0 && left > 0).then_some((want, left - 1)));
         }
@@ -12596,7 +12704,7 @@ mod alert_tests {
         for _ in 0..20 {
             h.step();
         }
-        let (at, end) = (h.state().page_scroll, h.state().page_offset_max);
+        let (at, end) = (h.state().page_offset_y, h.state().page_offset_max);
         assert!(at <= end + 1.0, "the page is not past its end: {at} of {end}");
         assert!(!h.ctx.has_requested_repaint(), "and with nothing happening the window asks for no more frames");
     }
@@ -12648,7 +12756,7 @@ mod alert_tests {
         for _ in 0..10 {
             h.step();
         }
-        let scrolled = h.state().page_scroll;
+        let scrolled = h.state().page_offset_y;
         assert!(scrolled > 300.0, "the page is scrolled down: {scrolled}");
         // The window closes.
         h.state_mut().before_close();
@@ -12662,7 +12770,7 @@ mod alert_tests {
         }
         assert_eq!(h.state().editor.as_ref().map(|e| e.dir.clone()), Some(page.clone()), "the same page is open");
         assert_eq!(h.state().zoom_percent, 150, "at the same zoom");
-        assert!((h.state().page_scroll - scrolled).abs() < 2.0, "scrolled to the same place: {scrolled} -> {}", h.state().page_scroll);
+        assert!((h.state().page_offset_y - scrolled).abs() < 2.0, "scrolled to the same place: {scrolled} -> {}", h.state().page_offset_y);
         assert!(h.state().open.contains(&made), "and its notebook is open in the tree");
     }
 
