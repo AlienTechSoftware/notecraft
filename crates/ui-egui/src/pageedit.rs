@@ -35,8 +35,8 @@ use notecraft_model::Tag;
 /// Set by the container, taken by the block's text box on the next frame. A text box moves its
 /// selection to the pointer the moment any button goes down, so a menu that acts on the words
 /// (Cut, Copy, Bold) would find none selected unless they are put back.
-pub fn restore_selection_id() -> egui::Id {
-    egui::Id::new("restore-selection")
+pub fn restore_selection_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("restore-selection", ctx.viewport_id()))
 }
 
 /// What the caret is in, and the text it is editing.
@@ -1628,7 +1628,7 @@ fn steady_blink<R>(ui: &mut Ui, at: (usize, &str, (usize, usize)), show: impl Fn
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     at.hash(&mut hasher);
     let key = hasher.finish();
-    let id = egui::Id::new("caret-blink");
+    let id = egui::Id::new(("caret-blink", ui.ctx().viewport_id()));
     let now = ui.input(|i| i.time);
     let since = match ui.data(|d| d.get_temp::<(u64, f64)>(id)) {
         Some((k, from)) if k == key => now - from,
@@ -2540,7 +2540,8 @@ pub fn show_blocks(
                 }
             }
             // Restore after focus placement, which otherwise collapses the selected range.
-            let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
+            let restore_id = restore_selection_id(ui.ctx());
+            let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_id));
             if let Some((block_at, primary, secondary)) = wanted
                 && block_at == i
             {
@@ -2550,7 +2551,8 @@ pub fn show_blocks(
                     state.store(ui.ctx(), id);
                     c.selection = (b, a);
                 }
-                ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
+                let restore_id = restore_selection_id(ui.ctx());
+                ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
             }
             if resp.changed() {
                 // What was typed goes into the block at once, so the page and the file
@@ -3240,13 +3242,15 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
         c.selection = (at, at);
     }
-    let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_selection_id()));
+    let restore_id = restore_selection_id(ui.ctx());
+    let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_id));
     if let Some((block, primary, secondary)) = wanted
         && block == c.block
     {
         let len = c.text.chars().count();
         c.selection = (primary.min(len), secondary.min(len));
-        ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_selection_id()));
+        let restore_id = restore_selection_id(ui.ctx());
+        ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
     }
     // The caret is in this block, so this is where the typing goes.
     if !resp.has_focus() {

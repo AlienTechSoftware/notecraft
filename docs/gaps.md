@@ -163,6 +163,14 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   keep only the To Do items not yet ticked, and takes the caret to a line when it is clicked. It lists
   what the pages said when it last looked; Refresh looks again. OneNote's other groupings (by section,
   title or date), its search box and Create Summary Page are not built.
+- **Desktop note windows and Quick Notes are implemented.** View > New window (Ctrl+M)
+  starts on the current page with independent navigation and zoom. View > New quick note
+  (Ctrl+Shift+M) creates a durable page in the local Quick Notes section and opens a compact
+  editor. Same-page text and ink edits detect stale saves; unsaved conflicts can be kept as
+  a sibling page or explicitly discarded before reloading. Browser and mobile multi-window
+  controls explain the desktop requirement. Native desktop backends need their own window
+  lifecycle verification; this change does not supply cross-process locking or automatic
+  edit merging. See [Note windows](note-windows.md).
 - **Page zoom scales the document.** The View tab has large Zoom Out and Zoom In buttons,
   a percentage selector, 100% reset and Page Width; Ctrl+mouse wheel adjusts the same zoom.
   Text, pictures, diagrams, equations, handwriting, tables, container outlines and rule

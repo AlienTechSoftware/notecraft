@@ -85,6 +85,7 @@ pub struct Pad {
     pub drawing: Drawing,
     /// Changed since it was last written.
     pub dirty: bool,
+    saved_bytes: Option<Vec<u8>>,
     /// How many strokes in the file were a picture only, with no readings to give back.
     pub flat: usize,
     /// The file holds more than `drawing` does: it could not be read, or some of its lines are
@@ -138,6 +139,7 @@ impl Pad {
     /// drawn on, so a page nobody has drawn on stays as clean as it was.
     pub fn of_page(page_dir: &Path) -> Pad {
         let file = page_dir.join(FILE);
+        let saved_bytes = std::fs::read(&file).ok();
         let read = std::fs::read_to_string(&file).ok().and_then(|text| svg::read(&text).ok());
         // A file that is there but could not be read, or that holds lines with no readings,
         // would lose them the first time the ink is written (issue #157).
@@ -150,6 +152,7 @@ impl Pad {
             file,
             drawing,
             dirty: false,
+            saved_bytes,
             flat,
             incomplete,
             kept_original: None,
@@ -168,8 +171,25 @@ impl Pad {
         .with_kept()
     }
 
+    /// Whether the drawing on disk is still the one this view loaded or last saved.
+    pub fn matches_disk(&self) -> bool {
+        match std::fs::read(&self.file) {
+            Ok(bytes) => self.saved_bytes.as_ref() == Some(&bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => self.saved_bytes.is_none(),
+            Err(_) => false,
+        }
+    }
+
     /// Writes the ink, with its readings, which is what the page keeps.
     pub fn save(&mut self) -> std::io::Result<()> {
+        let current = match std::fs::read(&self.file) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e),
+        };
+        if current != self.saved_bytes {
+            return Err(std::io::Error::other("This drawing changed in another window or on disk. Keep your edits as a copy or reload."));
+        }
         if let Some(parent) = self.file.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -191,8 +211,17 @@ impl Pad {
         } else {
             std::fs::write(&self.file, svg::write(&self.drawing, svg::Flavour::Editable))?;
         }
+        self.saved_bytes = std::fs::read(&self.file).ok();
         self.dirty = false;
         Ok(())
+    }
+
+    /// Point a retained drawing at an already-created recovery page.
+    pub fn save_copy_to(&self, page: &Path) -> std::io::Result<()> {
+        let mut copy = self.clone();
+        copy.file = page.join(FILE);
+        copy.saved_bytes = std::fs::read(&copy.file).ok();
+        copy.save()
     }
 
     /// Copies the ink file as it is to `ink.svg.bak`, or the first free `ink-N.svg.bak`, beside

@@ -216,13 +216,57 @@ fn node_title(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::None)
 }
 
+/// Validate the target; the host owns native window creation.
+fn window_new(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = match p.get("path").filter(|p| !p.is_empty()) {
+        Some(path) => s.page_to_show(path)?,
+        None => s.root().to_path_buf(),
+    };
+    Ok(Output::Path(path))
+}
+
+/// Quick Notes are ordinary durable pages, never scratch files or Welcome content.
+fn window_quick_note(s: &mut Session, _p: &Params) -> Result<Output, EngineError> {
+    let section = if let Some(path) = s.settings.get("quick_notes_section").filter(|p| !p.trim().is_empty()) {
+        let path = s.resolve(&path)?;
+        if !tree::read_node(&path).is_some_and(|n| n.kind == NodeKind::Section) {
+            return Err(EngineError::BadParam(
+                "Quick Notes destination must be a section. Choose an existing section in quick_notes_section.".into(),
+            ));
+        }
+        path
+    } else {
+        let notebook = s.root().join("quick-notes");
+        if !notebook.exists() {
+            ops::create_notebook(s.root(), "Quick Notes", None, &s.settings)?;
+        }
+        if !tree::read_node(&notebook).is_some_and(|n| n.kind == NodeKind::Notebook) {
+            return Err(EngineError::BadParam("The Quick Notes notebook location is occupied by another file or folder.".into()));
+        }
+        let section = notebook.join("quick-notes");
+        if !section.exists() {
+            ops::create_node(&notebook, "Quick Notes", NodeKind::Section, None, &s.settings)?;
+        }
+        if !tree::read_node(&section).is_some_and(|n| n.kind == NodeKind::Section) {
+            return Err(EngineError::BadParam("The Quick Notes section location is occupied by another file or folder.".into()));
+        }
+        section
+    };
+    Ok(Output::Path(ops::create_untitled_page(&section, None, None, &s.settings)?))
+}
+
 fn page_load(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Page(page::load_page(&s.resolve(req(p, "path")?)?)?))
 }
 
 fn page_save(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
-    Ok(Output::Text(page::save_body(&path, req(p, "body")?)?))
+    let body = req(p, "body")?;
+    let timestamp = match p.get("expected_body") {
+        Some(expected) => page::save_body_checked(&path, body, expected)?,
+        None => page::save_body(&path, body)?,
+    };
+    Ok(Output::Text(timestamp))
 }
 
 fn page_versions(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -621,11 +665,13 @@ name (required): the template's name",
         changes_tree: true,
         run: node_title,
     },
+    CommandSpec { id: "window.new", label: "Open another note window", params: "path (optional): the current page; omitted for an empty window", changes_tree: false, run: window_new },
+    CommandSpec { id: "window.quick-note", label: "Create a persistent Quick Note", params: "", changes_tree: true, run: window_quick_note },
     CommandSpec { id: "page.load", label: "Open a page", params: "path (required): the page", changes_tree: false, run: page_load },
     CommandSpec {
         id: "page.save",
         label: "Save a page",
-        params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)",
+        params: "path (required): the page\nbody (required): the editable part (inside of the HTML body, or the Markdown after the front matter)\nexpected_body (optional): refuse a save if the editable part changed since loading",
         changes_tree: false,
         run: page_save,
     },

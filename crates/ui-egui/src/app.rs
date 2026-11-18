@@ -3,6 +3,9 @@
 //! Every action goes through `Session::run`, so the window, the command line and any
 //! later control channel share one code path.
 
+#[path = "app/window_capture.rs"]
+mod window_capture;
+
 use crate::backstage;
 use crate::control::{ControlRequest, ControlServer, base64};
 // The file dialogs: `rfd` everywhere it has a backend, and a stand-in on Android that says so.
@@ -1021,6 +1024,12 @@ pub struct FileDownload {
 }
 
 pub struct NoteCraftApp {
+    window_requests: Vec<crate::windows::Request>,
+    secondary_window: bool,
+    native_hosted: bool,
+    native_close: std::cell::Cell<bool>,
+    page_revision: Option<crate::windows::Revision>,
+    page_conflict: bool,
     session: Session,
     /// Writes autosaves off the window's thread (see [`crate::saver`]).
     saver: crate::saver::Saver,
@@ -1272,6 +1281,12 @@ impl NoteCraftApp {
             status: crate::tl_id!("ui.ready_2").into(),
             status_is_error: false,
             session_only_storage: false,
+            window_requests: Vec::new(),
+            secondary_window: false,
+            native_hosted: false,
+            native_close: std::cell::Cell::new(false),
+            page_revision: None,
+            page_conflict: false,
             search: String::new(),
             searched: String::new(),
             hits: Vec::new(),
@@ -1453,6 +1468,9 @@ impl NoteCraftApp {
 
     /// Remembers which page is open, for the next time the window starts.
     fn remember_last_page(&mut self, dir: &Path) {
+        if self.secondary_window {
+            return;
+        }
         let Ok(rel) = dir.strip_prefix(self.session.root()) else { return };
         let value = rel.to_string_lossy().replace('\\', "/");
         let _ = self.session.settings.set("last_page", &value);
@@ -1850,6 +1868,20 @@ impl NoteCraftApp {
     /// The keys and buttons that move through the pages that were opened. Undo and Redo keys
     /// are the page history's own, taken below.
     fn nav_keys(&mut self, ctx: &Context) {
+        if self.dialog.is_none() && self.backstage.is_none() {
+            let request = ctx.input_mut(|input| {
+                let at = input.events.iter().position(
+                    |event| matches!(event, egui::Event::Key { key: Key::M, pressed: true, modifiers, .. } if modifiers.command && !modifiers.alt),
+                );
+                at.and_then(|at| match input.events.remove(at) {
+                    egui::Event::Key { modifiers, .. } => Some(modifiers.shift),
+                    _ => None,
+                })
+            });
+            if let Some(quick) = request {
+                self.request_window(quick);
+            }
+        }
         if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1)) {
             self.go_back();
         }
@@ -2034,7 +2066,10 @@ impl NoteCraftApp {
 
     /// Whether the page being edited has unsaved changes.
     pub fn is_dirty(&self) -> bool {
-        self.editor.as_ref().is_some_and(|e| e.dirty_since.is_some() || e.saving.is_some())
+        self.editor
+            .as_ref()
+            .is_some_and(|e| e.dirty_since.is_some() || e.saving.is_some() || e.title_buf.trim() != if e.titled { e.title.as_str() } else { "" })
+            || self.pad.as_ref().is_some_and(|p| p.dirty)
     }
 
     /// Where the page's words were drawn last frame. Its ink is measured from the top
@@ -2069,6 +2104,13 @@ impl NoteCraftApp {
     /// Saves the open page now, if it has changes.
     pub fn save(&mut self) {
         self.save_now();
+        if !self.page_conflict
+            && let Some(pad) = self.pad.as_mut().filter(|p| p.dirty)
+            && let Err(e) = pad.save()
+        {
+            self.status = e.to_string();
+            self.status_is_error = true;
+        }
     }
 
     /// The last status line.
@@ -2118,13 +2160,32 @@ impl NoteCraftApp {
         self.status_is_error = true;
     }
 
+    fn run_recording(&mut self, id: &str, p: &Params) -> Result<Output, EngineError> {
+        let observed =
+            self.editor.as_ref().filter(|ed| self.page_revision.is_some() && ed.dir.exists()).map(|ed| (ed.dir.clone(), ed.saved_body.clone()));
+        match observed {
+            Some((page, expected)) => self.session.run_with_page(id, p, &page, &expected).map(|(output, snapshot)| {
+                if let Some(snapshot) = snapshot {
+                    if let Some(ed) = &mut self.editor {
+                        ed.saved_body = snapshot.body;
+                    }
+                    self.page_revision = snapshot.revision;
+                } else {
+                    self.page_revision = None;
+                }
+                output
+            }),
+            None => self.session.run(id, p),
+        }
+    }
+
     fn run(&mut self, id: &str, p: &Params) -> Option<Output> {
-        // A command may read or write the page an autosave is still writing.
         self.take_saves(true);
-        match self.session.run(id, p) {
-            Ok(o) => Some(o),
+        match self.run_recording(id, p) {
+            Ok(output) => Some(output),
             Err(e) => {
                 self.fail(&e);
+                self.check_page_changes();
                 None
             }
         }
@@ -2445,6 +2506,9 @@ impl NoteCraftApp {
         self.dismiss_search();
         self.page_opened = true;
         self.save_now();
+        if self.is_dirty() || self.page_conflict {
+            return;
+        }
         // The page being left was read as it now stands, own edits included (issue #291).
         if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()).filter(|d| d != dir) {
             self.note_read(&left, false);
@@ -2557,6 +2621,7 @@ impl NoteCraftApp {
             // Opened, so read (issue #291).
             self.note_read(dir, true);
             self.say(crate::tl_id!("ui.opened"));
+            self.page_revision = crate::windows::Revision::read(dir).ok();
         }
     }
 
@@ -2624,34 +2689,50 @@ impl NoteCraftApp {
     /// written: what comes next (another page, closing, a command) may read the file.
     fn save_now(&mut self) {
         self.take_saves(true);
-        let Some(ed) = self.editor.as_mut() else { return };
-        if ed.dirty_since.is_none() {
+        self.check_page_changes();
+        if self.page_conflict {
             return;
         }
-        let (dir, body) = (ed.dir.clone(), ed.body_to_save());
-        // Nothing to write: the file already says this.
-        if body == ed.saved_body {
-            ed.dirty_since = None;
-            return;
-        }
-        match self.session.run("page.save", &params(&[("path", &path_str(&dir)), ("body", &body)])) {
-            Ok(Output::Text(ts)) => {
-                self.note_read(&dir, false);
-                if let Some(ed) = self.editor.as_mut() {
-                    ed.dirty_since = None;
-                    ed.last_saved = Some(ts);
-                    ed.saved_body = body;
+        if let Some(ed) = self.editor.as_mut().filter(|ed| ed.dirty_since.is_some()) {
+            let (dir, body, expected) = (ed.dir.clone(), ed.body_to_save(), ed.saved_body.clone());
+            if body == ed.saved_body {
+                ed.dirty_since = None;
+            } else {
+                match self.session.run_with_page(
+                    "page.save",
+                    &params(&[("path", &path_str(&dir)), ("body", &body), ("expected_body", &expected)]),
+                    &dir,
+                    &expected,
+                ) {
+                    Ok((Output::Text(ts), snapshot)) => {
+                        self.note_read(&dir, false);
+                        if let Some(ed) = self.editor.as_mut() {
+                            ed.dirty_since = None;
+                            ed.last_saved = Some(ts);
+                            ed.saved_body = snapshot.as_ref().map(|s| s.body.clone()).unwrap_or(body);
+                        }
+                        self.page_revision = snapshot.and_then(|s| s.revision);
+                        self.say(self.saved_caption(None));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        self.fail(&e);
+                        self.check_page_changes();
+                        return;
+                    }
                 }
-                self.say(self.saved_caption(None));
             }
-            Ok(_) => {}
-            Err(e) => self.fail(&e),
         }
+        self.save_pending_title();
     }
 
     /// The autosave: hands the page to the saver and carries on, so the window is not held up
     /// while a slow folder writes it.
     fn save_in_background(&mut self) {
+        self.take_saves(false);
+        if self.saver.busy() || self.page_conflict {
+            return;
+        }
         let Some(ed) = self.editor.as_mut() else { return };
         if ed.dirty_since.is_none() {
             return;
@@ -2661,8 +2742,11 @@ impl NoteCraftApp {
         if body == ed.saved_body || ed.saving.as_ref() == Some(&body) {
             return;
         }
-        self.saver.submit(&ed.dir, &body);
-        ed.saving = Some(body);
+        if self.saver.submit_checked(self.session.root(), &ed.dir, &body, &ed.saved_body) {
+            ed.saving = Some(body);
+        } else {
+            ed.dirty_since = Some(Instant::now());
+        }
     }
 
     /// Takes in the autosaves that have finished, waiting for all of them if `wait`. A save that
@@ -2683,7 +2767,8 @@ impl NoteCraftApp {
                         if ed.saving.as_ref() == Some(&saved.body) {
                             ed.saving = None;
                         }
-                        ed.saved_body = saved.body;
+                        ed.saved_body = saved.snapshot.as_ref().map(|s| s.body.clone()).unwrap_or(saved.body);
+                        self.page_revision = saved.snapshot.and_then(|s| s.revision);
                     }
                     self.say(self.saved_caption(None));
                 }
@@ -3518,7 +3603,7 @@ impl NoteCraftApp {
         let search_width = (right.available_width() - left_used - 8.0).clamp(60.0, 200.0);
         let resp = right.add(
             egui::TextEdit::singleline(&mut self.search)
-                .id(Id::new("page-search"))
+                .id(Id::new(("page-search", ui.ctx().viewport_id())))
                 .hint_text(crate::tl_id!("ui.search_all_pages"))
                 .desired_width(search_width),
         );
@@ -3605,11 +3690,11 @@ impl NoteCraftApp {
             let enabled = ui.is_enabled();
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
             if resp.on_hover_text(label).clicked() {
-                ctx.send_viewport_cmd(match kind {
-                    "Close" => egui::ViewportCommand::Close,
-                    "Maximize" => egui::ViewportCommand::Maximized(!maximized),
-                    _ => egui::ViewportCommand::Minimized(true),
-                });
+                match kind {
+                    "Close" => self.request_window_close(&ctx),
+                    "Maximize" => ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized)),
+                    _ => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                }
             }
         }
     }
@@ -4538,6 +4623,8 @@ impl NoteCraftApp {
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
         match act {
+            ribbon::Act::NewWindow => self.request_window(false),
+            ribbon::Act::QuickNote => self.request_window(true),
             ribbon::Act::File => self.backstage = Some("Info"),
             ribbon::Act::SendPage => {
                 let _ = self.session.run("export.cancel", &Params::new());
@@ -7320,7 +7407,7 @@ impl NoteCraftApp {
             });
         // Keep the query editable while results are open. An outside press dismisses them
         // without consuming the press, so the clicked ribbon or page control still works.
-        let search_rect = ctx.read_response(Id::new("page-search")).map(|response| response.rect);
+        let search_rect = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
         let outside = ctx.input(|input| {
             input.pointer.any_pressed()
                 && input
@@ -8122,7 +8209,7 @@ impl NoteCraftApp {
                 ui.label(egui::RichText::new(message).color(tokens.muted));
             }
             // One id for the title, whether it is drawn as words or as a text box.
-            let title_id = egui::Id::new("page-title-box");
+            let title_id = egui::Id::new(("page-title-box", ui.ctx().viewport_id()));
             ui.horizontal_wrapped(|ui| {
                 // File details live in the status bar. Keep only compact page controls
                 // here, with a drop instruction while a file is actually over the window.
@@ -8269,7 +8356,8 @@ impl NoteCraftApp {
                                 ed.boxes[0].width = crate::containers::responsive_default_width(ui.available_width(), zoom_scale);
                             }
                             if let Some(selection) = ed.restore_format_selection.take() {
-                                ui.data_mut(|data| data.insert_temp(pageedit::restore_selection_id(), selection));
+                                let restore_id = pageedit::restore_selection_id(ui.ctx());
+                                ui.data_mut(|data| data.insert_temp(restore_id, selection));
                             }
                             let before_caret = ed.pending_format.as_ref().and_then(|_| ed.caret.clone());
                             let mut moved = if ink_owns_canvas {
@@ -8681,15 +8769,11 @@ impl NoteCraftApp {
         if let Some(href) = follow {
             self.follow_link(ui.ctx(), &href);
         }
-        if let Some(t) = rename
-            && let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone())
-            && self.run("node.title", &params(&[("path", &path_str(&dir)), ("title", &t)])).is_some()
-        {
-            if let Some(ed) = self.editor.as_mut() {
-                ed.titled = !t.is_empty();
-                ed.title = if t.is_empty() { notecraft_store::tree::UNTITLED_PAGE.to_string() } else { t };
+        if rename.is_some() {
+            self.save_now();
+            if !self.is_dirty() && !self.page_conflict {
+                self.say(crate::tl_id!("ui.title_saved"));
             }
-            self.say(crate::tl_id!("ui.title_saved"));
         }
     }
 
@@ -10298,13 +10382,24 @@ impl NoteCraftApp {
                 } else if !id.starts_with("export.") {
                     self.save_now();
                 }
-                let out = self.session.run(id, &params).map_err(|e| e.to_string())?;
+                if !id.starts_with("export.") && (self.page_conflict || self.is_dirty()) {
+                    return Err("Resolve or save the current page before running another command.".into());
+                }
+                let out = if id.starts_with("export.") { self.session.run(id, &params) } else { self.run_recording(id, &params) }
+                    .map_err(|e| e.to_string())?;
+                if matches!(id, "window.new" | "window.quick-note")
+                    && let Output::Path(path) = &out
+                {
+                    self.window_requests.push(crate::windows::Request { path: path.clone(), quick: id == "window.quick-note" });
+                }
                 if self.editor.as_ref().is_some_and(|ed| !ed.dir.exists()) {
                     self.editor = None;
                 }
                 Ok(notecraft_engine::output_json(&out))
             }
             "ui.inspect" => Ok(self.inspect(ctx)),
+            "ui.window.reload" => Ok(json!({"reloaded": self.reload_conflicted_page()})),
+            "ui.window.keep-copy" => self.keep_conflicted_copy().map(|p| json!({"path": path_str(&p)})),
             "ui.open" => {
                 self.open_path(text("path").ok_or("missing path")?);
                 if self.status_is_error { Err(self.status.clone()) } else { Ok(self.inspect(ctx)) }
@@ -10449,7 +10544,7 @@ impl NoteCraftApp {
             }
             "app.quit" => {
                 self.save_now();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.request_window_close(ctx);
                 Ok(json!({}))
             }
             other => Err(format!("unknown method '{other}'")),
@@ -10537,6 +10632,7 @@ impl NoteCraftApp {
             "windowFrame": if self.frameless { "own" } else { "system" },
             "quickAccess": {"shown": self.qat.show, "below": self.qat.below, "hidden": self.qat.hidden},
             // Folded to its tab names (Ctrl+F1), and whether a clicked tab shows it over the page.
+            "window": {"secondary": self.secondary_window, "conflict": self.page_conflict},
             "ribbon": {"collapsed": self.ribbon_collapsed, "shown": !self.ribbon_folded() || self.ribbon_peek, "tab": self.ribbon_tab},
             // Whether a dialog is up over the window (Android's Back closes it first).
             "dialogOpen": self.dialog.is_some(),
@@ -10683,6 +10779,30 @@ impl NoteCraftApp {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
+        self.take_saves(false);
+        self.check_page_changes();
+        if self.page_conflict {
+            self.conflict_screen(ui);
+            return;
+        }
+        ui.push_id(ui.ctx().viewport_id(), |ui| self.show_checked(ui));
+        if self.pad.as_ref().is_some_and(|p| p.dirty) {
+            self.check_page_changes();
+        }
+        if !self.saver.busy()
+            && !self.page_conflict
+            && let Some(current) = self.editor.as_ref().and_then(|ed| crate::windows::Revision::read(&ed.dir).ok())
+            && let Some(previous) = &self.page_revision
+            && previous != &current
+            && previous.same_page(&current)
+            && self.pad.as_ref().is_some_and(crate::inkpad::Pad::matches_disk)
+        {
+            // Only the ink this view just wrote changed. Other changes must be checked next frame.
+            self.page_revision = Some(current);
+        }
+    }
+
+    fn show_checked(&mut self, ui: &mut Ui) {
         // egui's root `Ui` covers the whole window, the parts under a phone's status and
         // navigation bars included. Everything is laid out inside the safe area instead
         // (issue #315); on a desktop the two are the same.
@@ -10704,7 +10824,8 @@ impl NoteCraftApp {
         // Search owns Escape before text widgets and the page can consume it.
         if self.dialog.is_none() && !self.search.is_empty() && ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
             self.dismiss_search();
-            ctx.memory_mut(|memory| memory.surrender_focus(Id::new("page-search")));
+            let search_id = Id::new(("page-search", ctx.viewport_id()));
+            ctx.memory_mut(|memory| memory.surrender_focus(search_id));
         }
         if !self.loaders_installed {
             crate::pictures::install(ctx);
@@ -10721,7 +10842,7 @@ impl NoteCraftApp {
             self.update_closing = true;
             self.save();
             log::info!("update: closing so the new version can be put in place");
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.request_window_close(ctx);
         }
         self.apply_theme(ctx);
         // Only when the size was chosen or read at start: egui's own Ctrl+Plus and Ctrl+Minus
@@ -10845,6 +10966,9 @@ impl NoteCraftApp {
         // written: what was typed in the moment before closing is not lost.
         if ctx.input(|i| i.viewport().close_requested()) {
             self.save_now();
+            if self.is_dirty() || self.page_conflict {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
         }
         self.take_saves(false);
         if self.saver.busy() {

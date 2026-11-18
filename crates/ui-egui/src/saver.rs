@@ -18,12 +18,20 @@ pub struct Saved {
     pub body: String,
     pub result: Result<String, String>,
     pub jobs: usize,
+    pub snapshot: Option<notecraft_store::coordination::Snapshot>,
 }
 
-type Writer = Box<dyn Fn(&Path, &str) -> Result<String, String> + Send>;
+type Writer = Box<dyn Fn(&Path, &str, Option<&str>) -> Result<String, String> + Send>;
+
+struct Job {
+    dir: PathBuf,
+    body: String,
+    expected: Option<(PathBuf, String)>,
+    jobs: usize,
+}
 
 pub struct Saver {
-    jobs: Option<mpsc::Sender<(PathBuf, String)>>,
+    jobs: Option<mpsc::Sender<Job>>,
     done: mpsc::Receiver<Saved>,
     in_flight: usize,
     worker: Option<std::thread::JoinHandle<()>>,
@@ -31,15 +39,33 @@ pub struct Saver {
 
 impl Default for Saver {
     fn default() -> Self {
-        Self::with_writer(|dir, body| notecraft_store::page::save_body(dir, body).map_err(|e| e.to_string()))
+        Self::with_job_writer(|dir, body, expected| {
+            match expected {
+                Some(expected) => notecraft_store::page::save_body_checked(dir, body, expected),
+                None => notecraft_store::page::save_body(dir, body),
+            }
+            .map_err(|e| e.to_string())
+        })
     }
 }
 
 impl Saver {
     /// A saver that writes with `write`; the window's own uses the page store.
     pub fn with_writer(write: impl Fn(&Path, &str) -> Result<String, String> + Send + 'static) -> Self {
+        Self::with_job_writer(move |dir, body, expected| {
+            if let Some(expected) = expected {
+                let loaded = notecraft_store::page::load_page(dir).map_err(|e| e.to_string())?;
+                if loaded.body != expected {
+                    return Err("The page changed before this save.".into());
+                }
+            }
+            write(dir, body)
+        })
+    }
+
+    fn with_job_writer(write: impl Fn(&Path, &str, Option<&str>) -> Result<String, String> + Send + 'static) -> Self {
         let write: Writer = Box::new(write);
-        let (jobs, inbox) = mpsc::channel::<(PathBuf, String)>();
+        let (jobs, inbox) = mpsc::channel::<Job>();
         let (outbox, done) = mpsc::channel::<Saved>();
         let worker = std::thread::Builder::new()
             .name("notecraft-saver".into())
@@ -48,19 +74,33 @@ impl Saver {
                     // Everything asked for meanwhile: of each page, only the newest text is written.
                     let mut queue = vec![first];
                     queue.extend(inbox.try_iter());
-                    let mut latest: Vec<(PathBuf, String, usize)> = Vec::new();
-                    for (dir, body) in queue {
-                        match latest.iter_mut().find(|(d, ..)| *d == dir) {
+                    let mut latest: Vec<Job> = Vec::new();
+                    for job in queue {
+                        match latest.iter_mut().find(|entry| entry.dir == job.dir) {
                             Some(entry) => {
-                                entry.1 = body;
-                                entry.2 += 1;
+                                entry.body = job.body;
+                                entry.jobs += job.jobs;
                             }
-                            None => latest.push((dir, body, 1)),
+                            None => latest.push(job),
                         }
                     }
-                    for (dir, body, jobs) in latest {
-                        let result = write(&dir, &body);
-                        if outbox.send(Saved { dir, body, result, jobs }).is_err() {
+                    for Job { dir, body, jobs, expected } in latest {
+                        let (result, snapshot) = match expected {
+                            Some((root, expected)) => {
+                                let attempt = (|| {
+                                    let writer = notecraft_store::coordination::writer(&root).map_err(|e| e.to_string())?;
+                                    let _guard = writer.lock().map_err(|_| "the notebook writer is unavailable".to_string())?;
+                                    let timestamp = write(&dir, &body, Some(&expected))?;
+                                    Ok::<_, String>((timestamp, notecraft_store::coordination::Snapshot::read(&dir).ok()))
+                                })();
+                                match attempt {
+                                    Ok((timestamp, snapshot)) => (Ok(timestamp), snapshot),
+                                    Err(e) => (Err(e), None),
+                                }
+                            }
+                            None => (write(&dir, &body, None), None),
+                        };
+                        if outbox.send(Saved { dir, body, result, jobs, snapshot }).is_err() {
                             return;
                         }
                     }
@@ -73,9 +113,23 @@ impl Saver {
     /// Asks for `body` to be written as the page in `dir`, and returns at once.
     pub fn submit(&mut self, dir: &Path, body: &str) {
         if let Some(jobs) = &self.jobs
-            && jobs.send((dir.to_path_buf(), body.to_string())).is_ok()
+            && jobs.send(Job { dir: dir.to_path_buf(), body: body.to_string(), expected: None, jobs: 1 }).is_ok()
         {
             self.in_flight += 1;
+        }
+    }
+
+    /// A window saves only against the body it loaded, so another window cannot be overwritten.
+    pub fn submit_checked(&mut self, root: &Path, dir: &Path, body: &str, expected: &str) -> bool {
+        if let Some(jobs) = &self.jobs
+            && jobs
+                .send(Job { dir: dir.to_path_buf(), body: body.to_string(), expected: Some((root.to_path_buf(), expected.to_string())), jobs: 1 })
+                .is_ok()
+        {
+            self.in_flight += 1;
+            true
+        } else {
+            false
         }
     }
 

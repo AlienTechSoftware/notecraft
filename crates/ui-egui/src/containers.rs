@@ -645,7 +645,8 @@ pub fn show(
             && pointer.is_some_and(|p| frame.contains(p))
             && let Some((_, block_at, primary, secondary)) = words_in
         {
-            ui.data_mut(|d| d.insert_temp(pageedit::restore_selection_id(), (block_at, primary, secondary)));
+            let restore_id = pageedit::restore_selection_id(ui.ctx());
+            ui.data_mut(|d| d.insert_temp(restore_id, (block_at, primary, secondary)));
         }
         let image_right_click = image_hit.as_ref().is_some_and(|response| response.secondary_clicked());
         let right_here = right_click && pointer.is_some_and(|p| bar.contains(p)) && !words_selected && !image_right_click;

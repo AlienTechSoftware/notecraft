@@ -1190,5 +1190,14 @@
 @id	ui.choose_the_notebooks_folder	$$$Choose the notebooks folder@@@
 @id	ui.could_not_save_the_notebooks_folder_error	$$$Could not save the notebooks folder: {error}@@@
 @id	ui.notebooks_folder_current	$$$NoteCraft keeps new notebooks in {folder}.@@@
+@id	ui.window_native_only	$$$Additional note windows are available in the desktop app. In this browser or mobile app, open another tab or page instead.@@@
+@id	ui.window_conflict_title	$$$This page changed elsewhere@@@
+@id	ui.window_conflict_detail	$$$Your unsaved changes are still here. Keep them as a new page, or discard them and reload the newer page. Resolve this before closing the window.@@@
+@id	ui.window_keep_copy	$$$Keep my edits as a new page@@@
+@id	ui.window_reload	$$$Discard my edits and reload@@@
+@id	ui.window_quick_title	$$$Quick Notes - NoteCraft@@@
+@id	ui.window_new_tip	$$$Open the current page in another window (Ctrl+M)@@@
+@id	ui.window_quick_tip	$$$Create a persistent Quick Note (Ctrl+Shift+M)@@@
+@id	ui.window_owner_unavailable	$$$This note window is unavailable on the rendering thread.@@@
 @id	ui.notebooks_folder_changed	$$$The notebooks folder is now {folder}.@@@
 @id	ui.could_not_open_the_notebooks_folder_error	$$$Could not open the notebooks folder: {error}@@@

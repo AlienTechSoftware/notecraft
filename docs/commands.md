@@ -192,6 +192,20 @@ Parameters:
 - path (required)
 - title (required)
 
+## `window.new`
+
+Open another note window.
+
+Parameters:
+
+- path (optional): the current page; omitted for an empty window
+
+## `window.quick-note`
+
+Create a persistent Quick Note (changes the tree).
+
+No parameters.
+
 ## `page.load`
 
 Open a page.
@@ -208,6 +222,7 @@ Parameters:
 
 - path (required): the page
 - body (required): the editable part (inside of the HTML body, or the Markdown after the front matter)
+- expected_body (optional): refuse a save if the editable part changed since loading
 
 ## `page.versions`
 
