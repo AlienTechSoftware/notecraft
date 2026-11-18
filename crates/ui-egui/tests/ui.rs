@@ -12697,6 +12697,33 @@ fn window_capture_clean_view_reloads_changes_and_missing_pages_keep_unsaved_inpu
 }
 
 #[test]
+fn window_capture_refreshed_caret_uses_the_new_pages_formatting() {
+    for html in [false, true] {
+        let (_t, mut first, sample) = sample_app("window-caret-refresh");
+        let page = if html { &sample.html_page } else { &sample.md_page };
+        first.open_path(&page.to_string_lossy());
+        first.set_body(if html { "<p>seed</p>" } else { "seed\n" });
+        first.save();
+        let second = first.child_window(&notecraft_ui_egui::windows::Request { path: page.clone(), quick: false }).expect("second");
+        let mut h = sized_harness(second, LIGHT, egui::vec2(1500.0, 900.0));
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block":0})).expect("caret");
+        ask(&mut h, "ui.text", json!({"text":"x"})).expect("hydrate the caret's editing spans");
+        h.state_mut().save();
+        let body = if html { "<p><strong>seedx</strong></p>" } else { "**seedx**\n" };
+        first.session_mut().run("page.save", &params(&[("path", &page.to_string_lossy()), ("body", body)])).expect("peer formatting");
+        h.state_mut().check_page_changes();
+        assert!(!h.state().has_page_conflict());
+        ask(&mut h, "ui.text", json!({"text":"!"})).expect("continue typing after refresh");
+        h.state_mut().save();
+        let loaded = notecraft_store::page::load_page(page).expect("saved page");
+        let blocks = notecraft_formats::boxes::read(loaded.format, &loaded.body).0;
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
+        assert!(spans.iter().any(|span| span.bold && span.text.contains("seedx")), "typing after refresh must retain the peer's formatting");
+    }
+}
+
+#[test]
 fn window_capture_stale_ink_cannot_replace_another_views_drawing() {
     let t = TempDir::new("window-ink-conflict");
     let mut first = notecraft_ui_egui::inkpad::Pad::of_page(t.path());

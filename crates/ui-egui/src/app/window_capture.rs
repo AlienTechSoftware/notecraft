@@ -113,6 +113,7 @@ impl NoteCraftApp {
                             && let Some(block) = ed.blocks.get(caret.block)
                         {
                             caret.text = pageedit::caret_text(block);
+                            caret.inline = None;
                         }
                     }
                 }
@@ -176,6 +177,8 @@ impl NoteCraftApp {
                         return None;
                     }
                     c.text = pageedit::caret_text(block);
+                    // The refreshed spans own formatting and literal identity too.
+                    c.inline = None;
                     let count = c.text.chars().count();
                     c.selection = (c.selection.0.min(count), c.selection.1.min(count));
                     c.place = c.place.map(|p| p.min(count));
