@@ -183,7 +183,7 @@ fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
     // details when the attachment they belong to is present.
     if let Some((source, extension)) = name.rsplit_once('.')
         && matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg")
-        && page.join("assets").join(source).is_file()
+        && crate::fscache::is_file(&page.join("assets").join(source))
     {
         return None;
     }
@@ -192,7 +192,7 @@ fn missing_attachment_icon(page: &Path, src: &str) -> Option<String> {
     }
     // A missing attachment is not a missing-icon case. Do not warn about an icon
     // when the original file itself is no longer present.
-    if !page.join("assets").join(name).is_file() {
+    if !crate::fscache::is_file(&page.join("assets").join(name)) {
         return None;
     }
     (!attachment_icon_healthy(page, name)).then(|| name.to_string())
@@ -214,7 +214,9 @@ fn attachment_icon_exists(page: &Path, name: &str) -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        page.join("assets").join(format!("{name}.svg")).is_file() || page.join("assets").join(format!("{name}.png")).is_file()
+        // Asked every frame while a page is open: see `fscache`.
+        crate::fscache::is_file(&page.join("assets").join(format!("{name}.svg")))
+            || crate::fscache::is_file(&page.join("assets").join(format!("{name}.png")))
     }
 }
 
@@ -1092,6 +1094,8 @@ pub struct NoteCraftApp {
     native_hosted: bool,
     native_close: std::cell::Cell<bool>,
     page_revision: Option<crate::windows::Revision>,
+    /// When, on the window's clock, the page was last checked for another window's writes.
+    changes_checked_at: Option<f64>,
     page_conflict: bool,
     #[cfg(feature = "voice")]
     voice: voice::VoiceUi,
@@ -1383,6 +1387,7 @@ impl NoteCraftApp {
             native_hosted: false,
             native_close: std::cell::Cell::new(false),
             page_revision: None,
+            changes_checked_at: None,
             page_conflict: false,
             search: String::new(),
             searched: String::new(),
@@ -2287,7 +2292,11 @@ impl NoteCraftApp {
 
     fn run(&mut self, id: &str, p: &Params) -> Option<Output> {
         self.take_saves(true);
-        match self.run_recording(id, p) {
+        let result = self.run_recording(id, p);
+        // A command may have written, replaced or removed a picture or an attachment: what the
+        // window kept about files is let go, so the page shows the change at once.
+        crate::fscache::forget_all();
+        match result {
             Ok(output) => Some(output),
             Err(e) => {
                 self.fail(&e);
@@ -2653,6 +2662,12 @@ impl NoteCraftApp {
         if typing_elsewhere || self.dialog.is_some() || self.backstage.is_some() {
             return;
         }
+        // Which page is selected, and whether it can be made a subpage, is read from its folder;
+        // that is only worth doing when a key went down. Every frame it read the page and every
+        // page beside it, which on a synced folder held each frame up.
+        if !ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. }))) {
+            return;
+        }
         let Some(page) = self.selected.clone().filter(|path| notecraft_store::tree::read_node(path).is_some_and(|info| info.kind == NodeKind::Page))
         else {
             return;
@@ -2699,6 +2714,8 @@ impl NoteCraftApp {
 
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
+        // A page opened is looked at afresh, not through what was kept about the last one's files.
+        crate::fscache::forget_all();
         self.dismiss_search();
         self.page_opened = true;
         #[cfg(feature = "voice")]
@@ -8424,9 +8441,17 @@ impl NoteCraftApp {
     /// Where a new section goes: the notebook or section group the chosen section or page is in,
     /// a section group that is itself chosen, or else the first notebook. `None` with no notebook.
     fn new_section_parent(&self) -> Option<(PathBuf, NodeKind)> {
+        // Asked every frame the side panel is drawn, so it reads the tree the window holds,
+        // not the folders: read from disk it was the page and every folder above it, a frame,
+        // which on a synced folder held each frame up.
+        fn kind_in(nodes: &[notecraft_store::tree::Node], path: &Path) -> Option<NodeKind> {
+            let node = nodes.iter().find(|n| path.starts_with(&n.path))?;
+            if node.path == path { Some(node.info.kind) } else { kind_in(&node.children, path) }
+        }
+        let tree = self.session.tree();
         let mut at = self.selected.clone().or_else(|| self.editor.as_ref().map(|e| e.dir.clone()));
         while let Some(path) = at {
-            match notecraft_store::tree::read_node(&path).map(|n| n.kind) {
+            match kind_in(tree, &path) {
                 Some(kind @ (NodeKind::Notebook | NodeKind::SectionGroup)) => return Some((path, kind)),
                 Some(_) => at = path.parent().map(Path::to_path_buf),
                 None => break,
@@ -11479,12 +11504,36 @@ impl NoteCraftApp {
 
     pub fn show(&mut self, ui: &mut Ui) {
         self.take_saves(false);
-        self.check_page_changes();
+        // Another window's writes are looked for before anything typed or clicked here is acted
+        // on, and twice a second besides. Not every frame: each look asks the disk about the page
+        // and its ink, and on a synced folder that held up every frame of a scroll or a pinch.
+        let now = ui.input(|i| i.time);
+        let acting = ui.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key { pressed: true, .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::Paste(_)
+                        | egui::Event::Cut
+                        | egui::Event::Ime(_)
+                        | egui::Event::PointerButton { pressed: true, .. }
+                )
+            })
+        });
+        let due = acting || self.changes_checked_at.is_none_or(|at| now - at >= 0.5 || now < at);
+        if due {
+            self.changes_checked_at = Some(now);
+            self.check_page_changes();
+        }
         if self.page_conflict {
             self.conflict_screen(ui);
             return;
         }
         ui.push_id(ui.ctx().viewport_id(), |ui| self.show_checked(ui));
+        if !due {
+            return;
+        }
         if self.pad.as_ref().is_some_and(|p| p.dirty) {
             self.check_page_changes();
         }
@@ -12452,6 +12501,25 @@ mod alert_tests {
             h.step();
         }
         (t, page, pdf, h)
+    }
+
+    /// Drawing a page does not go to the disk every frame. A page of printouts asked about every
+    /// picture and attachment each frame; on a synced folder (OneDrive through onedriver) each of
+    /// those waits on the mount, and the window drew a few frames a second while scrolling.
+    #[test]
+    fn drawing_a_page_of_printouts_does_not_ask_the_disk_every_frame() {
+        let (_t, page, pdf, mut h) = printout_harness(true, "printout-quiet-frames");
+        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        for _ in 0..5 {
+            h.step();
+        }
+        let before = crate::fscache::disk_asks();
+        for _ in 0..30 {
+            h.step();
+        }
+        let asked = crate::fscache::disk_asks() - before;
+        // Within the cache's moment each file is asked about at most once, not once a frame.
+        assert!(asked <= 12, "30 frames asked the disk {asked} times");
     }
 
     /// Issue #67: with no box holding the caret, a second printout goes below what is already

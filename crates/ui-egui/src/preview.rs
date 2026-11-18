@@ -53,26 +53,19 @@ pub(crate) fn line_numbers(lines: usize) -> String {
     (1..=lines).map(|n| format!("{n} |")).collect::<Vec<_>>().join("\n")
 }
 
-fn file_time(path: &Path) -> Option<std::time::SystemTime> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::fs::metadata(path).ok()?.modified().ok()
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = path;
-        None
-    }
-}
-
 fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(String, egui::load::Bytes)> {
     let rel = src.strip_prefix("assets/")?;
     if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
         return None;
     }
     let path = page_dir.join("assets").join(rel);
-    let meta = std::fs::metadata(&path).ok()?;
-    let stamp = (meta.len(), file_time(&path));
+    // Asked every frame for every picture drawn: kept a moment, so a page of printouts on a
+    // synced folder does not ask its mount hundreds of times a frame.
+    let seen = crate::fscache::seen(&path);
+    if !seen.file {
+        return None;
+    }
+    let stamp = (seen.len, seen.modified);
     let cache = ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone());
     let mut cache = cache.lock().ok()?;
     if let Some((had, uri, bytes)) = cache.get(&path)
@@ -701,7 +694,7 @@ pub(crate) fn show_block_zoomed(
                     3 => 18.0,
                     _ => 16.0,
                 } * zoom;
-                ui.add_space(6.0);
+                ui.add_space(6.0 * zoom);
                 match tagged(spans) {
                     // A heading is aligned as a paragraph is, but never justified.
                     Some((tag, spans)) => with_tag(ui, tag, tokens, |ui| {
@@ -709,7 +702,7 @@ pub(crate) fn show_block_zoomed(
                     }),
                     None => draw_spans(ui, spans, size, tokens.strong, tokens, page, aligned_only(justified), selected, floor),
                 }
-                ui.add_space(2.0);
+                ui.add_space(2.0 * zoom);
             }
             Block::Paragraph(spans) => {
                 // A line that starts with a tag marker shows the tag's mark, not the word.
@@ -719,14 +712,14 @@ pub(crate) fn show_block_zoomed(
                             draw_inline_images(ui, &spans, page_dir, zoom, i, &mut rendered_object_rect);
                             draw_spans(ui, &spans, 14.5 * zoom, body, tokens, page, justified, selected, floor);
                         });
-                        ui.add_space(4.0);
+                        ui.add_space(4.0 * zoom);
                     }
                     None => {
                         draw_inline_images(ui, spans, page_dir, zoom, i, &mut rendered_object_rect);
                         if !text_of(spans).is_empty() || spans.iter().any(|s| s.math) {
                             draw_spans(ui, spans, 14.5 * zoom, body, tokens, page, justified, selected, floor);
                         }
-                        ui.add_space(4.0);
+                        ui.add_space(4.0 * zoom);
                     }
                 }
             }
@@ -739,7 +732,7 @@ pub(crate) fn show_block_zoomed(
                     egui::Layout::left_to_right(egui::Align::Min)
                 };
                 ui.with_layout(row, |ui| {
-                    ui.add_space(8.0 + *depth as f32 * 18.0);
+                    ui.add_space((8.0 + *depth as f32 * 18.0) * zoom);
                     match task {
                         Some(done) => {
                             let mut v = *done;
@@ -776,7 +769,7 @@ pub(crate) fn show_block_zoomed(
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
                     draw_spans(ui, spans, 14.5 * zoom, tokens.muted, tokens, page, None, selected, floor);
                 });
-                ui.add_space(4.0);
+                ui.add_space(4.0 * zoom);
             }
             // A Mermaid diagram is shown as the drawing, in the page, and a click puts the caret in
             // it, which shows its source to edit. One that cannot be drawn says why and shows its
@@ -788,7 +781,7 @@ pub(crate) fn show_block_zoomed(
                         ui.label(RichText::new(text).monospace().size(14.5 * zoom));
                     }
                 });
-                ui.add_space(4.0);
+                ui.add_space(4.0 * zoom);
             }
             Block::Code { lang, text } => {
                 let (numbered, language) = notecraft_formats::markdown::code_lang(lang);
@@ -809,14 +802,14 @@ pub(crate) fn show_block_zoomed(
                         ui.label(RichText::new(text).monospace().size(14.5 * zoom));
                     }
                 });
-                ui.add_space(4.0);
+                ui.add_space(4.0 * zoom);
             }
             Block::MathBlock(tex) => {
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     crate::mathview::display(ui, tex, 22.0 * zoom, tokens.strong);
                 });
-                ui.add_space(4.0);
+                ui.add_space(4.0 * zoom);
             }
             Block::Table { head, rows } => {
                 egui::Grid::new(("table", i)).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
@@ -831,7 +824,7 @@ pub(crate) fn show_block_zoomed(
                         ui.end_row();
                     }
                 });
-                ui.add_space(6.0);
+                ui.add_space(6.0 * zoom);
             }
             Block::Rule => {
                 ui.separator();
@@ -869,7 +862,7 @@ pub(crate) fn show_block_zoomed(
                         ui.weak(format!("[image: {alt} ({src})]"));
                     }
                 }
-                ui.add_space(4.0);
+                ui.add_space(4.0 * zoom);
             }
         }
     }
@@ -883,7 +876,7 @@ pub(crate) fn show_block_zoomed(
             Block::Heading { level: 2, .. } => 28.0,
             Block::Heading { .. } => 24.0,
             _ => 22.0,
-        };
+        } * zoom;
         if used < line {
             ui.add_space(line - used);
         }
@@ -972,7 +965,7 @@ pub(crate) fn object_link(block: &Block, page_dir: &std::path::Path) -> Option<S
             if !matches!(extension.to_ascii_lowercase().as_str(), "png" | "svg") {
                 return None;
             }
-            page_dir.join("assets").join(source).is_file().then(|| format!("assets/{source}"))
+            crate::fscache::is_file(&page_dir.join("assets").join(source)).then(|| format!("assets/{source}"))
         }
         _ => None,
     }
@@ -1113,6 +1106,9 @@ mod tests {
         let before = image_reads();
         let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
         std::fs::write(&file, b"a different, longer picture").expect("replaced");
+        // What the window knew about the file is kept a moment (see `fscache`); a change made
+        // by a command lets it go at once, as here, and one made elsewhere shows within the moment.
+        crate::fscache::forget_all();
         let second = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
         assert_eq!(image_reads() - before, 2, "read again once it changed");
         assert_ne!(first.0, second.0, "a new name, so egui does not keep showing the old picture");
