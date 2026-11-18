@@ -121,3 +121,98 @@ mod tests {
         assert!(!size_is_usable("13", &sizes));
     }
 }
+
+/// A script the family list is grouped by. A font belongs under each script whose sample
+/// character it draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Script {
+    Latin,
+    Greek,
+    Cyrillic,
+    Arabic,
+    Hebrew,
+    Devanagari,
+    Thai,
+    Han,
+    Kana,
+    Hangul,
+}
+
+impl Script {
+    /// Every script, in the order the list shows them.
+    pub const ALL: [Script; 10] = [
+        Script::Latin,
+        Script::Greek,
+        Script::Cyrillic,
+        Script::Arabic,
+        Script::Hebrew,
+        Script::Devanagari,
+        Script::Thai,
+        Script::Han,
+        Script::Kana,
+        Script::Hangul,
+    ];
+
+    /// One letter a font of this script must draw.
+    pub fn sample(self) -> char {
+        match self {
+            Script::Latin => 'A',
+            Script::Greek => '\u{03A9}',
+            Script::Cyrillic => '\u{0416}',
+            Script::Arabic => '\u{0627}',
+            Script::Hebrew => '\u{05D0}',
+            Script::Devanagari => '\u{0915}',
+            Script::Thai => '\u{0E01}',
+            Script::Han => '\u{4E2D}',
+            Script::Kana => '\u{3042}',
+            Script::Hangul => '\u{D55C}',
+        }
+    }
+}
+
+/// The scripts a font covers, judged by whether it draws each script's sample character.
+pub fn scripts_of(has_glyph: impl Fn(char) -> bool) -> Vec<Script> {
+    Script::ALL.into_iter().filter(|script| has_glyph(script.sample())).collect()
+}
+
+/// The list grouped by script: each script with the families that cover it, in list order.
+/// Scripts with no family are left out. A family covering several scripts appears under each.
+pub fn sections(families: &[String], scripts_of_family: impl Fn(&str) -> Vec<Script>) -> Vec<(Script, Vec<String>)> {
+    let covered: Vec<(&String, Vec<Script>)> = families.iter().map(|name| (name, scripts_of_family(name))).collect();
+    Script::ALL
+        .into_iter()
+        .filter_map(|script| {
+            let names: Vec<String> = covered.iter().filter(|(_, scripts)| scripts.contains(&script)).map(|(name, _)| (*name).clone()).collect();
+            (!names.is_empty()).then_some((script, names))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod section_tests {
+    use super::*;
+
+    #[test]
+    fn a_font_is_listed_under_each_script_it_covers() {
+        let families = vec!["Mixed".to_owned(), "Latin only".to_owned()];
+        let grouped = sections(&families, |name| match name {
+            "Mixed" => vec![Script::Latin, Script::Arabic],
+            _ => vec![Script::Latin],
+        });
+        assert_eq!(grouped, vec![(Script::Latin, vec!["Mixed".to_owned(), "Latin only".to_owned()]), (Script::Arabic, vec!["Mixed".to_owned()])]);
+    }
+
+    #[test]
+    fn a_script_with_no_font_gets_no_section() {
+        let families = vec!["Latin only".to_owned()];
+        let grouped = sections(&families, |_| vec![Script::Latin]);
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0].0, Script::Latin);
+    }
+
+    #[test]
+    fn scripts_are_read_from_their_sample_characters() {
+        assert_eq!(scripts_of(|c| c == 'A' || c == '\u{0627}'), vec![Script::Latin, Script::Arabic]);
+        assert!(scripts_of(|_| false).is_empty());
+    }
+}

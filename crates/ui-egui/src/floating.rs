@@ -119,6 +119,8 @@ pub struct FontBoxes {
     pub recent: Vec<String>,
     /// The family shown is not installed, so the box shows its warning mark.
     pub family_missing: bool,
+    /// The installed families grouped by script, with a heading for each.
+    pub sections: Vec<(String, Vec<String>)>,
 }
 
 /// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
@@ -215,6 +217,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             recent: &fonts.recent,
                             missing: fonts.family_missing,
                             preview: true,
+                            sections: &fonts.sections,
                         },
                     );
                     if let Some(name) = families.chosen {
@@ -237,6 +240,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             recent: &[],
                             missing: false,
                             preview: false,
+                            sections: &[],
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

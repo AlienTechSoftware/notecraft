@@ -48,6 +48,25 @@ pub struct Spec<'a> {
     /// Each family name is drawn in its own font, as a sample, once that font is loaded. The
     /// fonts load as the rows come into view.
     pub preview: bool,
+    /// The list grouped by script: each heading with its families. Empty when there is no
+    /// grouping (the size box, or while the catalog loads).
+    pub sections: &'a [(String, Vec<String>)],
+}
+
+/// One row of a font list. Records a visible name so its font loads, and scrolls to the row when
+/// asked to.
+fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut Vec<String>, scroll_to: bool) -> egui::Response {
+    // A fixed row height: a row drawn in its own font would otherwise change size as its font loads,
+    // and move under the pointer.
+    let height = ui.spacing().interact_size.y;
+    let row = ui.add_sized(egui::vec2(ui.available_width(), height), egui::Button::selectable(current, name_text(ui, name, preview)).truncate());
+    if preview && ui.is_rect_visible(row.rect) {
+        wanted.push(name.to_owned());
+    }
+    if current && scroll_to {
+        row.scroll_to_me(Some(Align::Center));
+    }
+    row
 }
 
 /// The text of one list row: the name, drawn in its own font when `preview` is on and that font
@@ -97,7 +116,20 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         highlight = 0;
     }
     // Typing lists the matches while the box has focus and its text is not the shown value.
-    let typing = spec.filter && typed.trim() != spec.shown && (was_focused || value_box.has_focus());
+    // A press on a row of the typed list takes focus from the box. The list must keep its matches
+    // until the button is released, or the row under the pointer changes before the click lands.
+    let last_typing: bool = ui.data(|d| d.get_temp(spec.id.with("last-typing"))).unwrap_or(false);
+    let list_under_pointer: bool = match (ui.input(|i| i.pointer.hover_pos()), ui.data(|d| d.get_temp::<Rect>(list_rect_id))) {
+        (Some(p), Some(r)) => r.contains(p),
+        _ => false,
+    };
+    let pressing_list = list_under_pointer && ui.input(|i| i.pointer.primary_down());
+    // Armed by a press on the typed list; it stays armed through the release, so the release
+    // lands on the row that was pressed.
+    let armed: bool = ui.data(|d| d.get_temp(spec.id.with("press-armed"))).unwrap_or(false);
+    let released = ui.input(|i| i.pointer.primary_released());
+    let keep_typing = (pressing_list && last_typing) || armed;
+    let typing = spec.filter && ((typed.trim() != spec.shown && (was_focused || value_box.has_focus())) || keep_typing);
     let hits: Vec<&String> =
         if typing { crate::font_picker::matches(&typed, spec.items).into_iter().map(|i| &spec.items[i]).collect() } else { Vec::new() };
     if down {
@@ -134,7 +166,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
             }
         }
     }
-    if !value_box.has_focus() {
+    if !value_box.has_focus() && !keep_typing {
         typed = spec.shown.to_owned();
     }
     ui.data_mut(|d| {
@@ -168,6 +200,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         let rows: Vec<&String> = if typing { hits } else { spec.items.iter().collect() };
         // Recently used families go above the full list, when the box is not being typed in.
         let recent_rows: Vec<&String> = if typing { Vec::new() } else { spec.recent.iter().collect() };
+        // The script sections replace the one full list when the box is not being typed in.
+        let by_script = !typing && !spec.sections.is_empty();
         // Names whose rows are on screen this frame; their fonts load after the list is drawn.
         let mut wanted: Vec<String> = Vec::new();
         let list = Area::new(spec.id.with("list")).order(Order::Foreground).fixed_pos(value_box.rect.left_bottom()).show(ui.ctx(), |ui| {
@@ -184,13 +218,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                         ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
                         for item in &recent_rows {
                             let current = item.as_str() == spec.shown;
-                            let row = ui.selectable_label(current, name_text(ui, item, spec.preview));
-                            if spec.preview && ui.is_rect_visible(row.rect) {
-                                wanted.push(item.to_string());
-                            }
-                            if current && scroll {
-                                row.scroll_to_me(Some(Align::Center));
-                            }
+                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
                             if row.clicked() {
                                 outcome.chosen = Some((*item).clone());
                                 open = false;
@@ -198,21 +226,33 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                             }
                         }
                         ui.separator();
-                        ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
                     }
-                    for (index, item) in rows.iter().enumerate() {
-                        let current = if typing { index == highlight } else { item.as_str() == spec.shown };
-                        let row = ui.selectable_label(current, name_text(ui, item, spec.preview));
-                        if spec.preview && ui.is_rect_visible(row.rect) {
-                            wanted.push(item.to_string());
+                    if by_script {
+                        // One heading per script, so the list scrolls from language to language.
+                        for (heading, names) in spec.sections {
+                            ui.label(egui::RichText::new(heading).small().weak());
+                            for item in names {
+                                let current = item.as_str() == spec.shown;
+                                let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
+                                if row.clicked() {
+                                    outcome.chosen = Some(item.clone());
+                                    open = false;
+                                    ui.memory_mut(|m| m.surrender_focus(typed_id));
+                                }
+                            }
                         }
-                        if current && (scroll || typing) {
-                            row.scroll_to_me(Some(Align::Center));
+                    } else {
+                        if !recent_rows.is_empty() {
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
                         }
-                        if row.clicked() {
-                            outcome.chosen = Some((*item).clone());
-                            open = false;
-                            ui.memory_mut(|m| m.surrender_focus(typed_id));
+                        for (index, item) in rows.iter().enumerate() {
+                            let current = if typing { index == highlight } else { item.as_str() == spec.shown };
+                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll || typing);
+                            if row.clicked() {
+                                outcome.chosen = Some((*item).clone());
+                                open = false;
+                                ui.memory_mut(|m| m.surrender_focus(typed_id));
+                            }
                         }
                     }
                 });
@@ -232,6 +272,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     ui.data_mut(|d| {
         d.insert_temp(scroll_id, scroll);
         d.insert_temp(open_id, open);
+        d.insert_temp(spec.id.with("last-typing"), typing);
+        d.insert_temp(spec.id.with("press-armed"), keep_typing && !released);
         if let Some(r) = list_rect {
             d.insert_temp(list_rect_id, r);
         } else {

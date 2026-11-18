@@ -1,6 +1,5 @@
 //! Catalog and load installed font families on desktop.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[cfg(target_os = "linux")]
@@ -17,6 +16,8 @@ mod platform;
 pub struct Catalog {
     database: fontdb::Database,
     families: Vec<String>,
+    /// The scripts each family's regular face covers, read once when the catalog is built.
+    scripts: std::collections::BTreeMap<String, Vec<crate::font_picker::Script>>,
 }
 
 impl Catalog {
@@ -30,14 +31,34 @@ impl Catalog {
     }
 
     pub(crate) fn from_database(database: fontdb::Database) -> Self {
-        let families = database
-            .faces()
-            .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
-            .filter(|name| !name.is_empty())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
+        // The first face of each family stands for it, as the family's regular face.
+        let mut first_face = std::collections::BTreeMap::new();
+        for face in database.faces() {
+            if let Some((name, _)) = face.families.first()
+                && !name.is_empty()
+            {
+                first_face.entry(name.clone()).or_insert(face.id);
+            }
+        }
+        let scripts = first_face
+            .iter()
+            .map(|(name, id)| {
+                let covered = database
+                    .with_face_data(*id, |data, index| {
+                        ttf_parser::Face::parse(data, index).map(|face| crate::font_picker::scripts_of(|c| face.glyph_index(c).is_some())).ok()
+                    })
+                    .flatten()
+                    .unwrap_or_default();
+                (name.clone(), covered)
+            })
             .collect();
-        Self { database, families }
+        let families = first_face.into_keys().collect();
+        Self { database, families, scripts }
+    }
+
+    /// The scripts the family covers, or none when the family is not in the catalog.
+    pub fn scripts(&self, family: &str) -> Vec<crate::font_picker::Script> {
+        self.scripts.get(family).cloned().unwrap_or_default()
     }
 
     /// Adds every font file in `folder` to `database`. Windows keeps per-user fonts in a folder the

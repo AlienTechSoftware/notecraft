@@ -3381,6 +3381,7 @@ dependencies = [
  "semver",
  "serde_json",
  "sha2",
+ "ttf-parser",
  "ureq",
  "web-time",
  "zip",

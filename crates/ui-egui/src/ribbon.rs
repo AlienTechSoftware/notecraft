@@ -18,6 +18,23 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
+/// The translated heading of a script's section in the font list.
+pub fn script_heading(script: crate::font_picker::Script) -> String {
+    use crate::font_picker::Script;
+    match script {
+        Script::Latin => crate::tl_id!("ui.script_latin").to_string(),
+        Script::Greek => crate::tl_id!("ui.script_greek").to_string(),
+        Script::Cyrillic => crate::tl_id!("ui.script_cyrillic").to_string(),
+        Script::Arabic => crate::tl_id!("ui.script_arabic").to_string(),
+        Script::Hebrew => crate::tl_id!("ui.script_hebrew").to_string(),
+        Script::Devanagari => crate::tl_id!("ui.script_devanagari").to_string(),
+        Script::Thai => crate::tl_id!("ui.script_thai").to_string(),
+        Script::Han => crate::tl_id!("ui.script_han").to_string(),
+        Script::Kana => crate::tl_id!("ui.script_kana").to_string(),
+        Script::Hangul => crate::tl_id!("ui.script_hangul").to_string(),
+    }
+}
+
 pub const FONT_SIZES: [u8; 16] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 /// Shown only while the caret is in a table, the way Office shows a tab for the thing in
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
@@ -1204,6 +1221,23 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 };
                 // Warn only once the installed list is known; while it loads, nothing is missing yet.
                 let family_missing = !families.is_empty() && crate::font_picker::is_missing(view.font_family.unwrap_or(""), &families);
+                // The list grouped by script, with a translated heading for each.
+                let mut sections: Vec<(String, Vec<String>)> = match crate::fonts::catalog_if_ready() {
+                    Some(Ok(catalog)) => crate::font_picker::sections(&families, |name| catalog.scripts(name))
+                        .into_iter()
+                        .map(|(script, names)| (script_heading(script), names))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                // A family that covers none of the scripts (a symbol or decorative face) still needs
+                // a place in the list, so it is listed under Other.
+                if !sections.is_empty() {
+                    let placed: std::collections::BTreeSet<&String> = sections.iter().flat_map(|(_, names)| names.iter()).collect();
+                    let other: Vec<String> = families.iter().filter(|name| !placed.contains(name)).cloned().collect();
+                    if !other.is_empty() {
+                        sections.push((crate::tl_id!("ui.script_other").to_string(), other));
+                    }
+                }
                 // Recently used families, most recent first. Kept for this session in egui memory.
                 let recent_key = egui::Id::new("notecraft-recent-fonts");
                 let recent_families: Vec<String> = ui.data(|d| d.get_temp(recent_key)).unwrap_or_default();
@@ -1223,6 +1257,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         recent: &recent_families,
                         missing: family_missing,
                         preview: true,
+                        sections: &sections,
                     },
                 );
                 if let Some(name) = family_out.chosen {
@@ -1257,6 +1292,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         recent: &[],
                         missing: false,
                         preview: false,
+                        sections: &[],
                     },
                 );
                 let boxes = crate::floating::FontBoxes {
@@ -1267,6 +1303,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     sizes: sizes.clone(),
                     recent: recent_families.clone(),
                     family_missing,
+                    sections: sections.clone(),
                 };
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

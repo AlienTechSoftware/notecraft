@@ -8996,9 +8996,12 @@ fn font_family_applies_to_a_selection_across_paragraphs() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
-    h.get_by_label(family).click();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
+    h.get_by_label(&family).click();
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
     assert_eq!(body.matches("font-family:").count(), 2, "both paragraphs took the family:\n{body}");
@@ -9453,8 +9456,11 @@ fn choosing_a_font_changes_the_font_box() {
     settle(&mut h);
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": name.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&name).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
@@ -9523,8 +9529,11 @@ fn choosing_a_font_without_a_caret_changes_the_font_box() {
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.state_mut().open_path(&s.md_page.to_string_lossy());
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": name.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&name).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
@@ -9586,11 +9595,12 @@ fn installed_font_family_can_be_applied_and_undone_in_both_formats() {
         pump(&mut h);
         ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select text");
         pump(&mut h);
-        h.get_by_label("Font Family").click();
+        h.get_by_label("Font name").click();
         h.run();
-        // After the first page, this family is also under Recently Used Fonts. The All Fonts
-        // entry comes last in the list, so pick that one.
-        h.query_all_by_label(&family).last().expect("the family is listed").click();
+        ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+        ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+        settle(&mut h);
+        h.get_by_label(&family).click();
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);
@@ -9631,8 +9641,11 @@ fn installed_family_and_underline_apply_to_new_text() {
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     let before = h.state().body().unwrap_or_default().to_string();
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(family.as_str()), "pending family is shown before typing");
@@ -10404,8 +10417,11 @@ fn partial_selection_keeps_font_family_when_script_is_added() {
         ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
         pump(&mut h);
     }
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     h.get_by_label("Subscript").click();
@@ -10614,8 +10630,11 @@ fn selected_container_font_family_is_undoable_and_leaves_other_boxes_alone() {
     let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-font-family");
     select_box_by_handle(&mut h, ox, oy, 160.0);
     let before = h.state().body().unwrap_or_default().to_string();
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     let after = h.state().body().unwrap_or_default().to_string();
