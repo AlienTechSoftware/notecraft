@@ -325,3 +325,7 @@ mod tests {
         assert!(!has(&ctx, "\u{1F600}"), "no colour emoji face is bundled; a line that needs one still boxes");
     }
 }
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+/// Nothing to rescan where installed fonts cannot be read.
+pub fn rescan_in_background(_ctx: egui::Context) {}

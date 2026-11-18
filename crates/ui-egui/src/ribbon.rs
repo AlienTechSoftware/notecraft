@@ -1233,6 +1233,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     ui.data_mut(|d| d.remove::<String>(missing_key));
                 }
                 // The list grouped by script, with a translated heading for each.
+                #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
                 let mut sections: Vec<(String, Vec<String>)> = match crate::fonts::catalog_if_ready() {
                     Some(Ok(catalog)) => crate::font_picker::sections(&families, |name| catalog.scripts(name))
                         .into_iter()
@@ -1242,6 +1243,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 };
                 // A family that covers none of the scripts (a symbol or decorative face) still needs
                 // a place in the list, so it is listed under Other.
+                #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+                let mut sections: Vec<(String, Vec<String>)> = Vec::new();
                 if !sections.is_empty() {
                     let placed: std::collections::BTreeSet<&String> = sections.iter().flat_map(|(_, names)| names.iter()).collect();
                     let other: Vec<String> = families.iter().filter(|name| !placed.contains(name)).cloned().collect();

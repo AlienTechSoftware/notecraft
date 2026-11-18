@@ -63,6 +63,7 @@ pub fn install(files: &[PathBuf], dir: &Path) -> Report {
     report
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 /// Asks for font files (several may be picked), installs them in the user's fonts folder, and
 /// reports what happened. `None` when the dialog was cancelled. Events and log lines go out here,
 /// so every caller records the same things.
@@ -92,6 +93,12 @@ pub fn pick_and_install() -> Option<Report> {
     }
     log::info!("Add font: {} added to {}", report.copied.len(), dir.display());
     Some(report)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+/// Adding fonts needs the file dialog, which only the desktop builds have.
+pub fn pick_and_install() -> Option<Report> {
+    None
 }
 
 #[cfg(test)]
