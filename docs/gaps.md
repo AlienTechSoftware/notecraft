@@ -46,6 +46,18 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
 
 ## Product
 
+- **Optional dictation needs real speech and device acceptance.** The `voice` build
+  supports reviewed text insertion through a local whisper-cli/model.
+  Real recognition, device permissions/disconnects, and Windows/macOS voice paths
+  remain unverified. Inline code/math targets, tables, source view, and cross-block
+  selections are unsupported. Model language capability and transcript language
+  metadata are not detected. Literal punctuation that the format cannot preserve
+  is rejected without changing the page, retaining the draft. New dictation messages
+  fall back to English in real locales. Faulty recognizer output can grow on disk until timeout;
+  memory reads are bounded. Crash leftovers are cleaned on the next job, not launch.
+  Conversation, hosted providers, synthesis and browser capture are later work.
+  See [dictation](how-to/dictate.md).
+
 - **Portable sharing uses a save-and-share fallback.** File > Export, File > Share and
   Home > Send Page share a reviewed, original-format folder export. Download-enabled
   browser hosts receive a ZIP. Native share sheets and automatic mail attachments are

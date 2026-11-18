@@ -10,7 +10,13 @@ description = "NoteCraft egui front end. Swappable: nothing below it depends on 
 [lints]
 workspace = true
 
+[features]
+default = []
+voice = ["dep:craft-voice-core", "dep:craft-voice-runtime"]
+
 [dependencies]
+craft-voice-core = { workspace = true, optional = true }
+craft-voice-runtime = { workspace = true, optional = true, features = ["microphone"] }
 craft-i18n = { workspace = true }
 notecraft-input-language = { path = "../input-language" }
 notecraft-model = { workspace = true }

@@ -51,6 +51,9 @@ pub enum Act {
     /// Open the releases page in the browser, when an update cannot be installed from here.
     OpenReleases,
     ResetPreferences,
+    /// Open the dictation setup screen.
+    #[cfg(feature = "voice")]
+    DictationSetup,
     /// Another page of the File screen: Info, New or Open.
     Page(&'static str),
     /// A side entry that is listed but not built yet.
@@ -754,6 +757,16 @@ fn options_page(
     });
     ui.add_space(12.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400")).size(11.5).color(t.muted));
+    #[cfg(feature = "voice")]
+    {
+        ui.add_space(18.0);
+        ui.separator();
+        ui.label(egui::RichText::new(crate::tl_id!("voice.dictation_2a7fe421")).strong().size(15.0).color(t.strong));
+        ui.label(egui::RichText::new(crate::tl_id!("voice.the_speech_recognizer_model_language_microphone_an_3fece2c0")).size(11.5).color(t.muted));
+        if open_action(ui, crate::tl_id!("voice.dictation_setup_6be1e51d"), 190.0, 34.0, t, true).clicked() {
+            acts.push(Act::DictationSetup);
+        }
+    }
     ui.separator();
     ui.label(egui::RichText::new(crate::tl_id!("ui.application_preferences")).strong().size(15.0).color(t.strong));
     ui.label(egui::RichText::new(crate::tl_id!("ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb")).size(11.5).color(t.muted));
