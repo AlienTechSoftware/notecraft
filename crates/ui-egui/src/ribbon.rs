@@ -1222,6 +1222,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         filter: true,
                         recent: &recent_families,
                         missing: family_missing,
+                        preview: true,
                     },
                 );
                 if let Some(name) = family_out.chosen {
@@ -1255,6 +1256,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         filter: false,
                         recent: &[],
                         missing: false,
+                        preview: false,
                     },
                 );
                 let boxes = crate::floating::FontBoxes {

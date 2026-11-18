@@ -45,6 +45,22 @@ pub struct Spec<'a> {
     /// The shown value is not an installed font: a warning mark shows beside the box, with the
     /// tooltip `ui.font_missing`.
     pub missing: bool,
+    /// Each family name is drawn in its own font, as a sample, once that font is loaded. The
+    /// fonts load as the rows come into view.
+    pub preview: bool,
+}
+
+/// The text of one list row: the name, drawn in its own font when `preview` is on and that font
+/// is already registered. A font that is not registered yet draws in the interface font.
+fn name_text(ui: &Ui, name: &str, preview: bool) -> egui::RichText {
+    let text = egui::RichText::new(name);
+    if preview {
+        let family = crate::fonts::named_family(name);
+        if ui.ctx().fonts(|fonts| fonts.definitions().families.contains_key(&family)) {
+            return text.family(family);
+        }
+    }
+    text
 }
 
 /// Shows the combo box and returns what was chosen this frame.
@@ -152,6 +168,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         let rows: Vec<&String> = if typing { hits } else { spec.items.iter().collect() };
         // Recently used families go above the full list, when the box is not being typed in.
         let recent_rows: Vec<&String> = if typing { Vec::new() } else { spec.recent.iter().collect() };
+        // Names whose rows are on screen this frame; their fonts load after the list is drawn.
+        let mut wanted: Vec<String> = Vec::new();
         let list = Area::new(spec.id.with("list")).order(Order::Foreground).fixed_pos(value_box.rect.left_bottom()).show(ui.ctx(), |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(value_box.rect.width());
@@ -166,7 +184,10 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                         ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
                         for item in &recent_rows {
                             let current = item.as_str() == spec.shown;
-                            let row = ui.selectable_label(current, item.as_str());
+                            let row = ui.selectable_label(current, name_text(ui, item, spec.preview));
+                            if spec.preview && ui.is_rect_visible(row.rect) {
+                                wanted.push(item.to_string());
+                            }
                             if current && scroll {
                                 row.scroll_to_me(Some(Align::Center));
                             }
@@ -181,7 +202,10 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                     }
                     for (index, item) in rows.iter().enumerate() {
                         let current = if typing { index == highlight } else { item.as_str() == spec.shown };
-                        let row = ui.selectable_label(current, item.as_str());
+                        let row = ui.selectable_label(current, name_text(ui, item, spec.preview));
+                        if spec.preview && ui.is_rect_visible(row.rect) {
+                            wanted.push(item.to_string());
+                        }
                         if current && (scroll || typing) {
                             row.scroll_to_me(Some(Align::Center));
                         }
@@ -194,6 +218,11 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 });
             });
         });
+        if !wanted.is_empty() {
+            // Registers the fonts of the visible rows. Drawn in them from the next frame.
+            let names: std::collections::BTreeSet<String> = wanted.into_iter().collect();
+            crate::fonts::ensure_page_fonts(ui.ctx(), &names);
+        }
         list_rect = Some(list.response.rect);
         if !typing && ui.input(|i| i.pointer.any_click()) && !list.response.hovered() && !arrow.hovered() {
             open = false;

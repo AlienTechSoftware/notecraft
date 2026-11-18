@@ -214,6 +214,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             filter: true,
                             recent: &fonts.recent,
                             missing: fonts.family_missing,
+                            preview: true,
                         },
                     );
                     if let Some(name) = families.chosen {
@@ -235,6 +236,7 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             filter: false,
                             recent: &[],
                             missing: false,
+                            preview: false,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
