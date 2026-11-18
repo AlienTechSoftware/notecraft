@@ -442,6 +442,10 @@ pub fn show(
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(inner.min, vec2(b.width * zoom, area.height()))).layout(*ui.layout()));
         child.set_width(b.width * zoom);
+        // The gap egui leaves between one block and the next grows with the page like
+        // everything else on it: left as it was, it was the same few screen points at every zoom,
+        // so the page's blocks crept against its ink as it was zoomed.
+        child.spacing_mut().item_spacing.y *= zoom;
         let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), cols, justified, across, shown_title, zoom);
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
@@ -1608,6 +1612,8 @@ pub fn show_ink_view(
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
         child.set_width(container.width * zoom);
+        // Spaced as the ordinary view spaces them, at every zoom (see `show`).
+        child.spacing_mut().item_spacing.y *= zoom;
         let child_id = child.id();
         let first = range.start;
         for index in range {
@@ -1620,19 +1626,25 @@ pub fn show_ink_view(
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
             }
-            let _ = crate::preview::show_block_zoomed(
-                &mut child,
-                block,
-                index,
-                page_dir,
-                t,
-                false,
-                page,
-                justified.mark_of(index),
-                None,
-                child_id.with(("ink-view-block", index)),
-                zoom,
-            );
+            // In a scope of its own, as the ordinary view draws a finished block: egui spaces a
+            // scope from the next block as it spaces the block itself, and drawn straight into
+            // the column the blocks sat a little closer, so the page jumped when the pen was
+            // picked up or put down.
+            let _ = child.scope(|ui| {
+                crate::preview::show_block_zoomed(
+                    ui,
+                    block,
+                    index,
+                    page_dir,
+                    t,
+                    false,
+                    page,
+                    justified.mark_of(index),
+                    None,
+                    child_id.with(("ink-view-block", index)),
+                    zoom,
+                )
+            });
         }
         let used = child.min_rect().height().max(18.0);
         bottom = bottom.max(area.min.y + container.y * zoom + HANDLE * zoom + used + PAD * zoom);
