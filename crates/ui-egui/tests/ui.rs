@@ -9301,7 +9301,8 @@ fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
         assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
         h.get_by_label("Font Size").click();
-        h.run();
+        // Background font loading can still ask for a frame here, so wait for the frames to settle.
+        settle(&mut h);
         h.get_by_label("24").click();
         settle(&mut h);
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24"));
