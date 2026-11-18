@@ -5778,6 +5778,158 @@ fn pinch_zoom_and_panning_work_low_in_a_scrolled_page() {
     assert!((offset(&mut h) - x0).abs() > 10.0, "and a sideways scroll there pans: {x0} -> {}", offset(&mut h));
 }
 
+/// A pinch or Ctrl+wheel zooms about the pointer: the spot of the page under it stays under it,
+/// as in OneNote, rather than the page growing from its top left corner.
+#[test]
+fn zooming_keeps_the_spot_under_the_pointer() {
+    let (_t, app, s) = sample_app("ui-zoom-about-pointer");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=80).map(|n| format!("<p>line {n}</p>")).collect();
+    let html = format!("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"900\">{lines}</div>\n");
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Zoom", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    let at = egui::pos2(700.0, 600.0);
+    ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("pointer onto the page");
+    settle(&mut h);
+    let spot = |h: &mut Harness<'_, NoteCraftApp>| {
+        let state = ask(h, "ui.inspect", json!({})).expect("inspect");
+        let o = |i: usize| state["page"]["origin"][i].as_f64().unwrap_or(0.0) as f32;
+        let zoom = h.state().zoom_percent() as f32 / 100.0;
+        egui::vec2((at.x - o(0)) / zoom, (at.y - o(1)) / zoom)
+    };
+    let was = spot(&mut h);
+    for _ in 0..3 {
+        h.input_mut().events.push(egui::Event::Zoom(1.25));
+        settle(&mut h);
+    }
+    assert!(h.state().zoom_percent() > 150, "it zoomed in: {}", h.state().zoom_percent());
+    let now = spot(&mut h);
+    assert!((now - was).length() < 4.0, "the same spot of the page is under the pointer: {was:?} -> {now:?}");
+    for _ in 0..3 {
+        h.input_mut().events.push(egui::Event::Zoom(0.8));
+        settle(&mut h);
+    }
+    // Zooming out, it stays at the same height. Sideways the page can only be moved as far as
+    // there is page to see, so once it fits the window again it stops where it is.
+    let back = spot(&mut h);
+    assert!((back.y - was.y).abs() < 4.0, "and zooming out again keeps its height: {was:?} -> {back:?}");
+}
+
+/// A long page, scrolled to the top, with a box far to the right to pan to.
+fn long_wide_page(name: &str) -> (TempDir, Harness<'static, NoteCraftApp>) {
+    let (t, app, s) = sample_app(name);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 800.0));
+    settle(&mut h);
+    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
+    let lines: String = (1..=120).map(|n| format!("<p>line {n}</p>")).collect();
+    let html = format!(
+        "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"700\">{lines}</div>\n<div class=\"nc-box\" data-x=\"2400\" data-y=\"100\" data-width=\"400\"><p>far right</p></div>\n"
+    );
+    let made = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Long", "format": "html"}}),
+    )
+    .expect("a page");
+    let dir = made.as_str().expect("its path").to_string();
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
+    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": 600.0, "y": 400.0})).expect("pointer onto the page");
+    settle(&mut h);
+    (t, h)
+}
+
+fn page_corner(h: &mut Harness<'_, NoteCraftApp>) -> egui::Vec2 {
+    let state = ask(h, "ui.inspect", json!({})).expect("inspect");
+    let o = |i: usize| state["page"]["origin"][i].as_f64().unwrap_or(0.0) as f32;
+    egui::vec2(o(0), o(1))
+}
+
+/// A slow pinch zooms. A pinch comes as many small steps; each was rounded to a whole percent on
+/// its own, so steps under half a percent did nothing at all.
+#[test]
+fn a_slow_pinch_zooms() {
+    let (_t, mut h) = long_wide_page("ui-slow-pinch");
+    let before = h.state().zoom_percent();
+    for _ in 0..60 {
+        h.input_mut().events.push(egui::Event::Zoom(1.004));
+        h.step();
+    }
+    settle(&mut h);
+    assert!(h.state().zoom_percent() >= before + 20, "sixty small steps zoom in by about a quarter: {before} -> {}", h.state().zoom_percent());
+}
+
+/// A notch of a mouse wheel turned with Shift pans the page sideways a line's worth, as far as a
+/// notch scrolls it down, not one point.
+#[test]
+fn a_mouse_wheel_notch_pans_a_line() {
+    let (_t, mut h) = long_wide_page("ui-wheel-notch");
+    let x0 = page_corner(&mut h).x;
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -1.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: egui::Modifiers::SHIFT,
+    });
+    settle(&mut h);
+    let moved = (page_corner(&mut h).x - x0).abs();
+    assert!(moved >= 30.0, "one notch pans the page sideways a line: {moved}");
+}
+
+/// A swipe on a touchpad carries the page on after the fingers lift, and slows to a stop, as in
+/// a browser; a click stops it where it is.
+#[test]
+fn a_touchpad_swipe_carries_the_page_on() {
+    let (_t, mut h) = long_wide_page("ui-fling");
+    let mut now = 100.0;
+    let mut frame = |h: &mut Harness<'_, NoteCraftApp>, event: Option<egui::Event>| {
+        now += 1.0 / 60.0;
+        h.input_mut().time = Some(now);
+        if let Some(event) = event {
+            h.input_mut().events.push(event);
+        }
+        h.step();
+    };
+    let wheel = |delta: egui::Vec2, phase| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta,
+        phase,
+        source: egui::MouseWheelSource::Trackpad,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let start = page_corner(&mut h).y;
+    frame(&mut h, Some(wheel(egui::vec2(0.0, -25.0), egui::TouchPhase::Start)));
+    for _ in 0..6 {
+        frame(&mut h, Some(wheel(egui::vec2(0.0, -25.0), egui::TouchPhase::Move)));
+    }
+    frame(&mut h, Some(wheel(egui::Vec2::ZERO, egui::TouchPhase::End)));
+    let lifted = page_corner(&mut h).y;
+    assert!(lifted < start - 100.0, "the swipe scrolled the page: {start} -> {lifted}");
+    for _ in 0..30 {
+        frame(&mut h, None);
+    }
+    let coasted = page_corner(&mut h).y;
+    assert!(coasted < lifted - 150.0, "and it carried on after the fingers lifted: {lifted} -> {coasted}");
+    for _ in 0..120 {
+        frame(&mut h, None);
+    }
+    let stopped = page_corner(&mut h).y;
+    frame(&mut h, None);
+    assert!((page_corner(&mut h).y - stopped).abs() < 0.5, "then it stops");
+}
+
 /// Issue #21: a box with nothing written in it does not stay on the page once the caret has left
 /// it, as in OneNote. A click on open paper that is followed by a click somewhere else, or by
 /// Escape, leaves no empty box behind, and nor does a box whose words were all deleted. The
