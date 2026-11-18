@@ -98,8 +98,13 @@ fn node_move(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 }
 
 fn node_place(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
     let before = p.get("before").filter(|b| !b.trim().is_empty()).map(|b| s.resolve(b)).transpose()?;
-    Ok(Output::Path(ops::place_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?, before.as_deref())?))
+    // A notebook goes among the open notebooks, wherever each is kept: the window's own order.
+    if notecraft_store::tree::read_node(&path).is_some_and(|n| n.kind == NodeKind::Notebook) {
+        return Ok(Output::Path(s.place_notebook(&path, before.as_deref())?));
+    }
+    Ok(Output::Path(ops::place_node(&path, &s.resolve(req(p, "to")?)?, before.as_deref())?))
 }
 
 fn node_copy(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
@@ -615,8 +620,8 @@ to (required): where it goes; it is put last there",
         id: "node.place",
         label: "Put a page, section, section group or notebook just before another, or last, where a drag drops it",
         params: "path (required): the page, section, section group or notebook to place
-to (required): where it goes: a section or page for a page, a notebook or section group for a section or group, the folder a notebook is in for a notebook
-before (optional): the node in `to` it goes just before; left out, it goes last",
+to (required, but not for a notebook): where it goes: a section, section group, notebook or page for a page, a notebook or section group for a section or group
+before (optional): the node in `to` (for a notebook, the open notebook) it goes just before; left out, it goes last",
         changes_tree: true,
         run: node_place,
     },
@@ -1008,6 +1013,31 @@ mod tests {
             s.run("node.place", &p(&[("path", &section.to_string_lossy()), ("to", &first.to_string_lossy())])).is_err(),
             "a page holds no section"
         );
+    }
+
+    /// Notebooks are put in the order they were dragged into, wherever each is kept, and the
+    /// order holds when the window opens again.
+    #[test]
+    fn notebooks_keep_the_order_they_were_dragged_into() {
+        let t = TempDir::new("place-notebooks");
+        let mut s = session(&t);
+        let first = path_of(s.run("notebook.create", &p(&[("name", "Alpha")])).expect("notebook"));
+        let second = path_of(s.run("notebook.create", &p(&[("name", "Beta")])).expect("notebook"));
+        // One kept somewhere else, opened beside them.
+        let away = t.path().join("away");
+        std::fs::create_dir_all(&away).expect("dir");
+        let mut other = Session::new(&away, Settings::at(t.path().join("other.toml"))).expect("other");
+        let third = path_of(other.run("notebook.create", &p(&[("name", "Gamma")])).expect("notebook"));
+        s.run("notebook.open", &p(&[("path", &third.to_string_lossy())])).expect("open");
+        let titles = |s: &Session| s.tree().iter().map(|n| n.info.title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles(&s), ["Alpha", "Beta", "Gamma"]);
+        s.run("node.place", &p(&[("path", &third.to_string_lossy()), ("before", &first.to_string_lossy())])).expect("place");
+        assert_eq!(titles(&s), ["Gamma", "Alpha", "Beta"], "the one from elsewhere goes first");
+        s.run("node.place", &p(&[("path", &first.to_string_lossy())])).expect("last");
+        assert_eq!(titles(&s), ["Gamma", "Beta", "Alpha"]);
+        let _ = second;
+        let again = Session::new(&t.path().join("notebooks"), s.settings.clone()).expect("again");
+        assert_eq!(titles(&again), ["Gamma", "Beta", "Alpha"], "and it is remembered");
     }
 
     #[test]

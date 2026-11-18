@@ -57,8 +57,8 @@ Put a page, section, section group or notebook just before another, or last, whe
 Parameters:
 
 - path (required): the page, section, section group or notebook to place
-- to (required): where it goes: a section or page for a page, a notebook or section group for a section or group, the folder a notebook is in for a notebook
-- before (optional): the node in `to` it goes just before; left out, it goes last
+- to (required, but not for a notebook): where it goes: a section, section group, notebook or page for a page, a notebook or section group for a section or group
+- before (optional): the node in `to` (for a notebook, the open notebook) it goes just before; left out, it goes last
 
 ## `node.copy`
 

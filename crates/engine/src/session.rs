@@ -26,6 +26,9 @@ pub struct Session {
 /// is vanishingly rare elsewhere, which makes it a safe separator for one line of them.
 const OPEN_KEY: &str = "open_notebooks";
 const CLOSED_KEY: &str = "closed_notebooks";
+/// The order the notebooks were dragged into, wherever each is kept. Notebooks not named in it
+/// keep their own order, after the ones that are.
+const ORDER_KEY: &str = "notebook_order";
 const SEP: char = '|';
 
 impl Session {
@@ -92,6 +95,43 @@ impl Session {
                 self.tree.push(node);
             }
         }
+        // Then in the order they were dragged into, if they were: a notebook kept elsewhere can
+        // go before one in the notebooks folder. The sort is stable, so the rest keep theirs.
+        let order = self.notebook_order();
+        if !order.is_empty() {
+            self.tree.sort_by_key(|n| order.iter().position(|p| *p == n.path).unwrap_or(usize::MAX));
+        }
+    }
+
+    fn notebook_order(&self) -> Vec<PathBuf> {
+        self.settings.get(ORDER_KEY).map(|v| v.split(SEP).map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).collect()).unwrap_or_default()
+    }
+
+    /// Puts an open notebook just before another, or last: where a drag in the navigation pane
+    /// drops it. The order is kept in the settings, not in the notebooks, so notebooks kept in
+    /// different folders (one in a synced folder, one in the notebooks folder) can be put in any
+    /// order, and nothing in them is written.
+    pub fn place_notebook(&mut self, path: &Path, before: Option<&Path>) -> Result<PathBuf, EngineError> {
+        let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let path = canon(path);
+        let before = before.map(canon);
+        let mut order: Vec<PathBuf> = self.tree.iter().map(|n| n.path.clone()).collect();
+        if !order.contains(&path) {
+            return Err(EngineError::BadParam(format!("{} is not an open notebook", path.display())));
+        }
+        if before.as_ref().is_some_and(|b| !order.contains(b)) {
+            return Err(EngineError::BadParam("a notebook is placed before another open notebook".into()));
+        }
+        if before.as_ref() == Some(&path) {
+            return Ok(path);
+        }
+        order.retain(|p| *p != path);
+        let at = before.as_ref().and_then(|b| order.iter().position(|p| p == b)).unwrap_or(order.len());
+        order.insert(at, path.clone());
+        let line = order.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join(&SEP.to_string());
+        self.settings.set(ORDER_KEY, &line)?;
+        self.refresh();
+        Ok(path)
     }
 
     /// The notebooks opened from outside the notebooks folder.
