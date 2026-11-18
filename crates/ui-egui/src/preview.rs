@@ -912,9 +912,13 @@ pub(crate) fn show_block_zoomed(
         let double_clicked = response.double_clicked();
         let pointer = response.interact_pointer_pos();
         ui.data_mut(|data| {
-            let mut hits = data.get_temp::<Vec<(usize, egui::Rect, String)>>(object_hits_id()).unwrap_or_default();
-            hits.push((i, rendered_object_rect.unwrap_or(response.rect), kind.to_string()));
-            data.insert_temp(object_hits_id(), hits);
+            // Added where it is kept, not copied out and back for every picture (see
+            // `record_rendered_image`).
+            data.get_temp_mut_or_default::<Vec<(usize, egui::Rect, String)>>(object_hits_id()).push((
+                i,
+                rendered_object_rect.unwrap_or(response.rect),
+                kind.to_string(),
+            ));
             if clicked {
                 data.insert_temp(object_clicked_id(), (i, kind.to_string()));
             }
@@ -996,10 +1000,10 @@ pub fn rendered_images_id() -> egui::Id {
 }
 
 pub fn record_rendered_image(ctx: &egui::Context, block: usize, rect: egui::Rect, src: &str) {
+    // Added where it is kept: taken out, added to and put back, the whole list was copied for
+    // every picture drawn, which on a page of printouts was the most of a frame.
     ctx.data_mut(|data| {
-        let mut images = data.get_temp::<Vec<RenderedImage>>(rendered_images_id()).unwrap_or_default();
-        images.push(RenderedImage { block, rect, src: src.to_string() });
-        data.insert_temp(rendered_images_id(), images);
+        data.get_temp_mut_or_default::<Vec<RenderedImage>>(rendered_images_id()).push(RenderedImage { block, rect, src: src.to_string() });
     });
 }
 
