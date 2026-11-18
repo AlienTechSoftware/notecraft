@@ -2193,7 +2193,8 @@ fn the_caret_lands_in_the_last_word_of_a_line_that_holds_a_link() {
     }
     assert!(h.state().body().is_some_and(|b| b.starts_with("see [the format page]")), "the page stays open: {:?}", h.state().body());
     let at = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/page/caret/at").and_then(Value::as_u64).unwrap_or(0) as usize;
-    let last_word = body.find("stop").unwrap_or(0);
+    // The caret counts the words on the page, where the link's marks are not words.
+    let last_word = "see the format page and stop".find("stop").unwrap_or(0);
     assert!(at >= last_word, "the caret is in the last word: character {at} of {:?}, which begins at {last_word}", body.trim_end());
 }
 
@@ -9528,8 +9529,7 @@ fn home_mark_buttons_show_the_marks_at_the_caret_and_of_the_selection() {
         let on =
             |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
         // Puts the caret `right` characters into the line and selects `select` more. The line
-        // being written in still shows its marks' markup (`alpha **bravo** *omega*`, issue
-        // #242), and the caret counts through it.
+        // being written in shows only its words (issue #242), and the caret counts them.
         let place = |h: &mut Harness<'_, NoteCraftApp>, right: usize, select: usize| {
             ask(h, "ui.caret", json!({"block": 0})).expect("caret");
             pump(h);
@@ -9551,9 +9551,9 @@ fn home_mark_buttons_show_the_marks_at_the_caret_and_of_the_selection() {
         review(&mut h, &format!("mark_state_bold_{format:?}"));
         place(&mut h, 2, 0);
         assert!(!on(&h, "Bold"), "{format:?}: the caret in alpha shows no mark");
-        place(&mut h, 19, 0);
+        place(&mut h, 14, 0);
         assert!(on(&h, "Italic") && !on(&h, "Bold"), "{format:?}: the caret in omega shows Italic");
-        place(&mut h, 8, 5);
+        place(&mut h, 6, 5);
         assert!(on(&h, "Bold"), "{format:?}: all of bravo selected is bold");
         place(&mut h, 0, 13);
         assert!(!on(&h, "Bold"), "{format:?}: alpha and bravo together are only partly bold");
@@ -9709,7 +9709,7 @@ fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
             pump(&mut h);
             ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
             pump(&mut h);
-            for _ in 0..10 {
+            for _ in 0..6 {
                 ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
                 pump(&mut h);
             }
@@ -9806,7 +9806,7 @@ fn font_size_replaces_only_the_partial_selection_inside_an_existing_size() {
     pump(&mut h);
     ask(&mut h, "ui.key", json!({"key": "End"})).expect("end");
     pump(&mut h);
-    for _ in 0..13 {
+    for _ in 0..6 {
         ask(&mut h, "ui.key", json!({"key": "ArrowLeft"})).expect("left");
         pump(&mut h);
     }
@@ -10164,6 +10164,10 @@ fn legacy_font_marks_apply_to_next_typed_text_without_changing_page_first() {
             ask(&mut h, "ui.redo", json!({})).expect("redo");
             settle(&mut h);
             assert_eq!(h.state().body().unwrap_or_default(), after);
+            // Leave the page as it was opened: reopening saves a dirty editor over the
+            // fixture the next pass writes.
+            ask(&mut h, "ui.undo", json!({})).expect("undo to clean");
+            settle(&mut h);
         }
     }
 }

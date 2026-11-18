@@ -12,6 +12,7 @@
 use crate::pagetext;
 use crate::preview;
 use crate::theme::Tokens;
+use egui::text::LayoutJob;
 use egui::{Key, Sense, Ui, vec2};
 use notecraft_formats::markdown::{Block, Span, parse_inline};
 mod inline_edit;
@@ -80,6 +81,13 @@ impl Caret {
         } else {
             self.ensure_inline(block).write(block, &text);
         }
+        // The parse may have consumed markup the caller put in (a wrap, a pasted link), so
+        // the caret's text is always the canonical visible projection of the spans.
+        if let Some(inline) = self.inline.as_ref() {
+            self.text = inline.text().to_owned();
+        }
+        let len = self.text.chars().count();
+        self.selection = (self.selection.0.min(len), self.selection.1.min(len));
     }
 
     pub fn parse(&self, block: &Block, text: &str) -> Vec<Span> {
@@ -104,6 +112,19 @@ impl Caret {
         }
     }
 
+    /// Dialog edits (links, video): replace the visible characters `range` with
+    /// `replacement`, which may carry markup. Done on the spans because the words before
+    /// and after can look identical in the visible text while meaning something else.
+    pub fn replace_range(&mut self, block: &Block, range: (usize, usize), replacement: &str) {
+        let inline = self.ensure_inline(block);
+        inline.replace(range.0..range.1, replacement);
+        self.text = inline.text().to_owned();
+        let end = (range.0.min(range.1) + markup_visible_len(replacement)).min(self.text.chars().count());
+        self.selection = (end, end);
+        self.place = Some(end);
+        self.focus = true;
+    }
+
     /// Clear only the active text/cell and hydrate the same editing target afterwards.
     pub fn clear_marks(&mut self, block: &mut Block) {
         self.write(block);
@@ -122,7 +143,12 @@ impl Caret {
 
     pub fn format(&mut self, block: &Block, format: InlineFormat) -> Option<(String, (usize, usize))> {
         let (text, selection) = (self.text.clone(), self.selection);
-        self.ensure_inline(block).format(&text, selection, format)
+        let inline = self.ensure_inline(block);
+        let before = inline.spans().to_vec();
+        let out = inline.format(&text, selection, format)?;
+        // Formatting leaves the visible words where they were, so the text alone cannot
+        // say whether anything changed; the spans can.
+        (inline.spans() != before.as_slice()).then_some(out)
     }
 
     pub fn fonts(&self, block: &Block) -> Option<FontSelection> {
@@ -137,7 +163,10 @@ impl Caret {
     /// Gives the selected words `style`, for the Format Painter.
     pub fn paint(&mut self, block: &Block, style: &Span) -> Option<(String, (usize, usize))> {
         let (text, selection) = (self.text.clone(), self.selection);
-        self.ensure_inline(block).paint(&text, selection, style)
+        let inline = self.ensure_inline(block);
+        let before = inline.spans().to_vec();
+        let out = inline.paint(&text, selection, style)?;
+        (inline.spans() != before.as_slice()).then_some(out)
     }
 }
 
@@ -188,6 +217,33 @@ pub fn char_at(
     // The lines of a paragraph that was given a least height (issue #275), so the click is
     // measured against the lines that were drawn.
     pagetext::floor_lines(ui.ctx(), &mut job, crate::bidi::current_floor());
+    char_at_laid(ui, job, text, offset)
+}
+
+/// [`char_at`] against a job built from the block's spans, so the measurement sees the same
+/// formatted words the editor shows — and an inline image as its one object character.
+fn char_at_spans(
+    ui: &Ui,
+    spans: &[Span],
+    size: f32,
+    strong: bool,
+    t: &Tokens,
+    width: f32,
+    offset: egui::Vec2,
+    page: Option<notecraft_model::Dir>,
+) -> usize {
+    // The tag marker is drawn beside the line, not inside the measured words.
+    let spans = preview::tagged(spans).map(|(_, stripped)| stripped).unwrap_or_else(|| spans.to_vec());
+    let edit = InlineEdit::from_spans(&spans);
+    let text = edit.text().to_owned();
+    let colour = if strong { t.strong } else { t.text };
+    let mut job = preview::edit_job(ui, edit.spans(), size, colour, t, page, width.max(1.0));
+    pagetext::floor_lines(ui.ctx(), &mut job, crate::bidi::current_floor());
+    char_at_laid(ui, job, &text, offset)
+}
+
+/// The character of `text` a click at `offset` lands on in `job`'s galley.
+fn char_at_laid(ui: &Ui, job: LayoutJob, text: &str, offset: egui::Vec2) -> usize {
     let galley = ui.fonts_mut(|f| f.layout_job(job));
     let chars = text.chars().count();
     // Two things have to be undone for a right-to-left line, both measured in
@@ -1347,9 +1403,19 @@ fn table(
                             if here == Some(cell) && picked.is_none() {
                                 let Some(caret) = caret.as_mut() else { return };
                                 caret.ensure_inline(block);
-                                let previous_selection = caret.selection;
                                 let id = ui.make_persistent_id(("table-cell", i, r, c));
                                 changed.mark = formatting_key(ui, id);
+                                // The cell's words are drawn with their formatting, the way
+                                // the finished cell beside them is; the buffer stays the
+                                // visible text.
+                                let mut live = caret.inline.clone().unwrap_or_default();
+                                let strong = r == 0;
+                                let colour = if strong { t.strong } else { ui.style().visuals.text_color() };
+                                let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
+                                    live.parse(text.as_str());
+                                    let job = preview::edit_job(ui, live.spans(), 14.5 * zoom, colour, t, page, width.max(1.0));
+                                    ui.fonts_mut(|f| f.layout_job(job))
+                                };
                                 let at = (i, caret.text.clone(), caret.selection);
                                 let out = steady_blink(ui, (at.0, &at.1, at.2), |ui| {
                                     egui::TextEdit::singleline(&mut caret.text)
@@ -1358,6 +1424,7 @@ fn table(
                                         .horizontal_align(halign)
                                         .desired_width(inner)
                                         .font(egui::FontId::proportional(14.5 * zoom))
+                                        .layouter(&mut layouter)
                                         .show(ui)
                                 });
                                 if caret.focus {
@@ -1368,9 +1435,6 @@ fn table(
                                     caret.selection = (range.primary.index.0, range.secondary.index.0);
                                 }
                                 if out.response.changed() {
-                                    if let Some(inline) = caret.inline.as_mut() {
-                                        inline.update_at(&caret.text, previous_selection, caret.selection);
-                                    }
                                     action = Some(Action::SetCell(i, cell, caret.text.clone()));
                                 }
                             } else {
@@ -1622,9 +1686,11 @@ pub fn set_caret_text(block: &mut Block, text: &str) {
     InlineEdit::new(block, true).write(block, text);
 }
 
-/// Puts edited text back into a block, keeping what the block is.
+/// Puts edited text back into a block, keeping what the block is. `text` is the serialized
+/// source (`block_text`), so tags, direction marks and kind changes keep their literal
+/// identity.
 pub fn set_block_text(block: &mut Block, text: &str) {
-    let spans = InlineEdit::new(block, false).parse(text);
+    let spans = InlineEdit::new(block, false).parse_source(text);
     match block {
         Block::Heading { spans: s, .. } | Block::Paragraph(s) | Block::Quote(s) | Block::Item { spans: s, .. } => *s = spans,
         Block::Code { text: t, .. } => *t = text.to_string(),
@@ -1713,13 +1779,35 @@ fn cell_spans_mut(block: &mut Block, (row, column): (usize, usize)) -> Option<&m
 }
 
 pub fn cell_text(block: &Block, cell: (usize, usize)) -> Option<String> {
-    Some(spans_to_editor(cell_spans(block, cell)?))
+    Some(InlineEdit::from_spans(cell_spans(block, cell)?).text().to_owned())
 }
 
 pub fn set_cell_text(block: &mut Block, cell: (usize, usize), text: &str) {
     if let Some(spans) = cell_spans_mut(block, cell) {
         *spans = InlineEdit::from_spans(spans).parse(text);
     }
+}
+
+/// How many visible characters serialized inline markup stands for once parsed: the words
+/// a `[text](address)` link or a `**bold**` wrap shows, without its marks.
+pub fn markup_visible_len(text: &str) -> usize {
+    InlineEdit::from_spans(&parse_inline(text)).text().chars().count()
+}
+
+/// The link the caret or selection sits in, as the Link dialog needs it: where it starts
+/// and ends in the caret's visible characters, its words and its address. `None` when the
+/// caret is not on a link. For a table cell the cell's spans answer, not the block's.
+pub fn link_at_caret(block: &Block, caret: &Caret) -> Option<(usize, usize, String, String)> {
+    if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
+        return None;
+    }
+    let edit = caret
+        .inline
+        .clone()
+        .or_else(|| caret.cell.and_then(|cell| cell_spans(block, cell)).map(InlineEdit::from_spans))
+        .unwrap_or_else(|| InlineEdit::new(block, true));
+    let at = caret.selection.0.min(caret.selection.1);
+    inline_edit::link_span(edit.spans(), at)
 }
 
 /// A link written `[text](address)` in a line's editable text that the caret or selection
@@ -2128,13 +2216,24 @@ pub fn show_blocks(
             let size = size * zoom;
             let Some(c) = caret.as_mut() else { continue };
             c.ensure_inline(&block);
-            let previous_selection = c.selection;
             let inline = c.inline.clone().unwrap_or_default();
             // The least line height this paragraph was given, so the words keep their lines
             // while they are written in as they have when they are read (issue #275).
             let floor = f32::from(justified.spacing_of(i).unwrap_or_default().line) * zoom;
+            // The buffer is the visible text; the spans it stands for are laid out with the
+            // same formatting the finished block uses, re-parsed each frame so the galley
+            // always matches what is in the box. Code and equations keep their own plain
+            // source look.
+            let rich = spans_of(&block).is_some();
+            let mut live = inline.clone();
+            let colour = if strong { t.strong } else { t.text };
             let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, width: f32| {
-                let mut job = inline.layout(text.as_str(), |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, strong, t, width, page));
+                let mut job = if rich {
+                    live.parse(text.as_str());
+                    preview::edit_job(ui, live.spans(), size, colour, t, page, width)
+                } else {
+                    pagetext::inline_job_with_fonts(ui.ctx(), text.as_str(), size, strong, t, width, page)
+                };
                 pagetext::floor_lines(ui.ctx(), &mut job, floor);
                 ui.fonts_mut(|f| f.layout_job(job))
             };
@@ -2179,10 +2278,7 @@ pub fn show_blocks(
                     action = Some(Action::SetTask(i, done));
                 }
                 if wrote_changed {
-                    let typed = c.text.clone();
                     if let Some(b) = blocks.get_mut(i) {
-                        let selection = c.selection;
-                        c.ensure_inline(b).update_at(&typed, previous_selection, selection);
                         c.write(b);
                     }
                     changed.blocks = true;
@@ -2425,7 +2521,7 @@ pub fn show_blocks(
                 && ui.input(|i| i.modifiers.command)
                 && !matches!(block, Block::Code { .. } | Block::MathBlock(_))
                 && let Some((a, _)) = selection
-                && let Some(href) = pagetext::link_at(&c.text, a)
+                && let Some((_, _, _, href)) = c.inline.as_ref().and_then(|inline| inline_edit::link_span(inline.spans(), a))
             {
                 changed.link = Some(href);
             }
@@ -2461,10 +2557,7 @@ pub fn show_blocks(
             if resp.changed() {
                 // What was typed goes into the block at once, so the page and the file
                 // follow the caret without waiting for it to leave the block.
-                let typed = c.text.clone();
                 if let Some(b) = blocks.get_mut(i) {
-                    let selection = c.selection;
-                    c.ensure_inline(b).update_at(&typed, previous_selection, selection);
                     c.write(b);
                 }
                 changed.blocks = true;
@@ -2722,9 +2815,14 @@ pub fn copied_span(blocks: &[Block], across: Across) -> Option<Vec<Block>> {
             Block::Code { lang, .. } => Block::Code { lang: lang.clone(), text: picked.to_owned() },
             Block::MathBlock(_) => Block::MathBlock(picked.to_owned()),
             _ => {
+                // The covering bytes are serialized-source offsets; the spans' selection is
+                // in visible characters.
                 let a = text.get(..a)?.chars().count();
                 let b = text.get(..b)?.chars().count();
-                Block::Paragraph(InlineEdit::new(block, false).selected(&text, a..b)?)
+                let edit = InlineEdit::new(block, false);
+                let prefix = text.chars().count() - Tag::split(&text).1.chars().count();
+                let range = edit.visible_pos_of_source(a).saturating_sub(prefix)..edit.visible_pos_of_source(b).saturating_sub(prefix);
+                Block::Paragraph(edit.slice(range).spans().to_vec())
             }
         };
         result.push(fragment);
@@ -2742,13 +2840,19 @@ pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
     let ((first, from), (last, to)) = across.ends();
     let head = blocks.get(first).map(block_text).unwrap_or_default();
     let tail = blocks.get(last).map(block_text).unwrap_or_default();
-    let kept_head = head.get(..from.min(head.len())).unwrap_or("").to_string();
     let kept_tail = tail.get(to.min(tail.len())..).unwrap_or("").to_string();
-    let at = kept_head.chars().count();
-    let mut kept = blocks.get(first).map(|b| InlineEdit::new(b, false)).unwrap_or_default().slice(0..at);
-    let tail_start = tail.chars().count().saturating_sub(kept_tail.chars().count());
-    let end = blocks.get(last).map(|b| InlineEdit::new(b, false)).unwrap_or_default();
-    kept.join(end.slice(tail_start..tail.chars().count()));
+    // The cuts arrive as bytes of the serialized source; the caret's text is the visible
+    // projection, so they are carried across the spans' own mapping, less the tag marker.
+    let visible_cut = |block: Option<&Block>, text: &str, source_chars: usize| {
+        let Some(block) = block else { return 0 };
+        let prefix = text.chars().count() - Tag::split(text).1.chars().count();
+        InlineEdit::new(block, false).visible_pos_of_source(source_chars).saturating_sub(prefix)
+    };
+    let at = visible_cut(blocks.get(first), &head, chars_of(&head, from.min(head.len())));
+    let tail_start = visible_cut(blocks.get(last), &tail, tail.chars().count().saturating_sub(kept_tail.chars().count()));
+    let mut kept = blocks.get(first).map(|b| InlineEdit::new(b, true)).unwrap_or_default().slice(0..at);
+    let end = blocks.get(last).map(|b| InlineEdit::new(b, true)).unwrap_or_default();
+    kept.join(end.slice(tail_start..end.text().chars().count()));
     if let Some(b) = blocks.get_mut(first) {
         let text = kept.text().to_owned();
         kept.write(b, &text);
@@ -2762,31 +2866,38 @@ pub fn delete_span(blocks: &mut Vec<Block>, across: Across) -> (usize, usize) {
 }
 
 /// `covering`'s bytes of `block_text` as bytes of the block's drawn words, which is what
-/// the preview's selection bands measure in: the editable text carries marks and the tag
-/// marker the drawn line never shows.
+/// the preview's selection bands measure in: the drawn line is the visible text minus the
+/// tag marker, and neither shows an image or an equation's dollars.
 fn drawn_covering(block: &Block, a: usize, b: usize) -> Option<(usize, usize)> {
-    spans_of(block)?;
+    let spans = spans_of(block)?;
+    if spans.iter().any(|s| s.math || s.image.is_some()) {
+        return None;
+    }
     let whole = block_text(block);
     let range = chars_of(&whole, a)..chars_of(&whole, b);
-    InlineEdit::new(block, false).drawn_range(range)
+    let edit = InlineEdit::new(block, false);
+    let (v0, v1) = (edit.visible_pos_of_source(range.start), edit.visible_pos_of_source(range.end));
+    // The drawn words are the spans' text without the tag marker, which the preview strips.
+    let stripped = preview::tagged(spans).map(|(_, stripped)| stripped).unwrap_or_else(|| spans.to_vec());
+    let drawn: String = stripped.iter().map(|s| s.text.as_str()).collect();
+    let tag = whole.chars().count() - Tag::split(&whole).1.chars().count();
+    let byte_at = |at: usize| {
+        let at = at.saturating_sub(tag).min(drawn.chars().count());
+        drawn.char_indices().nth(at).map(|(byte, _)| byte).unwrap_or(drawn.len())
+    };
+    Some((byte_at(v0), byte_at(v1)))
 }
 
 /// Byte offset in `block_text` of caret-text character `at`.
 ///
-/// The caret's text drops the tag marker and writes an inline image as one character,
-/// while `block_text` keeps the marker and the image's markup; `at` counts the caret's
-/// characters, so the markup it skipped has to be added back.
+/// The caret's text is the visible projection: it drops the tag marker and writes an inline
+/// image as one character, while `block_text` keeps the marker and the image's markup; the
+/// spans know where each visible character sits in the serialized source.
 fn byte_of_caret(block: &Block, at: usize) -> usize {
     let whole = block_text(block);
     let prefix = whole.chars().count() - Tag::split(&whole).1.chars().count();
-    let mut pos = at + prefix;
     let edit = InlineEdit::new(block, true);
-    for (image_at, span) in edit.images() {
-        if *image_at >= at {
-            break;
-        }
-        pos += spans_to_editor(std::slice::from_ref(span)).chars().count().saturating_sub(1);
-    }
+    let pos = prefix + edit.source_pos_of_visible(at);
     byte_of_char(&whole, pos.min(whole.chars().count()))
 }
 
@@ -2820,27 +2931,29 @@ pub fn format_across(blocks: &mut [Block], across: Across, format: InlineFormat)
         let whole = block_text(block);
         let Some((a, b)) = across.covering(index, whole.len()) else { continue };
         let (Some(a), Some(b)) = (whole.get(..a), whole.get(..b)) else { continue };
-        let covered = (a.chars().count(), b.chars().count());
-        // The caret's own text drops the tag marker, which is not words and must not be
-        // formatted; `covered` is counted in the whole block's text, so the marker's
-        // characters come off the front of the range.
+        // `covered` is counted in the serialized source; the caret's text is the visible
+        // projection, so the range is carried across the spans' own mapping. The tag
+        // marker's characters come off the front: it is not words and must not be formatted.
+        let (a, b) = (a.chars().count(), b.chars().count());
+        let full = InlineEdit::new(block, false);
         let prefix = whole.chars().count() - Tag::split(&whole).1.chars().count();
+        let range = (full.visible_pos_of_source(a).saturating_sub(prefix), full.visible_pos_of_source(b).saturating_sub(prefix));
         let mut edit = InlineEdit::new(block, true);
         let text = edit.text().to_owned();
-        let range = (covered.0.saturating_sub(prefix), covered.1.saturating_sub(prefix));
         let Some((formatted, selection)) = edit.format(&text, range, format.clone()) else { continue };
         let Some(block) = blocks.get_mut(index) else { continue };
         edit.write(block, &formatted);
         changed = true;
-        if index == first.0 || index == last.0 {
-            let now = block_text(block);
-            let mark = now.chars().count() - Tag::split(&now).1.chars().count();
-            let byte_at = |at: usize| byte_of_char(&now, mark + at);
+        if (index == first.0 || index == last.0)
+            && let Some(block) = blocks.get(index)
+        {
+            // Formatting leaves the visible words where they were; the byte offsets are
+            // found again through the same visible-to-source map the caret uses.
             if index == first.0 {
-                start_byte = Some(byte_at(selection.0.min(selection.1)));
+                start_byte = Some(byte_of_caret(block, selection.0.min(selection.1)));
             }
             if index == last.0 {
-                end_byte = Some(byte_at(selection.0.max(selection.1)));
+                end_byte = Some(byte_of_caret(block, selection.0.max(selection.1)));
             }
         }
     }
@@ -3099,7 +3212,7 @@ pub struct Wrote {
 pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id, page: Option<notecraft_model::Dir>) -> Wrote {
     let width = ui.available_width().max(32.0);
     let inline = c.inline.clone().unwrap_or_default();
-    let job = inline.layout(&c.text, |text| pagetext::inline_job_with_fonts(ui.ctx(), text, size, false, t, width, page));
+    let job = preview::edit_job(ui, inline.spans(), size, t.text, t, page, width);
     let pieces = job.sections.into_iter().map(|section| (section.byte_range.start.0..section.byte_range.end.0, section.format)).collect::<Vec<_>>();
     let (drawn, used) = crate::bidi::runs(ui, &c.text, &pieces, size, width, page);
     // The block's own id, the same one the egui text box uses for a line without
@@ -3407,7 +3520,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             }
             renumber(blocks);
             let land = (start + n).saturating_sub(1).min(blocks.len().saturating_sub(1));
-            let text = blocks.get(land).map(block_text).unwrap_or_default();
+            let text = text_for_caret(blocks, land);
             let end = text.chars().count();
             *caret = Some(Caret { block: land, text, focus: true, selection: (end, end), place: Some(end), cell: None, span: None, inline: None });
             changed.blocks = true;
@@ -3612,8 +3725,12 @@ fn char_under(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Pos2, t:
         return at;
     }
     let (size, strong) = size_of(block);
+    let offset = pos - resp.rect.min - egui::vec2(lead_width(block), 0.0);
+    if let Some(spans) = spans_of(block) {
+        return char_at_spans(ui, spans, size, strong, t, resp.rect.width(), offset, page);
+    }
     let text = caret_text(block);
-    char_at(ui, &text, size, strong, t, resp.rect.width(), pos - resp.rect.min - egui::vec2(lead_width(block), 0.0), page)
+    char_at(ui, &text, size, strong, t, resp.rect.width(), offset, page)
 }
 
 /// Where a click on a finished block lands in the text the caret writes in.
@@ -3636,11 +3753,8 @@ fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Po
         Some((_, stripped)) => (stripped, 21.0),
         None => (spans.clone(), 0.0),
     };
-    // The walk below counts the marks span by span. That count is only right when the marks
-    // it counts are the ones the caret's text really has, so the two are compared first.
-    if spans_to_editor(&spans) != caret_text(block) {
-        return None;
-    }
+    // The drawn words and the caret's visible text are the same characters now that the
+    // caret edits what it shows, so a character measured in one is the same in the other.
     let drawn: String = spans.iter().map(|s| s.text.as_str()).collect();
     let lead = mark + lead_width(block);
     // A row that reads right to left keeps its bullet and its tag mark on the right, so its
@@ -3656,10 +3770,11 @@ fn char_under_drawn(ui: &Ui, block: &Block, resp: &egui::Response, pos: egui::Po
     } else {
         char_at(ui, &drawn, size, strong, t, column, vec2(x, rel.y), page)
     };
-    Some(over_marks(&spans, at))
+    Some(at)
 }
 
 /// A character of the drawn words, as a character of the same line written with its marks.
+#[cfg(test)]
 fn over_marks(spans: &[Span], drawn: usize) -> usize {
     let source = spans_to_editor(spans);
     if drawn >= spans.iter().map(|span| span.text.chars().count()).sum() {
@@ -3699,11 +3814,11 @@ fn link_in(block: &Block, at: usize, page: Option<notecraft_model::Dir>) -> Opti
     if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
         return None;
     }
-    let text = caret_text(block);
-    if crate::bidi::paints(&text, page) {
+    let edit = InlineEdit::new(block, true);
+    if crate::bidi::paints(edit.text(), page) {
         return None;
     }
-    pagetext::link_at(&text, at)
+    inline_edit::link_span(edit.spans(), at).map(|(_, _, _, href)| href)
 }
 
 /// The link under the pointer at `pos` in a finished block, if the pointer is on one. A
@@ -4409,7 +4524,7 @@ ordinary words
         );
         assert!(is_page_stamp(&old, 1));
         assert_eq!(text_for_caret(&old, 1), "Monday, 19 October 2026, 05:00");
-        assert_eq!(caret_text(&old[1]), "*Monday, 19 October 2026, 05:00*", "while any other line keeps its marks");
+        assert_eq!(caret_text(&old[1]), "Monday, 19 October 2026, 05:00", "while any other line keeps its marks");
 
         // A paragraph that is not a date is an ordinary paragraph wherever it sits.
         let not = blocks(

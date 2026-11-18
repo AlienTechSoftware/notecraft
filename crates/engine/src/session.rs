@@ -48,6 +48,15 @@ impl Session {
         &self.root
     }
 
+    /// Moves the session to another notebooks folder and lists the notebooks in it. The folder
+    /// is created when it does not exist yet, as at start.
+    pub fn set_root(&mut self, root: &Path) -> Result<(), EngineError> {
+        std::fs::create_dir_all(root).map_err(|e| StoreError::io("create", root, e))?;
+        self.root = std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))?;
+        self.refresh();
+        Ok(())
+    }
+
     pub fn reviewed_export(&self) -> Option<&notecraft_store::export::Prepared> {
         self.export.as_ref()
     }
@@ -231,6 +240,21 @@ fn first_page(n: &Node) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changing_the_root_shows_the_notebooks_in_the_new_folder() {
+        let t = notecraft_store::testing::TempDir::new("session-set-root");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        let first = t.path().join("first");
+        let second = t.path().join("second");
+        notecraft_store::ops::create_notebook(&second, "Work", None, &settings).expect("second notebook");
+        let mut session = Session::new(&first, settings).expect("session");
+
+        session.set_root(&second).expect("change the root");
+
+        assert_eq!(session.root(), std::fs::canonicalize(&second).expect("canonical").as_path());
+        assert!(session.tree().iter().any(|n| n.path.ends_with("work")), "the new folder's notebooks are listed");
+    }
 
     #[test]
     fn a_panic_becomes_an_error() {

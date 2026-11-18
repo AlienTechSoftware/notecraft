@@ -100,8 +100,17 @@ fn frame(ctx: &egui::Context, blocks: &mut Vec<Block>, caret: &mut Option<Caret>
     output.textures_delta.clear();
     fn check(shape: &egui::Shape) {
         match shape {
-            egui::Shape::Text(text) if text.galley.job.text.contains("*literal*") => {
-                assert!(text.galley.job.sections.iter().all(|s| !s.format.italics), "literal stars must stay literal in the widget");
+            egui::Shape::Text(text) => {
+                let job = &text.galley.job;
+                if let Some(at) = job.text.find("*literal*") {
+                    let end = at + "*literal*".len();
+                    for section in &job.sections {
+                        let (start, stop) = (usize::from(section.byte_range.start), usize::from(section.byte_range.end));
+                        if start < end && stop > at {
+                            assert!(!section.format.italics, "literal stars must stay literal in the widget");
+                        }
+                    }
+                }
             }
             egui::Shape::Vec(shapes) => {
                 for shape in shapes {
@@ -132,7 +141,7 @@ fn the_real_widget_keeps_literals_across_edits_and_accepts_new_markdown() {
     assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), format!("{original}bold"));
     assert!(spans.iter().any(|s| s.bold && s.text == "bold"));
     apply(Action::Move(0), &mut blocks, &mut caret, &mut changed);
-    assert_eq!(caret.as_ref().expect("returned caret").text, format!("{original}**bold**"));
+    assert_eq!(caret.as_ref().expect("returned caret").text, format!("{original}bold"));
 }
 
 #[test]
@@ -147,6 +156,37 @@ fn replacing_a_selected_literal_uses_the_new_characters_identity() {
     frame(&ctx, &mut blocks, &mut caret, vec![egui::Event::Text("**bold**".into())]);
     let Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
     assert_eq!(spans.as_slice(), &[Span { text: "bold".into(), bold: true, ..Default::default() }]);
+}
+
+#[test]
+fn formatted_text_enters_the_editor_as_visible_runs() {
+    let block = Block::Paragraph(vec![
+        Span { text: "Testing ".into(), ..Default::default() },
+        Span { text: "wierd".into(), font_family: Some("Bahnschrift".into()), ..Default::default() },
+        Span { text: " html tags".into(), ..Default::default() },
+    ]);
+    assert_eq!(caret_text(&block), "Testing wierd html tags");
+
+    let mut edited = block.clone();
+    set_caret_text(&mut edited, "Testing weird html tags");
+    let Block::Paragraph(spans) = edited else { panic!("paragraph") };
+    assert_eq!(spans.iter().map(|span| span.text.as_str()).collect::<String>(), "Testing weird html tags");
+    assert!(spans.iter().any(|span| span.text == "weird" && span.font_family.as_deref() == Some("Bahnschrift")));
+}
+
+#[test]
+fn markdown_marks_do_not_enter_the_normal_editor_as_source() {
+    let block = Block::Paragraph(vec![
+        Span { text: "plain ".into(), ..Default::default() },
+        Span { text: "bold".into(), bold: true, ..Default::default() },
+        Span { text: " italic".into(), italic: true, ..Default::default() },
+        Span { text: " struck".into(), strike: true, ..Default::default() },
+    ]);
+    assert_eq!(caret_text(&block), "plain bold italic struck");
+
+    let mut caret = Some(Caret { text: caret_text(&block), focus: true, ..Default::default() });
+    let mut changed = Changed::default();
+    apply(Action::Move(0), &mut vec![block], &mut caret, &mut changed);
 }
 
 #[test]

@@ -202,6 +202,27 @@ pub fn job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &To
     job
 }
 
+/// The editor's own job: the same runs [`job`] draws, but emitting exactly the caret's
+/// visible text — an inline image as one object character and maths without its dollars —
+/// so the galley the caret measures is the text it edits.
+pub fn edit_job(ui: &Ui, spans: &[Span], size: f32, color: egui::Color32, tokens: &Tokens, page: Option<Dir>, width: f32) -> LayoutJob {
+    let mut job = LayoutJob { halign: crate::pagetext::halign(&edit_text_of(spans), page), ..LayoutJob::default() };
+    job.wrap.max_width = width;
+    for s in spans {
+        let format = format_with_family(ui.ctx(), s, size, color, tokens);
+        if s.image.is_some() {
+            job.append("\u{fffc}", 0.0, TextFormat::default());
+        } else {
+            job.append(&s.text, 0.0, format);
+        }
+    }
+    job
+}
+
+fn edit_text_of(spans: &[Span]) -> String {
+    spans.iter().map(|s| if s.image.is_some() { "\u{fffc}".to_string() } else { s.text.clone() }).collect()
+}
+
 /// The rectangles to lay behind a selection inside a galley egui laid out: one to a row,
 /// so a paragraph wrapped over three lines gets three bands and not one tall box.
 ///
