@@ -97,6 +97,11 @@ fn node_move(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::move_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
 }
 
+fn node_place(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let before = p.get("before").filter(|b| !b.trim().is_empty()).map(|b| s.resolve(b)).transpose()?;
+    Ok(Output::Path(ops::place_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?, before.as_deref())?))
+}
+
 fn node_copy(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Path(ops::copy_node(&s.resolve(req(p, "path")?)?, &s.resolve(req(p, "to")?)?)?))
 }
@@ -607,6 +612,15 @@ to (required): where it goes; it is put last there",
         run: node_move,
     },
     CommandSpec {
+        id: "node.place",
+        label: "Put a page, section, section group or notebook just before another, or last, where a drag drops it",
+        params: "path (required): the page, section, section group or notebook to place
+to (required): where it goes: a section or page for a page, a notebook or section group for a section or group, the folder a notebook is in for a notebook
+before (optional): the node in `to` it goes just before; left out, it goes last",
+        changes_tree: true,
+        run: node_place,
+    },
+    CommandSpec {
         id: "node.copy",
         label: "Copy a page, section or section group into another notebook, section group, section or page",
         params: "path (required): the page, section or section group to copy
@@ -967,6 +981,33 @@ mod tests {
         assert!(s.run("export.write", &p(&[("folder", &dest)])).is_err());
         assert!(s.run("export.prepare", &p(&[("path", &path), ("snapshot_path", "../outside"), ("body", "bad")])).is_err());
         assert!(s.run("export.write", &p(&[("folder", &dest)])).is_err());
+    }
+
+    /// node.place puts a page where a drag drops it: before another page, or last, or into
+    /// another section, and says where it went.
+    #[test]
+    fn a_page_is_placed_before_another_or_last() {
+        let t = TempDir::new("place-command");
+        let mut s = session(&t);
+        let nb = path_of(s.run("notebook.create", &p(&[("name", "Course")])).expect("notebook"));
+        let section = nb.join("new-section-1");
+        let first = section.join("untitled-page");
+        let second =
+            path_of(s.run("node.create", &p(&[("parent", &section.to_string_lossy()), ("kind", "page"), ("title", "Second")])).expect("page"));
+        let titles = |s: &Session| s.tree()[0].children[0].children.iter().map(|n| n.info.title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles(&s).last().map(String::as_str), Some("Second"));
+        let placed = path_of(
+            s.run("node.place", &p(&[("path", &second.to_string_lossy()), ("to", &section.to_string_lossy()), ("before", &first.to_string_lossy())]))
+                .expect("place"),
+        );
+        assert_eq!(titles(&s).first().map(String::as_str), Some("Second"), "first now: {:?}", titles(&s));
+        assert_eq!(placed, std::fs::canonicalize(&second).expect("same folder"));
+        s.run("node.place", &p(&[("path", &second.to_string_lossy()), ("to", &section.to_string_lossy()), ("before", "")])).expect("last");
+        assert_eq!(titles(&s).last().map(String::as_str), Some("Second"));
+        assert!(
+            s.run("node.place", &p(&[("path", &section.to_string_lossy()), ("to", &first.to_string_lossy())])).is_err(),
+            "a page holds no section"
+        );
     }
 
     #[test]

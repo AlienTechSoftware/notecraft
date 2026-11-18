@@ -50,6 +50,16 @@ Parameters:
 - path (required): the page, section or section group to move
 - to (required): where it goes; it is put last there
 
+## `node.place`
+
+Put a page, section, section group or notebook just before another, or last, where a drag drops it (changes the tree).
+
+Parameters:
+
+- path (required): the page, section, section group or notebook to place
+- to (required): where it goes: a section or page for a page, a notebook or section group for a section or group, the folder a notebook is in for a notebook
+- before (optional): the node in `to` it goes just before; left out, it goes last
+
 ## `node.copy`
 
 Copy a page, section or section group into another notebook, section group, section or page (changes the tree).
