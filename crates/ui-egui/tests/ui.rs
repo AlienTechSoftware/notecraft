@@ -10189,6 +10189,38 @@ mod formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage {
     case!(dark_html_underline_command, DARK, Html, U, "Underline", true);
 }
 
+/// Issue #242: applying formatting to a full selection must leave the visible selection
+/// intact, so immediately typing replaces the words rather than stale source offsets.
+#[test]
+fn replacing_a_formatted_full_selection_keeps_only_the_replacement_in_both_formats() {
+    for (format, body) in
+        [(notecraft_model::PageFormat::Html, "<p>Alpha beta gamma delta.</p>"), (notecraft_model::PageFormat::Cmgfm, "Alpha beta gamma delta.")]
+    {
+        let (_t, app, s) = sample_app("ui-format-selection-replacement");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+        let page = if format == notecraft_model::PageFormat::Html { &s.html_page } else { &s.md_page };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("home");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select all");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "b", "ctrl": true})).expect("bold selection");
+        settle(&mut h);
+        ask(&mut h, "ui.text", json!({"text": "Replacement"})).expect("replace selection");
+        settle(&mut h);
+
+        let saved = h.state().body().unwrap_or_default().to_string();
+        let (blocks, _) = notecraft_formats::boxes::read(format, &saved);
+        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        assert_eq!(spans.iter().map(|span| span.text.as_str()).collect::<String>(), "Replacement", "{format:?}: {saved}");
+        assert!(spans.iter().all(|span| span.bold == spans[0].bold), "{format:?}: replacement has one consistent formatting state: {saved}");
+    }
+}
+
 #[test]
 fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
     let (_t, app, s) = sample_app("ui-partial-legacy-marks");

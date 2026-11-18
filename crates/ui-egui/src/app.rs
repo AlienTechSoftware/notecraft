@@ -6687,6 +6687,9 @@ impl NoteCraftApp {
                 caret.inline = None;
                 caret.selection = (0, caret.text.chars().count());
             }
+            // The source text changed when the marks were added or removed. Restore egui's
+            // range too, or typing replaces only the old offsets and leaves markup behind.
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
             ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
             return;
