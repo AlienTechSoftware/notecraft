@@ -39,6 +39,18 @@ thread_local! {
     static SEEN: std::cell::RefCell<HashMap<PathBuf, (Instant, Seen)>> = std::cell::RefCell::new(HashMap::new());
 }
 
+/// A file's last change, where the platform reports one. The browser build's file shim has no
+/// modification time, so there a file is told apart by its size alone.
+#[cfg(not(target_arch = "wasm32"))]
+fn modified(m: &std::fs::Metadata) -> Option<SystemTime> {
+    m.modified().ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn modified(_: &std::fs::Metadata) -> Option<SystemTime> {
+    None
+}
+
 /// What `path` is, asked of the disk at most once every [`FRESH`].
 pub fn seen(path: &Path) -> Seen {
     seen_at(path, Instant::now())
@@ -51,7 +63,7 @@ fn seen_at(path: &Path, now: Instant) -> Seen {
     #[cfg(test)]
     DISK_ASKS.with(|n| n.set(n.get() + 1));
     let seen = match std::fs::metadata(path) {
-        Ok(m) => Seen { file: m.is_file(), len: m.len(), modified: m.modified().ok() },
+        Ok(m) => Seen { file: m.is_file(), len: m.len(), modified: modified(&m) },
         Err(_) => Seen { file: false, len: 0, modified: None },
     };
     SEEN.with(|s| {
