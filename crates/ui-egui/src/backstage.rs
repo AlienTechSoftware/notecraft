@@ -55,6 +55,9 @@ pub enum Act {
     Page(&'static str),
     /// A side entry that is listed but not built yet.
     NotBuilt(&'static str),
+    /// File > Account: keep this name for the pages changed from now on, or with `None` keep
+    /// no name (issue #304).
+    SetAuthor(Option<String>),
     /// Save a Copy: ask the system for the folder the copy goes into (issue #301).
     ChooseCopyFolder,
     /// Save a Copy: copy this page, section or notebook into this folder.
@@ -62,6 +65,14 @@ pub enum Act {
         node: std::path::PathBuf,
         folder: std::path::PathBuf,
     },
+}
+
+/// File > Account as it is being filled in (issue #304): the name being typed, and the one
+/// kept, which every save notes in the page it changed.
+#[derive(Clone, Debug, Default)]
+pub struct AccountChoice {
+    pub typed: String,
+    pub kept: Option<String>,
 }
 
 /// What File > Save a Copy copies (issue #301).
@@ -108,7 +119,7 @@ pub const SIDE: [(&str, bool); 10] = [
     ("Print", false),
     ("Share", true),
     ("Export", true),
-    ("Account", false),
+    ("Account", true),
     ("Options", true),
     ("About", true),
 ];
@@ -174,6 +185,7 @@ pub fn show(
     ui_scale: u16,
     update: &crate::update::Status,
     copy: &mut CopyChoice,
+    account: &mut AccountChoice,
     export: &mut crate::portable::Choice,
     review: Option<&notecraft_store::export::Prepared>,
     export_acts: &mut Vec<crate::portable::Act>,
@@ -190,6 +202,7 @@ pub fn show(
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
                     "Open" => open_page(ui, recent, notebooks_folder, show_path, t, &mut acts),
                     "Save a Copy" => save_copy_page(ui, copy, show_path, t, &mut acts),
+                    "Account" => account_page(ui, account, t, &mut acts),
                     "Share" | "Export" => {
                         *export_acts = crate::portable::show(ui, export, review, t);
                     }
@@ -529,6 +542,41 @@ fn open_action(ui: &mut Ui, label: &str, width: f32, height: f32, t: &Tokens, pr
 }
 
 /// About: what this is, which version, and where the code lives.
+/// File > Account (issue #304). NoteCraft has no online accounts: there is nothing to sign in
+/// to, and nothing a local notebook needs one for. The page says so plainly, and keeps the one
+/// thing about the person that is useful here: the name their changes are marked with, for
+/// History > Find by Author (issue #292).
+fn account_page(ui: &mut Ui, account: &mut AccountChoice, t: &Tokens, acts: &mut Vec<Act>) {
+    heading(ui, crate::tl_id!("ui.account"), t);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.account_signed_out")).size(14.0).color(t.strong));
+    ui.label(egui::RichText::new(crate::tl_id!("ui.account_no_account_needed")).size(12.5).color(t.text));
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.account_no_online_services")).size(11.5).color(t.muted));
+    ui.add_space(16.0);
+    ui.label(egui::RichText::new(crate::tl_id!("ui.your_name_on_your_changes")).size(14.0).color(t.strong));
+    ui.label(egui::RichText::new(crate::tl_id!("ui.your_name_on_your_changes_hint")).size(12.0).color(t.text));
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        let name = ui.label(crate::tl_id!("ui.your_name"));
+        ui.add(egui::TextEdit::singleline(&mut account.typed).desired_width(260.0).char_limit(notecraft_store::authors::MAX_NAME))
+            .labelled_by(name.id);
+        let tidy = notecraft_store::authors::clean(&account.typed);
+        let changed = tidy != account.kept;
+        if ui.add_enabled(tidy.is_some() && changed, egui::Button::new(crate::tl_id!("ui.keep_this_name"))).clicked() {
+            acts.push(Act::SetAuthor(tidy));
+        }
+        if ui.add_enabled(account.kept.is_some(), egui::Button::new(crate::tl_id!("ui.keep_no_name"))).clicked() {
+            acts.push(Act::SetAuthor(None));
+        }
+    });
+    ui.add_space(4.0);
+    let now = match &account.kept {
+        Some(name) => crate::i18n::format_message_id("ui.your_changes_are_marked_name", &[("name", name)]),
+        None => crate::tl_id!("ui.your_changes_are_marked_with_no_name").to_string(),
+    };
+    ui.label(egui::RichText::new(now).size(12.0).color(t.muted));
+}
+
 fn about_page(
     ui: &mut Ui,
     telemetry_root: &std::path::Path,
@@ -741,7 +789,7 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Share", "Export", "Options", "About"]);
+        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Share", "Export", "Account", "Options", "About"]);
         assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
         assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
     }
@@ -767,6 +815,7 @@ mod tests {
                 100,
                 &crate::update::Status::Idle,
                 &mut CopyChoice::default(),
+                &mut AccountChoice::default(),
                 &mut crate::portable::Choice::default(),
                 None,
                 &mut Vec::new(),
