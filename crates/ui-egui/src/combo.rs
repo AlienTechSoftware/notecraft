@@ -74,19 +74,14 @@ fn section_heading(ui: &mut Ui, text: &str) {
 /// One row of a font list. Records a visible name so its font loads, and scrolls to the row when
 /// asked to.
 fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut Vec<String>, scroll_to: bool) -> egui::Response {
-    // A fixed row height: a row drawn in its own font would otherwise change size as its font loads,
-    // and move under the pointer.
     let height = ui.spacing().interact_size.y;
-    // The family list: names left-aligned and indented under their heading. The size list is drawn
-    // as it always was.
+    // The family list: names indented under their heading, at least one row high, so a taller face
+    // moves the rows below only a little. Drawn inside the list's own clip, so nothing spills out.
+    // The size list is drawn as it always was.
     const INDENT: f32 = 24.0;
     let row = if preview {
-        // A fixed-size slot: the name is laid out from the left inside it, so a taller face does not
-        // push the rows below it.
-        let width = ui.available_width().max(0.0);
-        ui.allocate_ui_with_layout(egui::vec2(width, height), egui::Layout::left_to_right(Align::Center), |ui| {
-            // A taller face is clipped to the slot rather than spilling into the rows below.
-            ui.set_clip_rect(ui.max_rect());
+        ui.horizontal(|ui| {
+            ui.set_min_height(height);
             ui.add_space(INDENT);
             ui.selectable_label(current, name_text(ui, name, preview))
         })
@@ -300,7 +295,13 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 {
                     ui.label(note);
                 }
-                ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                // The list is a fixed-height window of its own: the rows scroll inside it and never draw past it.
+                ui.set_max_height(280.0);
+                // Paint nothing outside the popup's own rectangle, whatever the rows below do.
+                let top = ui.max_rect().min;
+                let window = egui::Rect::from_min_size(top, egui::vec2(ui.max_rect().width(), 280.0));
+                ui.set_clip_rect(window);
+                ScrollArea::vertical().max_height(280.0).min_scrolled_height(280.0).auto_shrink([false, false]).show(ui, |ui| {
                     if !recent_rows.is_empty() {
                         ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
                         for item in &recent_rows {

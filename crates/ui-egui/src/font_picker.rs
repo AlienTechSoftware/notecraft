@@ -2,6 +2,20 @@
 //! later without changes. Ported from WordCraft's `widgets/combo.rs` (font matching and recents)
 //! and its font dialog (size check). Keep this file free of UI types.
 
+/// Separates the names of the recent list when it is saved. A family name cannot contain it.
+const LIST_SEPARATOR: char = '|';
+
+/// The saved recent list: names separated by [`LIST_SEPARATOR`], most recent first. Blank entries and
+/// entries that could not be a family name are dropped.
+pub fn parse_list(text: &str) -> Vec<String> {
+    text.split(LIST_SEPARATOR).map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned).take(RECENT_CAP).collect()
+}
+
+/// The recent list as it is saved.
+pub fn format_list(names: &[String]) -> String {
+    names.iter().filter(|name| !name.contains(LIST_SEPARATOR)).map(String::as_str).collect::<Vec<_>>().join(&LIST_SEPARATOR.to_string())
+}
+
 /// The most recent families kept in the Recently Used list.
 pub const RECENT_CAP: usize = 8;
 
@@ -48,6 +62,23 @@ pub fn is_missing(name: &str, installed: &[String]) -> bool {
 /// "NaN", "inf" or "1.5" is refused, so a non-finite size never reaches the layout.
 pub fn size_is_usable(text: &str, sizes: &[u8]) -> bool {
     text.trim().parse::<u8>().is_ok_and(|size| sizes.contains(&size))
+}
+
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+
+    #[test]
+    fn the_recent_list_round_trips_in_order() {
+        let names = vec!["Georgia".to_owned(), "Arial Black".to_owned()];
+        assert_eq!(parse_list(&format_list(&names)), names);
+    }
+
+    #[test]
+    fn a_damaged_saved_list_keeps_only_usable_names() {
+        assert_eq!(parse_list(" | Georgia ||  | Verdana |"), vec!["Georgia".to_owned(), "Verdana".to_owned()]);
+        assert!(parse_list("").is_empty());
+    }
 }
 
 #[cfg(test)]
