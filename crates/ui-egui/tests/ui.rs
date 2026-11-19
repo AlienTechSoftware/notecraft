@@ -8617,7 +8617,9 @@ fn a_page_that_was_never_arranged_stays_plain_text() {
     }
     ask(&mut h, "ui.text", json!({"text": " edited"})).expect("type");
     settle(&mut h);
-    settle(&mut h);
+    // Saved now rather than by the autosave, which fires 900 ms after the last change: two
+    // settles were not always that long on a slow runner (macOS on main, 2026-11-19).
+    h.state_mut().save();
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
     assert!(file.contains("edited"), "the edit was saved:\n{file}");
     assert!(!file.contains("nc-box"), "but no box was written into a page nobody arranged:\n{file}");
