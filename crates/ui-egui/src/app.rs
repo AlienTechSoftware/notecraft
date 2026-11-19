@@ -170,6 +170,32 @@ fn modal_button_enabled(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool
     )
 }
 
+/// A destructive modal action (issue #381): outlined and lettered in the warning colour, never
+/// the accent fill that a routine primary action uses, so "delete for good" never looks like
+/// "OK".
+// i18n-ui-text: label
+fn modal_button_destructive(ui: &mut Ui, tokens: &Tokens, label: &str) -> egui::Response {
+    let label = crate::tl!(label);
+    let width = (label.chars().count() as f32 * 8.0 + 32.0).max(92.0);
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).size(14.0).strong().color(tokens.warn))
+            .min_size(vec2(width, 32.0))
+            .fill(tokens.panel)
+            .stroke(egui::Stroke::new(1.5, tokens.warn)),
+    )
+}
+
+/// Keeps the keyboard inside a modal dialog (issue #381): when focus is on none of the
+/// dialog's own controls (it has just opened, or focus was left on the page behind it),
+/// it moves to `first`. For an action that cannot be undone `first` is Cancel, so Enter
+/// or Space straight after the dialog opens never confirms it.
+fn hold_modal_focus(first: &egui::Response, inside: &[&egui::Response]) {
+    let focused = first.ctx.memory(|m| m.focused());
+    if !inside.iter().any(|r| Some(r.id) == focused) {
+        first.request_focus();
+    }
+}
+
 fn params(pairs: &[(&str, &str)]) -> Params {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
@@ -500,6 +526,59 @@ fn section_for(path: &Path) -> Option<PathBuf> {
         }
         current = current.parent()?;
     }
+}
+
+/// Where the middle of the band's title goes (issue #371): on the window's `centre` when the
+/// title, `width` wide, fits there between `start` and `end`; otherwise as near to it as the
+/// room allows, never before `start`.
+fn band_title_centre(centre: f32, start: f32, end: f32, width: f32) -> f32 {
+    let half = width / 2.0;
+    centre.clamp(start + half, (end - half).max(start + half))
+}
+
+/// Where a search result is (issue #370): the titles of its notebook, any section groups and
+/// its section, from the tree already in memory, joined with " > ". A sub-page's parent pages
+/// are left out; the section is the place. Empty when the page is not in the tree.
+fn search_trail(tree: &[Node], page: &Path) -> String {
+    fn walk(nodes: &[Node], page: &Path, names: &mut Vec<String>) -> bool {
+        for n in nodes {
+            if n.path == page {
+                return true;
+            }
+            if page.starts_with(&n.path) {
+                let mark = names.len();
+                if n.info.kind != NodeKind::Page {
+                    names.push(n.info.title.clone());
+                }
+                if walk(&n.children, page, names) {
+                    return true;
+                }
+                names.truncate(mark);
+            }
+        }
+        false
+    }
+    let mut names = Vec::new();
+    if walk(tree, page, &mut names) { names.join(" > ") } else { String::new() }
+}
+
+/// Where a recycled item came from, as the titles of the groups and section that held it,
+/// joined with " > ". `original` is the item's own path inside the notebook. Empty when the
+/// item sat directly in the notebook or the entry does not say.
+fn recycled_place(notebook: &Path, original: &str) -> String {
+    let parts: Vec<&str> = original.split('/').filter(|p| !p.is_empty()).collect();
+    let mut at = notebook.to_path_buf();
+    let mut names = Vec::new();
+    for part in parts.iter().take(parts.len().saturating_sub(1)) {
+        at.push(part);
+        match notecraft_store::tree::read_node(&at) {
+            // A sub-page's parent page is not a place: the section above it is.
+            Some(node) if node.kind == NodeKind::Page => {}
+            Some(node) => names.push(node.title),
+            None => names.push((*part).to_string()),
+        }
+    }
+    names.join(" > ")
 }
 
 /// What the Format Painter holds: the formatting it picked up, where it picked it up (so the
@@ -964,9 +1043,17 @@ enum Dialog {
         /// A saved version opened for reading, before any Restore (issue #278).
         preview: Option<Box<crate::versions::Preview>>,
     },
+    /// The notebook's recycle bin as a recovery workspace (issue #365): every recycled item
+    /// with where it came from, one selected, and one Restore for the selection.
     RecycleBin {
         notebook: PathBuf,
+        /// The notebook's own name, for the header.
+        name: String,
         items: Vec<notecraft_store::recycle::Recycled>,
+        /// Where each item came from, as the titles of the section and groups above it.
+        places: Vec<String>,
+        /// The id of the selected item.
+        selected: Option<String>,
     },
     PurgeRecycleItem {
         notebook: PathBuf,
@@ -1159,6 +1246,10 @@ pub struct NoteCraftApp {
     search: String,
     searched: String,
     hits: Vec<Hit>,
+    /// Where each search result is, as its notebook and section titles (issue #370).
+    hit_trails: Vec<String>,
+    /// The result chosen with the arrow keys, if any (issue #370).
+    search_pick: Option<usize>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1426,6 +1517,8 @@ impl NoteCraftApp {
             search: String::new(),
             searched: String::new(),
             hits: Vec::new(),
+            hit_trails: Vec::new(),
+            search_pick: None,
             tags_pane: None,
             custom_tags: None,
             templates_pane: None,
@@ -3784,10 +3877,11 @@ impl NoteCraftApp {
             }
         }
         resp.context_menu(|ui| {
-            let new_page_label = if cfg!(target_os = "macos") { crate::tl_id!("ui.new_page_cmd_n") } else { crate::tl_id!("ui.new_page_ctrl_n") };
+            // Issue #380: the shortcut sits in its own right-hand column, not in the words.
+            let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
             if node.info.kind == NodeKind::Page
                 && let Some(parent) = node.path.parent()
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), new_page_label, t).clicked()
+                && floating::menu_row_shortcut(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page"), shortcut, t).clicked()
             {
                 acts.push(Act::NewPage(parent.to_path_buf()));
                 ui.close();
@@ -3864,12 +3958,6 @@ impl NoteCraftApp {
                 acts.push(Act::MoveOrCopy(node.path.clone()));
                 ui.close();
             }
-            if node.info.kind == NodeKind::Notebook
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
-            {
-                acts.push(Act::CloseNotebook(node.path.clone()));
-                ui.close();
-            }
             if has_kids
                 && floating::menu_row(
                     ui,
@@ -3910,6 +3998,8 @@ impl NoteCraftApp {
                     }
                 });
             }
+            // Where it is and how to reach it, apart from the actions that change it.
+            floating::menu_separator(ui, t);
             if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_link_to_page"), t)
                 .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
                 .clicked()
@@ -3931,7 +4021,13 @@ impl NoteCraftApp {
                 ui.close();
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+            if node.info.kind == NodeKind::Notebook
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
+            {
+                acts.push(Act::CloseNotebook(node.path.clone()));
+                ui.close();
+            }
+            if floating::menu_row_danger(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
                 .clicked()
             {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
@@ -4067,15 +4163,6 @@ impl NoteCraftApp {
             }
         });
         let text = title.map_or_else(|| "NoteCraft".to_owned(), |t| format!("{t} - NoteCraft"));
-        // A page named in Arabic puts the band's words in the wrong order if the whole
-        // string is handed to egui, so the band goes through the bidi painter like the page
-        // does. The name decides its own direction here; there is no page to follow.
-        // A phone-width window has no room for the title between the controls: the page's own
-        // title is the first thing on it anyway.
-        if !self.compact {
-            let band = ui.painter_at(row);
-            crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
-        }
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
@@ -4116,15 +4203,56 @@ impl NoteCraftApp {
                 Ok(Output::Hits(h)) => h,
                 _ => Vec::new(),
             };
+            self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
+            self.search_pick = None;
         }
         // The query box keeps Enter for navigation rather than leaving the user with a
-        // mouse-only result list. This is the same action as clicking the first result.
+        // mouse-only result list. Enter opens the result chosen with the arrow keys, or the
+        // first one when none was chosen (issue #370).
         if self.dialog.is_none()
             && resp.lost_focus()
             && right.input(|input| input.key_pressed(Key::Enter))
-            && let Some(path) = self.hits.first().map(|hit| hit.path.clone())
+            && let Some(path) = self.hits.get(self.search_pick.unwrap_or(0)).or(self.hits.first()).map(|hit| hit.path.clone())
         {
             self.open_search_result(&path);
+        }
+        if resp.has_focus() && !self.hits.is_empty() {
+            let (down, up) = right.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp)));
+            let last = self.hits.len() - 1;
+            if down {
+                self.search_pick = Some(self.search_pick.map_or(0, |n| (n + 1).min(last)));
+            }
+            if up {
+                self.search_pick = self.search_pick.and_then(|n| n.checked_sub(1));
+            }
+        }
+        // Issue #371: the page's title gets the room between the controls on both sides and
+        // no more. It is centred on the window when it fits there, otherwise in the room it
+        // has, and cut with an ellipsis rather than running under the search box. The whole
+        // title is on the hover of the words.
+        // A phone-width window has no room for the title between the controls: the page's own
+        // title is the first thing on it anyway.
+        if !self.compact {
+            let start = left.min_rect().right() + 12.0;
+            let end = right.min_rect().left() - 12.0;
+            if end - start > 24.0 {
+                let size = 12.5;
+                let shown = fit_to_width(ui, &text, size, end - start);
+                let width = text_width(ui, &shown, size);
+                let centre = band_title_centre(row.center().x, start, end, width);
+                let room = egui::Rect::from_min_max(egui::pos2(start, row.min.y), egui::pos2(end, row.max.y));
+                // A page named in Arabic puts the band's words in the wrong order if the whole
+                // string is handed to egui, so the band goes through the bidi painter like the
+                // page does. The name decides its own direction here; there is no page to follow.
+                let band = ui.painter_at(room);
+                crate::bidi::line_at(ui, &band, egui::pos2(centre, row.center().y), Align2::CENTER_CENTER, &shown, size, on.text, None);
+                if shown != text {
+                    let words = egui::Rect::from_center_size(egui::pos2(centre, row.center().y), vec2(width, H));
+                    // Hover only: a press here still reaches the band's handle and moves the window.
+                    let hover = ui.interact(words, ui.id().with("title-words"), Sense::hover());
+                    hover.on_hover_text(text.as_str());
+                }
+            }
         }
         ui.advance_cursor_after_rect(row);
     }
@@ -5175,10 +5303,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::RecycleBin => {
                 if let Some(notebook) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
-                    let p = params(&[("notebook", &path_str(&notebook))]);
-                    if let Some(Output::Recycled(items)) = self.run("recycle.list", &p) {
-                        self.dialog = Some(Dialog::RecycleBin { notebook, items });
-                    }
+                    self.open_recycle_bin(notebook, None);
                 }
             }
             ribbon::Act::Symbols => self.dialog = Some(Dialog::Symbols),
@@ -8208,10 +8333,23 @@ impl NoteCraftApp {
         }
     }
 
+    /// Opens (or refreshes in place) the notebook's recycle bin with `selected` chosen, or the
+    /// newest item when that one is gone.
+    fn open_recycle_bin(&mut self, notebook: PathBuf, selected: Option<String>) {
+        let p = params(&[("notebook", &path_str(&notebook))]);
+        let Some(Output::Recycled(items)) = self.run("recycle.list", &p) else { return };
+        let name = notecraft_store::tree::read_node(&notebook).map(|n| n.title).unwrap_or_default();
+        let places = items.iter().map(|item| recycled_place(&notebook, &item.original)).collect();
+        let selected = selected.filter(|id| items.iter().any(|i| &i.id == id)).or_else(|| items.first().map(|i| i.id.clone()));
+        self.dialog = Some(Dialog::RecycleBin { notebook, name, items, places, selected });
+    }
+
     fn dismiss_search(&mut self) {
         self.search.clear();
         self.searched.clear();
         self.hits.clear();
+        self.hit_trails.clear();
+        self.search_pick = None;
     }
 
     fn open_search_result(&mut self, path: &Path) {
@@ -8228,25 +8366,90 @@ impl NoteCraftApp {
             return;
         }
         let mut chosen: Option<PathBuf> = None;
-        let popup =
-            egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).anchor(Align2::RIGHT_TOP, vec2(-8.0, 44.0)).show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width(420.0);
-                    if self.hits.is_empty() {
-                        ui.weak(crate::tl_id!("ui.no_pages_match"));
-                    }
-                    for h in &self.hits {
-                        let r = ui.vertical(|ui| {
-                            ui.strong(&h.title);
-                            ui.label(egui::RichText::new(&h.snippet).small().color(self.tokens.muted));
-                        });
-                        if ui.interact(r.response.rect, Id::new(("hit", &h.path)), Sense::click()).clicked() {
+        let tokens = self.tokens;
+        // Issue #370: the results hang from the search box itself, as wide as it or wider, and
+        // are kept inside the window, rather than sitting at a fixed place on the right.
+        let screen = ctx.viewport_rect();
+        let field = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
+        let width = field.map_or(420.0, |f| f.width().max(420.0)).min((screen.width() - 16.0).max(200.0));
+        let (left, top) = match field {
+            Some(f) => (f.left().min(screen.right() - width - 8.0).max(screen.left() + 8.0), f.bottom() + 4.0),
+            None => (screen.right() - width - 8.0, screen.top() + 44.0),
+        };
+        let max_height = (screen.bottom() - top - 24.0).clamp(80.0, 460.0);
+        let pick = self.search_pick;
+        let picked_now = ctx.data_mut(|d| {
+            let id = Id::new("search-results-pick");
+            let before = d.get_temp::<Option<usize>>(id);
+            d.insert_temp(id, pick);
+            before != Some(pick)
+        });
+        let popup = egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).fixed_pos(egui::pos2(left, top)).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(width);
+                ui.label(egui::RichText::new(crate::tl_id!("ui.search_scope_all_notebooks")).small().color(tokens.muted));
+                ui.add_space(2.0);
+                if self.hits.is_empty() {
+                    ui.weak(crate::tl_id!("ui.no_pages_match"));
+                    return;
+                }
+                egui::ScrollArea::vertical().id_salt("search-results-list").max_height(max_height).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (index, h) in self.hits.iter().enumerate() {
+                        let trail = self.hit_trails.get(index).map(String::as_str).unwrap_or_default();
+                        let current = pick == Some(index);
+                        let row_width = ui.available_width();
+                        let lines = if trail.is_empty() { 2.0 } else { 3.0 };
+                        let (rect, row) = ui.allocate_exact_size(vec2(row_width, 8.0 + 17.0 * lines), Sense::click());
+                        let name =
+                            if trail.is_empty() { format!("{} {}", h.title, h.snippet) } else { format!("{} ({trail}) {}", h.title, h.snippet) };
+                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, current, name.clone()));
+                        let painter = ui.painter_at(rect);
+                        if current {
+                            painter.rect_filled(rect, 4.0, tokens.row_selected);
+                            painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, tokens.accent);
+                        } else if row.hovered() {
+                            painter.rect_filled(rect, 4.0, tokens.row_hover);
+                        }
+                        let x = rect.min.x + 10.0;
+                        let room = (rect.width() - 20.0).max(20.0);
+                        let mut y = rect.min.y + 12.0;
+                        painter.text(
+                            egui::pos2(x, y),
+                            Align2::LEFT_CENTER,
+                            fit_to_width(ui, &h.title, 14.0, room),
+                            egui::FontId::proportional(14.0),
+                            tokens.strong,
+                        );
+                        if !trail.is_empty() {
+                            y += 17.0;
+                            painter.text(
+                                egui::pos2(x, y),
+                                Align2::LEFT_CENTER,
+                                fit_to_width(ui, trail, 11.5, room),
+                                egui::FontId::proportional(11.5),
+                                tokens.accent,
+                            );
+                        }
+                        y += 17.0;
+                        painter.text(
+                            egui::pos2(x, y),
+                            Align2::LEFT_CENTER,
+                            fit_to_width(ui, &h.snippet, 12.0, room),
+                            egui::FontId::proportional(12.0),
+                            tokens.muted,
+                        );
+                        if current && picked_now {
+                            row.scroll_to_me(None);
+                        }
+                        let row = if trail.is_empty() { row } else { row.on_hover_text(trail) };
+                        if row.clicked() {
                             chosen = Some(h.path.clone());
                         }
-                        ui.separator();
                     }
                 });
             });
+        });
         // Keep the query editable while results are open. An outside press dismisses them
         // without consuming the press, so the clicked ribbon or page control still works.
         let search_rect = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
@@ -8776,6 +8979,30 @@ impl NoteCraftApp {
         }
     }
 
+    /// Add page (issue #366): one full-width row across the top of the page list, with a plus
+    /// and the words, about 32 points tall, marked with the section's colour. The whole row is
+    /// one target, so the plus, the words and the far edge all add the same page.
+    fn add_page_row(&self, ui: &mut Ui, accent: egui::Color32) -> egui::Response {
+        let t = self.tokens;
+        let width = ui.available_width().max(60.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        let fill = if resp.hovered() || resp.has_focus() { t.row_hover } else { crate::theme::mix(t.panel, accent, 0.10) };
+        painter.rect_filled(rect, 4.0, fill);
+        painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, accent);
+        if resp.has_focus() {
+            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
+        let plus = egui::Rect::from_center_size(egui::pos2(rect.min.x + 20.0, rect.center().y), vec2(16.0, 16.0));
+        icons::paint(&painter, plus, Icon::Plus, t.text);
+        let label = crate::tl_id!("ui.add_page");
+        painter.text(egui::pos2(rect.min.x + 36.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(14.0), t.text);
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        let shortcut = if cfg!(target_os = "macos") { crate::tl_id!("ui.new_page_cmd_n") } else { crate::tl_id!("ui.new_page_ctrl_n") };
+        resp.on_hover_text(format!("{}\n{shortcut}", crate::tl_id!("ui.a_new_page_in_this_section")))
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
         // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
@@ -8807,9 +9034,20 @@ impl NoteCraftApp {
                 // OneNote keeps it, and hides this column.
                 ui.horizontal(|ui| {
                     toggle |= Self::bars_button_at(ui).clicked();
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
+                    // A heading that reads as one (issue #368), above the tree's own scroller so
+                    // it stays put however far the tree is scrolled.
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).size(13.0).strong().color(self.tokens.text));
                 });
                 ui.horizontal(|ui| self.new_section_button(ui, acts));
+                // The notebook that owns the open page, named under the heading, so a long
+                // expanded tree never loses which notebook the visible sections belong to.
+                if let Some(owner) = self.editor.as_ref().and_then(|e| {
+                    self.session.tree().iter().find(|n| n.info.kind == NodeKind::Notebook && e.dir.starts_with(&n.path)).map(|n| n.info.title.clone())
+                }) {
+                    let room = ui.available_width().max(20.0);
+                    let shown = fit_to_width(ui, &owner, 12.0, room);
+                    ui.label(egui::RichText::new(shown).size(12.0).color(self.tokens.muted)).on_hover_text(owner);
+                }
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
@@ -8822,28 +9060,45 @@ impl NoteCraftApp {
                 });
             });
         }
-        let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone()));
+        let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
         egui::Panel::left("pages").resizable(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
             ui.add_space(4.0);
             match &section {
-                Some((path, title, pages)) => {
+                Some((path, title, pages, colour)) => {
                     ui.horizontal(|ui| {
                         // With the notebooks hidden the button lives here instead, so it is
-                        // always at the top left of the panel.
+                        // always at the top left of the panel. It is a target of its own,
+                        // apart from Add page below it (issue #366).
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        let add_page = egui::Button::new(crate::tl_id!("ui.add_page")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
-                        if ui.add(add_page).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
-                            acts.push(Act::Add(path.clone(), NodeKind::Section));
+                        // The section's name, as context for the list: readable, not shouted.
+                        let room = ui.available_width().max(20.0);
+                        let shown = fit_to_width(ui, title, 13.0, room);
+                        let name = ui.label(egui::RichText::new(shown).size(13.0).strong().color(self.tokens.text));
+                        if name.rect.width() + 1.0 < text_width(ui, title, 13.0) {
+                            name.on_hover_text(title.as_str());
                         }
                     });
-                    ui.label(egui::RichText::new(title.to_uppercase()).small().color(self.tokens.muted));
                     ui.add_space(2.0);
+                    // A section with no colour of its own wears the theme's section colour, as
+                    // its mark in the notebook tree does.
+                    let accent = colour.map_or(self.tokens.section, |c| {
+                        let (r, g, b) = c.rgb(self.effective_mode.is_dark());
+                        egui::Color32::from_rgb(r, g, b)
+                    });
+                    // The same create-and-open as Ctrl+N and the menu's New page (issue #366):
+                    // one click is one new page, opened at its title, with no name to type first.
+                    if self.add_page_row(ui, accent).clicked() {
+                        acts.push(Act::NewPage(path.clone()));
+                    }
+                    ui.add_space(4.0);
                     egui::ScrollArea::vertical().id_salt("pages").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                         let list: Vec<&Node> = pages.iter().filter(|p| p.info.kind == NodeKind::Page).collect();
                         if list.is_empty() {
-                            ui.weak(crate::tl_id!("ui.no_pages_in_this_section_yet"));
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.no_pages_in_this_section_yet")).color(self.tokens.text));
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.add_page_empty_hint")).small().color(self.tokens.muted));
                         }
                         // A line between every pair, and above the first and below the
                         // last: hovering one offers a page in that place.
@@ -10864,15 +11119,29 @@ impl NoteCraftApp {
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
                 let is_notebook = notecraft_store::tree::read_node(path).is_some_and(|node| node.kind == NodeKind::Notebook);
+                // Issue #381: the same modal as the other confirmations. The page behind is
+                // dimmed and takes no clicks, Escape cancels, and the title says what will
+                // happen to this item: a section is moved to the recycle bin, not "deleted".
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let backdrop = modal_backdrop(ctx, "delete-node-backdrop");
                 egui::Window::new(crate::tl_id!("ui.delete"))
                     .collapsible(false)
                     .resizable(false)
                     .title_bar(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         ui.set_min_width(420.0);
-                        modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"));
+                        ui.set_max_width(520.0);
+                        modal_title(
+                            ui,
+                            &self.tokens,
+                            if is_notebook { crate::tl_id!("ui.delete_notebook") } else { crate::tl_id!("ui.move_to_recycle_bin") },
+                        );
                         if is_notebook {
                             ui.label(crate::i18n::format_message_id("ui.delete_notebook_title_and_everything_inside_it", &[("title", title)]));
                             ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone"));
@@ -10882,20 +11151,28 @@ impl NoteCraftApp {
                                 *count as u64,
                                 &[("title", title)],
                             ));
-                            ui.label(crate::tl_id!("ui.you_can_restore_it_from_history"));
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.you_can_restore_it_from_history")).color(self.tokens.muted));
                         }
+                        ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                            let cancel = modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false);
+                            let confirm = if is_notebook {
+                                modal_button_destructive(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"))
+                            } else {
+                                modal_button(ui, &self.tokens, crate::tl_id!("ui.move_to_recycle_bin"), true)
+                            };
+                            // Removing a notebook from disk cannot be undone: the keyboard
+                            // starts on Cancel. A move to the recycle bin can be, so it starts
+                            // on the action, as a routine confirmation does.
+                            if is_notebook {
+                                hold_modal_focus(&cancel, &[&cancel, &confirm]);
+                            } else {
+                                hold_modal_focus(&confirm, &[&cancel, &confirm]);
+                            }
+                            if cancel.clicked() {
                                 keep = false;
                             }
-                            if modal_button(
-                                ui,
-                                &self.tokens,
-                                if is_notebook { crate::tl_id!("ui.delete_notebook") } else { crate::tl_id!("ui.move_to_recycle_bin") },
-                                true,
-                            )
-                            .clicked()
-                            {
+                            if confirm.clicked() {
                                 go = true;
                             }
                         });
@@ -11280,10 +11557,12 @@ impl NoteCraftApp {
                                         let size = (version.bytes.div_ceil(1024)).to_string();
                                         let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
                                         ui.label(egui::RichText::new(size).small().color(t.muted));
+                                        // Issue #382: looking first is the primary step; restoring
+                                        // replaces the page, so it is the quieter of the two here.
                                         if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
                                             open = Some((version.id.clone(), version.created.clone()));
                                         }
-                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), true).clicked() {
+                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), false).clicked() {
                                             restore = Some(version.id.clone());
                                         }
                                     });
@@ -11315,51 +11594,173 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::RecycleBin { notebook, items } => {
+            Dialog::RecycleBin { notebook, name, items, places, selected } => {
+                // Issue #365: a recovery workspace rather than a small list window. One item is
+                // selected; Restore acts on it, and deleting it for good is a separate, quieter
+                // action that asks first. Back or Escape returns to the page.
+                let t = self.tokens;
                 let mut restore: Option<String> = None;
                 let mut purge: Option<(String, String)> = None;
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let screen = ctx.viewport_rect();
+                let width = (screen.width() - 48.0).clamp(320.0, 680.0);
+                let list_height = (screen.height() * 0.7 - 190.0).max(120.0);
+                let backdrop = modal_backdrop(ctx, "recycle-bin-backdrop");
                 egui::Window::new(crate::tl_id!("ui.notebook_recycle_bin_2"))
+                    .title_bar(false)
                     .collapsible(false)
-                    .resizable(true)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .fixed_size(vec2(width, 0.0))
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&t))
                     .show(ctx, |ui| {
-                        ui.set_min_width(460.0);
+                        stay_above(ui, backdrop);
+                        ui.set_width(width);
+                        ui.horizontal(|ui| {
+                            let words = crate::tl_id!("ui.back_to_notes");
+                            let size = vec2(text_width(ui, words, 13.0) + 38.0, 28.0);
+                            let (rect, back) = ui.allocate_exact_size(size, Sense::click());
+                            let painter = ui.painter_at(rect);
+                            painter.rect_filled(rect, 4.0, if back.hovered() || back.has_focus() { t.row_hover } else { t.panel });
+                            painter.rect_stroke(
+                                rect,
+                                4.0,
+                                egui::Stroke::new(1.0, if back.has_focus() { t.accent } else { t.faint }),
+                                egui::StrokeKind::Inside,
+                            );
+                            let arrow = egui::Rect::from_center_size(egui::pos2(rect.min.x + 15.0, rect.center().y), vec2(14.0, 14.0));
+                            crate::ribbon_icons::paint(&painter, arrow, crate::ribbon_icons::Mark::Back, t.text);
+                            painter.text(
+                                egui::pos2(rect.min.x + 28.0, rect.center().y),
+                                Align2::LEFT_CENTER,
+                                words,
+                                egui::FontId::proportional(13.0),
+                                t.text,
+                            );
+                            back.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words));
+                            if back.clicked() {
+                                keep = false;
+                            }
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.notebook_recycle_bin_2")).strong().size(18.0).color(t.strong));
+                        });
+                        if !name.is_empty() {
+                            ui.label(egui::RichText::new(name.as_str()).color(t.muted));
+                        }
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.recycle_bin_explainer")).small().color(t.muted));
+                        ui.add_space(6.0);
+                        ui.separator();
                         if items.is_empty() {
-                            ui.label(crate::tl_id!("ui.this_notebook_s_recycle_bin_is_empty"));
+                            ui.add_space(18.0);
+                            ui.vertical_centered(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::hover());
+                                crate::ribbon_icons::paint(ui.painter(), rect, crate::ribbon_icons::Mark::Delete, t.muted);
+                                ui.add_space(6.0);
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.this_notebook_s_recycle_bin_is_empty")).color(t.text));
+                            });
+                            ui.add_space(18.0);
                         } else {
-                            egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
-                                for item in items.iter() {
-                                    ui.horizontal(|ui| {
-                                        ui.label(&item.title);
-                                        ui.label(
-                                            egui::RichText::new(crate::i18n::format_message_id(
-                                                "ui.count_deleted",
-                                                &[
-                                                    ("count", &crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64)),
-                                                    ("deleted", &item.deleted),
-                                                ],
-                                            ))
-                                            .small()
-                                            .color(self.tokens.muted),
+                            egui::ScrollArea::vertical().id_salt("recycle-bin-list").max_height(list_height).auto_shrink([false, true]).show(
+                                ui,
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.y = 2.0;
+                                    for (index, item) in items.iter().enumerate() {
+                                        let is_selected = selected.as_deref() == Some(item.id.as_str());
+                                        let row_width = ui.available_width();
+                                        let (rect, row) = ui.allocate_exact_size(vec2(row_width, 48.0), Sense::click());
+                                        let label = item.title.clone();
+                                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_selected, label.clone()));
+                                        let painter = ui.painter_at(rect);
+                                        if is_selected {
+                                            painter.rect_filled(rect, 4.0, t.row_selected);
+                                            painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, t.accent);
+                                        } else if row.hovered() {
+                                            painter.rect_filled(rect, 4.0, t.row_hover);
+                                        }
+                                        if row.has_focus() {
+                                            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+                                        }
+                                        let icon = match item.kind {
+                                            NodeKind::Section => Icon::Section,
+                                            NodeKind::SectionGroup => Icon::SectionGroup,
+                                            NodeKind::Notebook => Icon::Notebook,
+                                            NodeKind::Page => Icon::Page,
+                                        };
+                                        let icon_rect =
+                                            egui::Rect::from_center_size(egui::pos2(rect.min.x + 22.0, rect.center().y), vec2(18.0, 18.0));
+                                        crate::icons::paint(&painter, icon_rect, icon, t.text);
+                                        let text_left = rect.min.x + 44.0;
+                                        let room = (rect.max.x - text_left - 10.0).max(20.0);
+                                        let title = fit_to_width(ui, &item.title, 14.0, room);
+                                        painter.text(
+                                            egui::pos2(text_left, rect.min.y + 15.0),
+                                            Align2::LEFT_CENTER,
+                                            title,
+                                            egui::FontId::proportional(14.0),
+                                            t.text,
                                         );
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
-                                            restore = Some(item.id.clone());
+                                        let when = crate::versions::when(&item.deleted);
+                                        let mut details = match places.get(index).filter(|p| !p.is_empty()) {
+                                            Some(place) => {
+                                                crate::i18n::format_message_id("ui.recycle_bin_deleted_from", &[("when", &when), ("place", place)])
+                                            }
+                                            None => crate::i18n::format_message_id("ui.recycle_bin_deleted_at", &[("when", &when)]),
+                                        };
+                                        if item.kind != NodeKind::Page || item.count > 1 {
+                                            details =
+                                                format!("{details} \u{b7} {}", crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64));
                                         }
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
-                                            purge = Some((item.id.clone(), item.title.clone()));
+                                        let shown = fit_to_width(ui, &details, 12.0, room);
+                                        painter.text(
+                                            egui::pos2(text_left, rect.min.y + 34.0),
+                                            Align2::LEFT_CENTER,
+                                            shown,
+                                            egui::FontId::proportional(12.0),
+                                            t.muted,
+                                        );
+                                        let full = format!("{}\n{details}", item.title);
+                                        if row.on_hover_text(full).clicked() {
+                                            *selected = Some(item.id.clone());
                                         }
-                                    });
+                                    }
+                                },
+                            );
+                        }
+                        ui.separator();
+                        ui.add_space(4.0);
+                        let chosen = selected.as_ref().and_then(|id| items.iter().find(|i| &i.id == id));
+                        ui.horizontal(|ui| {
+                            let delete = ui
+                                .add_enabled_ui(chosen.is_some(), |ui| {
+                                    modal_button_destructive(ui, &t, crate::tl_id!("ui.delete_permanently_ellipsis"))
+                                })
+                                .inner;
+                            if delete.clicked()
+                                && let Some(item) = chosen
+                            {
+                                purge = Some((item.id.clone(), item.title.clone()));
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let restore_button = modal_button_enabled(ui, &t, crate::tl_id!("ui.restore"), true, chosen.is_some());
+                                if restore_button.clicked()
+                                    && let Some(item) = chosen
+                                {
+                                    restore = Some(item.id.clone());
                                 }
                             });
-                        }
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
-                            keep = false;
-                        }
+                        });
                     });
                 if let Some(id) = restore {
                     if self.run("recycle.restore", &params(&[("notebook", &path_str(notebook)), ("id", &id)])).is_some() {
                         self.say(crate::tl_id!("ui.restored_to_the_original_location"));
+                        // The list is refreshed in place: whatever else is in the bin stays in view.
+                        let notebook = notebook.clone();
                         keep = false;
+                        self.open_recycle_bin(notebook, None);
                     }
                 } else if let Some((id, title)) = purge {
                     next = Dialog::PurgeRecycleItem { notebook: notebook.clone(), id, title };
@@ -11367,25 +11768,45 @@ impl NoteCraftApp {
             }
             Dialog::PurgeRecycleItem { notebook, id, title } => {
                 let mut purge = false;
+                let mut cancel = false;
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    cancel = true;
+                }
+                let backdrop = modal_backdrop(ctx, "purge-recycled-backdrop");
                 egui::Window::new(crate::tl_id!("ui.permanently_delete"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        ui.set_min_width(400.0);
+                        ui.set_max_width(520.0);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.permanently_delete"));
                         ui.label(crate::i18n::format_message_id("ui.permanently_delete_title_and_everything_inside_it", &[("title", title)]));
                         ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_cannot_be_undone"));
+                        ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
-                                keep = false;
-                            }
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
-                                purge = true;
-                            }
+                            let no = modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false);
+                            let yes = modal_button_destructive(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"));
+                            // Nothing to undo afterwards: the keyboard starts on Cancel.
+                            hold_modal_focus(&no, &[&no, &yes]);
+                            cancel |= no.clicked();
+                            purge = yes.clicked();
                         });
                     });
-                if purge && self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
-                    self.say(crate::tl_id!("ui.permanently_deleted"));
+                if purge {
+                    if self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
+                        self.say(crate::tl_id!("ui.permanently_deleted"));
+                    }
                     keep = false;
+                    self.open_recycle_bin(notebook.clone(), None);
+                } else if cancel {
+                    // Back to the bin with the same item selected.
+                    keep = false;
+                    self.open_recycle_bin(notebook.clone(), Some(id.clone()));
                 }
             }
             Dialog::Symbols => {
@@ -14180,5 +14601,61 @@ mod recent_range_tests {
         assert_eq!(RecentRange::Week.since(now, 0), at("2026-11-09T00:00:00Z"));
         assert_eq!(RecentRange::Month.since(now, 0), at("2026-10-17T00:00:00Z"));
         assert_eq!(RecentRange::All.since(now, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod band_title_tests {
+    use super::{Node, NodeKind, band_title_centre, search_trail};
+    use notecraft_store::tree::NodeInfo;
+    use std::path::{Path, PathBuf};
+
+    fn node(kind: NodeKind, path: &str, title: &str, children: Vec<Node>) -> Node {
+        Node {
+            path: PathBuf::from(path),
+            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0 },
+            children,
+        }
+    }
+
+    /// Issue #370: a search result names its notebook, groups and section, and leaves out the
+    /// parent pages of a sub-page.
+    #[test]
+    fn a_search_trail_names_the_notebook_groups_and_section() {
+        let tree = vec![node(
+            NodeKind::Notebook,
+            "/nb",
+            "Book",
+            vec![node(
+                NodeKind::SectionGroup,
+                "/nb/g",
+                "Work",
+                vec![node(
+                    NodeKind::Section,
+                    "/nb/g/s",
+                    "Projects",
+                    vec![node(NodeKind::Page, "/nb/g/s/p", "Parent", vec![node(NodeKind::Page, "/nb/g/s/p/c", "Child", vec![])])],
+                )],
+            )],
+        )];
+        assert_eq!(search_trail(&tree, Path::new("/nb/g/s/p")), "Book > Work > Projects");
+        assert_eq!(search_trail(&tree, Path::new("/nb/g/s/p/c")), "Book > Work > Projects");
+        assert_eq!(search_trail(&tree, Path::new("/elsewhere/p")), "");
+    }
+
+    /// Issue #371: the title sits on the window's centre when it fits there, and is moved into
+    /// the room between the controls, never under them, when it does not.
+    #[test]
+    fn the_band_title_stays_between_the_controls() {
+        // Room from 300 to 900, window centre 600: a 200-wide title stays centred.
+        assert_eq!(band_title_centre(600.0, 300.0, 900.0, 200.0), 600.0);
+        // Controls on the right reach 650: the title moves left so its end is at 650.
+        let centre = band_title_centre(600.0, 300.0, 650.0, 200.0);
+        assert!(centre + 100.0 <= 650.0 && centre - 100.0 >= 300.0, "{centre}");
+        // Controls on the left reach 560: the title moves right so it starts at 560.
+        let centre = band_title_centre(600.0, 560.0, 1000.0, 200.0);
+        assert!(centre - 100.0 >= 560.0, "{centre}");
+        // Wider than the room (it is ellipsized to fit first): it starts where the room starts.
+        assert_eq!(band_title_centre(600.0, 300.0, 400.0, 300.0), 450.0);
     }
 }
