@@ -14010,7 +14010,12 @@ fn the_recycle_bin_selects_restores_and_guards_permanent_deletion() {
         settle(&mut h);
         review(&mut h, &format!("recycle_bin_{}", theme.mode.is_dark()));
         assert_eq!(h.query_all_by_label("Back to notes").count(), 1, "the workspace has a way back");
-        assert_eq!(is_on(&h, "Project X"), Some(true), "the only item starts selected");
+        let heard = h.get_by_label_contains("Project X, Page, Deleted").accesskit_node().label().unwrap_or_default();
+        assert!(heard.ends_with("from Work > Projects"), "the row is heard with its kind, time and place: {heard}");
+        let row_on = |h: &Harness<'_, NoteCraftApp>| {
+            h.get_by_label_contains("Project X, Page").accesskit_node().toggled().map(|t| t == egui::accesskit::Toggled::True)
+        };
+        assert_eq!(row_on(&h), Some(true), "the only item starts selected");
         assert!(!h.get_by_label("Restore").accesskit_node().is_disabled());
 
         h.get_by_label("Delete permanently...").click();
@@ -14020,7 +14025,7 @@ fn the_recycle_bin_selects_restores_and_guards_permanent_deletion() {
         ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("cancel");
         settle(&mut h);
         assert_eq!(h.query_all_by_label("Permanently delete?").count(), 0);
-        assert_eq!(is_on(&h, "Project X"), Some(true), "Cancel returns to the same row");
+        assert_eq!(row_on(&h), Some(true), "Cancel returns to the same row");
 
         h.get_by_label("Restore").click();
         settle(&mut h);
@@ -14066,12 +14071,18 @@ fn search_results_sit_under_the_field_show_where_and_follow_the_arrow_keys() {
     settle(&mut h);
     search_for(&mut h, "Level");
     let field = h.get_all_by_role(egui::accesskit::Role::TextInput).find(|n| n.value().as_deref() == Some("Level")).expect("search field").rect();
-    let rows: Vec<_> = h.query_all_by_label_contains("Projects").filter(|n| n.rect().min.y > field.max.y).collect();
+    // Result rows only: the notebook tree has a "Projects" row of its own.
+    let rows: Vec<_> = h.query_all_by_label_contains("Work > Projects)").collect();
     assert!(!rows.is_empty(), "a result names its section");
+    // The popup is at least 420 wide and starts at the field, moved left only as far as it must
+    // be to keep 8 points clear of the right edge of the 1400-wide window.
+    let popup_left = field.min.x.min(1400.0 - field.width().max(420.0) - 8.0);
     for row in &rows {
         let r = row.rect();
         assert!(r.min.y >= field.max.y, "results are under the field: {r:?} {field:?}");
-        assert!(r.min.x >= field.min.x - 2.0 || r.max.x <= 1400.0, "results start at the field and stay in the window");
+        assert!(r.min.x >= 0.0, "a result starts inside the window: {r:?}");
+        assert!(r.max.x <= 1400.0, "a result ends inside the window: {r:?}");
+        assert!((popup_left..=popup_left + 16.0).contains(&r.min.x), "a result starts at the popup's edge, {popup_left}: {r:?} {field:?}");
     }
     review(&mut h, "search_polish");
     ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
@@ -14154,4 +14165,29 @@ fn the_page_menu_names_new_page_without_its_shortcut() {
     assert_eq!(h.query_all_by_label("New page").count(), 1, "New page is named without its shortcut");
     assert_eq!(h.query_all_by_label_contains("(Ctrl+N)").count(), 0);
     assert_eq!(h.query_all_by_label("Delete...").count(), 1, "Delete is in the menu, in its own group");
+}
+
+/// Page navigation waits while a dialog is open: Ctrl+Page Down under the recycle bin leaves
+/// the page behind it alone, and works again once the dialog is closed.
+#[test]
+fn ctrl_page_down_does_not_change_the_page_under_a_dialog() {
+    let (_t, app, s) = sample_app("ui-nav-under-dialog");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let title = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["title"].clone();
+    assert_eq!(title(&mut h), json!("Project X"));
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Notebook Recycle Bin").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Back to notes").count(), 1);
+    ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("next page");
+    settle(&mut h);
+    assert_eq!(title(&mut h), json!("Project X"), "the page under the dialog does not change");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("close");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "PageDown", "ctrl": true})).expect("next page");
+    settle(&mut h);
+    assert_eq!(title(&mut h), json!("Deep page"), "with the dialog closed the shortcut works");
 }
