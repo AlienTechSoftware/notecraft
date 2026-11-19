@@ -50,8 +50,8 @@ mod imp {
     use super::*;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
-    use std::sync::{Condvar, Mutex};
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Condvar, Mutex};
     use std::time::{Instant, SystemTime};
 
     const POLL_STEP: Duration = Duration::from_millis(50);
