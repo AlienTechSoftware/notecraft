@@ -1209,7 +1209,9 @@ fn small_check(ui: &mut Ui, label: &str, tip: &str, on: bool, t: &Tokens) -> egu
     if on {
         painter.rect_filled(boxed, 2.0, t.accent);
         let c = boxed.center();
-        painter.add(egui::Shape::line(vec![c + vec2(-3.5, 0.2), c + vec2(-1.0, 2.8), c + vec2(3.5, -2.5)], egui::Stroke::new(1.6, t.band_text)));
+        // The accent is built to stand at least 3:1 against the panel, so the panel's colour is
+        // the tick that stays visible on it in every theme (white does not on a light accent).
+        painter.add(egui::Shape::line(vec![c + vec2(-3.5, 0.2), c + vec2(-1.0, 2.8), c + vec2(3.5, -2.5)], egui::Stroke::new(1.6, t.panel)));
     } else {
         painter.rect_stroke(boxed, 2.0, egui::Stroke::new(1.2, t.muted), egui::StrokeKind::Inside);
     }
