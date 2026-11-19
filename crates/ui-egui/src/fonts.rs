@@ -12,7 +12,9 @@
 //! present the letters join and a run of one direction is ordered correctly. A mixed line
 //! goes through the bidi painter; see `docs/how-to/write-right-to-left.md`.
 
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]

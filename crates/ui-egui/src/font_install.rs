@@ -38,6 +38,7 @@ pub fn is_font_file(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| FONT_EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(ext)))
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn name_of_path(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
