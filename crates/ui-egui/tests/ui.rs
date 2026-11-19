@@ -13943,3 +13943,215 @@ A short page.",
     });
     assert!(!stray_ink, "font names are drawn below the font list's popup");
 }
+
+// ---------- UI polish: issues #365 to #384 ----------
+
+/// Whether a control reports itself as on (egui reports a selected button as toggled).
+fn is_on(h: &Harness<'_, NoteCraftApp>, label: &str) -> Option<bool> {
+    use egui_kittest::kittest::NodeT as _;
+    h.get_by_label(label).accesskit_node().toggled().map(|t| t == egui::accesskit::Toggled::True)
+}
+
+fn pages_in(section: &std::path::Path) -> usize {
+    notecraft_store::tree::load_tree(section).map_or(0, |n| n.children.iter().filter(|c| c.info.kind == notecraft_model::NodeKind::Page).count())
+}
+
+/// Issue #366: Add page is one full-width row across the page list, about 32 points tall, and
+/// its plus, its words and its far edge each add exactly one page and open it.
+#[test]
+fn add_page_is_one_full_width_row_and_every_part_of_it_adds_one_page() {
+    for part in ["plus", "middle", "far edge"] {
+        let (_t, app, s) = sample_app("ui-add-page-row");
+        let mut h = harness(app, LIGHT);
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(&mut h);
+        // The page list with its own Add page is the Separate pages layout.
+        h.get_by_label("View").click();
+        settle(&mut h);
+        h.get_by_label("Separate pages").click();
+        settle(&mut h);
+        let section = s.md_page.parent().expect("section").to_path_buf();
+        let before = pages_in(&section);
+        let row = h.get_by_label("Add page").rect();
+        assert!(row.width() >= 140.0, "{part}: Add page spans the page list, not just its words: {row:?}");
+        assert!(row.height() >= 30.0, "{part}: Add page is a comfortable target: {row:?}");
+        let x = match part {
+            "plus" => row.min.x + 20.0,
+            "middle" => row.center().x,
+            _ => row.max.x - 3.0,
+        };
+        ask(&mut h, "ui.click", json!({"x": x, "y": row.center().y})).expect("click Add page");
+        settle(&mut h);
+        assert_eq!(pages_in(&section), before + 1, "{part}: one click adds exactly one page");
+        assert_eq!(h.query_all_by_label("Cancel").count(), 0, "{part}: no name dialog stands between the click and the page");
+        let root = h.state().session().root().to_path_buf();
+        let open = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["path"].as_str().map(|p| root.join(p));
+        assert!(open.as_ref().is_some_and(|p| p.starts_with(&section) && *p != s.md_page), "{part}: the new page is opened: {open:?}");
+    }
+}
+
+/// Issue #365: the recycle bin is a recovery workspace. Each item is a row with where it came
+/// from; one row is selected and Restore acts on it; deleting for good asks first with the
+/// keyboard on Cancel, and Cancel returns to the same row.
+#[test]
+fn the_recycle_bin_selects_restores_and_guards_permanent_deletion() {
+    use egui_kittest::kittest::NodeT as _;
+    for theme in [LIGHT, DARK] {
+        let (_t, app, s) = sample_app("ui-recycle-bin");
+        let mut h = sized_harness(app, theme, egui::vec2(1600.0, 900.0));
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "engine.execute", json!({"command": "node.delete", "params": {"path": s.html_page.to_string_lossy()}})).expect("recycle a page");
+        settle(&mut h);
+        assert!(!s.html_page.exists());
+        h.get_by_label("History").click();
+        settle(&mut h);
+        h.get_by_label("Notebook Recycle Bin").click();
+        settle(&mut h);
+        review(&mut h, &format!("recycle_bin_{}", theme.mode.is_dark()));
+        assert_eq!(h.query_all_by_label("Back to notes").count(), 1, "the workspace has a way back");
+        assert_eq!(is_on(&h, "Project X"), Some(true), "the only item starts selected");
+        assert!(!h.get_by_label("Restore").accesskit_node().is_disabled());
+
+        h.get_by_label("Delete permanently...").click();
+        settle(&mut h);
+        assert!(h.query_all_by_label("Permanently delete?").count() > 0, "deleting for good asks first");
+        assert!(h.get_by_label("Cancel").accesskit_node().is_focused(), "the keyboard starts on Cancel");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("cancel");
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("Permanently delete?").count(), 0);
+        assert_eq!(is_on(&h, "Project X"), Some(true), "Cancel returns to the same row");
+
+        h.get_by_label("Restore").click();
+        settle(&mut h);
+        assert!(s.html_page.exists(), "Restore puts the page back where it was");
+        assert_eq!(h.query_all_by_label("This notebook's recycle bin is empty.").count(), 1, "the list is refreshed in place");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave");
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("Back to notes").count(), 0, "Escape returns to the page");
+    }
+}
+
+/// Issue #381: moving a section to the recycle bin says so in its title, is modal, and Escape
+/// cancels it with nothing moved.
+#[test]
+fn the_delete_confirmation_names_what_happens_and_escape_cancels_it() {
+    let (_t, app, s) = sample_app("ui-delete-confirm");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let section = s.md_page.parent().expect("section").to_path_buf();
+    let title = notecraft_store::tree::read_node(&section).expect("section").title;
+    h.get_all_by_label(&title).next().expect("section row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Delete...").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label("Move to recycle bin").count() >= 2, "the title and the action both say what happens");
+    assert_eq!(h.query_all_by_label("Delete notebook").count(), 0, "a section is not called a notebook");
+    review(&mut h, "delete_section_confirm");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("cancel");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Move to recycle bin").count(), 0);
+    assert!(section.exists(), "Escape moved nothing");
+}
+
+/// Issue #370: results hang from the search box, each names its notebook and section, and the
+/// arrow keys choose the result that Enter opens.
+#[test]
+fn search_results_sit_under_the_field_show_where_and_follow_the_arrow_keys() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-search-polish");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 860.0));
+    h.state_mut().open_path(&s.deep_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "Level");
+    let field = h.get_all_by_role(egui::accesskit::Role::TextInput).find(|n| n.value().as_deref() == Some("Level")).expect("search field").rect();
+    let rows: Vec<_> = h.query_all_by_label_contains("Projects").filter(|n| n.rect().min.y > field.max.y).collect();
+    assert!(!rows.is_empty(), "a result names its section");
+    for row in &rows {
+        let r = row.rect();
+        assert!(r.min.y >= field.max.y, "results are under the field: {r:?} {field:?}");
+        assert!(r.min.x >= field.min.x - 2.0 || r.max.x <= 1400.0, "results start at the field and stay in the window");
+    }
+    review(&mut h, "search_polish");
+    ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "ArrowDown"})).expect("down");
+    settle(&mut h);
+    let picked = h
+        .get_all_by_role(egui::accesskit::Role::Button)
+        .filter(|n| n.accesskit_node().label().is_some_and(|l| l.contains("Projects")))
+        .find(|n| n.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True))
+        .and_then(|n| n.accesskit_node().label())
+        .expect("a result is chosen");
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("open");
+    settle(&mut h);
+    let title = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"].as_str().unwrap_or_default().to_string();
+    assert!(!title.is_empty() && picked.starts_with(&title), "Enter opens the chosen result: {picked} / {title}");
+}
+
+/// Issue #369: the tab row has a button listing every section, groups included, so a tab that
+/// has scrolled out of sight is one click away.
+#[test]
+fn section_tabs_have_an_all_sections_list() {
+    let (_t, app, s) = sample_app("ui-tabs-overflow");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 860.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    let before = h.query_all_by_label("Projects").count();
+    h.get_by_label("All sections").click();
+    settle(&mut h);
+    review(&mut h, "tabs_all_sections");
+    let names: Vec<_> = h.query_all_by_label("Projects").collect();
+    assert_eq!(names.len(), before + 1, "the list names a section inside a group");
+    names.last().expect("listed").click();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Kickoff notes"), "choosing it opens the section's first page");
+}
+
+/// Issue #376: View's toggles show whether they are on, and Reset zoom says what it does and is
+/// only offered when there is something to reset.
+#[test]
+fn view_toggles_show_their_state_and_reset_zoom_resets() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-view-polish");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(is_on(&h, "Tabs layout"), Some(false));
+    assert_eq!(is_on(&h, "Normal view"), Some(true), "the view in use is marked");
+    assert!(h.get_by_label("Reset zoom").accesskit_node().is_disabled(), "nothing to reset at 100%");
+    h.get_by_label("Zoom In").click();
+    settle(&mut h);
+    assert!(!h.get_by_label("Reset zoom").accesskit_node().is_disabled());
+    review(&mut h, "view_polish");
+    h.get_by_label("Reset zoom").click();
+    settle(&mut h);
+    assert!(h.get_by_label("Reset zoom").accesskit_node().is_disabled(), "the page is back at 100%");
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    assert_eq!(is_on(&h, "Tabs layout"), Some(true));
+}
+
+/// Issue #380: the tree's menu keeps the shortcut out of the label.
+#[test]
+fn the_page_menu_names_new_page_without_its_shortcut() {
+    let (_t, app, s) = sample_app("ui-menu-polish");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = h.get_all_by_label(&title).map(|n| n.rect()).min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("page row");
+    h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle(&mut h);
+    review(&mut h, "page_menu_polish");
+    assert_eq!(h.query_all_by_label("New page").count(), 1, "New page is named without its shortcut");
+    assert_eq!(h.query_all_by_label_contains("(Ctrl+N)").count(), 0);
+    assert_eq!(h.query_all_by_label("Delete...").count(), 1, "Delete is in the menu, in its own group");
+}
