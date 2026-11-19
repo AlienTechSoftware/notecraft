@@ -430,6 +430,8 @@
 @id	ui.make_subpage	[[RLI]]$$$Make Subpage@@@[[PDI]]
 @id	ui.make_the_page_larger	[[RLI]]$$$Make the page larger@@@[[PDI]]
 @id	ui.make_the_page_smaller	[[RLI]]$$$Make the page smaller@@@[[PDI]]
+@id	ui.making_a_printout_of_name	[[RLI]]$$$Making a printout of {name}…@@@[[PDI]]
+@id	ui.making_a_printout_of_name_page_done_of_total	[[RLI]]$$$Making a printout of {name}: page {done} of {total}@@@[[PDI]]
 @id	ui.many_thanks_to_its_authors_and_contributors	[[RLI]]$$$— many thanks to its authors and contributors.@@@[[PDI]]
 @id	ui.markdown	[[RLI]]$$$Markdown@@@[[PDI]]
 @id	ui.match_case	[[RLI]]$$$Match case@@@[[PDI]]

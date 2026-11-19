@@ -430,6 +430,8 @@
 @id	ui.make_subpage	$$$Make Subpage@@@
 @id	ui.make_the_page_larger	$$$Make the page larger@@@
 @id	ui.make_the_page_smaller	$$$Make the page smaller@@@
+@id	ui.making_a_printout_of_name	$$$Making a printout of {name}…@@@
+@id	ui.making_a_printout_of_name_page_done_of_total	$$$Making a printout of {name}: page {done} of {total}@@@
 @id	ui.many_thanks_to_its_authors_and_contributors	$$$— many thanks to its authors and contributors.@@@
 @id	ui.markdown	$$$Markdown@@@
 @id	ui.match_case	$$$Match case@@@
