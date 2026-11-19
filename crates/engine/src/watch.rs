@@ -7,9 +7,8 @@
 //! and wakes the UI only when external changes settle on disk.
 
 use notecraft_store::coordination::Revision;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// How long an external change must remain settled before notifying the view.
@@ -50,7 +49,9 @@ pub fn is_sync_temp(path: &Path) -> bool {
 mod imp {
     use super::*;
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
     use std::sync::{Condvar, Mutex};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Instant, SystemTime};
 
     const POLL_STEP: Duration = Duration::from_millis(50);
@@ -352,7 +353,8 @@ pub use imp::FileWatcher;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn sync_temp_files_are_filtered_out() {
