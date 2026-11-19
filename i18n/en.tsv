@@ -82,6 +82,24 @@
 @id	ui.font_size_box	Font size
 @id	ui.font_family	Font Family
 @id	ui.font_family_box	Font name
+@id	ui.recent_fonts	Recently Used Fonts
+@id	ui.all_fonts	All Fonts
+@id	ui.font_missing	This font is not installed. The page shows a fallback font.
+@id	ui.font_add_none	No font was added.
+@id	ui.script_latin	Latin
+@id	ui.script_greek	Greek
+@id	ui.script_cyrillic	Cyrillic
+@id	ui.script_arabic	Arabic
+@id	ui.script_hebrew	Hebrew
+@id	ui.script_devanagari	Devanagari
+@id	ui.script_thai	Thai
+@id	ui.script_han	Chinese
+@id	ui.script_kana	Japanese
+@id	ui.script_hangul	Korean
+@id	ui.script_other	Other scripts
+@id	ui.add_font	Add Font…
+@id	ui.add_font_dialog_title	Choose font files to add
+@id	ui.font_files_filter	Font files
 @id	ui.pick_date	Pick a date
 @id	ui.pick_time	Pick a time
 @id	ui.am	AM
@@ -412,6 +430,8 @@
 @id	ui.make_subpage	Make Subpage
 @id	ui.make_the_page_larger	Make the page larger
 @id	ui.make_the_page_smaller	Make the page smaller
+@id	ui.making_a_printout_of_name	Making a printout of {name}…
+@id	ui.making_a_printout_of_name_page_done_of_total	Making a printout of {name}: page {done} of {total}
 @id	ui.many_thanks_to_its_authors_and_contributors	— many thanks to its authors and contributors.
 @id	ui.markdown	Markdown
 @id	ui.match_case	Match case
@@ -591,7 +611,11 @@
 @id	ui.plain_text	Plain text
 @id	ui.powered_by	Powered by
 @id	ui.pressure_sensitivity_now_of_100	Pressure sensitivity {now} of 100
+@id	ui.pressure_sensitivity_tip	How readily the pen answers pressure: turned up, a light hand lays down more ink
 @id	ui.pressure_sensitivity_unavailable	Pressure sensitivity unavailable
+@id	ui.pressure_unavailable_tip_linux	No pen pressure readings have reached this window yet. On Linux, use a pressure-capable pen tablet in a Wayland session.
+@id	ui.pressure_unavailable_tip_other	No pen pressure readings have reached this window yet. Use a pressure-capable pen.
+@id	ui.pressure_unavailable_tip_windows	No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled.
 @id	ui.previous	Previous
 @id	ui.previous_match_shift_enter	Previous match (Shift+Enter)
 @id	ui.printout_is_available_for_pdf_and_office_documents	Printout is available for PDF and Office documents.
@@ -1401,3 +1425,12 @@
 @id	ui.the_window_is_docked	Docked at the right of the screen. Other windows are not moved aside; Dock to desktop again puts the window back.
 @id	ui.the_window_is_undocked	The window is back as it was.
 @id	ui.the_screen_size_is_not_known_so_the_window_cannot_be_docked	The screen's size is not known here, so the window cannot be docked.
+@id	ui.back_to_notes	Back to notes
+@id	ui.recycle_bin_explainer	Pages, sections and section groups you delete wait here. Restore one to put it back where it was.
+@id	ui.recycle_bin_deleted_from	Deleted {when} from {place}
+@id	ui.recycle_bin_deleted_at	Deleted {when}
+@id	ui.delete_permanently_ellipsis	Delete permanently...
+@id	ui.add_page_empty_hint	Choose Add page above to start one.
+@id	ui.search_scope_all_notebooks	Searching all notebooks. Enter opens the chosen page; Up and Down choose.
+@id	ui.all_sections	All sections
+@id	ui.reset_zoom	Reset zoom

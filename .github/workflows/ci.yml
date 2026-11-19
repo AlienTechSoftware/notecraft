@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue runs CI on the merged result; without this its required check never reports.
+  merge_group:
   workflow_dispatch:
 
 permissions:

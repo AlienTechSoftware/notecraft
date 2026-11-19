@@ -18,6 +18,102 @@ use notecraft_model::{PageFormat, Tag};
 /// shows a tab for what is selected.
 pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
 pub const SOURCE_TAB: &str = "Source";
+/// The families grouped by script, with a translated heading for each, and the families of no
+/// listed script under Other. Built once for each catalogue read and kept in egui memory; rebuilding
+/// them on every frame cloned thousands of names while the list was closed.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn script_sections(ctx: &egui::Context, families: &[String]) -> std::sync::Arc<Vec<(String, Vec<String>)>> {
+    let Some(Ok(catalog)) = crate::fonts::catalog_if_ready() else {
+        return std::sync::Arc::new(Vec::new());
+    };
+    let key = egui::Id::new("notecraft-font-sections");
+    // The cache holds the catalogue it was built from, so a newer catalogue is never mistaken for it.
+    let cached = ctx.data(|d| d.get_temp::<(std::sync::Arc<crate::fonts::system::Catalog>, std::sync::Arc<Vec<(String, Vec<String>)>>)>(key));
+    if let Some((built_from, sections)) = cached
+        && std::sync::Arc::ptr_eq(&built_from, &catalog)
+    {
+        return sections;
+    }
+    let mut sections: Vec<(String, Vec<String>)> = crate::font_picker::sections(families, |name| catalog.scripts(name))
+        .into_iter()
+        .map(|(script, names)| (script_heading(script), names))
+        .collect();
+    // A family that covers none of the scripts (a symbol or decorative face) still needs a place in
+    // the list, so it is listed under Other.
+    if !sections.is_empty() {
+        let placed: std::collections::BTreeSet<&String> = sections.iter().flat_map(|(_, names)| names.iter()).collect();
+        let other: Vec<String> = families.iter().filter(|name| !placed.contains(name)).cloned().collect();
+        if !other.is_empty() {
+            sections.push((crate::tl_id!("ui.script_other").to_string(), other));
+        }
+    }
+    let sections = std::sync::Arc::new(sections);
+    ctx.data_mut(|d| d.insert_temp(key, (catalog.clone(), sections.clone())));
+    sections
+}
+
+/// Without the desktop font catalogue there are no script sections.
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn script_sections(_ctx: &egui::Context, _families: &[String]) -> std::sync::Arc<Vec<(String, Vec<String>)>> {
+    std::sync::Arc::new(Vec::new())
+}
+
+/// The families used lately, most recent first, shared by the ribbon and the floating toolbar. Kept
+/// for this session in egui memory.
+pub fn recent_families(ctx: &egui::Context) -> Vec<String> {
+    ctx.data(|d| d.get_temp(egui::Id::new("notecraft-recent-fonts"))).unwrap_or_default()
+}
+
+/// Keeps the recent list in step with the saved one. The first call reads the saved list; after that
+/// a change to the list is saved. `load` reads the saved text and `save` writes it.
+pub fn sync_recent_fonts(ctx: &egui::Context, load: impl FnOnce() -> Option<String>, save: impl FnOnce(&str)) {
+    let seeded_id = egui::Id::new("notecraft-recent-fonts-seeded");
+    let stored_id = egui::Id::new("notecraft-recent-fonts-stored");
+    if !ctx.data(|d| d.get_temp::<bool>(seeded_id)).unwrap_or(false) {
+        ctx.data_mut(|d| d.insert_temp(seeded_id, true));
+        let saved = crate::font_picker::parse_list(&load().unwrap_or_default());
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("notecraft-recent-fonts"), saved));
+    }
+    let now = recent_families(ctx);
+    let stored: Option<Vec<String>> = ctx.data(|d| d.get_temp(stored_id));
+    if stored.as_ref() != Some(&now) {
+        save(&crate::font_picker::format_list(&now));
+        ctx.data_mut(|d| d.insert_temp(stored_id, now));
+    }
+}
+
+/// Forgets the recent fonts, as the reset of local settings does. The saved list goes with the settings file.
+pub fn clear_recent_fonts(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        d.remove::<Vec<String>>(egui::Id::new("notecraft-recent-fonts"));
+        d.remove::<Vec<String>>(egui::Id::new("notecraft-recent-fonts-stored"));
+    });
+}
+
+/// Records a family as used now, from either toolbar.
+pub fn remember_family(ctx: &egui::Context, name: &str) {
+    let mut recent = recent_families(ctx);
+    crate::font_picker::remember(&mut recent, name);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("notecraft-recent-fonts"), recent));
+}
+
+/// The translated heading of a script's section in the font list.
+pub fn script_heading(script: crate::font_picker::Script) -> String {
+    use crate::font_picker::Script;
+    match script {
+        Script::Latin => crate::tl_id!("ui.script_latin").to_string(),
+        Script::Greek => crate::tl_id!("ui.script_greek").to_string(),
+        Script::Cyrillic => crate::tl_id!("ui.script_cyrillic").to_string(),
+        Script::Arabic => crate::tl_id!("ui.script_arabic").to_string(),
+        Script::Hebrew => crate::tl_id!("ui.script_hebrew").to_string(),
+        Script::Devanagari => crate::tl_id!("ui.script_devanagari").to_string(),
+        Script::Thai => crate::tl_id!("ui.script_thai").to_string(),
+        Script::Han => crate::tl_id!("ui.script_han").to_string(),
+        Script::Kana => crate::tl_id!("ui.script_kana").to_string(),
+        Script::Hangul => crate::tl_id!("ui.script_hangul").to_string(),
+    }
+}
+
 pub const FONT_SIZES: [u8; 16] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 /// Shown only while the caret is in a table, the way Office shows a tab for the thing in
 /// hand. It goes when the caret leaves, and the ribbon falls back to Home.
@@ -673,8 +769,17 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
             });
         });
     if let Some(x) = overflow_arrows(ui, &out, t) {
-        ui.data_mut(|d| d.insert_temp(jump_id, x));
-        ui.ctx().request_repaint();
+        // Ask for another frame only when the arrows move: asking every frame keeps the window redrawing.
+        let last_id = egui::Id::new("ribbon-arrows-last");
+        if ui.data(|d| d.get_temp::<f32>(last_id)) != Some(x) {
+            ui.ctx().request_repaint();
+        }
+        ui.data_mut(|d| {
+            d.insert_temp(last_id, x);
+            d.insert_temp(jump_id, x);
+        });
+    } else {
+        ui.data_mut(|d| d.remove::<f32>(egui::Id::new("ribbon-arrows-last")));
     }
     acts
 }
@@ -1084,6 +1189,39 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
     resp.on_hover_text(tip)
 }
 
+/// A setting that is on or off, shown as a box with a tick and its name (issue #376), so the
+/// View tab's toggles say what they are and whether they are on, rather than a bare letter or
+/// an empty square.
+// i18n-ui-text: label,tip
+fn small_check(ui: &mut Ui, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
+    let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 30.0, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    let boxed = Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(12.0, 12.0));
+    if on {
+        painter.rect_filled(boxed, 2.0, t.accent);
+        let c = boxed.center();
+        // The accent is built to stand at least 3:1 against the panel, so the panel's colour is
+        // the tick that stays visible on it in every theme (white does not on a light accent).
+        painter.add(egui::Shape::line(vec![c + vec2(-3.5, 0.2), c + vec2(-1.0, 2.8), c + vec2(3.5, -2.5)], egui::Stroke::new(1.6, t.panel)));
+    } else {
+        painter.rect_stroke(boxed, 2.0, egui::Stroke::new(1.2, t.muted), egui::StrokeKind::Inside);
+    }
+    painter.text(egui::pos2(rect.min.x + 23.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
+    resp.on_hover_text(tip)
+}
+
 /// A compact Office-style row control with a clear icon and its visible label.
 // i18n-ui-text: label,tip
 fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
@@ -1202,6 +1340,25 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
                     }
                 };
+                // Warn only once the installed list is known; while it loads, nothing is missing yet.
+                // The default setting shows as its translated label, which is not a font name, so it is never missing.
+                let named_family = view.font_family.filter(|family| *family != crate::tl_id!("ui.default"));
+                let family_missing = !families.is_empty() && crate::font_picker::is_missing(named_family.unwrap_or(""), &families);
+                // Record a missing font once, when it first shows, not on every frame.
+                let missing_key = egui::Id::new("notecraft-missing-font-reported");
+                if family_missing {
+                    let shown = named_family.unwrap_or("");
+                    if ui.data(|d| d.get_temp::<String>(missing_key)).as_deref() != Some(shown) {
+                        crate::usage::record(crate::usage::Level::Warning, "font_missing_shown", &[("family", shown)]);
+                        ui.data_mut(|d| d.insert_temp(missing_key, shown.to_owned()));
+                    }
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(missing_key));
+                }
+                // The list grouped by script, with a translated heading for each. Built once per catalogue read.
+                let sections = script_sections(ui.ctx(), &families);
+                // Recently used families, most recent first. Kept for this session in egui memory.
+                let recent_families: Vec<String> = recent_families(ui.ctx());
                 let family_out = crate::combo::show(
                     ui,
                     t.text,
@@ -1214,9 +1371,26 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         items: &families,
                         empty_note: families_note.as_deref(),
                         accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                        filter: true,
+                        recent: &recent_families,
+                        missing: family_missing,
+                        preview: true,
+                        sections: &sections,
+                        add_font: Some(crate::tl_id!("ui.add_font")),
+                        usage: "ribbon-family",
+                        tokens: *t,
                     },
                 );
+                if family_out.add_font {
+                    // The Add Font row: pick font files, install them, and read the list again.
+                    if let Some(report) = crate::font_install::pick_and_install()
+                        && !report.copied.is_empty()
+                    {
+                        crate::fonts::rescan_in_background(ui.ctx().clone());
+                    }
+                }
                 if let Some(name) = family_out.chosen {
+                    remember_family(ui.ctx(), &name);
                     acts.push(Act::FontFamily(name));
                 }
                 // OneNote's size control: an editable box showing the size, and a drop-down arrow.
@@ -1240,7 +1414,15 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         width: 38.0,
                         items: &sizes,
                         empty_note: None,
-                        accept: &|typed| typed.parse::<u8>().is_ok_and(|size| FONT_SIZES.contains(&size)),
+                        accept: &|typed| crate::font_picker::size_is_usable(typed, &FONT_SIZES),
+                        filter: false,
+                        recent: &[],
+                        missing: false,
+                        preview: false,
+                        sections: &[],
+                        add_font: None,
+                        usage: "ribbon-size",
+                        tokens: *t,
                     },
                 );
                 let boxes = crate::floating::FontBoxes {
@@ -1249,6 +1431,9 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     families: families.clone(),
                     families_note: families_note.clone(),
                     sizes: sizes.clone(),
+                    recent: recent_families.clone(),
+                    family_missing,
+                    sections: sections.clone(),
                 };
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
@@ -2561,7 +2746,9 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
     rows(ui, |ui| {
         ui.add_space(4.0);
         let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
-        ui.label(egui::RichText::new(label).size(10.0).color(if pressure_available { t.muted } else { t.warn }));
+        // Issue #375: no pressure readings is a fact about the device, not an error, so it is
+        // shown in the quiet colour rather than the warning one. The reason is on the hover.
+        ui.label(egui::RichText::new(crate::tl!(label)).size(10.0).color(t.muted));
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
@@ -2597,17 +2784,15 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             crate::tl_id!("ui.pressure_sensitivity_unavailable").to_owned()
         };
         resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
-        let tip = if pressure_available {
-            "How readily the pen answers pressure: turned up, a light hand lays down more ink"
+        if pressure_available {
+            resp.on_hover_text(crate::tl_id!("ui.pressure_sensitivity_tip"));
         } else {
-            "No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled."
-        };
-        resp.on_hover_text(crate::tl!(tip));
-        ui.label(
-            egui::RichText::new(if pressure_available { format!("{now}") } else { crate::tl_id!("ui.off").to_owned() })
-                .size(11.5)
-                .color(if pressure_available { t.text } else { t.warn }),
-        );
+            resp.on_hover_text(pressure_unavailable_tip());
+        }
+        // The value only when there is one: "Pressure off" already says it is off.
+        if pressure_available {
+            ui.label(egui::RichText::new(format!("{now}")).size(11.5).color(t.text));
+        }
     });
 }
 
@@ -2725,7 +2910,10 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     // The one in use sinks into the rack, the way a pen lifted out of a tray sits lower
     // than its neighbours, and it eases down rather than jumping.
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
-    paint_tool(&painter, rect, nib.tool, nib.colour, drop);
+    let (stand, band) = rack_spots(rect);
+    paint_tool(&painter, stand, nib.tool, nib.colour, drop);
+    let dark = crate::theme::luminance(t.panel) < crate::inkpad::DARK_PAGE;
+    crate::inkpad::paint_stroke(&painter, band.min, &rack_swatch(nib, band, dark));
 
     // The chevron on the tool in hand opens its editor, as OneNote's does; a right click
     // opens the same editor and the rest of the rack's own menu.
@@ -2787,6 +2975,58 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
+}
+
+/// How tall the strip under a pen on the rack is, where the stroke it makes is drawn.
+const RACK_SWATCH_H: f32 = 10.0;
+
+/// Where in a rack slot the tool stands, and the strip under it for its stroke. The strip
+/// sits above the chevron the tool in hand shows, so neither covers the other; the eraser
+/// stands in the same place so the rack keeps one line.
+fn rack_spots(slot: Rect) -> (Rect, Rect) {
+    let band = Rect::from_min_size(egui::pos2(slot.min.x + 3.0, slot.max.y - 12.0 - RACK_SWATCH_H), vec2(slot.width() - 6.0, RACK_SWATCH_H));
+    let stand = Rect::from_min_max(slot.min, egui::pos2(slot.max.x, band.min.y - 2.0));
+    (stand, band)
+}
+
+/// The short stroke drawn under a pen on the rack: its own tool and colour, and a width
+/// that grows with the pen's (issue #375). Two black pens of different sizes look alike
+/// standing up; their strokes do not.
+///
+/// Fine pens are drawn at their own width. A broad one cannot be, in a strip ten points
+/// tall, so above three points the width grows by the square root of the rest, scaled so the
+/// broadest pen fills the strip: every size still draws wider than the one below it, and
+/// none spills out. `dark` is a
+/// dark ribbon, where black ink is drawn light, as a dark page draws it.
+fn rack_swatch(nib: Nib, band: Rect, dark: bool) -> notecraft_ink::Stroke {
+    let w = nib.width();
+    // The root is scaled so the broadest pen a rack can hold just fills the strip; capping it
+    // instead drew every pen past about 28 pt alike.
+    let (exact, room) = (3.0, RACK_SWATCH_H - 2.0);
+    let widest = f32::from(rack::MAX_TENTHS) / 10.0;
+    let shown = if w <= exact { w } else { exact + (room - exact) * ((w - exact) / (widest - exact)).sqrt().min(1.0) };
+    // On a dark ribbon black ink is shown light, as a dark page shows it.
+    let mut stroke = notecraft_ink::Stroke::new(nib.tool, crate::inkpad::shown_colour(nib.colour, dark), shown);
+    let (left, right) = (shown / 2.0 + 1.0, band.width() - shown / 2.0 - 1.0);
+    let mid = band.height() / 2.0;
+    // A slight wave, so it reads as a stroke and not a rule; the swing is kept inside the strip.
+    let swing = ((band.height() - shown) / 2.0 - 0.5).clamp(0.0, 1.5);
+    for k in 0..=6u8 {
+        let at = f32::from(k) / 6.0;
+        stroke.dabs.push(notecraft_ink::Dab::new(left + (right - left) * at, mid - (at * std::f32::consts::TAU).sin() * swing, 1.0));
+    }
+    stroke
+}
+
+/// What to say when no pressure has reached the window, by what this system needs for it.
+fn pressure_unavailable_tip() -> &'static str {
+    if cfg!(target_os = "windows") {
+        crate::tl_id!("ui.pressure_unavailable_tip_windows")
+    } else if cfg!(target_os = "linux") {
+        crate::tl_id!("ui.pressure_unavailable_tip_linux")
+    } else {
+        crate::tl_id!("ui.pressure_unavailable_tip_other")
+    }
 }
 
 /// OneNote's Modify Tool popup: the stroke this tool makes, the thicknesses as dots, the
@@ -2920,8 +3160,10 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
 
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
     let cx = rect.center().x;
-    let tall = 38.0;
-    let top = rect.center().y - tall / 2.0 - 2.0 + drop;
+    // Stood where the pens stand, and as tall as they are, above the strip their strokes use.
+    let (stand, _) = rack_spots(rect);
+    let tall = (stand.height() - 14.0).clamp(16.0, 38.0);
+    let top = stand.center().y - tall / 2.0 - 2.0 + drop;
     let foot = top + tall;
     // A block rubber seen square on: a pale grey body with a flat foot, and the band of
     // rubber at the bottom in the lilac OneNote gives it. No dome and no wedge; the
@@ -3497,14 +3739,18 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
     group(ui, crate::tl_id!("ui.views"), t, |ui| {
-        if big(ui, Icon::Page, crate::tl_id!("ui.normal_view"), crate::tl_id!("ui.the_page_beside_the_notebooks"), t).clicked() && view.full_page {
+        // Issue #376: the view in use is marked, so Normal and Full Page read as a choice.
+        if big_on(ui, Icon::Page, crate::tl_id!("ui.normal_view"), crate::tl_id!("ui.the_page_beside_the_notebooks"), !view.full_page, t).clicked()
+            && view.full_page
+        {
             acts.push(Act::ToggleFullPage);
         }
-        if big(
+        if big_on(
             ui,
             if view.full_page { Icon::ExitFullPage } else { Icon::FullPage },
             crate::tl_id!("ui.full_page_view_2"),
             crate::tl_id!("ui.give_the_page_the_whole_window"),
+            view.full_page,
             t,
         )
         .clicked()
@@ -3512,7 +3758,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleFullPage);
         }
         rows(ui, |ui| {
-            if small(ui, None, "", crate::tl_id!("ui.dock_to_desktop"), crate::tl_id!("ui.dock_to_desktop_tip"), view.docked, t).clicked() {
+            if small_check(ui, crate::tl_id!("ui.dock_to_desktop"), crate::tl_id!("ui.dock_to_desktop_tip"), view.docked, t).clicked() {
                 acts.push(Act::ToggleDock);
             }
         });
@@ -3521,10 +3767,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
         rows(ui, |ui| {
             // What OneNote calls the navigation pane: notebooks and sections in one
             // column, the pages of the chosen section in the next.
-            if small(
+            if small_check(
                 ui,
-                None,
-                crate::tl_id!("ui.split"),
                 crate::tl_id!("ui.separate_pages"),
                 crate::tl_id!("ui.notebooks_and_sections_in_one_column_pages_in_the_next"),
                 view.split_panes,
@@ -3535,17 +3779,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                 acts.push(Act::TogglePanes);
             }
             // Sections as coloured tabs across the top of the page (#268, #33).
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.tabs_layout"),
-                crate::tl_id!("ui.tabs_layout"),
-                crate::tl_id!("ui.tabs_layout_tip"),
-                view.tabs_layout,
-                t,
-            )
-            .clicked()
-            {
+            if small_check(ui, crate::tl_id!("ui.tabs_layout"), crate::tl_id!("ui.tabs_layout_tip"), view.tabs_layout, t).clicked() {
                 acts.push(Act::ToggleTabsLayout);
             }
         });
@@ -3571,15 +3805,11 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
         rows(ui, |ui| {
-            // i18n-exempt: T is the compact symbol on the page-title toggle.
-            if small(ui, None, "T", crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
+            if small_check(ui, crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
             }
-            if small(
+            if small_check(
                 ui,
-                None,
-                // i18n-exempt: # is the compact symbol on the snap-to-grid toggle.
-                "#",
                 crate::tl_id!("ui.snap_to_grid"),
                 crate::tl_id!("ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely"),
                 view.snap,
@@ -3623,8 +3853,14 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                         }
                     }
                 });
-                // i18n-exempt: 100% is a numeric zoom value, not translated copy.
-                if small(ui, None, "100%", crate::tl_id!("ui.zoom_to_100"), crate::tl_id!("ui.show_the_page_at_100"), false, t).clicked() {
+                // Issue #376: a reset reads as a reset, not as a second "100%" beside the
+                // percentage box; there is nothing to reset at 100%.
+                let reset = ui
+                    .add_enabled_ui(view.zoom_percent != 100, |ui| {
+                        small_labeled_icon(ui, Icon::Undo, crate::tl_id!("ui.reset_zoom"), crate::tl_id!("ui.show_the_page_at_100"), t)
+                    })
+                    .inner;
+                if reset.clicked() {
                     acts.push(Act::Zoom(0));
                 }
                 if small_labeled_icon(ui, Icon::PageWidth, crate::tl_id!("ui.page_width"), crate::tl_id!("ui.fit_the_page_to_the_available_width"), t)
@@ -3638,16 +3874,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     group(ui, crate::tl_id!("ui.window"), t, |ui| {
         rows(ui, |ui| {
             // Always on top is the window manager's business, and eframe can ask for it.
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.top"),
-                crate::tl_id!("ui.always_on_top"),
-                crate::tl_id!("ui.keep_this_window_above_the_others"),
-                view.always_on_top,
-                t,
-            )
-            .clicked()
+            if small_check(ui, crate::tl_id!("ui.always_on_top"), crate::tl_id!("ui.keep_this_window_above_the_others"), view.always_on_top, t)
+                .clicked()
             {
                 acts.push(Act::ToggleAlwaysOnTop);
             }
@@ -3808,6 +4036,50 @@ mod tests {
         assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "History", "View", "Table"]);
         assert_eq!(resolve_tab("Table", false, true), "Table");
         assert_eq!(resolve_tab("Table", false, false), "Home", "out of the table, out of the tab");
+    }
+
+    #[test]
+    fn a_pen_on_the_rack_shows_the_stroke_it_makes_thin_to_thick() {
+        let band = Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(21.0, RACK_SWATCH_H));
+        let black = notecraft_ink::Rgb(0, 0, 0);
+        let mut last = 0.0;
+        // Every size on the rack, then the broad ones a pen may be set to past it, up to the
+        // largest: compared with their neighbours, so a cap anywhere shows as two alike.
+        for tenths in rack::THICKNESSES.into_iter().chain([200, 280, 330, rack::MAX_TENTHS]) {
+            let nib = Nib::new(Tool::Pen, black, tenths);
+            let swatch = rack_swatch(nib, band, false);
+            assert_eq!((swatch.tool, swatch.colour), (Tool::Pen, black), "the swatch is the pen's own");
+            assert!(swatch.width > last, "{tenths} tenths draws wider than the size before it");
+            last = swatch.width;
+            for dab in &swatch.dabs {
+                let half = swatch.width / 2.0;
+                assert!(dab.x - half >= 0.0 && dab.x + half <= band.width(), "{tenths}: inside the rack across");
+                assert!(dab.y - half >= 0.0 && dab.y + half <= band.height(), "{tenths}: inside the rack down");
+            }
+        }
+        // A fine pen is drawn at its own width, so the two thinnest still read as different pens.
+        assert!((rack_swatch(Nib::new(Tool::Pen, black, 10), band, false).width - 1.0).abs() < 1e-4);
+        let marker = rack_swatch(Nib::new(Tool::Highlighter, notecraft_ink::Rgb(255, 230, 0), 140), band, false);
+        assert_eq!(marker.tool, Tool::Highlighter, "a highlighter swatch is drawn as a highlighter");
+        // On a dark ribbon a black pen's stroke is drawn light, or it would not be seen at all.
+        let on_dark = rack_swatch(Nib::new(Tool::Pen, black, 20), band, true);
+        assert_eq!(on_dark.colour, crate::inkpad::shown_colour(black, true));
+        assert_ne!(on_dark.colour, black);
+        let red = notecraft_ink::Rgb(220, 30, 30);
+        assert_eq!(rack_swatch(Nib::new(Tool::Pen, red, 20), band, true).colour, red, "a real colour stays itself");
+    }
+
+    #[test]
+    fn the_pressure_tip_names_what_this_system_needs() {
+        let tip = pressure_unavailable_tip();
+        if cfg!(target_os = "windows") {
+            assert!(tip.contains("Windows Ink"), "{tip}");
+        } else {
+            assert!(!tip.contains("Windows"), "a Windows setting is no help here: {tip}");
+        }
+        if cfg!(target_os = "linux") {
+            assert!(tip.contains("Wayland"), "{tip}");
+        }
     }
 
     #[test]

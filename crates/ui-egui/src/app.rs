@@ -46,6 +46,8 @@ const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 mod voice;
 /// The zoom, and how far down the last page was scrolled, when the window was closed.
 const LAST_ZOOM_KEY: &str = "last_zoom";
+/// The recently used font families, most recent first, saved with the other local settings.
+const RECENT_FONTS_KEY: &str = "recent_fonts";
 const LAST_SCROLL_KEY: &str = "last_scroll";
 /// How long after the last change to the ink it is written, once the pen is up. A write on a
 /// synced folder waits on the mount; made after every stroke on the window's thread, the next
@@ -166,6 +168,32 @@ fn modal_button_enabled(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool
             .fill(fill)
             .stroke(egui::Stroke::new(1.0, tokens.accent)),
     )
+}
+
+/// A destructive modal action (issue #381): outlined and lettered in the warning colour, never
+/// the accent fill that a routine primary action uses, so "delete for good" never looks like
+/// "OK".
+// i18n-ui-text: label
+fn modal_button_destructive(ui: &mut Ui, tokens: &Tokens, label: &str) -> egui::Response {
+    let label = crate::tl!(label);
+    let width = (label.chars().count() as f32 * 8.0 + 32.0).max(92.0);
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).size(14.0).strong().color(tokens.warn))
+            .min_size(vec2(width, 32.0))
+            .fill(tokens.panel)
+            .stroke(egui::Stroke::new(1.5, tokens.warn)),
+    )
+}
+
+/// Keeps the keyboard inside a modal dialog (issue #381): when focus is on none of the
+/// dialog's own controls (it has just opened, or focus was left on the page behind it),
+/// it moves to `first`. For an action that cannot be undone `first` is Cancel, so Enter
+/// or Space straight after the dialog opens never confirms it.
+fn hold_modal_focus(first: &egui::Response, inside: &[&egui::Response]) {
+    let focused = first.ctx.memory(|m| m.focused());
+    if !inside.iter().any(|r| Some(r.id) == focused) {
+        first.request_focus();
+    }
 }
 
 fn params(pairs: &[(&str, &str)]) -> Params {
@@ -498,6 +526,59 @@ fn section_for(path: &Path) -> Option<PathBuf> {
         }
         current = current.parent()?;
     }
+}
+
+/// Where the middle of the band's title goes (issue #371): on the window's `centre` when the
+/// title, `width` wide, fits there between `start` and `end`; otherwise as near to it as the
+/// room allows, never before `start`.
+fn band_title_centre(centre: f32, start: f32, end: f32, width: f32) -> f32 {
+    let half = width / 2.0;
+    centre.clamp(start + half, (end - half).max(start + half))
+}
+
+/// Where a search result is (issue #370): the titles of its notebook, any section groups and
+/// its section, from the tree already in memory, joined with " > ". A sub-page's parent pages
+/// are left out; the section is the place. Empty when the page is not in the tree.
+fn search_trail(tree: &[Node], page: &Path) -> String {
+    fn walk(nodes: &[Node], page: &Path, names: &mut Vec<String>) -> bool {
+        for n in nodes {
+            if n.path == page {
+                return true;
+            }
+            if page.starts_with(&n.path) {
+                let mark = names.len();
+                if n.info.kind != NodeKind::Page {
+                    names.push(n.info.title.clone());
+                }
+                if walk(&n.children, page, names) {
+                    return true;
+                }
+                names.truncate(mark);
+            }
+        }
+        false
+    }
+    let mut names = Vec::new();
+    if walk(tree, page, &mut names) { names.join(" > ") } else { String::new() }
+}
+
+/// Where a recycled item came from, as the titles of the groups and section that held it,
+/// joined with " > ". `original` is the item's own path inside the notebook. Empty when the
+/// item sat directly in the notebook or the entry does not say.
+fn recycled_place(notebook: &Path, original: &str) -> String {
+    let parts: Vec<&str> = original.split('/').filter(|p| !p.is_empty()).collect();
+    let mut at = notebook.to_path_buf();
+    let mut names = Vec::new();
+    for part in parts.iter().take(parts.len().saturating_sub(1)) {
+        at.push(part);
+        match notecraft_store::tree::read_node(&at) {
+            // A sub-page's parent page is not a place: the section above it is.
+            Some(node) if node.kind == NodeKind::Page => {}
+            Some(node) => names.push(node.title),
+            None => names.push((*part).to_string()),
+        }
+    }
+    names.join(" > ")
 }
 
 /// What the Format Painter holds: the formatting it picked up, where it picked it up (so the
@@ -962,9 +1043,17 @@ enum Dialog {
         /// A saved version opened for reading, before any Restore (issue #278).
         preview: Option<Box<crate::versions::Preview>>,
     },
+    /// The notebook's recycle bin as a recovery workspace (issue #365): every recycled item
+    /// with where it came from, one selected, and one Restore for the selection.
     RecycleBin {
         notebook: PathBuf,
+        /// The notebook's own name, for the header.
+        name: String,
         items: Vec<notecraft_store::recycle::Recycled>,
+        /// Where each item came from, as the titles of the section and groups above it.
+        places: Vec<String>,
+        /// The id of the selected item.
+        selected: Option<String>,
     },
     PurgeRecycleItem {
         notebook: PathBuf,
@@ -1050,6 +1139,8 @@ enum Act {
     PromoteSubpage(PathBuf),
     MovePageUp(PathBuf),
     MovePageDown(PathBuf),
+    /// A row dragged in the navigation pane and let go: where it goes.
+    Place(PathBuf, crate::navdrag::Drop),
     PageVersions(PathBuf),
     Delete(PathBuf, String, usize),
     Color(PathBuf, Option<NodeColor>),
@@ -1113,6 +1204,8 @@ pub struct NoteCraftApp {
     /// History > Hide Authors: who changed a page is not shown under its title. What the page
     /// keeps is not touched (issue #292).
     hide_authors: bool,
+    /// Printouts being made off the window's thread, with the format of the page each is for.
+    printouts: Vec<(crate::printout::Job, PageFormat)>,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     /// The pages visited, for Back and Forward.
@@ -1155,6 +1248,10 @@ pub struct NoteCraftApp {
     search: String,
     searched: String,
     hits: Vec<Hit>,
+    /// Where each search result is, as its notebook and section titles (issue #370).
+    hit_trails: Vec<String>,
+    /// The result chosen with the arrow keys, if any (issue #370).
+    search_pick: Option<usize>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1385,6 +1482,7 @@ impl NoteCraftApp {
             saver,
             author_name,
             hide_authors,
+            printouts: Vec::new(),
             nav: NavHistory::default(),
             qat,
             last_ink_change: None,
@@ -1423,6 +1521,8 @@ impl NoteCraftApp {
             search: String::new(),
             searched: String::new(),
             hits: Vec::new(),
+            hit_trails: Vec::new(),
+            search_pick: None,
             tags_pane: None,
             custom_tags: None,
             templates_pane: None,
@@ -2074,19 +2174,27 @@ impl NoteCraftApp {
                 self.request_window(quick);
             }
         }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1)) {
-            self.go_back();
-        }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2)) {
-            self.go_forward();
-        }
-        // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page list,
-        // from the page as well as from the list (issue #162).
-        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
-            self.step_page(false);
-        }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
-            self.step_page(true);
+        // Page navigation waits while a dialog is open: a modal (the recycle bin, a delete
+        // confirmation) acts on the page behind it, which must not change underneath it.
+        if self.dialog.is_none() {
+            if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft))
+                || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1))
+            {
+                self.go_back();
+            }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight))
+                || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2))
+            {
+                self.go_forward();
+            }
+            // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page
+            // list, from the page as well as from the list (issue #162).
+            if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
+                self.step_page(false);
+            }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
+                self.step_page(true);
+            }
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F1)) {
             self.toggle_ribbon();
@@ -2254,6 +2362,11 @@ impl NoteCraftApp {
     /// Opens every level of the tree.
     pub fn expand_all(&mut self) {
         self.open = self.collect_branches().into_iter().collect();
+    }
+
+    /// How many printouts are still being made.
+    pub fn printouts_pending(&self) -> usize {
+        self.printouts.len()
     }
 
     /// Whether the page being edited has unsaved changes.
@@ -3316,50 +3429,94 @@ impl NoteCraftApp {
         }
     }
 
+    /// Starts making a printout of `file` for the page in `dir`, off the window's thread: the
+    /// page goes on being written in while it is made ([`crate::printout::Job`]), and it goes in
+    /// once it is ready ([`Self::poll_printouts`]).
     fn insert_printout(&mut self, dir: &Path, file: &Path, format: PageFormat) {
-        let rendered = match printout::render(file) {
-            Ok(rendered) => rendered,
+        let job = crate::printout::Job::start(dir, file);
+        self.say(crate::i18n::format_message_id("ui.making_a_printout_of_name", &[("name", &job.name)]));
+        self.printouts.push((job, format));
+    }
+
+    /// Takes in the printouts that are ready, and says how far along the others are.
+    fn poll_printouts(&mut self, ctx: &Context) {
+        let mut i = 0;
+        while i < self.printouts.len() {
+            match self.printouts[i].0.poll() {
+                None => {
+                    let (done, total) = self.printouts[i].0.pages;
+                    if total > 0 {
+                        let name = self.printouts[i].0.name.clone();
+                        self.say(crate::i18n::format_message_id(
+                            "ui.making_a_printout_of_name_page_done_of_total",
+                            &[("name", &name), ("done", &done.to_string()), ("total", &total.to_string())],
+                        ));
+                    }
+                    i += 1;
+                }
+                Some(made) => {
+                    let (job, format) = self.printouts.remove(i);
+                    self.finish_printout(&job, format, made);
+                }
+            }
+        }
+        if !self.printouts.is_empty() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+    }
+
+    /// Puts a printout that is ready into its page: the open one where the writer is, as
+    /// [`Self::insert_printout_blocks`] does, or, when another page was opened meanwhile, into
+    /// that page's file, in a box of its own below what is there.
+    fn finish_printout(&mut self, job: &crate::printout::Job, format: PageFormat, made: Result<crate::printout::Made, String>) {
+        let made = match made {
+            Ok(made) => made,
             Err(error) => {
                 self.complain(&error);
                 return;
             }
         };
-        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let Some(Output::Text(link)) = self.run("page.attach", &params(&[("path", &path_str(dir)), ("source", &path_str(file))])) else {
-            self.complain(&crate::i18n::format_message_id("ui.could_not_attach_name_before_rendering_its_pages", &[("name", &name)]));
-            return;
-        };
-        let Some(base) = link.strip_prefix("assets/").and_then(|link| Path::new(link).file_name()).map(|name| name.to_string_lossy().into_owned())
-        else {
-            self.complain(crate::tl_id!("ui.the_attachment_returned_an_invalid_page_link"));
-            return;
-        };
-        let assets = dir.join("assets");
-        let mut generated = Vec::with_capacity(rendered.pages().len());
-        for (index, page) in rendered.pages().iter().enumerate() {
-            let target = assets.join(format!("{base}.printout-{:03}.png", index + 1));
-            if let Err(error) = std::fs::copy(page, &target) {
-                for path in &generated {
-                    let _ = std::fs::remove_file(path);
-                }
-                self.complain(&crate::i18n::format_message_id(
-                    "ui.could_not_store_printout_page_page_error",
-                    &[("page", &(index + 1).to_string()), ("error", &error.to_string())],
-                ));
-                return;
+        let mut text = snippets::attachment(format, &made.link, &job.name);
+        for (index, image) in made.images.iter().enumerate() {
+            text.push_str(&snippets::printout_page(format, image, index + 1));
+        }
+        if self.editor.as_ref().is_some_and(|ed| ed.dir == job.dir) {
+            self.insert_printout_blocks(&text);
+            if let Some(ed) = self.editor.as_mut() {
+                ed.attachments = notecraft_store::assets::list(&ed.dir);
             }
-            generated.push(target);
+        } else if !self.add_to_page_file(&job.dir, &text) {
+            return;
         }
-        let mut text = snippets::attachment(format, &link, &name);
-        for (index, _) in generated.iter().enumerate() {
-            let image = format!("assets/{base}.printout-{:03}.png", index + 1);
-            text.push_str(&snippets::printout_page(format, &image, index + 1));
-        }
-        self.insert_printout_blocks(&text);
         self.say(crate::i18n::format_message_id(
             "ui.inserted_name_and_count_printout_pages",
-            &[("name", &name), ("count", &generated.len().to_string())],
+            &[("name", &job.name), ("count", &made.images.len().to_string())],
         ));
+    }
+
+    /// Adds `text` to the page in `dir`, which is not the one open, in a box of its own below its
+    /// boxes, and writes it. Says why when it cannot, and returns whether it did.
+    fn add_to_page_file(&mut self, dir: &Path, text: &str) -> bool {
+        let page = match notecraft_store::page::load_page(dir) {
+            Ok(page) => page,
+            Err(e) => {
+                self.complain(&e.to_string());
+                return false;
+            }
+        };
+        let (mut blocks, arranged) = notecraft_formats::boxes::read(page.format, &page.body);
+        let (added, _) = notecraft_formats::boxes::read(page.format, text);
+        let body = match arranged {
+            Some(boxes) if !boxes.is_empty() => {
+                let width = boxes.first().map_or(360.0, |c| c.width);
+                let below = boxes.iter().map(|c| c.y + 60.0).fold(0.0, f32::max);
+                let boxes = notecraft_model::container::append(&boxes, blocks.len(), added.len(), width, below, 12.0);
+                blocks.extend(added);
+                notecraft_formats::boxes::write(page.format, &blocks, Some(&boxes))
+            }
+            _ => format!("{}\n{text}", page.body.trim_end()),
+        };
+        self.run("page.save", &params(&[("path", &path_str(dir)), ("body", &body)])).is_some()
     }
 
     // ---------- tree ----------
@@ -3475,6 +3632,7 @@ impl NoteCraftApp {
                     self.session.refresh();
                 }
             }
+            Act::Place(path, drop) => self.place_dropped(&path, &drop),
             Act::PageVersions(path) => self.show_page_versions(&path),
             Act::Delete(path, title, count) => self.dialog = Some(Dialog::Delete { path, title, count }),
             Act::Color(path, color) => {
@@ -3500,6 +3658,135 @@ impl NoteCraftApp {
         }
     }
 
+    /// Dragging rows in the navigation pane: taking hold of `node`'s row, showing where a carried
+    /// row would go over this one, and letting go (see `navdrag`).
+    fn drag_row(&self, ui: &Ui, node: &Node, rect: egui::Rect, resp: &egui::Response, acts: &mut Vec<Act>) {
+        use crate::navdrag::{Carried, Drop, carried_id, drop_at, drop_id};
+        let ctx = ui.ctx();
+        let frame = ctx.cumulative_frame_nr();
+        if resp.drag_started() {
+            ctx.data_mut(|d| {
+                d.insert_temp(carried_id(), Carried { path: node.path.clone(), kind: node.info.kind, title: node.info.title.clone() });
+                d.remove::<(u64, Option<Drop>)>(drop_id());
+            });
+        }
+        let Some(carried) = ctx.data(|d| d.get_temp::<Carried>(carried_id())) else { return };
+        // Escape puts it back: nothing is moved when the button comes up.
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ctx.data_mut(|d| {
+                d.remove::<Carried>(carried_id());
+                d.remove::<(u64, Option<Drop>)>(drop_id());
+            });
+            return;
+        }
+        let t = &self.tokens;
+        // Over this row: where it would go, shown on the row.
+        if let Some(p) = ctx.pointer_latest_pos().filter(|p| rect.contains(*p))
+            && carried.path != node.path
+        {
+            let drop = drop_at(&carried, &node.path, node.info.kind, rect.min.y, rect.max.y, p.y);
+            let painter = ui.painter_at(rect.expand(2.0));
+            match &drop {
+                Some(Drop::Before(_)) => {
+                    painter.line_segment([rect.left_top() + vec2(4.0, 0.0), rect.right_top() - vec2(4.0, 0.0)], egui::Stroke::new(2.0, t.accent));
+                }
+                Some(Drop::After(_)) => {
+                    painter
+                        .line_segment([rect.left_bottom() + vec2(4.0, 0.0), rect.right_bottom() - vec2(4.0, 0.0)], egui::Stroke::new(2.0, t.accent));
+                }
+                Some(Drop::Into(_)) => {
+                    painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+                }
+                None => {}
+            }
+            ctx.data_mut(|d| d.insert_temp(drop_id(), (frame, drop)));
+        }
+        if resp.dragged() && carried.path == node.path {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            // What is carried follows the pointer, faintly, above everything else.
+            if let Some(p) = ctx.pointer_latest_pos() {
+                let layer = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("nav-drag-ghost")));
+                let galley = ui.painter().layout_no_wrap(carried.title.clone(), egui::FontId::proportional(13.0), t.text);
+                let at = p + vec2(14.0, -galley.size().y / 2.0);
+                let back = egui::Rect::from_min_size(at - vec2(6.0, 3.0), galley.size() + vec2(12.0, 6.0));
+                layer.rect_filled(back, 4.0, t.panel.gamma_multiply(0.92));
+                layer.rect_stroke(back, 4.0, egui::Stroke::new(1.0, t.container_border), egui::StrokeKind::Inside);
+                layer.galley(at, galley, t.text);
+            }
+        }
+        if resp.drag_stopped() && carried.path == node.path {
+            // Only where the pointer is now, or was a frame ago: a row it has left has no say.
+            let drop = ctx.data_mut(|d| {
+                d.remove::<Carried>(carried_id());
+                d.remove_temp::<(u64, Option<Drop>)>(drop_id())
+            });
+            if let Some((when, Some(drop))) = drop
+                && when + 1 >= frame
+                && ctx.pointer_latest_pos().is_some_and(|p| ctx.viewport_rect().contains(p))
+            {
+                acts.push(Act::Place(node.path.clone(), drop));
+            }
+        }
+    }
+
+    /// Puts a row dragged in the navigation pane where it was let go: above or below another row,
+    /// among the rows beside it, or into one. The window stays on the page it was on, wherever
+    /// that page went.
+    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) {
+        use crate::navdrag::Drop;
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let kind = notecraft_store::tree::read_node(path).map(|n| n.kind);
+        let target = crate::navdrag::target(drop).to_path_buf();
+        // The nodes beside the target, in their order: the notebooks, or what its parent holds.
+        let beside: Vec<PathBuf> = {
+            fn holding<'a>(nodes: &'a [Node], child: &Path) -> Option<&'a [Node]> {
+                if nodes.iter().any(|n| n.path == child) {
+                    return Some(nodes);
+                }
+                nodes.iter().find(|n| child.starts_with(&n.path)).and_then(|n| holding(&n.children, child))
+            }
+            holding(self.session.tree(), &target).map(|nodes| nodes.iter().map(|n| n.path.clone()).collect()).unwrap_or_default()
+        };
+        let (to, before) = match drop {
+            Drop::Into(into) => (into.clone(), None),
+            Drop::Before(row) => (row.parent().map(Path::to_path_buf).unwrap_or_default(), Some(row.clone())),
+            Drop::After(row) => {
+                // Before whatever follows the row, not counting what is carried: below the row
+                // just above where it already is, it stays where it is.
+                let next = beside.iter().position(|p| p == row).and_then(|i| beside.iter().skip(i + 1).find(|p| *p != path)).cloned();
+                (row.parent().map(Path::to_path_buf).unwrap_or_default(), next)
+            }
+        };
+        let mut p = vec![("path", path_str(path))];
+        if kind != Some(NodeKind::Notebook) {
+            p.push(("to", path_str(&to)));
+        }
+        if let Some(before) = &before {
+            p.push(("before", path_str(before)));
+        }
+        let pairs: Vec<(&str, &str)> = p.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
+        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return };
+        self.session.refresh();
+        if matches!(drop, Drop::Into(_)) {
+            self.open.insert(to);
+        }
+        if new_path != path {
+            self.nav.relocate(path, &new_path);
+            let remap = |candidate: &Path| candidate.strip_prefix(path).map_or_else(|_| candidate.to_path_buf(), |suffix| new_path.join(suffix));
+            self.open = self.open.iter().map(|branch| remap(branch)).collect();
+            self.selected = self.selected.as_deref().map(remap);
+            if let Some(editor_path) = editor_path.filter(|editor_path| editor_path.starts_with(path)) {
+                let relocated = remap(&editor_path);
+                self.open_page_inner(&relocated);
+            }
+        }
+        self.say(crate::tl_id!("ui.moved"));
+    }
+
     fn draw_node(&self, ui: &mut Ui, node: &Node, depth: usize, acts: &mut Vec<Act>) {
         self.draw_row(ui, node, depth, acts, true);
     }
@@ -3511,9 +3798,12 @@ impl NoteCraftApp {
         let open = self.open.contains(&node.path);
         let selected = self.selected.as_deref() == Some(node.path.as_path());
         let width = ui.available_width();
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
+        // A row can be taken hold of and dragged elsewhere in the pane (see `navdrag`); a press
+        // that hardly moves is still a click.
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let t = &self.tokens;
+        self.drag_row(ui, node, rect, &resp, acts);
         if selected {
             painter.rect_filled(rect, 4.0, t.row_selected);
         } else if resp.hovered() {
@@ -3599,10 +3889,11 @@ impl NoteCraftApp {
             }
         }
         resp.context_menu(|ui| {
-            let new_page_label = if cfg!(target_os = "macos") { crate::tl_id!("ui.new_page_cmd_n") } else { crate::tl_id!("ui.new_page_ctrl_n") };
+            // Issue #380: the shortcut sits in its own right-hand column, not in the words.
+            let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
             if node.info.kind == NodeKind::Page
                 && let Some(parent) = node.path.parent()
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), new_page_label, t).clicked()
+                && floating::menu_row_shortcut(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page"), shortcut, t).clicked()
             {
                 acts.push(Act::NewPage(parent.to_path_buf()));
                 ui.close();
@@ -3679,12 +3970,6 @@ impl NoteCraftApp {
                 acts.push(Act::MoveOrCopy(node.path.clone()));
                 ui.close();
             }
-            if node.info.kind == NodeKind::Notebook
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
-            {
-                acts.push(Act::CloseNotebook(node.path.clone()));
-                ui.close();
-            }
             if has_kids
                 && floating::menu_row(
                     ui,
@@ -3725,6 +4010,8 @@ impl NoteCraftApp {
                     }
                 });
             }
+            // Where it is and how to reach it, apart from the actions that change it.
+            floating::menu_separator(ui, t);
             if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_link_to_page"), t)
                 .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
                 .clicked()
@@ -3746,7 +4033,13 @@ impl NoteCraftApp {
                 ui.close();
             }
             floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+            if node.info.kind == NodeKind::Notebook
+                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
+            {
+                acts.push(Act::CloseNotebook(node.path.clone()));
+                ui.close();
+            }
+            if floating::menu_row_danger(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
                 .clicked()
             {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
@@ -3882,15 +4175,6 @@ impl NoteCraftApp {
             }
         });
         let text = title.map_or_else(|| "NoteCraft".to_owned(), |t| format!("{t} - NoteCraft"));
-        // A page named in Arabic puts the band's words in the wrong order if the whole
-        // string is handed to egui, so the band goes through the bidi painter like the page
-        // does. The name decides its own direction here; there is no page to follow.
-        // A phone-width window has no room for the title between the controls: the page's own
-        // title is the first thing on it anyway.
-        if !self.compact {
-            let band = ui.painter_at(row);
-            crate::bidi::line_at(ui, &band, row.center(), Align2::CENTER_CENTER, &text, 12.5, on.text, None);
-        }
         let mut left = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
         left.add_space(8.0);
         left.add(egui::Image::from_bytes("bytes://notecraft-logo", crate::LOGO_PNG).fit_to_exact_size(vec2(18.0, 18.0)));
@@ -3931,15 +4215,56 @@ impl NoteCraftApp {
                 Ok(Output::Hits(h)) => h,
                 _ => Vec::new(),
             };
+            self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
+            self.search_pick = None;
         }
         // The query box keeps Enter for navigation rather than leaving the user with a
-        // mouse-only result list. This is the same action as clicking the first result.
+        // mouse-only result list. Enter opens the result chosen with the arrow keys, or the
+        // first one when none was chosen (issue #370).
         if self.dialog.is_none()
             && resp.lost_focus()
             && right.input(|input| input.key_pressed(Key::Enter))
-            && let Some(path) = self.hits.first().map(|hit| hit.path.clone())
+            && let Some(path) = self.hits.get(self.search_pick.unwrap_or(0)).or(self.hits.first()).map(|hit| hit.path.clone())
         {
             self.open_search_result(&path);
+        }
+        if resp.has_focus() && !self.hits.is_empty() {
+            let (down, up) = right.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp)));
+            let last = self.hits.len() - 1;
+            if down {
+                self.search_pick = Some(self.search_pick.map_or(0, |n| (n + 1).min(last)));
+            }
+            if up {
+                self.search_pick = self.search_pick.and_then(|n| n.checked_sub(1));
+            }
+        }
+        // Issue #371: the page's title gets the room between the controls on both sides and
+        // no more. It is centred on the window when it fits there, otherwise in the room it
+        // has, and cut with an ellipsis rather than running under the search box. The whole
+        // title is on the hover of the words.
+        // A phone-width window has no room for the title between the controls: the page's own
+        // title is the first thing on it anyway.
+        if !self.compact {
+            let start = left.min_rect().right() + 12.0;
+            let end = right.min_rect().left() - 12.0;
+            if end - start > 24.0 {
+                let size = 12.5;
+                let shown = fit_to_width(ui, &text, size, end - start);
+                let width = text_width(ui, &shown, size);
+                let centre = band_title_centre(row.center().x, start, end, width);
+                let room = egui::Rect::from_min_max(egui::pos2(start, row.min.y), egui::pos2(end, row.max.y));
+                // A page named in Arabic puts the band's words in the wrong order if the whole
+                // string is handed to egui, so the band goes through the bidi painter like the
+                // page does. The name decides its own direction here; there is no page to follow.
+                let band = ui.painter_at(room);
+                crate::bidi::line_at(ui, &band, egui::pos2(centre, row.center().y), Align2::CENTER_CENTER, &shown, size, on.text, None);
+                if shown != text {
+                    let words = egui::Rect::from_center_size(egui::pos2(centre, row.center().y), vec2(width, H));
+                    // Hover only: a press here still reaches the band's handle and moves the window.
+                    let hover = ui.interact(words, ui.id().with("title-words"), Sense::hover());
+                    hover.on_hover_text(text.as_str());
+                }
+            }
         }
         ui.advance_cursor_after_rect(row);
     }
@@ -4990,10 +5315,7 @@ impl NoteCraftApp {
             }
             ribbon::Act::RecycleBin => {
                 if let Some(notebook) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
-                    let p = params(&[("notebook", &path_str(&notebook))]);
-                    if let Some(Output::Recycled(items)) = self.run("recycle.list", &p) {
-                        self.dialog = Some(Dialog::RecycleBin { notebook, items });
-                    }
+                    self.open_recycle_bin(notebook, None);
                 }
             }
             ribbon::Act::Symbols => self.dialog = Some(Dialog::Symbols),
@@ -6054,14 +6376,14 @@ impl NoteCraftApp {
     /// Letters going into the block the caret was already in fold into the step before
     /// them, so Ctrl+Z takes back a run of writing rather than one character.
     fn remember_step(ed: &mut Editor) {
-        Self::remember(ed, false);
+        Self::remember(ed, false, None);
     }
 
     /// Remembers a change made from the ribbon rather than by writing, such as Insert Space
     /// or a row put into a table, as a step of its own. It never folds into the writing
     /// before it, even when the caret stays in the same block (issue #153).
     fn remember_edit(ed: &mut Editor) {
-        Self::remember(ed, true);
+        Self::remember(ed, true, None);
     }
 
     /// Remembers a change to how a table is laid out that may leave its words as they were,
@@ -6077,7 +6399,9 @@ impl NoteCraftApp {
         ed.history.record(step);
     }
 
-    fn remember(ed: &mut Editor, edit: bool) {
+    /// `moving`: boxes moved by the press of the pointer that went down then, and nothing else
+    /// changed. The frames of one drag fold into one step.
+    fn remember(ed: &mut Editor, edit: bool, moving: Option<u64>) {
         let same = ed.history.here().is_some_and(|s| s.body == ed.body && s.blocks == ed.blocks && s.boxes == ed.boxes);
         if same || {
             // Only the cursor's place on open paper came or went: the page is the one remembered.
@@ -6095,8 +6419,9 @@ impl NoteCraftApp {
         let here = ed.caret.as_ref().map(|c| c.block);
         let was = ed.history.here().and_then(|s| s.caret.as_ref().map(|c| c.block));
         let shape = ed.history.here().is_some_and(|s| s.blocks.len() == ed.blocks.len());
-        let kind = match (shape, here, was) {
-            (true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
+        let kind = match (moving, shape, here, was) {
+            (Some(press), ..) => crate::history::Kind::Moving(press),
+            (None, true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
             _ => crate::history::Kind::Edit,
         };
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
@@ -6688,6 +7013,9 @@ impl NoteCraftApp {
                 caret.inline = None;
                 caret.selection = (0, caret.text.chars().count());
             }
+            // The source text changed when the marks were added or removed. Restore egui's
+            // range too, or typing replaces only the old offsets and leaves markup behind.
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
             ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
             return;
@@ -7527,31 +7855,64 @@ impl NoteCraftApp {
 
     /// Makes the block the caret is in a heading, a list item, a quote or ordinary text.
     fn apply_block_kind(&mut self, kind: &str) {
-        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(ed) = self.editor.as_mut() else {
+            log::info!("ui_action: action=block_kind.apply kind={kind} outcome=no_page");
+            return;
+        };
         let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
+            log::info!("ui_action: action=block_kind.apply kind={kind} outcome=no_caret");
             return;
         };
         let at = caret.block;
-        // A style on a line of a code block applies to that line only: the block splits around it.
-        let line = caret.text.get(..caret.selection.1.min(caret.text.len())).map_or(0, |t| t.matches('\n').count());
+        let selection = caret.selection;
+        let selection_shape = if selection.0 == selection.1 { "caret" } else { "range" };
+        let low = selection.0.min(selection.1);
+        let high = selection.0.max(selection.1);
+        let line_at = |offset: usize| caret.text.chars().take(offset).filter(|ch| *ch == '\n').count();
+        let caret_line = line_at(selection.0);
+        let first_line = line_at(low);
+        let last_line = if low == high { first_line } else { line_at(high.saturating_sub(1)) };
+        let selected_line_count = last_line.saturating_sub(first_line) + 1;
         let in_code = matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Code { .. }));
-        if in_code && !matches!(kind, "codeblock" | "codenumbers") {
-            if !pageedit::split_code_line(&mut ed.blocks, at, line, kind) {
+        let code = in_code && !matches!(kind, "codeblock" | "codenumbers");
+        log::info!(
+            "ui_action: action=block_kind.apply kind={kind} target={} selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} outcome=attempted",
+            if in_code { "code" } else { "other" }
+        );
+        if code {
+            if !pageedit::split_code_selection(&mut ed.blocks, at, selection, kind) {
+                log::info!(
+                    "ui_action: action=block_kind.apply kind={kind} target=code selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} outcome=refused"
+                );
                 return;
             }
         } else if !pageedit::set_kind(&mut ed.blocks, at, kind) {
+            log::info!(
+                "ui_action: action=block_kind.apply kind={kind} target=other selection={selection_shape} chars={low}..{high} caret_line={caret_line} outcome=refused"
+            );
             return;
         }
         ed.rebuild_body();
-        if let Some(b) = ed.blocks.get(at) {
+        let caret_block = at + usize::from(code && first_line > 0);
+        if let Some(b) = ed.blocks.get(caret_block) {
             let text = pageedit::caret_text(b);
             if let Some(c) = ed.caret.as_mut() {
+                c.block = caret_block;
                 c.text = text;
+                c.selection = (0, 0);
+                c.place = Some(0);
             }
         }
+        if code {
+            ed.restore_format_selection = Some((caret_block, 0, 0));
+        }
         Self::mark_dirty_from_blocks(ed);
+        log::info!(
+            "ui_action: action=block_kind.apply kind={kind} target={} selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} result_block={caret_block} outcome=applied",
+            if in_code { "code" } else { "other" }
+        );
     }
 
     /// Puts a tag on the line the caret is in, or takes it off again.
@@ -7984,10 +8345,23 @@ impl NoteCraftApp {
         }
     }
 
+    /// Opens (or refreshes in place) the notebook's recycle bin with `selected` chosen, or the
+    /// newest item when that one is gone.
+    fn open_recycle_bin(&mut self, notebook: PathBuf, selected: Option<String>) {
+        let p = params(&[("notebook", &path_str(&notebook))]);
+        let Some(Output::Recycled(items)) = self.run("recycle.list", &p) else { return };
+        let name = notecraft_store::tree::read_node(&notebook).map(|n| n.title).unwrap_or_default();
+        let places = items.iter().map(|item| recycled_place(&notebook, &item.original)).collect();
+        let selected = selected.filter(|id| items.iter().any(|i| &i.id == id)).or_else(|| items.first().map(|i| i.id.clone()));
+        self.dialog = Some(Dialog::RecycleBin { notebook, name, items, places, selected });
+    }
+
     fn dismiss_search(&mut self) {
         self.search.clear();
         self.searched.clear();
         self.hits.clear();
+        self.hit_trails.clear();
+        self.search_pick = None;
     }
 
     fn open_search_result(&mut self, path: &Path) {
@@ -8004,25 +8378,86 @@ impl NoteCraftApp {
             return;
         }
         let mut chosen: Option<PathBuf> = None;
-        let popup =
-            egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).anchor(Align2::RIGHT_TOP, vec2(-8.0, 44.0)).show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width(420.0);
-                    if self.hits.is_empty() {
-                        ui.weak(crate::tl_id!("ui.no_pages_match"));
-                    }
-                    for h in &self.hits {
-                        let r = ui.vertical(|ui| {
-                            ui.strong(&h.title);
-                            ui.label(egui::RichText::new(&h.snippet).small().color(self.tokens.muted));
-                        });
-                        if ui.interact(r.response.rect, Id::new(("hit", &h.path)), Sense::click()).clicked() {
+        let tokens = self.tokens;
+        // Issue #370: the results hang from the search box itself, as wide as it or wider, and
+        // are kept inside the window, rather than sitting at a fixed place on the right.
+        let screen = ctx.viewport_rect();
+        let field = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
+        let width = field.map_or(420.0, |f| f.width().max(420.0)).min((screen.width() - 16.0).max(200.0));
+        let (left, top) = match field {
+            Some(f) => (f.left().min(screen.right() - width - 8.0).max(screen.left() + 8.0), f.bottom() + 4.0),
+            None => (screen.right() - width - 8.0, screen.top() + 44.0),
+        };
+        let max_height = (screen.bottom() - top - 24.0).clamp(80.0, 460.0);
+        let pick = self.search_pick;
+        let picked_now = ctx.data_mut(|d| {
+            let id = Id::new("search-results-pick");
+            let before = d.get_temp::<Option<usize>>(id);
+            d.insert_temp(id, pick);
+            before != Some(pick)
+        });
+        let popup = egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).fixed_pos(egui::pos2(left, top)).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(width);
+                ui.label(egui::RichText::new(crate::tl_id!("ui.search_scope_all_notebooks")).small().color(tokens.muted));
+                ui.add_space(2.0);
+                if self.hits.is_empty() {
+                    ui.weak(crate::tl_id!("ui.no_pages_match"));
+                    return;
+                }
+                egui::ScrollArea::vertical().id_salt("search-results-list").max_height(max_height).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (index, h) in self.hits.iter().enumerate() {
+                        let trail = self.hit_trails.get(index).map(String::as_str).unwrap_or_default();
+                        let current = pick == Some(index);
+                        let row_width = ui.available_width();
+                        let lines = if trail.is_empty() { 2.0 } else { 3.0 };
+                        let (rect, row) = ui.allocate_exact_size(vec2(row_width, 8.0 + 17.0 * lines), Sense::click());
+                        let name =
+                            if trail.is_empty() { format!("{} {}", h.title, h.snippet) } else { format!("{} ({trail}) {}", h.title, h.snippet) };
+                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, current, name.clone()));
+                        let painter = ui.painter_at(rect);
+                        if current {
+                            painter.rect_filled(rect, 4.0, tokens.row_selected);
+                            painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, tokens.accent);
+                        } else if row.hovered() {
+                            painter.rect_filled(rect, 4.0, tokens.row_hover);
+                        }
+                        let x = rect.min.x + 10.0;
+                        let room = (rect.width() - 20.0).max(20.0);
+                        let mut y = rect.min.y + 12.0;
+                        // Through the bidi painter, as the band's title is: a title or trail in
+                        // Arabic or Hebrew keeps its word order. Plain text takes egui's own path.
+                        let line = |text: &str, size: f32, y: f32, colour| {
+                            crate::bidi::line_at(
+                                ui,
+                                &painter,
+                                egui::pos2(x, y),
+                                Align2::LEFT_CENTER,
+                                &fit_to_width(ui, text, size, room),
+                                size,
+                                colour,
+                                None,
+                            );
+                        };
+                        line(&h.title, 14.0, y, tokens.strong);
+                        if !trail.is_empty() {
+                            y += 17.0;
+                            line(trail, 11.5, y, tokens.accent);
+                        }
+                        y += 17.0;
+                        line(&h.snippet, 12.0, y, tokens.muted);
+                        if current && picked_now {
+                            row.scroll_to_me(None);
+                        }
+                        let row = if trail.is_empty() { row } else { row.on_hover_text(trail) };
+                        if row.clicked() {
                             chosen = Some(h.path.clone());
                         }
-                        ui.separator();
                     }
                 });
             });
+        });
         // Keep the query editable while results are open. An outside press dismisses them
         // without consuming the press, so the clicked ribbon or page control still works.
         let search_rect = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
@@ -8552,6 +8987,30 @@ impl NoteCraftApp {
         }
     }
 
+    /// Add page (issue #366): one full-width row across the top of the page list, with a plus
+    /// and the words, about 32 points tall, marked with the section's colour. The whole row is
+    /// one target, so the plus, the words and the far edge all add the same page.
+    fn add_page_row(&self, ui: &mut Ui, accent: egui::Color32) -> egui::Response {
+        let t = self.tokens;
+        let width = ui.available_width().max(60.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        let fill = if resp.hovered() || resp.has_focus() { t.row_hover } else { crate::theme::mix(t.panel, accent, 0.10) };
+        painter.rect_filled(rect, 4.0, fill);
+        painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, accent);
+        if resp.has_focus() {
+            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
+        let plus = egui::Rect::from_center_size(egui::pos2(rect.min.x + 20.0, rect.center().y), vec2(16.0, 16.0));
+        icons::paint(&painter, plus, Icon::Plus, t.text);
+        let label = crate::tl_id!("ui.add_page");
+        painter.text(egui::pos2(rect.min.x + 36.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(14.0), t.text);
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        let shortcut = if cfg!(target_os = "macos") { crate::tl_id!("ui.new_page_cmd_n") } else { crate::tl_id!("ui.new_page_ctrl_n") };
+        resp.on_hover_text(format!("{}\n{shortcut}", crate::tl_id!("ui.a_new_page_in_this_section")))
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
         // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
@@ -8583,9 +9042,20 @@ impl NoteCraftApp {
                 // OneNote keeps it, and hides this column.
                 ui.horizontal(|ui| {
                     toggle |= Self::bars_button_at(ui).clicked();
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
+                    // A heading that reads as one (issue #368), above the tree's own scroller so
+                    // it stays put however far the tree is scrolled.
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).size(13.0).strong().color(self.tokens.text));
                 });
                 ui.horizontal(|ui| self.new_section_button(ui, acts));
+                // The notebook that owns the open page, named under the heading, so a long
+                // expanded tree never loses which notebook the visible sections belong to.
+                if let Some(owner) = self.editor.as_ref().and_then(|e| {
+                    self.session.tree().iter().find(|n| n.info.kind == NodeKind::Notebook && e.dir.starts_with(&n.path)).map(|n| n.info.title.clone())
+                }) {
+                    let room = ui.available_width().max(20.0);
+                    let shown = fit_to_width(ui, &owner, 12.0, room);
+                    ui.label(egui::RichText::new(shown).size(12.0).color(self.tokens.muted)).on_hover_text(owner);
+                }
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
@@ -8598,28 +9068,45 @@ impl NoteCraftApp {
                 });
             });
         }
-        let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone()));
+        let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
         egui::Panel::left("pages").resizable(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
             ui.add_space(4.0);
             match &section {
-                Some((path, title, pages)) => {
+                Some((path, title, pages, colour)) => {
                     ui.horizontal(|ui| {
                         // With the notebooks hidden the button lives here instead, so it is
-                        // always at the top left of the panel.
+                        // always at the top left of the panel. It is a target of its own,
+                        // apart from Add page below it (issue #366).
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        let add_page = egui::Button::new(crate::tl_id!("ui.add_page")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
-                        if ui.add(add_page).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
-                            acts.push(Act::Add(path.clone(), NodeKind::Section));
+                        // The section's name, as context for the list: readable, not shouted.
+                        let room = ui.available_width().max(20.0);
+                        let shown = fit_to_width(ui, title, 13.0, room);
+                        let name = ui.label(egui::RichText::new(shown).size(13.0).strong().color(self.tokens.text));
+                        if name.rect.width() + 1.0 < text_width(ui, title, 13.0) {
+                            name.on_hover_text(title.as_str());
                         }
                     });
-                    ui.label(egui::RichText::new(title.to_uppercase()).small().color(self.tokens.muted));
                     ui.add_space(2.0);
+                    // A section with no colour of its own wears the theme's section colour, as
+                    // its mark in the notebook tree does.
+                    let accent = colour.map_or(self.tokens.section, |c| {
+                        let (r, g, b) = c.rgb(self.effective_mode.is_dark());
+                        egui::Color32::from_rgb(r, g, b)
+                    });
+                    // The same create-and-open as Ctrl+N and the menu's New page (issue #366):
+                    // one click is one new page, opened at its title, with no name to type first.
+                    if self.add_page_row(ui, accent).clicked() {
+                        acts.push(Act::NewPage(path.clone()));
+                    }
+                    ui.add_space(4.0);
                     egui::ScrollArea::vertical().id_salt("pages").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                         let list: Vec<&Node> = pages.iter().filter(|p| p.info.kind == NodeKind::Page).collect();
                         if list.is_empty() {
-                            ui.weak(crate::tl_id!("ui.no_pages_in_this_section_yet"));
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.no_pages_in_this_section_yet")).color(self.tokens.text));
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.add_page_empty_hint")).small().color(self.tokens.muted));
                         }
                         // A line between every pair, and above the first and below the
                         // last: hovering one offers a page in that place.
@@ -9369,15 +9856,19 @@ impl NoteCraftApp {
             if (changed || from_blocks) && Self::name_ink(ed) {
                 from_blocks = true;
             }
-            if changed || from_blocks || boxes_moved {
-                Self::remember_step(ed);
-            }
             // A container was dragged or resized: the arrangement is the page's own, so it
-            // is written into the page's file rather than kept in the window.
+            // is written into the page's file rather than kept in the window. Done before the
+            // step is taken, so the step's text holds the boxes where they now are.
             if boxes_moved {
                 ed.arranged = true;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+            }
+            if changed || from_blocks || boxes_moved {
+                // Boxes moved while the pointer is held: one drag, one step.
+                let press = ui.input(|i| (i.pointer.any_down() || i.pointer.any_released()).then(|| i.pointer.press_start_time()).flatten());
+                let moving = (boxes_moved && !changed && !from_blocks).then_some(press).flatten().map(f64::to_bits);
+                Self::remember(ed, false, moving);
             }
             // A column was dragged wider or narrower. Widths are layout, like the boxes,
             // so they go into the page's own file beside them.
@@ -9848,6 +10339,7 @@ impl NoteCraftApp {
                 if reset {
                     match self.session.settings.reset() {
                         Ok(()) => {
+                            crate::ribbon::clear_recent_fonts(ctx);
                             self.ui_scale = 100;
                             self.ui_scale_pending = true;
                             self.dialog = Some(self.first_use_wizard());
@@ -10635,15 +11127,29 @@ impl NoteCraftApp {
             Dialog::Delete { path, title, count } => {
                 let mut go = false;
                 let is_notebook = notecraft_store::tree::read_node(path).is_some_and(|node| node.kind == NodeKind::Notebook);
+                // Issue #381: the same modal as the other confirmations. The page behind is
+                // dimmed and takes no clicks, Escape cancels, and the title says what will
+                // happen to this item: a section is moved to the recycle bin, not "deleted".
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let backdrop = modal_backdrop(ctx, "delete-node-backdrop");
                 egui::Window::new(crate::tl_id!("ui.delete"))
                     .collapsible(false)
                     .resizable(false)
                     .title_bar(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
                         ui.set_min_width(420.0);
-                        modal_title(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"));
+                        ui.set_max_width(520.0);
+                        modal_title(
+                            ui,
+                            &self.tokens,
+                            if is_notebook { crate::tl_id!("ui.delete_notebook") } else { crate::tl_id!("ui.move_to_recycle_bin") },
+                        );
                         if is_notebook {
                             ui.label(crate::i18n::format_message_id("ui.delete_notebook_title_and_everything_inside_it", &[("title", title)]));
                             ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone"));
@@ -10653,20 +11159,28 @@ impl NoteCraftApp {
                                 *count as u64,
                                 &[("title", title)],
                             ));
-                            ui.label(crate::tl_id!("ui.you_can_restore_it_from_history"));
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.you_can_restore_it_from_history")).color(self.tokens.muted));
                         }
+                        ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
+                            let cancel = modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false);
+                            let confirm = if is_notebook {
+                                modal_button_destructive(ui, &self.tokens, crate::tl_id!("ui.delete_notebook"))
+                            } else {
+                                modal_button(ui, &self.tokens, crate::tl_id!("ui.move_to_recycle_bin"), true)
+                            };
+                            // Removing a notebook from disk cannot be undone: the keyboard
+                            // starts on Cancel. A move to the recycle bin can be, so it starts
+                            // on the action, as a routine confirmation does.
+                            if is_notebook {
+                                hold_modal_focus(&cancel, &[&cancel, &confirm]);
+                            } else {
+                                hold_modal_focus(&confirm, &[&cancel, &confirm]);
+                            }
+                            if cancel.clicked() {
                                 keep = false;
                             }
-                            if modal_button(
-                                ui,
-                                &self.tokens,
-                                if is_notebook { crate::tl_id!("ui.delete_notebook") } else { crate::tl_id!("ui.move_to_recycle_bin") },
-                                true,
-                            )
-                            .clicked()
-                            {
+                            if confirm.clicked() {
                                 go = true;
                             }
                         });
@@ -11051,10 +11565,12 @@ impl NoteCraftApp {
                                         let size = (version.bytes.div_ceil(1024)).to_string();
                                         let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
                                         ui.label(egui::RichText::new(size).small().color(t.muted));
+                                        // Issue #382: looking first is the primary step; restoring
+                                        // replaces the page, so it is the quieter of the two here.
                                         if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
                                             open = Some((version.id.clone(), version.created.clone()));
                                         }
-                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), true).clicked() {
+                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), false).clicked() {
                                             restore = Some(version.id.clone());
                                         }
                                     });
@@ -11086,51 +11602,181 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
-            Dialog::RecycleBin { notebook, items } => {
+            Dialog::RecycleBin { notebook, name, items, places, selected } => {
+                // Issue #365: a recovery workspace rather than a small list window. One item is
+                // selected; Restore acts on it, and deleting it for good is a separate, quieter
+                // action that asks first. Back or Escape returns to the page.
+                let t = self.tokens;
                 let mut restore: Option<String> = None;
                 let mut purge: Option<(String, String)> = None;
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let screen = ctx.viewport_rect();
+                let width = (screen.width() - 48.0).clamp(320.0, 680.0);
+                let list_height = (screen.height() * 0.7 - 190.0).max(120.0);
+                let backdrop = modal_backdrop(ctx, "recycle-bin-backdrop");
                 egui::Window::new(crate::tl_id!("ui.notebook_recycle_bin_2"))
+                    .title_bar(false)
                     .collapsible(false)
-                    .resizable(true)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .fixed_size(vec2(width, 0.0))
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&t))
                     .show(ctx, |ui| {
-                        ui.set_min_width(460.0);
+                        stay_above(ui, backdrop);
+                        ui.set_width(width);
+                        ui.horizontal(|ui| {
+                            let words = crate::tl_id!("ui.back_to_notes");
+                            let size = vec2(text_width(ui, words, 13.0) + 38.0, 28.0);
+                            let (rect, back) = ui.allocate_exact_size(size, Sense::click());
+                            let painter = ui.painter_at(rect);
+                            painter.rect_filled(rect, 4.0, if back.hovered() || back.has_focus() { t.row_hover } else { t.panel });
+                            painter.rect_stroke(
+                                rect,
+                                4.0,
+                                egui::Stroke::new(1.0, if back.has_focus() { t.accent } else { t.faint }),
+                                egui::StrokeKind::Inside,
+                            );
+                            let arrow = egui::Rect::from_center_size(egui::pos2(rect.min.x + 15.0, rect.center().y), vec2(14.0, 14.0));
+                            crate::ribbon_icons::paint(&painter, arrow, crate::ribbon_icons::Mark::Back, t.text);
+                            painter.text(
+                                egui::pos2(rect.min.x + 28.0, rect.center().y),
+                                Align2::LEFT_CENTER,
+                                words,
+                                egui::FontId::proportional(13.0),
+                                t.text,
+                            );
+                            back.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words));
+                            if back.clicked() {
+                                keep = false;
+                            }
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.notebook_recycle_bin_2")).strong().size(18.0).color(t.strong));
+                        });
+                        if !name.is_empty() {
+                            ui.label(egui::RichText::new(name.as_str()).color(t.muted));
+                        }
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.recycle_bin_explainer")).small().color(t.muted));
+                        ui.add_space(6.0);
+                        ui.separator();
                         if items.is_empty() {
-                            ui.label(crate::tl_id!("ui.this_notebook_s_recycle_bin_is_empty"));
+                            ui.add_space(18.0);
+                            ui.vertical_centered(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::hover());
+                                crate::ribbon_icons::paint(ui.painter(), rect, crate::ribbon_icons::Mark::Delete, t.muted);
+                                ui.add_space(6.0);
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.this_notebook_s_recycle_bin_is_empty")).color(t.text));
+                            });
+                            ui.add_space(18.0);
                         } else {
-                            egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
-                                for item in items.iter() {
-                                    ui.horizontal(|ui| {
-                                        ui.label(&item.title);
-                                        ui.label(
-                                            egui::RichText::new(crate::i18n::format_message_id(
-                                                "ui.count_deleted",
-                                                &[
-                                                    ("count", &crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64)),
-                                                    ("deleted", &item.deleted),
-                                                ],
-                                            ))
-                                            .small()
-                                            .color(self.tokens.muted),
+                            egui::ScrollArea::vertical().id_salt("recycle-bin-list").max_height(list_height).auto_shrink([false, true]).show(
+                                ui,
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.y = 2.0;
+                                    for (index, item) in items.iter().enumerate() {
+                                        let is_selected = selected.as_deref() == Some(item.id.as_str());
+                                        let row_width = ui.available_width();
+                                        let (rect, row) = ui.allocate_exact_size(vec2(row_width, 48.0), Sense::click());
+                                        let painter = ui.painter_at(rect);
+                                        if is_selected {
+                                            painter.rect_filled(rect, 4.0, t.row_selected);
+                                            painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, t.accent);
+                                        } else if row.hovered() {
+                                            painter.rect_filled(rect, 4.0, t.row_hover);
+                                        }
+                                        if row.has_focus() {
+                                            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+                                        }
+                                        let (icon, kind_name) = match item.kind {
+                                            NodeKind::Section => (Icon::Section, crate::tl_id!("ui.section")),
+                                            NodeKind::SectionGroup => (Icon::SectionGroup, crate::tl_id!("ui.section_group")),
+                                            NodeKind::Notebook => (Icon::Notebook, crate::tl_id!("ui.notebook")),
+                                            NodeKind::Page => (Icon::Page, crate::tl_id!("ui.page")),
+                                        };
+                                        let icon_rect =
+                                            egui::Rect::from_center_size(egui::pos2(rect.min.x + 22.0, rect.center().y), vec2(18.0, 18.0));
+                                        crate::icons::paint(&painter, icon_rect, icon, t.text);
+                                        let text_left = rect.min.x + 44.0;
+                                        let room = (rect.max.x - text_left - 10.0).max(20.0);
+                                        let title = fit_to_width(ui, &item.title, 14.0, room);
+                                        crate::bidi::line_at(
+                                            ui,
+                                            &painter,
+                                            egui::pos2(text_left, rect.min.y + 15.0),
+                                            Align2::LEFT_CENTER,
+                                            &title,
+                                            14.0,
+                                            t.text,
+                                            None,
                                         );
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.restore"), true).clicked() {
-                                            restore = Some(item.id.clone());
+                                        let when = crate::versions::when(&item.deleted);
+                                        let mut details = match places.get(index).filter(|p| !p.is_empty()) {
+                                            Some(place) => {
+                                                crate::i18n::format_message_id("ui.recycle_bin_deleted_from", &[("when", &when), ("place", place)])
+                                            }
+                                            None => crate::i18n::format_message_id("ui.recycle_bin_deleted_at", &[("when", &when)]),
+                                        };
+                                        if item.kind != NodeKind::Page || item.count > 1 {
+                                            details =
+                                                format!("{details} \u{b7} {}", crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64));
                                         }
-                                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
-                                            purge = Some((item.id.clone(), item.title.clone()));
+                                        let shown = fit_to_width(ui, &details, 12.0, room);
+                                        crate::bidi::line_at(
+                                            ui,
+                                            &painter,
+                                            egui::pos2(text_left, rect.min.y + 34.0),
+                                            Align2::LEFT_CENTER,
+                                            &shown,
+                                            12.0,
+                                            t.muted,
+                                            None,
+                                        );
+                                        // A screen reader hears what the eye reads on both lines:
+                                        // the title, then the kind, when and where from.
+                                        let heard = format!("{}, {kind_name}, {details}", item.title);
+                                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_selected, heard.clone()));
+                                        let full = format!("{}\n{details}", item.title);
+                                        if row.on_hover_text(full).clicked() {
+                                            *selected = Some(item.id.clone());
                                         }
-                                    });
+                                    }
+                                },
+                            );
+                        }
+                        ui.separator();
+                        ui.add_space(4.0);
+                        let chosen = selected.as_ref().and_then(|id| items.iter().find(|i| &i.id == id));
+                        ui.horizontal(|ui| {
+                            let delete = ui
+                                .add_enabled_ui(chosen.is_some(), |ui| {
+                                    modal_button_destructive(ui, &t, crate::tl_id!("ui.delete_permanently_ellipsis"))
+                                })
+                                .inner;
+                            if delete.clicked()
+                                && let Some(item) = chosen
+                            {
+                                purge = Some((item.id.clone(), item.title.clone()));
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let restore_button = modal_button_enabled(ui, &t, crate::tl_id!("ui.restore"), true, chosen.is_some());
+                                if restore_button.clicked()
+                                    && let Some(item) = chosen
+                                {
+                                    restore = Some(item.id.clone());
                                 }
                             });
-                        }
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
-                            keep = false;
-                        }
+                        });
                     });
                 if let Some(id) = restore {
                     if self.run("recycle.restore", &params(&[("notebook", &path_str(notebook)), ("id", &id)])).is_some() {
                         self.say(crate::tl_id!("ui.restored_to_the_original_location"));
+                        // The list is refreshed in place: whatever else is in the bin stays in view.
+                        let notebook = notebook.clone();
                         keep = false;
+                        self.open_recycle_bin(notebook, None);
                     }
                 } else if let Some((id, title)) = purge {
                     next = Dialog::PurgeRecycleItem { notebook: notebook.clone(), id, title };
@@ -11138,25 +11784,45 @@ impl NoteCraftApp {
             }
             Dialog::PurgeRecycleItem { notebook, id, title } => {
                 let mut purge = false;
+                let mut cancel = false;
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    cancel = true;
+                }
+                let backdrop = modal_backdrop(ctx, "purge-recycled-backdrop");
                 egui::Window::new(crate::tl_id!("ui.permanently_delete"))
+                    .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
+                    .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
                     .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        ui.set_min_width(400.0);
+                        ui.set_max_width(520.0);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.permanently_delete"));
                         ui.label(crate::i18n::format_message_id("ui.permanently_delete_title_and_everything_inside_it", &[("title", title)]));
                         ui.colored_label(self.tokens.warn, crate::tl_id!("ui.this_cannot_be_undone"));
+                        ui.add_space(12.0);
                         ui.horizontal(|ui| {
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() {
-                                keep = false;
-                            }
-                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"), true).clicked() {
-                                purge = true;
-                            }
+                            let no = modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false);
+                            let yes = modal_button_destructive(ui, &self.tokens, crate::tl_id!("ui.delete_permanently"));
+                            // Nothing to undo afterwards: the keyboard starts on Cancel.
+                            hold_modal_focus(&no, &[&no, &yes]);
+                            cancel |= no.clicked();
+                            purge = yes.clicked();
                         });
                     });
-                if purge && self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
-                    self.say(crate::tl_id!("ui.permanently_deleted"));
+                if purge {
+                    if self.run("recycle.purge", &params(&[("notebook", &path_str(notebook)), ("id", id)])).is_some() {
+                        self.say(crate::tl_id!("ui.permanently_deleted"));
+                    }
                     keep = false;
+                    self.open_recycle_bin(notebook.clone(), None);
+                } else if cancel {
+                    // Back to the bin with the same item selected.
+                    keep = false;
+                    self.open_recycle_bin(notebook.clone(), Some(id.clone()));
                 }
             }
             Dialog::Symbols => {
@@ -11682,6 +12348,13 @@ impl NoteCraftApp {
 
     pub fn show(&mut self, ui: &mut Ui) {
         self.take_saves(false);
+        crate::ribbon::sync_recent_fonts(
+            ui.ctx(),
+            || self.session.settings.get(RECENT_FONTS_KEY),
+            |text| {
+                let _ = self.session.settings.set(RECENT_FONTS_KEY, text);
+            },
+        );
         if !self.watcher_woken {
             let wake_ctx = ui.ctx().clone();
             self.watcher.set_wake(std::sync::Arc::new(move || wake_ctx.request_repaint()));
@@ -11923,6 +12596,7 @@ impl NoteCraftApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
+        self.poll_printouts(ctx);
         self.take_saves(false);
         if self.saver.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
@@ -12655,7 +13329,7 @@ mod alert_tests {
             |h: &egui_kittest::Harness<'_, NoteCraftApp>| h.state().editor.as_ref().map(|e| (e.blocks.clone(), e.boxes.clone())).expect("editor");
         let before = shape(&h);
         let dir = page.clone();
-        h.state_mut().add_file(&dir, &pdf, FileChoice::Printout);
+        add_printout(&mut h, &dir, &pdf);
         // Long enough for the autosave to write the page and the window to settle.
         for _ in 0..60 {
             h.step();
@@ -12697,6 +13371,74 @@ mod alert_tests {
             h.step();
         }
         (t, page, pdf, h)
+    }
+
+    /// Waits until every printout asked for is made and in its page. A printout is rendered off
+    /// the window's thread, which takes a few seconds on a slow CI runner: the tests waited five
+    /// and then read the page whether or not it had finished, and failed now and then on macOS
+    /// with the printout simply not there yet.
+    fn wait_for_printouts(h: &mut egui_kittest::Harness<'_, NoteCraftApp>) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while h.state().printouts_pending() > 0 && std::time::Instant::now() < deadline {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        h.step();
+        assert_eq!(h.state().printouts_pending(), 0, "the printout was made within a minute");
+    }
+
+    /// Asks for a printout of `pdf` in `page` and waits for it: it is made in the background.
+    fn add_printout(h: &mut egui_kittest::Harness<'_, NoteCraftApp>, page: &Path, pdf: &Path) {
+        h.state_mut().add_file(page, pdf, FileChoice::Printout);
+        wait_for_printouts(h);
+        for _ in 0..3 {
+            h.step();
+        }
+    }
+
+    /// A printout is made off the window's thread: asking for one returns at once, the window
+    /// carries on drawing, and the pages go in once they are ready. Making one froze the page
+    /// for seconds (rendering, then copying every page into the page's folder).
+    #[test]
+    fn a_printout_is_made_in_the_background_and_goes_in_when_ready() {
+        let (_t, page, pdf, mut h) = printout_harness(true, "printout-background");
+        let before = h.state().editor.as_ref().map(|e| e.blocks.len()).expect("editor");
+        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        assert_eq!(h.state().printouts_pending(), 1, "the printout is being made");
+        assert_eq!(h.state().editor.as_ref().map(|e| e.blocks.len()), Some(before), "and the page is not waiting for it");
+        h.step();
+        wait_for_printouts(&mut h);
+        let ed = h.state().editor.as_ref().expect("editor");
+        assert!(ed.blocks.len() > before, "the printout went in once it was ready");
+        assert!(
+            ed.blocks.iter().any(|b| matches!(b, notecraft_formats::Block::Image { src, .. } if src.contains(".printout-001.png"))),
+            "its page is a picture in the page"
+        );
+    }
+
+    /// A printout asked for on one page goes into that page, even when another page was opened
+    /// while it was being made.
+    #[test]
+    fn a_printout_goes_into_its_own_page_when_another_was_opened_meanwhile() {
+        let (_t, page, pdf, mut h) = printout_harness(true, "printout-other-page");
+        let other = {
+            let parent = page.parent().expect("section").to_path_buf();
+            std::fs::read_dir(&parent)
+                .expect("section")
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.is_dir() && *p != page)
+                .expect("another page")
+        };
+        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        h.state_mut().open_path(&other.to_string_lossy());
+        wait_for_printouts(&mut h);
+        assert_eq!(h.state().editor.as_ref().map(|e| e.dir.clone()), Some(other.clone()), "the other page is the one open");
+        let file = notecraft_store::tree::page_file(&page).expect("the first page's file").1;
+        let text = std::fs::read_to_string(file).expect("read");
+        assert!(text.contains(".printout-001.png"), "the printout is in the page it was asked for:\n{text}");
+        let other_file = notecraft_store::tree::page_file(&other).expect("the other page's file").1;
+        assert!(!std::fs::read_to_string(other_file).expect("read").contains(".printout-001.png"), "and not in the other one");
     }
 
     /// The window opens where it was left: the same page, even in a notebook kept outside the
@@ -12802,7 +13544,7 @@ mod alert_tests {
     #[test]
     fn drawing_a_page_of_printouts_does_not_ask_the_disk_every_frame() {
         let (_t, page, pdf, mut h) = printout_harness(true, "printout-quiet-frames");
-        h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
+        add_printout(&mut h, &page, &pdf);
         for _ in 0..5 {
             h.step();
         }
@@ -12823,10 +13565,7 @@ mod alert_tests {
             let (_t, page, pdf, mut h) = printout_harness(html, "printout-below");
             h.state_mut().editor.as_mut().expect("editor").caret = None;
             for _ in 0..2 {
-                h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-                for _ in 0..5 {
-                    h.step();
-                }
+                add_printout(&mut h, &page, &pdf);
             }
             let all = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
             // The sample page's words, then one box for each printout, each one further down.
@@ -12873,10 +13612,7 @@ mod alert_tests {
             }
             let boxes_with_blank = h.state().editor.as_ref().map(|e| e.boxes.len()).expect("editor");
             h.state_mut().editor.as_mut().expect("editor").caret = None;
-            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-            for _ in 0..5 {
-                h.step();
-            }
+            add_printout(&mut h, &page, &pdf);
             let ed = h.state().editor.as_ref().expect("editor");
             assert!(!ed.boxes.iter().any(|c| c.y == 2000.0), "html={html}: the blank box went: {:?}", ed.boxes);
             assert_eq!(ed.boxes.len(), boxes_with_blank, "html={html}: one box for the printout, none for the blank line: {:?}", ed.boxes);
@@ -12957,10 +13693,7 @@ mod alert_tests {
             }
             let before = h.state().editor.as_ref().map(|e| e.boxes.clone()).expect("editor");
             let blocks_before = h.state().editor.as_ref().map(|e| e.blocks.clone()).expect("editor");
-            h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
-            for _ in 0..5 {
-                h.step();
-            }
+            add_printout(&mut h, &page, &pdf);
             let ed = h.state().editor.as_ref().expect("editor");
             assert_eq!(ed.boxes.len(), before.len(), "html={html}: no new box was made: {:?}", ed.boxes);
             let moved = &ed.boxes[index];
@@ -13902,5 +14635,61 @@ mod recent_range_tests {
         assert_eq!(RecentRange::Week.since(now, 0), at("2026-11-09T00:00:00Z"));
         assert_eq!(RecentRange::Month.since(now, 0), at("2026-10-17T00:00:00Z"));
         assert_eq!(RecentRange::All.since(now, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod band_title_tests {
+    use super::{Node, NodeKind, band_title_centre, search_trail};
+    use notecraft_store::tree::NodeInfo;
+    use std::path::{Path, PathBuf};
+
+    fn node(kind: NodeKind, path: &str, title: &str, children: Vec<Node>) -> Node {
+        Node {
+            path: PathBuf::from(path),
+            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0 },
+            children,
+        }
+    }
+
+    /// Issue #370: a search result names its notebook, groups and section, and leaves out the
+    /// parent pages of a sub-page.
+    #[test]
+    fn a_search_trail_names_the_notebook_groups_and_section() {
+        let tree = vec![node(
+            NodeKind::Notebook,
+            "/nb",
+            "Book",
+            vec![node(
+                NodeKind::SectionGroup,
+                "/nb/g",
+                "Work",
+                vec![node(
+                    NodeKind::Section,
+                    "/nb/g/s",
+                    "Projects",
+                    vec![node(NodeKind::Page, "/nb/g/s/p", "Parent", vec![node(NodeKind::Page, "/nb/g/s/p/c", "Child", vec![])])],
+                )],
+            )],
+        )];
+        assert_eq!(search_trail(&tree, Path::new("/nb/g/s/p")), "Book > Work > Projects");
+        assert_eq!(search_trail(&tree, Path::new("/nb/g/s/p/c")), "Book > Work > Projects");
+        assert_eq!(search_trail(&tree, Path::new("/elsewhere/p")), "");
+    }
+
+    /// Issue #371: the title sits on the window's centre when it fits there, and is moved into
+    /// the room between the controls, never under them, when it does not.
+    #[test]
+    fn the_band_title_stays_between_the_controls() {
+        // Room from 300 to 900, window centre 600: a 200-wide title stays centred.
+        assert_eq!(band_title_centre(600.0, 300.0, 900.0, 200.0), 600.0);
+        // Controls on the right reach 650: the title moves left so its end is at 650.
+        let centre = band_title_centre(600.0, 300.0, 650.0, 200.0);
+        assert!(centre + 100.0 <= 650.0 && centre - 100.0 >= 300.0, "{centre}");
+        // Controls on the left reach 560: the title moves right so it starts at 560.
+        let centre = band_title_centre(600.0, 560.0, 1000.0, 200.0);
+        assert!(centre - 100.0 >= 560.0, "{centre}");
+        // Wider than the room (it is ellipsized to fit first): it starts where the room starts.
+        assert_eq!(band_title_centre(600.0, 300.0, 400.0, 300.0), 450.0);
     }
 }

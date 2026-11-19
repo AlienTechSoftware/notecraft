@@ -427,6 +427,16 @@ pub fn picker_popup_style(tokens: Tokens) -> egui::style::StyleModifier {
         style.visuals.widgets.active.weak_bg_fill = tokens.row_selected;
         style.visuals.widgets.open.bg_fill = tokens.row_selected;
         style.visuals.widgets.open.weak_bg_fill = tokens.row_selected;
+        // override_text_color covers only the resting state. Hovered, pressed and open rows take their
+        // own text colour, which can be white on the light popup, so each state gets the popup's text.
+        for widget in [
+            &mut style.visuals.widgets.inactive,
+            &mut style.visuals.widgets.hovered,
+            &mut style.visuals.widgets.active,
+            &mut style.visuals.widgets.open,
+        ] {
+            widget.fg_stroke.color = tokens.text;
+        }
         style.spacing.menu_margin = egui::Margin::same(8);
     })
 }
@@ -445,6 +455,15 @@ mod tests {
             assert_eq!(style.visuals.override_text_color, Some(tokens.text), "{}: popup text", theme.label());
             assert!(contrast(tokens.text, tokens.panel) >= 7.0, "{}: popup text on surface", theme.label());
             assert!(contrast(tokens.text, tokens.row_hover) >= 7.0, "{}: popup text on hover", theme.label());
+            // Every row state draws its text in the popup's text colour, not the app's, in every theme.
+            for (state, widget) in [
+                ("resting", &style.visuals.widgets.inactive),
+                ("hovered", &style.visuals.widgets.hovered),
+                ("pressed", &style.visuals.widgets.active),
+                ("open", &style.visuals.widgets.open),
+            ] {
+                assert_eq!(widget.fg_stroke.color, tokens.text, "{}: popup text when {state}", theme.label());
+            }
             assert!(contrast(tokens.text, tokens.row_selected) >= 7.0, "{}: popup text on selection", theme.label());
             assert_eq!(style.visuals.window_stroke.color, tokens.container_border, "{}: popup border", theme.label());
             assert_eq!(style.visuals.selection.bg_fill, tokens.row_selected, "{}: selected locale", theme.label());

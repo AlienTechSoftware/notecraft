@@ -835,7 +835,7 @@ pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (
 /// Applies `kind` to one line of a code block: the lines before and after stay code.
 pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &str) -> bool {
     let Some(Block::Code { lang, text }) = blocks.get(at).cloned() else { return false };
-    let lines: Vec<&str> = text.trim_end_matches('\n').split('\n').collect();
+    let lines: Vec<&str> = text.split('\n').collect();
     if line >= lines.len() {
         return false;
     }
@@ -851,6 +851,48 @@ pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &s
     out.extend(current);
     if line + 1 < lines.len() {
         out.push(Block::Code { lang, text: lines[line + 1..].join("\n") });
+    }
+    blocks.splice(at..at + 1, out);
+    true
+}
+
+/// Applies a block kind to each code line touched by a character selection.
+/// A collapsed selection targets the caret line; a non-empty selection includes
+/// the line containing its first and last selected characters.
+pub fn split_code_selection(blocks: &mut Vec<Block>, at: usize, selection: (usize, usize), kind: &str) -> bool {
+    let Some(Block::Code { lang, text }) = blocks.get(at).cloned() else { return false };
+    // Keep trailing empty lines. In the live editor, every trailing newline can
+    // represent a blank line the user just created, and the caret can sit there.
+    let lines: Vec<&str> = text.split('\n').collect();
+    if lines.is_empty() {
+        return false;
+    }
+    let (low, high) = (selection.0.min(selection.1), selection.0.max(selection.1));
+    let line_at = |offset: usize| text.chars().take(offset).filter(|ch| *ch == '\n').count().min(lines.len() - 1);
+    let first = line_at(low);
+    let last = if low == high {
+        first
+    } else if high >= text.chars().count() && text.ends_with('\n') {
+        // A selection reaching the end of a newly extended code block includes
+        // the blank line after its final newline.
+        line_at(high)
+    } else {
+        line_at(high.saturating_sub(1))
+    };
+
+    let mut out = Vec::new();
+    if first > 0 {
+        out.push(Block::Code { lang: lang.clone(), text: lines[..first].join("\n") });
+    }
+    for line in &lines[first..=last] {
+        let mut converted = vec![Block::Paragraph(parse_inline(line))];
+        if !set_kind(&mut converted, 0, kind) {
+            return false;
+        }
+        out.extend(converted);
+    }
+    if last + 1 < lines.len() {
+        out.push(Block::Code { lang, text: lines[last + 1..].join("\n") });
     }
     blocks.splice(at..at + 1, out);
     true
@@ -2762,7 +2804,7 @@ pub fn show_blocks(
                 })
                 .inner;
             let resp = out.response;
-            log::debug!(
+            log::trace!(
                 "page block rendered: block={} stamp={} kind={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
                 i,
                 stamp,
@@ -4930,6 +4972,67 @@ A note to self.
         assert_eq!(b.len(), 2, "{b:?}");
         assert_eq!(block_text(&b[0]), "first");
         assert!(matches!(&b[1], Block::Code { text, .. } if text == "second"), "{:?}", b[1]);
+    }
+
+    #[test]
+    fn normal_on_a_collapsed_caret_in_a_code_block_uses_the_caret_line() {
+        let mut b = blocks("```123|rust\nfirst\nsecond\nthird\n```\n");
+        assert!(split_code_selection(&mut b, 0, (8, 8), "p"));
+        assert_eq!(b.len(), 3, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
+        assert_eq!(block_text(&b[1]), "second");
+        assert!(matches!(&b[2], Block::Code { text, .. } if text == "third"));
+    }
+
+    #[test]
+    fn normal_on_a_multiline_code_selection_converts_each_selected_line() {
+        let mut b = blocks("```123|rust\nfirst\nsecond\nthird\nfourth\n```\n");
+        assert!(split_code_selection(&mut b, 0, (6, 19), "p"));
+        assert_eq!(b.len(), 4, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
+        assert_eq!(block_text(&b[1]), "second");
+        assert_eq!(block_text(&b[2]), "third");
+        assert!(matches!(&b[3], Block::Code { text, .. } if text == "fourth"));
+    }
+
+    #[test]
+    fn normal_on_a_blank_code_line_splits_at_the_caret() {
+        let mut b = blocks("```123|rust\nfirst\n\nthird\n```\n");
+        assert!(split_code_selection(&mut b, 0, (6, 6), "p"));
+        assert_eq!(b.len(), 3, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
+        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+        assert!(matches!(&b[2], Block::Code { text, .. } if text == "third"));
+    }
+
+    #[test]
+    fn normal_on_a_selection_with_a_blank_code_line_converts_every_selected_line() {
+        let mut b = blocks("```123|rust\nfirst\n\nthird\nfourth\n```\n");
+        assert!(split_code_selection(&mut b, 0, (0, 12), "p"));
+        assert_eq!(b.len(), 4, "{b:?}");
+        assert_eq!(block_text(&b[0]), "first");
+        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+        assert_eq!(block_text(&b[2]), "third");
+        assert!(matches!(&b[3], Block::Code { text, .. } if text == "fourth"));
+    }
+
+    #[test]
+    fn normal_at_the_caret_after_a_newline_converts_the_new_blank_line() {
+        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into() }];
+        assert!(split_code_selection(&mut b, 0, (13, 13), "p"));
+        assert_eq!(b.len(), 2, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { text, .. } if text == "first\nsecond"));
+        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+    }
+
+    #[test]
+    fn normal_on_a_selection_reaching_the_end_includes_the_trailing_blank_line() {
+        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into() }];
+        assert!(split_code_selection(&mut b, 0, (6, 13), "p"));
+        assert_eq!(b.len(), 3, "{b:?}");
+        assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
+        assert_eq!(block_text(&b[1]), "second");
+        assert!(matches!(&b[2], Block::Paragraph(spans) if spans.is_empty()));
     }
 
     #[test]

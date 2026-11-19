@@ -64,6 +64,45 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     resp
 }
 
+/// A menu row with its keyboard shortcut right-aligned in a column of its own (issue #380), so
+/// the shortcut is not run into the words of the label.
+// i18n-ui-text: label
+pub fn menu_row_shortcut(ui: &mut Ui, glyph: Option<Glyph>, label: &str, shortcut: &str, t: &Tokens) -> Response {
+    let resp = menu_row(ui, glyph, label, t);
+    ui.painter_at(resp.rect).text(
+        egui::pos2(resp.rect.max.x - 10.0, resp.rect.center().y),
+        Align2::RIGHT_CENTER,
+        shortcut,
+        egui::FontId::proportional(12.0),
+        t.muted,
+    );
+    resp
+}
+
+/// A menu row for an action that removes something (issue #380): the picture and the words
+/// in the warning colour, so Delete never reads as one more ordinary entry.
+// i18n-ui-text: label
+pub fn menu_row_danger(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> Response {
+    let label = crate::tl!(label);
+    let width = ui.available_width().min(MENU_W);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    let icon = Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH));
+    match glyph {
+        Some(Glyph::Mark(m)) => ribbon_icons::paint(&painter, icon, m, t.warn),
+        Some(Glyph::Icon(i)) => icons::paint(&painter, icon, i, t.warn),
+        None => {}
+    }
+    painter.text(egui::pos2(rect.min.x + ICON_COL + 2.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), t.warn);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp
+}
+
 /// A menu row with a tick in the picture column when `checked`, the way OneNote lists the
 /// things a menu can turn on and off.
 // i18n-ui-text: label
@@ -115,6 +154,12 @@ pub struct FontBoxes {
     pub families: Vec<String>,
     pub families_note: Option<String>,
     pub sizes: Vec<String>,
+    /// Recently used families, most recent first, shared with the ribbon's family box.
+    pub recent: Vec<String>,
+    /// The family shown is not installed, so the box shows its warning mark.
+    pub family_missing: bool,
+    /// The installed families grouped by script, with a heading for each.
+    pub sections: std::sync::Arc<Vec<(String, Vec<String>)>>,
 }
 
 /// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
@@ -207,9 +252,26 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             items: &fonts.families,
                             empty_note: fonts.families_note.as_deref(),
                             accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                            filter: true,
+                            recent: &fonts.recent,
+                            missing: fonts.family_missing,
+                            preview: true,
+                            sections: &fonts.sections,
+                            add_font: Some(crate::tl_id!("ui.add_font")),
+                            usage: "floating-family",
+                            tokens: *t,
                         },
                     );
+                    if families.add_font {
+                        // The Add Font row: pick font files, install them, and read the list again.
+                        if let Some(report) = crate::font_install::pick_and_install()
+                            && !report.copied.is_empty()
+                        {
+                            crate::fonts::rescan_in_background(ui.ctx().clone());
+                        }
+                    }
                     if let Some(name) = families.chosen {
+                        crate::ribbon::remember_family(ui.ctx(), &name);
                         acts.push(Act::FontFamily(name));
                         picked = true;
                     }
@@ -224,7 +286,15 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             width: 38.0,
                             items: &fonts.sizes,
                             empty_note: None,
-                            accept: &|typed| typed.parse::<u8>().is_ok_and(|size| crate::ribbon::FONT_SIZES.contains(&size)),
+                            accept: &|typed| crate::font_picker::size_is_usable(typed, &crate::ribbon::FONT_SIZES),
+                            filter: false,
+                            recent: &[],
+                            missing: false,
+                            preview: false,
+                            sections: &[],
+                            add_font: None,
+                            usage: "floating-size",
+                            tokens: *t,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

@@ -25,12 +25,15 @@ pub mod datetime;
 pub mod fling;
 pub mod fscache;
 pub mod update;
+pub mod usage;
 // Android has no `rfd`: app.rs reaches this stand-in under that name there.
 pub mod diagramview;
 #[cfg(target_os = "android")]
 #[path = "filepicker.android.rs"]
 pub(crate) mod filepicker;
 pub mod floating;
+pub mod font_install;
+pub mod font_picker;
 pub mod fonts;
 pub mod gridcraft;
 pub mod highlight;
@@ -47,6 +50,7 @@ pub mod input_language {
 }
 pub mod inkpad;
 pub mod mathview;
+pub mod navdrag;
 pub mod navhistory;
 pub mod onlinevideo;
 pub mod pageedit;
