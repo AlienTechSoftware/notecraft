@@ -243,6 +243,77 @@ pub fn move_node(path: &Path, dest: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// Puts a page (with its subpages, files and ink), a section or a section group into `dest`, just
+/// before `before` (one of `dest`'s own children), or last there when `before` is `None`: where a
+/// drag in the navigation pane drops it. A notebook is placed among the notebooks beside it, with
+/// `dest` its own folder's parent. Returns where it now is.
+///
+/// Only the node placed is written in the usual case: it takes an order between its new
+/// neighbours'. Every node beside it is renumbered only when there is no number left between
+/// them. On a synced folder each write waits on the mount, and renumbering a section of twenty
+/// pages for every drag took that many waits.
+pub fn place_node(path: &Path, dest: &Path, before: Option<&Path>) -> Result<PathBuf> {
+    let path = fs::canonicalize(path).map_err(|e| StoreError::io("open", path, e))?;
+    let dest = fs::canonicalize(dest).map_err(|e| StoreError::io("open", dest, e))?;
+    let before = before.map(|b| fs::canonicalize(b).map_err(|e| StoreError::io("open", b, e))).transpose()?;
+    let kind =
+        read_node(&path).map(|n| n.kind).ok_or_else(|| StoreError::invalid("only a page, section, section group or notebook can be placed"))?;
+    if kind == NodeKind::Notebook {
+        if path.parent() != Some(dest.as_path()) {
+            return Err(StoreError::invalid("a notebook is placed among the notebooks beside it"));
+        }
+    } else {
+        check_destination(&path, &dest)?;
+    }
+    if let Some(before) = &before {
+        if before.parent() != Some(dest.as_path()) {
+            return Err(StoreError::invalid("a node is placed before one of the nodes in the same place"));
+        }
+        if *before == path {
+            return Ok(path);
+        }
+    }
+    // The nodes it goes among, in their order, without it.
+    let mut siblings: Vec<(PathBuf, u32)> =
+        node_children(&dest).into_iter().filter(|c| *c != path).map(|c| (c.clone(), read_node(&c).map_or(0, |n| n.order))).collect();
+    let at = before.as_ref().map_or(siblings.len(), |b| siblings.iter().position(|(c, _)| c == b).unwrap_or(siblings.len()));
+    let order = match order_between(&siblings, at) {
+        Some(order) => order,
+        None => {
+            for (index, (child, order)) in siblings.iter_mut().enumerate() {
+                *order = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1).saturating_mul(10);
+                set_node_order(child, *order)?;
+            }
+            order_between(&siblings, at).unwrap_or(u32::MAX)
+        }
+    };
+    let target = if path.parent() == Some(dest.as_path()) {
+        path
+    } else {
+        let target = unique_child(&dest, &tree::folder_name(&path));
+        if fs::rename(&path, &target).is_err() {
+            // Another drive, for a notebook opened from elsewhere: copied, then the old one taken
+            // away once the copy is whole.
+            copy_tree(&path, &target).map_err(|e| StoreError::io("copy", &target, e))?;
+            remove_tree(&path).map_err(|e| StoreError::io("delete", &path, e))?;
+        }
+        target
+    };
+    set_node_order(&target, order)?;
+    Ok(target)
+}
+
+/// An order for a node put at `at` among `siblings` (their orders, in order): between the one
+/// before and the one after, or ten past the last. `None` when there is no number between them.
+fn order_between(siblings: &[(PathBuf, u32)], at: usize) -> Option<u32> {
+    let previous = at.checked_sub(1).and_then(|i| siblings.get(i)).map_or(0, |(_, order)| *order);
+    match siblings.get(at) {
+        None => Some(previous.saturating_add(10)),
+        Some((_, next)) if *next > previous.saturating_add(1) => Some(previous + (next - previous) / 2),
+        Some(_) => None,
+    }
+}
+
 /// Copies a page (with its subpages, files and ink), a section or a section group into another
 /// parent, last among the nodes there, as OneNote's Copy does (issue #167). Every node in the
 /// copy gets an id of its own, so a link to the original still finds the original.
@@ -674,6 +745,58 @@ fn retitle_heading(body: &str, was: &str, now: &str, format: PageFormat) -> Stri
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    /// A drag in the navigation pane puts a node just before another, or last, in the same parent
+    /// or another; only the node placed is written while there is room between its neighbours.
+    #[test]
+    fn a_node_is_placed_where_it_was_dropped_writing_only_itself() {
+        let t = TempDir::new("place-node");
+        let s = Settings::at(t.path().join("s.toml"));
+        let nb = create_notebook(&t.path().join("books"), "Work", None, &s).expect("notebook");
+        let a = create_node(&nb, "A", NodeKind::Section, None, &s).expect("section a");
+        let b = create_node(&nb, "B", NodeKind::Section, None, &s).expect("section b");
+        let pages: Vec<PathBuf> =
+            ["One", "Two", "Three", "Four"].iter().map(|n| create_node(&a, n, NodeKind::Page, Some(PageFormat::Html), &s).expect("page")).collect();
+        compact_orders(&a).expect("ten apart");
+        let names = |dir: &Path| node_children(dir).iter().map(|c| read_node(c).expect("node").title).collect::<Vec<_>>();
+        assert_eq!(names(&a), ["One", "Two", "Three", "Four"]);
+        let stamp = |p: &Path| fs::metadata(page_file(p).expect("page file").1).and_then(|m| m.modified()).expect("time");
+
+        // Four goes before Two; nothing but Four is written.
+        let untouched: Vec<_> = pages[..3].iter().map(|p| stamp(p)).collect();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let four = place_node(&pages[3], &a, Some(&pages[1])).expect("place");
+        assert_eq!(names(&a), ["One", "Four", "Two", "Three"]);
+        assert_eq!(pages[..3].iter().map(|p| stamp(p)).collect::<Vec<_>>(), untouched, "the other pages were not written");
+
+        // First, and last.
+        place_node(&pages[2], &a, Some(&pages[0])).expect("first");
+        assert_eq!(names(&a), ["Three", "One", "Four", "Two"]);
+        place_node(&pages[2], &a, None).expect("last");
+        assert_eq!(names(&a), ["One", "Four", "Two", "Three"]);
+
+        // Into another section, before nothing there yet; and into a page, as its subpage.
+        let moved = place_node(&four, &b, None).expect("other section");
+        assert_eq!(names(&b), ["Four"]);
+        assert_eq!(names(&a), ["One", "Two", "Three"]);
+        let sub = place_node(&moved, &pages[0], None).expect("subpage");
+        assert_eq!(names(&pages[0]), ["Four"]);
+        assert!(sub.starts_with(fs::canonicalize(&pages[0]).expect("page")));
+
+        // Squeezed in until there is no room: then the section is renumbered and the order holds.
+        for _ in 0..8 {
+            place_node(&pages[2], &a, Some(&pages[1])).expect("before two");
+            place_node(&pages[1], &a, Some(&pages[2])).expect("before three");
+        }
+        assert_eq!(names(&a), ["One", "Two", "Three"]);
+
+        // Sections among sections; a notebook only among notebooks; never into itself.
+        place_node(&b, &nb, Some(&a)).expect("section first");
+        assert_eq!(names(&nb), ["B", "A"]);
+        assert!(place_node(&nb, &a, None).is_err());
+        assert!(place_node(&a, &pages[0], None).is_err(), "a page holds no section");
+        assert!(place_node(&pages[0], &sub, None).is_err(), "not inside itself");
+    }
 
     /// Issue #301: Save a Copy makes content of its own, anywhere, without the history.
     #[test]
