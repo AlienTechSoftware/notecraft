@@ -27,10 +27,11 @@ static EMBEDDED: &craft_i18n::Embedded = &[
     ("ja", "", include_str!("../../../i18n/ja.tsv")),
     ("ko", "", include_str!("../../../i18n/ko.tsv")),
     ("ru", "", include_str!("../../../i18n/ru.tsv")),
+    ("tr", "", include_str!("../../../i18n/tr.tsv")),
     ("ur", "", include_str!("../../../i18n/ur.tsv")),
     ("zh", "", include_str!("../../../i18n/zh.tsv")),
 ];
-static OFFERED: &[&str] = &["en-XA", "ar-XB", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh"];
+static OFFERED: &[&str] = &["en-XA", "ar-XB", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "tr", "ur", "zh"];
 static PSEUDO_LOOKED_UP: LazyLock<Mutex<std::collections::BTreeSet<String>>> = LazyLock::new(|| Mutex::new(std::collections::BTreeSet::new()));
 static AR_XB_RENDERED: LazyLock<Mutex<BTreeMap<String, &'static str>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
@@ -257,9 +258,9 @@ mod tests {
     fn embedded_languages_and_ltr_pseudo_locale_are_offered() {
         let languages = available_languages();
         let codes: Vec<&str> = languages.iter().map(|language| language.code.as_str()).collect();
-        assert_eq!(codes, ["en", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh", "en-XA", "ar-XB"]);
-        assert_eq!(languages[13].name, "English (Pseudo, LTR)");
-        assert_eq!(languages[14].name, "Arabic (Pseudo, RTL)");
+        assert_eq!(codes, ["en", "ar", "de", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "tr", "ur", "zh", "en-XA", "ar-XB"]);
+        assert_eq!(languages[14].name, "English (Pseudo, LTR)");
+        assert_eq!(languages[15].name, "Arabic (Pseudo, RTL)");
         for (code, name) in [
             ("ar", "العربية"),
             ("de", "Deutsch"),
@@ -271,6 +272,7 @@ mod tests {
             ("ja", "日本語"),
             ("ko", "한국어"),
             ("ru", "Русский"),
+            ("tr", "Türkçe"),
             ("ur", "اردو"),
             ("zh", "中文（简体）"),
         ] {
@@ -291,6 +293,22 @@ mod tests {
         let spanish = I18N.from_code("es").unwrap_or(Lang::EN);
         assert_eq!(I18N.trn(spanish, 1, "{n} item", "{n} items"), "1 elemento");
         assert_eq!(I18N.trn(spanish, 2, "{n} item", "{n} items"), "2 elementos");
+        assert!(I18N.check_all().is_empty(), "invalid embedded catalog rows: {:?}", I18N.check_all());
+    }
+
+    #[test]
+    fn turkish_catalog_translates_ui_messages_and_counts() {
+        assert_eq!(normalize_preference("TR"), "tr");
+        assert_eq!(resolve_preference(AUTO, &["tr-TR", "en-US"]), "tr");
+        assert_eq!(translate_for("tr", "Interface language"), "Arayüz dili");
+        assert_eq!(translate_for("tr", "Search all pages"), "Tüm sayfalarda ara");
+        assert_eq!(
+            format_message_for("tr", "Could not save the interface language: {error}", &[("error", "disk full")]),
+            "Arayüz dili kaydedilemedi: disk full"
+        );
+        let turkish = I18N.from_code("tr").unwrap_or(Lang::EN);
+        assert_eq!(I18N.trn(turkish, 1, "{n} item", "{n} items"), "1 öğe");
+        assert_eq!(I18N.trn(turkish, 2, "{n} item", "{n} items"), "2 öğe");
         assert!(I18N.check_all().is_empty(), "invalid embedded catalog rows: {:?}", I18N.check_all());
     }
 
