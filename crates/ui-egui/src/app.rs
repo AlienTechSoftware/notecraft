@@ -2170,19 +2170,27 @@ impl NoteCraftApp {
                 self.request_window(quick);
             }
         }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1)) {
-            self.go_back();
-        }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight)) || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2)) {
-            self.go_forward();
-        }
-        // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page list,
-        // from the page as well as from the list (issue #162).
-        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
-            self.step_page(false);
-        }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
-            self.step_page(true);
+        // Page navigation waits while a dialog is open: a modal (the recycle bin, a delete
+        // confirmation) acts on the page behind it, which must not change underneath it.
+        if self.dialog.is_none() {
+            if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowLeft))
+                || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1))
+            {
+                self.go_back();
+            }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowRight))
+                || ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2))
+            {
+                self.go_forward();
+            }
+            // OneNote's Ctrl+Page Up and Ctrl+Page Down: the page above or below in the page
+            // list, from the page as well as from the list (issue #162).
+            if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageUp)) {
+                self.step_page(false);
+            }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::PageDown)) {
+                self.step_page(true);
+            }
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F1)) {
             self.toggle_ribbon();
@@ -8414,31 +8422,27 @@ impl NoteCraftApp {
                         let x = rect.min.x + 10.0;
                         let room = (rect.width() - 20.0).max(20.0);
                         let mut y = rect.min.y + 12.0;
-                        painter.text(
-                            egui::pos2(x, y),
-                            Align2::LEFT_CENTER,
-                            fit_to_width(ui, &h.title, 14.0, room),
-                            egui::FontId::proportional(14.0),
-                            tokens.strong,
-                        );
-                        if !trail.is_empty() {
-                            y += 17.0;
-                            painter.text(
+                        // Through the bidi painter, as the band's title is: a title or trail in
+                        // Arabic or Hebrew keeps its word order. Plain text takes egui's own path.
+                        let line = |text: &str, size: f32, y: f32, colour| {
+                            crate::bidi::line_at(
+                                ui,
+                                &painter,
                                 egui::pos2(x, y),
                                 Align2::LEFT_CENTER,
-                                fit_to_width(ui, trail, 11.5, room),
-                                egui::FontId::proportional(11.5),
-                                tokens.accent,
+                                &fit_to_width(ui, text, size, room),
+                                size,
+                                colour,
+                                None,
                             );
+                        };
+                        line(&h.title, 14.0, y, tokens.strong);
+                        if !trail.is_empty() {
+                            y += 17.0;
+                            line(trail, 11.5, y, tokens.accent);
                         }
                         y += 17.0;
-                        painter.text(
-                            egui::pos2(x, y),
-                            Align2::LEFT_CENTER,
-                            fit_to_width(ui, &h.snippet, 12.0, room),
-                            egui::FontId::proportional(12.0),
-                            tokens.muted,
-                        );
+                        line(&h.snippet, 12.0, y, tokens.muted);
                         if current && picked_now {
                             row.scroll_to_me(None);
                         }
@@ -11672,8 +11676,6 @@ impl NoteCraftApp {
                                         let is_selected = selected.as_deref() == Some(item.id.as_str());
                                         let row_width = ui.available_width();
                                         let (rect, row) = ui.allocate_exact_size(vec2(row_width, 48.0), Sense::click());
-                                        let label = item.title.clone();
-                                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_selected, label.clone()));
                                         let painter = ui.painter_at(rect);
                                         if is_selected {
                                             painter.rect_filled(rect, 4.0, t.row_selected);
@@ -11684,11 +11686,11 @@ impl NoteCraftApp {
                                         if row.has_focus() {
                                             painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
                                         }
-                                        let icon = match item.kind {
-                                            NodeKind::Section => Icon::Section,
-                                            NodeKind::SectionGroup => Icon::SectionGroup,
-                                            NodeKind::Notebook => Icon::Notebook,
-                                            NodeKind::Page => Icon::Page,
+                                        let (icon, kind_name) = match item.kind {
+                                            NodeKind::Section => (Icon::Section, crate::tl_id!("ui.section")),
+                                            NodeKind::SectionGroup => (Icon::SectionGroup, crate::tl_id!("ui.section_group")),
+                                            NodeKind::Notebook => (Icon::Notebook, crate::tl_id!("ui.notebook")),
+                                            NodeKind::Page => (Icon::Page, crate::tl_id!("ui.page")),
                                         };
                                         let icon_rect =
                                             egui::Rect::from_center_size(egui::pos2(rect.min.x + 22.0, rect.center().y), vec2(18.0, 18.0));
@@ -11696,12 +11698,15 @@ impl NoteCraftApp {
                                         let text_left = rect.min.x + 44.0;
                                         let room = (rect.max.x - text_left - 10.0).max(20.0);
                                         let title = fit_to_width(ui, &item.title, 14.0, room);
-                                        painter.text(
+                                        crate::bidi::line_at(
+                                            ui,
+                                            &painter,
                                             egui::pos2(text_left, rect.min.y + 15.0),
                                             Align2::LEFT_CENTER,
-                                            title,
-                                            egui::FontId::proportional(14.0),
+                                            &title,
+                                            14.0,
                                             t.text,
+                                            None,
                                         );
                                         let when = crate::versions::when(&item.deleted);
                                         let mut details = match places.get(index).filter(|p| !p.is_empty()) {
@@ -11715,13 +11720,20 @@ impl NoteCraftApp {
                                                 format!("{details} \u{b7} {}", crate::i18n::format_count_id("ui.n_item_n_items", item.count as u64));
                                         }
                                         let shown = fit_to_width(ui, &details, 12.0, room);
-                                        painter.text(
+                                        crate::bidi::line_at(
+                                            ui,
+                                            &painter,
                                             egui::pos2(text_left, rect.min.y + 34.0),
                                             Align2::LEFT_CENTER,
-                                            shown,
-                                            egui::FontId::proportional(12.0),
+                                            &shown,
+                                            12.0,
                                             t.muted,
+                                            None,
                                         );
+                                        // A screen reader hears what the eye reads on both lines:
+                                        // the title, then the kind, when and where from.
+                                        let heard = format!("{}, {kind_name}, {details}", item.title);
+                                        row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, is_selected, heard.clone()));
                                         let full = format!("{}\n{details}", item.title);
                                         if row.on_hover_text(full).clicked() {
                                             *selected = Some(item.id.clone());
