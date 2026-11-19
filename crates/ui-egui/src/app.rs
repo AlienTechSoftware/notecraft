@@ -8776,6 +8776,33 @@ impl NoteCraftApp {
         }
     }
 
+    /// Add page, as one row across the page pane with a plus before its words (issue #366):
+    /// the plus, the words and the empty end of the row are one button, so a page is asked
+    /// for wherever along it the click lands. It is tinted in the accent so it reads as an
+    /// action and not as one more page.
+    fn add_page_row(ui: &mut Ui, t: &crate::theme::Tokens) -> egui::Response {
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        let share = if resp.is_pointer_button_down_on() {
+            0.20
+        } else if resp.hovered() {
+            0.12
+        } else {
+            0.06
+        };
+        painter.rect_filled(rect, 6.0, crate::theme::mix(t.panel, t.accent, share));
+        if resp.has_focus() {
+            painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
+        let plus = egui::Rect::from_center_size(egui::pos2(rect.min.x + 18.0, rect.center().y), vec2(14.0, 14.0));
+        icons::paint(&painter, plus, Icon::Plus, t.accent);
+        let label = crate::tl_id!("ui.add_page");
+        painter.text(egui::pos2(plus.max.x + 9.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.5), t.text);
+        let enabled = ui.is_enabled();
+        resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        resp.on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section"))
+    }
+
     /// The three-bar button, at the top left of the side panel.
     fn bars_button_at(ui: &mut Ui) -> egui::Response {
         // Drawn rather than typed: the font's own three-bar glyph is heavy and tight.
@@ -8833,13 +8860,14 @@ impl NoteCraftApp {
                         if !self.organisers {
                             toggle |= Self::bars_button_at(ui).clicked();
                         }
-                        let add_page = egui::Button::new(crate::tl_id!("ui.add_page")).stroke(egui::Stroke::new(1.0, self.tokens.container_border));
-                        if ui.add(add_page).on_hover_text(crate::tl_id!("ui.a_new_page_in_this_section")).clicked() {
-                            acts.push(Act::Add(path.clone(), NodeKind::Section));
-                        }
+                        ui.label(egui::RichText::new(title.to_uppercase()).small().color(self.tokens.muted));
                     });
-                    ui.label(egui::RichText::new(title.to_uppercase()).small().color(self.tokens.muted));
                     ui.add_space(2.0);
+                    // Above the list, not in it: it stays put while the pages scroll.
+                    if Self::add_page_row(ui, &self.tokens).clicked() {
+                        acts.push(Act::Add(path.clone(), NodeKind::Section));
+                    }
+                    ui.add_space(4.0);
                     egui::ScrollArea::vertical().id_salt("pages").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                         let list: Vec<&Node> = pages.iter().filter(|p| p.info.kind == NodeKind::Page).collect();
                         if list.is_empty() {
@@ -14180,5 +14208,75 @@ mod recent_range_tests {
         assert_eq!(RecentRange::Week.since(now, 0), at("2026-11-09T00:00:00Z"));
         assert_eq!(RecentRange::Month.since(now, 0), at("2026-10-17T00:00:00Z"));
         assert_eq!(RecentRange::All.since(now, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod add_page_row_tests {
+    use super::*;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    /// The sample notebook with one of its pages open, so the page pane shows its section.
+    fn window(name: &str, organisers: bool) -> (notecraft_store::testing::TempDir, PathBuf, H) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let section = sample.html_page.parent().expect("a section").to_path_buf();
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        app.organisers = organisers;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        (t, section, h)
+    }
+
+    fn add_page_rect(h: &H) -> egui::Rect {
+        use egui_kittest::kittest::{NodeT as _, Queryable as _};
+        let node = h.get_by_label(crate::tl_id!("ui.add_page"));
+        let b = node.accesskit_node().bounding_box().expect("a drawn button");
+        #[allow(clippy::cast_possible_truncation)]
+        egui::Rect::from_min_max(egui::pos2(b.x0 as f32, b.y0 as f32), egui::pos2(b.x1 as f32, b.y1 as f32))
+    }
+
+    fn click_at(h: &mut H, at: egui::Pos2) {
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+            h.step();
+        }
+        h.step();
+    }
+
+    /// Issue #366: Add page was a small outlined button the width of its words. It is now one
+    /// row across the page pane, so a click anywhere along it, the plus, the words or the far
+    /// edge, asks for a page in the section on show.
+    #[test]
+    fn add_page_runs_the_width_of_the_page_pane_and_answers_all_along_it() {
+        for organisers in [true, false] {
+            let (_t, section, mut h) = window(&format!("add-page-row-{organisers}"), organisers);
+            let row = add_page_rect(&h);
+            assert!(row.height() >= 28.0, "a row a finger finds, not a word: {row:?}");
+            let pane_w = 230.0;
+            assert!(row.width() >= pane_w - 2.0 * 16.0 - if organisers { 0.0 } else { 34.0 }, "it runs the pane: {row:?}");
+            for x in [row.min.x + 3.0, row.center().x, row.max.x - 3.0] {
+                h.state_mut().dialog = None;
+                click_at(&mut h, egui::pos2(x, row.center().y));
+                match &h.state().dialog {
+                    Some(Dialog::Add { parent, parent_kind, .. }) => {
+                        assert_eq!((parent, *parent_kind), (&section, NodeKind::Section), "a page in this section, at x {x}");
+                    }
+                    other => panic!("a click at x {x} (organisers {organisers}) asked for no page: {:?}", other.is_some()),
+                }
+            }
+        }
     }
 }
