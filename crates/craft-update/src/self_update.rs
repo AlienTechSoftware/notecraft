@@ -1859,6 +1859,7 @@ mod tests {
         assert!(error.contains("changed after it was checked"), "{error}");
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_file_must_be_signed_by_the_launchers_own_publisher() {
         let cmd = system_program("cmd.exe");
