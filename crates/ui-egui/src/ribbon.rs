@@ -66,7 +66,7 @@ pub fn recent_families(ctx: &egui::Context) -> Vec<String> {
 
 /// Keeps the recent list in step with the saved one. The first call reads the saved list; after that
 /// a change to the list is saved. `load` reads the saved text and `save` writes it.
-pub fn sync_recent_fonts(ctx: &egui::Context, load: impl FnOnce() -> Option<String>, save: impl FnOnce(&str)) {
+pub fn sync_recent_fonts(ctx: &egui::Context, load: impl FnOnce() -> Option<String>, save: impl FnOnce(&str) -> Result<(), String>) {
     let seeded_id = egui::Id::new("notecraft-recent-fonts-seeded");
     let stored_id = egui::Id::new("notecraft-recent-fonts-stored");
     if !ctx.data(|d| d.get_temp::<bool>(seeded_id)).unwrap_or(false) {
@@ -76,9 +76,28 @@ pub fn sync_recent_fonts(ctx: &egui::Context, load: impl FnOnce() -> Option<Stri
     }
     let now = recent_families(ctx);
     let stored: Option<Vec<String>> = ctx.data(|d| d.get_temp(stored_id));
-    if stored.as_ref() != Some(&now) {
-        save(&crate::font_picker::format_list(&now));
-        ctx.data_mut(|d| d.insert_temp(stored_id, now));
+    if stored.as_ref() == Some(&now) {
+        return;
+    }
+    // The snapshot moves on only when the list was saved. A failed save is tried again on the next frames,
+    // a few times, and then given up with a log line, so a broken settings file does not retry forever.
+    const SAVE_ATTEMPTS: u32 = 3;
+    let attempts_id = egui::Id::new("notecraft-recent-fonts-attempts");
+    let attempts = ctx.data(|d| d.get_temp::<u32>(attempts_id)).unwrap_or(0) + 1;
+    match save(&crate::font_picker::format_list(&now)) {
+        Ok(()) => {
+            ctx.data_mut(|d| d.remove::<u32>(attempts_id));
+            ctx.data_mut(|d| d.insert_temp(stored_id, now));
+        }
+        Err(error) if attempts < SAVE_ATTEMPTS => {
+            log::warn!("Could not save the recent fonts (attempt {attempts}): {error}");
+            ctx.data_mut(|d| d.insert_temp(attempts_id, attempts));
+        }
+        Err(error) => {
+            log::warn!("Gave up saving the recent fonts after {attempts} attempts: {error}");
+            ctx.data_mut(|d| d.remove::<u32>(attempts_id));
+            ctx.data_mut(|d| d.insert_temp(stored_id, now));
+        }
     }
 }
 

@@ -11914,9 +11914,7 @@ impl NoteCraftApp {
         crate::ribbon::sync_recent_fonts(
             ui.ctx(),
             || self.session.settings.get(RECENT_FONTS_KEY),
-            |text| {
-                let _ = self.session.settings.set(RECENT_FONTS_KEY, text);
-            },
+            |text| self.session.settings.set(RECENT_FONTS_KEY, text).map_err(|error| error.to_string()),
         );
         // Another window's writes are looked for before anything typed or clicked here is acted
         // on, and twice a second besides. Not every frame: each look asks the disk about the page

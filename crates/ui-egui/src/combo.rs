@@ -295,13 +295,13 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 {
                     ui.label(note);
                 }
-                // The list is a fixed-height window of its own: the rows scroll inside it and never draw past it.
-                ui.set_max_height(280.0);
-                // Paint nothing outside the popup's own rectangle, whatever the rows below do.
-                let top = ui.max_rect().min;
-                let window = egui::Rect::from_min_size(top, egui::vec2(ui.max_rect().width(), 280.0));
-                ui.set_clip_rect(window);
-                ScrollArea::vertical().max_height(280.0).min_scrolled_height(280.0).auto_shrink([false, false]).show(ui, |ui| {
+                // The list is at most 280 points tall, and never taller than the space the popup has. The rows
+                // scroll inside it, and nothing draws outside it: the popup's clip is intersected, not replaced.
+                let height = ui.available_height().min(280.0);
+                ui.set_max_height(height);
+                let window = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.max_rect().width(), height));
+                ui.set_clip_rect(ui.clip_rect().intersect(window));
+                ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
                     if !recent_rows.is_empty() {
                         ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
                         for item in &recent_rows {
