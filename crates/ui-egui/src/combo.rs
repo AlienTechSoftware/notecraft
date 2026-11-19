@@ -71,6 +71,11 @@ fn section_heading(ui: &mut Ui, text: &str) {
     });
 }
 
+/// Rows drawn beyond the visible window, in points, so a fast scroll does not show blank space.
+const VIEW_MARGIN: f32 = 60.0;
+/// The height a script heading takes, for the rows that are skipped without being drawn.
+const HEADING_H: f32 = 28.0;
+
 /// One row of a font list. Records a visible name so its font loads, and scrolls to the row when
 /// asked to.
 fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut Vec<String>, scroll_to: bool) -> egui::Response {
@@ -301,51 +306,108 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 ui.set_max_height(height);
                 let window = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.max_rect().width(), height));
                 ui.set_clip_rect(ui.clip_rect().intersect(window));
-                ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
-                    if !recent_rows.is_empty() {
-                        ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
-                        for item in &recent_rows {
-                            let current = item.as_str() == spec.shown;
-                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
-                            if row.clicked() {
-                                how = "list";
-                                outcome.chosen = Some((*item).clone());
-                                open = false;
-                                ui.memory_mut(|m| m.surrender_focus(typed_id));
-                            }
+                // Only the rows on screen are laid out and their fonts asked for; the rows above and below keep
+                // their space, so the scroll positions are the same as if every row were drawn.
+                ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+                    let origin = ui.min_rect().min;
+                    let row_h = ui.spacing().interact_size.y;
+                    let spacing = ui.spacing().item_spacing.y;
+                    let width = ui.available_width();
+                    let mut y = 0.0_f32;
+                    // Returns whether the item is near the window; off-screen items only take their space.
+                    let cull = |ui: &mut Ui, y: &mut f32, h: f32| -> (bool, f32) {
+                        let top = *y;
+                        *y += h + spacing;
+                        let shown = top + h >= viewport.min.y - VIEW_MARGIN && top <= viewport.max.y + VIEW_MARGIN;
+                        if !shown {
+                            ui.add_space(h + spacing);
                         }
-                        ui.separator();
-                    }
-                    if by_script {
-                        // One heading per script, so the list scrolls from language to language.
-                        for (heading, names) in spec.sections {
-                            section_heading(ui, heading);
-                            for item in names {
-                                let current = item.as_str() == spec.shown;
-                                let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll);
+                        (shown, top)
+                    };
+                    if !recent_rows.is_empty() {
+                        let (shown, _) = cull(ui, &mut y, HEADING_H);
+                        if shown {
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.recent_fonts")).small().weak());
+                        }
+                        for item in &recent_rows {
+                            let (shown, top) = cull(ui, &mut y, row_h);
+                            let current = item.as_str() == spec.shown;
+                            if current && scroll {
+                                ui.scroll_to_rect(
+                                    egui::Rect::from_min_size(origin + egui::vec2(0.0, top), egui::vec2(width, row_h)),
+                                    Some(Align::Center),
+                                );
+                            }
+                            if shown {
+                                let row = font_row(ui, item, current, spec.preview, &mut wanted, false);
                                 if row.clicked() {
                                     how = "list";
-                                    outcome.chosen = Some(item.clone());
+                                    outcome.chosen = Some((*item).clone());
                                     open = false;
                                     ui.memory_mut(|m| m.surrender_focus(typed_id));
                                 }
                             }
                         }
+                        cull(ui, &mut y, 6.0);
+                    }
+                    if by_script {
+                        // One heading per script, so the list scrolls from language to language.
+                        for (heading, names) in spec.sections {
+                            let (shown, _) = cull(ui, &mut y, HEADING_H);
+                            if shown {
+                                section_heading(ui, heading);
+                            }
+                            for item in names {
+                                let (shown, top) = cull(ui, &mut y, row_h);
+                                let current = item.as_str() == spec.shown;
+                                if current && scroll {
+                                    ui.scroll_to_rect(
+                                        egui::Rect::from_min_size(origin + egui::vec2(0.0, top), egui::vec2(width, row_h)),
+                                        Some(Align::Center),
+                                    );
+                                }
+                                if shown {
+                                    let row = font_row(ui, item, current, spec.preview, &mut wanted, false);
+                                    if row.clicked() {
+                                        how = "list";
+                                        outcome.chosen = Some(item.clone());
+                                        open = false;
+                                        ui.memory_mut(|m| m.surrender_focus(typed_id));
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         if !recent_rows.is_empty() {
-                            ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
+                            let (shown, _) = cull(ui, &mut y, HEADING_H);
+                            if shown {
+                                ui.label(egui::RichText::new(crate::tl_id!("ui.all_fonts")).small().weak());
+                            }
                         }
                         for (index, item) in rows.iter().enumerate() {
                             if let Some((_, heading)) = heading_starts.iter().find(|(start, _)| *start == index) {
-                                section_heading(ui, heading);
+                                let (shown, _) = cull(ui, &mut y, HEADING_H);
+                                if shown {
+                                    section_heading(ui, heading);
+                                }
                             }
+                            let (shown, top) = cull(ui, &mut y, row_h);
                             let current = if typing { index == highlight } else { item.as_str() == spec.shown };
-                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll || (current && scroll_highlight));
-                            if row.clicked() {
-                                how = "list";
-                                outcome.chosen = Some((*item).clone());
-                                open = false;
-                                ui.memory_mut(|m| m.surrender_focus(typed_id));
+                            let wants_scroll = scroll || (current && scroll_highlight);
+                            if current && wants_scroll {
+                                ui.scroll_to_rect(
+                                    egui::Rect::from_min_size(origin + egui::vec2(0.0, top), egui::vec2(width, row_h)),
+                                    Some(Align::Center),
+                                );
+                            }
+                            if shown {
+                                let row = font_row(ui, item, current, spec.preview, &mut wanted, false);
+                                if row.clicked() {
+                                    how = "list";
+                                    outcome.chosen = Some((*item).clone());
+                                    open = false;
+                                    ui.memory_mut(|m| m.surrender_focus(typed_id));
+                                }
                             }
                         }
                     }
