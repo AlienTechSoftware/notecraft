@@ -199,28 +199,33 @@ fn overflow(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens) -> Optio
     let resp = resp.on_hover_text(label);
     egui::Popup::menu(&resp).id(ui.id().with("all-sections")).show(|ui| {
         ui.set_min_width(200.0);
-        for t_ in tabs {
-            match &t_.inside {
-                None => {
-                    if ui.selectable_label(here == Some(t_.path.as_path()), &t_.title).clicked() {
-                        chosen = Some(t_.path.clone());
-                        ui.close();
+        // A notebook with many sections scrolls inside the list rather than running past the
+        // bottom of the window.
+        let room = (ui.ctx().viewport_rect().bottom() - ui.cursor().top() - 16.0).max(120.0);
+        egui::ScrollArea::vertical().id_salt("all-sections-list").max_height(room).show(ui, |ui| {
+            for t_ in tabs {
+                match &t_.inside {
+                    None => {
+                        if ui.selectable_label(here == Some(t_.path.as_path()), &t_.title).clicked() {
+                            chosen = Some(t_.path.clone());
+                            ui.close();
+                        }
                     }
-                }
-                Some(inside) => {
-                    ui.label(egui::RichText::new(&t_.title).small().strong().color(t.muted));
-                    for s in inside {
-                        ui.horizontal(|ui| {
-                            ui.add_space(12.0);
-                            if ui.selectable_label(here == Some(s.path.as_path()), &s.title).clicked() {
-                                chosen = Some(s.path.clone());
-                                ui.close();
-                            }
-                        });
+                    Some(inside) => {
+                        ui.label(egui::RichText::new(&t_.title).small().strong().color(t.muted));
+                        for s in inside {
+                            ui.horizontal(|ui| {
+                                ui.add_space(12.0);
+                                if ui.selectable_label(here == Some(s.path.as_path()), &s.title).clicked() {
+                                    chosen = Some(s.path.clone());
+                                    ui.close();
+                                }
+                            });
+                        }
                     }
                 }
             }
-        }
+        });
     });
     chosen
 }
