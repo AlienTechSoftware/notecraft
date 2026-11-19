@@ -825,6 +825,10 @@ fn flatpak_host_pid() -> Option<u32> {
     parse_flatpak_host_pid(&out, &instance_id)
 }
 
+// A failed instance query cannot establish that the old copy has exited.
+#[cfg(target_os = "linux")]
+const FLATPAK_INSTANCE_WAIT_SCRIPT: &str = r#"id=$1; shift; i=0; while :; do instances=$(flatpak ps --columns=instance 2>/dev/null) || exit 1; printf '%s\n' "$instances" | grep -Fxq -- "$id" || break; [ $i -ge 600 ] && exit 1; sleep 0.1; i=$((i+1)); done; exec "$@""#;
+
 /// A [`Restart`] that starts a host helper, which waits for this Flatpak instance to exit, then
 /// relaunches it via Flatpak on the host. Nothing starts before the app's exit is certain.
 #[cfg(target_os = "linux")]
@@ -839,10 +843,7 @@ fn relaunch_flatpak_after_exit(app: &App) -> Result<Restart, String> {
             r#"pid=$1; shift; i=0; while kill -0 "$pid" 2>/dev/null; do [ $i -ge 600 ] && exit 1; sleep 0.1; i=$((i+1)); done; exec "$@""#,
             pid.to_string(),
         ),
-        (None, Some(id)) => (
-            r#"id=$1; shift; i=0; while flatpak ps --columns=instance 2>/dev/null | grep -q "^$id$"; do [ $i -ge 600 ] && exit 1; sleep 0.1; i=$((i+1)); done; exec "$@""#,
-            id,
-        ),
+        (None, Some(id)) => (FLATPAK_INSTANCE_WAIT_SCRIPT, id),
         // Without either, starting it again could only meet the old copy still running.
         (None, None) => return Err(format!("{} is updated; quit and reopen it to start the new version", app.name)),
     };
@@ -2739,6 +2740,34 @@ mod tests {
         let ps = "Instance   PID    Application\n155661136  842791 ai.storyteller.artcraft-launcher\n";
         assert_eq!(parse_flatpak_host_pid(ps, "155661136"), Some(842791));
         assert_eq!(parse_flatpak_host_pid(ps, "999999999"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flatpak_restart_requires_a_successful_query_without_the_instance() {
+        use std::os::unix::fs::PermissionsExt;
+
+        for (output, query_status, should_launch) in
+            [("", 0, true), ("other", 0, true), ("", 1, false), ("other", 1, false), ("155661136", 1, false)]
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let flatpak = dir.path().join("flatpak");
+            std::fs::write(&flatpak, format!("#!/bin/sh\nprintf '%s\\n' '{output}'\nexit {query_status}\n")).unwrap();
+            std::fs::set_permissions(&flatpak, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let path = std::env::join_paths(
+                std::iter::once(dir.path().to_path_buf()).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
+            )
+            .unwrap();
+            let launched = dir.path().join("launched");
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", FLATPAK_INSTANCE_WAIT_SCRIPT, "sh", "155661136", "touch"])
+                .arg(&launched)
+                .env("PATH", path)
+                .status()
+                .unwrap();
+            assert_eq!(status.success(), should_launch, "output {output:?}, status {query_status}");
+            assert_eq!(launched.exists(), should_launch);
+        }
     }
 
     /// A per-user bundle and a system-wide bundle are told apart. Anything else is left alone,
