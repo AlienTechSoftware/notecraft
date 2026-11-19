@@ -611,7 +611,11 @@
 @id	ui.plain_text	Plain text
 @id	ui.powered_by	Powered by
 @id	ui.pressure_sensitivity_now_of_100	Pressure sensitivity {now} of 100
+@id	ui.pressure_sensitivity_tip	How readily the pen answers pressure: turned up, a light hand lays down more ink
 @id	ui.pressure_sensitivity_unavailable	Pressure sensitivity unavailable
+@id	ui.pressure_unavailable_tip_linux	No pen pressure readings have reached this window yet. On Linux, use a pressure-capable pen tablet in a Wayland session.
+@id	ui.pressure_unavailable_tip_other	No pen pressure readings have reached this window yet. Use a pressure-capable pen.
+@id	ui.pressure_unavailable_tip_windows	No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled.
 @id	ui.previous	Previous
 @id	ui.previous_match_shift_enter	Previous match (Shift+Enter)
 @id	ui.printout_is_available_for_pdf_and_office_documents	Printout is available for PDF and Office documents.
