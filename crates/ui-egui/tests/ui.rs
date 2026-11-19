@@ -7980,6 +7980,76 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
     }
 }
 
+/// A printout is one thing on the page, as in OneNote. Taking hold of any of its pages moves the
+/// whole printout, its card and every page: in a box of its own the box moves, and in a box shared
+/// with words the printout is lifted out together rather than page by page. One Ctrl+Z puts a
+/// drag back however many frames it took.
+#[test]
+fn a_printout_moves_as_one_and_undo_puts_it_back() {
+    for shared in [false, true] {
+        let what = format!("shared={shared}");
+        let t = TempDir::new("ui-printout-moves-whole");
+        let mut s = session(&t);
+        let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+        let path = sample.md_page.to_string_lossy().into_owned();
+        s.attach_bytes(&path, "a.pdf", b"%PDF-1.4\n").expect("pdf");
+        s.attach_bytes(&path, "a.pdf.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>").expect("card");
+        s.attach_bytes(&path, "a.pdf.printout-001.png", LOGO_PNG).expect("page 1");
+        s.attach_bytes(&path, "a.pdf.printout-002.png", LOGO_PNG).expect("page 2");
+        // Small pages, so both are in the window.
+        let printout = "[![a.pdf](assets/a.pdf.svg)](assets/a.pdf)\n\n<img src=\"assets/a.pdf.printout-001.png\" alt=\"Printout page 1\" width=\"200\" height=\"100\">\n\n<img src=\"assets/a.pdf.printout-002.png\" alt=\"Printout page 2\" width=\"200\" height=\"100\">\n";
+        let body = if shared { format!("Before\n\n{printout}\nAfter\n") } else { printout.to_string() };
+        let blocks = if shared { 5 } else { 3 };
+        s.run("page.save", &params(&[("path", &path), ("body", &body)])).expect("page");
+        s.run("page.containers", &params(&[("path", &path), ("boxes", &format!("0,0,500,{blocks}"))])).expect("one box");
+        let mut app = NoteCraftApp::new(s);
+        app.open_path(&path);
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        let boxes = |h: &mut Harness<'_, NoteCraftApp>| {
+            let state = look_at(h);
+            state
+                .pointer("/page/containers")
+                .and_then(Value::as_array)
+                .map(|b| {
+                    b.iter()
+                        .map(|c| {
+                            let f = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(-1.0) as f32;
+                            (f("x"), f("y"), c.get("blocks").and_then(Value::as_u64).unwrap_or(0))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let before = boxes(&mut h);
+        assert_eq!(before, vec![(0.0, 0.0, blocks as u64)], "one box to begin with in {what}");
+
+        // Take hold of the second page and drag it, over many frames.
+        let page_two = if shared { 3 } else { 2 };
+        let start = rendered_picture_rect(&h, page_two).center();
+        ask(&mut h, "ui.press", json!({"x": start.x, "y": start.y})).expect("press the page");
+        for step in 1..=20 {
+            let f = step as f32;
+            ask(&mut h, "ui.move", json!({"x": start.x + 4.0 * f, "y": start.y + 3.0 * f})).expect("drag");
+        }
+        ask(&mut h, "ui.release", json!({"x": start.x + 80.0, "y": start.y + 60.0})).expect("drop");
+        settle(&mut h);
+        let after = boxes(&mut h);
+        if shared {
+            let counts: Vec<u64> = after.iter().map(|b| b.2).collect();
+            assert_eq!(counts, vec![1, 3, 1], "the words, the whole printout, the words in {what}: {after:?}");
+        } else {
+            assert_eq!(after.len(), 1, "still one box in {what}: {after:?}");
+            assert!((after[0].0 - 80.0).abs() < 2.0 && (after[0].1 - 60.0).abs() < 2.0, "the box went with the pointer in {what}: {after:?}");
+        }
+
+        // One Ctrl+Z, and the page is as it was.
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("Ctrl+Z");
+        settle(&mut h);
+        assert_eq!(boxes(&mut h), before, "one undo puts the whole drag back in {what}");
+    }
+}
+
 // The native attachment-card double-click path is manually verified on Windows. The Linux
 // headless WGPU runner does not deliver the rendered attachment hit target consistently: the
 // same test stalls for the full suite timeout there while passing locally.

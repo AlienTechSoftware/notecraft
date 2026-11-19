@@ -16,8 +16,8 @@
 # all 43 patches apply, `cargo check --target wasm32-unknown-unknown` passes, and a full `trunk build
 # --release` (the playground-web profile: LTO fat, one codegen unit) produces a working demo.
 #
-# Shared website pipeline called by two workflows: PR builds and the separate manual deployment.
-# The PR workflow does not receive the Azure token; only the manual workflow can request deployment.
+# PRs build and verify the site. Nightly releases build it early and deploy it after
+# packaging and tests. Manual deployments build and deploy in the same workflow run.
 #
 # Needs one repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN (the Azure Static Web App's deployment
 # token — create the Free-tier resource first, then copy its token here; never commit it). Set on
@@ -42,6 +42,15 @@ on:
         required: false
         type: string
         default: ""
+      upload-site:
+        description: Upload the verified site for deployment by the caller.
+        type: boolean
+        default: false
+    outputs:
+      site-artifact-id:
+        value: ${{ jobs.build.outputs.site-artifact-id }}
+      site-sha256:
+        value: ${{ jobs.build.outputs.site-sha256 }}
     secrets:
       AZURE_STATIC_WEB_APPS_API_TOKEN:
         required: false
@@ -52,10 +61,19 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.version.outputs.value }}
+      site-artifact-id: ${{ steps.site-upload.outputs.artifact-id }}
+      site-sha256: ${{ steps.site.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || (inputs.deploy && 'main' || github.sha) }}
+
+      - name: Record the checked-out commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install the wasm32 target
         run: rustup target add wasm32-unknown-unknown
@@ -161,71 +179,37 @@ jobs:
           path: ${{ runner.temp }}/web/*.zip
           if-no-files-found: error
 
-      - uses: Azure/static-web-apps-deploy@v1
-        if: inputs.deploy
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ github.token }}
-          action: upload
-          app_location: "website"
-          output_location: ""
-          skip_app_build: true
-
-      - name: Verify deployed production demo version
-        if: inputs.deploy
+      - name: Archive the verified site for deployment
+        id: site
+        if: inputs.deploy || inputs.upload-site
         env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
           NOTECRAFT_VERSION: ${{ steps.version.outputs.value }}
-          VERIFY_QUERY: ${{ github.sha }}
         run: |
-          python3 - <<'PY'
-          import os
-          import re
-          import sys
-          import time
-          import zipfile
-          from io import BytesIO
-          from urllib.error import URLError
-          from urllib.parse import urljoin
-          from urllib.request import urlopen
+          set -euo pipefail
+          staging="$RUNNER_TEMP/website-artifact"
+          mkdir -p "$staging"
+          tar -C website -cf "$staging/site.tar" .
+          printf '%s\n' "$SOURCE_SHA" > "$staging/source-sha.txt"
+          printf '%s\n' "$NOTECRAFT_VERSION" > "$staging/version.txt"
+          sha256sum "$staging/site.tar" | awk '{print "sha256=" $1}' >> "$GITHUB_OUTPUT"
 
-          base = "https://notecraft.cloud/demo/"
-          version = os.environ["NOTECRAFT_VERSION"].encode()
-          query = "?release-check=" + os.environ["VERIFY_QUERY"]
-          last_error = "no attempt made"
-          for attempt in range(1, 13):
-              try:
-                  with urlopen(base + query, timeout=30) as response:
-                      html = response.read().decode("utf-8")
-                  match = re.search(r"['\"](\./[^'\"]+\.wasm)['\"]", html)
-                  if not match:
-                      raise RuntimeError("deployed demo index does not reference a WASM file")
-                  wasm_url = urljoin(base, match.group(1)) + query
-                  with urlopen(wasm_url, timeout=60) as response:
-                      wasm = response.read()
-                  if version not in wasm:
-                      last_error = f"live WASM does not contain NoteCraft {version.decode()}"
-                      raise RuntimeError(last_error)
-                  with urlopen(base + "welcome-notebook.zip" + query, timeout=60) as response:
-                      archive_bytes = response.read()
-                  with zipfile.ZipFile(BytesIO(archive_bytes)) as notebook:
-                      html = notebook.read("html/00-start/welcome/index.html").decode("utf-8")
-                      cmgfm = notebook.read("cmgfm/00-start/welcome/index.md").decode("utf-8")
-                      names = notebook.namelist()
-                  title = f"Welcome to NoteCraft (Ver {version.decode()})"
-                  if title not in html or title not in cmgfm:
-                      last_error = f"live Welcome notebook formats do not match NoteCraft {version.decode()}"
-                      raise RuntimeError(last_error)
-                  if not all(name in names for name in (
-                      "html/_node.toml", "cmgfm/_node.toml",
-                      "html/00-start/welcome/index.html", "cmgfm/00-start/welcome/index.md",
-                  )):
-                      last_error = "live Welcome notebook must contain both generated formats"
-                      raise RuntimeError(last_error)
-                  print(f"Live demo at {wasm_url} and both Welcome notebook formats embed NoteCraft {version.decode()}")
-                  sys.exit(0)
-              except (URLError, TimeoutError, RuntimeError, zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
-                  last_error = str(error)
-              if attempt < 12:
-                  time.sleep(10)
-          sys.exit(f"Live demo version verification failed after {attempt} attempts: {last_error}")
-          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: site-upload
+        if: inputs.deploy || inputs.upload-site
+        with:
+          name: website-site-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/website-artifact/
+          if-no-files-found: error
+
+  deploy:
+    if: inputs.deploy
+    needs: build
+    uses: ./.github/workflows/website-deploy.yml
+    with:
+      artifact-id: ${{ needs.build.outputs.site-artifact-id }}
+      site-sha256: ${{ needs.build.outputs.site-sha256 }}
+      source-sha: ${{ needs.build.outputs.source-sha }}
+      version: ${{ needs.build.outputs.version }}
+    secrets:
+      AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}

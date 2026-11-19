@@ -36,6 +36,10 @@ pub enum Kind {
     Edit,
     /// Letters going into this block.
     Typing(usize),
+    /// Boxes being moved by one press of the pointer, named by when it went down. Every frame of
+    /// a drag is one step, so Undo puts the boxes back where the drag found them, not where they
+    /// were a frame before.
+    Moving(u64),
 }
 
 /// The page as it stood at one moment.
@@ -106,6 +110,7 @@ impl History {
         let last = &self.steps[self.at];
         match (last.kind, step.kind) {
             (Kind::Typing(a), Kind::Typing(b)) => a == b && step.when.duration_since(last.when) < PAUSE,
+            (Kind::Moving(a), Kind::Moving(b)) => a == b,
             _ => false,
         }
     }
@@ -271,5 +276,20 @@ mod tests {
         }
         assert!(h.len() < 40, "the heavy steps were trimmed: {}", h.len());
         assert!(h.can_undo(), "but there is still something to undo");
+    }
+
+    /// A box dragged across the page records a step a frame: they are one step, so one Undo
+    /// puts it back where the drag began, and a long drag cannot push the older steps out.
+    #[test]
+    fn one_drag_is_one_step() {
+        let mut h = History::new(step("page", Kind::Edit));
+        for frame in 0..(MAX_STEPS * 2) {
+            h.record(step(&format!("page moved {frame}"), Kind::Moving(7)));
+        }
+        assert_eq!(h.len(), 2, "the page as opened and the drag");
+        assert_eq!(h.undo().map(|s| s.body.as_str()), Some("page"));
+        h.redo();
+        h.record(step("moved again", Kind::Moving(8)));
+        assert_eq!(h.len(), 3, "the next drag is a step of its own");
     }
 }
