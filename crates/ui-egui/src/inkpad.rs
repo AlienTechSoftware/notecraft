@@ -903,7 +903,7 @@ fn as_tuple(b: egui::Rect, origin: egui::Pos2, zoom: f32) -> (f32, f32, f32, f32
 /// end. The edges are the ones the saved outline is built from, so the screen and the file
 /// show the same shape.
 /// A page darker than this (relative luminance) shows dark ink light.
-const DARK_PAGE: f32 = 0.2;
+pub(crate) const DARK_PAGE: f32 = 0.2;
 
 /// The colour a stroke is drawn in. On a dark page, ink that is dark and has no real colour
 /// (black, the dark greys) is drawn as its light opposite, as OneNote's dark mode does, so the
