@@ -119,7 +119,11 @@ impl Host {
         } else {
             self.primary_closed = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-            self.primary.alert("update-close", "NoteCraft", "Save or resolve conflicts in all note and Quick Note windows, then choose Restart to Update again.");
+            self.primary.alert(
+                "update-close",
+                "NoteCraft",
+                "Save or resolve conflicts in all note and Quick Note windows, then choose Restart to Update again.",
+            );
         }
         ctx.request_repaint();
     }

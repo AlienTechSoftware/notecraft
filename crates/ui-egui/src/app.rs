@@ -10151,7 +10151,7 @@ impl NoteCraftApp {
                     } else {
                         self.request_window_close(ctx);
                     }
-                },
+                }
                 _ => {}
             }
         }

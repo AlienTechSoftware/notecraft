@@ -57,8 +57,11 @@ pub enum Status {
 
 /// What [`Status::Ready`] says: Windows and AppImage updates install at the exit handoff;
 /// other installations may already be in place and take effect when the app restarts.
-pub const READY_TEXT: &str =
-    if cfg!(any(windows, target_os = "linux")) { "Update ready. Close {app} to finish; it restarts by itself." } else { "The update is installed. Close {app} to finish; it restarts by itself." };
+pub const READY_TEXT: &str = if cfg!(any(windows, target_os = "linux")) {
+    "Update ready. Close {app} to finish; it restarts by itself."
+} else {
+    "The update is installed. Close {app} to finish; it restarts by itself."
+};
 
 /// What the app should do after [`Updater::show`].
 #[derive(Clone, Debug, PartialEq, Eq)]

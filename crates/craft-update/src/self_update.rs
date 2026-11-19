@@ -1209,8 +1209,10 @@ fn check_helper(app: &App, me: &Path, paths: &Paths, exe: &Path, step: &Finish) 
             Ok(file) => Ok(file.parent() == Some(downloads.as_path())),
             // A removed cache entry can still restart the validated installed copy after
             // waiting. Do not treat broken links or other validation errors as cache misses.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound
-                && std::fs::symlink_metadata(file).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::NotFound
+                    && std::fs::symlink_metadata(file).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+            {
                 Ok(file.file_name().is_some() && canonical(file.parent().ok_or_else(refused)?)? == downloads)
             }
             Err(_) => Err(refused()),
@@ -1255,10 +1257,11 @@ fn verify_at_use(step: &Finish, expect: Option<&str>) -> Result<(), String> {
 #[cfg(windows)]
 fn protect_artifact(step: &Finish) -> Result<std::fs::File, String> {
     use std::os::windows::fs::OpenOptionsExt;
-    let file = match step { Finish::Msi(file) | Finish::Portable { zip: file, .. } => file };
+    let file = match step {
+        Finish::Msi(file) | Finish::Portable { zip: file, .. } => file,
+    };
     // FILE_SHARE_READ: readers may reopen these bytes; writes and deletion are denied.
-    std::fs::OpenOptions::new().read(true).share_mode(1).open(file)
-        .map_err(|e| format!("couldn't protect the downloaded update ({e})"))
+    std::fs::OpenOptions::new().read(true).share_mode(1).open(file).map_err(|e| format!("couldn't protect the downloaded update ({e})"))
 }
 
 /// What [`step_after_wait`] came to.
@@ -2822,8 +2825,7 @@ mod tests {
     fn flatpak_restart_requires_a_successful_query_without_the_instance() {
         use std::os::unix::fs::PermissionsExt;
 
-        for (output, query_status, should_launch) in
-            [("", 0, true), ("other", 0, true), ("", 1, false), ("other", 1, false), ("155661136", 1, false)]
+        for (output, query_status, should_launch) in [("", 0, true), ("other", 0, true), ("", 1, false), ("other", 1, false), ("155661136", 1, false)]
         {
             let dir = tempfile::tempdir().unwrap();
             let flatpak = dir.path().join("flatpak");
