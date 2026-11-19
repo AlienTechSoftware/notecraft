@@ -55,10 +55,10 @@ pub enum Status {
     InstallFailed(String),
 }
 
-/// What [`Status::Ready`] says: on Windows the update installs after the app exits; elsewhere it
-/// is already in place and takes effect when the app restarts.
+/// What [`Status::Ready`] says: Windows and AppImage updates install at the exit handoff;
+/// other installations may already be in place and take effect when the app restarts.
 pub const READY_TEXT: &str =
-    if cfg!(windows) { "Update ready. Close {app} to install it." } else { "The update is installed. Close {app} to finish; it restarts by itself." };
+    if cfg!(any(windows, target_os = "linux")) { "Update ready. Close {app} to finish; it restarts by itself." } else { "The update is installed. Close {app} to finish; it restarts by itself." };
 
 /// What the app should do after [`Updater::show`].
 #[derive(Clone, Debug, PartialEq, Eq)]

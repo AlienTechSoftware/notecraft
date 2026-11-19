@@ -76,6 +76,9 @@ impl Host {
             self.primary.show(ui);
         }
         self.show_windows(&ctx);
+        if ctx.data_mut(|data| data.remove_temp::<bool>(egui::Id::new("update-process-close"))).unwrap_or(false) {
+            self.request_update_close(&ctx);
+        }
         // A child requested in this pass must exist before deciding whether the root may exit.
         if !self.primary_closed && (self.primary.take_native_close() || ctx.input(|i| i.viewport().close_requested())) {
             self.primary.save();
@@ -90,6 +93,35 @@ impl Host {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
+    }
+
+    /// Save every editor before committing the process to an update restart.
+    fn request_update_close(&mut self, ctx: &egui::Context) {
+        self.primary.save();
+        let mut ready = !self.primary.is_dirty() && !self.primary.has_page_conflict();
+        CHILDREN.with(|views| {
+            let mut views = views.borrow_mut();
+            for child in views.values_mut() {
+                child.app.save();
+                ready &= !child.app.is_dirty() && !child.app.has_page_conflict();
+            }
+            if ready {
+                for child in views.values_mut() {
+                    child.closing = true;
+                }
+            }
+        });
+        if ready {
+            self.primary.request_window_close(ctx);
+            for window in &self.windows {
+                ctx.send_viewport_cmd_to(window.id, egui::ViewportCommand::Close);
+            }
+        } else {
+            self.primary_closed = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            self.primary.alert("update-close", "NoteCraft", "Save or resolve conflicts in all note and Quick Note windows, then choose Restart to Update again.");
+        }
+        ctx.request_repaint();
     }
 
     /// The logic pass queues a real render pass; it never initializes native viewports itself.
@@ -245,6 +277,22 @@ mod tests {
             "the host must dispose of immediate viewports after the callback"
         );
     }
+    #[test]
+    fn update_close_requests_every_window() {
+        let t = notecraft_store::testing::TempDir::new("update-window-close");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = notecraft_engine::Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let primary = NoteCraftApp::new(session);
+        let child = primary.child_window(&Request { path: primary.session().root().to_path_buf(), quick: true }).expect("child");
+        let mut host = Host::new(primary);
+        host.add_window(child, true);
+        let ctx = egui::Context::default();
+        host.request_update_close(&ctx);
+        assert!(host.primary.take_native_close());
+        CHILDREN.with(|views| assert!(views.borrow().values().all(|child| child.closing)));
+    }
+
     #[test]
     fn a_hidden_root_requests_a_render_pass_for_its_children() {
         let t = notecraft_store::testing::TempDir::new("hidden-window-render");

@@ -377,7 +377,8 @@ pub fn update(
 
 /// What remains of an update after [`prepare_update`]: starting the helper, which waits for this
 /// process to exit. On Windows the helper then installs the update and starts the new version;
-/// on macOS and Linux the update is already in place and the helper starts the new version.
+/// on macOS and Linux packages the update is already in place. AppImage replacement
+/// waits for this handoff too.
 #[must_use = "the update only installs or restarts once the restart is started"]
 pub struct Restart {
     helper: Option<Box<dyn FnOnce() -> Result<(), String> + Send>>,
@@ -412,7 +413,7 @@ impl std::fmt::Debug for Restart {
 }
 
 /// [`update`] without starting the helper: the caller starts the returned [`Restart`] when the
-/// app's exit is certain. On macOS and Linux the update is in place when this returns.
+/// app's exit is certain. AppImage replacement is deferred until that handoff.
 #[allow(clippy::too_many_arguments)]
 pub fn prepare_update(
     app: &App,
@@ -453,7 +454,9 @@ pub fn prepare_update(
     // written when it starts (see `windows_helper`): it clears the record when it fails, which a
     // write after it started could undo.
     #[cfg(not(windows))]
-    mark_installed(paths, release);
+    if !matches!(install, Install::AppImage(_)) {
+        mark_installed(paths, release);
+    }
     let pid = std::process::id();
     let scheduled = (|| -> Result<Restart, String> {
         match install {
@@ -466,11 +469,7 @@ pub fn prepare_update(
                 Ok(relaunch_after_exit(app, pid, &[Path::new("/usr/bin/open").as_os_str(), placed.as_os_str()]))
             }
             #[cfg(target_os = "linux")]
-            Install::AppImage(path) => {
-                replace_appimage(&file, path)?;
-                let _ = std::fs::remove_file(&file);
-                Ok(relaunch_after_exit(app, pid, &[path.as_os_str()]))
-            }
+            Install::AppImage(path) => Ok(appimage_restart(app, paths, release, file, path.clone(), pid)),
             #[cfg(target_os = "linux")]
             Install::Package(kind, exe) => {
                 let result = install::linux::install_package(*kind, &file, None, stop, phase);
@@ -519,9 +518,9 @@ pub fn prepare_update(
         }
     })();
     let scheduled = unmark_unless_scheduled(paths, scheduled);
-    // On macOS and Linux the update is in place once it is prepared.
+    // AppImage records success at the exit handoff; other Unix installs are already in place.
     #[cfg(not(windows))]
-    if scheduled.is_ok() {
+    if scheduled.is_ok() && !matches!(install, Install::AppImage(_)) {
         record_done(paths, &release.version_label());
     }
     scheduled
@@ -617,6 +616,20 @@ fn unmark_unless_scheduled<T>(paths: &Paths, scheduled: Result<T, String>) -> Re
         let _ = std::fs::remove_file(marker(paths));
     }
     scheduled
+}
+
+/// Prepares a handoff without changing the installation while windows can cancel exit.
+#[cfg(target_os = "linux")]
+fn appimage_restart(app: &App, paths: &Paths, release: &Release, file: PathBuf, path: PathBuf, pid: u32) -> Restart {
+    let (app, paths, release) = (*app, paths.clone(), release.clone());
+    Restart::later(move || {
+        mark_installed(&paths, &release);
+        let result = replace_appimage(&file, &path);
+        let _ = std::fs::remove_file(&file);
+        unmark_unless_scheduled(&paths, result)?;
+        record_done(&paths, &release.version_label());
+        relaunch_after_exit(&app, pid, &[path.as_os_str()]).start()
+    })
 }
 
 /// Copies the new AppImage beside the running one and renames it over it. The running copy is
@@ -1191,7 +1204,18 @@ fn check_helper(app: &App, me: &Path, paths: &Paths, exe: &Path, step: &Finish) 
         return Err(refused());
     }
     let downloads = canonical(&paths.downloads())?;
-    let in_downloads = |file: &Path| canonical(file).map(|f| f.parent() == Some(downloads.as_path()));
+    let in_downloads = |file: &Path| {
+        match file.canonicalize() {
+            Ok(file) => Ok(file.parent() == Some(downloads.as_path())),
+            // A removed cache entry can still restart the validated installed copy after
+            // waiting. Do not treat broken links or other validation errors as cache misses.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound
+                && std::fs::symlink_metadata(file).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {
+                Ok(file.file_name().is_some() && canonical(file.parent().ok_or_else(refused)?)? == downloads)
+            }
+            Err(_) => Err(refused()),
+        }
+    };
     let allowed = match (detect(app, &exe), step) {
         (Some(Install::Msi(installed)), Finish::Msi(msi)) => installed == exe && in_downloads(msi)?,
         (Some(Install::Portable(installed) | Install::Standalone(installed)), Finish::Portable { zip, tmp }) => {
@@ -1227,6 +1251,16 @@ fn verify_at_use(step: &Finish, expect: Option<&str>) -> Result<(), String> {
     }
 }
 
+/// Keep the verified cache file immutable while the installer or ZIP reader uses it.
+#[cfg(windows)]
+fn protect_artifact(step: &Finish) -> Result<std::fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let file = match step { Finish::Msi(file) | Finish::Portable { zip: file, .. } => file };
+    // FILE_SHARE_READ: readers may reopen these bytes; writes and deletion are denied.
+    std::fs::OpenOptions::new().read(true).share_mode(1).open(file)
+        .map_err(|e| format!("couldn't protect the downloaded update ({e})"))
+}
+
 /// What [`step_after_wait`] came to.
 #[cfg(windows)]
 struct Stepped {
@@ -1242,21 +1276,23 @@ struct Stepped {
 fn step_after_wait(app: &App, reference: &Path, pid: u32, exe: &Path, step: &Finish, wait: &dyn Fn(u32) -> bool, expect: Option<&str>) -> Stepped {
     let waited = wait(pid);
     log::info!("update helper: the app exited: {waited}");
-    let result = if let (true, Err(e)) = (waited, verify_at_use(step, expect)) {
-        Err(e)
-    } else if waited {
-        match step {
-            Finish::Msi(msi) => {
-                signed_like(app, reference, msi).and_then(|()| msi_step(app, exe)).and_then(|step| crate::msi_migrate::windows::run(msi, &step))
+    let result = if waited {
+        let protected = protect_artifact(step);
+        protected.and_then(|_guard| {
+            verify_at_use(step, expect)?;
+            match step {
+                Finish::Msi(msi) => {
+                    signed_like(app, reference, msi).and_then(|()| msi_step(app, exe)).and_then(|step| crate::msi_migrate::windows::run(msi, &step))
+                }
+                Finish::Portable { zip, tmp } => match (exe.parent(), exe.file_name()) {
+                    (Some(dir), Some(executable)) => crate::portable::unpack_over(zip, tmp, dir, executable, &|file| {
+                        // The expected executable must be signed even when its contents aren't a PE file.
+                        if file.file_name() == Some(executable) || is_program(file) { signed_like(app, reference, file) } else { Ok(()) }
+                    }),
+                    _ => Err(format!("{} isn't in a folder", app.name)),
+                },
             }
-            Finish::Portable { zip, tmp } => match (exe.parent(), exe.file_name()) {
-                (Some(dir), Some(executable)) => crate::portable::unpack_over(zip, tmp, dir, executable, &|file| {
-                    // The expected executable must be signed even when its contents aren't a PE file.
-                    if file.file_name() == Some(executable) || is_program(file) { signed_like(app, reference, file) } else { Ok(()) }
-                }),
-                _ => Err(format!("{} isn't in a folder", app.name)),
-            },
-        }
+        })
     } else {
         Err(format!("{} was still running after a minute, so the update wasn't installed", app.name))
     };
@@ -1275,6 +1311,24 @@ fn step_after_wait(app: &App, reference: &Path, pid: u32, exe: &Path, step: &Fin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_preparation_does_not_replace_the_installation() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::under(dir.path());
+        let installed = dir.path().join("installed.AppImage");
+        let download = dir.path().join("download.AppImage");
+        std::fs::write(&installed, b"old version").unwrap();
+        std::fs::write(&download, b"new version").unwrap();
+        let restart = appimage_restart(&crate::suite::LAUNCHER, &paths, &Release::default(), download.clone(), installed.clone(), std::process::id());
+        assert_eq!(std::fs::read(&installed).unwrap(), b"old version");
+        assert!(download.exists());
+        assert!(!marker(&paths).exists());
+        // Canceling the handoff must leave the installation untouched too.
+        drop(restart);
+        assert_eq!(std::fs::read(&installed).unwrap(), b"old version");
+    }
 
     #[test]
     fn macos_package_manager_folders_are_recognised() {
@@ -1647,6 +1701,10 @@ mod tests {
         assert!(check_helper(&crate::suite::LAUNCHER, &me, &paths, &other_in_folder, &portable(&zip, &staging)).is_err());
         // An MSI is for an MSI installation only.
         assert!(check_helper(&crate::suite::LAUNCHER, &me, &paths, &exe, &Finish::Msi(zip.clone())).is_err());
+        // A missing cache file may reach the wait-and-restart path; a foreign path may not.
+        std::fs::remove_file(&zip).unwrap();
+        assert_eq!(check_helper(&crate::suite::LAUNCHER, &me, &paths, &exe, &portable(&zip, &staging)), Ok(()));
+        assert!(check_helper(&crate::suite::LAUNCHER, &me, &paths, &exe, &portable(&elsewhere, &staging)).is_err());
     }
 
     /// The helper finds a portable launcher's folders beside it, as that launcher does.
@@ -1839,6 +1897,23 @@ mod tests {
         let mut gone = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
         gone.wait().unwrap();
         gone.id()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_artifact_cannot_be_written_or_removed_during_use() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("update.msi");
+        std::fs::write(&file, b"verified bytes").unwrap();
+        let step = Finish::Msi(file.clone());
+        let hash = crate::http::sha256_file(&file).unwrap();
+        let guard = protect_artifact(&step).unwrap();
+        assert_eq!(verify_at_use(&step, Some(&hash)), Ok(()));
+        assert!(std::fs::write(&file, b"changed bytes").is_err());
+        assert!(std::fs::remove_file(&file).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"verified bytes");
+        drop(guard);
+        std::fs::remove_file(file).unwrap();
     }
 
     /// A catalog-signed program matches itself; an unsigned one never does, on either side.

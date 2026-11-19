@@ -13,7 +13,7 @@ impl NoteCraftApp {
         self.native_close.replace(false)
     }
 
-    pub(super) fn request_window_close(&self, ctx: &Context) {
+    pub(crate) fn request_window_close(&self, ctx: &Context) {
         if self.native_hosted {
             self.native_close.set(true);
             ctx.request_repaint();

@@ -10144,7 +10144,14 @@ impl NoteCraftApp {
             ctx.global_style_mut(|style| style.spacing = app_spacing);
             match action {
                 crate::update_card::updater::Action::OpenUrl(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
-                crate::update_card::updater::Action::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                crate::update_card::updater::Action::Close => {
+                    if self.native_hosted {
+                        ctx.data_mut(|data| data.insert_temp(egui::Id::new("update-process-close"), true));
+                        ctx.request_repaint_of(egui::ViewportId::ROOT);
+                    } else {
+                        self.request_window_close(ctx);
+                    }
+                },
                 _ => {}
             }
         }
