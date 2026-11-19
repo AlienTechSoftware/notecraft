@@ -2994,12 +2994,17 @@ fn rack_spots(slot: Rect) -> (Rect, Rect) {
 /// standing up; their strokes do not.
 ///
 /// Fine pens are drawn at their own width. A broad one cannot be, in a strip ten points
-/// tall, so above three points the width grows by the square root of the rest: every size
-/// still draws wider than the one below it, and none spills out of the strip. `dark` is a
+/// tall, so above three points the width grows by the square root of the rest, scaled so the
+/// broadest pen fills the strip: every size still draws wider than the one below it, and
+/// none spills out. `dark` is a
 /// dark ribbon, where black ink is drawn light, as a dark page draws it.
 fn rack_swatch(nib: Nib, band: Rect, dark: bool) -> notecraft_ink::Stroke {
     let w = nib.width();
-    let shown = if w <= 3.0 { w } else { 3.0 + (w - 3.0).sqrt() }.min(RACK_SWATCH_H - 2.0);
+    // The root is scaled so the broadest pen a rack can hold just fills the strip; capping it
+    // instead drew every pen past about 28 pt alike.
+    let (exact, room) = (3.0, RACK_SWATCH_H - 2.0);
+    let widest = f32::from(rack::MAX_TENTHS) / 10.0;
+    let shown = if w <= exact { w } else { exact + (room - exact) * ((w - exact) / (widest - exact)).sqrt().min(1.0) };
     // On a dark ribbon black ink is shown light, as a dark page shows it.
     let mut stroke = notecraft_ink::Stroke::new(nib.tool, crate::inkpad::shown_colour(nib.colour, dark), shown);
     let (left, right) = (shown / 2.0 + 1.0, band.width() - shown / 2.0 - 1.0);
