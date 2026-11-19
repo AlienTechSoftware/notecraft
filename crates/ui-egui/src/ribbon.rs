@@ -2784,12 +2784,11 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             crate::tl_id!("ui.pressure_sensitivity_unavailable").to_owned()
         };
         resp.widget_info(move || egui::WidgetInfo::slider(enabled, f64::from(now), &said));
-        let tip = if pressure_available {
-            "How readily the pen answers pressure: turned up, a light hand lays down more ink"
+        if pressure_available {
+            resp.on_hover_text(crate::tl_id!("ui.pressure_sensitivity_tip"));
         } else {
-            "No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled."
-        };
-        resp.on_hover_text(crate::tl!(tip));
+            resp.on_hover_text(pressure_unavailable_tip());
+        }
         // The value only when there is one: "Pressure off" already says it is off.
         if pressure_available {
             ui.label(egui::RichText::new(format!("{now}")).size(11.5).color(t.text));
@@ -2911,7 +2910,10 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     // The one in use sinks into the rack, the way a pen lifted out of a tray sits lower
     // than its neighbours, and it eases down rather than jumping.
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
-    paint_tool(&painter, rect, nib.tool, nib.colour, drop);
+    let (stand, band) = rack_spots(rect);
+    paint_tool(&painter, stand, nib.tool, nib.colour, drop);
+    let dark = crate::theme::luminance(t.panel) < crate::inkpad::DARK_PAGE;
+    crate::inkpad::paint_stroke(&painter, band.min, &rack_swatch(nib, band, dark));
 
     // The chevron on the tool in hand opens its editor, as OneNote's does; a right click
     // opens the same editor and the rest of the rack's own menu.
@@ -2973,6 +2975,58 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
+}
+
+/// How tall the strip under a pen on the rack is, where the stroke it makes is drawn.
+const RACK_SWATCH_H: f32 = 10.0;
+
+/// Where in a rack slot the tool stands, and the strip under it for its stroke. The strip
+/// sits above the chevron the tool in hand shows, so neither covers the other; the eraser
+/// stands in the same place so the rack keeps one line.
+fn rack_spots(slot: Rect) -> (Rect, Rect) {
+    let band = Rect::from_min_size(egui::pos2(slot.min.x + 3.0, slot.max.y - 12.0 - RACK_SWATCH_H), vec2(slot.width() - 6.0, RACK_SWATCH_H));
+    let stand = Rect::from_min_max(slot.min, egui::pos2(slot.max.x, band.min.y - 2.0));
+    (stand, band)
+}
+
+/// The short stroke drawn under a pen on the rack: its own tool and colour, and a width
+/// that grows with the pen's (issue #375). Two black pens of different sizes look alike
+/// standing up; their strokes do not.
+///
+/// Fine pens are drawn at their own width. A broad one cannot be, in a strip ten points
+/// tall, so above three points the width grows by the square root of the rest, scaled so the
+/// broadest pen fills the strip: every size still draws wider than the one below it, and
+/// none spills out. `dark` is a
+/// dark ribbon, where black ink is drawn light, as a dark page draws it.
+fn rack_swatch(nib: Nib, band: Rect, dark: bool) -> notecraft_ink::Stroke {
+    let w = nib.width();
+    // The root is scaled so the broadest pen a rack can hold just fills the strip; capping it
+    // instead drew every pen past about 28 pt alike.
+    let (exact, room) = (3.0, RACK_SWATCH_H - 2.0);
+    let widest = f32::from(rack::MAX_TENTHS) / 10.0;
+    let shown = if w <= exact { w } else { exact + (room - exact) * ((w - exact) / (widest - exact)).sqrt().min(1.0) };
+    // On a dark ribbon black ink is shown light, as a dark page shows it.
+    let mut stroke = notecraft_ink::Stroke::new(nib.tool, crate::inkpad::shown_colour(nib.colour, dark), shown);
+    let (left, right) = (shown / 2.0 + 1.0, band.width() - shown / 2.0 - 1.0);
+    let mid = band.height() / 2.0;
+    // A slight wave, so it reads as a stroke and not a rule; the swing is kept inside the strip.
+    let swing = ((band.height() - shown) / 2.0 - 0.5).clamp(0.0, 1.5);
+    for k in 0..=6u8 {
+        let at = f32::from(k) / 6.0;
+        stroke.dabs.push(notecraft_ink::Dab::new(left + (right - left) * at, mid - (at * std::f32::consts::TAU).sin() * swing, 1.0));
+    }
+    stroke
+}
+
+/// What to say when no pressure has reached the window, by what this system needs for it.
+fn pressure_unavailable_tip() -> &'static str {
+    if cfg!(target_os = "windows") {
+        crate::tl_id!("ui.pressure_unavailable_tip_windows")
+    } else if cfg!(target_os = "linux") {
+        crate::tl_id!("ui.pressure_unavailable_tip_linux")
+    } else {
+        crate::tl_id!("ui.pressure_unavailable_tip_other")
+    }
 }
 
 /// OneNote's Modify Tool popup: the stroke this tool makes, the thicknesses as dots, the
@@ -3106,8 +3160,10 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
 
     let drop = ui.ctx().animate_bool_with_time(resp.id.with("picked"), chosen, 0.12) * DROP;
     let cx = rect.center().x;
-    let tall = 38.0;
-    let top = rect.center().y - tall / 2.0 - 2.0 + drop;
+    // Stood where the pens stand, and as tall as they are, above the strip their strokes use.
+    let (stand, _) = rack_spots(rect);
+    let tall = (stand.height() - 14.0).clamp(16.0, 38.0);
+    let top = stand.center().y - tall / 2.0 - 2.0 + drop;
     let foot = top + tall;
     // A block rubber seen square on: a pale grey body with a flat foot, and the band of
     // rubber at the bottom in the lilac OneNote gives it. No dome and no wedge; the
@@ -3980,6 +4036,50 @@ mod tests {
         assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "History", "View", "Table"]);
         assert_eq!(resolve_tab("Table", false, true), "Table");
         assert_eq!(resolve_tab("Table", false, false), "Home", "out of the table, out of the tab");
+    }
+
+    #[test]
+    fn a_pen_on_the_rack_shows_the_stroke_it_makes_thin_to_thick() {
+        let band = Rect::from_min_size(egui::pos2(0.0, 0.0), vec2(21.0, RACK_SWATCH_H));
+        let black = notecraft_ink::Rgb(0, 0, 0);
+        let mut last = 0.0;
+        // Every size on the rack, then the broad ones a pen may be set to past it, up to the
+        // largest: compared with their neighbours, so a cap anywhere shows as two alike.
+        for tenths in rack::THICKNESSES.into_iter().chain([200, 280, 330, rack::MAX_TENTHS]) {
+            let nib = Nib::new(Tool::Pen, black, tenths);
+            let swatch = rack_swatch(nib, band, false);
+            assert_eq!((swatch.tool, swatch.colour), (Tool::Pen, black), "the swatch is the pen's own");
+            assert!(swatch.width > last, "{tenths} tenths draws wider than the size before it");
+            last = swatch.width;
+            for dab in &swatch.dabs {
+                let half = swatch.width / 2.0;
+                assert!(dab.x - half >= 0.0 && dab.x + half <= band.width(), "{tenths}: inside the rack across");
+                assert!(dab.y - half >= 0.0 && dab.y + half <= band.height(), "{tenths}: inside the rack down");
+            }
+        }
+        // A fine pen is drawn at its own width, so the two thinnest still read as different pens.
+        assert!((rack_swatch(Nib::new(Tool::Pen, black, 10), band, false).width - 1.0).abs() < 1e-4);
+        let marker = rack_swatch(Nib::new(Tool::Highlighter, notecraft_ink::Rgb(255, 230, 0), 140), band, false);
+        assert_eq!(marker.tool, Tool::Highlighter, "a highlighter swatch is drawn as a highlighter");
+        // On a dark ribbon a black pen's stroke is drawn light, or it would not be seen at all.
+        let on_dark = rack_swatch(Nib::new(Tool::Pen, black, 20), band, true);
+        assert_eq!(on_dark.colour, crate::inkpad::shown_colour(black, true));
+        assert_ne!(on_dark.colour, black);
+        let red = notecraft_ink::Rgb(220, 30, 30);
+        assert_eq!(rack_swatch(Nib::new(Tool::Pen, red, 20), band, true).colour, red, "a real colour stays itself");
+    }
+
+    #[test]
+    fn the_pressure_tip_names_what_this_system_needs() {
+        let tip = pressure_unavailable_tip();
+        if cfg!(target_os = "windows") {
+            assert!(tip.contains("Windows Ink"), "{tip}");
+        } else {
+            assert!(!tip.contains("Windows"), "a Windows setting is no help here: {tip}");
+        }
+        if cfg!(target_os = "linux") {
+            assert!(tip.contains("Wayland"), "{tip}");
+        }
     }
 
     #[test]
