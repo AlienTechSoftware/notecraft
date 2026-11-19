@@ -75,6 +75,9 @@ time = { version = "0.3", default-features = false, features = ["std", "local-of
 # Keep the upstream crate local until its WASM-safe timer fix is released.
 [patch.crates-io]
 mermaid-rs-renderer = { path = "vendor/mermaid-rs-renderer" }
+# winit 0.30.13 does not report touchpad pinch (#64) or pen tablets (#8) on Wayland, and no 0.30.x
+# release will. Keep the patched copy until egui uses a winit release that does; see its NOTECRAFT.md.
+winit = { path = "vendor/winit" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

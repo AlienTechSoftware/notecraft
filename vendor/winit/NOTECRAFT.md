@@ -1,0 +1,23 @@
+# NoteCraft patch
+
+This is `winit` 0.30.13, the version egui and eframe 0.37 use, distributed under
+the Apache-2.0 license in `LICENSE`. It is kept here because winit 0.30.13 does
+not report two kinds of Wayland input that NoteCraft needs on Linux, and no
+0.30.x release will add them: the 0.30 backport of pinch gestures
+(rust-windowing/winit#4778) was closed without being merged.
+
+Two changes, both in the Wayland backend only:
+
+- `src/platform_impl/linux/wayland/seat/pointer/pointer_gesture.rs` reports
+  touchpad pinch and rotation (`zwp_pointer_gestures_v1`) as
+  `WindowEvent::PinchGesture` and `WindowEvent::RotationGesture`, so a pinch
+  zooms the page (NoteCraft #64). It follows #4778.
+- `src/platform_impl/linux/wayland/seat/tablet.rs` reports pen tablets
+  (`zwp_tablet_manager_v2`) as touches with pressure, so a pen draws with
+  pressure (NoteCraft #8).
+
+`src/event.rs` and `src/changelog/unreleased.md` document the events on Wayland.
+Windows, macOS, X11 and the web build behave as the released crate does.
+
+When egui moves to a winit release that reports these events on Wayland, remove
+this copy and its line in the workspace `[patch.crates-io]`.
