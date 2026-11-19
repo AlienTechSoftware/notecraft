@@ -1421,3 +1421,12 @@
 @id	ui.the_window_is_docked	$$$Docked at the right of the screen. Other windows are not moved aside; Dock to desktop again puts the window back.@@@
 @id	ui.the_window_is_undocked	$$$The window is back as it was.@@@
 @id	ui.the_screen_size_is_not_known_so_the_window_cannot_be_docked	$$$The screen's size is not known here, so the window cannot be docked.@@@
+@id	ui.back_to_notes	$$$Back to notes@@@
+@id	ui.recycle_bin_explainer	$$$Pages, sections and section groups you delete wait here. Restore one to put it back where it was.@@@
+@id	ui.recycle_bin_deleted_from	$$$Deleted {when} from {place}@@@
+@id	ui.recycle_bin_deleted_at	$$$Deleted {when}@@@
+@id	ui.delete_permanently_ellipsis	$$$Delete permanently...@@@
+@id	ui.add_page_empty_hint	$$$Choose Add page above to start one.@@@
+@id	ui.search_scope_all_notebooks	$$$Searching all notebooks. Enter opens the chosen page; Up and Down choose.@@@
+@id	ui.all_sections	$$$All sections@@@
+@id	ui.reset_zoom	$$$Reset zoom@@@
