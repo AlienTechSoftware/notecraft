@@ -1,7 +1,5 @@
 //! Catalog and load installed font families on desktop.
 
-use std::sync::Arc;
-
 #[cfg(target_os = "linux")]
 #[path = "../system_fonts.lnx.rs"]
 mod platform;
@@ -40,12 +38,15 @@ impl Catalog {
                 first_face.entry(name.clone()).or_insert(face.id);
             }
         }
+        // Coverage is read from the face that `load` picks for the family, so the two agree.
         let scripts = first_face
-            .iter()
-            .map(|(name, id)| {
-                let covered = database
-                    .with_face_data(*id, |data, index| {
-                        ttf_parser::Face::parse(data, index).map(|face| crate::font_picker::scripts_of(|c| face.glyph_index(c).is_some())).ok()
+            .keys()
+            .map(|name| {
+                let covered = select_face(&database, name)
+                    .and_then(|id| {
+                        database.with_face_data(id, |data, index| {
+                            ttf_parser::Face::parse(data, index).map(|face| crate::font_picker::scripts_of(|c| face.glyph_index(c).is_some())).ok()
+                        })
                     })
                     .flatten()
                     .unwrap_or_default();
@@ -78,11 +79,14 @@ impl Catalog {
     /// The font bytes of a family's regular face. Reading them can take a while, so the window
     /// does this on a background thread (see `fonts::ensure_page_fonts`).
     pub fn load(&self, family: &str) -> Result<egui::FontData, String> {
-        if !self.families.iter().any(|name| name == family) {
-            return Err(format!("Font family {family:?} is not in the installed font catalog"));
-        }
-        let query = fontdb::Query { families: &[fontdb::Family::Name(family)], ..Default::default() };
-        let id = self.database.query(&query).ok_or_else(|| format!("No usable face was found for font family {family:?}"))?;
+        // Names match as the page's names do: ignoring case, as the missing-font check does.
+        let family = self
+            .families
+            .iter()
+            .find(|name| name.as_str() == family)
+            .or_else(|| self.families.iter().find(|name| name.eq_ignore_ascii_case(family)))
+            .ok_or_else(|| format!("Font family {family:?} is not in the installed font catalog"))?;
+        let id = select_face(&self.database, family).ok_or_else(|| format!("No usable face was found for font family {family:?}"))?;
         let (bytes, index) = self
             .database
             .with_face_data(id, |bytes, index| (bytes.to_vec(), index))
@@ -101,13 +105,22 @@ impl Catalog {
 /// Adds loaded face bytes to the font set under the family's own name, with the proportional
 /// fallback chain after it. Cheap; must run where the font set is changed (the UI thread).
 pub fn insert_face(definitions: &mut egui::FontDefinitions, family: &str, data: egui::FontData) -> Result<egui::FontFamily, String> {
+    insert_face_arc(definitions, family, std::sync::Arc::new(data))
+}
+
+/// As `insert_face`, for face bytes that are already shared between windows.
+pub fn insert_face_arc(
+    definitions: &mut egui::FontDefinitions,
+    family: &str,
+    data: std::sync::Arc<egui::FontData>,
+) -> Result<egui::FontFamily, String> {
     let name = format!("notecraft-system-font:{family}");
     let key = super::named_family(family);
     let mut chain = vec![name.clone()];
     let fallbacks =
         definitions.families.get(&egui::FontFamily::Proportional).ok_or_else(|| "The proportional font fallback chain is missing".to_string())?;
     chain.extend(fallbacks.iter().cloned());
-    definitions.font_data.insert(name, Arc::new(data));
+    definitions.font_data.insert(name, data);
     definitions.families.insert(key.clone(), chain);
     Ok(key)
 }
@@ -129,4 +142,11 @@ mod folder_tests {
         let _ = std::fs::remove_dir_all(&folder);
         assert!(catalog.families().iter().any(|name| name == "Noto Sans Hebrew"), "the family is listed: {:?}", catalog.families());
     }
+}
+
+/// The face a family's regular text uses: the one fontdb matches for the family name. Shared by the
+/// script coverage and by loading, so they always describe the same face.
+fn select_face(database: &fontdb::Database, family: &str) -> Option<fontdb::ID> {
+    let query = fontdb::Query { families: &[fontdb::Family::Name(family)], ..Default::default() };
+    database.query(&query)
 }

@@ -85,6 +85,7 @@
 @id	ui.recent_fonts	$$$Recently Used Fonts@@@
 @id	ui.all_fonts	$$$All Fonts@@@
 @id	ui.font_missing	$$$This font is not installed. The page shows a fallback font.@@@
+@id	ui.font_add_none	$$$No font was added.@@@
 @id	ui.script_latin	$$$Latin@@@
 @id	ui.script_greek	$$$Greek@@@
 @id	ui.script_cyrillic	$$$Cyrillic@@@

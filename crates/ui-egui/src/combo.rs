@@ -85,6 +85,8 @@ fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut 
         // push the rows below it.
         let width = ui.available_width().max(0.0);
         ui.allocate_ui_with_layout(egui::vec2(width, height), egui::Layout::left_to_right(Align::Center), |ui| {
+            // A taller face is clipped to the slot rather than spilling into the rows below.
+            ui.set_clip_rect(ui.max_rect());
             ui.add_space(INDENT);
             ui.selectable_label(current, name_text(ui, name, preview))
         })
@@ -215,13 +217,18 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
             (Some(p), Some(r)) => r.contains(p),
             _ => false,
         };
-        if !cancelled && !on_list {
-            let exact = spec.items.iter().find(|item| item.eq_ignore_ascii_case(typed.trim()));
-            // Enter takes the match. A click away takes only an exact family name: half-typed text
+        // Enter commits even with the pointer over the list; a click away does not commit on the list.
+        if !cancelled && (entered || !on_list) {
+            // Enter takes the highlighted match. The ranking puts an exact name first, so the highlight is
+            // the name shown selected. A click away takes only an exact family name: half-typed text
             // ("geo") is not applied as a font just because the box lost focus.
+            let exact = spec
+                .items
+                .iter()
+                .find(|item| item.as_str() == typed.trim())
+                .or_else(|| spec.items.iter().find(|item| item.eq_ignore_ascii_case(typed.trim())));
             let value: Option<String> = match (spec.filter, entered, exact, hits.get(highlight)) {
-                (true, true, Some(item), _) => Some(item.clone()),
-                (true, true, None, Some(hit)) => Some((*hit).clone()),
+                (true, true, _, Some(hit)) => Some((*hit).clone()),
                 (true, false, Some(item), _) => Some(item.clone()),
                 (true, false, None, _) => None,
                 _ => Some(typed.trim().to_owned()),
@@ -264,6 +271,12 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
 
     // The list: the matches while typing, otherwise all items when the arrow has opened it.
     let show_list = typing || open;
+    // While typing, scroll the highlighted row into view only when the highlight has moved.
+    let scrolled_key = spec.id.with("scrolled-highlight");
+    let scroll_highlight = typing && ui.data(|d| d.get_temp::<usize>(scrolled_key)) != Some(highlight);
+    if typing {
+        ui.data_mut(|d| d.insert_temp(scrolled_key, highlight));
+    }
     let mut list_rect = None;
     if show_list {
         let rows: Vec<&String> = if typing { hits } else { spec.items.iter().collect() };
@@ -326,7 +339,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                                 section_heading(ui, heading);
                             }
                             let current = if typing { index == highlight } else { item.as_str() == spec.shown };
-                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll || typing);
+                            let row = font_row(ui, item, current, spec.preview, &mut wanted, scroll || (current && scroll_highlight));
                             if row.clicked() {
                                 how = "list";
                                 outcome.chosen = Some((*item).clone());

@@ -38,6 +38,10 @@ pub fn is_font_file(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| FONT_EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(ext)))
 }
 
+fn name_of_path(path: &Path) -> String {
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
 /// True when both paths name the same file on disk. A target that does not exist yet is never the
 /// same file.
 fn same_file(source: &Path, target: &Path) -> bool {
@@ -70,21 +74,18 @@ pub fn install(files: &[PathBuf], dir: &Path) -> Report {
             report.skipped.push((name, "already in the fonts folder".to_owned()));
             continue;
         }
-        // Another font with this name is installed: refuse rather than overwrite it.
-        if target.exists() {
-            report.skipped.push((name, "a different font with this name is already installed".to_owned()));
-            continue;
-        }
-        // Copy to a temporary name and rename it into place only once the copy is complete, so an
-        // interrupted install never leaves a partial font under the real name.
+        // Copy to a temporary name, then link it to the real name. A link fails if the name exists,
+        // so another font with this name is never overwritten, and a dangling symlink there counts
+        // as taken. An interrupted copy never leaves a partial font under the real name.
         let staging = dir.join(format!(".{name}.part"));
-        let result = std::fs::copy(file, &staging).and_then(|_| std::fs::rename(&staging, &target));
+        let result = std::fs::copy(file, &staging).and_then(|_| std::fs::hard_link(&staging, &target));
+        let _ = std::fs::remove_file(&staging);
         match result {
             Ok(()) => report.copied.push(name),
-            Err(error) => {
-                let _ = std::fs::remove_file(&staging);
-                report.skipped.push((name, error.to_string()));
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                report.skipped.push((name, "a different font with this name is already installed".to_owned()));
             }
+            Err(error) => report.skipped.push((name, error.to_string())),
         }
     }
     report
@@ -106,9 +107,25 @@ pub fn pick_and_install() -> Option<Report> {
     let Some(dir) = user_fonts_dir() else {
         crate::usage::record(crate::usage::Level::Error, "font_add_no_folder", &[]);
         log::error!("Add font: this platform has no user fonts folder");
-        return Some(Report { copied: Vec::new(), skipped: files.iter().map(|f| (f.display().to_string(), "no fonts folder".to_owned())).collect() });
+        return Some(Report { copied: Vec::new(), skipped: files.iter().map(|f| (name_of_path(f), "no fonts folder".to_owned())).collect() });
     };
     let report = install(&files, &dir);
+    if report.copied.is_empty() && !report.skipped.is_empty() {
+        // Nothing was installed: say so, rather than closing the picker silently.
+        let reasons: Vec<String> = report.skipped.iter().map(|(name, reason)| format!("{name}: {reason}")).collect();
+        rfd::MessageDialog::new()
+            .set_description(format!(
+                "{}
+
+{}",
+                crate::tl_id!("ui.font_add_none"),
+                reasons.join(
+                    "
+"
+                )
+            ))
+            .show();
+    }
     crate::usage::record(
         crate::usage::Level::Usage,
         "font_added",

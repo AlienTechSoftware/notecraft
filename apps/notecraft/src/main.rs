@@ -203,7 +203,8 @@ fn main() -> eframe::Result {
     // it also goes to the telemetry session when one exists and its level allows the event.
     let session = telemetry;
     notecraft_ui_egui::usage::install(Box::new(move |level, event, fields| {
-        applog::info(&format!("event {event} {fields:?}"));
+        // The log keeps the event name only; field values may name files, so they stay in the telemetry session.
+        applog::info(&format!("event {event}"));
         if let Some(session) = &session {
             let level = match level {
                 notecraft_ui_egui::usage::Level::Usage => telemetry::Level::Usage,

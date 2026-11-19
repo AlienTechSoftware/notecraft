@@ -85,6 +85,7 @@
 @id	ui.recent_fonts	[[RLI]]$$$Recently Used Fonts@@@[[PDI]]
 @id	ui.all_fonts	[[RLI]]$$$All Fonts@@@[[PDI]]
 @id	ui.font_missing	[[RLI]]$$$This font is not installed. The page shows a fallback font.@@@[[PDI]]
+@id	ui.font_add_none	[[RLI]]$$$No font was added.@@@[[PDI]]
 @id	ui.script_latin	[[RLI]]$$$Latin@@@[[PDI]]
 @id	ui.script_greek	[[RLI]]$$$Greek@@@[[PDI]]
 @id	ui.script_cyrillic	[[RLI]]$$$Cyrillic@@@[[PDI]]

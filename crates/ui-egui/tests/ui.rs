@@ -10669,7 +10669,9 @@ fn missing_page_fonts_are_visible_in_both_formats() {
         settle(&mut h);
         // The font is looked up on a background thread, so the notice appears a few frames later.
         let mut reported = false;
-        for _ in 0..400 {
+        // A time limit, not a count: a slow machine still gets the time it needs.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while std::time::Instant::now() < deadline {
             settle(&mut h);
             if h.query_all_by_label_contains("These fonts could not be loaded").count() > 0 {
                 reported = true;
