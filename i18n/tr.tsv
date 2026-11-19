@@ -1,0 +1,1423 @@
+@plural	Move "{title}" and everything inside it ({n} item) to this notebook's recycle bin?|Move "{title}" and everything inside it ({n} items) to this notebook's recycle bin?	"{title}" öğesini ve içindeki her şeyi ({n} öğe) bu not defterinin geri dönüşüm kutusuna taşı?|"{title}" öğesini ve içindeki her şeyi ({n} öğe) bu not defterinin geri dönüşüm kutusuna taşı?
+@plural	{n} item|{n} items	{n} öğe|{n} öğe
+@plural	{n} notebook opened|{n} notebooks opened	{n} not defteri açıldı|{n} not defteri açıldı
+@plural	{n} notebook|{n} notebooks	{n} not defteri|{n} not defteri
+@plural	{n} stroke|{n} strokes	{n} çizgi|{n} çizgi
+@id	language.name	Türkçe
+@id	product.about	NoteCraft; özgün, bağımsız olarak yazılmış kodlardan ve herkese açık belgelerden yararlanılarak açık şekilde geliştirilen, tamamen Rust tabanlı bir projedir. Amacı, OneNote'un tanıdık düzenini; inceleyebileceğiniz, yedekleyebileceğiniz ve seçtiğiniz hizmetler ile araçlarla eşitleyebileceğiniz yerel, taşınabilir dosyalarla birleştirmektir.
+@id	product.long_description	NoteCraft, OneNote not defteri deneyiminin açık kaynaklı ve sıfırdan bağımsız olarak yeniden geliştirilmiş bir sürümüdür. Not defterlerini, bölümleri, sayfaları, resimleri ve ekleri cihazınızda sıradan klasörler ve dosyalar olarak saklar. Herhangi bir NoteCraft sunucusu veya hesabı olmadan, zaten güvendiğiniz araçları kullanarak bunları nasıl eşitleyeceğinizi ve yedekleyeceğinizi seçebilirsiniz.
+@id	product.short_description	NoteCraft, yerel dosyalar etrafında şekillenen, OneNote not defteri deneyiminin açık kaynaklı ve sıfırdan bağımsız olarak yeniden geliştirilmiş bir sürümüdür. Notlarınızı cihazınızda tutun ve seçtiğiniz araçlarla eşitleyin veya yedekleyin.
+@id	product.tagline	Yerel dosyalar ve kendi koşullarınıza göre eşitleme için sıfırdan yeniden geliştirilmiş bir OneNote deneyimi.
+@id	ui.a_bullet_list	Madde işaretli liste
+@id	ui.a_column_left_of_the_caret_s	İmlecin bulunduğu sütunun soluna bir sütun
+@id	ui.a_column_right_of_the_caret_s	İmlecin bulunduğu sütunun sağına bir sütun
+@id	ui.a_copy_goes_into_this_page_s_folder_so_the_notebook_5f331e4138	Bir kopyası bu sayfanın klasörüne yerleştirilir; böylece not defteri onu her yere taşır.
+@id	ui.a_direction_goes_on_a_paragraph_of_text	Metin paragrafına bir yön atanır
+@id	ui.a_file_copied_in_or_linked_where_it_is	Bir dosya: kopyalanarak içeri aktarılır ya da bulunduğu yerde bağlanır
+@id	ui.a_link	Bağlantı
+@id	ui.a_link_to_a_page_or_an_address	Bir sayfaya veya adrese bağlantı
+@id	ui.a_link_to_paste_into_another_page	Başka bir sayfaya yapıştırılacak bağlantı
+@id	ui.a_mermaid_diagram_kept_as_its_source	Kaynak koduyla saklanan bir Mermaid diyagramı
+@id	ui.a_new_notebook_is_a_folder_in_folder_with_one_sectio_7208ff46e4	Yeni bir not defteri, {folder} içinde bulunan ve içinde bir bölüm ile bir sayfa yer alan bir klasördür.
+@id	ui.a_new_page_in_this_section	Bu bölümde yeni bir sayfa
+@id	ui.a_new_section_in_the_chosen_notebook	Seçilen not defterinde yeni bir bölüm
+@id	ui.a_new_spreadsheet_beside_the_page_opened_in_gridcraft	Sayfanın yanında, GridCraft'ta açılan yeni bir elektronik tablo
+@id	ui.a_numbered_list	Numaralı liste
+@id	ui.a_page_here	Buraya bir sayfa
+@id	ui.a_row_above_the_caret_s	İmlecin bulunduğu satırın üstüne bir satır
+@id	ui.a_row_below_the_caret_s	İmlecin bulunduğu satırın altına bir satır
+@id	ui.a_table_keeps_its_heading_row_and_at_least_one_column	Bir tablo başlık satırını ve en az bir sütunu korur
+@id	ui.a_table_pick_its_size	Bir tablo: boyutunu seçin
+@id	ui.a_tag_goes_on_a_line_of_text	Metin satırına bir etiket eklenir
+@id	ui.a_to_do_box_on_this_line_ctrl_1	Bu satıra yapılacaklar kutusu (Ctrl+1)
+@id	ui.a_tour_of_notecraft_shown_on_its_own_pages_it_is_add_96221451f0	Kendi sayfalarında gösterilen bir NoteCraft turu. İlk başlatmada boş not defterleri klasörüne eklenir; bu işlem onu yeniden ekler veya hâlâ buradaysa açar.
+@id	ui.about_notecraft	NoteCraft Hakkında
+@id	ui.accent_accent	Vurgu: {accent}
+@id	ui.accept	Kabul Et
+@id	ui.add	Ekle
+@id	ui.add_a_blank_paragraph_at_the_caret	İmleç konumuna boş bir paragraf ekle
+@id	ui.add_a_page_here	Buraya bir sayfa ekle
+@id	ui.add_a_sub_page	Alt sayfa ekle
+@id	ui.add_another_tool	Başka bir {tool} ekle
+@id	ui.add_file	Dosya ekle
+@id	ui.add_file_to_this_page	Bu sayfaya dosya ekle
+@id	ui.add_inside_this_kind	Bu {kind} içine ekle
+@id	ui.add_name	{name} ekle
+@id	ui.add_name_left_more	{name} ekle ({left} tane daha)
+@id	ui.add_page	Sayfa ekle
+@id	ui.add_the_welcome_notebook	Karşılama not defterini ekle
+@id	ui.add_tool	{tool} ekle
+@id	ui.added_a_link_to_name_at_the_end_of_the_page	Sayfanın sonuna {name} bağlantısı eklendi
+@id	ui.added_a_tool	{tool} eklendi
+@id	ui.address	Adres
+@id	ui.android_no_file_picker	Android henüz bu dosya iletişim kutusunu gösteremiyor. Not defterleri Android/data/com.alientechsoftware.notecraft/files/NoteCraft konumundadır.
+@id	ui.the_line_changed_put_the_link_in_again	Satır değişti; bağlantıyı yeniden ekleyin
+@id	ui.select_words_in_one_line_for_a_link	Bağlantı için tek bir satırdaki sözcükleri seçin
+@id	ui.that_address_cannot_be_used_for_a_link	Bu adres bağlantı için kullanılamaz
+@id	ui.remove_link	Bağlantıyı kaldır
+@id	ui.text_to_display	Görüntülenecek metin
+@id	ui.alignment	Hizalama
+@id	ui.alignment_and_direction	Hizalama ve yön
+@id	ui.alignment_and_which_way_this_paragraph_reads	Hizalama ve bu paragrafın okunma yönü
+@id	ui.all_of_them_live_in_folder	Hepsi {folder} içinde yer alır
+@id	ui.always_on_top	Her zaman üstte
+@id	ui.an_equation_written_in_tex_pick_one_to_start_from	TeX ile yazılmış bir denklem: başlamak için birini seçin
+@id	ui.app_preferences_reset_restart_notecraft_to_apply_every_default	Uygulama tercihleri sıfırlandı. Tüm varsayılanları uygulamak için NoteCraft'ı yeniden başlatın.
+@id	ui.appearance	Görünüm
+@id	ui.append_link	Bağlantıyı sona ekle
+@id	ui.application_preferences	Uygulama tercihleri
+@id	ui.arrow	Ok
+@id	ui.attach_the_file	Dosyayı ekle
+@id	ui.attachment_icon_missing	Ek simgesi eksik
+@id	ui.attachment_not_linked	Ek bağlı değil
+@id	ui.attachment_recovery	Ek kurtarma
+@id	ui.authors	Yazarlar
+@id	ui.auto	Otomatik
+@id	ui.automatic_system_language	Otomatik (sistem dili)
+@id	ui.back	Geri
+@id	ui.back_to_the_notebook	Not defterine dön
+@id	ui.back_to_the_page_before_alt_left	Önceki sayfaya dön (Alt+Sol)
+@id	ui.basic_text	Temel Metin
+@id	ui.font_size	Yazı Tipi Boyutu
+@id	ui.font_size_box	Yazı tipi boyutu
+@id	ui.font_family	Yazı Tipi Ailesi
+@id	ui.font_family_box	Yazı tipi adı
+@id	ui.recent_fonts	Son Kullanılan Yazı Tipleri
+@id	ui.all_fonts	Tüm Yazı Tipleri
+@id	ui.font_missing	Bu yazı tipi yüklü değil. Sayfa yedek bir yazı tipi gösteriyor.
+@id	ui.font_add_none	Yazı tipi eklenmedi.
+@id	ui.script_latin	Latin
+@id	ui.script_greek	Yunan
+@id	ui.script_cyrillic	Kiril
+@id	ui.script_arabic	Arapça
+@id	ui.script_hebrew	İbranice
+@id	ui.script_devanagari	Devanagari
+@id	ui.script_thai	Tayca
+@id	ui.script_han	Çince
+@id	ui.script_kana	Japonca
+@id	ui.script_hangul	Korece
+@id	ui.script_other	Diğer yazı sistemleri
+@id	ui.add_font	Yazı Tipi Ekle…
+@id	ui.add_font_dialog_title	Eklenecek yazı tipi dosyalarını seçin
+@id	ui.font_files_filter	Yazı tipi dosyaları
+@id	ui.pick_date	Tarih seçin
+@id	ui.pick_time	Saat seçin
+@id	ui.am	ÖÖ
+@id	ui.pm	ÖS
+@id	ui.pick_date_and_time	Tarih ve saat seçin
+@id	ui.today	Bugün
+@id	ui.month_1	Ocak
+@id	ui.month_2	Şubat
+@id	ui.month_3	Mart
+@id	ui.month_4	Nisan
+@id	ui.month_5	Mayıs
+@id	ui.month_6	Haziran
+@id	ui.month_7	Temmuz
+@id	ui.month_8	Ağustos
+@id	ui.month_9	Eylül
+@id	ui.month_10	Ekim
+@id	ui.month_11	Kasım
+@id	ui.month_12	Aralık
+@id	ui.weekday_short_0	Pz
+@id	ui.weekday_short_1	Pt
+@id	ui.weekday_short_2	Sa
+@id	ui.weekday_short_3	Ça
+@id	ui.weekday_short_4	Pe
+@id	ui.weekday_short_5	Cu
+@id	ui.weekday_short_6	Ct
+@id	ui.loading_fonts	Yazı tipleri yükleniyor...
+@id	ui.mixed	Karma
+@id	ui.font_catalog_unavailable	Bu cihazda yüklü yazı tipleri listelenemedi.
+@id	ui.underline	Altı Çizili
+@id	ui.subscript	Alt Simge
+@id	ui.superscript	Üst Simge
+@id	ui.inline_mark_whole_line	Bu biçimlendirme bu seçim veya imleç konumu için henüz kullanılamıyor. Bunun yerine tüm satırı seçin.
+@id	ui.fonts_unavailable	Şu yazı tipleri yüklenemedi; yedek yazı tipleri gösteriliyor: {fonts}
+@id	ui.select_text_before_changing_font_size	Yazı tipi boyutunu değiştirmeden önce metin seçin.
+@id	ui.black	siyah
+@id	ui.blue	mavi
+@id	ui.blue_2	Mavi
+@id	ui.bold	Kalın
+@id	ui.bold_ctrl_b	Kalın (Ctrl+B)
+@id	ui.both_as_the_page_s_own_stamp_is_written	Her ikisi de, sayfanın kendi damgası yazıldığı gibi
+@id	ui.browse_for_a_notebook	Not defterine göz at…
+@id	ui.browse_notebooks_in_folder_or_choose_another_folder	{folder} içindeki not defterlerine göz atın veya başka bir klasör seçin.
+@id	ui.brush_pen	Fırça Kalem
+@id	ui.built_with	Şununla geliştirildi
+@id	ui.bullets	Madde İşaretleri
+@id	ui.cancel	İptal
+@id	ui.cancel_import	İçe aktarmayı iptal et
+@id	ui.cannot_open_gridcraft_error	GridCraft açılamıyor: {error}
+@id	ui.cannot_open_the_table_in_gridcraft_error	Tablo GridCraft'ta açılamıyor: {error}
+@id	ui.cannot_read_the_picture_error	Resim okunamıyor: {error}
+@id	ui.cannot_save_the_pasted_picture_error	Yapıştırılan resim kaydedilemiyor: {error}
+@id	ui.cannot_write_name_error	{name} yazılamıyor: {error}
+@id	ui.cannot_write_the_drawing_error	Çizim yazılamıyor: {error}
+@id	ui.cannot_write_the_picture_error	Resim yazılamıyor: {error}
+@id	ui.cannot_write_this_page_s_ink	Bu sayfanın mürekkebi yazılamıyor
+@id	ui.choose_a_custom_ink_colour	Özel bir mürekkep rengi seçin
+@id	ui.choose_a_file_to_attach	Eklenecek bir dosya seçin
+@id	ui.choose_a_file_to_import	İçe aktarılacak bir dosya seçin
+@id	ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0	Yerel toplama düzeyini seçin. Sürüm derlemelerinde günlük kaydı varsayılan olarak kapalıdır.
+@id	ui.choose_a_notebook_a_folder_of_notebooks_or_an_empty_9de57f8f1f	Bir not defteri, not defterleri içeren bir klasör veya yeni bir not defteri için boş bir klasör seçin
+@id	ui.choose_a_onenote_notebook_folder	Bir OneNote not defteri klasörü seçin
+@id	ui.choose_a_pdf_or_office_document_to_print_out	Yazdırılacak bir PDF veya Office belgesi seçin
+@id	ui.choose_a_picture	Bir resim seçin
+@id	ui.choose_a_section_to_see_its_pages	Sayfalarını görmek için bir bölüm seçin.
+@id	ui.choose_a_symbol_to_insert_at_the_caret	İmleç konumuna eklenecek bir simge seçin
+@id	ui.choose_how_to_insert_a_picture	Resmin nasıl ekleneceğini seçin
+@id	ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8	NoteCraft'ın yerel olarak neleri kaydedeceğini seçin. Hiçbir veri otomatik olarak karşıya yüklenmez.
+@id	ui.chosen_for_this_page	bu sayfa için seçildi
+@id	ui.circle	Daire
+@id	ui.clear_all_local_telemetry_sessions_and_exported_tele_e4f5e2340d	Tüm yerel telemetri oturumları ve dışa aktarılan telemetri ZIP dosyaları temizlensin mi?
+@id	ui.clear_formatting	Biçimlendirmeyi temizle
+@id	ui.clear_formatting_2	Biçimlendirmeyi temizle
+@id	ui.clear_telemetry	Telemetriyi temizle
+@id	ui.click_a_stroke_to_pick_it_up_then_move_stretch_or_delete_it	Almak için bir çizgiye tıklayın, ardından taşıyın, uzatın veya silin
+@id	ui.click_in_a_table_first	Önce bir tablonun içine tıklayın
+@id	ui.click_in_the_page_first	Önce sayfanın içine tıklayın
+@id	ui.click_in_the_page_first_then_use_the_ribbon	Önce sayfanın içine tıklayın, ardından şeridi kullanın
+@id	ui.click_in_the_table_first	Önce tablonun içine tıklayın
+@id	ui.clipboard	Pano
+@id	ui.close	Kapat
+@id	ui.close_notebook	Not defterini kapat
+@id	ui.close_the_find_bar_escape	Bul çubuğunu kapat (Escape)
+@id	ui.close_the_source_pane	Kaynak bölmesini kapat
+@id	ui.cloud_import_is_not_implemented_yet	Buluttan içe aktarma henüz uygulanmadı.
+@id	ui.code_2	Kod
+@id	ui.code_in_one_line	Tek satırda kod
+@id	ui.collapse	Daralt
+@id	ui.collapse_all	Tümünü daralt
+@id	ui.collapse_subpages	Alt Sayfaları Daralt
+@id	ui.collapse_the_ribbon_ctrl_f1	Şeridi daralt (Ctrl+F1)
+@id	ui.college	Üniversite
+@id	ui.college_ruled	Üniversite çizgili
+@id	ui.colour	Renk
+@id	ui.colour_hex	{colour} {hex}
+@id	ui.colour_removed	Renk kaldırıldı
+@id	ui.colour_set_to_colour	Renk {colour} olarak ayarlandı
+@id	ui.colours	Renkler
+@id	ui.columns_x_rows_table	{columns} x {rows} Tablo
+@id	ui.commonmark_gfm	CommonMark + GFM
+@id	ui.contact	İletişim
+@id	ui.convert	Dönüştür
+@id	ui.convert_to_gridcraft_2	GridCraft'a\nDönüştür
+@id	ui.convert_to_gridcraft_gridcraft_is_not_installed	GridCraft'a Dönüştür: GridCraft yüklü değil
+@id	ui.copied	Kopyalandı
+@id	ui.copies_the_file_and_inserts_one_picture_for_each_printed_page	Dosyayı kopyalar ve yazdırılan her sayfa için bir resim ekler.
+@id	ui.copy	Kopyala
+@id	ui.copy_full_path	Tam yolu kopyala
+@id	ui.copy_link_to_page	Sayfa bağlantısını kopyala
+@id	ui.copy_the_selection	Seçimi kopyala
+@id	ui.could_not_attach_name_before_rendering_its_pages	Sayfaları işlenmeden önce {name} eklenemedi
+@id	ui.could_not_attach_name_to_this_page	{name} bu sayfaya eklenemedi.
+@id	ui.could_not_complete_the_action_error	İşlem tamamlanamadı: {error}
+@id	ui.could_not_import_the_notebook_error	Not defteri içe aktarılamadı: {error}
+@id	ui.could_not_open_the_containing_folder_error	İçeren klasör açılamadı: {error}
+@id	ui.could_not_open_the_file_error	Dosya açılamadı: {error}
+@id	ui.could_not_repair_the_icon_for_name_error	{name} için simge onarılamadı: {error}
+@id	ui.could_not_reset_app_preferences_error	Uygulama tercihleri sıfırlanamadı: {error}
+@id	ui.could_not_restore_the_link_for_name_error	{name} için bağlantı geri yüklenemedi: {error}
+@id	ui.could_not_save_the_interface_language_error	Arayüz dili kaydedilemedi: {error}
+@id	ui.could_not_save_the_interface_size_error	Arayüz boyutu kaydedilemedi: {error}
+@id	ui.could_not_store_printout_page_page_error	Çıktı sayfası {page} saklanamadı: {error}
+@id	ui.count_deleted	{count} · {deleted}
+@id	ui.count_items_colour_colour	{count} öğe, {colour} renk
+@id	ui.create	Oluştur
+@id	ui.created	Oluşturuldu
+@id	ui.critical	Kritik
+@id	ui.ctrl_v_pastes_into_the_page	Ctrl+V sayfaya yapıştırır
+@id	ui.ctrl_y_puts_it_back	Ctrl+Y geri getirir
+@id	ui.ctrl_z_takes_back_the_last_change	Ctrl+Z son değişikliği geri alır
+@id	ui.current_session_id	Geçerli oturum: {id}
+@id	ui.custom	özel
+@id	ui.customize_quick_access_toolbar	Hızlı Erişim Araç Çubuğunu Özelleştir
+@id	ui.cut	Kes
+@id	ui.cut_2	kes
+@id	ui.cut_the_selection	Seçimi kes
+@id	ui.dark	Koyu
+@id	ui.data	Veri
+@id	ui.date	Tarih
+@id	ui.date_time_2	Tarih ve\nSaat
+@id	ui.debug	hata ayıklama
+@id	ui.decrease_indentation	Girintiyi azalt
+@id	ui.decrease_indentation_shift_tab	Girintiyi azalt (Shift+Tab)
+@id	ui.default	Varsayılan
+@id	ui.default_format	Varsayılan biçim
+@id	ui.default_format_for_pages_below	Aşağıdaki sayfalar için varsayılan biçim
+@id	ui.definition	Tanım
+@id	ui.delete	Sil
+@id	ui.delete_assets_name_from_this_page_s_folder	"assets/{name}" bu sayfanın klasöründen silinsin mi?
+@id	ui.delete_columns_2	Sütunları\nSil
+@id	ui.delete_ellipsis	Sil...
+@id	ui.delete_file	Dosyayı sil
+@id	ui.delete_notebook	Not defterini sil
+@id	ui.delete_notebook_2	Not defterini sil...
+@id	ui.delete_notebook_title_and_everything_inside_it	"{title}" not defteri ve içindeki her şey silinsin mi?
+@id	ui.delete_permanently	Kalıcı olarak sil
+@id	ui.delete_rows_2	Satırları\nSil
+@id	ui.delete_tool	Silme Aracı
+@id	ui.delete_tool_2	{tool} aracını sil
+@id	ui.deleted_notebook	Not defteri silindi
+@id	ui.deleted_notebook_path	{path} not defteri silindi
+@id	ui.deny	Reddet
+@id	ui.diagram	Diyagram
+@id	ui.diamond	Eşkenar Dörtgen
+@id	ui.direction_from_the_words	Sözcüklere göre yön
+@id	ui.discovering_sections	Bölümler bulunuyor…
+@id	ui.do_not_warn_about_similar_attachment_issues_again_this_session	Bu oturumda benzer ek sorunları hakkında bir daha uyarma
+@id	ui.do_not_warn_about_similar_missing_icons_again_this_session	Bu oturumda benzer eksik simgeler hakkında bir daha uyarma
+@id	ui.do_not_warn_again_for_this_file_type_this_session	Bu oturumda bu dosya türü için bir daha uyarma
+@id	ui.dock_to_desktop	Masaüstüne sabitle
+@id	ui.document_renderer_coming_soon	Belge işleyici yakında geliyor
+@id	ui.don_t_show_this_again_in_this_session	Bu oturumda bunu bir daha gösterme
+@id	ui.don_t_show_this_ever	Bunu bir daha hiç gösterme
+@id	ui.draw	Çiz
+@id	ui.draw_a_loop_round_ink_to_pick_it_up	Mürekkebi seçmek için etrafına bir halka çizin
+@id	ui.draw_here_2	Buraya\nçiz
+@id	ui.drawing	Çiziliyor...
+@id	ui.drawing_saved_count_strokes	Çizim kaydedildi, {count} çizgi
+@id	ui.drawing_tools	Çizim Araçları
+@id	ui.drop_a_file_onto_the_page_to_add_it	Eklemek için sayfaya bir dosya bırakın
+@id	ui.edit	Düzenle
+@id	ui.editing	Düzenleniyor...
+@id	ui.egui_and_eframe	egui ve eframe
+@id	ui.ellipse	Elips
+@id	ui.email	E-posta
+@id	ui.english	İngilizce
+@id	ui.equation	Denklem
+@id	ui.equation_name	Denklem: {name}
+@id	ui.eraser	Silgi
+@id	ui.error	hata
+@id	ui.every_fifth_line_is_slightly_stronger_for_easier_counting	Daha kolay saymak için her beşinci çizgi biraz daha belirgindir.
+@id	ui.every_line_of_this_page_decides_for_itself	Bu sayfadaki her satır kendisi karar verir
+@id	ui.every_paragraph_decides_for_itself	Her paragraf kendisi karar verir
+@id	ui.expand	Genişlet
+@id	ui.expand_all	Tümünü genişlet
+@id	ui.expand_subpages	Alt Sayfaları Genişlet
+@id	ui.export_creates_a_user_selected_zip_then_removes_the_66f2bf3400	Dışa aktarma, kullanıcının seçtiği bir ZIP dosyası oluşturur ve ardından dışa aktarılan oturum klasörünü kaldırır.
+@id	ui.export_current_session_zip	Geçerli oturum ZIP'ini dışa aktar
+@id	ui.export_telemetry_zip	Telemetri ZIP'ini dışa aktar
+@id	ui.eyedropper	Damlalık
+@id	ui.eyedropper_not_built	Damlalık henüz yapılmadı
+@id	ui.file	Dosya
+@id	ui.file_attachment_2	Dosya\nEki
+@id	ui.file_options	Dosya seçenekleri
+@id	ui.file_printout_2	Dosya\nÇıktısı
+@id	ui.files	Dosyalar
+@id	ui.files_in_this_page	BU SAYFADAKİ DOSYALAR
+@id	ui.find	Bul
+@id	ui.find_in_this_file	Bu dosyada bul
+@id	ui.find_tags	Etiketleri Bul
+@id	ui.find_tags_3	Etiketleri\nBul
+@id	ui.fit_the_page_to_the_available_width	Sayfayı kullanılabilir genişliğe sığdır
+@id	ui.folder_folder	Klasör: {folder}
+@id	ui.follow_the_system_light_or_dark_setting	Sistemin açık veya koyu ayarını izle
+@id	ui.format	Biçim
+@id	ui.format_background_2	Arka Planı\nBiçimlendir
+@id	ui.format_for_this_page	Bu sayfanın biçimi
+@id	ui.format_painter	Biçim Boyacısı
+@id	ui.click_in_the_words_whose_formatting_to_copy	Biçimini kopyalamak istediğiniz sözcüklere tıklayın
+@id	ui.pick_the_words_to_give_that_formatting	Bu biçimin uygulanacağı sözcükleri seçin
+@id	ui.format_painter_keeps_painting_until_escape	Biçim Boyacısı, Escape tuşuna kadar boyamaya devam eder
+@id	ui.format_painter_put_down	Biçim Boyacısı bırakıldı
+@id	ui.format_painter_tip	İmleçteki biçimi bundan sonra seçeceğiniz sözcüklere kopyalayın. Escape tuşuna kadar boyamaya devam etmek için çift tıklayın.
+@id	ui.forward	İleri
+@id	ui.forward_to_the_page_after_alt_right	Sonraki sayfaya git (Alt+Right)
+@id	ui.fountain_pen	Dolma Kalem
+@id	ui.from_camera	Kameradan
+@id	ui.from_online	Çevrimiçi Kaynaktan
+@id	ui.full_page	Tam sayfa
+@id	ui.full_page_view_2	Tam Sayfa\nGörünümü
+@id	ui.full_path_copied	Tam yol kopyalandı
+@id	ui.give_the_page_the_whole_window	Sayfaya pencerenin tamamını ver
+@id	ui.gray	Gri
+@id	ui.green	Yeşil
+@id	ui.green_2	yeşil
+@id	ui.grey	gri
+@id	ui.gridcraft_is_not_installed	GridCraft yüklü değil
+@id	ui.help	Yardım
+@id	ui.hide	Gizle
+@id	ui.hide_everything_but_the_page	Sayfa dışındaki her şeyi gizle
+@id	ui.hide_page_title	Sayfa başlığını gizle
+@id	ui.hide_the_page_source	Sayfa kaynağını gizle
+@id	ui.hide_the_page_title	Sayfa başlığını gizle
+@id	ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely	Kutuları taşırken veya yeniden boyutlandırırken sayfa kılavuzuna hizalayın. Serbestçe yerleştirmek için Alt tuşunu basılı tutun.
+@id	ui.snap_to_grid	Kılavuza hizala
+@id	ui.sort_ascending_2	Artan\nSırala
+@id	ui.sort_descending_2	Azalan\nSırala
+@id	ui.sort_the_rows_by_the_caret_s_column_a_to_z	Satırları imlecin bulunduğu sütuna göre A'dan Z'ye ve 1'den 9'a sırala. Başlık üstte kalır.
+@id	ui.sort_the_rows_by_the_caret_s_column_z_to_a	Satırları imlecin bulunduğu sütuna göre Z'den A'ya ve 9'dan 1'e sırala. Başlık üstte kalır.
+@id	ui.the_rows_are_already_in_that_order	Satırlar zaten bu sırada
+@id	ui.highlight	Vurgula
+@id	ui.highlighter	Vurgulayıcı
+@id	ui.history	Geçmiş
+@id	ui.home	Giriş
+@id	ui.html_3	HTML
+@id	ui.html_4	html
+@id	ui.idea_3	Fikir
+@id	ui.images	Görseller
+@id	ui.immersive_reader	Odaklanmış okuyucu
+@id	ui.import_file	Dosya içe aktar
+@id	ui.import_from_the_cloud	Buluttan içe aktar
+@id	ui.import_notebook_folder	Not defteri klasörünü içe aktar
+@id	ui.important	Önemli
+@id	ui.importing	İçe aktarılıyor…
+@id	ui.importing_onenote	OneNote içe aktarılıyor
+@id	ui.increase_indentation	Girintiyi artır
+@id	ui.increase_indentation_tab	Girintiyi artır (Tab)
+@id	ui.index_of_total_sections	{index} / {total} bölüm
+@id	ui.info	bilgi
+@id	ui.inherit_notebook_section_or_global_setting	Devral (not defteri, bölüm veya genel ayar)
+@id	ui.input_mode	Giriş Modu
+@id	ui.insert	Ekle
+@id	ui.insert_a_common_symbol	Yaygın bir simge ekle
+@id	ui.insert_column_left_2	Sola\nSütun Ekle
+@id	ui.insert_column_right_2	Sağa\nSütun Ekle
+@id	ui.insert_printout	Çıktı ekle
+@id	ui.insert_row_above_2	Üste\nSatır Ekle
+@id	ui.insert_row_below_2	Alta\nSatır Ekle
+@id	ui.insert_space_2	Boşluk\nEkle
+@id	ui.insert_symbol	Simge ekle
+@id	ui.insert_table_not_built	Tablo Ekle... (henüz geliştirilmedi)
+@id	ui.insert_the_picture	Resmi ekle
+@id	ui.insert_the_recording	Kaydı ekle
+@id	ui.insert_the_video	Videoyu ekle
+@id	ui.inserted_name_and_count_printout_pages	{name} ve {count} çıktı sayfası eklendi
+@id	ui.interface_language	Arayüz dili
+@id	ui.interface_language_language	Arayüz dili: {language}
+@id	ui.interface_size	Arayüz boyutu
+@id	ui.interface_size_hint	Bu ekranda şeridi, menüleri ve sayfayı büyütür veya küçültür.
+@id	ui.interface_size_percent	%{percent}
+@id	ui.issues_the_roadmap_and_the_documentation_are_all_the_2beb6e100f	Sorunlar, yol haritası ve belgeler orada yer alır. NoteCraft içindeki hiçbir şey kendiliğinden orayla ya da başka bir hizmetle iletişim kurmaz.
+@id	ui.it_is_listed_so_the_page_s_folder_is_not_a_secret	Sayfa klasörünün gizli kalmaması için listelenir.
+@id	ui.italic	İtalik
+@id	ui.italic_ctrl_i	İtalik (Ctrl+I)
+@id	ui.json	JSON
+@id	ui.justification_goes_on_a_paragraph_of_text	Yaslama, bir metin paragrafına uygulanır
+@id	ui.keep_this_window_above_the_others	Bu pencereyi diğerlerinin üzerinde tut
+@id	ui.kept_the_original_drawing_file_path	Bu sayfanın çizim dosyasında NoteCraft'ın düzenleyemediği çizgiler vardı. Dosyanın özgün hâli {path} olarak saklandı.
+@id	ui.label	etiket
+@id	ui.label_not_built	{label} (henüz geliştirilmedi)
+@id	ui.label_not_built_yet	{label}: henüz geliştirilmedi
+@id	ui.label_nothing_to_action	{label}: {action} için bir şey yok
+@id	ui.language_click_to_change_it	{language}. Değiştirmek için tıklayın.
+@id	ui.large	Büyük
+@id	ui.large_squares	Büyük kareler
+@id	ui.laser_pointer	Lazer İşaretçi
+@id	ui.lasso_select	Kement\nSeçimi
+@id	ui.layout	Düzen
+@id	ui.leave_it	Olduğu gibi bırak
+@id	ui.left_to_right	Soldan Sağa
+@id	ui.level	Düzey:
+@id	ui.licence	Lisans
+@id	ui.light	Açık
+@id	ui.light_or_dark_and_the_accent_colour	Açık veya koyu tema ve vurgu rengi
+@id	ui.line	Çizgi
+@id	ui.lines_or_squares_behind_the_page_as_on_paper	Kâğıtta olduğu gibi sayfanın arkasında çizgiler veya kareler
+@id	ui.link	Bağlantı
+@id	ui.link_to_the_file_where_it_is	Dosyaya bulunduğu konumdan bağlantı ver
+@id	ui.link_to_title_copied	"{title}" bağlantısı kopyalandı
+@id	ui.linked_name_where_it_is_the_file_was_not_copied	{name} bulunduğu konumda bağlandı; dosya kopyalanmadı
+@id	ui.links	Bağlantılar
+@id	ui.live_captions	Canlı altyazılar
+@id	ui.local_collection_level	Yerel toplama düzeyi
+@id	ui.local_diagnostics	Yerel tanılama
+@id	ui.local_diagnostics_and_usage	Yerel tanılama ve kullanım
+@id	ui.logging_folder_folder	Günlük klasörü: {folder}
+@id	ui.logs_and_telemetry_stay_on_this_device_notecraft_doe_87b8387dee	Günlükler ve telemetri verileri bu cihazda kalır. NoteCraft bunları otomatik olarak göndermez.
+@id	ui.magenta	Macenta
+@id	ui.make_subpage	Alt Sayfa Yap
+@id	ui.make_the_page_larger	Sayfayı büyüt
+@id	ui.make_the_page_smaller	Sayfayı küçült
+@id	ui.making_a_printout_of_name	{name} çıktısı oluşturuluyor…
+@id	ui.making_a_printout_of_name_page_done_of_total	{name} çıktısı oluşturuluyor: {done} / {total} sayfa
+@id	ui.many_thanks_to_its_authors_and_contributors	— yazarlarına ve katkıda bulunanlara çok teşekkürler.
+@id	ui.markdown	Markdown
+@id	ui.match_case	Büyük/küçük harf eşleştir
+@id	ui.math	Matematik
+@id	ui.maximize	Ekranı Kapla
+@id	ui.md_2	md
+@id	ui.media	Medya
+@id	ui.medium	Orta
+@id	ui.medium_squares	Orta kareler
+@id	ui.meeting_details	Toplantı Ayrıntıları
+@id	ui.meeting_details_3	Toplantı\nAyrıntıları
+@id	ui.meetings	Toplantılar
+@id	ui.merge	Birleştir
+@id	ui.mermaid	Mermaid
+@id	ui.mint	nane yeşili
+@id	ui.mit_license	MIT lisansı
+@id	ui.mit_or_apache_2_0_at_your_option_the_koala_artwork_i_2ad8f523c0	İsteğinize bağlı olarak MIT veya Apache-2.0. Koala çizimi bunun kapsamında değildir; ATTRIBUTION.md dosyasına bakın.
+@id	ui.mode	Mod
+@id	ui.modify_tool	Aracı Düzenle
+@id	ui.more	Daha fazla...
+@id	ui.more_2	Daha fazla
+@id	ui.more_colours	Daha Fazla Renk
+@id	ui.more_styles	Daha fazla stil
+@id	ui.more_tags	Daha fazla etiket
+@id	ui.move_down	Aşağı Taşı
+@id	ui.move_left	Sola Taşı
+@id	ui.move_right	Sağa Taşı
+@id	ui.move_title_and_everything_inside_it_n_item_to_this_n_20c3146ea1	"{title}" öğesini ve içindeki her şeyi ({n} öğe) bu not defterinin geri dönüşüm kutusuna taşı?|"{title}" öğesini ve içindeki her şeyi ({n} öğe) bu not defterinin geri dönüşüm kutusuna taşı?
+@id	ui.move_to_recycle_bin	Geri dönüşüm kutusuna taşı
+@id	ui.move_up	Yukarı Taşı
+@id	ui.moved_moved_strokes_from_this_page_s_old_drawing_ont_11ecd930d5	Bu sayfanın eski çizimindeki {moved} çizgi doğrudan sayfanın üzerine taşındı
+@id	ui.moved_moved_strokes_onto_the_page_left_old_drawing_f_89f765dcef	{moved} çizgi sayfanın üzerine taşındı; {left} eski çizim dosyası kaldırılamadı
+@id	ui.moved_to_the_notebook_recycle_bin	Not defterinin geri dönüşüm kutusuna taşındı
+@id	ui.n_item_n_items	{n} öğe|{n} öğe
+@id	ui.n_notebook_n_notebooks	{n} not defteri|{n} not defteri
+@id	ui.n_notebook_opened_n_notebooks_opened	{n} not defteri açıldı|{n} not defteri açıldı
+@id	ui.n_stroke_n_strokes	{n} çizgi|{n} çizgi
+@id	ui.name_2	Ad
+@id	ui.name_is_not_built_yet_see_the_roadmap_for_what_is_coming	{name} henüz geliştirilmedi. Nelerin geleceğini görmek için yol haritasına bakın.
+@id	ui.name_is_now_a_file_in_this_page_s_folder	{name} artık bu sayfanın klasöründe bir dosya
+@id	ui.name_is_open_in_gridcraft	{name}, GridCraft'ta açık
+@id	ui.name_not_used_by_the_page	{name}: sayfa tarafından kullanılmıyor
+@id	ui.narrow	Dar
+@id	ui.narrow_ruled	Dar çizgili
+@id	ui.new_gridcraft_spreadsheet	Yeni GridCraft Elektronik Tablosu
+@id	ui.new_gridcraft_spreadsheet_not_installed	Yeni GridCraft Elektronik Tablosu (yüklü değil)
+@id	ui.new_notebook	Yeni not defteri
+@id	ui.new_notebook_2	Yeni not defteri...
+@id	ui.new_page	Yeni sayfa
+@id	ui.new_section_button	+ Yeni bölüm
+@id	ui.new_page_2	Yeni sayfa...
+@id	ui.new_page_cmd_n	Yeni Sayfa (Cmd+N)
+@id	ui.new_page_ctrl_n	Yeni Sayfa (Ctrl+N)
+@id	ui.new_pages	Yeni sayfalar:
+@id	ui.new_pages_use_format_unless_the_notebook_or_section_2678c9f7e6	Not defterinde veya bölümde aksi belirtilmedikçe yeni sayfalar {format} kullanır
+@id	ui.new_quick_note	Yeni hızlı not
+@id	ui.new_window	Yeni pencere
+@id	ui.next	Sonraki
+@id	ui.next_match_enter_f3	Sonraki eşleşme (Enter, F3)
+@id	ui.no	hayır
+@id	ui.no_colour	Renk yok
+@id	ui.no_generated_preview_icon_is_available	Oluşturulmuş önizleme simgesi yok.
+@id	ui.no_lines_behind_the_page	Sayfa arkasında çizgi yok
+@id	ui.no_name_beside_this_page_hand_the_table_over_first	Bu sayfanın yanında {name} yok: önce tabloyu devredin
+@id	ui.no_notebooks_yet_use_new_notebook	Henüz not defteri yok. "Yeni not defteri" seçeneğini kullanın.
+@id	ui.no_pages_in_this_section_yet	Bu bölümde henüz sayfa yok.
+@id	ui.no_pages_match	Eşleşen sayfa yok.
+@id	ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad	Henüz kayıtlı sürüm yok. NoteCraft, sayfa değiştiğinde bir kopya saklar.
+@id	ui.none	Yok
+@id	ui.normal_view	Normal\ngörünüm
+@id	ui.not_built	Geliştirilmedi
+@id	ui.not_built_2	geliştirilmedi
+@id	ui.not_built_yet	Henüz geliştirilmedi
+@id	ui.not_drawn_why	Çizilmedi: {why}
+@id	ui.not_used_by_the_page	sayfa tarafından kullanılmıyor
+@id	ui.note_taking_and_organization_in_pure_rust_your_notes_49e8095e25	Saf Rust ile not alma ve düzenleme. Notlarınız düz klasörler ve dosyalardır.
+@id	ui.notebook	Not defteri
+@id	ui.notebook_closed_its_files_are_still_on_disk	Not defteri kapatıldı; dosyaları hâlâ diskte
+@id	ui.notebook_created	Not defteri oluşturuldu
+@id	ui.notebook_information	Not defteri bilgileri
+@id	ui.notebook_recycle_bin_2	Not defteri geri dönüşüm kutusu
+@id	ui.notebook_recycle_bin_3	Not Defteri\nGeri Dönüşüm Kutusu
+@id	ui.notebooks_2	NOT DEFTERLERİ
+@id	ui.notebooks_and_pages_in_their_own_columns	Not defterleri ve sayfalar kendi sütunlarında
+@id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Not defterleri ve bölümler bir sütunda, sayfalar bir sonrakinde
+@id	ui.notebooks_folder_folder	Not defterleri klasörü: {folder}
+@id	ui.notebooks_items_folder	{notebooks} · {items} | {folder}
+@id	ui.notebooks_you_open_will_appear_here	Açtığınız not defterleri burada görünür.
+@id	ui.notecraft	NoteCraft
+@id	ui.notecraft_found_an_attachment_that_is_not_referenced_8c0eb51257	NoteCraft, bu sayfa tarafından referans verilmeyen bir ek buldu:
+@id	ui.notecraft_found_an_attachment_without_its_generated_icon_name	NoteCraft, oluşturulmuş simgesi olmayan bir ek buldu:
+@id	ui.notecraft_ruled	NoteCraft çizgili
+@id	ui.notecraft_squares	NoteCraft kareli
+@id	ui.notes_as_plain_folders_open_a_page_or_create_a_notebook_to_start	Düz klasörler hâlinde notlar. Başlamak için bir sayfa açın veya not defteri oluşturun.
+@id	ui.nothing_at_path_the_link_points_to_a_page_or_file_th_18d71ccd21	{path} konumunda hiçbir şey yok: bağlantı orada olmayan bir sayfayı veya dosyayı işaret ediyor
+@id	ui.nothing_here_can_show_this_kind_of_file	Burada bu tür bir dosyayı gösterebilecek hiçbir şey yok.
+@id	ui.nothing_is_copied_the_link_breaks_if_the_file_moves	Hiçbir şey kopyalanmaz. Dosya taşınırsa bağlantı bozulur.
+@id	ui.nothing_to_redo	Yinelenecek bir şey yok
+@id	ui.nothing_to_undo	Geri alınacak bir şey yok
+@id	ui.numbering	Numaralandırma
+@id	ui.off	KAPALI
+@id	ui.off_2	kapalı
+@id	ui.office_document	Office belgesi
+@id	ui.office_text_inspection	Office metin incelemesi
+@id	ui.officeimo	OfficeIMO
+@id	ui.ok	Tamam
+@id	ui.one_tree_of_notebooks	Tek not defteri ağacı
+@id	ui.onedrive_and_sharepoint_not_built_point_notecraft_at_584930dc1b	OneDrive ve SharePoint: geliştirilmedi. NoteCraft'ı eşitleme aracınızın zaten izlediği bir klasöre yönlendirmeniz aynı işi görür.
+@id	ui.onenote_import	OneNote içe aktarma
+@id	ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0	Çevrimiçi not defterleri (OneDrive, SharePoint) geliştirilmedi. Eşitleme aracınızın izlediği bir klasördeki not defteri onun tarafından eşitlenir.
+@id	ui.only_a_list_item_can_be_indented	Yalnızca bir liste öğesi girintilenebilir
+@id	ui.only_open_it_if_you_trust_the_file_and_the_person_who_created_it	Yalnızca dosyaya ve onu oluşturan kişiye güveniyorsanız açın.
+@id	ui.open	Aç
+@id	ui.open_a_folder	Bir klasör aç...
+@id	ui.open_a_notebook	Bir not defteri aç
+@id	ui.open_a_page_first	Önce bir sayfa açın
+@id	ui.open_a_page_first_then_drop_files_onto_it	Önce bir sayfa açın, ardından dosyaları üzerine bırakın.
+@id	ui.open_attachment	Eki aç
+@id	ui.open_every_level	Tüm düzeyleri aç
+@id	ui.open_folder	Klasörü aç
+@id	ui.open_in_folder	Klasörde aç
+@id	ui.open_name	Aç: {name}
+@id	ui.open_telemetry_folder	Telemetri klasörünü aç
+@id	ui.open_the_artcraft_discord	ArtCraft Discord'unu aç
+@id	ui.open_this_notebook	Bu not defterini aç
+@id	ui.open_using_shell	Kabuk kullanarak aç
+@id	ui.open_with_associated_app	İlişkili uygulamayla aç
+@id	ui.opened	Açıldı
+@id	ui.opened_path	{path} açıldı
+@id	ui.opened_path_it_has_no_pages_yet	{path} açıldı; henüz sayfası yok
+@id	ui.opened_the_containing_folder	İçeren klasör açıldı
+@id	ui.opened_url_in_the_browser	{url} tarayıcıda açıldı
+@id	ui.opened_using_the_associated_application	İlişkili uygulama kullanılarak açıldı
+@id	ui.opening_path	{path} açılıyor
+@id	ui.options	Seçenekler
+@id	ui.orange	Turuncu
+@id	ui.page	Sayfa
+@id	ui.page_colour	Sayfa rengi
+@id	ui.page_direction_from_the_words	Sözcüklere göre sayfa yönü
+@id	ui.page_format	Sayfa biçimi
+@id	ui.page_left_to_right	Sayfa soldan sağa
+@id	ui.page_right_to_left	Sayfa sağdan sola
+@id	ui.page_setup	Sayfa Yapısı
+@id	ui.page_source	Sayfa kaynağı
+@id	ui.page_versions_2	Sayfa sürümleri
+@id	ui.page_versions_4	Sayfa\nSürümleri
+@id	ui.page_width	Sayfa Genişliği
+@id	ui.pages	Sayfalar
+@id	ui.paper_behind_the_page	Sayfa arkasında {paper}
+@id	ui.paper_size	Kâğıt boyutu
+@id	ui.para	Parag.
+@id	ui.paragraph_direction_from_the_words	Sözcüklere göre paragraf yönü
+@id	ui.paragraph_left_to_right	Paragraf soldan sağa
+@id	ui.paragraph_right_to_left	Paragraf sağdan sola
+@id	ui.paragraph_selected	Paragraf seçildi
+@id	ui.paste	Yapıştır
+@id	ui.pasted	Yapıştırıldı
+@id	ui.pasted_a_picture_width_by_height	Bir resim yapıştırıldı, {width} × {height}
+@id	ui.pasted_formatted_content	Biçimlendirilmiş içerik yapıştırıldı
+@id	ui.path_opened_as_an_empty_notebook	{path} boş bir not defteri olarak açıldı
+@id	ui.pdf_and_office_documents	PDF ve Office belgeleri
+@id	ui.pdf_document	PDF belgesi
+@id	ui.pdf_text_inspection	PDF metin incelemesi
+@id	ui.pen	Kalem
+@id	ui.pencil	Kurşun kalem
+@id	ui.permanently_delete	Kalıcı olarak silinsin mi?
+@id	ui.permanently_delete_title_and_everything_inside_it	"{title}" ve içindeki her şey kalıcı olarak silinsin mi?
+@id	ui.permanently_deleted	Kalıcı olarak silindi
+@id	ui.phone_number	Telefon numarası
+@id	ui.pick_a_pdf_or_office_document_and_insert_its_pages_as_pictures	Bir PDF veya Office belgesi seçin ve sayfalarını resim olarak ekleyin
+@id	ui.pick_the_caret_s_column	İmlecin bulunduğu sütunu seçin
+@id	ui.pick_the_caret_s_row	İmlecin bulunduğu satırı seçin
+@id	ui.pick_the_whole_table	Tüm tabloyu seçin
+@id	ui.picture_from_a_file	Dosyadan resim
+@id	ui.pictures	Resimler
+@id	ui.plain	Düz
+@id	ui.plain_text	Düz metin
+@id	ui.powered_by	Destekleyen:
+@id	ui.pressure_sensitivity_now_of_100	Basınç hassasiyeti: {now} / 100
+@id	ui.pressure_sensitivity_unavailable	Basınç hassasiyeti kullanılamıyor
+@id	ui.previous	Önceki
+@id	ui.previous_match_shift_enter	Önceki eşleşme (Shift+Enter)
+@id	ui.printout_is_available_for_pdf_and_office_documents	Çıktı alma özelliği PDF ve Office belgeleri için kullanılabilir.
+@id	ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac	Gizlilik en büyük önceliğimizdir. Tüm günlükler ve telemetri verileri bu cihazda kalır. NoteCraft bunları hiçbir zaman otomatik olarak göndermez.
+@id	ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0	Gizlilik en büyük önceliğimizdir. Günlükler ve telemetri verileri bu cihazda kalır. NoteCraft bunları bize göndermez.
+@id	ui.promote_subpage	Alt sayfayı yükselt
+@id	ui.purple	Mor
+@id	ui.put_a_sheet_to_draw_on_into_the_page	Sayfaya üzerine çizim yapılabilecek bir alan ekleyin
+@id	ui.put_another_tool_on_the_rack	Araç rafına başka bir araç ekleyin
+@id	ui.put_the_pointer_back_to_the_words_and_the_caret	İşaretçiyi tekrar metne ve imlece döndürün
+@id	ui.put_what_the_spreadsheet_holds_back_into_this_table	Elektronik tablodaki verileri bu tabloya geri aktarın
+@id	ui.question	Soru
+@id	ui.quote_2	Alıntı
+@id	ui.quote_this_paragraph	Bu paragrafı alıntılayın
+@id	ui.read_back_from_it_2	Buradan\ngeri oku
+@id	ui.read_back_rows_rows_and_columns_columns	{rows} satır ve {columns} sütun geri okundu
+@id	ui.read_only	salt okunur
+@id	ui.read_only_text_extraction_full_document_rendering_is_coming_soon	Salt okunur metin çıkarma. Tam belge görüntüleme özelliği yakında geliyor.
+@id	ui.ready_2	Hazır
+@id	ui.recently_opened	Son açılanlar
+@id	ui.recording	Kayıt
+@id	ui.rectangle	Dikdörtgen
+@id	ui.red	kırmızı
+@id	ui.red_2	Kırmızı
+@id	ui.redo	Yinele
+@id	ui.redo_ctrl_y	Yinele (Ctrl+Y)
+@id	ui.remember_for_later	Sonrası için hatırla
+@id	ui.remove_from_list	Listeden kaldır
+@id	ui.remove_this_tool_from_the_rack	Bu aracı araç rafından kaldırın
+@id	ui.removed_notebook_from_the_known_notebooks_list	Not defteri bilinen not defterleri listesinden kaldırıldı
+@id	ui.rename	Yeniden adlandır
+@id	ui.rename_ellipsis	Yeniden adlandır...
+@id	ui.it_is_in_place_now	Artık {place} konumunda
+@id	ui.move_or_copy_title_to	"{title}" öğesini şuraya taşıyın veya kopyalayın:
+@id	ui.moved	Taşındı
+@id	ui.move	Taşı
+@id	ui.move_or_copy	Taşı veya kopyala
+@id	ui.move_or_copy_ellipsis	Taşı veya kopyala...
+@id	ui.renamed	Yeniden adlandırıldı
+@id	ui.rendered_svg_preview	Oluşturulan SVG önizlemesi
+@id	ui.repair_icon	Simgeyi onar
+@id	ui.repaired_the_attachment_icon_for_name	{name} için ek simgesi onarıldı
+@id	ui.replay	Yeniden oynat
+@id	ui.reset_app_preferences	Uygulama tercihlerini sıfırla
+@id	ui.reset_app_preferences_2	Uygulama tercihlerini sıfırla…
+@id	ui.reset_notecraft_s_saved_preferences_to_their_built_in_defaults	NoteCraft'ın kayıtlı tercihleri yerleşik varsayılanlarına sıfırlansın mı?
+@id	ui.reset_preferences	Tercihleri sıfırla
+@id	ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb	Temaları, düzeni, şerit seçimlerini ve diğer kayıtlı NoteCraft tercihlerini varsayılanlarına sıfırlayın.
+@id	ui.restore	Geri yükle
+@id	ui.restore_pages_sections_and_groups_removed_from_this_notebook	Bu not defterinden kaldırılan sayfaları, bölümleri ve grupları geri yükleyin
+@id	ui.restored_the_saved_page_version	Kayıtlı sayfa sürümü geri yüklendi
+@id	ui.restored_to_the_original_location	Özgün konumuna geri yüklendi
+@id	ui.right_to_left	Sağdan sola
+@id	ui.rounded	Yuvarlatılmış
+@id	ui.rub_out_whatever_the_pointer_passes_over	İşaretçinin üzerinden geçtiği her şeyi silin
+@id	ui.rule_line_colour_not_built	Kılavuz çizgisi rengi (henüz eklenmedi)
+@id	ui.ruled	Çizgili
+@id	ui.save_picture_as	Resmi farklı kaydet...
+@id	ui.save_picture_2	Resmi\nkaydet
+@id	ui.saved	Kaydedildi
+@id	ui.saved_copies_of_this_page	Bu sayfanın kayıtlı kopyaları
+@id	ui.saved_picture_as_path	Resim şu konuma kaydedildi: {path}
+@id	ui.saved_the_drawing_as_a_picture_path	Çizim resim olarak kaydedildi: {path}
+@id	ui.saved_time	Kaydedildi: {time}
+@id	ui.search	Ara
+@id	ui.search_all_pages	Tüm sayfalarda ara
+@id	ui.section	Bölüm
+@id	ui.section_group	Bölüm grubu
+@id	ui.see_and_restore_saved_copies_of_this_page	Bu sayfanın kayıtlı kopyalarını görüntüleyin ve geri yükleyin
+@id	ui.select	Seç
+@id	ui.select_columns_2	Sütunları\nseç
+@id	ui.select_rows_2	Satırları\nseç
+@id	ui.select_some_words_first	Önce birkaç sözcük seçin
+@id	ui.select_table_2	Tabloyu\nseç
+@id	ui.selected_text_next_typing	Seçili metin / sonraki yazım
+@id	ui.selection	Seçim
+@id	ui.send_page	Sayfayı gönder
+@id	ui.send_page_3	Sayfayı\ngönder
+@id	ui.separate_pages	Ayrı sayfalar
+@id	ui.session_id_id	Oturum kimliği: {id}
+@id	ui.set_the_direction_of_selected_text_or_the_text_typed_next	Seçili metnin veya bundan sonra yazılacak metnin yönünü ayarlayın
+@id	ui.shape	şekil
+@id	ui.shape_drag_on_the_page_to_draw_one	{shape}: çizmek için sayfada sürükleyin
+@id	ui.shapes	Şekiller
+@id	ui.show	Göster
+@id	ui.show_notebooks_folder	Not defterleri klasörünü göster
+@id	ui.show_or_hide_the_notebooks_column	Not defterleri sütununu gösterin veya gizleyin
+@id	ui.show_the_code	Kodu gösterin
+@id	ui.show_the_notebooks_again	Not defterlerini yeniden gösterin
+@id	ui.show_the_notebooks_folder	Not defterleri klasörünü gösterin
+@id	ui.show_the_page_at_100	Sayfayı %100 boyutunda gösterin
+@id	ui.show_the_page_source	Sayfa kaynağını gösterin
+@id	ui.show_the_ribbon_ctrl_f1	Şeridi göster (Ctrl+F1)
+@id	ui.show_the_strokes	Çizgileri gösterin
+@id	ui.size_kb	{size} KB
+@id	ui.size_pt	{size} pt
+@id	ui.small	Küçük
+@id	ui.small_squares	Küçük kareler
+@id	ui.somewhere_else	Başka bir yer
+@id	ui.source	Kaynak
+@id	ui.split	Böl
+@id	ui.spreadsheet	Elektronik tablo
+@id	ui.square	Kare
+@id	ui.squares	Kareler
+@id	ui.standard	Standart
+@id	ui.standard_ruled	Standart çizgili
+@id	ui.star	Yıldız
+@id	ui.stencils	Şablonlar
+@id	ui.strike_through	Üstünü çiz
+@id	ui.strikethrough	Üstü çizili
+@id	ui.styles	Stiller
+@id	ui.styles_2	stiller
+@id	ui.svg_source	SVG kaynağı
+@id	ui.symbol	Simge
+@id	ui.symbols	Simgeler
+@id	ui.table_3	Tablo
+@id	ui.tables	Tablolar
+@id	ui.tabs_layout	Sekme düzeni
+@id	ui.tag_tag	{tag} etiketi
+@id	ui.tags	Etiketler
+@id	ui.take_the_caret_s_column_out	İmlecin bulunduğu sütunu çıkar
+@id	ui.take_the_caret_s_row_out	İmlecin bulunduğu satırı çıkar
+@id	ui.take_the_last_stroke_back	Son çizgiyi geri al
+@id	ui.take_the_marks_off	İşaretleri kaldır
+@id	ui.teal_2	Deniz mavisi
+@id	ui.text	Metin
+@id	ui.text_122	█
+@id	ui.text_74	{} {}
+@id	ui.text_inspection_is_shown_below	Metin incelemesi aşağıda gösterilmektedir.
+@id	ui.text_run_direction	Metin parçası yönü
+@id	ui.thank_you_for_trying_notecraft	NoteCraft'ı denediğiniz için teşekkür ederiz!
+@id	ui.that_file_has_nothing_in_it_to_put_back	Bu dosyada geri yüklenecek bir şey yok
+@id	ui.that_file_is_not_in_this_page_s_folder	Bu dosya bu sayfanın klasöründe değil
+@id	ui.that_is_not_something_a_page_can_hold	Bir sayfa bu tür bir içerik barındıramaz
+@id	ui.that_link_points_outside_the_notebooks_folder_so_it_3a37bd9b91	Bu bağlantı not defterleri klasörünün dışına işaret ettiğinden açılmadı
+@id	ui.that_page_is_not_in_a_notebook_that_is_open	Bu sayfa açık olan bir not defterinde değil
+@id	ui.the_attachment_returned_an_invalid_page_link	Ek geçersiz bir sayfa bağlantısı döndürdü
+@id	ui.the_built_in_default	yerleşik varsayılan
+@id	ui.the_code	Kod
+@id	ui.the_diagnostics_folder_could_not_be_created_error	Tanılama klasörü oluşturulamadı: {error}
+@id	ui.the_file_could_not_be_opened_error	Dosya açılamadı: {error}
+@id	ui.the_file_is_gone	Dosya artık yok
+@id	ui.the_file_is_removed_from_disk_undo_does_not_bring_a_file_back	Dosya diskten kaldırılır. Geri al işlemi dosyayı geri getirmez.
+@id	ui.the_file_is_safe_notecraft_can_append_a_link_to_it_a_c31b3d9716	Dosya güvende. NoteCraft sayfanın sonuna dosyaya giden bir bağlantı ekleyebilir.
+@id	ui.the_file_was_not_attached_the_attach_command_returne_beaffe0fd0	Dosya eklenemedi: ekleme komutu beklenmeyen bir sonuç döndürdü.
+@id	ui.the_folder_could_not_be_opened_error	Klasör açılamadı: {error}
+@id	ui.the_format_is_set_when_the_page_is_created	Biçim, sayfa oluşturulurken belirlenir
+@id	ui.the_global_setting	genel ayar
+@id	ui.the_last_tool_stays_on_the_rack	Son araç rafta kalır
+@id	ui.the_notebook_could_not_be_deleted_error	Not defteri silinemedi: {error}
+@id	ui.the_notebook_or_section_setting	not defteri veya bölüm ayarı
+@id	ui.the_original_file_is_still_safe_notecraft_can_regene_f10ded524a	Özgün dosya hâlâ güvende. NoteCraft yanındaki simgeyi yeniden oluşturabilir.
+@id	ui.the_page_beside_the_notebooks	Not defterlerinin yanındaki sayfa
+@id	ui.the_page_is_colour	Sayfa rengi: {colour}
+@id	ui.the_page_is_the_theme_s_own_colour	Sayfa, temanın kendi renginde
+@id	ui.the_page_source_beside_the_page	Sayfanın yanındaki sayfa kaynağı
+@id	ui.the_paper_and_colour_apply_to_this_page_only	Kâğıt ve renk yalnızca bu sayfa için geçerlidir.
+@id	ui.the_theme_could_not_be_saved_error	Tema kaydedilemedi: {error}
+@id	ui.the_time_now	Şu anki saat
+@id	ui.the_welcome_notebook	Karşılama not defteri
+@id	ui.the_whole_page_reads_left_to_right	Tüm sayfa soldan sağa okunur
+@id	ui.the_whole_page_reads_right_to_left_arabic_hebrew	Tüm sayfa sağdan sola okunur (Arapça, İbranice)
+@id	ui.the_window_drawn_on_the_gpu_the_icons_are_drawn_in_c_27f197a70f	Pencere GPU üzerinde çizilir. Simgeler kodla çizilir. Tek resim logodur.
+@id	ui.theme	Tema
+@id	ui.theme_theme	Tema {theme}
+@id	ui.theme_theme_2	Tema: {theme}
+@id	ui.theme_theme_click_to_change_it	{theme} teması. Değiştirmek için tıklayın.
+@id	ui.there_are_no_notebooks_yet_new_starts_one	Henüz not defteri yok. "Yeni" ile bir tane oluşturabilirsiniz.
+@id	ui.there_is_no_drawing_on_this_page	Bu sayfada çizim yok
+@id	ui.there_is_no_earlier_page	Daha önceki bir sayfa yok
+@id	ui.there_is_no_later_page	Daha sonraki bir sayfa yok
+@id	ui.there_is_no_room_on_the_rack_for_another_tool	Rafta başka bir araç için yer yok
+@id	ui.there_is_no_stroke_to_take_back	Geri alınacak çizgi yok
+@id	ui.there_is_nothing_on_the_clipboard_to_paste	Panoda yapıştırılacak bir şey yok
+@id	ui.thickness	Kalınlık
+@id	ui.this_cannot_be_undone	Bu işlem geri alınamaz.
+@id	ui.this_could_not_be_moved_to_the_recycle_bin_nothing_was_deleted	Bu öğe geri dönüşüm kutusuna taşınamadı. Hiçbir şey silinmedi.
+@id	ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone	Bu işlem not defterlerini veya sayfaları silmez. Geri alınamaz.
+@id	ui.this_file_will_be_opened_by_its_associated_application	Bu dosya ilişkili uygulamayla açılacak.
+@id	ui.this_is_the_first_page	Bu ilk sayfa
+@id	ui.this_is_the_last_page	Bu son sayfa
+@id	ui.this_notebook_s_recycle_bin_is_empty	Bu not defterinin geri dönüşüm kutusu boş.
+@id	ui.this_page	Bu sayfa
+@id	ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92	Bu sayfa, NoteCraft'ın henüz düzenleyemediği biçimlendirme içeriyor; bu yüzden olduğu gibi gösteriliyor.
+@id	ui.this_page_reads_left_to_right	Bu sayfa soldan sağa okunur
+@id	ui.this_page_reads_right_to_left	Bu sayfa sağdan sola okunur
+@id	ui.this_paragraph_decides_from_its_own_first_letter	Bu paragraf yönünü kendi ilk harfine göre belirler
+@id	ui.this_paragraph_fills_the_column	Bu paragraf sütunu doldurur
+@id	ui.this_paragraph_fills_the_column_stretched_hard	Bu paragraf sütunu sıkıca esnetilerek doldurur
+@id	ui.this_paragraph_fills_the_column_stretched_lightly	Bu paragraf sütunu hafifçe esnetilerek doldurur
+@id	ui.this_paragraph_is_ragged_again	Bu paragrafın kenarı yeniden serbest bırakılır
+@id	ui.this_paragraph_reads_left_to_right	Bu paragraf soldan sağa okunur
+@id	ui.this_paragraph_reads_right_to_left	Bu paragraf sağdan sola okunur
+@id	ui.this_paragraph_reads_right_to_left_arabic_hebrew	Bu paragraf sağdan sola okunur (Arapça, İbranice)
+@id	ui.this_paragraph_reads_whichever_way_its_words_do	Bu paragraf sözcüklerinin yönüne göre okunur
+@id	ui.this_picture_cannot_be_shown_here	Bu resim burada gösterilemiyor.
+@id	ui.this_removes_the_notebook_folder_from_disk_and_cannot_be_undone	Bu işlem not defteri klasörünü diskten kaldırır ve geri alınamaz.
+@id	ui.this_run_reads_left_to_right_a_mixed_line_is_still_d_af62d34d2f	Bu metin parçası soldan sağa okunur. Karışık yönlü satırlar hâlâ tek sırada çizilir; yol haritasına bakın
+@id	ui.this_run_reads_right_to_left_a_mixed_line_is_still_d_d2a74de074	Bu metin parçası sağdan sola okunur. Karışık yönlü satırlar hâlâ tek sırada çizilir; yol haritasına bakın
+@id	ui.this_svg_cannot_be_rendered_here	Bu SVG burada işlenemiyor.
+@id	ui.this_window_behaves_like_the_others	Bu pencere diğerleri gibi davranır
+@id	ui.this_window_stays_on_top	Bu pencere her zaman üstte kalır
+@id	ui.time	Saat
+@id	ui.time_stamp	Zaman damgası
+@id	ui.title_2	Başlık
+@id	ui.title_saved	Başlık kaydedildi
+@id	ui.title_the_folder_name_does_not_change	Başlık (klasör adı değişmez)
+@id	ui.to_do_2	Yapılacak
+@id	ui.to_do_tag_2	Yapılacak\nEtiketi
+@id	ui.today_s_date	Bugünün tarihi
+@id	ui.toml	TOML
+@id	ui.took_it_off_the_rack	Raftan kaldırıldı
+@id	ui.took_the_last_stroke_back_count_left	Son çizgi geri alındı; {count} kaldı
+@id	ui.tool_colour	{tool} {colour}
+@id	ui.tools	Araçlar
+@id	ui.top	Üst
+@id	ui.triangle	Üçgen
+@id	ui.type	Tür
+@id	ui.under_the	altında
+@id	ui.undo	Geri al
+@id	ui.undo_ctrl_z	Geri al (Ctrl+Z)
+@id	ui.undo_stroke	Çizgiyi\ngeri al
+@id	ui.unread	Okunmamış
+@id	ui.updated_the_welcome_notebook	Karşılama not defteri güncellendi
+@id	ui.use_notecraft_s_own_title_bar	NoteCraft'ın kendi başlık çubuğunu kullan
+@id	ui.use_the_system_title_bar	Sistem başlık çubuğunu kullan
+@id	ui.version_version_alpha	Sürüm {version} (alfa)
+@id	ui.very_large	Çok büyük
+@id	ui.very_large_squares	Çok büyük kareler
+@id	ui.view	Görünüm
+@id	ui.views	Görünümler
+@id	ui.warn	uyarı
+@id	ui.web_site_to_visit	Ziyaret edilecek web sitesi
+@id	ui.welcome_to_notecraft	NoteCraft'a Hoş Geldiniz
+@id	ui.what_should_happen_to_this_file	Bu dosyaya ne yapılsın?
+@id	ui.what_to_add	Ne eklenecek
+@id	ui.wide	Geniş
+@id	ui.wide_ruled	Geniş çizgili
+@id	ui.window	Pencere
+@id	ui.write_anywhere_on_the_page	Sayfanın herhangi bir yerine yazın
+@id	ui.write_the_drawing_again_with_no_pen_readings_in_it_f_09e93dbd9f	Çizimi, başkasına göndermek üzere kalem verileri olmadan yeniden yazın
+@id	ui.write_the_table_out_and_open_it_in_gridcraft	Tabloyu dışa aktarıp GridCraft'ta açın
+@id	ui.xml_2	XML
+@id	ui.yaml	YAML
+@id	ui.yellow	Sarı
+@id	ui.yellow_2	sarı
+@id	ui.you_can_continue_working_while_the_import_runs	İçe aktarma sürerken çalışmaya devam edebilirsiniz.
+@id	ui.you_can_restore_it_from_history	Geçmiş'ten geri yükleyebilirsiniz.
+@id	ui.zoom	Yakınlaştırma
+@id	ui.zoom_in	Yakınlaştır
+@id	ui.zoom_out	Uzaklaştır
+@id	ui.zoom_to_100	%100'e yakınlaştır
+@id	ui.welcome_format_title	Sayfa biçimi seçin
+@id	ui.welcome_format_body	NoteCraft her sayfayı HTML (önerilen) veya CommonMark + GFM Markdown olarak kaydeder. Yeni sayfalar burada seçtiğiniz biçimi kullanır. Bunu daha sonra değiştirebilirsiniz.
+@id	ui.welcome_format_next	İleri
+@id	ui.welcome_notebook_prompt_format	Biçim: {format}.
+@id	ui.welcome_notebook_prompt_title	Hoş Geldiniz not defteri eklensin mi?
+@id	ui.welcome_notebook_prompt_body	Bu sürümün Hoş Geldiniz not defterini not defterlerinize ekleyin. Zaten varsa silinir ve yerine yeni kopyası konur.
+@id	ui.welcome_notebook_replace_warning	Mevcut Hoş Geldiniz not defterinde yapılan değişiklikler kaybolacaktır. Diğer not defterleri değişmez.
+@id	ui.welcome_notebook_add_yes	Evet, ekle
+@id	ui.welcome_notebook_add_no	Hayır, şimdi değil
+@id	ui.welcome_notebook_action_failed	Hoş Geldiniz not defteri güncellenemedi: {error}
+@id	ui.welcome_wizard_back	Geri
+@id	ui.welcome_wizard_finish	Bitir
+@id	ui.welcome_wizard_done_title	Teşekkürler
+@id	ui.welcome_wizard_done_body	NoteCraft kullanıma hazır. Seçimleriniz kaydedildi. Bu kurulum yalnızca tercihleri sıfırladıktan sonra yeniden görünür.
+@id	ui.kept_in_this_tab	Bu sekmede tutuluyor
+@id	ui.session_only_storage_notice	Yalnızca oturumluk notlar: Bu sekmeyi yenilediğinizde veya kapattığınızda değişiklikler kaybolur.
+@id	ui.session_storage_guard_failed	Sekme kapatma uyarısı etkinleştirilemedi. Bu sekmeyi yenilemeden veya kapatmadan önce notlarınızı kopyalayın.
+@id	ui.table_align_left	Sola\nHizala
+@id	ui.table_align_left_tip	Sözcükleri hücrenin soluna hizalayın
+@id	ui.table_align_center	Ortala
+@id	ui.table_align_center_tip	Sözcükleri hücrenin ortasına yerleştirin
+@id	ui.table_align_right	Sağa\nHizala
+@id	ui.table_align_right_tip	Sözcükleri hücrenin sağına hizalayın
+@id	ui.table_shading	Gölgelendirme
+@id	ui.table_shading_tip	Seçilen hücrelerin arkasındaki renk
+@id	ui.list_the_tagged_notes_and_go_to_them	Etiketli notları listeleyin ve onlara gidin
+@id	ui.tags_summary	Etiket Özeti
+@id	ui.close_the_tags_summary	Etiket özetini kapat
+@id	ui.tags_look_in	Şurada ara
+@id	ui.tags_scope_this_page	Bu sayfa
+@id	ui.tags_scope_this_section	Bu bölüm
+@id	ui.tags_scope_this_notebook	Bu not defteri
+@id	ui.tags_scope_all_notebooks	Tüm not defterleri
+@id	ui.tags_only_unchecked_to_do_items	Yalnızca işaretlenmemiş Yapılacak öğeleri
+@id	ui.refresh	Yenile
+@id	ui.look_again_for_tagged_notes	Etiketli notları yeniden ara
+@id	ui.no_tagged_notes_here	Burada etiketli not yok.
+@id	ui.tags_empty_line	(boş satır)
+@id	ui.scroll_the_page_sideways	Sayfayı yana kaydırın
+@id	ui.collect_all	Tümünü\nTopla
+@id	ui.collect_all_tip	Sayfada birbirinden uzaklaşan kutuları ve mürekkepleri yeniden bir araya getirin
+@id	ui.page_templates	Sayfa\nŞablonları
+@id	ui.page_templates_tip	Bir şablondan yeni sayfa başlatın veya bu sayfayı şablon olarak saklayın
+@id	ui.page_templates_title	Sayfa Şablonları
+@id	ui.close_the_page_templates	Sayfa şablonlarını kapat
+@id	ui.page_templates_hint	Bu bölüme sayfa eklemek için bir şablona tıklayın.
+@id	ui.add_a_page_from_this_template	Bu şablondan bu bölüme bir sayfa ekle
+@id	ui.no_saved_templates	Henüz kayıtlı şablon yok.
+@id	ui.save_current_page_as_a_template	Geçerli sayfayı şablon olarak kaydet:
+@id	ui.template_name	Şablon adı
+@id	ui.save_as_template	Şablon Olarak Kaydet
+@id	ui.page_from_template	{name} şablonundan yeni sayfa
+@id	ui.saved_as_template	Bu sayfa {name} şablonu olarak kaydedildi
+@id	ui.open_a_section_first_for_a_template	Önce bir bölüm açın: yeni sayfa bu bölüme eklenir
+@id	ui.template_category_academic	Akademik
+@id	ui.template_category_blank	Boş
+@id	ui.template_category_business	İş
+@id	ui.template_category_planners	Planlayıcılar
+@id	ui.template_category_mine	Şablonlarım
+@id	ui.template_lecture_notes	Ders Notları
+@id	ui.template_study_guide	Çalışma Kılavuzu
+@id	ui.template_college_ruled	Dar Çizgili
+@id	ui.template_grid	Kareli
+@id	ui.template_meeting_notes	Toplantı Notları
+@id	ui.template_project_overview	Proje Genel Bakışı
+@id	ui.template_to_do_list	Yapılacaklar Listesi
+@id	ui.template_weekly_planner	Haftalık Planlayıcı
+@id	ui.insert_space_tip	Alan eklemek için sayfayı aşağı, azaltmak için yukarı sürükleyin
+@id	ui.insert_space_how	Daha fazla alan istediğiniz yerde aşağı, alanı azaltmak için yukarı sürükleyin. Esc aracı bırakır.
+@id	ui.pen_keys_typing	Yazma (Alt+0)
+@id	ui.pen_keys_picked	Kalem {number} (Alt+{number})
+@id	ui.spreadsheet_gridcraft_is_not_installed	Elektronik tablo: GridCraft yüklü değil
+@id	ui.redo_stroke	Çizgiyi\nyinele
+@id	ui.put_back_the_stroke_undo_stroke_took_back	Çizgiyi geri al işleminin geri aldığı çizgiyi geri getir
+@id	ui.version_and_updates	Sürüm ve güncellemeler
+@id	ui.you_are_running_version	NoteCraft {version} sürümünü kullanıyorsunuz.
+@id	ui.check_for_updates	Güncellemeleri denetle
+@id	ui.check_for_updates_hint	GitHub'dan en yeni sürümü ister; daha yeniyse indirir, doğrular ve yükler. Siz düğmeye basana kadar hiçbir şey gönderilmez.
+@id	ui.open_the_releases_page	Sürümler sayfasını aç
+@id	ui.update_checking	Daha yeni bir sürüm aranıyor…
+@id	ui.update_up_to_date	NoteCraft güncel. En yeni sürüm {version}.
+@id	ui.update_downloading_of	NoteCraft {version} indiriliyor: {done} / {total} MB…
+@id	ui.update_downloading	NoteCraft {version} indiriliyor: {done} MB…
+@id	ui.update_verifying	İndirilen NoteCraft {version} dosyası yayımlanan sağlama toplamıyla doğrulanıyor…
+@id	ui.update_restarting	NoteCraft {version} hazır. NoteCraft güncellemeyi uygulamak için şimdi kapanacak ve ardından yeniden başlayacak.
+@id	ui.update_handed	NoteCraft {version} indirildi ve sisteminizin yazılım yükleyicisinde açıldı.
+@id	ui.update_manual	NoteCraft {version} yayımlandı, ancak bu bilgisayarda buradan yüklenemiyor. Sürümler sayfasından indirin.
+@id	ui.update_manual_this_build	Bu yapı güncellemeleri kendisi yükleyemez. En yeni sürüm sürümler sayfasında yer almaktadır.
+@id	ui.update_failed	Güncelleme başarısız oldu: {reason}
+@id	ui.panning_hand_2	Kaydırma\nEli
+@id	ui.drag_to_move_around_the_page	Sayfada gezinmek için sürükleyin
+@id	ui.insert_table	Tablo Ekle
+@id	ui.insert_table_2	Tablo Ekle…
+@id	ui.number_of_columns	Sütun sayısı
+@id	ui.number_of_rows	Satır sayısı
+@id	ui.table_size_limits	Sütunlar: 1 - {columns}. Satırlar: 1 - {rows}.
+@id	ui.delete_table_2	Tabloyu\nSil
+@id	ui.take_the_whole_table_out	Tüm tabloyu kaldır
+@id	ui.put_the_caret_in_a_table_first	Önce imleci bir tabloya yerleştirin
+@id	ui.deleted_the_table	Tablo silindi
+@id	ui.align_left_ctrl_l	Sola Hizala (Ctrl+L)
+@id	ui.center	Ortala
+@id	ui.align_right_ctrl_r	Sağa Hizala (Ctrl+R)
+@id	ui.alignment_goes_on_a_paragraph_or_a_heading	Hizalama bir paragrafa veya başlığa uygulanır
+@id	ui.the_paragraph_follows_its_words_again	Paragraf yeniden sözcüklerin okunuş yönüne göre hizalandı
+@id	ui.aligned_left	Sola hizalandı
+@id	ui.centred	Ortalandı
+@id	ui.aligned_right	Sağa hizalandı
+@id	ui.point_at_the_page_without_drawing_on_it	Sayfa üzerine çizmeden işaret edin
+@id	ui.laser_pointer_put_down	Lazer işaretçi bırakıldı
+@id	ui.rule_line_colour	Çizgi rengi
+@id	ui.automatic_rule_lines	Otomatik çizgiler
+@id	ui.the_lines_are_colour	Sayfanın çizgileri {colour}
+@id	ui.the_lines_are_the_theme_s_own_colour	Sayfanın çizgileri temanın kendi renginde
+@id	ui.colour_lines	{colour} çizgiler
+@id	ui.rotate_right_90	Sağa 90° Döndür
+@id	ui.rotate_left_90	Sola 90° Döndür
+@id	ui.flip_horizontal	Yatay Çevir
+@id	ui.flip_vertical	Dikey Çevir
+@id	ui.this_picture_cannot_be_turned_here	Bu resim döndürülemez veya çevrilemez
+@id	ui.rotated_the_picture	Resim döndürüldü
+@id	ui.flipped_the_picture	Resim çevrildi
+@id	ui.rotated_the_picture_ink_on_the_page_stays_where_it_is	Resim döndürüldü. Sayfadaki mürekkep olduğu yerde kalır
+@id	ui.flipped_the_picture_ink_on_the_page_stays_where_it_is	Resim çevrildi. Sayfadaki mürekkep olduğu yerde kalır
+@id	ui.save_a_copy	Kopyasını Kaydet
+@id	ui.open_a_page_first_save_a_copy_copies_it_its_section_or_its_notebook	Önce bir sayfa açın: Kopyasını Kaydet; sayfayı, bölümünü veya not defterini kopyalar.
+@id	ui.what_to_copy	Kopyalanacak öğe
+@id	ui.this_section	Bu bölüm
+@id	ui.scope_title	{scope}: {title}
+@id	ui.copy_into_this_folder	Bu klasöre kopyala
+@id	ui.folder	Klasör
+@id	ui.choose	Seç…
+@id	ui.the_copy_is_a_folder_of_its_own_with_the_files_and_ink_but_not_the_saved_versions_the_original_stays_open	Kopya; sayfa dosyalarını, resimleri ve mürekkebi içeren ancak kayıtlı sürümleri veya geri dönüşüm kutusunu içermeyen ayrı bir klasördür. Özgün dosya açık ve değişmeden kalır.
+@id	ui.saved_a_copy_in_path	{path} konumuna bir kopya kaydedildi
+@id	ui.could_not_save_the_copy_why	Kopya kaydedilemedi: {why}
+@id	ui.choose_the_folder_for_the_copy	Kopya için klasör seçin
+@id	ui.this_notebook	Bu not defteri
+@id	ui.save_the_copy	Kopyayı kaydet
+@id	ui.next_unread_2	Sonraki\nOkunmamış
+@id	ui.go_to_the_next_page_changed_since_you_last_read_it	Son okumanızdan bu yana değişen sonraki sayfaya git
+@id	ui.mark_as_read_2	Okundu\nİşaretle
+@id	ui.mark_as_unread_2	Okunmadı\nİşaretle
+@id	ui.mark_this_page_as_read	Bu sayfayı okundu olarak işaretle
+@id	ui.mark_this_page_as_unread_to_come_back_to_it	Daha sonra dönmek için bu sayfayı okunmadı olarak işaretle
+@id	ui.there_are_no_unread_pages	Okunmamış sayfa yok.
+@id	ui.marked_as_read	Okundu olarak işaretlendi
+@id	ui.marked_as_unread	Okunmadı olarak işaretlendi
+@id	ui.title_unread	{title}, okunmamış
+@id	ui.recent_edits_2	Son\nDüzenlemeler
+@id	ui.see_the_pages_changed_lately	Son zamanlarda değiştirilen sayfaları gör
+@id	ui.recent_edits	Son düzenlemeler
+@id	ui.all_open_notebooks	Tüm açık not defterleri
+@id	ui.filter_by_title_section_or_notebook	Başlık, bölüm veya not defterine göre filtrele
+@id	ui.no_pages_were_changed_in_this_time	Bu süre içinde hiçbir sayfa değiştirilmedi.
+@id	ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed	Bu sayfa kendi zaman bilgisini tutmaz: bu, dosyasının son değiştirilme zamanıdır.
+@id	ui.last_7_days	Son 7 gün
+@id	ui.last_30_days	Son 30 gün
+@id	ui.all_time	Tüm zamanlar
+@id	ui.untitled_page	Adsız sayfa
+@id	ui.place_separator	›
+@id	ui.filter	Filtrele
+@id	ui.version_saved_when	Sürüm kaydedildi: {when}
+@id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	Salt okunur eski bir sürüm. Geri yüklemediğiniz sürece sayfa değişmez.
+@id	ui.this_version	Bu sürüm
+@id	ui.compare_with_the_page	Sayfayla karşılaştır
+@id	ui.this_version_has_the_same_words_as_the_page	Bu sürüm, sayfayla aynı sözcüklere sahip.
+@id	ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page	− ile işaretli satırlar yalnızca bu sürümde bulunur; + ile işaretli satırlar yalnızca şimdiki sayfada bulunur.
+@id	ui.restore_this_version	Bu sürümü geri yükle
+@id	ui.back_to_the_list	Listeye dön
+@id	ui.preview	Önizleme
+@id	ui.cannot_open_that_version_error	Bu sürüm açılamıyor: {error}
+@id	ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins	Bu sayfanın üzerine yazıldığı kağıt: boyutu, yönü ve kenar boşlukları
+@id	ui.size	Boyut
+@id	ui.auto_the_page_grows_with_what_is_on_it	Otomatik (sayfa içeriğe göre büyür)
+@id	ui.custom_size	Özel boyut
+@id	ui.auto_pages_have_no_edges_choose_a_size_to_see_the_sheet	Otomatik sayfanın kenarları yoktur. Kağıdı ve kenar boşluklarını görmek için bir boyut seçin.
+@id	ui.width_mm	Genişlik (mm)
+@id	ui.height_mm	Yükseklik (mm)
+@id	ui.orientation	Yönlendirme
+@id	ui.portrait	Dikey
+@id	ui.landscape	Yatay
+@id	ui.margins_mm	Kenar boşlukları (mm)
+@id	ui.top_margin_mm	Üst
+@id	ui.bottom_margin_mm	Alt
+@id	ui.left_margin_mm	Sol
+@id	ui.right_margin_mm	Sağ
+@id	ui.restore_default_margins	Varsayılan kenar boşluklarını geri yükle
+@id	ui.the_page_is_written_on_size_turn	Sayfa düzeni: {size}, {turn}
+@id	ui.the_page_is_auto_it_grows_with_what_is_on_it	Sayfa Otomatik: içeriğe göre büyür
+@id	ui.paper_letter	Letter
+@id	ui.paper_legal	Legal
+@id	ui.paper_tabloid	Tabloid
+@id	ui.paper_executive	Executive
+@id	ui.index_card_3_x_5_in	Dizin Kartı (3 x 5 inç)
+@id	ui.index_card_4_x_6_in	Dizin Kartı (4 x 6 inç)
+@id	ui.index_card_5_x_8_in	Dizin Kartı (5 x 8 inç)
+@id	ui.customize_tags	Etiketleri Özelleştir...
+@id	ui.customize_tags_title	Etiketleri Özelleştir
+@id	ui.make_your_own_tags_with_a_name_symbol_and_colour	Her birinin adı, simgesi ve rengi olan kendi etiketlerinizi oluşturun
+@id	ui.custom_tags_none_yet	Henüz kendi etiketiniz yok.
+@id	ui.custom_tags_explained	Etiketleriniz ayarlarınızda saklanır ve her not defterinde çalışır. Bir etiketi yeniden adlandırmak, onu bulunduğu her satırda korur. Bir etiketi kaldırmak, işaret sözcüğüyle birlikte o satırları olduğu gibi bırakır; böylece aynı etiketi yeniden oluşturduğunuzda geri gelir.
+@id	ui.tag_name	Etiket adı
+@id	ui.tag_symbol_for_name	{name} için simge
+@id	ui.tag_colour_for_name	{name} için renk
+@id	ui.move_name_up	{name} etiketini yukarı taşı
+@id	ui.move_name_down	{name} etiketini aşağı taşı
+@id	ui.remove_name	{name} etiketini kaldır
+@id	ui.new_tag_name	Yeni etiket adı
+@id	ui.add_tag	Etiket ekle
+@id	ui.tag_name_added	{name} etiketi eklendi
+@id	ui.tag_name_removed	{name} etiketi kaldırıldı; etiketi içeren satırlar sözcüklerini korur
+@id	ui.the_word_written_in_the_page	Sayfada yazılı sözcük
+@id	ui.could_not_save_your_tags_error	Etiketleriniz kaydedilemedi: {error}
+@id	ui.take_a_colour_from_ink_on_the_page	Sayfadaki mürekkepten bir renk al
+@id	ui.no_ink_here	Burada mürekkep yok
+@id	ui.the_pen_takes_colour	Kalem {colour} rengini alır
+@id	ui.eyedropper_put_down_the_pen_is_as_it_was	Damlalık bırakıldı; kalem önceki hâline döndü
+@id	ui.show_more_of_the_ribbon_to_the_left	Şeridin sol tarafını daha fazla göster
+@id	ui.show_more_of_the_ribbon_to_the_right	Şeridin sağ tarafını daha fazla göster
+@id	ui.paragraph_spacing_options	Paragraf Aralığı Seçenekleri…
+@id	ui.paragraph_spacing	Paragraf Aralığı
+@id	ui.space_before_points	Önceki boşluk (punto)
+@id	ui.space_after_points	Sonraki boşluk (punto)
+@id	ui.least_line_height_points	Satır yüksekliği, en az (punto)
+@id	ui.spacing_mixed	Karışık
+@id	ui.spacing_reset	Sıfırla
+@id	ui.spacing_limits	Her değer 0 ile {max} arasında bir tam punto sayısıdır. Her paragrafın kendi değerini korumak için alanı boş bırakın.
+@id	ui.spacing_goes_on_text	Aralık; bir paragrafa, başlığa, liste öğesine veya alıntıya uygulanır
+@id	ui.paragraph_spacing_set	Paragraf aralığı ayarlandı
+@id	ui.reading_the_onenote_files	OneNote dosyaları okunuyor…
+@id	ui.the_import_stopped_unexpectedly	İçe aktarma beklenmedik şekilde durdu
+@id	ui.portable_export_title	Taşınabilir dışa aktarma ve paylaşım
+@id	ui.portable_export_explanation	Seçilen içeriği, varlıklarını ve bağlantılı yerel sayfaları içeren taşınabilir not defteri klasörünü gözden geçirin. Hazırlama işlemi veri göndermez ve kaynağı değiştirmez.
+@id	ui.portable_share_fallback	Sistem paylaşımı henüz tümleştirilmedi. Dışa aktarımı kaydedin, ardından tüm klasörü seçtiğiniz uygulamayla paylaşın. Yerel bir yol uzaktan erişim izni vermez. Hesap gerekmez.
+@id	ui.portable_open_page	Sayfasını, bölümünü veya not defterini seçmek için bir sayfa açın.
+@id	ui.portable_original_formats	Biçim: Dönüştürme olmadan özgün HTML / CMGFM dosyaları. Bu bir dışa aktarma anlık görüntüsüdür; Kopyasını Kaydet veya Yazdır değildir. Burada OneNote ve PDF dışa aktarma sunulmaz.
+@id	ui.portable_download_destination	Hedef: Tarayıcınızın indirme klasörü. Gözden geçirilen dosyalar ZIP olarak paketlenecektir. NoteCraft'ta açmadan önce tüm klasörü arşivden çıkarın.
+@id	ui.portable_destination	Dışa aktarma hedef klasörü
+@id	ui.portable_no_overwrite	Yeni bir dışa aktarma klasörü oluşturulur. Mevcut dosyaların üzerine asla yazılmaz. Kaydedilen sürümler, geri dönüşüm kutuları ve şablonlar hariç tutulur.
+@id	ui.portable_review	Dışa aktarımı gözden geçir
+@id	ui.portable_cancel	Dışa aktarmayı iptal et
+@id	ui.portable_review_summary	{title} | Sayfalar: {pages} | Dosyalar: {files} | Bayt: {bytes}
+@id	ui.portable_dependencies	Seçilen kapsamın dışındaki bağlantılı içerikler dahil edildi. Dışa aktarmadan önce bu ek dosyaları gözden geçirin:
+@id	ui.portable_external_links	Dış bağlantılar korunur. İçerikleri indirilmez ve ağ bağlantısı ya da başka bir uygulama gerektirebilir:
+@id	ui.portable_included_files	Dahil edilen dosyalar
+@id	ui.portable_page_contents	Sayfa metni önizlemesi
+@id	ui.portable_review_snapshot	Yazma işleminde kaydedilmemiş sayfa metni dahil bu gözden geçirilmiş anlık görüntü kullanılır. Sonraki düzenlemeleri dahil etmek için yeniden gözden geçirin. Dışa aktarılan tüm dosyaları birlikte paylaşın.
+@id	ui.portable_write	Gözden geçirilen dışa aktarımı yaz
+@id	ui.portable_download_ready	Gözden geçirilen arşiv indirilmek üzere tarayıcınıza iletildi.
+@id	ui.portable_saved	Dışa aktarım {path} konumuna kaydedildi
+@id	ui.portable_no_snapshot	Yazmadan önce dışa aktarımı gözden geçirin.
+@id	ui.portable_send_hint	Paylaşmadan önce bu sayfanın taşınabilir bir kopyasını gözden geçirin
+@id	ui.ink_help_2	Mürekkep\nYardım
+@id	ui.ink_help_tip	Hoş Geldiniz not defterindeki el yazısı ve çizim sayfasını aç
+@id	ui.ink_help_missing	Çizim yardımı, şu anda açık olmayan Hoş Geldiniz not defterinde bulunur. İlk kullanım isteminden yeniden ekleyin veya klasörünü Dosya > Aç menüsünden açın.
+@id	ui.online_video_2	Çevrimiçi\nVideo
+@id	ui.online_video_tip	Sayfaya web üzerindeki bir videonun bağlantısını ekle
+@id	ui.online_video_title	Çevrimiçi Video
+@id	ui.online_video_address	Video adresi
+@id	ui.online_video_line	Video ({site}): {address}
+@id	ui.online_video_explain	Sayfa yalnızca bir bağlantı tutar. Siz tıklayana kadar hiçbir şey yüklenmez; tıkladığınızda tarayıcınızda açılır.
+@id	ui.online_video_bad_address	Web üzerindeki bir videonun https:// ile başlayan adresini yapıştırın
+@id	ui.online_video_inserted	Videoya bağlantı eklendi.
+@id	ui.ruler_2	Cetvel
+@id	ui.ruler_tip	Sayfanın üzerine bir cetvel yerleştirin: Kenarı boyunca çizilen mürekkep düz çıkar. Taşımak için sürükleyin, döndürmek için yuvarlak tutamacını sürükleyin ya da [ ve ] tuşlarına basın (Shift ile 15 derece). Kaldırmak için yeniden basın.
+@id	ui.reader_focus_off	Kapalı
+@id	ui.reader_focus_one	1 satır
+@id	ui.reader_focus_three	3 satır
+@id	ui.reader_focus_five	5 satır
+@id	ui.reader_picture_without_description	Resim (açıklama yok)
+@id	ui.reader_picture_alt	Resim: {alt}
+@id	ui.reader_handwriting_not_shown	Bu sayfada el yazısı var; okuyucu bunu göstermez. Görmek için okuyucuyu kapatın.
+@id	ui.reader_text_size	Metin boyutu
+@id	ui.reader_smaller	Daha küçük
+@id	ui.reader_larger	Daha büyük
+@id	ui.reader_smaller_text	Metni küçült
+@id	ui.reader_larger_text	Metni büyüt
+@id	ui.reader_line_spacing	Satır aralığı
+@id	ui.reader_less	Daha az
+@id	ui.reader_more	Daha fazla
+@id	ui.reader_less_space	Satırlar arasında daha az boşluk
+@id	ui.reader_more_space	Satırlar arasında daha fazla boşluk
+@id	ui.reader_line_focus	Satır odağı
+@id	ui.reader_close	Kapat
+@id	ui.reader_close_tip	Sayfaya dön (Escape)
+@id	ui.reader_read_aloud_not_available	Yukarı ve Aşağı tuşları satır odağını taşır. Sesli okuma henüz geliştirilmedi: NoteCraft hiçbir platformda konuşma hizmetine sahip değildir.
+@id	ui.immersive_reader_tip	Sayfayı satır odağıyla büyük ve sade yazı tipinde okuyun. Sayfa değiştirilmez.
+@id	ui.reader_open_a_page	Odaklı Okuyucu'da okumak için bir sayfa açın.
+@id	ui.automatic_shapes_2	Otomatik\nŞekiller
+@id	ui.automatic_shapes_tip	Açıkken elle çizilen bir çizgi, dikdörtgen, elips veya üçgen, kalem kaldırıldığında düzgün bir şekilde yeniden çizilir. Geri Al çizdiğiniz şekli geri getirir.
+@id	ui.automatic_shapes_on	Otomatik Şekiller açık: Düz çizgiler, dikdörtgenler, elipsler ve üçgenler düzgün bir şekilde yeniden çizilir.
+@id	ui.automatic_shapes_off	Otomatik Şekiller kapalı.
+@id	ui.recognised_line	Düz çizgi olarak çizildi. Geri Al çizdiğinizi geri getirir.
+@id	ui.recognised_rectangle	Dikdörtgen olarak çizildi. Geri Al çizdiğinizi geri getirir.
+@id	ui.recognised_ellipse	Elips olarak çizildi. Geri Al çizdiğinizi geri getirir.
+@id	ui.recognised_triangle	Üçgen olarak çizildi. Geri Al çizdiğinizi geri getirir.
+@id	ui.ink_replay_2	Mürekkep\nTekrarı
+@id	ui.ink_replay_tip	Sayfadaki mürekkebi çizildiği sırayla çizgi çizgi yeniden çizer. Sayfa değiştirilmez.
+@id	ui.ink_replay_title	Mürekkep Tekrarı
+@id	ui.replay_restart	Yeniden başlat
+@id	ui.replay_previous	Önceki çizgi
+@id	ui.replay_previous_tip	Bir çizgi geri
+@id	ui.replay_pause	Duraklat
+@id	ui.replay_pause_tip	Duraklat (Boşluk)
+@id	ui.replay_play	Oynat
+@id	ui.replay_play_tip	Oynat (Boşluk)
+@id	ui.replay_next	Sonraki çizgi
+@id	ui.replay_next_tip	Bir çizgi ileri
+@id	ui.replay_speed	Hız {speed}x
+@id	ui.replay_speed_tip	Hızı değiştir: 0.5x, 1x, 2x, 4x
+@id	ui.replay_count	{shown} / {total} çizgi
+@id	ui.replay_close_tip	Tekrarı durdur ve sayfaya dön (Escape)
+@id	ui.replay_order_note	Çizgiler çizildikleri sırayla ve eşit hızda geri oynatılır: NoteCraft süreleri değil, sırayı saklar.
+@id	ui.replay_nothing_to_replay	Bu sayfada yeniden oynatılacak mürekkep yok.
+@id	ui.tabs_layout_tip	Bu not defterinin bölümlerini sayfanın üst kısmında renkli sekmeler olarak göster. Ağaç görünümü yan panelde kalır.
+@id	ui.tabs_layout_on	Bölümler sayfanın üstünde sekmeler olarak gösteriliyor.
+@id	ui.tabs_layout_off	Bölümler yalnızca ağaç görünümünde gösteriliyor.
+@id	ui.section_group_tab	{name} (grup)
+@id	ui.this_group_has_no_sections	Bu grupta bölüm yok.
+@id	ui.this_section_has_no_pages_yet	Bu bölümde henüz sayfa yok.
+@id	ui.colour_dark_red	Koyu Kırmızı
+@id	ui.colour_red	Kırmızı
+@id	ui.colour_orange	Turuncu
+@id	ui.colour_yellow	Sarı
+@id	ui.colour_light_green	Açık Yeşil
+@id	ui.colour_green	Yeşil
+@id	ui.colour_light_blue	Açık Mavi
+@id	ui.colour_blue	Mavi
+@id	ui.colour_dark_blue	Koyu Mavi
+@id	ui.colour_purple	Mor
+@id	ui.colour_bright_green	Parlak Yeşil
+@id	ui.colour_turquoise	Turkuaz
+@id	ui.colour_pink	Pembe
+@id	ui.colour_gray	Gri
+@id	ui.font_colour	Yazı Tipi Rengi
+@id	ui.font_colour_tip	Seçili sözcükleri veya bundan sonra yazacaklarınızı renklendirin
+@id	ui.text_highlight_colour	Metin Vurgu Rengi
+@id	ui.text_highlight_colour_tip	Seçili sözcükleri veya bundan sonra yazacaklarınızı vurgu rengiyle işaretleyin
+@id	ui.automatic_colour	Otomatik
+@id	ui.notebooks_folder	Not defterleri klasörü
+@id	ui.notebooks_folder_hint	Seçtiğiniz klasörde zaten bulunan not defterleri şimdi açılır. Yeni not defterleri bir sonraki başlatmadan itibaren oraya kaydedilir. Hiçbir dosya taşınmaz.
+@id	ui.change_notebooks_folder	Not defterleri klasörünü değiştir...
+@id	ui.use_the_default_notebooks_folder	Varsayılan klasörü kullan
+@id	ui.choose_the_notebooks_folder	Not defterleri klasörünü seçin
+@id	ui.could_not_save_the_notebooks_folder_error	Not defterleri klasörü kaydedilemedi: {error}
+@id	ui.notebooks_folder_current	NoteCraft yeni not defterlerini {folder} konumunda tutar.
+@id	ui.window_native_only	Ek not pencereleri masaüstü uygulamasında kullanılabilir. Bu tarayıcıda veya mobil uygulamada bunun yerine başka bir sekme ya da sayfa açın.
+@id	ui.window_conflict_title	Bu sayfa başka bir yerde değiştirildi
+@id	ui.window_conflict_detail	Kaydedilmemiş değişiklikleriniz hâlâ burada. Bunları yeni bir sayfa olarak saklayın veya yok sayıp daha yeni sayfayı yeniden yükleyin. Pencereyi kapatmadan önce bunu çözümleyin.
+@id	ui.window_keep_copy	Düzenlemelerimi yeni sayfa olarak sakla
+@id	ui.window_reload	Düzenlemelerimi yok say ve yeniden yükle
+@id	ui.window_quick_title	Hızlı Notlar - NoteCraft
+@id	ui.window_new_tip	Geçerli sayfayı başka bir pencerede aç (Ctrl+M)
+@id	ui.window_quick_tip	Kalıcı bir Hızlı Not oluştur (Ctrl+Shift+M)
+@id	ui.window_owner_unavailable	Bu not penceresi işleme iş parçacığında kullanılamıyor.
+@id	ui.notebooks_folder_changed	Not defterleri klasörü artık {folder}.
+@id	ui.could_not_open_the_notebooks_folder_error	Not defterleri klasörü açılamadı: {error}
+@id	voice.another_program_changed_this_page_reload_it_then_d_cc71cb4e	Başka bir program bu sayfayı değiştirdi. Sayfayı yeniden yükleyip tekrar dikte edin.
+@id	voice.at_the_end_of_the_page_24302b0e	sayfanın sonuna
+@id	voice.at_your_cursor_e3b613bb	imlecinizin bulunduğu yere
+@id	voice.browse_c1b20f52	Gözat…
+@id	voice.cannot_create_the_voice_cache_error_05777284	Ses önbelleği oluşturulamıyor: {error}
+@id	voice.cannot_locate_the_local_settings_folder_6346b636	Yerel ayarlar klasörü bulunamıyor.
+@id	voice.cannot_open_the_microphone_settings_error_b3a9cb13	Mikrofon ayarları açılamıyor: {error}
+@id	voice.cannot_read_the_page_from_disk_reload_it_then_dict_b17aa77a	Sayfa diskten okunamıyor. Sayfayı yeniden yükleyip tekrar dikte edin.
+@id	voice.cannot_read_the_page_source_error_3c53fd4d	Sayfa kaynağı okunamıyor: {error}
+@id	voice.cannot_resolve_the_voice_cache_error_902cca25	Ses önbelleği çözümlenemiyor: {error}
+@id	voice.cannot_save_dictation_settings_error_fa8703c7	Dikte ayarları kaydedilemiyor: {error}
+@id	voice.check_your_setup_b61b421a	Kurulumunuzu denetleyin
+@id	voice.chinese_15dc1886	Çince
+@id	voice.choose_a_cursor_position_in_the_paragraph_s_words_6538d9ab	Paragraftaki sözcükler içinde, biçimlendirme işaretlerinin dışında bir imleç konumu seçin.
+@id	voice.choose_a_cursor_position_outside_formatting_marks_54a40d44	Biçimlendirme işaretlerinin dışında bir imleç konumu seçin.
+@id	voice.choose_a_paragraph_before_inserting_3f802b0c	Eklemeden önce bir paragraf seçin.
+@id	voice.choose_a_paragraph_without_inline_code_or_equation_bf91894f	Dikte etmeden önce satır içi kod veya denklem içermeyen bir paragraf seçin.
+@id	voice.choose_a_program_and_a_model_to_finish_82dc257d	Bitirmek için bir program ve bir model seçin.
+@id	voice.choose_a_speech_model_f18c2ce5	Bir konuşma modeli seçin
+@id	voice.choose_the_speech_recognizer_and_a_model_to_start_4a44889b	Dikte etmeye başlamak için konuşma tanıyıcıyı ve bir modeli seçin.
+@id	voice.choose_whisper_cli_db09c1c2	whisper-cli seç
+@id	voice.click_where_the_words_should_go_and_choose_insert_473a713a	Sözcüklerin nereye ekleneceğini tıklayın ve yeniden Ekle'yi seçin.
+@id	voice.detect_automatically_25a36033	Otomatik algıla
+@id	voice.dictate_3eaff69c	Dikte et
+@id	voice.dictate_at_the_cursor_or_at_the_end_of_the_page_12635b46	İmleç konumuna veya sayfanın sonuna dikte et
+@id	voice.dictated_words_8c96e44a	Dikte edilen sözcükler
+@id	voice.dictation_2a7fe421	Dikte
+@id	voice.dictation_currently_supports_paragraphs_headings_q_4db15ad2	Dikte şu anda paragrafları, başlıkları, alıntıları ve liste metinlerini destekler.
+@id	voice.dictation_discarded_2159761f	Dikte yok sayıldı.
+@id	voice.dictation_inserted_ctrl_z_takes_it_back_a6eb393d	Dikte eklendi. Ctrl+Z ile geri alabilirsiniz.
+@id	voice.dictation_runs_on_this_computer_with_whisper_cpp_c_fe751c46	Dikte bu bilgisayarda whisper.cpp ile çalışır. whisper-cli programını ve indirdiğiniz bir konuşma modelini seçin. NoteCraft bunları hiçbir zaman indirmez ve sesi hiçbir yere göndermez.
+@id	voice.dictation_setup_6be1e51d	Dikte kurulumu…
+@id	voice.dictation_setup_b70a0aa8	Dikte kurulumu
+@id	voice.discard_36fff63c	Yok say
+@id	voice.dismiss_70afe9ef	Kapat
+@id	voice.done_e9b450d1	Bitti
+@id	voice.done_editing_b4938456	Düzenleme bitti
+@id	voice.dutch_334a85f1	Felemenkçe
+@id	voice.enter_or_shortcut_25ef81f2	Enter veya {shortcut}
+@id	voice.esc_1f7a4f9e	Esc
+@id	voice.finish_dictating_0f7d9f4b	Dikteyi bitir
+@id	voice.finish_dictating_enter_esc_cancels_2151a686	Dikteyi bitir (Enter). Esc iptal eder.
+@id	voice.finishing_90218af7	Bitiriliyor…
+@id	voice.found_bbba8413	Bulundu
+@id	voice.french_44389f6a	Fransızca
+@id	voice.german_da91388c	Almanca
+@id	voice.heard_you_loudest_sound_decibels_db_ce75d644	Sesiniz duyuldu. En yüksek ses: {decibels} dB.
+@id	voice.insert_here_1fe34d33	Buraya ekle
+@id	voice.insert_on_this_page_f7f93d5b	Bu sayfaya ekle
+@id	voice.insert_or_discard_the_dictated_words_first_df8983ce	Önce dikte edilen sözcükleri ekleyin veya yok sayın
+@id	voice.italian_485b57ad	İtalyanca
+@id	voice.japanese_9239c22d	Japonca
+@id	voice.keep_the_settings_folder_outside_notebooks_before_a55ba6bc	Dikteyi etkinleştirmeden önce ayarlar klasörünü not defterlerinin dışında tutun.
+@id	voice.korean_dec66c5b	Korece
+@id	voice.language_89b86ab0	Dil
+@id	voice.listening_dc353487	Dinleniyor
+@id	voice.loading_the_model_45a4f448	Model yükleniyor…
+@id	voice.microphone_24280537	Mikrofon
+@id	voice.microphone_level_7b9bf79a	Mikrofon düzeyi
+@id	voice.microphone_settings_2a04af24	Mikrofon ayarları
+@id	voice.models_whose_name_ends_in_en_understand_english_on_41b266d0	Adı .en ile biten modeller yalnızca İngilizceyi anlar.
+@id	voice.no_audio_arrived_from_the_microphone_check_the_sel_68498934	Mikrofondan ses gelmedi. Seçili mikrofonu ve sistemin mikrofon iznini denetleyin.
+@id	voice.no_sound_from_the_microphone_yet_check_that_the_ri_84320e7b	Mikrofondan henüz ses gelmiyor. Doğru mikrofonun seçili olduğundan ve sesinin kapalı olmadığından emin olun.
+@id	voice.no_speech_was_recognized_7ff9a913	Hiçbir konuşma tanınmadı.
+@id	voice.not_found_475c8486	Bulunamadı
+@id	voice.notecraft_can_t_hear_your_microphone_check_that_it_5f82d9f8	NoteCraft mikrofonunuzu duyamıyor. Bağlı olduğundan ve sesinin kapalı olmadığından, Dikte kurulumunda doğru mikrofonun seçildiğinden ve {system} sisteminin masaüstü uygulamalarının mikrofonu kullanmasına izin verdiğinden emin olun.
+@id	voice.notecraft_couldn_t_save_the_page_so_it_won_t_add_d_5c189933	NoteCraft sayfayı kaydedemediği için dikte edilen sözcükleri henüz sayfaya eklemeyecek.
+@id	voice.open_a_page_to_dictate_into_0300e9a6	Dikte etmek için bir sayfa açın.
+@id	voice.open_system_microphone_settings_11e3ebb5	{system} mikrofon ayarlarını aç
+@id	voice.page_view_6a49efac	Sayfa görünümü
+@id	voice.portuguese_23882c57	Portekizce
+@id	voice.preview_going_place_2eeaa180	Önizleme, {place} eklenecek
+@id	voice.ready_to_insert_place_7f3f4d09	{place} eklemeye hazır
+@id	voice.recognition_took_too_long_a_smaller_model_such_as_fff73af3	Tanıma çok uzun sürdü. base veya tiny gibi daha küçük bir model daha hızlıdır.
+@id	voice.recognizer_program_whisper_cli_eb53d9da	Tanıyıcı programı (whisper-cli)
+@id	voice.refresh_56e3badc	Yenile
+@id	voice.reopen_the_app_to_start_a_new_target_sequence_907696fc	Yeni bir hedef dizisi başlatmak için uygulamayı yeniden açın.
+@id	voice.return_to_the_page_view_before_dictating_2c363339	Dikte etmeden önce sayfa görünümüne dönün.
+@id	voice.say_something_9aa1505d	Bir şey söyleyin…
+@id	voice.shortcut_e2012dea	Kısayol
+@id	voice.show_the_words_for_review_before_inserting_them_d313939a	Eklemeden önce sözcükleri gözden geçirmek için göster
+@id	voice.spanish_8df7f1b3	İspanyolca
+@id	voice.speech_model_3c5f0bfe	Konuşma modeli
+@id	voice.starting_the_microphone_26a22bd2	Mikrofon başlatılıyor…
+@id	voice.switch_back_to_the_page_view_to_dictate_e3deb7f8	Dikte etmek için sayfa görünümüne geri dönün.
+@id	voice.system_default_9d8d3808	Sistem varsayılanı
+@id	voice.tap_shortcut_to_start_and_again_to_finish_or_hold_6f592a2d	Başlatmak için {shortcut} tuşuna dokunun ve bitirmek için tekrar dokunun ya da konuşurken basılı tutun.
+@id	voice.test_microphone_49e76fed	Mikrofonu sına
+@id	voice.test_recognizer_f042c45f	Tanıyıcıyı sına
+@id	voice.the_computer_fell_behind_while_recording_try_again_e30d7359	Bilgisayar kayıt sırasında geride kaldı. Tekrar deneyin; bu durum devam ederse yoğun uygulamaları kapatmak yardımcı olur.
+@id	voice.the_displayed_draft_is_not_the_accepted_revision_r_3002e242	Görüntülenen taslak kabul edilen düzeltme değil. Eklemeden önce tekrar gözden geçirin.
+@id	voice.the_microphone_sends_audio_but_it_is_silent_check_d7cf0faa	Mikrofon ses gönderiyor ancak sessiz. Sessize alma anahtarlarını ve doğru mikrofonun seçili olup olmadığını denetleyin.
+@id	voice.the_page_changed_while_you_were_talking_click_wher_2d22a184	Siz konuşurken sayfa değişti. Sözcüklerin nereye ekleneceğini tıklayın ve yeniden Ekle'yi seçin.
+@id	voice.the_page_changed_while_you_were_talking_so_the_wor_41829e1a	Sayfa veya imleç değiştiği için sözcükler imlecinizin şu an bulunduğu yere eklendi. Ctrl+Z ile geri alabilirsiniz.
+@id	voice.the_page_closed_fc708395	Sayfa kapandı.
+@id	voice.the_paragraph_closed_868b6d17	Paragraf kapandı.
+@id	voice.the_recognizer_and_the_model_work_11e481ee	Tanıyıcı ve model çalışıyor.
+@id	voice.the_speech_recognizer_isn_t_set_up_correctly_open_57ac2283	Konuşma tanıyıcı doğru kurulmamış. Programı ve modeli denetlemek için Dikte kurulumunu açın.
+@id	voice.the_speech_recognizer_model_language_microphone_an_3fece2c0	Sayfalara dikte etmek için kullanılan konuşma tanıyıcı, model, dil, mikrofon ve kısayol.
+@id	voice.the_voice_cache_resolves_into_a_notebook_choose_a_1f9a56e8	Ses önbelleği bir not defterinin içine çözümleniyor. Not defterlerinin dışında yerel bir ayarlar klasörü seçin.
+@id	voice.the_words_are_longer_than_64_kib_shorten_them_befo_74a29916	Sözcükler 64 KiB'den uzun. Eklemeden önce kısaltın.
+@id	voice.there_are_no_words_to_insert_d397d6a5	Eklenecek sözcük yok.
+@id	voice.these_words_were_for_the_page_title_c7a50f95	Bu sözcükler "{title}" sayfası içindi
+@id	voice.these_words_were_for_the_page_title_choose_insert_27760264	Bu sözcükler "{title}" sayfası içindi. Bunun yerine buraya koymak için Bu sayfaya ekle'yi seçin.
+@id	voice.these_words_would_become_a_page_tag_edit_the_tag_m_bfed5fa8	Bu sözcükler bir sayfa etiketine dönüşecek. Eklemeden önce etiket işaretçisini düzenleyin.
+@id	voice.this_cursor_position_cannot_preserve_the_existing_ccbd81ed	Bu imleç konumu mevcut metni koruyamaz. Bunun yerine sözcükleri sona eklemek için sayfanın altına tıklayın.
+@id	voice.this_page_format_cannot_preserve_these_literal_wor_fc42673c	Bu sayfa biçimi bu sözcükleri henüz olduğu gibi koruyamıyor. Taslaktaki noktalama işaretlerini düzenleyin veya taslağı atmadan önce kopyalayın.
+@id	voice.this_page_is_read_only_here_so_dictation_can_t_wri_47a8e613	Bu sayfa burada salt okunur olduğundan dikte içine yazamaz.
+@id	voice.try_again_042c862e	Yeniden dene
+@id	voice.try_again_a_little_closer_to_the_microphone_30f96ada	Mikrofona biraz daha yaklaşarak yeniden deneyin.
+@id	voice.where_to_get_whisper_cli_and_a_model_3b6c0fcb	whisper-cli ve bir model nereden edinilir
+@id	voice.your_system_3a1356ff	sisteminiz
+@id	voice.layout_would_shift	Bu ekleme, paragraf veya tablo düzenini kaydırabilir. Tek satır ekleyin veya sözcükleri sona eklemek için sayfanın altına tıklayın.
+@id	voice.target_changed_review_required	Sayfa veya imleç değişti. Sözcükleri gözden geçirin ve geçerli konumu kullanmak için Ekle'yi seçin.
+@id	voice.multiline_needs_line_end	Birden çok satır için imlecin bir paragrafın sonunda olması gerekir. İmleci oraya taşıyın veya sözcükleri sona eklemek için sayfanın altına tıklayın.
+@id	ui.merge_cells	Hücreleri\nBirleştir
+@id	ui.merge_cells_tip	Seçilen hücreleri tek hücrede birleştirin. İçerikleri okuma sırasıyla korunur.
+@id	ui.split_cells	Hücreleri\nBöl
+@id	ui.split_cells_tip	İmlecin bulunduğu birleştirilmiş hücreyi yeniden hücrelerine ayırın. İçeriği ilk hücrede kalır.
+@id	ui.pick_two_or_more_cells_to_merge	Birleştirmek için iki veya daha fazla hücre seçin: önce üzerlerinden sürükleyin.
+@id	ui.these_cells_cannot_be_merged	Bu hücreler birleştirilemez.
+@id	ui.the_cells_are_merged	Hücreler birleştirildi.
+@id	ui.this_cell_is_not_merged	Bu hücre birleştirilmiş bir hücre değil.
+@id	ui.the_merged_cell_is_split	Birleştirilmiş hücre bölündü.
+@id	ui.account	Hesap
+@id	ui.account_signed_out	Oturum açmadınız ve açmanız da gerekmiyor.
+@id	ui.account_no_account_needed	NoteCraft hesap gerektirmez. Not defterleriniz bu bilgisayardaki klasörlerdir ve her şey oturum açmadan çalışır.
+@id	ui.account_no_online_services	Bu sürüm hiçbir çevrimiçi hizmete bağlanmaz: eklenecek, bağlanılacak veya oturumu kapatılacak bir hesap yoktur. Çevrimiçi not defterleri henüz geliştirilmemiştir.
+@id	ui.your_name_on_your_changes	Değişikliklerinizdeki adınız
+@id	ui.your_name_on_your_changes_hint	Burada bir ad saklandığında, bundan sonra değiştirdiğiniz her sayfa bu adı kaydeder; böylece Geçmiş > Yazara Göre Bul sayfalarınızı bulabilir. Ad bu bilgisayarın ayarlarında saklanır ve değiştirdiğiniz sayfalara yazılır; dolayısıyla sayfanın bir kopyası da bunu taşır. Daha önce değiştirilen sayfalar mevcut adlarını korur.
+@id	ui.your_name	Ad
+@id	ui.keep_this_name	Bu adı sakla
+@id	ui.keep_no_name	Ad saklama
+@id	ui.your_changes_are_marked_name	Değişiklikleriniz {name} olarak işaretleniyor.
+@id	ui.your_changes_are_marked_with_no_name	Değişiklikleriniz adsız olarak işaretleniyor.
+@id	ui.find_by_author	Yazara\nGöre Bul
+@id	ui.find_by_author_tip	Her kişinin değiştirdiği sayfaları listeleyin
+@id	ui.hide_authors	Yazarları\nGizle
+@id	ui.hide_authors_tip	Sayfayı kimin değiştirdiğini başlığının altından gizleyin. Adlar sayfada kalır.
+@id	ui.who_changed_a_page_is_hidden	Sayfayı kimin değiştirdiği gizlendi. Sayfalar adları yine de korur.
+@id	ui.who_changed_a_page_is_shown_under_its_title	Sayfayı kimin değiştirdiği başlığının altında gösteriliyor.
+@id	ui.find_by_author_title	Yazara Göre Bul
+@id	ui.find_by_author_hint	Bir sayfa, Dosya > Hesap bölümünde saklanan bir adla kendisine değişiklik kaydeden her kişinin adını not eder. Sayfalarını görmek için bir ad seçin.
+@id	ui.no_page_keeps_a_name_yet	Açık not defterlerindeki hiçbir sayfa henüz bir ad saklamıyor. Dosya > Hesap bölümünde bir ad saklayın; bundan sonra değiştirdiğiniz sayfalar bu adı saklayacaktır.
+@id	ui.name_n_pages	{name} ({n})
+@id	ui.unknown_author_n_pages	Bilinmeyen yazar ({n})
+@id	ui.unknown_author_tip	Adla yapılan hiçbir kaydın değiştirmediği sayfalar: adlar saklanmadan önce yazılmış, içe aktarılmış veya başka bir program tarafından değiştirilmiş.
+@id	ui.pages_changed_by_name	{name} tarafından değiştirilen sayfalar
+@id	ui.pages_whose_author_is_unknown	Yazarı bilinmeyen sayfalar
+@id	ui.back_to_the_names	Adlara dön
+@id	ui.changed_by_names	Değiştiren: {names}
+@id	ui.changed_by_names_last_by_name	Değiştiren: {names}; son değiştiren: {name}
+@id	ui.stickers	Çıkartmalar
+@id	ui.stickers_tip	Sayfaya çıkartma koyun
+@id	ui.stickers_gallery	Çıkartmalar
+@id	ui.sticker_star	Yıldız çıkartması
+@id	ui.sticker_heart	Kalp çıkartması
+@id	ui.sticker_check	Onay işareti çıkartması
+@id	ui.sticker_smile	Gülen yüz çıkartması
+@id	ui.sticker_sun	Güneş çıkartması
+@id	ui.sticker_lightbulb	Ampul çıkartması
+@id	ui.sticker_warning	Uyarı çıkartması
+@id	ui.sticker_question	Soru çıkartması
+@id	ui.sticker_flower	Çiçek çıkartması
+@id	ui.sticker_trophy	Kupa çıkartması
+@id	ui.sticker_rainbow	Gökkuşağı çıkartması
+@id	ui.sticker_pin	Raptiye çıkartması
+@id	ui.cannot_add_the_sticker_error	Çıkartma eklenemiyor: {error}
+@id	ui.added_the_name_sticker	Eklendi: {name}.
+@id	ui.meeting_details_tip	Bir takvim dosyasından toplantı ayrıntılarını sayfaya koyun
+@id	ui.meeting_details_title	Toplantı Ayrıntıları
+@id	ui.meetings_from_file	{file} takvim dosyasındaki toplantılar
+@id	ui.meeting_details_privacy	NoteCraft yalnızca bu dosyayı okur. Hiçbir takvim hizmetine bağlanmaz ve hiçbir yere veri göndermez.
+@id	ui.previous_day	Önceki gün
+@id	ui.next_day	Sonraki gün
+@id	ui.no_meetings_on_this_day	Bu günde toplantı yok.
+@id	ui.meeting_details_preview	Sayfaya konulacaklar:
+@id	ui.insert_meeting_details	Ayrıntıları ekle
+@id	ui.choose_another_calendar_file	Başka bir takvim dosyası seç
+@id	ui.choose_a_calendar_file	Bir takvim dosyası seç
+@id	ui.calendar_files	Takvim dosyaları
+@id	ui.meeting_details_added	Toplantı ayrıntıları sayfada.
+@id	ui.meeting_file_too_large	Bu takvim dosyası okunamayacak kadar büyük.
+@id	ui.meeting_file_has_no_events	Bu dosyada NoteCraft'ın okuyabileceği bir etkinlik yok. Bir iCalendar (.ics) dosyası mı?
+@id	ui.meeting_file_unreadable_error	Takvim dosyası okunamıyor: {error}
+@id	ui.meeting_to	-
+@id	ui.meeting_with_no_title	Başlıksız toplantı
+@id	ui.meeting_when	Ne zaman
+@id	ui.meeting_where	Nerede
+@id	ui.meeting_link	Bağlantı
+@id	ui.meeting_organizer	Düzenleyen
+@id	ui.meeting_participants	Katılımcılar
+@id	ui.meeting_recurrence	Yineleme
+@id	ui.meeting_repeats	Evet, bu toplantılarından biri
+@id	ui.meeting_repeats_not_followed	Evet, NoteCraft'ın düzenlemediği bir biçimde; bu ilk toplantısı
+@id	ui.meeting_agenda	Gündem
+@id	ui.dock_to_desktop_tip	Diğer pencerelerin yanında not almak için pencereyi ekranın kenarında, diğer pencerelerin üzerinde tutulan dar bir sütun hâline getirin. Yeniden seçmek pencereyi eski hâline döndürür.
+@id	ui.the_window_is_docked	Ekranın sağına yerleştirildi. Diğer pencereler kenara kaydırılmadı; Masaüstüne yerleştir'i yeniden seçmek pencereyi eski hâline döndürür.
+@id	ui.the_window_is_undocked	Pencere eski hâline döndü.
+@id	ui.the_screen_size_is_not_known_so_the_window_cannot_be_docked	Ekran boyutu burada bilinmediğinden pencere yerleştirilemiyor.
