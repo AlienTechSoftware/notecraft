@@ -12,7 +12,7 @@
 //! present the letters join and a run of one direction is ordered correctly. A mixed line
 //! goes through the bidi painter; see `docs/how-to/write-right-to-left.md`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
@@ -166,7 +166,7 @@ pub fn system_catalog() -> Result<std::sync::Arc<system::Catalog>, String> {
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[derive(Default)]
 struct Loads {
-    loaded: BTreeMap<String, Result<Arc<egui::FontData>, String>>,
+    loaded: std::collections::BTreeMap<String, Result<Arc<egui::FontData>, String>>,
     loading: BTreeSet<String>,
 }
 
@@ -206,7 +206,7 @@ pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Ve
     let id = egui::Id::new("notecraft-page-font-results");
     let seen = egui::Id::new("notecraft-page-font-generation");
     let generation = GENERATION.load(std::sync::atomic::Ordering::Relaxed);
-    let mut results = ctx.data(|data| data.get_temp::<BTreeMap<String, bool>>(id).unwrap_or_default());
+    let mut results = ctx.data(|data| data.get_temp::<std::collections::BTreeMap<String, bool>>(id).unwrap_or_default());
     // A newer catalogue read may have the font a failed request was missing: ask again.
     if ctx.data(|data| data.get_temp::<u64>(seen)) != Some(generation) {
         results.retain(|_, ok| *ok);
