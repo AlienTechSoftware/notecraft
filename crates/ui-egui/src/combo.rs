@@ -280,11 +280,12 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
             }
             Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(value_box.rect.width());
-                if rows.is_empty() {
-                    if let Some(note) = spec.empty_note {
-                        ui.label(note);
-                    }
-                    return;
+                // An empty list still shows its note and the Add Font row below, so a font can be
+                // added even when the installed fonts could not be read.
+                if rows.is_empty()
+                    && let Some(note) = spec.empty_note
+                {
+                    ui.label(note);
                 }
                 ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
                     if !recent_rows.is_empty() {
@@ -375,4 +376,46 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         );
     }
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn the_add_font_row_shows_when_the_list_is_empty() {
+        // An empty list (the installed fonts could not be read) still offers Add Font.
+        let mut h = Harness::new_ui(|ui| {
+            let items: Vec<String> = Vec::new();
+            let accept = |_: &str| true;
+            show(
+                ui,
+                egui::Color32::BLACK,
+                Spec {
+                    id: egui::Id::new("empty-font-list"),
+                    box_label: "Font name",
+                    arrow_label: "Font Family",
+                    shown: "Default",
+                    width: 96.0,
+                    items: &items,
+                    empty_note: Some("No installed fonts"),
+                    accept: &accept,
+                    filter: true,
+                    recent: &[],
+                    missing: false,
+                    preview: true,
+                    sections: &[],
+                    add_font: Some("Add Font…"),
+                    usage: "test",
+                    tokens: crate::theme::Theme::all()[0].tokens(),
+                },
+            );
+        });
+        h.run();
+        h.get_by_label("Font Family").click();
+        h.run();
+        h.get_by_label("Add Font…");
+    }
 }

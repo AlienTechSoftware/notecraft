@@ -75,9 +75,16 @@ pub fn install(files: &[PathBuf], dir: &Path) -> Report {
             report.skipped.push((name, "a different font with this name is already installed".to_owned()));
             continue;
         }
-        match std::fs::copy(file, &target) {
-            Ok(_) => report.copied.push(name),
-            Err(error) => report.skipped.push((name, error.to_string())),
+        // Copy to a temporary name and rename it into place only once the copy is complete, so an
+        // interrupted install never leaves a partial font under the real name.
+        let staging = dir.join(format!(".{name}.part"));
+        let result = std::fs::copy(file, &staging).and_then(|_| std::fs::rename(&staging, &target));
+        match result {
+            Ok(()) => report.copied.push(name),
+            Err(error) => {
+                let _ = std::fs::remove_file(&staging);
+                report.skipped.push((name, error.to_string()));
+            }
         }
     }
     report
@@ -182,6 +189,34 @@ mod tests {
 
         assert!(report.copied.is_empty());
         assert_eq!(std::fs::read(folder.join("Same.ttf")).expect("kept"), b"installed");
+    }
+
+    #[test]
+    fn a_completed_install_leaves_no_temporary_file() {
+        let source = scratch("staged-source");
+        let folder = scratch("staged-target");
+        let font = source.join("Clean.ttf");
+        std::fs::write(&font, b"font bytes").expect("font");
+
+        let report = install(&[font], &folder);
+
+        assert_eq!(report.copied, vec!["Clean.ttf".to_owned()]);
+        assert!(!folder.join(".Clean.ttf.part").exists(), "no temporary file is left behind");
+    }
+
+    #[test]
+    fn an_install_that_cannot_make_its_folder_reports_every_file() {
+        let source = scratch("blocked-source");
+        let blocker = scratch("blocked-parent").join("not-a-folder");
+        std::fs::write(&blocker, b"a file, not a folder").expect("blocker");
+        let font = source.join("Blocked.ttf");
+        std::fs::write(&font, b"font bytes").expect("font");
+
+        let report = install(&[font], &blocker.join("fonts"));
+
+        assert!(report.copied.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert!(report.skipped[0].1.contains("cannot be created"), "{:?}", report.skipped);
     }
 
     #[test]

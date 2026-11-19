@@ -159,7 +159,9 @@ fn start_loading(ctx: &egui::Context, catalog: std::sync::Arc<system::Catalog>, 
     let ctx = ctx.clone();
     std::thread::spawn(move || {
         for family in families {
-            let loaded = catalog.load(&family);
+            // A panic while reading one font must not leave its name marked as loading for good.
+            let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| catalog.load(&family)))
+                .unwrap_or_else(|_| Err(format!("reading the font {family:?} failed")));
             FINISHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((family.clone(), loaded));
             LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&family);
             ctx.request_repaint();
