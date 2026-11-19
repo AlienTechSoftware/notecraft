@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	完了
 @id	ui.welcome_wizard_done_title	ありがとうございます
 @id	ui.welcome_wizard_done_body	NoteCraft の準備ができました。選択内容は保存されています。この設定は環境設定をリセットしたときにだけ再表示されます。
+@id	ui.update_prompt.available	{app} {version} が利用可能です。最新の機能とバグ修正が含まれています。
+@id	ui.update_prompt.by_developer	{developer} 提供
+@id	ui.update_prompt.version_change	v{from} から {to}
+@id	ui.update_prompt.whats_new	新機能
+@id	ui.update_prompt.download	ダウンロード
+@id	ui.update_prompt.later	後で
+@id	ui.update_prompt.dismiss	閉じる
+@id	ui.update_prompt.all_releases	すべてのリリースは {url} にあります
+@id	ui.update_prompt.update	更新
+@id	ui.update_prompt.restart_to_update	再起動して更新
+@id	ui.update_prompt.update_and_restart	更新して再起動
+@id	ui.update_prompt.downloading	更新をダウンロードしてインストールしています…
+@id	ui.update_prompt.close	閉じる
+@id	ui.notebooks_folder	ノートブックのフォルダ
+@id	ui.notebooks_folder_hint	選んだフォルダにあるノートブックはすぐに開きます。新しいノートブックは次回起動時からそこに作られます。何も移動されません。
+@id	ui.notebooks_folder_current	NoteCraft は新しいノートブックを {folder} に保存します。
+@id	ui.change_notebooks_folder	ノートブックのフォルダを変更...
+@id	ui.use_the_default_notebooks_folder	既定のフォルダを使う
+@id	ui.choose_the_notebooks_folder	ノートブックのフォルダを選択
+@id	ui.notebooks_folder_changed	ノートブックのフォルダは {folder} になりました。
+@id	ui.could_not_save_the_notebooks_folder_error	ノートブックのフォルダを保存できませんでした: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	ノートブックのフォルダを開けませんでした: {error}

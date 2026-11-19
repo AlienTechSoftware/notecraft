@@ -2250,10 +2250,12 @@ fn welcome_notebook_prompt_can_replace_and_open_the_release_copy() {
     assert!(destination.join("00-start/welcome/index.md").is_file(), "the chosen CMGFM release content is installed");
     assert!(!destination.join("html").exists(), "the other edition is not installed");
     assert_eq!(h.state().session().settings.default_format(), Some(notecraft_model::PageFormat::Cmgfm), "the format step saves the default");
-    assert_eq!(
-        h.state().title(),
-        Some(format!("Welcome to NoteCraft (Ver {})", env!("CARGO_PKG_VERSION")).as_str()),
-        "the generated Welcome page is opened"
+    // The title carries the version the demo content was written for, which is not
+    // necessarily this build's version, so only the name and the version label are checked.
+    assert!(
+        h.state().title().is_some_and(|t| t.starts_with("Welcome to NoteCraft (Ver ")),
+        "the generated Welcome page is opened: {:?}",
+        h.state().title()
     );
     assert_eq!(h.state().session().settings.get("privacy_welcome_seen").as_deref(), Some("true"), "finishing the wizard marks it seen");
 }
@@ -2378,8 +2380,8 @@ fn an_installed_welcome_notebook_is_discovered_and_opened_as_user_data() {
     settle(&mut h);
     // The start page's title is in its head and the window shows it above the page. Its
     // large banner is the first thing in the body.
-    let expected_title = format!("Welcome to NoteCraft (Ver {})", env!("CARGO_PKG_VERSION"));
-    assert_eq!(h.state().title(), Some(expected_title.as_str()), "opened on the start page");
+    // The demo content carries the version it was written for, so only the name is checked here.
+    assert!(h.state().title().is_some_and(|t| t.starts_with("Welcome to NoteCraft (Ver ")), "opened on the start page: {:?}", h.state().title());
     assert!(
         h.state().body().is_some_and(|b| b.starts_with("<p><img src=\"assets/banner-start.png\"")),
         "the first page is bundled as HTML: {:?}",

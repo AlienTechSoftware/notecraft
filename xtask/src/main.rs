@@ -43,6 +43,8 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-model", 0),
     ("craft-voice-core", 1),
     ("craft-voice-runtime", 3),
+    // Copied from craft-libs; depends on no NoteCraft crate (see crates/craft-update/README.md).
+    ("craft-update", 0),
     ("notecraft-math", 1),
     ("notecraft-diagram", 1),
     ("notecraft-ink", 1),

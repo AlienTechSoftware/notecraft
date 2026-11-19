@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	סיום
 @id	ui.welcome_wizard_done_title	תודה
 @id	ui.welcome_wizard_done_body	NoteCraft מוכן לשימוש. הבחירות שלכם נשמרו. ההגדרה הזו תופיע שוב רק אחרי איפוס ההעדפות.
+@id	ui.update_prompt.available	{app} {version} זמין עם התכונות החדשות ותיקוני השגיאות האחרונים.
+@id	ui.update_prompt.by_developer	מאת {developer}
+@id	ui.update_prompt.version_change	מ-v{from} ל-{to}
+@id	ui.update_prompt.whats_new	מה חדש
+@id	ui.update_prompt.download	הורדה
+@id	ui.update_prompt.later	לא עכשיו
+@id	ui.update_prompt.dismiss	סגירה
+@id	ui.update_prompt.all_releases	כל הגרסאות מופיעות ב-{url}
+@id	ui.update_prompt.update	עדכון
+@id	ui.update_prompt.restart_to_update	הפעל מחדש לעדכון
+@id	ui.update_prompt.update_and_restart	עדכון והפעלה מחדש
+@id	ui.update_prompt.downloading	מוריד ומתקין את העדכון…
+@id	ui.update_prompt.close	סגירה
+@id	ui.notebooks_folder	תיקיית המחברות
+@id	ui.notebooks_folder_hint	מחברות שכבר נמצאות בתיקייה שתבחר ייפתחו עכשיו. מחברות חדשות ייווצרו שם מההפעלה הבאה. דבר לא יועבר.
+@id	ui.notebooks_folder_current	NoteCraft שומר מחברות חדשות ב-{folder}.
+@id	ui.change_notebooks_folder	שינוי תיקיית המחברות...
+@id	ui.use_the_default_notebooks_folder	שימוש בתיקייה ברירת המחדל
+@id	ui.choose_the_notebooks_folder	בחירת תיקיית המחברות
+@id	ui.notebooks_folder_changed	תיקיית המחברות עכשיו היא {folder}.
+@id	ui.could_not_save_the_notebooks_folder_error	לא ניתן לשמור את תיקיית המחברות: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	לא ניתן לפתוח את תיקיית המחברות: {error}

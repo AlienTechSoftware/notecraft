@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	پایان
 @id	ui.welcome_wizard_done_title	متشکریم
 @id	ui.welcome_wizard_done_body	NoteCraft آماده استفاده است. انتخاب‌های شما ذخیره شد. این راه‌اندازی تنها پس از بازنشانی تنظیمات دوباره نمایش داده می‌شود.
+@id	ui.update_prompt.available	{app} {version} با آخرین امکانات و رفع اشکال در دسترس است.
+@id	ui.update_prompt.by_developer	توسط {developer}
+@id	ui.update_prompt.version_change	از v{from} به {to}
+@id	ui.update_prompt.whats_new	تازه‌ها
+@id	ui.update_prompt.download	بارگیری
+@id	ui.update_prompt.later	بعداً
+@id	ui.update_prompt.dismiss	نادیده گرفتن
+@id	ui.update_prompt.all_releases	همه نسخه‌ها در {url} فهرست شده‌اند
+@id	ui.update_prompt.update	به‌روزرسانی
+@id	ui.update_prompt.restart_to_update	راه‌اندازی مجدد برای به‌روزرسانی
+@id	ui.update_prompt.update_and_restart	به‌روزرسانی و راه‌اندازی مجدد
+@id	ui.update_prompt.downloading	در حال بارگیری و نصب به‌روزرسانی…
+@id	ui.update_prompt.close	بستن
+@id	ui.notebooks_folder	پوشه دفترچه‌ها
+@id	ui.notebooks_folder_hint	دفترچه‌های موجود در پوشه‌ای که انتخاب می‌کنید همین حالا باز می‌شوند. دفترچه‌های جدید از شروع بعدی آنجا ساخته می‌شوند. چیزی جابه‌جا نمی‌شود.
+@id	ui.notebooks_folder_current	NoteCraft دفترچه‌های جدید را در {folder} ذخیره می‌کند.
+@id	ui.change_notebooks_folder	تغییر پوشه دفترچه‌ها...
+@id	ui.use_the_default_notebooks_folder	استفاده از پوشه پیش‌فرض
+@id	ui.choose_the_notebooks_folder	پوشه دفترچه‌ها را انتخاب کنید
+@id	ui.notebooks_folder_changed	پوشه دفترچه‌ها اکنون {folder} است.
+@id	ui.could_not_save_the_notebooks_folder_error	پوشه دفترچه‌ها ذخیره نشد: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	پوشه دفترچه‌ها باز نشد: {error}

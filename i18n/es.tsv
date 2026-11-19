@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	Terminar
 @id	ui.welcome_wizard_done_title	Gracias
 @id	ui.welcome_wizard_done_body	NoteCraft está listo para usar. Tus opciones están guardadas. Esta configuración solo volverá a aparecer si restableces las preferencias.
+@id	ui.update_prompt.available	{app} {version} está disponible con las últimas novedades y correcciones.
+@id	ui.update_prompt.by_developer	por {developer}
+@id	ui.update_prompt.version_change	v{from} a {to}
+@id	ui.update_prompt.whats_new	Novedades
+@id	ui.update_prompt.download	Descargar
+@id	ui.update_prompt.later	Más tarde
+@id	ui.update_prompt.dismiss	Descartar
+@id	ui.update_prompt.all_releases	Todas las versiones están en {url}
+@id	ui.update_prompt.update	Actualizar
+@id	ui.update_prompt.restart_to_update	Reiniciar para actualizar
+@id	ui.update_prompt.update_and_restart	Actualizar y reiniciar
+@id	ui.update_prompt.downloading	Descargando e instalando la actualización…
+@id	ui.update_prompt.close	Cerrar
+@id	ui.notebooks_folder	Carpeta de cuadernos
+@id	ui.notebooks_folder_hint	Los cuadernos que ya están en la carpeta elegida se abren ahora. Los nuevos cuadernos se guardan allí desde el próximo inicio. No se mueve nada.
+@id	ui.notebooks_folder_current	NoteCraft guarda los cuadernos nuevos en {folder}.
+@id	ui.change_notebooks_folder	Cambiar carpeta de cuadernos...
+@id	ui.use_the_default_notebooks_folder	Usar la carpeta predeterminada
+@id	ui.choose_the_notebooks_folder	Elige la carpeta de cuadernos
+@id	ui.notebooks_folder_changed	La carpeta de cuadernos es ahora {folder}.
+@id	ui.could_not_save_the_notebooks_folder_error	No se pudo guardar la carpeta de cuadernos: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	No se pudo abrir la carpeta de cuadernos: {error}

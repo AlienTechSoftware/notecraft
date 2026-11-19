@@ -18,7 +18,14 @@ requested `reelase` spelling for discoverability.
 
 ## Signoff gates
 
-1. Confirm the approved version in `[workspace.package]`; do not bump it without explicit approval.
+1. The release version is the nightly tag (`vX.Y.Z`, published by `nightly-release.yml`), not
+   `[workspace.package]` on `main`. `main` stays at its approved version (0.0.9, AGENTS.md); the
+   nightly sets the version in its own tagged commit. Confirm the tag and the release notes; do not
+   bump `main` without explicit approval.
+   Where the official number comes from: the newest published, non-draft `vX.Y.Z` tag on GitHub
+   (`gh release list --repo AlienTechSoftware/notecraft --exclude-drafts --limit 5`, or the
+   `Latest` label). Pre-releases and drafts are not the official number. The next nightly is the
+   highest of those tags plus one patch.
 2. Check branch, status, diff, tags, and release notes. No unrelated or generated scratch files.
 3. Update the authored demo under `docs/demo/scripts/content`, regenerate both formats into
    `docs/demo/DemoNotebook`, and refresh the ignored developer copy from the generated output.

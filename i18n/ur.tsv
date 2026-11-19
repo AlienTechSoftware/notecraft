@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	ختم
 @id	ui.welcome_wizard_done_title	شکریہ
 @id	ui.welcome_wizard_done_body	NoteCraft استعمال کے لیے تیار ہے۔ آپ کا انتخاب محفوظ ہو گیا ہے۔ یہ ترتیب صرف ترجیحات دوبارہ ترتیب دینے کے بعد ظاہر ہوگی۔
+@id	ui.update_prompt.available	{app} {version} دستیاب ہے، جس میں نئی خصوصیات اور بگ کی اصلاحات شامل ہیں۔
+@id	ui.update_prompt.by_developer	{developer} کی جانب سے
+@id	ui.update_prompt.version_change	v{from} سے {to}
+@id	ui.update_prompt.whats_new	نیا کیا ہے
+@id	ui.update_prompt.download	ڈاؤن لوڈ
+@id	ui.update_prompt.later	بعد میں
+@id	ui.update_prompt.dismiss	برخاست کریں
+@id	ui.update_prompt.all_releases	تمام ریلیزز {url} پر درج ہیں
+@id	ui.update_prompt.update	اپ ڈیٹ
+@id	ui.update_prompt.restart_to_update	اپ ڈیٹ کے لیے دوبارہ شروع کریں
+@id	ui.update_prompt.update_and_restart	اپ ڈیٹ کریں اور دوبارہ شروع کریں
+@id	ui.update_prompt.downloading	اپ ڈیٹ ڈاؤن لوڈ اور انسٹال ہو رہی ہے…
+@id	ui.update_prompt.close	بند کریں
+@id	ui.notebooks_folder	نوٹ بکس کا فولڈر
+@id	ui.notebooks_folder_hint	جو فولڈر آپ چنیں اس میں موجود نوٹ بکس ابھی کھل جاتی ہیں۔ نئی نوٹ بکس اگلے آغاز سے وہیں بنیں گی۔ کچھ بھی منتقل نہیں ہوتا۔
+@id	ui.notebooks_folder_current	NoteCraft نئی نوٹ بکس {folder} میں رکھتا ہے۔
+@id	ui.change_notebooks_folder	نوٹ بکس کا فولڈر تبدیل کریں...
+@id	ui.use_the_default_notebooks_folder	ڈیفالٹ فولڈر استعمال کریں
+@id	ui.choose_the_notebooks_folder	نوٹ بکس کا فولڈر منتخب کریں
+@id	ui.notebooks_folder_changed	نوٹ بکس کا فولڈر اب {folder} ہے۔
+@id	ui.could_not_save_the_notebooks_folder_error	نوٹ بکس کا فولڈر محفوظ نہیں ہو سکا: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	نوٹ بکس کا فولڈر نہیں کھولا جا سکا: {error}

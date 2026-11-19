@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	완료
 @id	ui.welcome_wizard_done_title	감사합니다
 @id	ui.welcome_wizard_done_body	NoteCraft를 사용할 준비가 되었습니다. 선택한 내용은 저장되었습니다. 이 설정은 환경설정을 초기화한 뒤에만 다시 나타납니다.
+@id	ui.update_prompt.available	{app} {version}을(를) 사용할 수 있습니다. 최신 기능과 버그 수정이 포함되어 있습니다.
+@id	ui.update_prompt.by_developer	{developer} 제작
+@id	ui.update_prompt.version_change	v{from} → {to}
+@id	ui.update_prompt.whats_new	새로운 기능
+@id	ui.update_prompt.download	다운로드
+@id	ui.update_prompt.later	나중에
+@id	ui.update_prompt.dismiss	닫기
+@id	ui.update_prompt.all_releases	모든 릴리스는 {url}에서 볼 수 있습니다
+@id	ui.update_prompt.update	업데이트
+@id	ui.update_prompt.restart_to_update	다시 시작하여 업데이트
+@id	ui.update_prompt.update_and_restart	업데이트 후 다시 시작
+@id	ui.update_prompt.downloading	업데이트를 다운로드하고 설치하는 중…
+@id	ui.update_prompt.close	닫기
+@id	ui.notebooks_folder	노트북 폴더
+@id	ui.notebooks_folder_hint	선택한 폴더에 있는 노트북은 지금 바로 열립니다. 새 노트북은 다음 시작부터 그곳에 만들어집니다. 아무것도 옮겨지지 않습니다.
+@id	ui.notebooks_folder_current	NoteCraft는 새 노트북을 {folder}에 보관합니다.
+@id	ui.change_notebooks_folder	노트북 폴더 변경...
+@id	ui.use_the_default_notebooks_folder	기본 폴더 사용
+@id	ui.choose_the_notebooks_folder	노트북 폴더 선택
+@id	ui.notebooks_folder_changed	노트북 폴더가 이제 {folder}입니다.
+@id	ui.could_not_save_the_notebooks_folder_error	노트북 폴더를 저장할 수 없습니다: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	노트북 폴더를 열 수 없습니다: {error}

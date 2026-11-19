@@ -63,3 +63,8 @@ egui_kittest = { workspace = true }
 egui-wgpu = "0.37"
 
 
+
+# The update check and prompt, copied from craft-libs (MIT OR Apache-2.0); see crates/craft-update/README.md.
+# Desktop only: the web build has no installed copy to update, and the TLS stack does not build for wasm32.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+craft-update = { path = "../craft-update" }

@@ -36,6 +36,20 @@ or `cargo xtask demo both` to request both explicitly. Each can be run alone:
 | Icon tests | `crates/ui-egui/tests/icons_visual.rs` | Each code-drawn icon is rendered twice by the same renderer and compared; the pairs must match exactly, and negative controls prove the comparison can fail. |
 | Repository gates | `xtask` | Layering, asset attribution, links in documents, no byte order marks, plain punctuation. |
 
+## Update tests (run.cmd)
+
+Test the update flow without publishing anything. `run.cmd` (see its header) takes these flags:
+
+- `run.cmd --new-version 0.0.14` shows a newer version in Options and starts the card. No download.
+- `run.cmd --set-version 0.0.8` runs the real update check as if the installed copy were 0.0.8.
+  Nothing is saved, so the next start is the real version again.
+- `run.cmd --set-version 0.0.9 --update-from <folder>` offers the installer in `<folder>` (with a
+  `SHA256SUMS.txt` beside it) instead of GitHub. The installer must be signed like the installed copy.
+
+A development run hands these flags to the installed copy in Program Files, which is where the
+install is tested. Headless tests cover the version rules, the checksum refusals, the macOS route,
+and the card's decision. See `crates/ui-egui/src/update_card/mod.rs`.
+
 ## Why no golden pictures
 
 A stored reference image breaks when a GPU, a driver or a font changes, and then people

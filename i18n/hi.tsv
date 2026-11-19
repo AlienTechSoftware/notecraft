@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	समाप्त
 @id	ui.welcome_wizard_done_title	धन्यवाद
 @id	ui.welcome_wizard_done_body	NoteCraft उपयोग के लिए तैयार है। आपकी पसंद सहेज ली गई है। यह सेटअप केवल प्राथमिकताएँ रीसेट करने के बाद फिर दिखेगा।
+@id	ui.update_prompt.available	{app} {version} नए फ़ीचर और बग सुधारों के साथ उपलब्ध है।
+@id	ui.update_prompt.by_developer	{developer} द्वारा
+@id	ui.update_prompt.version_change	v{from} से {to}
+@id	ui.update_prompt.whats_new	नया क्या है
+@id	ui.update_prompt.download	डाउनलोड
+@id	ui.update_prompt.later	बाद में
+@id	ui.update_prompt.dismiss	खारिज करें
+@id	ui.update_prompt.all_releases	सभी रिलीज़ {url} पर सूचीबद्ध हैं
+@id	ui.update_prompt.update	अपडेट करें
+@id	ui.update_prompt.restart_to_update	अपडेट के लिए फिर से शुरू करें
+@id	ui.update_prompt.update_and_restart	अपडेट करें और फिर से शुरू करें
+@id	ui.update_prompt.downloading	अपडेट डाउनलोड और इंस्टॉल हो रहा है…
+@id	ui.update_prompt.close	बंद करें
+@id	ui.notebooks_folder	नोटबुक फ़ोल्डर
+@id	ui.notebooks_folder_hint	आप जिस फ़ोल्डर को चुनते हैं, उसकी नोटबुक अभी खुल जाती हैं। नई नोटबुक अगली बार शुरू होने पर वहीं बनेंगी। कुछ भी स्थानांतरित नहीं होता।
+@id	ui.notebooks_folder_current	NoteCraft नई नोटबुक {folder} में रखता है।
+@id	ui.change_notebooks_folder	नोटबुक फ़ोल्डर बदलें...
+@id	ui.use_the_default_notebooks_folder	डिफ़ॉल्ट फ़ोल्डर का उपयोग करें
+@id	ui.choose_the_notebooks_folder	नोटबुक फ़ोल्डर चुनें
+@id	ui.notebooks_folder_changed	नोटबुक फ़ोल्डर अब {folder} है।
+@id	ui.could_not_save_the_notebooks_folder_error	नोटबुक फ़ोल्डर सहेजा नहीं जा सका: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	नोटबुक फ़ोल्डर खोला नहीं जा सका: {error}

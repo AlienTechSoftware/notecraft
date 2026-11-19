@@ -151,6 +151,11 @@ fn open_arg(args: &[String]) -> Option<String> {
     while let Some(a) = words.next() {
         if VALUE_FLAGS.contains(&a.as_str()) {
             words.next();
+        } else if a == "--new-version" || a == "--set-version" {
+            // The version after it is not a page to open.
+            if args.iter().skip_while(|x| *x != a).nth(1).is_some_and(|v| v.starts_with(|c: char| c.is_ascii_digit())) {
+                words.next();
+            }
         } else if !a.starts_with("--") {
             return Some(a.clone());
         }
@@ -179,6 +184,18 @@ fn fail(message: &str) -> ! {
     std::process::exit(1);
 }
 
+/// The NoteCraft copy installed for everyone, when there is one (Windows).
+fn installed_copy() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
+        let exe = program_files.join("NoteCraft").join("notecraft.exe");
+        exe.is_file().then_some(exe)
+    }
+    #[cfg(not(windows))]
+    None
+}
+
 fn main() -> eframe::Result {
     // First, while this is the only thread: on Linux and macOS the offset can only be read
     // safely then. Timestamps are kept in UTC and shown on the user's clock (issue #133); if
@@ -188,6 +205,17 @@ fn main() -> eframe::Result {
         notecraft_model::time::set_local_offset(offset.whole_seconds());
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // The update helper started this copy with --finish-update: it runs the install and the restart,
+    // then exits. This must run before any window opens.
+    if let Some(result) =
+        craft_update::self_update::finish(&notecraft_ui_egui::update_prompt::NOTECRAFT, &std::env::args_os().skip(1).collect::<Vec<_>>())
+    {
+        match &result {
+            Ok(()) => applog::info("update helper: finished"),
+            Err(e) => applog::line("ERROR", &format!("update helper: {e}")),
+        }
+        return Ok(());
+    }
     let settings_dir = Settings::default_location().path().parent().map(std::path::Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let telemetry_level =
         Settings::default_location().get("telemetry_level").as_deref().and_then(telemetry::Level::parse).unwrap_or_else(telemetry::Level::for_build);
@@ -227,6 +255,18 @@ fn main() -> eframe::Result {
     if args.iter().any(|a| a == "--version") {
         println!("notecraft {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    // A development run tests an update against the installed copy: it hands `--new-version` to
+    // the installed NoteCraft, which then downloads and installs over itself.
+    #[allow(clippy::collapsible_if)]
+    if cfg!(debug_assertions) && args.iter().any(|a| a == "--new-version" || a == "--set-version") {
+        if let Some(installed) = installed_copy() {
+            applog::info(&format!("development run: --new-version runs the installed copy {}", installed.display()));
+            match std::process::Command::new(&installed).args(&args).spawn() {
+                Ok(_) => return Ok(()),
+                Err(error) => applog::line("ERROR", &format!("could not start the installed copy: {error}")),
+            }
+        }
     }
     let root = notebooks_dir(&args);
     applog::info(&format!("notebooks folder: {}", root.display()));
@@ -325,6 +365,37 @@ fn main() -> eframe::Result {
                     }
                     Err(e) => eprintln!("NoteCraft: the control channel is off: {e}"),
                 }
+            }
+            // `--new-version` shows a newer version; `--new-version 0.0.14` names it. Nothing is downloaded.
+            if let Some(i) = args.iter().position(|a| a == "--new-version") {
+                let named = args.get(i + 1).filter(|v| v.starts_with(|c: char| c.is_ascii_digit()));
+                app.skip_first_use_wizard();
+                app.simulate_new_version(named.map_or(notecraft_ui_egui::app::SIMULATED_NEW_VERSION, String::as_str));
+            }
+            // `--set-version 0.0.8` runs the real check as an installed copy of that version, for this
+            // run only. Nothing is saved, so the next start is the real version again.
+            if let Some(folder) = args.iter().position(|a| a == "--update-from").and_then(|i| args.get(i + 1)) {
+                {
+                    let running = args
+                        .iter()
+                        .position(|a| a == "--set-version")
+                        .and_then(|j| args.get(j + 1))
+                        .cloned()
+                        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+                    app.skip_first_use_wizard();
+                    app.start_local_update_check(&running, std::path::Path::new(folder));
+                }
+            }
+            // A local update folder replaces the GitHub check, so --set-version does not start its own.
+            if let Some(running) = args
+                .iter()
+                .position(|a| a == "--set-version")
+                .filter(|_| !args.iter().any(|a| a == "--update-from"))
+                .and_then(|i| args.get(i + 1))
+                .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
+            {
+                app.skip_first_use_wizard();
+                app.start_update_check(running);
             }
             if expand {
                 app.expand_all();
@@ -477,6 +548,14 @@ mod tests {
     fn a_trailing_flag_without_a_value_falls_back_to_the_default() {
         let args = vec!["--notebooks".to_string()];
         assert_eq!(notebooks_dir(&args), notecraft_store::settings::default_notebooks_dir());
+    }
+
+    #[test]
+    fn a_version_after_new_version_is_not_a_page_to_open() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(open_arg(&a(&["--new-version", "0.0.14"])), None);
+        assert_eq!(open_arg(&a(&["--new-version", "0.0.14", "Notes/Work"])), Some("Notes/Work".to_string()));
+        assert_eq!(open_arg(&a(&["--set-version", "0.0.8"])), None);
     }
 
     #[test]
