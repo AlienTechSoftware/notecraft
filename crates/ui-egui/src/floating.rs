@@ -115,6 +115,12 @@ pub struct FontBoxes {
     pub families: Vec<String>,
     pub families_note: Option<String>,
     pub sizes: Vec<String>,
+    /// Recently used families, most recent first, shared with the ribbon's family box.
+    pub recent: Vec<String>,
+    /// The family shown is not installed, so the box shows its warning mark.
+    pub family_missing: bool,
+    /// The installed families grouped by script, with a heading for each.
+    pub sections: std::sync::Arc<Vec<(String, Vec<String>)>>,
 }
 
 /// The egui memory key under which the ribbon stores the [`FontBoxes`] for this frame.
@@ -207,9 +213,26 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             items: &fonts.families,
                             empty_note: fonts.families_note.as_deref(),
                             accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                            filter: true,
+                            recent: &fonts.recent,
+                            missing: fonts.family_missing,
+                            preview: true,
+                            sections: &fonts.sections,
+                            add_font: Some(crate::tl_id!("ui.add_font")),
+                            usage: "floating-family",
+                            tokens: *t,
                         },
                     );
+                    if families.add_font {
+                        // The Add Font row: pick font files, install them, and read the list again.
+                        if let Some(report) = crate::font_install::pick_and_install()
+                            && !report.copied.is_empty()
+                        {
+                            crate::fonts::rescan_in_background(ui.ctx().clone());
+                        }
+                    }
                     if let Some(name) = families.chosen {
+                        crate::ribbon::remember_family(ui.ctx(), &name);
                         acts.push(Act::FontFamily(name));
                         picked = true;
                     }
@@ -224,7 +247,15 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
                             width: 38.0,
                             items: &fonts.sizes,
                             empty_note: None,
-                            accept: &|typed| typed.parse::<u8>().is_ok_and(|size| crate::ribbon::FONT_SIZES.contains(&size)),
+                            accept: &|typed| crate::font_picker::size_is_usable(typed, &crate::ribbon::FONT_SIZES),
+                            filter: false,
+                            recent: &[],
+                            missing: false,
+                            preview: false,
+                            sections: &[],
+                            add_font: None,
+                            usage: "floating-size",
+                            tokens: *t,
                         },
                     );
                     if let Some(chosen) = size.chosen.and_then(|typed| typed.parse::<u8>().ok()) {

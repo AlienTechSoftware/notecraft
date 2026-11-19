@@ -51,6 +51,7 @@ arboard = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 fontdb = "0.23"
+ttf-parser = "0.25.1"
 # File > About > "Check for updates": asks GitHub for the newest release, downloads the file for
 # this computer and checks it against the release's SHA-256 before running it. Nothing is sent
 # until the button is pressed.

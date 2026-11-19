@@ -124,6 +124,12 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   mapped without losing formatting are refused.
   Bold and italic faces are not loaded. Windows and macOS discovery have not been tested on
   those platforms. Browser local-font permission and access are not implemented.
+- **Add Font does not register fonts with the operating system on Windows.** Font files chosen with Add Font are copied into the
+  user's fonts folder (`%LOCALAPPDATA%\Microsoft\Windows\Fonts` on Windows, `~/Library/Fonts` on macOS, `~/.local/share/fonts` on Linux). NoteCraft reads that folder
+  and lists the fonts, but Windows and other applications do not see them until each font is also
+  registered under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts` and announced to the system.
+  A page that uses such a font draws it in NoteCraft and falls back to another font in WordCraft or a browser.
+  Registration is not implemented on any platform. The add-font control is desktop only (Windows, macOS, Linux).
 - **Font size is in progress.** The ribbon can size a selected line, text in a selected
   container, safely mapped selections within or across paragraphs, or text typed at a plain
   caret. Ambiguous selections are not supported and are reported rather than changed.

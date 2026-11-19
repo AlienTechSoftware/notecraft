@@ -8996,9 +8996,12 @@ fn font_family_applies_to_a_selection_across_paragraphs() {
     settle(&mut h);
     ask(&mut h, "ui.release", json!({"x": second.center().x, "y": second.center().y})).expect("release");
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
-    h.get_by_label(family).click();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
+    h.get_by_label(family.as_str()).click();
     settle(&mut h);
     let body = h.state().body().unwrap_or_default().to_string();
     assert_eq!(body.matches("font-family:").count(), 2, "both paragraphs took the family:\n{body}");
@@ -9298,7 +9301,8 @@ fn font_selectors_show_selection_values_and_mixed_state_in_both_formats() {
         assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Mixed"));
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("Mixed"));
         h.get_by_label("Font Size").click();
-        h.run();
+        // Background font loading can still ask for a frame here, so wait for the frames to settle.
+        settle(&mut h);
         h.get_by_label("24").click();
         settle(&mut h);
         assert_eq!(h.get_by_label("Font Size").value().as_deref(), Some("24"));
@@ -9453,11 +9457,37 @@ fn choosing_a_font_changes_the_font_box() {
     settle(&mut h);
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": name.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&name).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
+}
+
+/// Typing in the font box lists the families that contain the text, so a family can be found by
+/// its middle letters rather than scrolled to.
+#[test]
+fn typing_a_font_name_lists_the_families_that_contain_it() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog.families().iter().find(|n| notecraft_formats::markdown::valid_font_family(n) && n.len() > 4).cloned() else { return };
+    let query: String = name.chars().skip(1).take(3).collect();
+    let (_t, app, s) = sample_app("ui-font-filter");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    // "Font name" is the text box; "Font Family" is the arrow beside it, which opens the list.
+    h.get_by_label("Font name").click();
+    h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box's text");
+    ask(&mut h, "ui.text", json!({"text": query})).expect("type a part of the name");
+    settle(&mut h);
+    h.get_by_label(&name);
+    assert_eq!(h.get_by_label("Font name").value().as_deref(), Some(query.as_str()), "the box shows what was typed");
 }
 
 /// Dragging across plain text selects it, and the page reports the selection.
@@ -9500,8 +9530,11 @@ fn choosing_a_font_without_a_caret_changes_the_font_box() {
     let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
     h.state_mut().open_path(&s.md_page.to_string_lossy());
     settle(&mut h);
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": name.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&name).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(name.as_str()), "the box shows the chosen font");
@@ -9563,8 +9596,11 @@ fn installed_font_family_can_be_applied_and_undone_in_both_formats() {
         pump(&mut h);
         ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select text");
         pump(&mut h);
-        h.get_by_label("Font Family").click();
+        h.get_by_label("Font name").click();
         h.run();
+        ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+        ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+        settle(&mut h);
         h.get_by_label(&family).click();
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
@@ -9606,8 +9642,11 @@ fn installed_family_and_underline_apply_to_new_text() {
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
     pump(&mut h);
     let before = h.state().body().unwrap_or_default().to_string();
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(family.as_str()), "pending family is shown before typing");
@@ -10411,8 +10450,11 @@ fn partial_selection_keeps_font_family_when_script_is_added() {
         ask(&mut h, "ui.key", json!({"key": "ArrowRight", "shift": true})).expect("select");
         pump(&mut h);
     }
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     h.get_by_label("Subscript").click();
@@ -10621,8 +10663,11 @@ fn selected_container_font_family_is_undoable_and_leaves_other_boxes_alone() {
     let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-font-family");
     select_box_by_handle(&mut h, ox, oy, 160.0);
     let before = h.state().body().unwrap_or_default().to_string();
-    h.get_by_label("Font Family").click();
+    h.get_by_label("Font name").click();
     h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": family.to_string()})).expect("type the font name");
+    settle(&mut h);
     h.get_by_label(&family).click();
     settle(&mut h);
     let after = h.state().body().unwrap_or_default().to_string();
@@ -10654,7 +10699,19 @@ fn missing_page_fonts_are_visible_in_both_formats() {
         notecraft_store::page::save_body(page, body).expect("write fixture");
         h.state_mut().open_path(&page.to_string_lossy());
         settle(&mut h);
-        assert!(h.query_all_by_label_contains("These fonts could not be loaded").count() > 0, "a missing family is reported for {}", page.display());
+        // The font is looked up on a background thread, so the notice appears a few frames later.
+        let mut reported = false;
+        // A time limit, not a count: a slow machine still gets the time it needs.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while std::time::Instant::now() < deadline {
+            settle(&mut h);
+            if h.query_all_by_label_contains("These fonts could not be loaded").count() > 0 {
+                reported = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(reported, "a missing family is reported for {}", page.display());
         assert!(h.state().body().unwrap_or_default().contains("NoteCraft Missing Font 928474"), "the name stays on the page");
     }
 }
@@ -13716,6 +13773,37 @@ fn a_merged_cell_is_drawn_across_its_columns_without_a_line_through_it() {
             painted_segments(&h).iter().any(|[a, b]| (a.x - b.x).abs() < 0.5 && (a.x - mid_x).abs() < 3.0 && a.y.min(b.y) < y1 && a.y.max(b.y) > y0);
         assert!(!through, "html={html}: no line between the merged columns in the merged row");
     }
+}
+
+/// Typing a script's name lists the fonts of that script, so an Arabic font is found by typing
+/// "Arabic" rather than by scrolling to it.
+#[test]
+fn typing_a_script_name_lists_its_fonts() {
+    let Ok(catalog) = notecraft_ui_egui::fonts::system_catalog() else { return };
+    let Some(name) = catalog
+        .families()
+        .iter()
+        .find(|n| {
+            notecraft_formats::markdown::valid_font_family(n)
+                && catalog.scripts(n).contains(&notecraft_ui_egui::font_picker::Script::Arabic)
+                && !n.to_lowercase().contains("arabic")
+        })
+        .cloned()
+    else {
+        return;
+    };
+    let (_t, app, s) = sample_app("ui-font-script-search");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(2000.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font name").click();
+    h.run();
+    ask(&mut h, "ui.key", json!({"key": "a", "ctrl": true})).expect("select the box text");
+    ask(&mut h, "ui.text", json!({"text": "Arabic"})).expect("type the script name");
+    settle(&mut h);
+    h.get_by_label(name.as_str());
 }
 
 /// Dragging in the navigation pane, as in OneNote: a page up or down its section, onto another

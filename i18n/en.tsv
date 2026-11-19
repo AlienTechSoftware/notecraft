@@ -82,6 +82,24 @@
 @id	ui.font_size_box	Font size
 @id	ui.font_family	Font Family
 @id	ui.font_family_box	Font name
+@id	ui.recent_fonts	Recently Used Fonts
+@id	ui.all_fonts	All Fonts
+@id	ui.font_missing	This font is not installed. The page shows a fallback font.
+@id	ui.font_add_none	No font was added.
+@id	ui.script_latin	Latin
+@id	ui.script_greek	Greek
+@id	ui.script_cyrillic	Cyrillic
+@id	ui.script_arabic	Arabic
+@id	ui.script_hebrew	Hebrew
+@id	ui.script_devanagari	Devanagari
+@id	ui.script_thai	Thai
+@id	ui.script_han	Chinese
+@id	ui.script_kana	Japanese
+@id	ui.script_hangul	Korean
+@id	ui.script_other	Other scripts
+@id	ui.add_font	Add Font…
+@id	ui.add_font_dialog_title	Choose font files to add
+@id	ui.font_files_filter	Font files
 @id	ui.pick_date	Pick a date
 @id	ui.pick_time	Pick a time
 @id	ui.am	AM
