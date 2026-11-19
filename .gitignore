@@ -48,3 +48,6 @@ MEMORY.md
 # by the deploy workflow (.github/workflows/deploy-website.yml), never
 # committed — a local copy here is for manual inspection only.
 /website/demo/
+
+# The vendored winit is its own workspace for its tests (vendor/winit/NOTECRAFT.md).
+/vendor/winit/Cargo.lock
