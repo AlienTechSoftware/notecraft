@@ -125,6 +125,13 @@ pub fn insert_face_arc(
     Ok(key)
 }
 
+/// The face a family's regular text uses: the one fontdb matches for the family name. Shared by the
+/// script coverage and by loading, so they always describe the same face.
+fn select_face(database: &fontdb::Database, family: &str) -> Option<fontdb::ID> {
+    let query = fontdb::Query { families: &[fontdb::Family::Name(family)], ..Default::default() };
+    database.query(&query)
+}
+
 #[cfg(test)]
 mod folder_tests {
     use super::Catalog;
@@ -142,11 +149,4 @@ mod folder_tests {
         let _ = std::fs::remove_dir_all(&folder);
         assert!(catalog.families().iter().any(|name| name == "Noto Sans Hebrew"), "the family is listed: {:?}", catalog.families());
     }
-}
-
-/// The face a family's regular text uses: the one fontdb matches for the family name. Shared by the
-/// script coverage and by loading, so they always describe the same face.
-fn select_face(database: &fontdb::Database, family: &str) -> Option<fontdb::ID> {
-    let query = fontdb::Query { families: &[fontdb::Family::Name(family)], ..Default::default() };
-    database.query(&query)
 }
