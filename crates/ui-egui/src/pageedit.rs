@@ -2804,7 +2804,7 @@ pub fn show_blocks(
                 })
                 .inner;
             let resp = out.response;
-            log::debug!(
+            log::trace!(
                 "page block rendered: block={} stamp={} kind={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
                 i,
                 stamp,

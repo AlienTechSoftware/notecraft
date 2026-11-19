@@ -46,6 +46,8 @@ const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 mod voice;
 /// The zoom, and how far down the last page was scrolled, when the window was closed.
 const LAST_ZOOM_KEY: &str = "last_zoom";
+/// The recently used font families, most recent first, saved with the other local settings.
+const RECENT_FONTS_KEY: &str = "recent_fonts";
 const LAST_SCROLL_KEY: &str = "last_scroll";
 /// How long after the last change to the ink it is written, once the pen is up. A write on a
 /// synced folder waits on the mount; made after every stroke on the window's thread, the next
@@ -10074,6 +10076,7 @@ impl NoteCraftApp {
                 if reset {
                     match self.session.settings.reset() {
                         Ok(()) => {
+                            crate::ribbon::clear_recent_fonts(ctx);
                             self.ui_scale = 100;
                             self.ui_scale_pending = true;
                             self.dialog = Some(self.first_use_wizard());
@@ -11908,6 +11911,13 @@ impl NoteCraftApp {
 
     pub fn show(&mut self, ui: &mut Ui) {
         self.take_saves(false);
+        crate::ribbon::sync_recent_fonts(
+            ui.ctx(),
+            || self.session.settings.get(RECENT_FONTS_KEY),
+            |text| {
+                let _ = self.session.settings.set(RECENT_FONTS_KEY, text);
+            },
+        );
         // Another window's writes are looked for before anything typed or clicked here is acted
         // on, and twice a second besides. Not every frame: each look asks the disk about the page
         // and its ink, and on a synced folder that held up every frame of a scroll or a pinch.

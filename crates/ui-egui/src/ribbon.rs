@@ -64,6 +64,32 @@ pub fn recent_families(ctx: &egui::Context) -> Vec<String> {
     ctx.data(|d| d.get_temp(egui::Id::new("notecraft-recent-fonts"))).unwrap_or_default()
 }
 
+/// Keeps the recent list in step with the saved one. The first call reads the saved list; after that
+/// a change to the list is saved. `load` reads the saved text and `save` writes it.
+pub fn sync_recent_fonts(ctx: &egui::Context, load: impl FnOnce() -> Option<String>, save: impl FnOnce(&str)) {
+    let seeded_id = egui::Id::new("notecraft-recent-fonts-seeded");
+    let stored_id = egui::Id::new("notecraft-recent-fonts-stored");
+    if !ctx.data(|d| d.get_temp::<bool>(seeded_id)).unwrap_or(false) {
+        ctx.data_mut(|d| d.insert_temp(seeded_id, true));
+        let saved = crate::font_picker::parse_list(&load().unwrap_or_default());
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("notecraft-recent-fonts"), saved));
+    }
+    let now = recent_families(ctx);
+    let stored: Option<Vec<String>> = ctx.data(|d| d.get_temp(stored_id));
+    if stored.as_ref() != Some(&now) {
+        save(&crate::font_picker::format_list(&now));
+        ctx.data_mut(|d| d.insert_temp(stored_id, now));
+    }
+}
+
+/// Forgets the recent fonts, as the reset of local settings does. The saved list goes with the settings file.
+pub fn clear_recent_fonts(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        d.remove::<Vec<String>>(egui::Id::new("notecraft-recent-fonts"));
+        d.remove::<Vec<String>>(egui::Id::new("notecraft-recent-fonts-stored"));
+    });
+}
+
 /// Records a family as used now, from either toolbar.
 pub fn remember_family(ctx: &egui::Context, name: &str) {
     let mut recent = recent_families(ctx);
@@ -743,8 +769,17 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
             });
         });
     if let Some(x) = overflow_arrows(ui, &out, t) {
-        ui.data_mut(|d| d.insert_temp(jump_id, x));
-        ui.ctx().request_repaint();
+        // Ask for another frame only when the arrows move: asking every frame keeps the window redrawing.
+        let last_id = egui::Id::new("ribbon-arrows-last");
+        if ui.data(|d| d.get_temp::<f32>(last_id)) != Some(x) {
+            ui.ctx().request_repaint();
+        }
+        ui.data_mut(|d| {
+            d.insert_temp(last_id, x);
+            d.insert_temp(jump_id, x);
+        });
+    } else {
+        ui.data_mut(|d| d.remove::<f32>(egui::Id::new("ribbon-arrows-last")));
     }
     acts
 }
@@ -1273,11 +1308,13 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     }
                 };
                 // Warn only once the installed list is known; while it loads, nothing is missing yet.
-                let family_missing = !families.is_empty() && crate::font_picker::is_missing(view.font_family.unwrap_or(""), &families);
+                // The default setting shows as its translated label, which is not a font name, so it is never missing.
+                let named_family = view.font_family.filter(|family| *family != crate::tl_id!("ui.default"));
+                let family_missing = !families.is_empty() && crate::font_picker::is_missing(named_family.unwrap_or(""), &families);
                 // Record a missing font once, when it first shows, not on every frame.
                 let missing_key = egui::Id::new("notecraft-missing-font-reported");
                 if family_missing {
-                    let shown = view.font_family.unwrap_or("");
+                    let shown = named_family.unwrap_or("");
                     if ui.data(|d| d.get_temp::<String>(missing_key)).as_deref() != Some(shown) {
                         crate::usage::record(crate::usage::Level::Warning, "font_missing_shown", &[("family", shown)]);
                         ui.data_mut(|d| d.insert_temp(missing_key, shown.to_owned()));

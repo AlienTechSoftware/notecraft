@@ -13910,3 +13910,34 @@ fn notebooks_sections_and_pages_are_dragged_where_they_go() {
     settle(&mut h);
     assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"], json!("Alpha"), "the click opened Alpha");
 }
+
+/// The font list stays inside its popup in the real app. Names drawn below the popup would be ink in
+/// the empty area under it, which this checks.
+#[test]
+fn the_font_list_stays_inside_its_popup_in_the_app() {
+    let (_t, app, s) = sample_app("ui-font-list-inside");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 760.0));
+    notecraft_store::page::save_body(
+        &s.md_page,
+        "Format ideas
+
+A short page.",
+    )
+    .expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Font Family").click();
+    settle(&mut h);
+    let picture = h.render().expect("render");
+    let (width, height) = picture.dimensions();
+    // The popup ends near y 390 at this size; below it, above the status bar, the page is empty.
+    let stray_ink = (430..height.min(720)).any(|y| {
+        (320..width.min(880)).any(|x| {
+            let p = picture.get_pixel(x, y);
+            p[3] > 200 && (u16::from(p[0]) + u16::from(p[1]) + u16::from(p[2])) / 3 < 120
+        })
+    });
+    assert!(!stray_ink, "font names are drawn below the font list's popup");
+}

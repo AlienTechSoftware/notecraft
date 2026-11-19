@@ -416,7 +416,7 @@ pub fn show(
         let image_object = range.len() == 1 && blocks.get(range.start).is_some_and(block_has_image);
         let standalone_image = range.len() == 1 && matches!(blocks.get(range.start), Some(Block::Image { .. }));
         let contains_image = blocks.get(range.clone()).is_some_and(|held| held.iter().any(block_has_image));
-        log::debug!(
+        log::trace!(
             "CONTAINER: i={} pos=({:.0},{:.0}) width={:.0} blocks={:?} image_object={} contains_image={}",
             i,
             b.x,
@@ -860,10 +860,10 @@ pub fn show(
         // A box with nothing in it is only where the cursor was put, as in OneNote: no edges and no
         // strip until something is written in it.
         if (hovered || editing || busy || is_sel) && !holds_nothing {
-            log::debug!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
+            log::trace!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
             if !image_object {
-                log::debug!("draw faint stroke for non-image");
+                log::trace!("draw faint stroke for non-image");
                 ui.painter().rect_stroke(frame, 3.0 * zoom, egui::Stroke::new(1.0 * zoom, t.container_border), egui::StrokeKind::Inside);
             }
             // Images: affordance is drawn in selection block above (on object_rect, the picture rect)
