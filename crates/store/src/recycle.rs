@@ -12,6 +12,11 @@ pub struct Recycled {
     pub title: String,
     pub deleted: String,
     pub count: usize,
+    /// What was recycled: a page, a section or a section group.
+    pub kind: NodeKind,
+    /// Where it came from, relative to the notebook, with `/` between the parts. Empty when
+    /// the entry does not say.
+    pub original: String,
 }
 
 fn canonical(path: &Path) -> Result<PathBuf> {
@@ -120,6 +125,8 @@ pub fn list(notebook: &Path) -> Result<Vec<Recycled>> {
             title: fields.get("title").cloned().unwrap_or_else(|| node.info.title.clone()),
             deleted: fields.get("deleted").cloned().unwrap_or_default(),
             count: node.count(),
+            kind: node.info.kind,
+            original: fields.get("original").cloned().unwrap_or_default(),
         });
     }
     result.sort_by(|a, b| b.id.cmp(&a.id));
