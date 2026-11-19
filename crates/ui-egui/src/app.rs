@@ -1182,6 +1182,9 @@ const MEETING_FILE_KEY: &str = "meeting_calendar_file";
 /// The settings key for History > Hide Authors (issue #292).
 const HIDE_AUTHORS_KEY: &str = "hide_authors";
 
+/// The version `--new-version` shows when no version is given. It is never downloaded.
+pub const SIMULATED_NEW_VERSION: &str = "0.0.99";
+
 pub struct NoteCraftApp {
     window_requests: Vec<crate::windows::Request>,
     secondary_window: bool,
@@ -1267,6 +1270,8 @@ pub struct NoteCraftApp {
     /// writes here; the window reads it each frame and closes when the update is ready to
     /// be put in place.
     update: std::sync::Arc<std::sync::Mutex<crate::update::Status>>,
+    /// The shared update prompt, while it is open (`--new-version` opens it at start).
+    update_prompt: Option<crate::update_card::updater::Updater>,
     update_closing: bool,
     effective_mode: Mode,
     accent: Accent,
@@ -1529,6 +1534,7 @@ impl NoteCraftApp {
             ui_scale,
             ui_scale_pending: ui_scale != 100,
             update: Default::default(),
+            update_prompt: None,
             update_closing: false,
             effective_mode: if mode_pref == ModePref::Dark { Mode::Dark } else { Mode::Light },
             accent,
@@ -1859,6 +1865,31 @@ impl NoteCraftApp {
     /// The size the whole window is drawn at, in percent of the system's own scale.
     pub fn ui_scale(&self) -> u16 {
         self.ui_scale
+    }
+
+    /// Shows a newer version in Options and About, for a screen check. It only shows the message
+    /// and the releases-page link; nothing is downloaded or installed.
+    /// The first-use wizard does not open for a test hook: `--new-version` shows only the update.
+    pub fn skip_first_use_wizard(&mut self) {
+        if matches!(self.dialog, Some(Dialog::FirstUseWizard { .. })) {
+            self.dialog = None;
+        }
+    }
+
+    /// Starts the real update check, as an installed copy of `running` (`--set-version`).
+    pub fn start_local_update_check(&mut self, running: &str, folder: &std::path::Path) {
+        self.update_prompt = Some(crate::update_prompt::check_from_folder(running, folder));
+    }
+
+    pub fn start_update_check(&mut self, running: &str) {
+        self.update_prompt = Some(crate::update_prompt::check_latest(running));
+    }
+
+    pub fn simulate_new_version(&mut self, version: &str) {
+        if let Ok(mut status) = self.update.lock() {
+            *status = crate::update::Status::Manual { version: version.to_string() };
+        }
+        self.update_prompt = Some(crate::update_prompt::offer_named(version));
     }
 
     /// Saves the notebooks folder NoteCraft uses from the next start. `None` goes back to the
@@ -10090,6 +10121,25 @@ impl NoteCraftApp {
     // ---------- dialogs ----------
 
     fn dialogs(&mut self, ctx: &Context) {
+        // The update card may ask the app to close for an installed update. It is asked only
+        // when no page has unsaved work: the close below then goes through the normal close
+        // path, which saves the page first.
+        let can_close = !self.is_dirty() && !self.page_conflict;
+        if let Some(prompt) = self.update_prompt.as_mut() {
+            // The shared card is drawn to its own spacing, so the app's spacing does not pad it.
+            let app_spacing = ctx.global_style().spacing.clone();
+            ctx.global_style_mut(|style| style.spacing = egui::Spacing::default());
+            // Asks GitHub for the named release once, then picks up its answer each frame.
+            prompt.check_at_start(ctx);
+            prompt.tick(ctx);
+            let action = prompt.show_if(ctx, can_close);
+            ctx.global_style_mut(|style| style.spacing = app_spacing);
+            match action {
+                crate::update_card::updater::Action::OpenUrl(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
+                crate::update_card::updater::Action::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                _ => {}
+            }
+        }
         // View > Immersive Reader (issue #299) covers the window until it is closed.
         if let Some(reader) = self.reader.as_mut()
             && crate::reader::show(ctx, reader, &self.tokens) == Some(crate::reader::Act::Close)
@@ -13021,6 +13071,39 @@ mod alert_tests {
 
         assert_eq!(app.session().root(), std::fs::canonicalize(&chosen).expect("canonical").as_path(), "the window moves to the chosen folder");
         assert_eq!(settings.get("last_notebooks_root"), Some(chosen.to_string_lossy().into_owned()), "the choice is remembered");
+    }
+
+    /// `--new-version` is a test hook: it must not change the first-use state of a real install, or
+    /// open the first-use wizard in its place.
+    #[test]
+    fn new_version_leaves_the_first_use_state_alone() {
+        let t = notecraft_store::testing::TempDir::new("new-version-first-use");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings.clone()).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        app.simulate_new_version(SIMULATED_NEW_VERSION);
+
+        assert_eq!(settings.get("privacy_welcome_seen").as_deref(), Some("true"), "the first-use state is unchanged");
+        assert!(!matches!(app.dialog, Some(Dialog::FirstUseWizard { .. })), "the first-use wizard does not open for a test hook");
+    }
+
+    #[test]
+    fn simulated_new_version_shows_an_update_without_downloading() {
+        let t = notecraft_store::testing::TempDir::new("simulated-new-version");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let mut app = NoteCraftApp::new(session);
+
+        app.simulate_new_version(SIMULATED_NEW_VERSION);
+
+        assert!(
+            matches!(*app.update.lock().expect("status"), crate::update::Status::Manual { ref version } if version == SIMULATED_NEW_VERSION),
+            "the Options page shows a newer version, and downloads nothing"
+        );
+        assert!(app.update_prompt.is_some(), "the shared update prompt is set up at start; it opens once GitHub answers");
     }
 
     #[test]

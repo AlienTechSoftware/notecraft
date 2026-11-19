@@ -793,3 +793,25 @@
 @id	ui.welcome_wizard_finish	完成
 @id	ui.welcome_wizard_done_title	谢谢
 @id	ui.welcome_wizard_done_body	NoteCraft 已准备就绪。您的选择已保存。只有在重置偏好设置后，此设置才会再次出现。
+@id	ui.update_prompt.available	{app} {version} 已推出，包含最新功能和错误修复。
+@id	ui.update_prompt.by_developer	由 {developer} 提供
+@id	ui.update_prompt.version_change	v{from} 到 {to}
+@id	ui.update_prompt.whats_new	新功能
+@id	ui.update_prompt.download	下载
+@id	ui.update_prompt.later	稍后
+@id	ui.update_prompt.dismiss	关闭
+@id	ui.update_prompt.all_releases	所有版本列于 {url}
+@id	ui.update_prompt.update	更新
+@id	ui.update_prompt.restart_to_update	重启以更新
+@id	ui.update_prompt.update_and_restart	更新并重启
+@id	ui.update_prompt.downloading	正在下载并安装更新…
+@id	ui.update_prompt.close	关闭
+@id	ui.notebooks_folder	笔记本文件夹
+@id	ui.notebooks_folder_hint	所选文件夹中已有的笔记本会立即打开。新笔记本从下次启动起会保存在那里。不会移动任何内容。
+@id	ui.notebooks_folder_current	NoteCraft 将新笔记本保存在 {folder}。
+@id	ui.change_notebooks_folder	更改笔记本文件夹...
+@id	ui.use_the_default_notebooks_folder	使用默认文件夹
+@id	ui.choose_the_notebooks_folder	选择笔记本文件夹
+@id	ui.notebooks_folder_changed	笔记本文件夹现在是 {folder}。
+@id	ui.could_not_save_the_notebooks_folder_error	无法保存笔记本文件夹：{error}
+@id	ui.could_not_open_the_notebooks_folder_error	无法打开笔记本文件夹：{error}

@@ -25,6 +25,8 @@ pub mod datetime;
 pub mod fling;
 pub mod fscache;
 pub mod update;
+pub mod update_card;
+pub mod update_prompt;
 pub mod usage;
 // Android has no `rfd`: app.rs reaches this stand-in under that name there.
 pub mod diagramview;

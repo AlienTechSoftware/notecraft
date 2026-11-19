@@ -16,6 +16,7 @@ default = []
 voice = ["notecraft-ui-egui/voice"]
 
 [dependencies]
+craft-update = { path = "../../crates/craft-update" }
 notecraft-engine = { workspace = true }
 notecraft-store = { workspace = true }
 notecraft-ui-egui = { workspace = true }

@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	Fertig
 @id	ui.welcome_wizard_done_title	Vielen Dank
 @id	ui.welcome_wizard_done_body	NoteCraft ist einsatzbereit. Deine Auswahl ist gespeichert. Diese Einrichtung erscheint erst wieder, wenn du die Einstellungen zurücksetzt.
+@id	ui.update_prompt.available	{app} {version} ist verfügbar mit den neuesten Funktionen und Fehlerbehebungen.
+@id	ui.update_prompt.by_developer	von {developer}
+@id	ui.update_prompt.version_change	v{from} auf {to}
+@id	ui.update_prompt.whats_new	Neuerungen
+@id	ui.update_prompt.download	Herunterladen
+@id	ui.update_prompt.later	Später
+@id	ui.update_prompt.dismiss	Verwerfen
+@id	ui.update_prompt.all_releases	Alle Versionen stehen unter {url}
+@id	ui.update_prompt.update	Aktualisieren
+@id	ui.update_prompt.restart_to_update	Neu starten zum Aktualisieren
+@id	ui.update_prompt.update_and_restart	Aktualisieren und neu starten
+@id	ui.update_prompt.downloading	Update wird heruntergeladen und installiert…
+@id	ui.update_prompt.close	Schließen
+@id	ui.notebooks_folder	Notizbuch-Ordner
+@id	ui.notebooks_folder_hint	Notizbücher im gewählten Ordner öffnen sofort. Neue Notizbücher landen ab dem nächsten Start dort. Nichts wird verschoben.
+@id	ui.notebooks_folder_current	NoteCraft legt neue Notizbücher in {folder} ab.
+@id	ui.change_notebooks_folder	Notizbuch-Ordner ändern...
+@id	ui.use_the_default_notebooks_folder	Standardordner verwenden
+@id	ui.choose_the_notebooks_folder	Notizbuch-Ordner auswählen
+@id	ui.notebooks_folder_changed	Der Notizbuch-Ordner ist jetzt {folder}.
+@id	ui.could_not_save_the_notebooks_folder_error	Der Notizbuch-Ordner konnte nicht gespeichert werden: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	Der Notizbuch-Ordner konnte nicht geöffnet werden: {error}

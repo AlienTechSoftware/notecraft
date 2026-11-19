@@ -1430,3 +1430,20 @@
 @id	ui.search_scope_all_notebooks	$$$Searching all notebooks. Enter opens the chosen page; Up and Down choose.@@@
 @id	ui.all_sections	$$$All sections@@@
 @id	ui.reset_zoom	$$$Reset zoom@@@
+@id	ui.new_version_title	$$$NoteCraft {version} is available@@@
+@id	ui.new_version_body	$$$You are running NoteCraft {current}. The newest release is on the releases page.@@@
+@id	ui.new_version_open_releases	$$$Open the releases page@@@
+@id	ui.new_version_later	$$$Later@@@
+@id	ui.update_prompt.available	$$${app} {version} is available with the latest features and bug fixes.@@@
+@id	ui.update_prompt.by_developer	$$$by {developer}@@@
+@id	ui.update_prompt.version_change	$$$v{from} to {to}@@@
+@id	ui.update_prompt.whats_new	$$$What's new@@@
+@id	ui.update_prompt.download	$$$Download@@@
+@id	ui.update_prompt.later	$$$Later@@@
+@id	ui.update_prompt.dismiss	$$$Dismiss@@@
+@id	ui.update_prompt.all_releases	$$$All releases are listed at {url}@@@
+@id	ui.update_prompt.update	$$$Update@@@
+@id	ui.update_prompt.restart_to_update	$$$Restart to Update@@@
+@id	ui.update_prompt.update_and_restart	$$$Update and Restart@@@
+@id	ui.update_prompt.downloading	$$$Downloading and installing update…@@@
+@id	ui.update_prompt.close	$$$Close@@@
