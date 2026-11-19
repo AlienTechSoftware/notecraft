@@ -155,6 +155,7 @@ jobs:
           git status --short
 
       - name: Commit the version, push the tag, and bring main in step
+        id: tag
         if: steps.decide.outputs.release == 'true'
         env:
           TAG: ${{ steps.decide.outputs.tag }}
@@ -169,6 +170,7 @@ jobs:
           git push --force origin "refs/tags/$TAG"
           # Keep main's version in step with the release: a fast-forward of main onto this commit.
           git push origin "HEAD:refs/heads/main"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "### NoteCraft $TAG (\`$(git rev-parse --short HEAD)\`, main at \`$(git rev-parse --short HEAD~1)\`)" >>"$GITHUB_STEP_SUMMARY"
 
   test:
