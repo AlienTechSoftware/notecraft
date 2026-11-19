@@ -11741,9 +11741,9 @@ impl NoteCraftApp {
         {
             // Only the ink this view just wrote changed. Other changes must be checked next frame.
             self.page_revision = Some(current);
-        if let Some(dir) = self.editor.as_ref().map(|ed| ed.dir.as_path()) {
-            self.watcher.note_own_revision(dir, self.page_revision.clone());
-        }
+            if let Some(dir) = self.editor.as_ref().map(|ed| ed.dir.as_path()) {
+                self.watcher.note_own_revision(dir, self.page_revision.clone());
+            }
         }
     }
 
