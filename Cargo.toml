@@ -2,6 +2,8 @@
 resolver = "3"
 members = ["crates/*", "apps/*", "android", "xtask", "docs/demo/scripts"]
 default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "apps/notecraft-setup", "xtask"]
+# A patched dependency, not ours: kept out so its own tests run from its folder (vendor/winit/NOTECRAFT.md).
+exclude = ["vendor/winit"]
 
 [workspace.package]
 version = "0.0.9"

@@ -101,12 +101,16 @@ impl PinchGestureData {
         let mut inner = self.inner.lock().unwrap();
         let window_id = inner.window_id?;
 
-        // A compositor is not expected to send either, but a NaN scale would
-        // poison every following delta of the gesture.
-        if !scale.is_finite() {
+        // A compositor is not expected to send either, but a NaN or a scale of
+        // zero or less would poison every following delta of the gesture.
+        if !scale.is_finite() || scale <= 0.0 {
             return None;
         }
-        let pinch = scale - inner.scale;
+        // The log of the step's ratio: consumers zoom by `exp(delta)` for each
+        // event, so the zoom of the whole gesture is the compositor's scale and
+        // the content follows the fingers. A linear difference compounded to
+        // `exp(scale - 1)`, so a pinch to 1.5 zoomed to 1.65 and one to 2 to 2.7.
+        let pinch = (scale / inner.scale).ln();
         inner.scale = scale;
         let rotation = if rotation.is_finite() { -(rotation as f32) } else { 0.0 };
 
@@ -207,16 +211,41 @@ mod tests {
         assert_eq!(data.begin(window(), 2), Some((window(), TouchPhase::Started)));
 
         let (_, delta, _) = data.update(1.05, 0.0).unwrap();
-        assert!((delta - 0.05).abs() < f64::EPSILON);
+        assert!((delta - 1.05f64.ln()).abs() < 1e-12);
 
         // The protocol's scale is absolute, so the second update reports the
         // change since the first, not since the beginning.
         let (_, delta, _) = data.update(1.1, 0.0).unwrap();
-        assert!((delta - 0.05).abs() < 1e-9);
+        assert!((delta - (1.1f64 / 1.05).ln()).abs() < 1e-12);
 
         // Pinching back to the start undoes the zoom.
         let (_, delta, _) = data.update(1.0, 0.0).unwrap();
-        assert!((delta + 0.1).abs() < 1e-9);
+        assert!((delta - (1.0f64 / 1.1).ln()).abs() < 1e-12);
+    }
+
+    /// egui and other consumers zoom by `exp(delta)` for each event, so the
+    /// zoom of a whole gesture is the product of those factors. It must equal
+    /// the scale the compositor reports: the content follows the fingers.
+    #[test]
+    fn the_zoom_of_a_gesture_is_the_scale_of_the_fingers() {
+        let data = PinchGestureData::default();
+        data.begin(window(), 2).unwrap();
+        let mut zoom = 1.0f64;
+        for scale in [1.25, 1.5, 2.0, 1.75] {
+            let (_, delta, _) = data.update(scale, 0.0).unwrap();
+            zoom *= delta.exp();
+            assert!((zoom - scale).abs() < 1e-9, "at a scale of {scale} the zoom is {zoom}");
+        }
+    }
+
+    #[test]
+    fn a_scale_of_zero_or_less_is_dropped() {
+        let data = PinchGestureData::default();
+        data.begin(window(), 2).unwrap();
+        assert_eq!(data.update(0.0, 0.0), None);
+        assert_eq!(data.update(-1.0, 0.0), None);
+        let (_, delta, _) = data.update(2.0, 0.0).unwrap();
+        assert!((delta - 2.0f64.ln()).abs() < 1e-12, "measured from the last sane scale");
     }
 
     #[test]
@@ -271,6 +300,6 @@ mod tests {
 
         // The next sane update still measures from the last sane scale.
         let (_, delta, _) = data.update(1.1, 0.0).unwrap();
-        assert!((delta - 0.1).abs() < 1e-9);
+        assert!((delta - 1.1f64.ln()).abs() < 1e-12);
     }
 }

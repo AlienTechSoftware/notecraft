@@ -86,9 +86,11 @@ struct TabletToolDataInner {
     pressure: Option<u32>,
     /// True while the tip is on the tablet.
     down: bool,
+    /// True when the frame in progress changed the pressure.
+    pressure_changed: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ToolStep {
     Enter(WlSurface),
     Moved,
@@ -171,13 +173,17 @@ impl Dispatch<ZwpTabletToolV2, TabletToolData, WinitState> for TabletState {
                 inner.position = (x, y);
                 inner.pending.push(ToolStep::Moved);
             },
-            ToolEvent::Pressure { pressure } => inner.pressure = Some(pressure),
+            ToolEvent::Pressure { pressure } => {
+                inner.pressure = Some(pressure);
+                inner.pressure_changed = true;
+            },
             ToolEvent::Removed => {
                 drop(inner);
                 tool.destroy();
             },
             ToolEvent::Frame { .. } => {
-                let steps = std::mem::take(&mut inner.pending);
+                let pending = std::mem::take(&mut inner.pending);
+                let steps = frame_steps(pending, std::mem::take(&mut inner.pressure_changed), inner.down);
                 for step in steps {
                     if let ToolStep::Enter(surface) = &step {
                         inner.surface = Some(surface.clone());
@@ -188,6 +194,19 @@ impl Dispatch<ZwpTabletToolV2, TabletToolData, WinitState> for TabletState {
             _ => (),
         }
     }
+}
+
+/// The steps a frame reports. A frame that changed only the pressure while the
+/// tip is down moves the touch where it is, so pressing harder without moving
+/// reaches the window; a frame that moves, or puts the tip down or up, already
+/// carries the new pressure.
+fn frame_steps(mut pending: Vec<ToolStep>, pressure_changed: bool, down: bool) -> Vec<ToolStep> {
+    let reports_contact =
+        pending.iter().any(|step| matches!(step, ToolStep::Moved | ToolStep::Down | ToolStep::Up));
+    if pressure_changed && down && !reports_contact {
+        pending.push(ToolStep::Moved);
+    }
+    pending
 }
 
 /// Report one step of a tool over one of our windows.
@@ -206,14 +225,24 @@ fn deliver(
     // Only a window's own surface: over its decorations or a subsurface the tool is not ours.
     let is_toplevel = surface
         .data::<SurfaceData>()
-        .is_some_and(|data| data.parent_surface().is_none_or(|parent| *parent == surface));
+        .is_some_and(|data| data.parent_surface().map_or(true, |parent| *parent == surface));
     if !is_toplevel {
         return;
     }
     let window_id = wayland::make_wid(&surface);
     let scale_factor = match state.windows.get_mut().get(&window_id) {
         Some(window) => window.lock().unwrap().scale_factor(),
-        None => return,
+        None => {
+            // Nothing can be told to a window that is gone, but the tool must not stay
+            // down: the next window it hovers would get moves without a start.
+            if matches!(step, ToolStep::Up | ToolStep::Left) {
+                inner.down = false;
+            }
+            if leaving {
+                inner.pressure = None;
+            }
+            return;
+        },
     };
     let location = LogicalPosition::new(inner.position.0, inner.position.1).to_physical(scale_factor);
     let device_id = crate::event::DeviceId(crate::platform_impl::DeviceId::Wayland(DeviceId));
@@ -329,3 +358,27 @@ delegate_dispatch!(WinitState: [ZwpTabletPadV2: ()] => TabletState);
 delegate_dispatch!(WinitState: [ZwpTabletPadGroupV2: ()] => TabletState);
 delegate_dispatch!(WinitState: [ZwpTabletPadRingV2: ()] => TabletState);
 delegate_dispatch!(WinitState: [ZwpTabletPadStripV2: ()] => TabletState);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pressing_harder_without_moving_moves_the_touch_where_it_is() {
+        assert_eq!(frame_steps(vec![], true, true), vec![ToolStep::Moved]);
+    }
+
+    #[test]
+    fn a_frame_that_already_reports_the_tip_carries_the_pressure() {
+        assert_eq!(frame_steps(vec![ToolStep::Moved], true, true), vec![ToolStep::Moved]);
+        assert_eq!(frame_steps(vec![ToolStep::Down], true, false), vec![ToolStep::Down]);
+        assert_eq!(frame_steps(vec![ToolStep::Up], true, true), vec![ToolStep::Up]);
+    }
+
+    #[test]
+    fn pressure_with_the_tip_up_or_unchanged_adds_nothing() {
+        assert_eq!(frame_steps(vec![], true, false), vec![]);
+        assert_eq!(frame_steps(vec![], false, true), vec![]);
+        assert_eq!(frame_steps(vec![ToolStep::Left], false, true), vec![ToolStep::Left]);
+    }
+}

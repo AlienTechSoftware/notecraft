@@ -19,5 +19,13 @@ Two changes, both in the Wayland backend only:
 `src/event.rs` and `src/changelog/unreleased.md` document the events on Wayland.
 Windows, macOS, X11 and the web build behave as the released crate does.
 
+The copy is kept out of the workspace, so its tests run from its own folder, on Linux:
+
+```sh
+cd vendor/winit && cargo test --lib --features wayland,x11 --target-dir target -- tablet pointer_gesture
+```
+
+`cargo xtask pre-push` builds the copy as part of the app but does not run these tests.
+
 When egui moves to a winit release that reports these events on Wayland, remove
 this copy and its line in the workspace `[patch.crates-io]`.

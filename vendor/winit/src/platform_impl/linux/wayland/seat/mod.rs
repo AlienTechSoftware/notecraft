@@ -245,8 +245,14 @@ impl SeatHandler for WinitState {
         _queue_handle: &QueueHandle<Self>,
         seat: WlSeat,
     ) {
-        if let Some(tablet_seat) = self.seats.remove(&seat.id()).and_then(|s| s.tablet_seat) {
-            tablet_seat.destroy();
+        if let Some(mut seat_state) = self.seats.remove(&seat.id()) {
+            // As when the seat loses its pointer: the gesture object references it.
+            if let Some(pinch_gesture) = seat_state.pinch_gesture.take() {
+                pinch_gesture.destroy();
+            }
+            if let Some(tablet_seat) = seat_state.tablet_seat.take() {
+                tablet_seat.destroy();
+            }
         }
         self.on_keyboard_destroy(&seat.id());
     }

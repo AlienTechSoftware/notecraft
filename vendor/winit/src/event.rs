@@ -851,7 +851,9 @@ pub struct Touch {
     ///
     /// ## Platform-specific
     ///
-    /// - Only available on **iOS** 9.0+, **Windows** 8+, **Web**, and **Android**.
+    /// - Only available on **iOS** 9.0+, **Windows** 8+, **Web**, **Android**, and for
+    ///   **Wayland** tablet tools (`zwp_tablet_manager_v2`). A Wayland tool reports
+    ///   `None` until it has sent a pressure reading.
     /// - **Android**: This will never be [None]. If the device doesn't support pressure
     ///   sensitivity, force will either be 0.0 or 1.0. Also see the
     ///   [android documentation](https://developer.android.com/reference/android/view/MotionEvent#AXIS_PRESSURE).
