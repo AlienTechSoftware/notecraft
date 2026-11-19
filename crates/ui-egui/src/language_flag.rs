@@ -99,6 +99,13 @@ pub fn paint_at(ui: &Ui, rect: Rect, code: &str) {
             stripe(1, c(0x0039A6), 3);
             stripe(2, red, 3);
         }
+        "tr" => {
+            let tr_red = c(0xE30A17);
+            p.rect_filled(rect, 0.0, tr_red);
+            p.circle_filled(pos2(rect.left() + rect.width() * 0.42, rect.center().y), 3.4, white);
+            p.circle_filled(pos2(rect.left() + rect.width() * 0.48, rect.center().y), 2.7, tr_red);
+            p.circle_filled(pos2(rect.left() + rect.width() * 0.67, rect.center().y), 1.4, white);
+        }
         "ur" => {
             p.rect_filled(rect, 0.0, green);
             p.rect_filled(Rect::from_min_max(rect.min, pos2(rect.left() + rect.width() * 0.23, rect.bottom())), 0.0, white);
@@ -123,7 +130,7 @@ mod tests {
 
     #[test]
     fn every_demo_and_pseudo_locale_has_a_marker_mapping() {
-        for code in ["ar", "de", "en", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "ur", "zh", "en-XA", "ar-XB"] {
+        for code in ["ar", "de", "en", "es", "fa", "fr", "he", "hi", "ja", "ko", "ru", "tr", "ur", "zh", "en-XA", "ar-XB"] {
             let ctx = egui::Context::default();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ctx| {
                 crate::fonts::install_once(ctx);
