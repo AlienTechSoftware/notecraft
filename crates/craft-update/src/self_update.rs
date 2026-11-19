@@ -442,6 +442,10 @@ pub fn prepare_update(
     let file = install::download(release, &asset, &mut job)?;
     #[cfg(windows)]
     windows_precheck(app, install, paths, &file)?;
+    // The installer's hash as it is now, after the download was checked. The Windows helper checks
+    // the file against it again just before it runs, after the wait for this app to exit.
+    #[cfg(windows)]
+    let expect = crate::http::sha256_file(&file)?;
     // The restart ends this process: nothing else may be under way.
     last()?;
     phase(JobPhase::Installing);
@@ -489,16 +493,16 @@ pub fn prepare_update(
                 relaunch_flatpak_after_exit(app)
             }
             #[cfg(windows)]
-            Install::Msi(exe) => windows_helper(app, paths, release, pid, exe, &msi_finish(&file)?),
+            Install::Msi(exe) => windows_helper(app, paths, release, pid, exe, &msi_finish(&file)?, &expect),
             #[cfg(windows)]
             Install::Portable(exe) => {
                 exe.parent().ok_or_else(|| format!("{} isn't in a folder", app.name))?;
-                windows_helper(app, paths, release, pid, exe, &Finish::Portable { zip: file, tmp: paths.cache.join(PORTABLE_STAGING) })
+                windows_helper(app, paths, release, pid, exe, &Finish::Portable { zip: file, tmp: paths.cache.join(PORTABLE_STAGING) }, &expect)
             }
             #[cfg(windows)]
             Install::Standalone(exe) => {
                 exe.parent().ok_or_else(|| format!("{} isn't in a folder", app.name))?;
-                windows_helper(app, paths, release, pid, exe, &Finish::Portable { zip: file, tmp: paths.cache.join(PORTABLE_STAGING) })
+                windows_helper(app, paths, release, pid, exe, &Finish::Portable { zip: file, tmp: paths.cache.join(PORTABLE_STAGING) }, &expect)
             }
             #[cfg(unix)]
             Install::Standalone(exe) => {
@@ -876,29 +880,32 @@ enum Finish {
 /// The helper's arguments: [`FINISH_FLAG`], the process id to wait for, the exe to start
 /// afterwards, then the step.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn helper_args(pid: u32, exe: &Path, finish: &Finish) -> Vec<OsString> {
+fn helper_args(pid: u32, exe: &Path, finish: &Finish, expect: &str) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec![FINISH_FLAG.into(), pid.to_string().into(), exe.into()];
     match finish {
         Finish::Msi(msi) => args.extend(["msi".into(), msi.into()]),
         Finish::Portable { zip, tmp } => args.extend(["portable".into(), zip.into(), tmp.into()]),
     }
+    args.push(expect.into());
     args
 }
 
 /// Reads [`helper_args`] back.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn parse_helper_args(args: &[OsString]) -> Option<(u32, PathBuf, Finish)> {
-    let [flag, pid, exe, step @ ..] = args else { return None };
+fn parse_helper_args(args: &[OsString]) -> Option<(u32, PathBuf, Finish, String)> {
+    let [flag, pid, exe, rest @ ..] = args else { return None };
     if flag != FINISH_FLAG {
         return None;
     }
     let pid = pid.to_str()?.parse().ok()?;
+    let (expect, step) = rest.split_last()?;
+    let expect = expect.to_str()?.to_string();
     let finish = match step {
         [kind, msi] if kind == "msi" => Finish::Msi(msi.into()),
         [kind, zip, tmp] if kind == "portable" => Finish::Portable { zip: zip.into(), tmp: tmp.into() },
         _ => return None,
     };
-    Some((pid, exe.into(), finish))
+    Some((pid, exe.into(), finish, expect))
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -918,7 +925,7 @@ const PORTABLE_STAGING: &str = "launcher-update";
 /// the step replaces. The returned [`Restart`] records `release` as installed and starts the
 /// helper.
 #[cfg(windows)]
-fn windows_helper(app: &App, paths: &Paths, release: &Release, pid: u32, exe: &Path, finish: &Finish) -> Result<Restart, String> {
+fn windows_helper(app: &App, paths: &Paths, release: &Release, pid: u32, exe: &Path, finish: &Finish, expect: &str) -> Result<Restart, String> {
     let program = std::env::current_exe().map_err(|e| format!("couldn't find this program ({e})"))?;
     let dir = paths.cache.join(HELPER_DIR);
     // The previous update's copy, when it's still there.
@@ -927,7 +934,7 @@ fn windows_helper(app: &App, paths: &Paths, release: &Release, pid: u32, exe: &P
     let helper = dir.join(program.file_name().ok_or("this program has no file name")?);
     std::fs::copy(&program, &helper).map_err(|e| format!("couldn't schedule the update ({e})"))?;
     let mut cmd = process::command(&helper);
-    cmd.args(helper_args(pid, exe, finish));
+    cmd.args(helper_args(pid, exe, finish, expect));
     clear_pretend_version(&mut cmd, app);
     let (paths, release) = (paths.clone(), release.clone());
     Ok(Restart::later(move || {
@@ -945,7 +952,7 @@ pub fn finish(app: &App, args: &[OsString]) -> Option<Result<(), String>> {
     if args.first().is_none_or(|a| a != FINISH_FLAG) {
         return None;
     }
-    let Some((pid, exe, step)) = parse_helper_args(args) else { return Some(Err("the update helper's arguments are incomplete".into())) };
+    let Some((pid, exe, step, expect)) = parse_helper_args(args) else { return Some(Err("the update helper's arguments are incomplete".into())) };
     log::info!("update helper: started for pid {pid}, app {}", exe.display());
     let Ok(me) = std::env::current_exe() else { return Some(Err("the update helper couldn't find itself".into())) };
     let paths = match Paths::for_exe(app, &exe) {
@@ -966,7 +973,7 @@ pub fn finish(app: &App, args: &[OsString]) -> Option<Result<(), String>> {
         signed_like(app, &me, exe)
             .and_then(|()| process::spawn_detached(std::process::Command::new(exe)).map_err(|e| format!("couldn't start {} ({e})", exe.display())))
     };
-    Some(finish_step(app, &me, &paths, pid, exe, &step, registered, &wait, &start))
+    Some(finish_step(app, &me, &paths, pid, exe, &step, registered, Some(&expect), &wait, &start))
 }
 
 /// The helper's work once its checks have passed: waits for `pid` with `wait`, does `step`, and
@@ -982,11 +989,12 @@ fn finish_step(
     exe: PathBuf,
     step: &Finish,
     registered: bool,
+    expect: Option<&str>,
     wait: &dyn Fn(u32) -> bool,
     start: &dyn Fn(&Path) -> Result<(), String>,
 ) -> Result<(), String> {
     let portable_before = has_portable_marker(&exe);
-    let stepped = step_after_wait(app, reference, pid, &exe, step, wait);
+    let stepped = step_after_wait(app, reference, pid, &exe, step, wait, expect);
     let done = stepped.result;
     if let Err(e) = &done {
         record_failure(paths, e);
@@ -1199,7 +1207,23 @@ fn check_helper(app: &App, me: &Path, paths: &Paths, exe: &Path, step: &Finish) 
 /// [`step_after_wait`], waiting up to `wait` for `pid` to exit.
 #[cfg(all(windows, test))]
 fn run_step(app: &App, reference: &Path, pid: u32, exe: &Path, step: &Finish, wait: std::time::Duration) -> Result<(), String> {
-    step_after_wait(app, reference, pid, exe, step, &|pid| process::wait_for_exit(pid, wait)).result
+    step_after_wait(app, reference, pid, exe, step, &|pid| process::wait_for_exit(pid, wait), None).result
+}
+
+/// Whether the step may use its installer: the file must still have the hash `expect` (the one
+/// checked when it was handed over), so a file replaced in the meantime is refused. `None` for
+/// the tests that don't hand over a hash.
+#[cfg(windows)]
+fn verify_at_use(step: &Finish, expect: Option<&str>) -> Result<(), String> {
+    let Some(expect) = expect else { return Ok(()) };
+    let file = match step {
+        Finish::Msi(msi) => msi,
+        Finish::Portable { zip, .. } => zip,
+    };
+    match crate::http::sha256_file(file) {
+        Ok(hash) if hash.eq_ignore_ascii_case(expect) => Ok(()),
+        _ => Err("the downloaded update changed after it was checked, so nothing was installed; try the update again".into()),
+    }
 }
 
 /// What [`step_after_wait`] came to.
@@ -1214,10 +1238,12 @@ struct Stepped {
 /// the download either way. The MSI, and every program in the portable zip, must be signed like
 /// `reference`.
 #[cfg(windows)]
-fn step_after_wait(app: &App, reference: &Path, pid: u32, exe: &Path, step: &Finish, wait: &dyn Fn(u32) -> bool) -> Stepped {
+fn step_after_wait(app: &App, reference: &Path, pid: u32, exe: &Path, step: &Finish, wait: &dyn Fn(u32) -> bool, expect: Option<&str>) -> Stepped {
     let waited = wait(pid);
     log::info!("update helper: the app exited: {waited}");
-    let result = if waited {
+    let result = if let (true, Err(e)) = (waited, verify_at_use(step, expect)) {
+        Err(e)
+    } else if waited {
         match step {
             Finish::Msi(msi) => {
                 signed_like(app, reference, msi).and_then(|()| msi_step(app, exe)).and_then(|step| crate::msi_migrate::windows::run(msi, &step))
@@ -1340,9 +1366,9 @@ mod tests {
         let portable =
             Finish::Portable { zip: PathBuf::from(r"D:\Tools\x 1.zip"), tmp: PathBuf::from(r"D:\Tools\ArtCraftLauncherData\cache\launcher-update") };
         for finish in [msi, portable] {
-            let args = helper_args(4242, exe, &finish);
+            let args = helper_args(4242, exe, &finish, "abc123");
             assert_eq!(args.first().map(OsString::as_os_str), Some(std::ffi::OsStr::new(FINISH_FLAG)));
-            assert_eq!(parse_helper_args(&args), Some((4242, exe.to_path_buf(), finish)));
+            assert_eq!(parse_helper_args(&args), Some((4242, exe.to_path_buf(), finish, "abc123".to_string())));
         }
         let os = |args: &[&str]| args.iter().map(OsString::from).collect::<Vec<_>>();
         for bad in [
@@ -1350,10 +1376,11 @@ mod tests {
             os(&["--hidden"]),
             os(&[FINISH_FLAG, "4242", "launcher.exe"]),
             os(&[FINISH_FLAG, "4242", "launcher.exe", "msi"]),
-            os(&[FINISH_FLAG, "4242", "launcher.exe", "msi", "a.msi", "extra"]),
+            os(&[FINISH_FLAG, "4242", "launcher.exe", "msi"]),
             os(&[FINISH_FLAG, "4242", "launcher.exe", "portable", "a.zip"]),
             os(&[FINISH_FLAG, "not a pid", "launcher.exe", "msi", "a.msi"]),
-            os(&[FINISH_FLAG, "4242", "launcher.exe", "script", "Remove-Item C:\\"]),
+            os(&[FINISH_FLAG, "4242", "launcher.exe", "script", "Remove-Item C:\\", "abc123"]),
+            os(&[FINISH_FLAG, "4242", "launcher.exe", "msi", "a.msi"]),
             os(&["--finish", "4242", "launcher.exe", "msi", "a.msi"]),
         ] {
             assert_eq!(parse_helper_args(&bad), None, "{bad:?}");
@@ -1402,7 +1429,8 @@ mod tests {
             // before the scope joins it.
             let (gate, wait) = WaitGate::new();
             let (helper_exe, pid) = (exe.clone(), old.id());
-            let helper = scope.spawn(move || step_after_wait(&crate::suite::LAUNCHER, &system_program("cmd.exe"), pid, &helper_exe, &step, &wait));
+            let helper =
+                scope.spawn(move || step_after_wait(&crate::suite::LAUNCHER, &system_program("cmd.exe"), pid, &helper_exe, &step, &wait, None));
             gate.entered();
             old.assert_running("while the helper was waiting");
             assert_eq!(std::fs::read(&exe).unwrap(), b"0.1.0", "replaced while the old launcher was still running");
@@ -1543,7 +1571,8 @@ mod tests {
             // before the scope joins it.
             let (gate, wait) = WaitGate::new();
             let helper_exe = exe.clone();
-            let helper = scope.spawn(move || step_after_wait(&crate::suite::LAUNCHER, &system_program("cmd.exe"), pid, &helper_exe, &step, &wait));
+            let helper =
+                scope.spawn(move || step_after_wait(&crate::suite::LAUNCHER, &system_program("cmd.exe"), pid, &helper_exe, &step, &wait, None));
             gate.entered();
             old.assert_running("while the helper was waiting");
             assert_eq!(std::fs::read(&exe).unwrap(), b"0.1.0", "replaced while the old launcher was still running");
@@ -1813,6 +1842,23 @@ mod tests {
 
     /// A catalog-signed program matches itself; an unsigned one never does, on either side.
     #[cfg(windows)]
+    /// The helper uses the installer only if it still has the hash checked when it was handed
+    /// over: a file replaced after the wait is refused, and `None` checks nothing.
+    #[cfg(windows)]
+    #[test]
+    fn a_changed_installer_is_refused_before_it_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let msi = dir.path().join("launcher.msi");
+        std::fs::write(&msi, b"the checked installer").unwrap();
+        let hash = crate::http::sha256_file(&msi).unwrap();
+        let step = Finish::Msi(msi.clone());
+        assert_eq!(verify_at_use(&step, Some(&hash)), Ok(()));
+        assert_eq!(verify_at_use(&step, None), Ok(()));
+        std::fs::write(&msi, b"swapped after the check").unwrap();
+        let error = verify_at_use(&step, Some(&hash)).unwrap_err();
+        assert!(error.contains("changed after it was checked"), "{error}");
+    }
+
     #[test]
     fn a_file_must_be_signed_by_the_launchers_own_publisher() {
         let cmd = system_program("cmd.exe");
@@ -2413,8 +2459,9 @@ mod tests {
             Ok(())
         };
         let never_exits = |_pid| false;
-        let error = finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &never_exits, &start)
-            .unwrap_err();
+        let error =
+            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &never_exits, &start)
+                .unwrap_err();
         assert!(error.contains("still running"), "{error}");
         assert_eq!(*started.lock().unwrap(), Vec::<PathBuf>::new(), "no copy of the app may start while it still runs");
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), "0.1.0");
@@ -2440,7 +2487,9 @@ mod tests {
             Ok(())
         };
         let exited = |_pid| true;
-        assert!(finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &exited, &start).is_err());
+        assert!(
+            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &exited, &start).is_err()
+        );
         assert_eq!(*started.lock().unwrap(), vec![exe.clone()]);
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), "0.1.0");
     }
@@ -2460,8 +2509,8 @@ mod tests {
         let step = Finish::Portable { zip, tmp: dir.path().join(PORTABLE_STAGING) };
         let start = |_exe: &Path| Err("couldn't start artcraft-launcher.exe (denied)".to_string());
         let exited = |_pid| true;
-        let error =
-            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &exited, &start).unwrap_err();
+        let error = finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &exited, &start)
+            .unwrap_err();
         assert!(error.ends_with("; couldn't start artcraft-launcher.exe (denied)"), "{error}");
         assert!(error.len() > "; couldn't start artcraft-launcher.exe (denied)".len(), "the step's error comes first: {error}");
         assert_eq!(take_failure(&paths).as_deref(), Some(error.as_str()));
@@ -2502,7 +2551,7 @@ mod tests {
         let exited = |_pid| true;
         mark_installed(&paths, &Release { tag: "v0.2.0".into(), ..Release::default() });
         assert_eq!(
-            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &exited, &start),
+            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &exited, &start),
             Ok(())
         );
         assert_eq!(*started.lock().unwrap(), vec![(exe, signed_exe)], "the new app starts once");
@@ -2534,7 +2583,7 @@ mod tests {
         let exited = |_pid| true;
         let start = |_: &Path| Ok(());
         assert_eq!(
-            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &exited, &start),
+            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &exited, &start),
             Ok(())
         );
         let after = Paths::for_exe(&crate::suite::LAUNCHER, &exe).unwrap();
@@ -2558,7 +2607,10 @@ mod tests {
         }
         mark_installed(&paths, &release);
         let denied = |_: &Path| Err("couldn't start the launcher (denied)".to_owned());
-        assert!(finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, &exited, &denied).is_err());
+        assert!(
+            finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe.clone(), &step, false, None, &exited, &denied)
+                .is_err()
+        );
         let after = Paths::for_exe(&crate::suite::LAUNCHER, &exe).unwrap();
         assert_eq!(take_outcome(&after, "0.2.0"), Some(Outcome::Failed("couldn't start the launcher (denied)".into())));
     }
@@ -2590,7 +2642,7 @@ mod tests {
         mark_installed(&paths, &Release { tag: "v0.2.0".into(), ..Release::default() });
         let start = |_: &Path| Err("couldn't start the launcher (denied)".to_owned());
         let exited = |_pid| true;
-        let result = finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe, &step, false, &exited, &start);
+        let result = finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe, &step, false, None, &exited, &start);
         assert_eq!(result, Err("couldn't start the launcher (denied)".into()));
         assert_eq!(take_outcome(&paths, "0.2.0"), Some(Outcome::Failed("couldn't start the launcher (denied)".into())));
     }
@@ -2609,7 +2661,7 @@ mod tests {
             mark_installed(&paths, &Release { tag: "v0.2.0".into(), ..Release::default() });
             let start = |_: &Path| Ok(());
             let wait = |_pid| exits;
-            assert!(finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe, &step, false, &wait, &start).is_err());
+            assert!(finish_step(&crate::suite::LAUNCHER, &system_program("cmd.exe"), &paths, 4242, exe, &step, false, None, &wait, &start).is_err());
             assert!(!done_file(&paths).exists(), "exits {exits}, zip {zip_ok}");
             assert!(matches!(take_outcome(&paths, "0.2.0"), Some(Outcome::Failed(_))), "exits {exits}, zip {zip_ok}");
         }

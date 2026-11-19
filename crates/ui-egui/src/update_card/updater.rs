@@ -12,6 +12,7 @@
 //! reports what came of it: [`Status::Updated`] or [`Status::InstallFailed`].
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SendError, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -161,6 +162,9 @@ pub struct Updater {
     /// called. An install worker sends its outcome while holding it, and starts a finished
     /// installation's helper itself once it is set.
     exiting: Arc<Mutex<bool>>,
+    /// Whether the app may close now: no unsaved work and no page conflict. Set each frame by
+    /// [`Self::show_if`]; the install worker waits for it before it replaces the installed copy.
+    may_exit: Arc<AtomicBool>,
     /// The version-choice file to read in place of [`Pins::default_path`] (tests).
     pins_path: Option<PathBuf>,
     /// The launcher's choice for this app when it is not stable, as of the last check or offer.
@@ -191,6 +195,7 @@ impl Updater {
             failed_reason: None,
             pending_open: None,
             exiting: Arc::new(Mutex::new(false)),
+            may_exit: Arc::new(AtomicBool::new(false)),
             pins_path: None,
             managed: None,
             translate: english,
@@ -567,6 +572,7 @@ impl Updater {
     /// Like [`Self::show`], but an installation only starts, and a ready update only asks the app
     /// to close, when `can_start` is true. An app passes `false` while it holds unsaved work.
     pub fn show_if(&mut self, ctx: &egui::Context, can_start: bool) -> Action {
+        self.may_exit.store(can_start, Ordering::SeqCst);
         if let Some(url) = self.pending_open.take() {
             return Action::OpenUrl(url);
         }
@@ -691,8 +697,9 @@ impl Updater {
         let (app, version, ctx, release) = (self.app, self.version.clone(), ctx.clone(), prompt.release.clone());
         let worker_release = release.clone();
         let exiting = handoff(&mut self.exiting);
+        let may_exit = Arc::clone(&self.may_exit);
         let spawned = std::thread::Builder::new().name("self-update".into()).spawn(move || {
-            let run = || install(app, &installed, worker_release, &version).map_err(Failure::Installer);
+            let run = || install(app, &installed, worker_release, &version, &may_exit).map_err(Failure::Installer);
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or_else(|_| Err(Failure::panicked()));
             deliver(app, &tx, &exiting, paths.as_ref(), outcome);
             ctx.request_repaint();
@@ -745,7 +752,13 @@ fn deliver(app: &App, tx: &Sender<Result<Restart, Failure>>, exiting: &Mutex<boo
     }
 }
 
-fn install(app: &'static App, installed: &self_update::Install, mut release: Release, version: &str) -> Result<Restart, String> {
+fn install(
+    app: &'static App,
+    installed: &self_update::Install,
+    mut release: Release,
+    version: &str,
+    may_exit: &Arc<AtomicBool>,
+) -> Result<Restart, String> {
     let http = Http::new(&format!("{}/Update", app.name)).map_err(|e| format!("could not initialize HTTP: {e}"))?;
     if release.assets.is_empty()
         && let Some(full) = check_for_update(app, &http, version).map_err(|e| format!("could not fetch release assets: {e}"))?
@@ -754,7 +767,16 @@ fn install(app: &'static App, installed: &self_update::Install, mut release: Rel
     }
     let paths = Paths::for_app(app).map_err(|e| format!("could not find paths: {e}"))?;
     let platform = Platform::current().ok_or("unsupported platform for self update")?;
-    self_update::prepare_update(app, installed, &release, platform, &http, &paths, &Stop::default(), &mut |_| {}, &|| Ok(()), Some(version))
+    // The download and its check happen now; the installed copy is replaced only once the app
+    // may close. Unsaved work holds the swap back, so nothing is replaced under an open page.
+    let may_exit = Arc::clone(may_exit);
+    let wait_to_exit = move || {
+        while !may_exit.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        Ok(())
+    };
+    self_update::prepare_update(app, installed, &release, platform, &http, &paths, &Stop::default(), &mut |_| {}, &wait_to_exit, Some(version))
 }
 
 /// Download in the prompt: the release page, when it is a safe web link (an app may build its
