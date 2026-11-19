@@ -11319,6 +11319,36 @@ fn normal_on_the_current_code_line_closes_the_block_before_it() {
     );
 }
 
+#[test]
+fn normal_on_a_new_trailing_code_line_splits_after_the_last_enter() {
+    let (_t, app, s) = sample_app("ui-code-split-trailing-blank-normal");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let inspect = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let blocks = inspect.pointer("/page/blocks").and_then(Value::as_u64).expect("block count") as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into code");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("make a trailing blank code line");
+    settle(&mut h);
+    let caret = ask(&mut h, "ui.inspect", json!({})).expect("inspect the new line");
+    assert_eq!(caret.pointer("/page/caret/text").and_then(Value::as_str), Some("line one\nline two\nline three\n"));
+
+    let more = h.get_by_label("More styles").rect();
+    ask(&mut h, "ui.click", json!({"x": more.center().x, "y": more.center().y})).expect("open Styles gallery");
+    settle(&mut h);
+    let normal = h.query_all_by_label("Normal").last().expect("Normal style").rect();
+    ask(&mut h, "ui.click", json!({"x": normal.center().x, "y": normal.center().y})).expect("apply Normal");
+    settle(&mut h);
+    let split = ask(&mut h, "ui.inspect", json!({})).expect("inspect split");
+    assert_eq!(split.pointer("/page/blocks").and_then(Value::as_u64), Some((blocks + 1) as u64));
+    assert_eq!(split.pointer("/page/caret/text").and_then(Value::as_str), Some(""), "the caret moved to the new Normal paragraph");
+}
+
 /// Applying Normal to the selected middle code line keeps the lines around it in the code block.
 #[test]
 fn normal_on_a_selected_code_line_splits_only_that_line() {
@@ -11411,6 +11441,54 @@ fn normal_on_a_selected_multiline_code_range_splits_every_selected_line() {
         file.contains("```123|rust\nline one\n```\n\nline two\n\nline three\n\n```123|rust\nline four\n```"),
         "Normal should split each selected line and preserve code around the range:\n{file}"
     );
+}
+
+#[test]
+fn normal_on_newly_typed_selected_code_lines_keeps_the_unselected_prefix() {
+    let (_t, app, s) = sample_app("ui-code-split-newly-typed-selection");
+    let file = s.md_page.join("index.md");
+    let md = std::fs::read_to_string(&file).expect("page");
+    std::fs::write(&file, format!("{md}\n```123|rust\nline one\nline two\nline three\n```\n")).expect("write");
+    let mut app = app;
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 1400.0));
+    settle(&mut h);
+    let inspect = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let blocks = inspect.pointer("/page/blocks").and_then(Value::as_u64).expect("block count") as usize;
+    ask(&mut h, "ui.caret", json!({"block": blocks - 1})).expect("caret into code");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("add a code line");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "line four"})).expect("type first new line");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("add another code line");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "line five"})).expect("type second new line");
+    settle(&mut h);
+
+    ask(&mut h, "ui.key", json!({"key": "ArrowUp"})).expect("move to line four");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start line four");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "ArrowDown", "shift": true})).expect("extend into line five");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End", "shift": true})).expect("select line five");
+    settle(&mut h);
+    let selected = ask(&mut h, "ui.inspect", json!({})).expect("inspect selection");
+    let caret = selected.pointer("/page/caret").expect("caret remains in code");
+    assert_eq!(caret["text"], "line one\nline two\nline three\nline four\nline five");
+    assert_eq!(caret["anchor"], 29, "the selection starts at the first newly typed line");
+    assert_eq!(caret["at"], 48, "the selection ends at the second newly typed line");
+
+    let more = h.get_by_label("More styles").rect();
+    ask(&mut h, "ui.click", json!({"x": more.center().x, "y": more.center().y})).expect("open Styles gallery");
+    settle(&mut h);
+    let normal = h.query_all_by_label("Normal").last().expect("Normal style").rect();
+    ask(&mut h, "ui.click", json!({"x": normal.center().x, "y": normal.center().y})).expect("apply Normal");
+    settle(&mut h);
+    let split = ask(&mut h, "ui.inspect", json!({})).expect("inspect split");
+    assert_eq!(split.pointer("/page/blocks").and_then(Value::as_u64), Some((blocks + 2) as u64));
+    assert_eq!(split.pointer("/page/caret/text").and_then(Value::as_str), Some("line four"));
 }
 
 /// Up inside a numbered code block moves the caret one line up and keeps the block in edit mode.
