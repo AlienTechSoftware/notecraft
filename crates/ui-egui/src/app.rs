@@ -12908,17 +12908,24 @@ mod alert_tests {
         (t, page, pdf, h)
     }
 
+    /// Waits until every printout asked for is made and in its page. A printout is rendered off
+    /// the window's thread, which takes a few seconds on a slow CI runner: the tests waited five
+    /// and then read the page whether or not it had finished, and failed now and then on macOS
+    /// with the printout simply not there yet.
+    fn wait_for_printouts(h: &mut egui_kittest::Harness<'_, NoteCraftApp>) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while h.state().printouts_pending() > 0 && std::time::Instant::now() < deadline {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        h.step();
+        assert_eq!(h.state().printouts_pending(), 0, "the printout was made within a minute");
+    }
+
     /// Asks for a printout of `pdf` in `page` and waits for it: it is made in the background.
     fn add_printout(h: &mut egui_kittest::Harness<'_, NoteCraftApp>, page: &Path, pdf: &Path) {
         h.state_mut().add_file(page, pdf, FileChoice::Printout);
-        for _ in 0..500 {
-            h.step();
-            if h.state().printouts_pending() == 0 {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert_eq!(h.state().printouts_pending(), 0, "the printout was made");
+        wait_for_printouts(h);
         for _ in 0..3 {
             h.step();
         }
@@ -12935,13 +12942,7 @@ mod alert_tests {
         assert_eq!(h.state().printouts_pending(), 1, "the printout is being made");
         assert_eq!(h.state().editor.as_ref().map(|e| e.blocks.len()), Some(before), "and the page is not waiting for it");
         h.step();
-        for _ in 0..500 {
-            h.step();
-            if h.state().printouts_pending() == 0 {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        wait_for_printouts(&mut h);
         let ed = h.state().editor.as_ref().expect("editor");
         assert!(ed.blocks.len() > before, "the printout went in once it was ready");
         assert!(
@@ -12966,13 +12967,7 @@ mod alert_tests {
         };
         h.state_mut().add_file(&page, &pdf, FileChoice::Printout);
         h.state_mut().open_path(&other.to_string_lossy());
-        for _ in 0..500 {
-            h.step();
-            if h.state().printouts_pending() == 0 {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        wait_for_printouts(&mut h);
         assert_eq!(h.state().editor.as_ref().map(|e| e.dir.clone()), Some(other.clone()), "the other page is the one open");
         let file = notecraft_store::tree::page_file(&page).expect("the first page's file").1;
         let text = std::fs::read_to_string(file).expect("read");
