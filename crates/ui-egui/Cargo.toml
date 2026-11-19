@@ -17,8 +17,6 @@ voice = ["dep:craft-voice-core", "dep:craft-voice-runtime"]
 [dependencies]
 craft-voice-core = { workspace = true, optional = true }
 craft-voice-runtime = { workspace = true, optional = true, features = ["microphone"] }
-# The update check and prompt, copied from craft-libs (MIT OR Apache-2.0); see crates/craft-update/README.md.
-craft-update = { path = "../craft-update" }
 craft-i18n = { workspace = true }
 notecraft-input-language = { path = "../input-language" }
 notecraft-model = { workspace = true }
@@ -65,3 +63,8 @@ egui_kittest = { workspace = true }
 egui-wgpu = "0.37"
 
 
+
+# The update check and prompt, copied from craft-libs (MIT OR Apache-2.0); see crates/craft-update/README.md.
+# Desktop only: the web build has no installed copy to update, and the TLS stack does not build for wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+craft-update = { path = "../craft-update" }

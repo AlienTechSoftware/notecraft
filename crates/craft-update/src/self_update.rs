@@ -1130,16 +1130,17 @@ fn same_cache_as_helper(app: &App, paths: &Paths, exe: &Path) -> Result<(), Stri
     }
 }
 
-/// Accepts `file` when it carries a valid Authenticode signature from the same publisher as
-/// `reference`, this program. Refuses an unsigned file, another publisher's, and every file when
-/// `reference` itself isn't signed.
-#[cfg(windows)]
 /// Whether an update must be Authenticode-signed by the same publisher as the installed copy.
 /// Off for now: updates are checked by SHA-256 against the release's checksum list only, until
 /// the project decides on a trusted signing certificate. Turn it on to restore the signature
 /// check; `publishers_match` is that check.
 pub const SIGNATURES_REQUIRED: bool = false;
 
+/// Accepts `file` when it carries a valid Authenticode signature from the same publisher as
+/// `reference`, this program. Refuses an unsigned file, another publisher's, and every file when
+/// `reference` itself isn't signed. With [`SIGNATURES_REQUIRED`] off, every file is accepted here
+/// and the SHA-256 check is the only one.
+#[cfg(windows)]
 fn signed_like(app: &App, reference: &Path, file: &Path) -> Result<(), String> {
     if !SIGNATURES_REQUIRED {
         return Ok(());
@@ -1147,6 +1148,7 @@ fn signed_like(app: &App, reference: &Path, file: &Path) -> Result<(), String> {
     publishers_match(app, reference, file)
 }
 
+#[cfg(windows)]
 fn publishers_match(app: &App, reference: &Path, file: &Path) -> Result<(), String> {
     let publisher = |path: &Path| verifysign::verify_file(path).map(|signature| signature.subject_name());
     let ours = publisher(reference).map_err(|e| format!("this copy of {} isn't signed ({e}), so it doesn't install updates", app.name))?;

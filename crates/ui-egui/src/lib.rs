@@ -25,7 +25,10 @@ pub mod datetime;
 pub mod fling;
 pub mod fscache;
 pub mod update;
+// The updater is desktop only: the web build has no installed copy to update.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod update_card;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod update_prompt;
 pub mod usage;
 // Android has no `rfd`: app.rs reaches this stand-in under that name there.
