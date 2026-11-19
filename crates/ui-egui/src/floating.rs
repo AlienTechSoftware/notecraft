@@ -64,6 +64,45 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     resp
 }
 
+/// A menu row with its keyboard shortcut right-aligned in a column of its own (issue #380), so
+/// the shortcut is not run into the words of the label.
+// i18n-ui-text: label
+pub fn menu_row_shortcut(ui: &mut Ui, glyph: Option<Glyph>, label: &str, shortcut: &str, t: &Tokens) -> Response {
+    let resp = menu_row(ui, glyph, label, t);
+    ui.painter_at(resp.rect).text(
+        egui::pos2(resp.rect.max.x - 10.0, resp.rect.center().y),
+        Align2::RIGHT_CENTER,
+        shortcut,
+        egui::FontId::proportional(12.0),
+        t.muted,
+    );
+    resp
+}
+
+/// A menu row for an action that removes something (issue #380): the picture and the words
+/// in the warning colour, so Delete never reads as one more ordinary entry.
+// i18n-ui-text: label
+pub fn menu_row_danger(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> Response {
+    let label = crate::tl!(label);
+    let width = ui.available_width().min(MENU_W);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    let icon = Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH));
+    match glyph {
+        Some(Glyph::Mark(m)) => ribbon_icons::paint(&painter, icon, m, t.warn),
+        Some(Glyph::Icon(i)) => icons::paint(&painter, icon, i, t.warn),
+        None => {}
+    }
+    painter.text(egui::pos2(rect.min.x + ICON_COL + 2.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), t.warn);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    resp
+}
+
 /// A menu row with a tick in the picture column when `checked`, the way OneNote lists the
 /// things a menu can turn on and off.
 // i18n-ui-text: label

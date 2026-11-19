@@ -1189,6 +1189,39 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
     resp.on_hover_text(tip)
 }
 
+/// A setting that is on or off, shown as a box with a tick and its name (issue #376), so the
+/// View tab's toggles say what they are and whether they are on, rather than a bare letter or
+/// an empty square.
+// i18n-ui-text: label,tip
+fn small_check(ui: &mut Ui, label: &str, tip: &str, on: bool, t: &Tokens) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
+    let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 30.0, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    let boxed = Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(12.0, 12.0));
+    if on {
+        painter.rect_filled(boxed, 2.0, t.accent);
+        let c = boxed.center();
+        // The accent is built to stand at least 3:1 against the panel, so the panel's colour is
+        // the tick that stays visible on it in every theme (white does not on a light accent).
+        painter.add(egui::Shape::line(vec![c + vec2(-3.5, 0.2), c + vec2(-1.0, 2.8), c + vec2(3.5, -2.5)], egui::Stroke::new(1.6, t.panel)));
+    } else {
+        painter.rect_stroke(boxed, 2.0, egui::Stroke::new(1.2, t.muted), egui::StrokeKind::Inside);
+    }
+    painter.text(egui::pos2(rect.min.x + 23.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
+    let enabled = ui.is_enabled();
+    let name = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
+    resp.on_hover_text(tip)
+}
+
 /// A compact Office-style row control with a clear icon and its visible label.
 // i18n-ui-text: label,tip
 fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui::Response {
@@ -2713,7 +2746,9 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
     rows(ui, |ui| {
         ui.add_space(4.0);
         let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
-        ui.label(egui::RichText::new(label).size(10.0).color(if pressure_available { t.muted } else { t.warn }));
+        // Issue #375: no pressure readings is a fact about the device, not an error, so it is
+        // shown in the quiet colour rather than the warning one. The reason is on the hover.
+        ui.label(egui::RichText::new(crate::tl!(label)).size(10.0).color(t.muted));
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
@@ -2755,11 +2790,10 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             "No pen pressure readings have reached this window yet. Use a pressure-capable pen with Windows Ink enabled."
         };
         resp.on_hover_text(crate::tl!(tip));
-        ui.label(
-            egui::RichText::new(if pressure_available { format!("{now}") } else { crate::tl_id!("ui.off").to_owned() })
-                .size(11.5)
-                .color(if pressure_available { t.text } else { t.warn }),
-        );
+        // The value only when there is one: "Pressure off" already says it is off.
+        if pressure_available {
+            ui.label(egui::RichText::new(format!("{now}")).size(11.5).color(t.text));
+        }
     });
 }
 
@@ -3649,14 +3683,18 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     // The groups OneNote's View tab has, in its order: Views, Layout, Tools, Page Setup,
     // Zoom, Window. What NoteCraft does not have says so rather than being left out.
     group(ui, crate::tl_id!("ui.views"), t, |ui| {
-        if big(ui, Icon::Page, crate::tl_id!("ui.normal_view"), crate::tl_id!("ui.the_page_beside_the_notebooks"), t).clicked() && view.full_page {
+        // Issue #376: the view in use is marked, so Normal and Full Page read as a choice.
+        if big_on(ui, Icon::Page, crate::tl_id!("ui.normal_view"), crate::tl_id!("ui.the_page_beside_the_notebooks"), !view.full_page, t).clicked()
+            && view.full_page
+        {
             acts.push(Act::ToggleFullPage);
         }
-        if big(
+        if big_on(
             ui,
             if view.full_page { Icon::ExitFullPage } else { Icon::FullPage },
             crate::tl_id!("ui.full_page_view_2"),
             crate::tl_id!("ui.give_the_page_the_whole_window"),
+            view.full_page,
             t,
         )
         .clicked()
@@ -3664,7 +3702,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             acts.push(Act::ToggleFullPage);
         }
         rows(ui, |ui| {
-            if small(ui, None, "", crate::tl_id!("ui.dock_to_desktop"), crate::tl_id!("ui.dock_to_desktop_tip"), view.docked, t).clicked() {
+            if small_check(ui, crate::tl_id!("ui.dock_to_desktop"), crate::tl_id!("ui.dock_to_desktop_tip"), view.docked, t).clicked() {
                 acts.push(Act::ToggleDock);
             }
         });
@@ -3673,10 +3711,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
         rows(ui, |ui| {
             // What OneNote calls the navigation pane: notebooks and sections in one
             // column, the pages of the chosen section in the next.
-            if small(
+            if small_check(
                 ui,
-                None,
-                crate::tl_id!("ui.split"),
                 crate::tl_id!("ui.separate_pages"),
                 crate::tl_id!("ui.notebooks_and_sections_in_one_column_pages_in_the_next"),
                 view.split_panes,
@@ -3687,17 +3723,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                 acts.push(Act::TogglePanes);
             }
             // Sections as coloured tabs across the top of the page (#268, #33).
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.tabs_layout"),
-                crate::tl_id!("ui.tabs_layout"),
-                crate::tl_id!("ui.tabs_layout_tip"),
-                view.tabs_layout,
-                t,
-            )
-            .clicked()
-            {
+            if small_check(ui, crate::tl_id!("ui.tabs_layout"), crate::tl_id!("ui.tabs_layout_tip"), view.tabs_layout, t).clicked() {
                 acts.push(Act::ToggleTabsLayout);
             }
         });
@@ -3723,15 +3749,11 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
         rows(ui, |ui| {
-            // i18n-exempt: T is the compact symbol on the page-title toggle.
-            if small(ui, None, "T", crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
+            if small_check(ui, crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
             }
-            if small(
+            if small_check(
                 ui,
-                None,
-                // i18n-exempt: # is the compact symbol on the snap-to-grid toggle.
-                "#",
                 crate::tl_id!("ui.snap_to_grid"),
                 crate::tl_id!("ui.snap_boxes_to_the_page_s_grid_hold_alt_to_place_one_freely"),
                 view.snap,
@@ -3775,8 +3797,14 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                         }
                     }
                 });
-                // i18n-exempt: 100% is a numeric zoom value, not translated copy.
-                if small(ui, None, "100%", crate::tl_id!("ui.zoom_to_100"), crate::tl_id!("ui.show_the_page_at_100"), false, t).clicked() {
+                // Issue #376: a reset reads as a reset, not as a second "100%" beside the
+                // percentage box; there is nothing to reset at 100%.
+                let reset = ui
+                    .add_enabled_ui(view.zoom_percent != 100, |ui| {
+                        small_labeled_icon(ui, Icon::Undo, crate::tl_id!("ui.reset_zoom"), crate::tl_id!("ui.show_the_page_at_100"), t)
+                    })
+                    .inner;
+                if reset.clicked() {
                     acts.push(Act::Zoom(0));
                 }
                 if small_labeled_icon(ui, Icon::PageWidth, crate::tl_id!("ui.page_width"), crate::tl_id!("ui.fit_the_page_to_the_available_width"), t)
@@ -3790,16 +3818,8 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     group(ui, crate::tl_id!("ui.window"), t, |ui| {
         rows(ui, |ui| {
             // Always on top is the window manager's business, and eframe can ask for it.
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.top"),
-                crate::tl_id!("ui.always_on_top"),
-                crate::tl_id!("ui.keep_this_window_above_the_others"),
-                view.always_on_top,
-                t,
-            )
-            .clicked()
+            if small_check(ui, crate::tl_id!("ui.always_on_top"), crate::tl_id!("ui.keep_this_window_above_the_others"), view.always_on_top, t)
+                .clicked()
             {
                 acts.push(Act::ToggleAlwaysOnTop);
             }
