@@ -6874,6 +6874,9 @@ impl NoteCraftApp {
                 caret.inline = None;
                 caret.selection = (0, caret.text.chars().count());
             }
+            // The source text changed when the marks were added or removed. Restore egui's
+            // range too, or typing replaces only the old offsets and leaves markup behind.
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
             ed.rebuild_body();
             Self::mark_dirty_from_blocks(ed);
             return;
@@ -7713,31 +7716,64 @@ impl NoteCraftApp {
 
     /// Makes the block the caret is in a heading, a list item, a quote or ordinary text.
     fn apply_block_kind(&mut self, kind: &str) {
-        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(ed) = self.editor.as_mut() else {
+            log::info!("ui_action: action=block_kind.apply kind={kind} outcome=no_page");
+            return;
+        };
         let Some(caret) = ed.caret.as_ref() else {
             self.status = crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon").into();
             self.status_is_error = false;
+            log::info!("ui_action: action=block_kind.apply kind={kind} outcome=no_caret");
             return;
         };
         let at = caret.block;
-        // A style on a line of a code block applies to that line only: the block splits around it.
-        let line = caret.text.get(..caret.selection.1.min(caret.text.len())).map_or(0, |t| t.matches('\n').count());
+        let selection = caret.selection;
+        let selection_shape = if selection.0 == selection.1 { "caret" } else { "range" };
+        let low = selection.0.min(selection.1);
+        let high = selection.0.max(selection.1);
+        let line_at = |offset: usize| caret.text.chars().take(offset).filter(|ch| *ch == '\n').count();
+        let caret_line = line_at(selection.0);
+        let first_line = line_at(low);
+        let last_line = if low == high { first_line } else { line_at(high.saturating_sub(1)) };
+        let selected_line_count = last_line.saturating_sub(first_line) + 1;
         let in_code = matches!(ed.blocks.get(at), Some(notecraft_formats::markdown::Block::Code { .. }));
-        if in_code && !matches!(kind, "codeblock" | "codenumbers") {
-            if !pageedit::split_code_line(&mut ed.blocks, at, line, kind) {
+        let code = in_code && !matches!(kind, "codeblock" | "codenumbers");
+        log::info!(
+            "ui_action: action=block_kind.apply kind={kind} target={} selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} outcome=attempted",
+            if in_code { "code" } else { "other" }
+        );
+        if code {
+            if !pageedit::split_code_selection(&mut ed.blocks, at, selection, kind) {
+                log::info!(
+                    "ui_action: action=block_kind.apply kind={kind} target=code selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} outcome=refused"
+                );
                 return;
             }
         } else if !pageedit::set_kind(&mut ed.blocks, at, kind) {
+            log::info!(
+                "ui_action: action=block_kind.apply kind={kind} target=other selection={selection_shape} chars={low}..{high} caret_line={caret_line} outcome=refused"
+            );
             return;
         }
         ed.rebuild_body();
-        if let Some(b) = ed.blocks.get(at) {
+        let caret_block = at + usize::from(code && first_line > 0);
+        if let Some(b) = ed.blocks.get(caret_block) {
             let text = pageedit::caret_text(b);
             if let Some(c) = ed.caret.as_mut() {
+                c.block = caret_block;
                 c.text = text;
+                c.selection = (0, 0);
+                c.place = Some(0);
             }
         }
+        if code {
+            ed.restore_format_selection = Some((caret_block, 0, 0));
+        }
         Self::mark_dirty_from_blocks(ed);
+        log::info!(
+            "ui_action: action=block_kind.apply kind={kind} target={} selection={selection_shape} chars={low}..{high} caret_line={caret_line} lines={first_line}..={last_line} selected_lines={selected_line_count} result_block={caret_block} outcome=applied",
+            if in_code { "code" } else { "other" }
+        );
     }
 
     /// Puts a tag on the line the caret is in, or takes it off again.
