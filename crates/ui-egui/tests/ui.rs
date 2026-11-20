@@ -625,9 +625,11 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
 
         ask(&mut h, "ui.press", json!({"x": x, "y": y, "button": "middle"})).expect("start pan");
         pump(&mut h);
-        ask(&mut h, "ui.move", json!({"x": x + 80.0, "y": y + 60.0})).expect("move canvas");
+        // Right, past the page's left edge, and up, into the page: the canvas does not pan
+        // above the page's top, which is where it starts.
+        ask(&mut h, "ui.move", json!({"x": x + 80.0, "y": y - 60.0})).expect("move canvas");
         pump(&mut h);
-        ask(&mut h, "ui.release", json!({"x": x + 80.0, "y": y + 60.0, "button": "middle"})).expect("finish pan");
+        ask(&mut h, "ui.release", json!({"x": x + 80.0, "y": y - 60.0, "button": "middle"})).expect("finish pan");
         settle(&mut h);
 
         let after = ask(&mut h, "ui.inspect", json!({})).expect("inspect canvas after pan");
@@ -637,7 +639,7 @@ fn middle_drag_pans_the_canvas_for_html_and_cmgfm_pages() {
         let after_origin = after.pointer("/page/origin").and_then(Value::as_array).expect("page origin after pan");
         assert!(
             after_origin[0].as_f64().unwrap_or_default() > before_origin[0].as_f64().unwrap_or_default()
-                && after_origin[1].as_f64().unwrap_or_default() > before_origin[1].as_f64().unwrap_or_default(),
+                && after_origin[1].as_f64().unwrap_or_default() < before_origin[1].as_f64().unwrap_or_default(),
             "middle drag moves page content with the {label} canvas: before={before_origin:?}, after={after_origin:?}"
         );
         review(&mut h, if markdown { "canvas_pan_cmgfm" } else { "canvas_pan_html" });
