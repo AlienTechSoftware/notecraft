@@ -1162,6 +1162,7 @@
 @id	ui.automatic_shapes_off	Automatic Shapes is off.
 @id	ui.auto_switch	Switch tools with the pen and the trackpad
 @id	ui.auto_switch_off	Auto-switch is off: tools change only when you choose them.
+@id	ui.auto_switch_not_saved	The choice to switch tools with the pen and the trackpad was not saved: {error}
 @id	ui.auto_switch_on	Auto-switch is on: the pen picks up a pen, and typing or the trackpad puts it down.
 @id	ui.auto_switch_tip	When on, a pen touching the page picks up the pen last in hand, and typing or a click with the trackpad puts it down again.
 @id	ui.recognised_line	Drawn as a straight line. Undo brings back what you drew.

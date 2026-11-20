@@ -2140,11 +2140,16 @@ impl NoteCraftApp {
         // the hand has left the pen, and the pen the pen picked up is put down. The same click
         // then puts the caret where it landed, as the page is drawn with the caret from here.
         if self.pen_picked_by_pen && matches!(self.pointer, ribbon::Pointer::Draw) {
-            let page = self.page_rect;
-            let by_hand = ctx.input(|i| {
-                i.pointer.primary_pressed()
-                    && !i.events.iter().any(|e| matches!(e, egui::Event::Touch { .. }))
-                    && i.pointer.press_origin().is_some_and(|at| page.is_some_and(|page| page.contains(at)))
+            // The part of the page the window shows (the page itself reaches above it once
+            // scrolled), and not a menu or a folded ribbon drawn over it.
+            let page = self.page_view.or(self.page_rect);
+            let pressed = ctx.input(|i| {
+                let untouched = !i.events.iter().any(|e| matches!(e, egui::Event::Touch { .. }));
+                if i.pointer.primary_pressed() && untouched { i.pointer.press_origin() } else { None }
+            });
+            // Asked of the context outside its input: asked inside, it waited on itself.
+            let by_hand = pressed.is_some_and(|at| {
+                page.is_some_and(|page| page.contains(at)) && ctx.layer_id_at(at).is_none_or(|layer| layer.order < egui::Order::Foreground)
             });
             if by_hand {
                 self.ribbon_act(ribbon::Act::InkPointer(ribbon::Pointer::Write));
@@ -4528,11 +4533,14 @@ impl NoteCraftApp {
                     self.set_ui_language(language);
                 }
                 backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
-                backstage::Act::SetAutoSwitch(on) => {
-                    self.auto_switch = on;
-                    let _ = self.session.settings.set("switch_by_device", if on { "true" } else { "false" });
-                    self.say(if on { crate::tl_id!("ui.auto_switch_on") } else { crate::tl_id!("ui.auto_switch_off") });
-                }
+                backstage::Act::SetAutoSwitch(on) => match self.session.settings.set("switch_by_device", if on { "true" } else { "false" }) {
+                    Ok(()) => {
+                        self.auto_switch = on;
+                        self.say(if on { crate::tl_id!("ui.auto_switch_on") } else { crate::tl_id!("ui.auto_switch_off") });
+                    }
+                    // Not kept, so not changed: the next start would have gone back to it.
+                    Err(e) => self.complain(&crate::i18n::format_message_id("ui.auto_switch_not_saved", &[("error", &e.to_string())])),
+                },
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
                 backstage::Act::UseDefaultNotebooksFolder => self.apply_notebooks_root_choice(None),
                 backstage::Act::OpenTelemetryFolder(path) => {
@@ -5340,8 +5348,12 @@ impl NoteCraftApp {
 
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
-        // A tool chosen is chosen by hand; the automatic switch marks its own choice after this.
-        if matches!(act, ribbon::Act::InkPen(_) | ribbon::Act::InkPointer(_)) {
+        // A tool chosen is chosen by hand, a tool added to the rack or changed on it too; the
+        // automatic switch marks its own choice after this.
+        if matches!(
+            act,
+            ribbon::Act::InkPen(_) | ribbon::Act::InkPointer(_) | ribbon::Act::InkRack(ribbon::RackEdit::Add(_) | ribbon::RackEdit::Set(..))
+        ) {
             self.pen_picked_by_pen = false;
         }
         match act {
