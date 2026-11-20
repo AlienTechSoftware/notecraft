@@ -325,6 +325,11 @@ impl Pad {
         self.drawing.is_empty() && self.drawing_now.is_none()
     }
 
+    /// Whether a stroke, shape drag, lasso loop, or selection drag is under way right now.
+    pub fn stroke_in_progress(&self) -> bool {
+        self.drawing_now.is_some() || !self.loop_now.is_empty() || self.grabbed.is_some()
+    }
+
     /// How many strokes are being held.
     pub fn holding(&self) -> usize {
         self.held.len()
