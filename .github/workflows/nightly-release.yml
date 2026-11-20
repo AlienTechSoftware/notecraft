@@ -179,6 +179,19 @@ jobs:
         # request, enable auto-merge), minutes after minting. The wait loop polls with
         # GITHUB_TOKEN and the tag push uses GITHUB_TOKEN, so nothing depends on it later.
 
+      - name: Fetch the LFS objects the branch push needs
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          # The branch push runs the LFS pre-push check over the branch
+          # history, and it fails when an object is missing locally
+          # (nightly run #13). Fetch only the two large fixtures, after
+          # the release decision, so nights without a release download
+          # nothing. The include and the empty exclude follow the
+          # .lfsconfig comment: the exclusion there still applies to
+          # later LFS commands, so it must be overridden explicitly.
+          git lfs fetch --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one" --exclude=""
+
       - name: Commit the version bump and open its pull request
         id: pr
         if: steps.decide.outputs.release == 'true'
