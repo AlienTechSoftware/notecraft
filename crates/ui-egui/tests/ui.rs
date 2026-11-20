@@ -14442,3 +14442,55 @@ fn ctrl_page_down_does_not_change_the_page_under_a_dialog() {
     settle(&mut h);
     assert_eq!(title(&mut h), json!("Deep page"), "with the dialog closed the shortcut works");
 }
+
+/// A pen touching a folded ribbon shown over the page is a touch on the ribbon, not on the
+/// page: it picks up no pen. On the page below the ribbon it does.
+#[test]
+fn a_pen_on_a_folded_ribbon_over_the_page_picks_up_no_pen() {
+    let (_t, mut app, s) = sample_app("ui-auto-pen-ribbon");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let pointer = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string()
+    };
+    let pen = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force: Some(0.6) };
+        h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        h.input_mut().events.push(contact(egui::TouchPhase::End, at));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        settle(h);
+    };
+    ask(&mut h, "ui.key", json!({"key": "F1", "ctrl": true})).expect("Ctrl+F1");
+    settle(&mut h);
+    let page = h.state().page_rect().expect("the page");
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ribbon"]["shown"], json!(true), "the ribbon is shown over the page");
+    // Just inside the page's top, under the ribbon shown over it, and clear of its buttons'
+    // labels on the right.
+    let under = egui::pos2(page.right() - 40.0, page.top() + 30.0);
+    assert_eq!(pointer(&mut h), "write");
+    pen(&mut h, under);
+    assert_eq!(pointer(&mut h), "write", "a pen on the ribbon over the page picks up no pen");
+
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    pen(&mut h, egui::pos2(page.center().x, page.top() + 400.0));
+    assert_eq!(pointer(&mut h), "draw", "on the page itself it does");
+}
