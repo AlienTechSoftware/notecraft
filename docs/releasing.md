@@ -43,12 +43,18 @@ One run:
 - From a terminal: `gh workflow run nightly-release.yml --repo AlienTechSoftware/notecraft --ref main`.
 - When nothing has merged since the last release the run stops early. Tick **force** (or add
   `-f force=true`) to release anyway, for example after a failed run.
-- A failed run leaves no tag: the tag is pushed only after the version bump merges. What
-  the next run does depends on where the run failed. If the bump did not merge, the next
-  run reuses the number and reopens or reuses the bump pull request. If the bump merged
-  but the tag push failed, `main` already carries the version and the next run skips that
-  number: no release ever carries it, and the version in `main` is one ahead of the
-  latest release until the next release lands.
+- A failed run leaves no tag if it failed before the tag push: the tag is pushed only
+  after the version bump merges. What the next run does depends on where the run
+  failed. If the bump did not merge, the next run reuses the number and reopens or
+  reuses the bump pull request. If the bump merged but the tag push failed, `main`
+  already carries the version and the next run skips that number: no release ever
+  carries it, and the version in `main` is one ahead of the latest release until the
+  next release lands.
+- If the tag push succeeded but a later job failed (test, packaging, deployment, or
+  publication), the tag stays in place without a release. `main` already carries the
+  version, so the next run also skips that number, and the orphaned tag is left
+  behind. An operator can delete it, or leave it: it points at the commit that
+  would have been released.
 - To update only the website, run Actions, Deploy website. It builds `main` and needs no release.
 
 ### What it needs
