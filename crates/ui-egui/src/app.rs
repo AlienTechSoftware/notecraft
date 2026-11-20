@@ -1751,7 +1751,7 @@ impl NoteCraftApp {
     }
 
     /// Remembers which page is open, for the next time the window starts.
-    fn remember_last_page(&mut self, dir: &Path) {
+    fn remember_last_page(&mut self, dir: &Path, another_page: bool) {
         // A note window of its own is not where the window was left.
         if self.secondary_window {
             return;
@@ -1763,8 +1763,8 @@ impl NoteCraftApp {
             Err(_) => dir.to_string_lossy().into_owned(),
         };
         let _ = self.session.settings.set("last_page", &value);
-        // A new page starts at its top.
-        if self.restore_scroll.is_none() {
+        // A new page starts at its top; the same page read again keeps where it is scrolled to.
+        if another_page && self.restore_scroll.is_none() {
             self.page_offset_y = 0.0;
         }
     }
@@ -3077,7 +3077,7 @@ impl NoteCraftApp {
             self.sync_ink_reference();
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
-            self.remember_last_page(dir);
+            self.remember_last_page(dir, another_page);
             // Opened, so read (issue #291).
             self.note_read(dir, true);
             self.say(crate::tl_id!("ui.opened"));
@@ -14911,6 +14911,19 @@ mod canvas_pan_tests {
         settle(&mut h);
         assert_eq!(h.state().canvas_pan, egui::Vec2::ZERO, "the next page starts at its top left");
         assert!(h.state().page_offset_y < 0.5, "scrolled to its top too: {}", h.state().page_offset_y);
+
+        // The same page read again keeps its view: scrolled down, and panned back up part of the
+        // way, as the pen may, it stays so.
+        h.state_mut().open_page(&sample.html_page);
+        settle(&mut h);
+        h.state_mut().scroll_to = Some(200.0);
+        settle(&mut h);
+        swipe(&mut h, 100.0);
+        let (pan, scrolled) = (h.state().canvas_pan, h.state().page_offset_y);
+        assert!(pan.y > 50.0, "panned up within the page: {pan:?}, scrolled {scrolled}");
+        h.state_mut().open_page(&sample.html_page);
+        settle(&mut h);
+        assert!((h.state().canvas_pan.y - pan.y).abs() < 1.0, "the same page read again kept its pan: {pan:?} -> {:?}", h.state().canvas_pan);
 
         // A page that cannot be read leaves the view of the one open as it was.
         swipe(&mut h, -3000.0);
