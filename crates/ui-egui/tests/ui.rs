@@ -12506,6 +12506,94 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     assert_eq!(after.matches('Z').count(), before.matches('Z').count() + 1, "the Z went into the page");
     assert!(after.contains("ZNoteCraft pages"), "where the caret was before the pen: {after}");
 }
+/// The other half of the automatic switching: a pen the pen picked up is put down again by a
+/// click or a tap on the page with the trackpad, which puts the caret where it landed. A pen
+/// chosen by hand stays in hand, so a mouse or a trackpad can still draw. File > Options turns
+/// all of it off, and it stays off.
+#[test]
+fn a_trackpad_click_puts_down_the_pen_the_pen_picked_up() {
+    let (t, mut app, s) = sample_app("ui-auto-pen-trackpad");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let pointer = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string()
+    };
+    let at = page_origin(&mut h) + egui::vec2(500.0, 420.0);
+    // A pen: a touch that reports a force, with the pointer the platform moves along with it.
+    let pen = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force: Some(0.6) };
+        h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        let to = at + egui::vec2(60.0, 10.0);
+        h.input_mut().events.push(contact(egui::TouchPhase::Move, to));
+        h.input_mut().events.push(egui::Event::PointerMoved(to));
+        h.step();
+        h.input_mut().events.push(contact(egui::TouchPhase::End, to));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: to,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        settle(h);
+    };
+    // A click with the trackpad: the pointer moves there and presses, and no touch comes with it.
+    let trackpad = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        h.input_mut().events.push(egui::Event::MouseMoved(egui::vec2(3.0, 1.0)));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+        }
+        settle(h);
+    };
+
+    assert_eq!(pointer(&mut h), "write");
+    pen(&mut h, at);
+    assert_eq!(pointer(&mut h), "draw", "the pen picked up a pen");
+    trackpad(&mut h, at + egui::vec2(0.0, -200.0));
+    assert_eq!(pointer(&mut h), "write", "a trackpad click put it down");
+    let state = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(state.pointer("/ink/strokes").and_then(Value::as_u64), Some(1), "and drew nothing: {state}");
+
+    // Chosen by hand, the pen stays in hand: the trackpad draws with it.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    trackpad(&mut h, at + egui::vec2(0.0, 120.0));
+    assert_eq!(pointer(&mut h), "draw", "a pen chosen by hand is not put down by the trackpad");
+
+    // Auto-switch off: the pen no longer picks up a pen, and it stays off for the next window.
+    h.get_by_label("Type").click();
+    settle(&mut h);
+    h.state_mut().open_backstage_page("Options");
+    settle(&mut h);
+    h.get_by_label("Switch tools with the pen and the trackpad").click();
+    settle(&mut h);
+    h.state_mut().close_backstage();
+    settle(&mut h);
+    pen(&mut h, at + egui::vec2(0.0, 240.0));
+    assert_eq!(pointer(&mut h), "write", "with Auto-switch off the pen changes nothing");
+    let settings = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(settings.contains("switch_by_device = \"false\""), "the choice is kept: {settings}");
+}
 /// Issue #23: Draw > Collect All brings boxes and ink that drifted apart on the canvas back
 /// together, keeps their order and does not lay one over another; one Undo puts them all back.
 #[test]

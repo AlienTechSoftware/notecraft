@@ -1338,6 +1338,12 @@ pub struct NoteCraftApp {
     ruler: bool,
     /// Draw > Automatic Shapes is on (issue #294). Kept in the settings.
     auto_shapes: bool,
+    /// Draw > Auto-switch (issue #9): the pen picks up a pen, and typing or the trackpad puts it
+    /// down. On unless turned off.
+    auto_switch: bool,
+    /// The pen in hand was picked up by the pen touching the page, not chosen: a trackpad click
+    /// on the page puts it down again. One chosen by hand stays, so a trackpad can draw too.
+    pen_picked_by_pen: bool,
     /// Draw > Ink Replay is showing (issue #295). Its progress is the ink layer's.
     replaying: bool,
     /// View > Tabs layout: the sections as tabs over the page (issues #268, #33). Kept.
@@ -1460,6 +1466,7 @@ impl NoteCraftApp {
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
+        let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
@@ -1575,6 +1582,8 @@ impl NoteCraftApp {
             space_tool: false,
             ruler: false,
             auto_shapes: session_auto_shapes,
+            auto_switch: session_auto_switch,
+            pen_picked_by_pen: false,
             replaying: false,
             tabs_layout: session_tabs_layout,
             reader: None,
@@ -2126,15 +2135,36 @@ impl NoteCraftApp {
     /// force is a pen, so this works where the platform passes the pen's pressure on (see
     /// `stylus.rs`), and elsewhere the tools are chosen by hand as before.
     fn switch_by_device(&mut self, ctx: &Context) {
-        if self.dialog.is_some() || self.backstage.is_some() || !self.editor.as_ref().is_some_and(|ed| ed.writable) {
+        if !self.auto_switch || self.dialog.is_some() || self.backstage.is_some() || !self.editor.as_ref().is_some_and(|ed| ed.writable) {
             return;
         }
         if self.pointer == ribbon::Pointer::Write {
             if self.stylus.landed().is_some_and(|at| self.page_rect.is_some_and(|page| page.contains(at))) {
                 self.ribbon_act(ribbon::Act::InkPen(self.nib));
+                self.pen_picked_by_pen = true;
                 crate::inkpad::claim_press(ctx);
             }
             return;
+        }
+        // A click or a tap on the page that no touch came with is the trackpad's (or a mouse's):
+        // the hand has left the pen, and the pen the pen picked up is put down. The same click
+        // then puts the caret where it landed, as the page is drawn with the caret from here.
+        if self.pen_picked_by_pen && matches!(self.pointer, ribbon::Pointer::Draw) {
+            // The part of the page the window shows (the page itself reaches above it once
+            // scrolled), and not a menu or a folded ribbon drawn over it.
+            let page = self.page_view.or(self.page_rect);
+            let pressed = ctx.input(|i| {
+                let untouched = !i.events.iter().any(|e| matches!(e, egui::Event::Touch { .. }));
+                if i.pointer.primary_pressed() && untouched { i.pointer.press_origin() } else { None }
+            });
+            // Asked of the context outside its input: asked inside, it waited on itself.
+            let by_hand = pressed.is_some_and(|at| {
+                page.is_some_and(|page| page.contains(at)) && ctx.layer_id_at(at).is_none_or(|layer| layer.order < egui::Order::Foreground)
+            });
+            if by_hand {
+                self.ribbon_act(ribbon::Act::InkPointer(ribbon::Pointer::Write));
+                return;
+            }
         }
         let typed = ctx.input(|i| {
             !i.modifiers.command
@@ -4474,6 +4504,7 @@ impl NoteCraftApp {
                 &ui_language,
                 &languages,
                 self.ui_scale,
+                self.auto_switch,
                 &update,
                 &mut copy,
                 &mut account,
@@ -4524,6 +4555,14 @@ impl NoteCraftApp {
                     self.set_ui_language(language);
                 }
                 backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
+                backstage::Act::SetAutoSwitch(on) => match self.session.settings.set("switch_by_device", if on { "true" } else { "false" }) {
+                    Ok(()) => {
+                        self.auto_switch = on;
+                        self.say(if on { crate::tl_id!("ui.auto_switch_on") } else { crate::tl_id!("ui.auto_switch_off") });
+                    }
+                    // Not kept, so not changed: the next start would have gone back to it.
+                    Err(e) => self.complain(&crate::i18n::format_message_id("ui.auto_switch_not_saved", &[("error", &e.to_string())])),
+                },
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
                 backstage::Act::UseDefaultNotebooksFolder => self.apply_notebooks_root_choice(None),
                 backstage::Act::OpenTelemetryFolder(path) => {
@@ -5331,6 +5370,14 @@ impl NoteCraftApp {
 
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
+        // A tool chosen is chosen by hand, a tool added to the rack or changed on it too; the
+        // automatic switch marks its own choice after this.
+        if matches!(
+            act,
+            ribbon::Act::InkPen(_) | ribbon::Act::InkPointer(_) | ribbon::Act::InkRack(ribbon::RackEdit::Add(_) | ribbon::RackEdit::Set(..))
+        ) {
+            self.pen_picked_by_pen = false;
+        }
         match act {
             ribbon::Act::NewWindow => self.request_window(false),
             ribbon::Act::QuickNote => self.request_window(true),
