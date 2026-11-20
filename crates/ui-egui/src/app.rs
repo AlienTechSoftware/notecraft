@@ -41,6 +41,8 @@ use web_time::Instant;
 
 /// The grid boxes snap to on plain paper, in page points: the smallest squared paper's step.
 const PLAIN_SNAP_STEP: f32 = 12.0;
+/// The room kept above ink drawn above a page's top, when the canvas is panned up to it.
+const INK_ABOVE_ROOM: f32 = 24.0;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
@@ -2958,6 +2960,12 @@ impl NoteCraftApp {
             self.note_read(&left, false);
         }
         self.code = crate::codeview::State::default();
+        // A pan belongs to the page it was made on: kept, it showed every other page as far off
+        // the screen, blank until the window was started again.
+        if self.editor.as_ref().is_none_or(|e| e.dir != dir) {
+            self.canvas_pan = egui::Vec2::ZERO;
+            self.fling.stop();
+        }
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
             let audit = notecraft_formats::boxes::span_audit(&page.body, &blocks);
@@ -9218,6 +9226,15 @@ impl NoteCraftApp {
         });
     }
 
+    /// How far, in screen points, the open page's ink reaches above its top, with a little room
+    /// beyond it; nothing when all of it is on the page.
+    fn ink_above_page(&self) -> f32 {
+        #[allow(clippy::cast_precision_loss)]
+        let zoom = self.zoom_percent as f32 / 100.0;
+        let top = self.pad.as_ref().and_then(|pad| pad.drawing.bounds()).map_or(0.0, |(_, y0, _, _)| y0);
+        if top < 0.0 { (-top + INK_ABOVE_ROOM) * zoom } else { 0.0 }
+    }
+
     fn wheel_canvas_pan_delta(delta: egui::Vec2, modifiers: Modifiers, canvas_pan_enabled: bool) -> egui::Vec2 {
         if modifiers.ctrl {
             return egui::Vec2::ZERO;
@@ -9322,6 +9339,15 @@ impl NoteCraftApp {
                 }
             } else {
                 self.canvas_drag = None;
+            }
+            // The canvas is endless down, where there is room to draw, but it starts at the top of
+            // the page: panned past it, the view went thousands of points into nothing, where a pen
+            // touching down drew a dot the page then grew to hold. Ink already above the page can
+            // still be reached.
+            let top = self.page_offset_y + self.ink_above_page();
+            if self.canvas_pan.y > top {
+                self.canvas_pan.y = top;
+                self.fling.stop();
             }
         } else {
             self.canvas_drag = None;
@@ -14769,5 +14795,110 @@ mod band_title_tests {
         assert!(centre - 100.0 >= 560.0, "{centre}");
         // Wider than the room (it is ellipsized to fit first): it starts where the room starts.
         assert_eq!(band_title_centre(600.0, 300.0, 400.0, 300.0), 450.0);
+    }
+}
+
+#[cfg(test)]
+mod canvas_pan_tests {
+    use super::*;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    /// The sample notebook with its HTML page open and a pen in hand, which pans the canvas.
+    fn drawing(name: &str) -> (notecraft_store::testing::TempDir, notecraft_engine::sample::Sample, H) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        app.pointer = ribbon::Pointer::Draw;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        settle(&mut h);
+        (t, sample, h)
+    }
+
+    fn settle(h: &mut H) {
+        for _ in 0..5 {
+            h.step();
+        }
+    }
+
+    /// Two fingers on the touchpad, moved `dy` points down the page (positive: towards its top).
+    fn swipe(h: &mut H, dy: f32) {
+        let over = h.state().page_view.expect("the page is shown").center();
+        h.event(egui::Event::PointerMoved(over));
+        h.step();
+        for _ in 0..20 {
+            h.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, dy / 20.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+                source: egui::MouseWheelSource::Trackpad,
+            });
+            h.step();
+        }
+        settle(h);
+    }
+
+    /// Where on screen the page's top left corner is drawn.
+    fn page_corner(h: &H) -> egui::Pos2 {
+        h.state().editor.as_ref().expect("editor").origin
+    }
+
+    /// The canvas a pen pans is endless down and to the right, where there is room to draw,
+    /// but not above the page's top or left of its edge: a swipe up there took the view
+    /// thousands of points into nothing, where the pen then drew a dot the page grew to hold.
+    #[test]
+    fn a_pen_cannot_pan_the_canvas_above_the_top_of_the_page() {
+        let (_t, _sample, mut h) = drawing("pan-above-top");
+        // As far up as the page goes: its top, wherever its own scroll bar had it.
+        let ceiling = h.state().page_offset_y;
+        swipe(&mut h, 8000.0);
+        assert!(h.state().canvas_pan.y <= ceiling + 0.5, "no pan above the page: {:?}, its top at {ceiling}", h.state().canvas_pan);
+        let top = page_corner(&h);
+        assert!(top.y < h.state().page_view.expect("shown").center().y, "the page's top is in view: {top:?}");
+
+        // Down the page it still pans, as far as the pen wants room.
+        swipe(&mut h, -3000.0);
+        assert!(h.state().canvas_pan.y < -2000.0, "the canvas pans down: {:?}", h.state().canvas_pan);
+        // And back up to the top, but no further.
+        swipe(&mut h, 8000.0);
+        let (pan, ceiling) = (h.state().canvas_pan.y, h.state().page_offset_y);
+        assert!((pan - ceiling).abs() < 0.5, "back at the top and no further: pan {pan}, top at {ceiling}");
+    }
+
+    /// Ink already drawn above the page can still be reached: the canvas pans up as far as it.
+    #[test]
+    fn ink_above_the_page_can_still_be_panned_to() {
+        let (_t, _sample, mut h) = drawing("pan-to-ink-above");
+        {
+            let pad = h.state_mut().pad.as_mut().expect("a pad for the page");
+            let mut stroke = notecraft_ink::Stroke::new(notecraft_ink::Tool::Pen, notecraft_ink::Rgb(0, 0, 0), 2.0);
+            stroke.add(notecraft_ink::Dab::new(100.0, -400.0, 1.0));
+            stroke.add(notecraft_ink::Dab::new(140.0, -380.0, 1.0));
+            pad.drawing.add(stroke);
+        }
+        settle(&mut h);
+        swipe(&mut h, 8000.0);
+        let pan = h.state().canvas_pan.y;
+        assert!(pan > 350.0 && pan < 500.0, "up as far as the ink above the page, and no further: {pan}");
+    }
+
+    /// A pan belongs to the page it was made on: the next page opens at its own top left. A pan
+    /// kept from one page showed every other page thousands of points off the screen, blank.
+    #[test]
+    fn another_page_opens_at_its_top_left_whatever_the_last_was_panned_to() {
+        let (_t, sample, mut h) = drawing("pan-next-page");
+        swipe(&mut h, -3000.0);
+        assert!(h.state().canvas_pan.y < -2000.0, "panned down the first page");
+        h.state_mut().open_page(&sample.md_page);
+        settle(&mut h);
+        assert_eq!(h.state().canvas_pan, egui::Vec2::ZERO, "the next page starts at its top left");
     }
 }
