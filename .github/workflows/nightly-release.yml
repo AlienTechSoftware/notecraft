@@ -84,6 +84,9 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
+          # The push below checks every Git LFS object in the new branch's history. Without
+          # these, the runner lacks some (the OneNote samples), and the push is refused.
+          lfs: true
           # No persisted credential: checkout would store a GITHUB_TOKEN
           # Authorization header that overrides the App token in the branch
           # push URL below. Every write in this job carries its own token.
