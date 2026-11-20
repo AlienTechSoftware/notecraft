@@ -95,9 +95,9 @@ const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_millis(12)
 #[cfg(test)]
 const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// The most pictures read at once. Readers are started as pictures wait for one, so a few reads
-/// stuck on a slow download or a hung mount do not hold up the pictures asked for after them.
-const PICTURE_READERS: usize = 16;
+/// How long a picture reader with nothing to read waits for more before it ends.
+#[cfg(not(target_arch = "wasm32"))]
+const READER_IDLE: std::time::Duration = std::time::Duration::from_secs(30);
 
 type PageImages = std::sync::Arc<std::sync::Mutex<Pictures>>;
 
@@ -238,8 +238,6 @@ struct Readers {
     idle: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// Reads queued and not taken by a reader yet.
     queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    /// Readers started.
-    started: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -251,40 +249,61 @@ impl Readers {
             waiting: std::sync::Arc::new(std::sync::Mutex::new(waiting)),
             idle: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             queued: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            started: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
-    /// Queues a read, and starts another reader when more reads wait than readers are free to
-    /// take them. Counting only free readers was not enough: reads queued one after another all
-    /// saw the same free reader before it took the first, and waited behind it if it stuck.
+    /// Queues a read for a reader, starting one first when more reads wait than readers are free
+    /// to take them. There is no cap: a reader stuck on a hung mount keeps its thread, but every
+    /// other picture gets one of its own, and a reader left with nothing to do ends after
+    /// [`READER_IDLE`]. A picture is asked for once while it is being read, so there are never
+    /// more readers than pictures waiting. When no reader can be started, the read is given back
+    /// to be made in place, so it is not left queued with nobody to take it.
+    ///
+    /// Counting only free readers was not enough: reads queued one after another all saw the same
+    /// free reader before it took the first, and waited behind it if it stuck.
     fn send(&self, job: PictureRead) -> Result<(), PictureRead> {
         use std::sync::atomic::Ordering;
         // Counted before it is queued: a free reader may take it, and count it off, at once.
         let waiting_reads = self.queued.fetch_add(1, Ordering::SeqCst) + 1;
+        if waiting_reads > self.idle.load(Ordering::SeqCst) && !self.start_reader() {
+            self.queued.fetch_sub(1, Ordering::SeqCst);
+            // A reader already running will come to queued reads; none at all, and this one is
+            // read in place.
+            if self.idle.load(Ordering::SeqCst) == 0 {
+                return Err(job);
+            }
+        }
         if let Err(e) = self.queue.send(job) {
             self.queued.fetch_sub(1, Ordering::SeqCst);
             return Err(e.0);
         }
-        if waiting_reads > self.idle.load(Ordering::SeqCst) && self.started.load(Ordering::SeqCst) < PICTURE_READERS {
-            let n = self.started.fetch_add(1, Ordering::SeqCst);
-            let (waiting, idle, queued) = (self.waiting.clone(), self.idle.clone(), self.queued.clone());
-            let spawned = std::thread::Builder::new().name(format!("notecraft-pictures-{n}")).spawn(move || {
+        Ok(())
+    }
+
+    /// Starts a reader. False when the system has no thread to give.
+    fn start_reader(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        let (waiting, idle, queued) = (self.waiting.clone(), self.idle.clone(), self.queued.clone());
+        std::thread::Builder::new()
+            .name("notecraft-pictures".into())
+            .spawn(move || {
                 loop {
                     idle.fetch_add(1, Ordering::SeqCst);
                     // The queue is held only to take the next read, not while reading it.
-                    let next = waiting.lock().ok().and_then(|q| q.recv().ok());
+                    let next = waiting.lock().ok().map(|q| q.recv_timeout(READER_IDLE));
                     idle.fetch_sub(1, Ordering::SeqCst);
-                    let Some(job) = next else { break };
-                    queued.fetch_sub(1, Ordering::SeqCst);
-                    job.run();
+                    match next {
+                        Some(Ok(job)) => {
+                            queued.fetch_sub(1, Ordering::SeqCst);
+                            job.run();
+                        }
+                        // A read queued as this reader gave up waiting counted on it: it stays for it.
+                        Some(Err(std::sync::mpsc::RecvTimeoutError::Timeout)) if queued.load(Ordering::SeqCst) > 0 => {}
+                        _ => break,
+                    }
                 }
-            });
-            if spawned.is_err() {
-                self.started.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        Ok(())
+            })
+            .is_ok()
     }
 }
 
@@ -1359,8 +1378,8 @@ mod tests {
     }
 
     /// Reads stuck for good, on a hung mount, say, take a reader each and never give it back.
-    /// Readers are started as pictures wait for one, so a page's stuck pictures do not keep the
-    /// next page's pictures from coming.
+    /// Readers are started as pictures wait for one, with no cap, so however many of a page's
+    /// pictures are stuck, the next page's pictures still come.
     #[cfg(unix)]
     #[test]
     fn pictures_stuck_on_one_page_do_not_keep_another_pages_from_loading() {
@@ -1369,7 +1388,8 @@ mod tests {
         for page in [&stuck, &other] {
             std::fs::create_dir_all(page.join("assets")).expect("assets");
         }
-        let pipes: Vec<std::path::PathBuf> = (0..4).map(|n| stuck.join("assets").join(format!("p{n}.png"))).collect();
+        const STUCK: usize = 16;
+        let pipes: Vec<std::path::PathBuf> = (0..STUCK).map(|n| stuck.join("assets").join(format!("p{n}.png"))).collect();
         for pipe in &pipes {
             assert!(std::process::Command::new("mkfifo").arg(pipe).status().expect("mkfifo").success());
         }
@@ -1378,18 +1398,31 @@ mod tests {
         let (answers, answered) = std::sync::mpsc::channel();
         let asker = ctx.clone();
         std::thread::spawn(move || {
-            for n in 0..4 {
+            for n in 0..STUCK {
                 let _ = picture(&asker, &stuck, &format!("assets/p{n}.png"));
             }
             let (_, bytes) = ready(&asker, &other, "assets/a.png");
             let _ = answers.send(bytes.to_vec());
         });
         let got = answered.recv_timeout(std::time::Duration::from_secs(20));
-        // Let the stuck reads go, so their readers are free again for the other tests.
+        // Let the stuck reads go, so their readers are free again for the other tests. Opened
+        // without waiting: a pipe no reader has opened yet is skipped instead of hanging here.
         for pipe in &pipes {
-            let _ = std::fs::write(pipe, b"x");
+            let _ = nonblocking_write(pipe, b"x");
         }
         assert_eq!(got.ok().as_deref(), Some(b"the other page's picture".as_slice()), "the other page's picture came");
+    }
+
+    /// Writes into a named pipe if a reader has it open, without waiting for one.
+    #[cfg(unix)]
+    fn nonblocking_write(pipe: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        #[cfg(target_os = "linux")]
+        const O_NONBLOCK: i32 = 0o4000;
+        #[cfg(not(target_os = "linux"))]
+        const O_NONBLOCK: i32 = 0x0004;
+        std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(pipe)?.write_all(bytes)
     }
 
     /// A picture in a synced folder that is not on this computer yet is downloaded when it is
