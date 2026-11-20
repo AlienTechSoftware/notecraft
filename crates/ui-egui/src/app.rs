@@ -9351,9 +9351,9 @@ impl NoteCraftApp {
             // touching down drew a dot the page then grew to hold. Ink already above the page can
             // still be reached.
             let top = self.page_offset_y + self.ink_above_page();
+            // Held at the top in every frame, so a fling going up and sideways keeps going sideways.
             if self.canvas_pan.y > top {
                 self.canvas_pan.y = top;
-                self.fling.stop();
             }
         } else {
             self.canvas_drag = None;
