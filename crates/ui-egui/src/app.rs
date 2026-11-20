@@ -2960,13 +2960,19 @@ impl NoteCraftApp {
             self.note_read(&left, false);
         }
         self.code = crate::codeview::State::default();
-        // A pan belongs to the page it was made on: kept, it showed every other page as far off
-        // the screen, blank until the window was started again.
-        if self.editor.as_ref().is_none_or(|e| e.dir != dir) {
-            self.canvas_pan = egui::Vec2::ZERO;
-            self.fling.stop();
-        }
+        let another_page = self.editor.as_ref().is_none_or(|e| e.dir != dir);
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
+            // A view belongs to the page it was made on: a pan kept showed every other page as far
+            // off the screen, blank until the window was started again. Another page opens at its
+            // top left, unless the window is putting back where it was left; the same page read
+            // again, and a page that could not be read, keep the view as it is.
+            if another_page {
+                self.canvas_pan = egui::Vec2::ZERO;
+                self.fling.stop();
+                if self.restore_scroll.is_none() {
+                    self.scroll_to = Some(0.0);
+                }
+            }
             let (blocks, in_the_text) = notecraft_formats::boxes::read(page.format, &page.body);
             let audit = notecraft_formats::boxes::span_audit(&page.body, &blocks);
             log::debug!("page read span audit: page={:?} raw_span_tags={} styled_spans={}", dir, audit.raw_tags, audit.styled);
@@ -14897,8 +14903,20 @@ mod canvas_pan_tests {
         let (_t, sample, mut h) = drawing("pan-next-page");
         swipe(&mut h, -3000.0);
         assert!(h.state().canvas_pan.y < -2000.0, "panned down the first page");
+        // And scrolled down it by its own scroll bar, as the caret's pointer scrolls.
+        h.state_mut().scroll_to = Some(200.0);
+        settle(&mut h);
+        assert!(h.state().page_offset_y > 50.0, "scrolled down the first page: {}", h.state().page_offset_y);
         h.state_mut().open_page(&sample.md_page);
         settle(&mut h);
         assert_eq!(h.state().canvas_pan, egui::Vec2::ZERO, "the next page starts at its top left");
+        assert!(h.state().page_offset_y < 0.5, "scrolled to its top too: {}", h.state().page_offset_y);
+
+        // A page that cannot be read leaves the view of the one open as it was.
+        swipe(&mut h, -3000.0);
+        let pan = h.state().canvas_pan;
+        h.state_mut().open_page(&sample.md_page.with_file_name("no-such-page"));
+        settle(&mut h);
+        assert_eq!(h.state().canvas_pan, pan, "a page that did not open did not move this one");
     }
 }
