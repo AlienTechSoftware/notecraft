@@ -84,6 +84,10 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
+          # Fetch the LFS objects: the branch push runs the LFS pre-push
+          # check over the branch history, and it fails when an object
+          # is missing locally (nightly run #13).
+          lfs: true
           # No persisted credential: checkout would store a GITHUB_TOKEN
           # Authorization header that overrides the App token in the branch
           # push URL below. Every write in this job carries its own token.
