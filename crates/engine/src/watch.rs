@@ -7,7 +7,7 @@
 //! and wakes the UI only when external changes settle on disk.
 
 use notecraft_store::coordination::Revision;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,16 +45,19 @@ pub fn is_sync_temp(path: &Path) -> bool {
         || file_name.ends_with('~')
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
 mod imp {
     use super::*;
     use std::collections::BTreeMap;
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Condvar, Mutex};
     use std::time::{Instant, SystemTime};
 
     const POLL_STEP: Duration = Duration::from_millis(50);
+    #[cfg(target_os = "android")]
+    const TREE_SCAN_STEP: Duration = Duration::from_millis(750);
+    #[cfg(not(target_os = "android"))]
+    const TREE_SCAN_STEP: Duration = Duration::from_millis(500);
 
     #[derive(Clone, Default, PartialEq, Eq)]
     struct PageStamp {
@@ -69,10 +72,11 @@ mod imp {
 
     #[derive(Default)]
     struct Target {
-        root: Option<PathBuf>,
+        roots: Vec<PathBuf>,
+        roots_gen: u64,
         page: Option<PathBuf>,
+        page_gen: u64,
         own_revision: Option<Revision>,
-        generation: u64,
     }
 
     struct Shared {
@@ -119,19 +123,28 @@ mod imp {
         }
 
         pub fn watch(&self, root: &Path, page: Option<&Path>, own_revision: Option<Revision>) {
-            let root_buf = root.to_path_buf();
+            self.watch_roots(&[root.to_path_buf()], page, own_revision);
+        }
+
+        pub fn watch_roots(&self, roots: &[PathBuf], page: Option<&Path>, own_revision: Option<Revision>) {
             let page_buf = page.map(Path::to_path_buf);
             if let Ok(mut target) = self.shared.target.lock() {
-                let target_changed = target.root.as_ref() != Some(&root_buf) || target.page.as_ref() != page_buf.as_ref();
-                if target_changed {
-                    target.root = Some(root_buf);
+                let roots_changed = target.roots.as_slice() != roots;
+                let page_changed = target.page.as_ref() != page_buf.as_ref();
+                if roots_changed {
+                    target.roots = roots.to_vec();
+                    target.roots_gen = target.roots_gen.wrapping_add(1);
+                }
+                if page_changed {
                     target.page = page_buf;
+                    target.page_gen = target.page_gen.wrapping_add(1);
+                }
+                if roots_changed || page_changed || target.own_revision != own_revision {
                     target.own_revision = own_revision;
-                    target.generation = target.generation.wrapping_add(1);
+                }
+                if roots_changed || page_changed {
                     self.shared.has_target.store(true, Ordering::Release);
                     self.shared.cv.notify_all();
-                } else if target.own_revision != own_revision {
-                    target.own_revision = own_revision;
                 }
             }
         }
@@ -162,11 +175,13 @@ mod imp {
     }
 
     fn run_loop(shared: &Shared) {
-        let mut tracked_gen: u64 = 0;
+        let mut tracked_roots_gen: u64 = 0;
+        let mut tracked_page_gen: u64 = 0;
         let mut baseline_page: Option<PageStamp> = None;
         let mut pending_page: Option<(PageStamp, Instant)> = None;
         let mut baseline_tree: Option<TreeStamp> = None;
         let mut pending_tree: Option<(TreeStamp, Instant)> = None;
+        let mut last_tree_scan: Option<Instant> = None;
 
         loop {
             {
@@ -181,21 +196,25 @@ mod imp {
                 }
             }
 
-            let (gen_now, root, page, own_rev) = {
+            let (roots_gen, page_gen, roots, page, own_rev) = {
                 let Ok(target) = shared.target.lock() else { continue };
-                (target.generation, target.root.clone(), target.page.clone(), target.own_revision.clone())
+                (target.roots_gen, target.page_gen, target.roots.clone(), target.page.clone(), target.own_revision.clone())
             };
 
-            if gen_now != tracked_gen {
-                tracked_gen = gen_now;
+            if page_gen != tracked_page_gen {
+                tracked_page_gen = page_gen;
                 baseline_page = page.as_deref().map(read_page_stamp);
                 pending_page = None;
-                baseline_tree = root.as_deref().map(read_tree_stamp);
+            }
+            if roots_gen != tracked_roots_gen {
+                tracked_roots_gen = roots_gen;
+                baseline_tree = (!roots.is_empty()).then(|| read_tree_stamp(&roots));
                 pending_tree = None;
-                continue;
+                last_tree_scan = Some(Instant::now());
             }
 
-            let mut notify = false;
+            let mut page_hit = false;
+            let mut tree_hit = false;
 
             if let Some(page_dir) = page.as_deref() {
                 let current = read_page_stamp(page_dir);
@@ -211,10 +230,7 @@ mod imp {
                                 if now.duration_since(*since) >= DEBOUNCE {
                                     *base = current;
                                     pending_page = None;
-                                    if let Ok(mut c) = shared.changes.lock() {
-                                        c.page = true;
-                                    }
-                                    notify = true;
+                                    page_hit = true;
                                 }
                             }
                             _ => {
@@ -229,36 +245,40 @@ mod imp {
                 }
             }
 
-            if let Some(root_dir) = root.as_deref() {
-                let current = read_tree_stamp(root_dir);
-                if let Some(base) = &mut baseline_tree {
-                    if &current != base {
-                        let now = Instant::now();
-                        match &pending_tree {
-                            Some((cand, since)) if cand == &current => {
-                                if now.duration_since(*since) >= DEBOUNCE {
-                                    *base = current;
-                                    pending_tree = None;
-                                    if let Ok(mut c) = shared.changes.lock() {
-                                        c.tree = true;
+            if !roots.is_empty() {
+                let now = Instant::now();
+                let tree_step = if pending_tree.is_some() { DEBOUNCE } else { TREE_SCAN_STEP };
+                if last_tree_scan.is_none_or(|prev| now.duration_since(prev) >= tree_step) {
+                    last_tree_scan = Some(now);
+                    let current = read_tree_stamp(&roots);
+                    if let Some(base) = &mut baseline_tree {
+                        if &current != base {
+                            match &pending_tree {
+                                Some((cand, since)) if cand == &current => {
+                                    if now.duration_since(*since) >= DEBOUNCE {
+                                        *base = current;
+                                        pending_tree = None;
+                                        tree_hit = true;
                                     }
-                                    notify = true;
                                 }
+                                _ => pending_tree = Some((current, now)),
                             }
-                            _ => {
-                                pending_tree = Some((current, now));
-                            }
+                        } else {
+                            pending_tree = None;
                         }
                     } else {
-                        pending_tree = None;
+                        baseline_tree = Some(current);
                     }
-                } else {
-                    baseline_tree = Some(current);
                 }
             }
-
-            if notify && let Some(wake) = shared.wake.lock().ok().and_then(|g| g.clone()) {
-                wake();
+            if page_hit || tree_hit {
+                if let Ok(mut c) = shared.changes.lock() {
+                    c.page |= page_hit;
+                    c.tree |= tree_hit;
+                }
+                if let Some(wake) = shared.wake.lock().ok().and_then(|g| g.clone()) {
+                    wake();
+                }
             }
         }
     }
@@ -285,13 +305,15 @@ mod imp {
         PageStamp { revision, assets }
     }
 
-    fn read_tree_stamp(root: &Path) -> TreeStamp {
+    fn read_tree_stamp(roots: &[PathBuf]) -> TreeStamp {
         let mut nodes = BTreeMap::new();
-        collect_tree(root, root, &mut nodes, 0);
+        for root in roots {
+            collect_tree(root, &mut nodes, 0);
+        }
         TreeStamp { nodes }
     }
 
-    fn collect_tree(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, (bool, Option<(u64, Option<SystemTime>)>)>, depth: usize) {
+    fn collect_tree(dir: &Path, out: &mut BTreeMap<PathBuf, (bool, Option<(u64, Option<SystemTime>)>)>, depth: usize) {
         if depth > 24 || out.len() >= 10_000 {
             return;
         }
@@ -310,16 +332,15 @@ mod imp {
             if !kind.is_dir() {
                 continue;
             }
-            let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
             let has_page = notecraft_store::tree::page_file(&path).is_some();
             let node_meta = std::fs::metadata(path.join("_node.toml")).ok().map(|m| (m.len(), m.modified().ok()));
-            out.insert(rel, (has_page, node_meta));
-            collect_tree(root, &path, out, depth + 1);
+            out.insert(path.clone(), (has_page, node_meta));
+            collect_tree(&path, out, depth + 1);
         }
     }
 }
 
-#[cfg(any(target_arch = "wasm32", target_os = "android", target_os = "ios"))]
+#[cfg(any(target_arch = "wasm32", target_os = "ios"))]
 mod imp {
     use super::*;
 
@@ -340,6 +361,8 @@ mod imp {
 
         pub fn watch(&self, _root: &Path, _page: Option<&Path>, _own_revision: Option<Revision>) {}
 
+        pub fn watch_roots(&self, _roots: &[PathBuf], _page: Option<&Path>, _own_revision: Option<Revision>) {}
+
         pub fn note_own_revision(&self, _page: &Path, _revision: Option<Revision>) {}
 
         pub fn take_changes(&self) -> WatchChanges {
@@ -353,7 +376,7 @@ pub use imp::FileWatcher;
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -385,7 +408,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
     #[test]
     fn watcher_ignores_own_revision_and_wakes_on_debounced_external_write() {
         let dir = notecraft_store::testing::TempDir::new("engine-file-watcher");
@@ -424,9 +447,10 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         let mut got = WatchChanges::default();
         while std::time::Instant::now() < deadline {
-            let next = watcher.take_changes();
-            if next.page {
+            if watcher.take_changes().page {
                 got.page = true;
+            }
+            if got.page && wakes.load(Ordering::SeqCst) >= 1 {
                 break;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -435,7 +459,7 @@ mod tests {
         assert!(wakes.load(Ordering::SeqCst) >= 1, "expected wake callback to fire");
     }
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
     #[test]
     fn external_notebook_tree_changes_report_tree_changed() {
         let dir = notecraft_store::testing::TempDir::new("engine-tree-watcher");
@@ -462,11 +486,46 @@ mod tests {
         while std::time::Instant::now() < deadline {
             if watcher.take_changes().tree {
                 saw_tree = true;
+            }
+            if saw_tree && wakes.load(Ordering::SeqCst) >= 1 {
                 break;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
         assert!(saw_tree, "expected external directory creation to report tree change");
         assert!(wakes.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+    #[test]
+    fn page_switch_preserves_pending_tree_change() {
+        let dir = notecraft_store::testing::TempDir::new("engine-tree-page-switch");
+        let root = dir.path().join("notebooks");
+        let section = root.join("work").join("notes");
+        let page1 = section.join("page-one");
+        let page2 = section.join("page-two");
+        std::fs::create_dir_all(&page1).expect("create page1");
+        std::fs::create_dir_all(&page2).expect("create page2");
+        std::fs::write(page1.join("index.md"), "# One\n").expect("write page1");
+        std::fs::write(page2.join("index.md"), "# Two\n").expect("write page2");
+        let watcher = FileWatcher::new();
+        watcher.watch(&root, Some(&page1), None);
+        std::thread::sleep(Duration::from_millis(120));
+        let _ = watcher.take_changes();
+        let new_page = section.join("synced-page");
+        std::fs::create_dir_all(&new_page).expect("create synced page");
+        std::fs::write(new_page.join("index.md"), "# Synced\n").expect("write synced page");
+        std::thread::sleep(Duration::from_millis(60));
+        watcher.watch(&root, Some(&page2), None);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut saw_tree = false;
+        while std::time::Instant::now() < deadline {
+            if watcher.take_changes().tree {
+                saw_tree = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert!(saw_tree, "expected page switch to preserve pending tree change");
     }
 }
