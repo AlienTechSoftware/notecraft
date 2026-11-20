@@ -95,8 +95,9 @@ const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_millis(12)
 #[cfg(test)]
 const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// How many pictures are read at once: one picture slow to download does not hold up the rest.
-const PICTURE_READERS: usize = 4;
+/// The most pictures read at once. Readers are started as pictures wait for one, so a few reads
+/// stuck on a slow download or a hung mount do not hold up the pictures asked for after them.
+const PICTURE_READERS: usize = 16;
 
 type PageImages = std::sync::Arc<std::sync::Mutex<Pictures>>;
 
@@ -207,10 +208,10 @@ impl PictureRead {
             }
         }
         drop(pictures);
-        // The frame that asked may have stopped waiting; then it is drawn again instead.
-        if self.done.send(()).is_err() {
-            self.ctx.request_repaint();
-        }
+        // Told to a frame still waiting, and drawn again in any case: the frame may have stopped
+        // waiting just as the read came in.
+        let _ = self.done.send(());
+        self.ctx.request_repaint();
     }
 }
 
@@ -223,29 +224,67 @@ fn send_to_reader(job: PictureRead) -> Result<(), PictureRead> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        static READER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<PictureRead>>> = std::sync::OnceLock::new();
-        let reader = READER.get_or_init(|| {
-            let (tx, rx) = std::sync::mpsc::channel::<PictureRead>();
-            let rx = std::sync::Arc::new(std::sync::Mutex::new(rx));
-            let mut started = 0;
-            for n in 0..PICTURE_READERS {
-                let rx = rx.clone();
-                let spawned = std::thread::Builder::new().name(format!("notecraft-pictures-{n}")).spawn(move || {
-                    loop {
-                        // The queue is held only to take the next read, not while reading it.
-                        let next = rx.lock().ok().and_then(|q| q.recv().ok());
-                        let Some(job) = next else { break };
-                        job.run();
-                    }
-                });
-                started += usize::from(spawned.is_ok());
-            }
-            (started > 0).then_some(tx)
-        });
-        match reader {
-            Some(tx) => tx.send(job).map_err(|e| e.0),
-            None => Err(job),
+        static READERS: std::sync::OnceLock<Readers> = std::sync::OnceLock::new();
+        READERS.get_or_init(Readers::new).send(job)
+    }
+}
+
+/// The threads pictures are read on, and the reads waiting for one.
+#[cfg(not(target_arch = "wasm32"))]
+struct Readers {
+    queue: std::sync::mpsc::Sender<PictureRead>,
+    waiting: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<PictureRead>>>,
+    /// Readers with nothing to read.
+    idle: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Reads queued and not taken by a reader yet.
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Readers started.
+    started: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Readers {
+    fn new() -> Self {
+        let (queue, waiting) = std::sync::mpsc::channel();
+        Readers {
+            queue,
+            waiting: std::sync::Arc::new(std::sync::Mutex::new(waiting)),
+            idle: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            queued: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            started: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// Queues a read, and starts another reader when more reads wait than readers are free to
+    /// take them. Counting only free readers was not enough: reads queued one after another all
+    /// saw the same free reader before it took the first, and waited behind it if it stuck.
+    fn send(&self, job: PictureRead) -> Result<(), PictureRead> {
+        use std::sync::atomic::Ordering;
+        // Counted before it is queued: a free reader may take it, and count it off, at once.
+        let waiting_reads = self.queued.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Err(e) = self.queue.send(job) {
+            self.queued.fetch_sub(1, Ordering::SeqCst);
+            return Err(e.0);
+        }
+        if waiting_reads > self.idle.load(Ordering::SeqCst) && self.started.load(Ordering::SeqCst) < PICTURE_READERS {
+            let n = self.started.fetch_add(1, Ordering::SeqCst);
+            let (waiting, idle, queued) = (self.waiting.clone(), self.idle.clone(), self.queued.clone());
+            let spawned = std::thread::Builder::new().name(format!("notecraft-pictures-{n}")).spawn(move || {
+                loop {
+                    idle.fetch_add(1, Ordering::SeqCst);
+                    // The queue is held only to take the next read, not while reading it.
+                    let next = waiting.lock().ok().and_then(|q| q.recv().ok());
+                    idle.fetch_sub(1, Ordering::SeqCst);
+                    let Some(job) = next else { break };
+                    queued.fetch_sub(1, Ordering::SeqCst);
+                    job.run();
+                }
+            });
+            if spawned.is_err() {
+                self.started.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1317,6 +1356,40 @@ mod tests {
         let ctx = egui::Context::default();
         assert!(matches!(picture(&ctx, t.path(), "assets/none.png"), Picture::Missing));
         assert!(matches!(picture(&ctx, t.path(), "../outside.png"), Picture::Missing));
+    }
+
+    /// Reads stuck for good, on a hung mount, say, take a reader each and never give it back.
+    /// Readers are started as pictures wait for one, so a page's stuck pictures do not keep the
+    /// next page's pictures from coming.
+    #[cfg(unix)]
+    #[test]
+    fn pictures_stuck_on_one_page_do_not_keep_another_pages_from_loading() {
+        let t = notecraft_store::testing::TempDir::new("page-image-stuck");
+        let (stuck, other) = (t.path().join("stuck"), t.path().join("other"));
+        for page in [&stuck, &other] {
+            std::fs::create_dir_all(page.join("assets")).expect("assets");
+        }
+        let pipes: Vec<std::path::PathBuf> = (0..4).map(|n| stuck.join("assets").join(format!("p{n}.png"))).collect();
+        for pipe in &pipes {
+            assert!(std::process::Command::new("mkfifo").arg(pipe).status().expect("mkfifo").success());
+        }
+        std::fs::write(other.join("assets").join("a.png"), b"the other page's picture").expect("picture");
+        let ctx = egui::Context::default();
+        let (answers, answered) = std::sync::mpsc::channel();
+        let asker = ctx.clone();
+        std::thread::spawn(move || {
+            for n in 0..4 {
+                let _ = picture(&asker, &stuck, &format!("assets/p{n}.png"));
+            }
+            let (_, bytes) = ready(&asker, &other, "assets/a.png");
+            let _ = answers.send(bytes.to_vec());
+        });
+        let got = answered.recv_timeout(std::time::Duration::from_secs(20));
+        // Let the stuck reads go, so their readers are free again for the other tests.
+        for pipe in &pipes {
+            let _ = std::fs::write(pipe, b"x");
+        }
+        assert_eq!(got.ok().as_deref(), Some(b"the other page's picture".as_slice()), "the other page's picture came");
     }
 
     /// A picture in a synced folder that is not on this computer yet is downloaded when it is
