@@ -387,6 +387,12 @@ fn main() -> eframe::Result {
                 }
             }
             // A local update folder replaces the GitHub check, so --set-version does not start its own.
+            // An installed copy checks GitHub at every start, as the update card promises. A
+            // development run checks only when --set-version asks for it.
+            let installed_start = !cfg!(debug_assertions) && !args.iter().any(|a| a == "--update-from" || a == "--set-version");
+            if installed_start {
+                app.start_update_check(env!("CARGO_PKG_VERSION"));
+            }
             if let Some(running) = args
                 .iter()
                 .position(|a| a == "--set-version")
