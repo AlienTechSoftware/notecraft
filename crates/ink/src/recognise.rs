@@ -33,9 +33,40 @@ impl Recognised {
     }
 }
 
+/// What a stroke fits when smoothed or snapped: one of the regular shapes, or a smoothed
+/// open curve.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Fit {
+    Shape(Recognised),
+    Curve(Vec<(f32, f32)>),
+}
+
+impl Fit {
+    pub fn id(&self) -> &'static str {
+        match self {
+            Fit::Shape(s) => s.id(),
+            Fit::Curve(_) => "curve",
+        }
+    }
+}
+
 /// A stroke must be at least this long, in points, to be read as a shape: a tick or a dot
 /// is writing.
 const LEAST: f32 = 24.0;
+const ASPECT_MIN: f32 = 0.85;
+const ASPECT_MAX: f32 = 1.18;
+
+fn snap_box(x0: f32, y0: f32, x1: f32, y1: f32) -> (f32, f32, f32, f32) {
+    let (w, h) = (x1 - x0, y1 - y0);
+    let aspect = w / h.max(f32::EPSILON);
+    if (ASPECT_MIN..=ASPECT_MAX).contains(&aspect) {
+        let half = (w + h) / 4.0;
+        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        (cx - half, cy - half, cx + half, cy + half)
+    } else {
+        (x0, y0, x1, y1)
+    }
+}
 
 fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
     (a.0 - b.0).hypot(a.1 - b.1)
@@ -93,7 +124,8 @@ pub fn recognise(stroke: &Stroke) -> Option<Recognised> {
     let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
     let visited = corners.iter().all(|&c| pts.iter().any(|&p| dist(p, c) <= diagonal * 0.12));
     if edge_off <= slack && visited {
-        return Some(Recognised::Rectangle { left: x0, top: y0, right: x1, bottom: y1 });
+        let (left, top, right, bottom) = snap_box(x0, y0, x1, y1);
+        return Some(Recognised::Rectangle { left, top, right, bottom });
     }
 
     // An ellipse in that box: every reading near the ellipse the box holds, and it goes
@@ -119,7 +151,8 @@ pub fn recognise(stroke: &Stroke) -> Option<Recognised> {
         total.abs()
     };
     if worst <= 0.2 && turned >= std::f32::consts::TAU * 0.85 {
-        return Some(Recognised::Ellipse { left: x0, top: y0, right: x1, bottom: y1 });
+        let (left, top, right, bottom) = snap_box(x0, y0, x1, y1);
+        return Some(Recognised::Ellipse { left, top, right, bottom });
     }
 
     // A triangle: the closed path comes down to three corners, and every reading is near
@@ -199,6 +232,175 @@ pub fn redraw(stroke: &Stroke, shape: Recognised) -> Stroke {
     // Straight from the tracer: a shape's corners are repeated on purpose to stay sharp,
     // which `Stroke::add` would drop as readings that say nothing new.
     Stroke { dabs, ..stroke.clone() }
+}
+
+/// Redraws `stroke` from any [`Fit`], keeping its tool, colour, width, gain and average pressure.
+pub fn redraw_fit(stroke: &Stroke, fit: Fit) -> Stroke {
+    match fit {
+        Fit::Shape(shape) => redraw(stroke, shape),
+        Fit::Curve(pts) => {
+            #[allow(clippy::cast_precision_loss)]
+            let pressure = (stroke.dabs.iter().map(|d| d.pressure).sum::<f32>() / stroke.dabs.len().max(1) as f32).clamp(0.1, 1.0);
+            let dabs = pts.into_iter().map(|(x, y)| Dab { x, y, pressure }).collect();
+            Stroke { dabs, ..stroke.clone() }
+        }
+    }
+}
+
+/// Whether `stroke` is a rapid back-and-forth zig-zag scribble rather than a clean shape or curve.
+pub fn is_scribble(stroke: &Stroke) -> bool {
+    let pts: Vec<(f32, f32)> = stroke.dabs.iter().map(|d| (d.x, d.y)).collect();
+    if pts.len() < 4 {
+        return false;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (pts[0].0, pts[0].1, pts[0].0, pts[0].1);
+    for &(x, y) in &pts {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    let diagonal = (x1 - x0).hypot(y1 - y0);
+    if diagonal < 12.0 {
+        return false;
+    }
+    let length: f32 = pts.windows(2).map(|w| dist(w[0], w[1])).sum();
+    if length < diagonal * 2.4 {
+        return false;
+    }
+    let min_step = (diagonal * 0.05).max(3.0);
+    let mut simplified = Vec::with_capacity(pts.len());
+    simplified.push(pts[0]);
+    for &p in &pts[1..] {
+        if let Some(&prev) = simplified.last()
+            && dist(prev, p) >= min_step
+        {
+            simplified.push(p);
+        }
+    }
+    if simplified.len() < 4 {
+        return false;
+    }
+    let mut reversals = 0usize;
+    let mut prev_dir: Option<(f32, f32)> = None;
+    for w in simplified.windows(2) {
+        let (dx, dy) = (w[1].0 - w[0].0, w[1].1 - w[0].1);
+        let len = dx.hypot(dy);
+        if len <= f32::EPSILON {
+            continue;
+        }
+        let dir = (dx / len, dy / len);
+        if let Some(p) = prev_dir
+            && (p.0 * dir.0 + p.1 * dir.1) < -0.25
+        {
+            reversals += 1;
+        }
+        prev_dir = Some(dir);
+    }
+    reversals >= 3
+}
+
+/// Smooths an open hand-drawn curve via uniform arc-length resampling and three Chaikin corner-cutting
+/// passes while keeping both endpoints exact.
+pub fn smooth_open_curve(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let mut src: Vec<(f32, f32)> = Vec::with_capacity(pts.len());
+    for &p in pts {
+        if src.last().is_none_or(|&prev| dist(prev, p) >= 1.0) {
+            src.push(p);
+        }
+    }
+    if src.len() < 3 {
+        return pts.to_vec();
+    }
+    let target_count = (src.len() / 3 + 4).clamp(8, 24);
+    let mut cur = resample_uniform(&src, target_count);
+    let first = cur[0];
+    let last = cur[cur.len() - 1];
+    for _ in 0..3 {
+        if cur.len() < 3 {
+            break;
+        }
+        let mut next = Vec::with_capacity(cur.len() * 2);
+        next.push(first);
+        for w in cur.windows(2) {
+            let (p, q) = (w[0], w[1]);
+            next.push((0.75 * p.0 + 0.25 * q.0, 0.75 * p.1 + 0.25 * q.1));
+            next.push((0.25 * p.0 + 0.75 * q.0, 0.25 * p.1 + 0.75 * q.1));
+        }
+        next.push(last);
+        cur = next;
+    }
+    cur
+}
+
+fn resample_uniform(pts: &[(f32, f32)], target_count: usize) -> Vec<(f32, f32)> {
+    if pts.len() <= 2 || target_count <= 2 {
+        return match (pts.first(), pts.last()) {
+            (Some(&a), Some(&b)) => vec![a, b],
+            _ => pts.to_vec(),
+        };
+    }
+    let mut cum = Vec::with_capacity(pts.len());
+    cum.push(0.0_f32);
+    let mut total = 0.0_f32;
+    for w in pts.windows(2) {
+        total += dist(w[0], w[1]);
+        cum.push(total);
+    }
+    if total <= 0.0 {
+        return vec![pts[0], pts[pts.len() - 1]];
+    }
+    let mut out = Vec::with_capacity(target_count);
+    out.push(pts[0]);
+    let mut seg = 0usize;
+    for k in 1..(target_count - 1) {
+        #[allow(clippy::cast_precision_loss)]
+        let target = total * k as f32 / (target_count - 1) as f32;
+        while seg + 2 < cum.len() && cum[seg + 1] < target {
+            seg += 1;
+        }
+        let seg_len = cum[seg + 1] - cum[seg];
+        let t = if seg_len > 0.0 { ((target - cum[seg]) / seg_len).clamp(0.0, 1.0) } else { 0.0 };
+        let (a, b) = (pts[seg], pts[seg + 1]);
+        out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+    }
+    out.push(pts[pts.len() - 1]);
+    out
+}
+
+/// Recognises a regular shape via [`recognise`] or, for a non-scribble open arc, returns a smoothed
+/// open curve (`Fit::Curve`).
+pub fn recognise_or_curve(stroke: &Stroke) -> Option<Fit> {
+    if is_scribble(stroke) {
+        return None;
+    }
+    if let Some(shape) = recognise(stroke) {
+        return Some(Fit::Shape(shape));
+    }
+    let pts: Vec<(f32, f32)> = stroke.dabs.iter().map(|d| (d.x, d.y)).collect();
+    if pts.len() < 6 {
+        return None;
+    }
+    let (Some(&first), Some(&last)) = (pts.first(), pts.last()) else {
+        return None;
+    };
+    let (mut x0, mut y0, mut x1, mut y1) = (first.0, first.1, first.0, first.1);
+    for &(x, y) in &pts {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    let diagonal = (x1 - x0).hypot(y1 - y0);
+    let length: f32 = pts.windows(2).map(|w| dist(w[0], w[1])).sum();
+    let chord = dist(first, last);
+    if diagonal >= 20.0 && length >= 32.0 && length <= diagonal * 3.2 && chord > diagonal * 0.2 {
+        let smoothed = smooth_open_curve(&pts);
+        if smoothed.len() >= 3 {
+            return Some(Fit::Curve(smoothed));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -282,5 +484,88 @@ mod tests {
         let (sx0, sy0, sx1, sy1) = s.bounds().expect("bounds");
         assert!((bx0 - sx0).abs() < 2.0 && (by0 - sy0).abs() < 2.0 && (bx1 - sx1).abs() < 2.0 && (by1 - sy1).abs() < 2.0);
         assert!(r.dabs.iter().all(|d| (d.pressure - 0.6).abs() < 1e-4), "an even line at the hand's pressure");
+    }
+
+    #[test]
+    fn closed_circular_trace_snaps_to_square_ellipse_box() {
+        let round: Vec<(f32, f32)> = (0..=72)
+            .map(|i| {
+                let a = i as f32 / 72.0 * std::f32::consts::TAU;
+                let jitter = if i % 2 == 0 { 1.5 } else { -1.5 };
+                (200.0 + (60.0 + jitter) * a.cos(), 200.0 + (55.0 - jitter) * a.sin())
+            })
+            .collect();
+        let Some(Recognised::Ellipse { left, top, right, bottom }) = recognise(&hand(&round)) else {
+            panic!("expected Ellipse");
+        };
+        assert!(((right - left) - (bottom - top)).abs() < 0.5, "width {} vs height {}", right - left, bottom - top);
+    }
+
+    #[test]
+    fn elongated_ellipse_snaps_to_non_square_ellipse_box() {
+        let round: Vec<(f32, f32)> = (0..=72)
+            .map(|i| {
+                let a = i as f32 / 72.0 * std::f32::consts::TAU;
+                (250.0 + 120.0 * a.cos(), 200.0 + 50.0 * a.sin())
+            })
+            .collect();
+        let Some(Recognised::Ellipse { left, top, right, bottom }) = recognise(&hand(&round)) else {
+            panic!("expected Ellipse");
+        };
+        assert!((right - left) > (bottom - top) * 1.8);
+    }
+
+    #[test]
+    fn closed_four_corner_square_started_mid_edge_snaps_to_square_rectangle_box() {
+        let trace = walk(&[(150.0, 100.0), (196.0, 100.0), (196.0, 205.0), (100.0, 205.0), (100.0, 100.0), (152.0, 100.0)], 4.0);
+        let Some(Recognised::Rectangle { left, top, right, bottom }) = recognise(&hand(&trace)) else {
+            panic!("expected Rectangle");
+        };
+        assert!(((right - left) - (bottom - top)).abs() < 0.5, "width {} vs height {}", right - left, bottom - top);
+    }
+
+    #[test]
+    fn wide_four_corner_box_snaps_to_rectangle() {
+        let trace = walk(&[(40.0, 60.0), (240.0, 60.0), (240.0, 140.0), (40.0, 140.0), (40.0, 62.0)], 4.0);
+        let Some(Recognised::Rectangle { left, top, right, bottom }) = recognise(&hand(&trace)) else {
+            panic!("expected Rectangle");
+        };
+        assert!((right - left) > (bottom - top) * 2.0);
+    }
+
+    #[test]
+    fn three_corner_loop_snaps_to_triangle() {
+        let trace = walk(&[(150.0, 50.0), (230.0, 190.0), (70.0, 190.0), (151.0, 52.0)], 4.0);
+        assert!(matches!(recognise(&hand(&trace)), Some(Recognised::Triangle(_))));
+    }
+
+    #[test]
+    fn smooth_open_arc_returns_curve_with_pinned_endpoints() {
+        let pts: Vec<(f32, f32)> = (0..=40)
+            .map(|i| {
+                let t = i as f32 / 40.0;
+                let jitter = if (1..=39).contains(&i) && i % 2 == 0 { 2.5 } else { 0.0 };
+                (50.0 + 200.0 * t, 200.0 - 60.0 * (std::f32::consts::PI * t).sin() + jitter)
+            })
+            .collect();
+        let stroke = hand(&pts);
+        assert_eq!(recognise(&stroke), None);
+        let Some(Fit::Curve(curve)) = recognise_or_curve(&stroke) else {
+            panic!("expected Fit::Curve");
+        };
+        assert!(curve.len() >= 6);
+        assert!((curve[0].0 - 50.0).abs() < 0.01);
+        assert!((curve[curve.len() - 1].0 - 250.0).abs() < 0.01);
+        let redrawn = redraw_fit(&stroke, Fit::Curve(curve));
+        assert!(redrawn.dabs.len() >= 6);
+    }
+
+    #[test]
+    fn zig_zag_scribble_is_detected_and_rejected_as_shape() {
+        let scribble = walk(&[(50.0, 100.0), (140.0, 90.0), (55.0, 110.0), (145.0, 100.0), (60.0, 125.0), (150.0, 118.0), (55.0, 135.0)], 5.0);
+        let stroke = hand(&scribble);
+        assert!(is_scribble(&stroke));
+        assert_eq!(recognise(&stroke), None);
+        assert_eq!(recognise_or_curve(&stroke), None);
     }
 }
