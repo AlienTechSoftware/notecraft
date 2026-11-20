@@ -1734,7 +1734,9 @@ impl NoteCraftApp {
         // Scrolled to where it was.
         if let Some(y) = self.session.settings.get(LAST_SCROLL_KEY).and_then(|y| y.trim().parse::<f32>().ok()).filter(|y| y.is_finite() && *y > 0.0) {
             // Pictures may take a while to arrive from a synced folder, and the page is only as
-            // tall as what has arrived: it is tried for a few seconds.
+            // tall as what has arrived: it is tried for a few seconds. Opening the page asked for
+            // its top; that is not where it was left, so it is not asked for any more.
+            self.scroll_to = None;
             self.restore_scroll = Some((y, 300));
         }
     }
