@@ -41,6 +41,11 @@ use web_time::Instant;
 
 /// The grid boxes snap to on plain paper, in page points: the smallest squared paper's step.
 const PLAIN_SNAP_STEP: f32 = 12.0;
+#[cfg(test)]
+thread_local! {
+    /// How many times the window read the notebooks' trees from disk, for tests.
+    static TREE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
@@ -2727,6 +2732,8 @@ impl NoteCraftApp {
     /// Every notebook that is open: those in the notebooks folder and those opened from
     /// elsewhere.
     fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
+        #[cfg(test)]
+        TREE_READS.with(|n| n.set(n.get() + 1));
         let mut notebooks = notecraft_store::tree::load_notebooks(self.session.root());
         for dir in self.session.opened_elsewhere() {
             if let Some(nb) = notecraft_store::tree::load_tree(dir)
@@ -9175,7 +9182,9 @@ impl NoteCraftApp {
             return;
         }
         let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
-        let notebooks = self.open_notebooks();
+        // From the tree the window holds, which commands keep up to date: read from disk here,
+        // every frame, it asked a synced folder's mount for every section and page each time.
+        let notebooks = self.session.tree();
         let Some(notebook) = notebook_for(&dir).and_then(|nb| notebooks.iter().find(|n| n.path == nb)) else { return };
         let tabs = crate::sectiontabs::tabs(notebook);
         let here = section_for(&dir);
@@ -9188,7 +9197,7 @@ impl NoteCraftApp {
                 chosen = crate::sectiontabs::show(ui, &tabs, here.as_deref(), &tokens);
             });
         if let Some(section) = chosen {
-            match first_page_under(&notebooks, &section) {
+            match first_page_under(self.session.tree(), &section) {
                 Some(page) => {
                     self.expand_to(&page);
                     self.open_page(&page);
@@ -14769,5 +14778,67 @@ mod band_title_tests {
         assert!(centre - 100.0 >= 560.0, "{centre}");
         // Wider than the room (it is ellipsized to fit first): it starts where the room starts.
         assert_eq!(band_title_centre(600.0, 300.0, 400.0, 300.0), 450.0);
+    }
+}
+
+#[cfg(test)]
+mod tabs_layout_tests {
+    use super::*;
+
+    /// View > Tabs layout read every open notebook's tree from disk to draw the tabs, every
+    /// frame: on a synced folder every one of those reads goes to the mount, and the page
+    /// crawled. The tabs come from the tree the window already holds.
+    #[test]
+    fn the_section_tabs_do_not_read_the_notebooks_from_disk_each_frame() {
+        let t = notecraft_store::testing::TempDir::new("tabs-layout-reads");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        app.tabs_layout = true;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        let before = TREE_READS.with(std::cell::Cell::get);
+        for _ in 0..20 {
+            h.step();
+        }
+        assert_eq!(TREE_READS.with(std::cell::Cell::get) - before, 0, "twenty frames with the tabs shown, and no reads of the notebooks");
+
+        // The tabs are drawn, and one opens its section's first page.
+        // Another section of the open page's notebook, with a page in it.
+        let here = section_for(&sample.html_page).expect("the page's section");
+        let other = h
+            .state()
+            .session
+            .tree()
+            .iter()
+            .flat_map(|n| n.children.iter())
+            .find(|n| n.info.kind == NodeKind::Section && n.path != here && n.children.iter().any(|p| p.info.kind == NodeKind::Page));
+        let (section, title) = other.map(|n| (n.path.clone(), n.info.title.clone())).expect("another section with a page");
+        {
+            use egui_kittest::kittest::{NodeT as _, Queryable as _};
+            // The section is named in the notebooks pane too; its tab is the one over the page,
+            // right of the panes.
+            let tab = h
+                .query_all_by_label(&title)
+                .max_by(|a, b| {
+                    let x = |n: &egui_kittest::Node<'_>| n.accesskit_node().bounding_box().map_or(0.0, |r| r.x0);
+                    x(a).total_cmp(&x(b))
+                })
+                .expect("the section's tab");
+            tab.click();
+        }
+        for _ in 0..5 {
+            h.step();
+        }
+        let open = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("a page open");
+        assert!(open.starts_with(&section), "a tab opens a page of its section: {open:?}");
     }
 }
