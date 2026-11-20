@@ -84,6 +84,10 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
+          # No persisted credential: checkout would store a GITHUB_TOKEN
+          # Authorization header that overrides the App token in the branch
+          # push URL below. Every write in this job carries its own token.
+          persist-credentials: false
 
       - name: Decide whether to release, and which version
         id: decide
@@ -191,8 +195,8 @@ jobs:
           git checkout -B "$branch"
           git add Cargo.toml Cargo.lock docs/demo/DemoNotebook
           git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
-          # Push the branch with the App token, to an explicit URL, so the checkout's own
-          # remote (GITHUB_TOKEN) is left alone for the tag push later.
+          # Push the branch with the App token, to an explicit URL. The checkout stored no
+          # credential (persist-credentials: false), so nothing overrides the App token here.
           git push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           # Reuse the pull request from a failed run if one already exists for this branch.
           pr="$(gh pr list --head "$branch" --base main --json number --jq '.[0].number // empty')"
@@ -255,13 +259,16 @@ jobs:
         run: |
           set -euo pipefail
           sha="${{ steps.wait.outputs.merged_commit }}"
+          # Fetch needs no credential: the repository is public.
           git fetch origin main --tags --force
           # The merged commit must carry the release version.
           git show "$sha:Cargo.toml" | grep -qx "version = \"$VERSION\"" || { echo "::error::merged commit $sha does not say $VERSION"; exit 1; }
           git tag -f -a "$TAG" -m "NoteCraft $TAG" "$sha"
-          git push --force origin "refs/tags/$TAG"
+          # The checkout stored no credential, so the tag push and the branch delete
+          # carry GITHUB_TOKEN in the URL.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
           # The version branch served its purpose; the pull request is merged.
-          git push origin --delete "${{ steps.pr.outputs.branch }}" || true
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete "${{ steps.pr.outputs.branch }}" || true
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "### NoteCraft $TAG (\`$(git rev-parse --short "$sha")\`)" >>"$GITHUB_STEP_SUMMARY"
 
