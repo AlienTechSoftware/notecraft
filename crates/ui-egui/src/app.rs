@@ -43,11 +43,6 @@ use web_time::Instant;
 const PLAIN_SNAP_STEP: f32 = 12.0;
 /// The room kept above ink drawn above a page's top, when the canvas is panned up to it.
 const INK_ABOVE_ROOM: f32 = 24.0;
-#[cfg(test)]
-thread_local! {
-    /// How many times the window read the notebooks' trees from disk, for tests.
-    static TREE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
@@ -2772,8 +2767,6 @@ impl NoteCraftApp {
     /// Every notebook that is open: those in the notebooks folder and those opened from
     /// elsewhere.
     fn open_notebooks(&self) -> Vec<notecraft_store::tree::Node> {
-        #[cfg(test)]
-        TREE_READS.with(|n| n.set(n.get() + 1));
         let mut notebooks = notecraft_store::tree::load_notebooks(self.session.root());
         for dir in self.session.opened_elsewhere() {
             if let Some(nb) = notecraft_store::tree::load_tree(dir)
@@ -15060,11 +15053,71 @@ mod tabs_layout_tests {
         for _ in 0..5 {
             h.step();
         }
-        let before = TREE_READS.with(std::cell::Cell::get);
-        for _ in 0..20 {
-            h.step();
+        // A section of the other notebook gets its `_node.toml` from a named pipe, and a thread
+        // on the other end counts how many times it is read: each read of the notebooks from
+        // disk reads it once.
+        #[cfg(unix)]
+        {
+            use std::io::Write as _;
+            use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+            fn sections(nodes: &[Node], out: &mut Vec<PathBuf>) {
+                for n in nodes {
+                    if n.info.kind == NodeKind::Section {
+                        out.push(n.path.clone());
+                    }
+                    sections(&n.children, out);
+                }
+            }
+            let mut all = Vec::new();
+            sections(h.state().session.tree(), &mut all);
+            let elsewhere = all
+                .into_iter()
+                .find(|s| !sample.html_page.starts_with(s))
+                .map(|s| s.join("_node.toml"))
+                .expect("a section other than the open page's");
+            let text = std::fs::read(&elsewhere).expect("the section's file");
+            std::fs::remove_file(&elsewhere).expect("remove");
+            assert!(std::process::Command::new("mkfifo").arg(&elsewhere).status().expect("mkfifo").success());
+            let (reads, stop) = (std::sync::Arc::new(AtomicUsize::new(0)), std::sync::Arc::new(AtomicBool::new(false)));
+            let writer = {
+                let (pipe, reads, stop, text) = (elsewhere.clone(), reads.clone(), stop.clone(), text.clone());
+                std::thread::spawn(move || {
+                    use std::os::unix::fs::OpenOptionsExt as _;
+                    #[cfg(any(target_os = "linux", target_os = "android"))]
+                    const O_NONBLOCK: i32 = 0o4000;
+                    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                    const O_NONBLOCK: i32 = 0x0004;
+                    // A reader waits in its open for a writer; opened without waiting, the write
+                    // end opens only while one does.
+                    while !stop.load(Ordering::SeqCst) {
+                        match std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(&pipe) {
+                            Ok(mut out) => {
+                                let _ = out.write_all(&text);
+                                reads.fetch_add(1, Ordering::SeqCst);
+                            }
+                            Err(_) => std::thread::sleep(Duration::from_millis(1)),
+                        }
+                    }
+                })
+            };
+            // Anything the change itself sets off is let settle first.
+            let settle = std::time::Instant::now() + Duration::from_millis(1500);
+            while std::time::Instant::now() < settle {
+                h.step();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let before = reads.load(Ordering::SeqCst);
+            for _ in 0..20 {
+                h.step();
+            }
+            let read = reads.load(Ordering::SeqCst) - before;
+            stop.store(true, Ordering::SeqCst);
+            writer.join().expect("the writer");
+            // The section's own file back, for what follows.
+            std::fs::remove_file(&elsewhere).expect("remove the pipe");
+            std::fs::write(&elsewhere, &text).expect("the section's file back");
+            assert_eq!(read, 0, "twenty frames with the tabs shown, and no reads of the notebooks");
         }
-        assert_eq!(TREE_READS.with(std::cell::Cell::get) - before, 0, "twenty frames with the tabs shown, and no reads of the notebooks");
 
         // The tabs are drawn, and one opens its section's first page.
         // Another section of the open page's notebook, with a page in it.
