@@ -1193,6 +1193,7 @@ pub struct NoteCraftApp {
     page_revision: Option<crate::windows::Revision>,
     watcher: notecraft_engine::FileWatcher,
     watcher_woken: bool,
+    pending_tree_refresh: bool,
     /// When, on the window's clock, the page was last checked for another window's writes.
     changes_checked_at: Option<f64>,
     page_conflict: bool,
@@ -1523,6 +1524,7 @@ impl NoteCraftApp {
             page_revision: None,
             watcher: notecraft_engine::FileWatcher::new(),
             watcher_woken: false,
+            pending_tree_refresh: false,
             changes_checked_at: None,
             page_conflict: false,
             search: String::new(),
@@ -12426,14 +12428,24 @@ impl NoteCraftApp {
             self.watcher_woken = true;
         }
         let open_page = self.editor.as_ref().map(|ed| ed.dir.clone());
-        self.watcher.watch(self.session.root(), open_page.as_deref(), self.page_revision.clone());
+        let mut watch_roots = Vec::with_capacity(1 + self.session.opened_elsewhere().len());
+        watch_roots.push(self.session.root().to_path_buf());
+        watch_roots.extend(self.session.opened_elsewhere().iter().cloned());
+        self.watcher.watch_roots(&watch_roots, open_page.as_deref(), self.page_revision.clone());
         let watched = self.watcher.take_changes();
-        if watched.tree && !self.saver.busy() && self.ink_saving.is_none() {
+        if watched.tree {
+            self.pending_tree_refresh = true;
+        }
+        if self.pending_tree_refresh && !self.saver.busy() && self.ink_saving.is_none() {
+            self.pending_tree_refresh = false;
             crate::fscache::forget_all();
             self.session.refresh();
         }
         if watched.page {
             crate::fscache::forget_all();
+            if let Some(ed) = self.editor.as_mut() {
+                ed.attachments = notecraft_store::assets::list(&ed.dir);
+            }
         }
         // Another window's writes are looked for before anything typed or clicked here is acted
         // on, and twice a second besides. Not every frame: each look asks the disk about the page
