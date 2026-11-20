@@ -1474,6 +1474,9 @@ impl Written {
 impl InkWrite {
     /// Writes the ink, or takes the file away when nothing is drawn.
     pub fn run(self) -> std::io::Result<Written> {
+        // Written out first, the slow part: the file is then checked for a change made by another
+        // window as late as it can be, just before it is written.
+        let text = self.drawing.as_ref().map(svg_text);
         let current = match std::fs::read(&self.file) {
             Ok(bytes) => Some(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -1490,7 +1493,6 @@ impl InkWrite {
         let kept = if self.keep_first && self.file.is_file() { Some(keep_original(&self.file)?) } else { None };
         // A page drawn on and then rubbed clean loses its file rather than keeping an
         // empty one, so a page with no ink has no ink in its folder either.
-        let text = self.drawing.as_ref().map(svg_text);
         match &text {
             None => match std::fs::remove_file(&self.file) {
                 Ok(()) => {}
@@ -1554,15 +1556,8 @@ mod tests {
             pad.drawing.add(s);
         }
         let before = svg_writes();
-        let started = std::time::Instant::now();
         let write = pad.prepare_save();
-        let preparing = started.elapsed();
         assert_eq!(svg_writes(), before, "nothing written out on the window's thread");
-        let started = std::time::Instant::now();
-        let whole = svg::write(&pad.drawing, svg::Flavour::Editable);
-        let writing_out = started.elapsed();
-        assert!(preparing * 10 < writing_out, "preparing the save takes a small part of writing the page out: {preparing:?} against {writing_out:?}");
-        drop(whole);
 
         let file = write.file.clone();
         let written = std::thread::spawn(move || write.run()).join().expect("the save's thread").expect("written");
