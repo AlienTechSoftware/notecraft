@@ -464,8 +464,11 @@ What it means for you:
 - **Pushing needs LFS too.** When a push includes new history that touches LFS objects, Git LFS
   uploads them. If LFS is missing or the objects are not on disk, the push is refused with
   `missing or corrupt local objects`. The nightly hit this on 20 November 2026.
-- **CI and the nightly check out LFS objects** (`lfs: true` on the checkout steps). Any new workflow
-  that checks out the repository and pushes must do the same.
+- **CI does not fetch LFS objects today.** Nothing on `main` sets `lfs` on a checkout. The nightly's
+  push of its version bump is the one place that needs them. Its fix is pending in PR #425, which
+  either fetches the objects or uses the push flag `lfs.allowincompletepush`. Read that PR's
+  decision before you change the nightly's checkout. Any new workflow that checks out the repository
+  and pushes must handle LFS the same way.
 - `cargo xtask pre-push` does not check LFS. If a push is refused for LFS reasons, run
   `git lfs fetch --all` and `git lfs pull`, then push again.
 

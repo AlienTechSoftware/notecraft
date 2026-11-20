@@ -146,8 +146,9 @@ DMGs and CLI archives, the Android APK.
 **Known failure modes (seen so far).**
 - Push refused with GH006: `main` is protected and the workflow pushed to it directly. Fixed by
   the merge-queue design (PR #421).
-- Push refused with `missing or corrupt local objects`: the runner did not fetch Git LFS objects.
-  The checkout needs `lfs: true` (see the nc-devx skill, Git LFS section).
+- Push refused with `missing or corrupt local objects`: the runner did not have Git LFS objects.
+  The fix is pending in PR #425 (fetch the objects, or the push flag). See the nc-devx skill,
+  Git LFS section.
 - macOS packaging stopped on an empty array under `set -u` (fixed by PR #415).
 - Stray tag without a release: a failed run leaves its tag. The next run replaces it. Delete it by
   hand if you need to recover.
