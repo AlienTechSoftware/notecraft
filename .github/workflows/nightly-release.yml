@@ -7,10 +7,15 @@
 # What one run does (docs/releasing.md has the long form):
 #   1. prepare: stops when nothing merged to main since the last release, or when main's own CI is
 #      not green. Otherwise takes the next patch number above every released version, sets it with
-#      `cargo xtask version set`, regenerates the Welcome notebook for that number, commits that on
-#      top of main, pushes the tag v<version>, and fast-forwards main onto that commit, so main's
-#      version line always matches the latest release. (This overrides the 2026-11-12 rule that main
-#      is never pushed to; see AGENTS.md.)
+#      `cargo xtask version set`, regenerates the Welcome notebook for that number, and lands that
+#      version bump on main through the merge queue: it mints a token for the nightly GitHub App
+#      (see Needs), opens a pull request with it, queues it like any other change, and waits for it
+#      to merge, so the bump gets CI before it lands. The App token matters: a pull request opened
+#      with GITHUB_TOKEN gets no CI without a manual approval, and the queue needs the PR's own
+#      checks to pass before it can enter. Then it tags the merged commit v<version>, so main's
+#      version line always matches the latest release. The nightly never pushes to main directly:
+#      main's branch protection requires the merge queue, and a direct push fails (GH006; the
+#      0.0.16 nightly failed this way on 2026-11-20).
 #   2. test: builds and runs the workspace tests on the tagged commit.
 #   3. packaging: the Packaging workflow on the tagged commit (Windows, Linux x86_64 and aarch64,
 #      macOS Apple Silicon and Intel, Android arm64).
@@ -23,7 +28,10 @@
 # even when nothing merged since the last release, for example after a failed run.
 #
 # Needs: the AZURE_STATIC_WEB_APPS_API_TOKEN repository secret (already used by Deploy website), and
-# workflow permissions that let GITHUB_TOKEN write contents (the tag and the release).
+# the nightly GitHub App (installed on this repo, Contents and Pull requests read and write) with
+# its App ID and private key in the NIGHTLY_APP_ID and NIGHTLY_APP_PRIVATE_KEY secrets. The App
+# token opens the version-bump pull request: GITHUB_TOKEN cannot, because a pull request it opens
+# gets no CI without a manual approval. The tag push and the release still use GITHUB_TOKEN.
 name: Nightly release
 
 on:
@@ -51,10 +59,12 @@ jobs:
   prepare:
     name: Decide, bump and tag
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 240
     permissions:
-      contents: write # push the release tag
+      contents: write # push the release tag and delete the version branch
       checks: read # read main's CI result
+      # The version-bump pull request is opened with the nightly App token (see the mint step
+      # below), so this job needs no pull-requests permission for GITHUB_TOKEN.
     outputs:
       release: ${{ steps.decide.outputs.release }}
       version: ${{ steps.decide.outputs.version }}
@@ -74,6 +84,10 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
+          # No persisted credential: checkout would store a GITHUB_TOKEN
+          # Authorization header that overrides the App token in the branch
+          # push URL below. Every write in this job carries its own token.
+          persist-credentials: false
 
       - name: Decide whether to release, and which version
         id: decide
@@ -154,7 +168,102 @@ jobs:
           cargo xtask demo-check
           git status --short
 
-      - name: Commit the version, push the tag, and bring main in step
+      - name: Mint a token for the nightly App
+        id: app-token
+        if: steps.decide.outputs.release == 'true'
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ secrets.NIGHTLY_APP_ID }}
+          private-key: ${{ secrets.NIGHTLY_APP_PRIVATE_KEY }}
+        # The token lives about an hour. It is used only in the next two steps (open the pull
+        # request, enable auto-merge), minutes after minting. The wait loop polls with
+        # GITHUB_TOKEN and the tag push uses GITHUB_TOKEN, so nothing depends on it later.
+
+      - name: Fetch the LFS objects the branch push needs
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          # The branch push runs the LFS pre-push check over the branch
+          # history, and it fails when an object is missing locally
+          # (nightly run #13). Fetch only the two large fixtures, after
+          # the release decision, so nights without a release download
+          # nothing. The include and the empty exclude follow the
+          # .lfsconfig comment: the exclusion there still applies to
+          # later LFS commands, so it must be overridden explicitly.
+          git lfs fetch --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one" --exclude=""
+
+      - name: Commit the version bump and open its pull request
+        id: pr
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="nightly/release-$TAG"
+          git checkout -B "$branch"
+          git add Cargo.toml Cargo.lock docs/demo/DemoNotebook
+          git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
+          # Push the branch with the App token, to an explicit URL. The checkout stored no
+          # credential (persist-credentials: false), so nothing overrides the App token here.
+          git push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          # Reuse the pull request from a failed run if one already exists for this branch.
+          pr="$(gh pr list --head "$branch" --base main --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            # gh pr create prints the pull request URL; it has no --json flag.
+            pr_url="$(gh pr create --title "release: v$VERSION" --base main --head "$branch" \
+              --body "Nightly version bump for $TAG, opened by the Nightly release workflow. It sets the workspace version to $VERSION and regenerates the Welcome notebook. The workflow queues it through the merge queue, tags the merged commit, and releases from it.")"
+            pr="$(gh pr view "$pr_url" --json number --jq '.number')"
+          fi
+          {
+            echo "number=$pr"
+            echo "branch=$branch"
+          } >>"$GITHUB_OUTPUT"
+          echo "Version-bump pull request: https://github.com/$GITHUB_REPOSITORY/pull/$pr" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Queue the version bump and wait for it to land
+        id: wait
+        if: steps.decide.outputs.release == 'true'
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # With the merge queue enabled, auto-merge adds the pull request to the queue.
+          # It waits for PR CI, then the queue runs merge-group CI and merges it.
+          # A rerun after a failed run may find auto-merge already on, or the PR merged.
+          # Reads use GITHUB_TOKEN (the job default); only the auto-merge call uses the App
+          # token, minutes after minting, well inside its hour.
+          read -r merged_at has_auto <<<"$(gh pr view "$PR" --json mergedAt,autoMergeRequest --jq '[.mergedAt // "null", (.autoMergeRequest != null)] | @tsv')"
+          if [ "$merged_at" = "null" ] && [ "$has_auto" != "true" ]; then
+            GH_TOKEN="$APP_TOKEN" gh pr merge --auto --merge "$PR"
+          fi
+          # PR CI plus queue CI can take a while; give the merge 150 minutes,
+          # well inside this job's timeout.
+          deadline=$((SECONDS + 150 * 60))
+          while :; do
+            read -r state merged_at <<<"$(gh pr view "$PR" --json state,mergedAt --jq '[.state, (.mergedAt // "null")] | @tsv')"
+            if [ "$merged_at" != "null" ]; then
+              echo "Pull request #$PR merged at $merged_at."
+              break
+            fi
+            if [ "$state" = "CLOSED" ]; then
+              echo "::error::Pull request #$PR was closed without merging. Inspect it, then rerun the nightly."
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Pull request #$PR did not merge within 150 minutes. Inspect it, then rerun the nightly."
+              exit 1
+            fi
+            sleep 60
+          done
+          echo "merged_commit=$(gh pr view "$PR" --json mergeCommit --jq '.mergeCommit.oid')" >>"$GITHUB_OUTPUT"
+
+      - name: Tag the merged commit
         id: tag
         if: steps.decide.outputs.release == 'true'
         env:
@@ -162,16 +271,19 @@ jobs:
           VERSION: ${{ steps.decide.outputs.version }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock docs/demo/DemoNotebook
-          git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
-          git tag -f -a "$TAG" -m "NoteCraft $TAG"
-          git push --force origin "refs/tags/$TAG"
-          # Keep main's version in step with the release: a fast-forward of main onto this commit.
-          git push origin "HEAD:refs/heads/main"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "### NoteCraft $TAG (\`$(git rev-parse --short HEAD)\`, main at \`$(git rev-parse --short HEAD~1)\`)" >>"$GITHUB_STEP_SUMMARY"
+          sha="${{ steps.wait.outputs.merged_commit }}"
+          # Fetch needs no credential: the repository is public.
+          git fetch origin main --tags --force
+          # The merged commit must carry the release version.
+          git show "$sha:Cargo.toml" | grep -qx "version = \"$VERSION\"" || { echo "::error::merged commit $sha does not say $VERSION"; exit 1; }
+          git tag -f -a "$TAG" -m "NoteCraft $TAG" "$sha"
+          # The checkout stored no credential, so the tag push and the branch delete
+          # carry GITHUB_TOKEN in the URL.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
+          # The version branch served its purpose; the pull request is merged.
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete "${{ steps.pr.outputs.branch }}" || true
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "### NoteCraft $TAG (\`$(git rev-parse --short "$sha")\`)" >>"$GITHUB_STEP_SUMMARY"
 
   test:
     name: Build and test the tagged commit

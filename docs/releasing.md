@@ -15,9 +15,16 @@ One run:
 1. Stops, and releases nothing, when no commit reached `main` since the last release.
 2. Stops with an error when CI on `main`'s newest commit is not green.
 3. Takes the next patch number above every published release (0.0.9 becomes 0.0.10), runs
-   `cargo xtask version set`, rebuilds the Welcome notebook for that number, and commits both on
-   top of `main`. Only the tag `v<version>` is pushed. `main` is never pushed to, so the version in
-   `main`'s `Cargo.toml` stays where it is, and the released numbers live in the tags.
+   `cargo xtask version set`, rebuilds the Welcome notebook for that number, and lands that
+   version bump on `main` through the merge queue: it mints a token for the nightly GitHub
+   App, opens a pull request with it, queues it like any other change, and waits for it to
+   merge, so the bump gets CI before it lands. The App token matters: a pull request opened
+   with `GITHUB_TOKEN` gets no CI without a manual approval, and the queue needs the PR's
+   own checks to pass before it can enter. Then it tags the merged commit `v<version>`.
+   The nightly never pushes to `main` directly: `main`'s branch protection requires the
+   merge queue, and a direct push fails (GH006; the 0.0.16 nightly failed this way on
+   2026-11-20). `main`'s `Cargo.toml` therefore matches the latest release, except after
+   a failed run (see below).
 4. Builds and tests the tagged commit on Linux.
 5. Runs the Packaging workflow on the tagged commit: Windows x64 (MSI and portable zip), Linux
    x86_64 and aarch64 (tar.gz, AppImage, deb and rpm), macOS Apple Silicon and Intel (DMG and
@@ -36,15 +43,34 @@ One run:
 - From a terminal: `gh workflow run nightly-release.yml --repo AlienTechSoftware/notecraft --ref main`.
 - When nothing has merged since the last release the run stops early. Tick **force** (or add
   `-f force=true`) to release anyway, for example after a failed run.
-- A failed run leaves a tag without a release. The next run reuses that number and replaces the tag.
+- A failed run leaves no tag if it failed before the tag push: the tag is pushed only
+  after the version bump merges. What the next run does depends on where the run
+  failed. If the bump did not merge, the next run reuses the number and reopens or
+  reuses the bump pull request. If the bump merged but the tag push failed, `main`
+  already carries the version and the next run skips that number: no release ever
+  carries it, and the version in `main` is one ahead of the latest release until the
+  next release lands.
+- If the tag push succeeded but a later job failed (test, packaging, deployment, or
+  publication), the tag stays in place without a release. `main` already carries the
+  version, so the next run also skips that number, and the orphaned tag is left
+  behind. An operator can delete it, or leave it: it points at the commit that
+  would have been released.
 - To update only the website, run Actions, Deploy website. It builds `main` and needs no release.
 
 ### What it needs
 
 - The `AZURE_STATIC_WEB_APPS_API_TOKEN` repository secret, the one Deploy website already uses.
-- Settings, Actions, General, Workflow permissions must let `GITHUB_TOKEN` write contents. The
-  workflow asks only for what each job needs, but an organisation or repository setting of
-  "read only" caps it and the tag push fails.
+- The nightly GitHub App, installed on this repository with Contents and Pull requests
+  read and write, and its App ID and private key in the `NIGHTLY_APP_ID` and
+  `NIGHTLY_APP_PRIVATE_KEY` secrets. The workflow mints a token each run and uses it for
+  the version-bump pull request. `GITHUB_TOKEN` cannot do this job: a pull request it
+  opens gets no CI without a manual approval. The repository setting "Allow GitHub
+  Actions to create and approve pull requests" is not needed, because the App token,
+  not `GITHUB_TOKEN`, opens the pull request.
+- Each job asks only for what it needs (`GITHUB_TOKEN` writes contents for the tag and
+  the release). The repository default for workflow permissions is only a default: a
+  job's `permissions` block can still ask for more. Do not broaden the default for all
+  workflows to fix one job.
 - No tag ruleset may block `github-actions[bot]` from creating `v*` tags.
 - Nothing is signed. When signing secrets are added (see Signing below), the nightly needs a change
   to use them.
@@ -52,9 +78,10 @@ One run:
 ## Versions
 
 - One source: `[workspace.package] version` in the root `Cargo.toml`. Every crate inherits it.
-- **Nightly releases bump the patch number by themselves, once a day, in the tag only.** The
-  maintainers approved that on 2026-11-12. A minor or major number, or any change to `main`'s
-  version line, still needs the owner's approval in words, each time. The first release was
+- **Nightly releases bump the patch number by themselves, once a day, and land the bump on
+  `main` through the merge queue.** The owner approved that on 2026-11-20. It replaces the
+  2026-11-12 rule that nightly bumps live in the tag only. A minor or major number still
+  needs the owner's approval in words, each time. The first release was
   `v0.0.1`. The owner approved 0.0.2 on 2026-10-19 for the title band, 0.0.3 on 2026-10-21, 0.0.6
   on 2026-10-25, 0.0.7 on 2026-10-29, 0.0.8 on 2026-11-02, and 0.0.9 on 2026-11-06.
 - A nightly patch number can carry features, not only fixes. The patch rule below is for releases
