@@ -238,6 +238,8 @@ struct Readers {
     idle: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// Reads queued and not taken by a reader yet.
     queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Readers running, busy or not.
+    live: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -249,6 +251,7 @@ impl Readers {
             waiting: std::sync::Arc::new(std::sync::Mutex::new(waiting)),
             idle: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             queued: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            live: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
@@ -265,13 +268,11 @@ impl Readers {
         use std::sync::atomic::Ordering;
         // Counted before it is queued: a free reader may take it, and count it off, at once.
         let waiting_reads = self.queued.fetch_add(1, Ordering::SeqCst) + 1;
-        if waiting_reads > self.idle.load(Ordering::SeqCst) && !self.start_reader() {
+        // No reader could be started: a reader running, busy or not, comes to the queue in time,
+        // so the read waits for it; with none running at all it is read in place.
+        if waiting_reads > self.idle.load(Ordering::SeqCst) && !self.start_reader() && self.live.load(Ordering::SeqCst) == 0 {
             self.queued.fetch_sub(1, Ordering::SeqCst);
-            // A reader already running will come to queued reads; none at all, and this one is
-            // read in place.
-            if self.idle.load(Ordering::SeqCst) == 0 {
-                return Err(job);
-            }
+            return Err(job);
         }
         if let Err(e) = self.queue.send(job) {
             self.queued.fetch_sub(1, Ordering::SeqCst);
@@ -283,27 +284,47 @@ impl Readers {
     /// Starts a reader. False when the system has no thread to give.
     fn start_reader(&self) -> bool {
         use std::sync::atomic::Ordering;
-        let (waiting, idle, queued) = (self.waiting.clone(), self.idle.clone(), self.queued.clone());
-        std::thread::Builder::new()
-            .name("notecraft-pictures".into())
-            .spawn(move || {
-                loop {
-                    idle.fetch_add(1, Ordering::SeqCst);
-                    // The queue is held only to take the next read, not while reading it.
-                    let next = waiting.lock().ok().map(|q| q.recv_timeout(READER_IDLE));
-                    idle.fetch_sub(1, Ordering::SeqCst);
-                    match next {
-                        Some(Ok(job)) => {
-                            queued.fetch_sub(1, Ordering::SeqCst);
-                            job.run();
+        let (waiting, idle, queued, live) = (self.waiting.clone(), self.idle.clone(), self.queued.clone(), self.live.clone());
+        self.live.fetch_add(1, Ordering::SeqCst);
+        let started = std::thread::Builder::new().name("notecraft-pictures".into()).spawn(move || {
+            loop {
+                idle.fetch_add(1, Ordering::SeqCst);
+                // Idle from now, not from when the queue is free: readers waiting their turn for
+                // the queue do not each wait the whole time again once they have it.
+                let until = std::time::Instant::now() + READER_IDLE;
+                // The queue is held only to take the next read, not while reading it.
+                let next = waiting.lock().ok().map(|q| q.recv_timeout(until.saturating_duration_since(std::time::Instant::now())));
+                idle.fetch_sub(1, Ordering::SeqCst);
+                match next {
+                    Some(Ok(job)) => {
+                        queued.fetch_sub(1, Ordering::SeqCst);
+                        job.run();
+                    }
+                    // Nothing to read for a while: the reader ends, unless a read was queued as it
+                    // gave up waiting, counting on it; then it stays for that read.
+                    Some(Err(std::sync::mpsc::RecvTimeoutError::Timeout)) => {
+                        if queued.load(Ordering::SeqCst) > 0 {
+                            continue;
                         }
-                        // A read queued as this reader gave up waiting counted on it: it stays for it.
-                        Some(Err(std::sync::mpsc::RecvTimeoutError::Timeout)) if queued.load(Ordering::SeqCst) > 0 => {}
-                        _ => break,
+                        live.fetch_sub(1, Ordering::SeqCst);
+                        if queued.load(Ordering::SeqCst) > 0 {
+                            live.fetch_add(1, Ordering::SeqCst);
+                            continue;
+                        }
+                        break;
+                    }
+                    // The queue is gone: nothing more will come.
+                    _ => {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                        break;
                     }
                 }
-            })
-            .is_ok()
+            }
+        });
+        if started.is_err() {
+            self.live.fetch_sub(1, Ordering::SeqCst);
+        }
+        started.is_ok()
     }
 }
 
@@ -1418,9 +1439,10 @@ mod tests {
     fn nonblocking_write(pipe: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::io::Write as _;
         use std::os::unix::fs::OpenOptionsExt as _;
-        #[cfg(target_os = "linux")]
+        // Linux and Android share the generic value; macOS and the BSDs another.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         const O_NONBLOCK: i32 = 0o4000;
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         const O_NONBLOCK: i32 = 0x0004;
         std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(pipe)?.write_all(bytes)
     }
