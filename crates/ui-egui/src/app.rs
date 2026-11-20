@@ -14924,6 +14924,7 @@ mod canvas_pan_tests {
         h.state_mut().open_page(&sample.html_page);
         settle(&mut h);
         assert!((h.state().canvas_pan.y - pan.y).abs() < 1.0, "the same page read again kept its pan: {pan:?} -> {:?}", h.state().canvas_pan);
+        assert!((h.state().page_offset_y - scrolled).abs() < 1.0, "and its scroll offset: {scrolled} -> {}", h.state().page_offset_y);
 
         // A page that cannot be read leaves the view of the one open as it was.
         swipe(&mut h, -3000.0);
