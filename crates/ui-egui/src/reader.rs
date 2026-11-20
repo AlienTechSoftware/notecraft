@@ -94,6 +94,13 @@ struct Swipe {
     zoom: bool,
     /// A click or a key stopped it: the lift that ends it carries nothing on.
     dropped: bool,
+    /// Its start was seen: where it began says whose it is, and moving over the reading later
+    /// does not make it the reading's.
+    seen: bool,
+    /// Begun with Shift held (and not Alt): egui scrolls it sideways to its end, as it keeps the
+    /// keys the fingers came down with, and the reading, which only scrolls up and down, does
+    /// not move, so nothing is carried on either.
+    sideways: bool,
 }
 
 /// The smallest and largest text sizes offered.
@@ -318,7 +325,13 @@ fn reading(ui: &mut Ui, reader: &mut Reader, t: &Tokens) {
                 // the reading's if it began over it.
                 egui::TouchPhase::Start => {
                     fling.stop();
-                    *swipe = Swipe { ours: over(i), zoom: modifiers.ctrl || modifiers.command, dropped: false };
+                    *swipe = Swipe {
+                        ours: over(i),
+                        zoom: modifiers.ctrl || modifiers.command,
+                        dropped: false,
+                        seen: true,
+                        sideways: modifiers.shift && !modifiers.alt,
+                    };
                 }
                 egui::TouchPhase::End => {
                     if swipe.ours && !swipe.zoom && !swipe.dropped {
@@ -334,12 +347,12 @@ fn reading(ui: &mut Ui, reader: &mut Reader, t: &Tokens) {
                 }
                 egui::TouchPhase::Move => {
                     // A swipe whose start was not seen is the reading's if it moves over it.
-                    if !swipe.ours && !swipe.zoom && !swipe.dropped && over(i) {
+                    if !swipe.seen && !swipe.ours && !swipe.zoom && !swipe.dropped && over(i) {
                         swipe.ours = true;
                     }
                     // Zoom stays zoom to the end, even once the key is let go.
                     swipe.zoom |= modifiers.ctrl || modifiers.command;
-                    if swipe.ours && !swipe.zoom && !swipe.dropped && *delta != egui::Vec2::ZERO {
+                    if swipe.ours && !swipe.zoom && !swipe.dropped && !swipe.sideways && *delta != egui::Vec2::ZERO {
                         fling.finger(i.time, *delta);
                     }
                 }
@@ -549,11 +562,15 @@ mod tests {
         }
 
         fn wheel(delta: f32, phase: egui::TouchPhase, ctrl: bool) -> egui::Event {
+            Self::wheel_with(delta, phase, if ctrl { egui::Modifiers::CTRL } else { egui::Modifiers::NONE })
+        }
+
+        fn wheel_with(delta: f32, phase: egui::TouchPhase, modifiers: egui::Modifiers) -> egui::Event {
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, delta),
                 phase,
-                modifiers: if ctrl { egui::Modifiers::CTRL } else { egui::Modifiers::NONE },
+                modifiers,
                 source: egui::MouseWheelSource::Trackpad,
             }
         }
@@ -585,6 +602,33 @@ mod tests {
         b.frame(vec![egui::Event::PointerMoved(egui::pos2(450.0, 10.0))]);
         b.swipe(false, Vec::new());
         assert!(b.carries_on().abs() < 1.0, "the toolbar's swipe is not the reading's");
+    }
+
+    #[test]
+    fn a_swipe_begun_over_the_toolbar_stays_the_toolbars_over_the_reading() {
+        let mut b = Bench::new();
+        b.frame(vec![egui::Event::PointerMoved(egui::pos2(450.0, 10.0))]);
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::Start, false)]);
+        b.frame(vec![egui::Event::PointerMoved(Bench::SCREEN.center())]);
+        for _ in 0..6 {
+            b.frame(vec![Bench::wheel(-40.0, egui::TouchPhase::Move, false)]);
+        }
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::End, false)]);
+        assert!(b.carries_on().abs() < 1.0, "begun over the toolbar, it is not the reading's to carry on");
+    }
+
+    #[test]
+    fn a_swipe_with_shift_held_carries_nothing_on_up_or_down() {
+        let mut b = Bench::new();
+        b.frame(vec![Bench::wheel_with(0.0, egui::TouchPhase::Start, egui::Modifiers::SHIFT)]);
+        for _ in 0..6 {
+            // The key is let go during the swipe: egui keeps the one it began with.
+            b.frame(vec![Bench::wheel(-40.0, egui::TouchPhase::Move, false)]);
+        }
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::End, false)]);
+        assert!(b.carries_on().abs() < 1.0, "egui scrolled it sideways; it is not carried on up and down");
+        b.swipe(false, Vec::new());
+        assert!(b.carries_on() > 20.0, "the next swipe, with no key, carries on");
     }
 
     #[test]
