@@ -20,6 +20,8 @@ pub const FRESH: Duration = Duration::from_secs(2);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Seen {
     pub file: bool,
+    /// Whether there is anything there at all: a file, a folder, or anything else.
+    pub exists: bool,
     pub len: u64,
     pub modified: Option<SystemTime>,
 }
@@ -63,8 +65,8 @@ fn seen_at(path: &Path, now: Instant) -> Seen {
     #[cfg(test)]
     DISK_ASKS.with(|n| n.set(n.get() + 1));
     let seen = match std::fs::metadata(path) {
-        Ok(m) => Seen { file: m.is_file(), len: m.len(), modified: modified(&m) },
-        Err(_) => Seen { file: false, len: 0, modified: None },
+        Ok(m) => Seen { file: m.is_file(), exists: true, len: m.len(), modified: modified(&m) },
+        Err(_) => Seen { file: false, exists: false, len: 0, modified: None },
     };
     SEEN.with(|s| {
         let mut s = s.borrow_mut();

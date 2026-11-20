@@ -16,7 +16,23 @@ Pick a pen from the rack in **Drawing Tools**, then write anywhere on the page.
   its whole width however you hold it.
 
 **Eraser** rubs out any stroke the pointer passes over. **Undo stroke** takes the last one
-back.
+back, and **Redo stroke** puts it back.
+
+The Draw tab also provides tools for drawing straight lines and clean shapes:
+
+- **Ruler** lays a straightedge on the page. Drag to move it, or drag its handle or press `[`
+  and `]` (hold Shift for 15 degrees) to turn it. A stroke started just outside a long edge
+  is guided along that edge so it stays straight. The ruler is a stencil and is not saved to
+  the file.
+- **Shapes** offers regular shapes (lines, arrows, rectangles, rounded rectangles, squares,
+  ellipses, circles, diamonds, triangles and stars) drawn by dragging between two corners.
+- **Automatic Shapes**, when turned on, recognises a hand-drawn line, rectangle, ellipse or
+  triangle and redraws it as a clean shape when you lift the pen, keeping your chosen tool,
+  colour and thickness. Recognition is strict so handwriting stays as drawn, and one Undo
+  restores what the hand drew.
+- **Ink Replay** redraws the page's strokes in the order they were made at an even speed,
+  with controls for play, pause (Space), restart, stepping one stroke back or forward, and
+  speed (0.5x to 4x). It does not alter the drawing or undo history.
 
 ## Picking ink up
 
@@ -24,8 +40,9 @@ Ink is its own thing on the page, not part of any paragraph, so it is picked up 
 
 - **Select** then click a stroke to hold it. Drag inside the box to move it, drag a corner
   to stretch it, and press Delete to throw it away. Clicking bare page lets go.
-- **Lasso Select** then draw a loop: everything wholly inside it is picked up. Wholly, not
-  partly, so a loop round two words does not drag in the long line passing through them.
+- **Lasso Select** then draw round ink to pick it up. A closed loop catches strokes whose
+  points sit inside it; an open C-shaped bracket catches strokes that are enclosed or have
+  at least 65% of their readings and centre enclosed.
 - **Type** puts the pointer back to the words and the caret.
 
 Moving a paragraph does not move ink that happens to sit near it, and moving ink does not
@@ -38,8 +55,12 @@ The rack is yours to arrange, and it is remembered between runs.
 - **Add** puts another tool on the end: a pen, pencil, fountain pen, brush pen or
   highlighter.
 - **Right-click a tool** for Modify Tool, Move Left, Move Right, Add Another and Delete.
-- **The chevron** under the tool in your hand opens the same editor: the stroke it makes,
-  its thickness as dots, and a grid of colours.
+- **The chevron** under the tool in your hand opens the tool editor: the stroke it makes,
+  its thickness as dots, and a grid of colours. The Eyedropper picks a colour from existing
+  ink on the page.
+- Each rack pen displays a preview of its stroke underneath it.
+- **Alt+1 to Alt+9** pick up the pen at that position on the rack from anywhere; **Alt+0**
+  puts the pen down and returns to typing.
 - The last tool cannot be deleted, so there is always something to draw with.
 
 ## Sensitivity
@@ -52,7 +73,9 @@ takes a firm press. The middle leaves the readings exactly as the pen gave them.
 Your pen's own readings are kept whatever this is set to, so a stroke drawn at one setting
 can be re-weighted later rather than having to be drawn again.
 
-Each stroke is written the moment you lift the pen. Ink does not wait for the page to save.
+Ink is written on a background thread a quarter of a second after the last change once the
+pen is lifted, so drawing never waits for the disk. It is finished before any action that
+needs it on disk, such as switching pages or undoing.
 
 ## Where the ink lives
 
@@ -77,9 +100,9 @@ page is rubbed clean.
 If you draw with a pen that reports pressure, the stroke swells and thins as you press.
 A mouse draws an even line, which is the right answer for a mouse.
 
-Pressure is read on Windows today. On macOS and Linux the window layer does not hand it to
-us, so a pen there draws like a mouse; see [gaps](../gaps.md). To see what your pen is
-reporting:
+Pressure is read on Windows, and on Linux under Wayland when using pen tablets. On macOS and
+Linux under X11 the windowing layer does not report tablet pressure events, so a pen there
+draws like a mouse; see [gaps](../gaps.md). To see what your pen is reporting:
 
 ```sh
 cargo run -p notecraft --example pen_check
@@ -103,8 +126,9 @@ the in-memory notebook. Exporting again uses a new filename and keeps earlier pi
 
 ## What is not here yet
 
-Selecting and moving ink, shapes, the ruler, ink replay, and turning handwriting into
-text. The pen rack cannot be added to or rearranged yet, and a tool's colour and thickness
-cannot be changed from its own popup the way OneNote's can. The Draw tab shows those and says
-they are not built. The readings kept in every file are what will make handwriting
-recognition possible later without redrawing anything.
+Turning handwriting into text (Ink to Text) and formulas into math (Ink to Math) are not
+built yet; the Draw tab buttons are placeholders. The raw readings kept in every `ink.svg`
+are what will make handwriting recognition possible later without redrawing anything.
+
+Other stencils such as a protractor, replaying only a selected part of the ink, tilt and
+eraser-end stylus detection, and pressure on macOS and X11 remain unbuilt.

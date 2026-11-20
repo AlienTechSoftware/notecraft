@@ -19,9 +19,10 @@ requested `reelase` spelling for discoverability.
 ## Signoff gates
 
 1. The release version is the nightly tag (`vX.Y.Z`, published by `nightly-release.yml`), not
-   `[workspace.package]` on `main`. `main` stays at its approved version (0.0.9, AGENTS.md); the
-   nightly sets the version in its own tagged commit. Confirm the tag and the release notes; do not
-   bump `main` without explicit approval.
+   `[workspace.package]` on `main`. The nightly lands each patch bump on `main` through the merge
+   queue, so `main`'s version matches the latest release (owner-approved 2026-11-20, AGENTS.md).
+   Minor and major bumps still need the owner's approval, each time. Confirm the tag and the
+   release notes; do not bump `main` by hand.
    Where the official number comes from: the newest published, non-draft `vX.Y.Z` tag on GitHub
    (`gh release list --repo AlienTechSoftware/notecraft --exclude-drafts --limit 5`, or the
    `Latest` label). Pre-releases and drafts are not the official number. The next nightly is the
@@ -66,8 +67,9 @@ requested `reelase` spelling for discoverability.
     rerun it from `main` and verify the live assets before signoff.
 14. Keep deployment provenance aligned. Run desktop Packaging and Release from the same `main`
     commit; confirm the Release workflow accepted that exact Packaging run. For Android, record
-    the external builder's source commit, APK package version, signing certificate identity, and
-    clean-install result. Android is a separate manual build today. Do not present the release as
+    the APK's source commit, package version, signing certificate identity, and clean-install
+    result. The nightly and the Release path build the Android APK inside `packaging.yml`, so the
+    APK comes from the same Packaging run as the desktop files. Do not present the release as
     platform-complete until every advertised platform has a verified artifact or its absence is
     clearly called out.
 15. Confirm every shipped User Assistance payload contains both generated formats and all 13
@@ -87,6 +89,83 @@ have separate artifacts or install results. Status and evidence rules are in
 | macOS | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Linux | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Android | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
+
+## Nightly release workflow (how it works, step by step)
+
+File: `.github/workflows/nightly-release.yml`. Name in Actions: "Nightly release".
+
+**Triggers.** A schedule at `0 7 * * *` (07:00 UTC, 23:00 PT) and a manual `workflow_dispatch`.
+The manual run has one input, `force` (default false): release even when nothing merged to main
+since the last release. Use it only on purpose: it publishes whatever is on `main` as the next
+patch number.
+
+**Job 1, `prepare` ("Decide, bump and tag", timeout 240 min)**
+1. Only runs from `main`.
+2. Decides whether to release. It lists non-draft GitHub releases whose tags match exactly
+   `vMAJOR.MINOR.PATCH` (the archive tag does not match). It takes the highest of those and
+   `Cargo.toml`'s version, then adds one to the patch. If `main` has no commits since the last
+   release and `force` is off, it stops with "no release tonight". This is a normal outcome.
+3. Requires CI on `main` to be green: it reads the check run named `CI` for the `main` commit.
+   If that is not `success`, the run fails and asks you to fix `main` first.
+4. Sets the version with `cargo xtask version set`, regenerates the Welcome notebook, and checks
+   that `Cargo.toml` says the new version.
+5. Mints a token for the nightly GitHub App (`NIGHTLY_APP_ID`, `NIGHTLY_APP_PRIVATE_KEY`). The
+   App token, not the default workflow token, opens the pull request, so CI runs on it.
+6. Commits `Cargo.toml`, `Cargo.lock` and `docs/demo/DemoNotebook` to a branch
+   `nightly/release-vX.Y.Z` and pushes it with the App token. Nothing else is committed.
+7. Opens a pull request to `main` from that branch and queues it with
+   `gh pr merge --auto --merge`. The merge queue runs the required checks and merges it.
+8. Waits up to 150 minutes for the merge. Then it checks the merged commit's `Cargo.toml`
+   and tags that commit `vX.Y.Z`, then deletes the bump branch.
+
+The nightly never pushes to `main` directly. `main` requires the merge queue, and a direct push
+fails with `GH006`.
+
+**Job 2, `test` ("Build and test the tagged commit", timeout 90 min).** Builds and runs the
+workspace tests on the tag, and checks the Welcome notebook matches the version.
+
+**Job 3, `packaging`.** Calls the reusable `packaging.yml`: Windows MSI and portable zip (signed
+with `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` when set), Linux packages, macOS
+DMGs and CLI archives, the Android APK.
+
+**Job 4, `website` and `website-deploy`.** Builds the web app and deploys it (needs
+`AZURE_STATIC_WEB_APPS_API_TOKEN`).
+
+**Job 5, `release` ("Publish the GitHub Release", timeout 30 min).**
+1. Checks out the tag, downloads the packaging artifacts, and writes one combined
+   `SHA256SUMS.txt` over all release files.
+2. Signs that list with `packaging/linux/sign-checksums.sh` (`LINUX_GPG_PRIVATE_KEY`,
+   `LINUX_GPG_PASSPHRASE`). It adds `SHA256SUMS.txt.asc` and the public key. With no key set,
+   it warns and publishes unsigned.
+3. Publishes with `gh release create <tag> dist/* --verify-tag --latest`. The release is
+   Latest, not a pre-release. If a release already exists for the tag, the run stops. A stray tag
+   from a failed run is left in place: check the run's log before you delete it by hand.
+
+**Secrets it needs (names only).** `NIGHTLY_APP_ID`, `NIGHTLY_APP_PRIVATE_KEY`,
+`WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD`, `LINUX_GPG_PRIVATE_KEY`,
+`LINUX_GPG_PASSPHRASE`, `ANDROID_KEYSTORE_*`, `AZURE_STATIC_WEB_APPS_API_TOKEN`.
+
+**Known failure modes (seen so far).**
+- Push refused with GH006: `main` is protected and the workflow pushed to it directly. Fixed by
+  the merge-queue design (PR #421).
+- Push refused with `missing or corrupt local objects`: the runner did not have Git LFS objects.
+  The fix is pending in PR #425 (fetch the objects, or the push flag). See the nc-devx skill,
+  Git LFS section.
+- macOS packaging stopped on an empty array under `set -u` (fixed by PR #415).
+- Stray tag without a release: a failed run can leave its tag with no release. Check the run's
+  log to see which version it names, then delete the tag by hand if it is not needed.
+- CI on `main` not green: the run stops before it changes anything.
+- A scheduled run with no commits on `main` says "no release tonight". That is correct.
+
+**Before you call a nightly good,** check: the release is Latest and not a pre-release; the tag
+points at the merged commit; `main`'s `Cargo.toml` has the same version; `SHA256SUMS.txt.asc`
+verifies with the public key in the release; the Windows MSI reports `Valid` (the test
+certificate is self-signed, so the VM does not trust it; the updater does not check signatures
+while that is postponed).
+
+**Manual runs.** Start the nightly through the workflow, never by hand-building a release. Use
+`gh workflow run "Nightly release" --repo AlienTechSoftware/notecraft --ref main`. Add
+`-f force=true` only on purpose.
 
 ## Release checklist
 
