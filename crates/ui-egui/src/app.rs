@@ -2143,7 +2143,9 @@ impl NoteCraftApp {
             // its top, and once the page is panned down it no longer covers what is shown.
             // Not where a menu or a folded ribbon is drawn over the page: that touch is theirs.
             let page = self.page_view.or(self.page_rect);
-            let on_page = |at: egui::Pos2| page.is_some_and(|page| page.contains(at)) && ctx.layer_id_at(at).is_none_or(|layer| layer.order < egui::Order::Foreground);
+            let on_page = |at: egui::Pos2| {
+                page.is_some_and(|page| page.contains(at)) && ctx.layer_id_at(at).is_none_or(|layer| layer.order < egui::Order::Foreground)
+            };
             if self.stylus.landed().is_some_and(on_page) {
                 self.ribbon_act(ribbon::Act::InkPen(self.nib));
                 self.pen_picked_by_pen = true;
