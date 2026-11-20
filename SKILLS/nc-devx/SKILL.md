@@ -471,6 +471,9 @@ What it means for you:
   and pushes must handle LFS the same way.
 - `cargo xtask pre-push` does not check LFS. If a push is refused for LFS reasons, run
   `git lfs fetch --all` and `git lfs pull`, then push again.
+- An LFS object that was never pushed cannot be fetched from the remote. If it is lost locally
+  before its first push, nothing on the remote can restore it: recover it from another copy of the
+  working tree, or re-add the file.
 
 ## Git Hooks
 

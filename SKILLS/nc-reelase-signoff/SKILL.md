@@ -19,9 +19,10 @@ requested `reelase` spelling for discoverability.
 ## Signoff gates
 
 1. The release version is the nightly tag (`vX.Y.Z`, published by `nightly-release.yml`), not
-   `[workspace.package]` on `main`. `main` stays at its approved version (0.0.9, AGENTS.md); the
-   nightly sets the version in its own tagged commit. Confirm the tag and the release notes; do not
-   bump `main` without explicit approval.
+   `[workspace.package]` on `main`. The nightly lands each patch bump on `main` through the merge
+   queue, so `main`'s version matches the latest release (owner-approved 2026-11-20, AGENTS.md).
+   Minor and major bumps still need the owner's approval, each time. Confirm the tag and the
+   release notes; do not bump `main` by hand.
    Where the official number comes from: the newest published, non-draft `vX.Y.Z` tag on GitHub
    (`gh release list --repo AlienTechSoftware/notecraft --exclude-drafts --limit 5`, or the
    `Latest` label). Pre-releases and drafts are not the official number. The next nightly is the
@@ -66,8 +67,9 @@ requested `reelase` spelling for discoverability.
     rerun it from `main` and verify the live assets before signoff.
 14. Keep deployment provenance aligned. Run desktop Packaging and Release from the same `main`
     commit; confirm the Release workflow accepted that exact Packaging run. For Android, record
-    the external builder's source commit, APK package version, signing certificate identity, and
-    clean-install result. Android is a separate manual build today. Do not present the release as
+    the APK's source commit, package version, signing certificate identity, and clean-install
+    result. The nightly and the Release path build the Android APK inside `packaging.yml`, so the
+    APK comes from the same Packaging run as the desktop files. Do not present the release as
     platform-complete until every advertised platform has a verified artifact or its absence is
     clearly called out.
 15. Confirm every shipped User Assistance payload contains both generated formats and all 13
@@ -136,8 +138,8 @@ DMGs and CLI archives, the Android APK.
    `LINUX_GPG_PASSPHRASE`). It adds `SHA256SUMS.txt.asc` and the public key. With no key set,
    it warns and publishes unsigned.
 3. Publishes with `gh release create <tag> dist/* --verify-tag --latest`. The release is
-   Latest, not a pre-release. If a release already exists for the tag, the run stops; if only a
-   stray tag exists (an earlier run failed before publishing), the tag is replaced.
+   Latest, not a pre-release. If a release already exists for the tag, the run stops. A stray tag
+   from a failed run is left in place: check the run's log before you delete it by hand.
 
 **Secrets it needs (names only).** `NIGHTLY_APP_ID`, `NIGHTLY_APP_PRIVATE_KEY`,
 `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD`, `LINUX_GPG_PRIVATE_KEY`,
@@ -150,8 +152,8 @@ DMGs and CLI archives, the Android APK.
   The fix is pending in PR #425 (fetch the objects, or the push flag). See the nc-devx skill,
   Git LFS section.
 - macOS packaging stopped on an empty array under `set -u` (fixed by PR #415).
-- Stray tag without a release: a failed run leaves its tag. The next run replaces it. Delete it by
-  hand if you need to recover.
+- Stray tag without a release: a failed run can leave its tag with no release. Check the run's
+  log to see which version it names, then delete the tag by hand if it is not needed.
 - CI on `main` not green: the run stops before it changes anything.
 - A scheduled run with no commits on `main` says "no release tonight". That is correct.
 
