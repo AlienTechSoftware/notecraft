@@ -841,6 +841,10 @@ pub(crate) mod tests {
                         .and_then(|()| stream.write_all(&body[from..]))
                     }
                 };
+                // Send the whole answer, then end the connection cleanly. Closing the socket with
+                // the client still reading can reset it and lose the tail ("Peer disconnected").
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
             }
         });
         (url, ranges)

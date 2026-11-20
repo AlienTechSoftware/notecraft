@@ -60,7 +60,7 @@ echo "==> NoteCraft $VERSION ($ARCH)"
 if [[ "$BUILD" = 1 ]]; then
   rustup target add "${targets[@]}"
   for target in "${targets[@]}"; do
-    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli "${VOICE_FEATURE[@]}")
+    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_ROOT" cargo build --locked --release --target "$target" -p notecraft -p notecraft-cli ${VOICE_FEATURE[@]+"${VOICE_FEATURE[@]}"})
   done
 fi
 # Both slices must be built from the same inputs, including local uncommitted work.
