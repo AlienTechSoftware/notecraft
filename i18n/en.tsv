@@ -126,6 +126,7 @@
 @id	ui.weekday_short_5	Fr
 @id	ui.weekday_short_6	Sa
 @id	ui.loading_fonts	Loading fonts...
+@id	ui.page_on_its_way	Opening "{page}": its files are still coming from the synced folder.
 @id	ui.mixed	Mixed
 @id	ui.font_catalog_unavailable	Installed fonts could not be listed on this device.
 @id	ui.underline	Underline

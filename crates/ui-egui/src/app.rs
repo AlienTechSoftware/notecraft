@@ -41,6 +41,43 @@ use web_time::Instant;
 
 /// The grid boxes snap to on plain paper, in page points: the smallest squared paper's step.
 const PLAIN_SNAP_STEP: f32 = 12.0;
+/// How long opening a page waits for its files to be read before it lets the window go on.
+const OPEN_WAIT: Duration = Duration::from_millis(25);
+
+/// A page asked for, and word that its files have been read.
+struct PendingOpen {
+    dir: PathBuf,
+    done: std::sync::mpsc::Receiver<()>,
+}
+
+/// Reads the files a page is opened from (its own, and those in `.notecraft`, but not its pictures,
+/// which are read as they are drawn, nor its old versions) on a thread of their own, so that a
+/// synced folder fetches any not on this computer yet. `None` when they were read within `wait`,
+/// or no thread could be had: the page is then opened at once, reading them in place. Otherwise
+/// the word that they are in.
+fn fetch_page_files(dir: &Path, wait: Duration) -> Option<std::sync::mpsc::Receiver<()>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let page = dir.to_path_buf();
+    let spawned = std::thread::Builder::new().name("notecraft-page-files".into()).spawn(move || {
+        for folder in [page.clone(), page.join(".notecraft")] {
+            let Ok(entries) = std::fs::read_dir(&folder) else { continue };
+            for entry in entries.flatten() {
+                if entry.file_type().is_ok_and(|t| !t.is_dir()) {
+                    let _ = std::fs::read(entry.path());
+                }
+            }
+        }
+        let _ = tx.send(());
+    });
+    if spawned.is_err() {
+        return None;
+    }
+    match rx.recv_timeout(wait) {
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Some(rx),
+        _ => None,
+    }
+}
+
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
@@ -1295,6 +1332,14 @@ pub struct NoteCraftApp {
     page_rect: Option<egui::Rect>,
     /// The canvas translation in screen points. It is UI state, so it never changes page data.
     canvas_pan: egui::Vec2,
+    /// A page asked for whose files were still being read when it was (see [`fetch_page_files`]):
+    /// opened once they are in, unless another page is asked for first.
+    opening: Option<PendingOpen>,
+    /// The page whose files were just read for it: opened without reading them first again.
+    fetched: Option<PathBuf>,
+    /// While true, a page asked for opens at once, its files read in place as before: for the
+    /// command line, the control protocol and agents, which are answered with the open page.
+    open_at_once: bool,
     /// The page carrying on after a swipe on a touchpad.
     fling: crate::fling::Fling,
     /// How far down the page is scrolled, as last drawn, and where to scroll it in the next pass:
@@ -1553,6 +1598,9 @@ impl NoteCraftApp {
             stylus: crate::stylus::Stylus::default(),
             page_rect: None,
             canvas_pan: egui::Vec2::ZERO,
+            opening: None,
+            fetched: None,
+            open_at_once: false,
             fling: crate::fling::Fling::default(),
             page_offset_y: 0.0,
             page_offset_max: 0.0,
@@ -1994,7 +2042,9 @@ impl NoteCraftApp {
         // opened first: the engine decides, so the command line and agents get the same page.
         if let Some(Output::Path(dir)) = self.run("open.page", &params(&[("path", path)])) {
             self.expand_to(&dir);
+            let was = std::mem::replace(&mut self.open_at_once, true);
             self.open_page(&dir);
+            self.open_at_once = was;
         }
     }
 
@@ -2939,6 +2989,30 @@ impl NoteCraftApp {
         self.open_page_inner(dir);
     }
 
+    /// Opens the page asked for whose files were still on their way, once they are in.
+    fn finish_pending_open(&mut self, ctx: &Context) {
+        let Some(pending) = &self.opening else { return };
+        match pending.done.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(100)),
+            // Read, or the reading stopped: opened now, from what is on this computer.
+            _ => {
+                let dir = pending.dir.clone();
+                self.opening = None;
+                self.fetched = Some(dir.clone());
+                self.open_page_inner(&dir);
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    /// The title the open notebooks give the page or section at `dir`, from the tree in memory.
+    fn title_in_tree(&self, dir: &Path) -> Option<String> {
+        fn find(nodes: &[Node], dir: &Path) -> Option<String> {
+            nodes.iter().find_map(|n| if n.path == dir { Some(n.info.title.clone()) } else { find(&n.children, dir) })
+        }
+        find(self.session.tree(), dir)
+    }
+
     /// Opens a page without counting it as a visit: what Back and Forward do.
     fn open_page_inner(&mut self, dir: &Path) {
         // A page opened is looked at afresh, not through what was kept about the last one's files.
@@ -2953,6 +3027,23 @@ impl NoteCraftApp {
         if self.is_dirty() || self.page_conflict {
             return;
         }
+        // In a synced folder a page's files may not be on this computer yet, and reading them
+        // waits for them to come down: read here, that froze the window for as long. They are
+        // read on a thread of their own first; on a local disk that is done at once, and the page
+        // opens now as it always did. Otherwise the page being shown stays, and this one opens
+        // when its files are in (`finish_pending_open`).
+        if !self.open_at_once
+            && self.fetched.as_deref() != Some(dir)
+            && let Some(done) = fetch_page_files(dir, OPEN_WAIT)
+        {
+            let name = self.title_in_tree(dir).unwrap_or_else(|| notecraft_store::tree::folder_name(dir));
+            self.opening = Some(PendingOpen { dir: dir.to_path_buf(), done });
+            self.say(crate::i18n::format_message_id("ui.page_on_its_way", &[("page", &name)]));
+            return;
+        }
+        // This page is the one asked for last: one still on its way is not opened after it.
+        self.fetched = None;
+        self.opening = None;
         // The page being left was read as it now stands, own edits included (issue #291).
         if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()).filter(|d| d != dir) {
             self.note_read(&left, false);
@@ -12584,6 +12675,7 @@ impl NoteCraftApp {
             }
             self.focus_search = true;
         }
+        self.finish_pending_open(ctx);
         self.nav_keys(ctx);
         self.replay_typing(ctx);
         self.switch_by_device(ctx);
@@ -14769,5 +14861,117 @@ mod band_title_tests {
         assert!(centre - 100.0 >= 560.0, "{centre}");
         // Wider than the room (it is ellipsized to fit first): it starts where the room starts.
         assert_eq!(band_title_centre(600.0, 300.0, 400.0, 300.0), 450.0);
+    }
+}
+
+#[cfg(test)]
+mod page_open_tests {
+    use super::*;
+
+    type H = egui_kittest::Harness<'static, NoteCraftApp>;
+
+    fn window(name: &str) -> (notecraft_store::testing::TempDir, notecraft_engine::sample::Sample, H) {
+        let t = notecraft_store::testing::TempDir::new(name);
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        (t, sample, h)
+    }
+
+    fn shown(h: &H) -> Option<PathBuf> {
+        h.state().editor.as_ref().map(|e| e.dir.clone())
+    }
+
+    /// Writes into a named pipe once a reader has it open, without waiting for one.
+    #[cfg(unix)]
+    fn write_when_read(pipe: &Path, bytes: &[u8]) -> bool {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        const O_NONBLOCK: i32 = 0o4000;
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        const O_NONBLOCK: i32 = 0x0004;
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < until {
+            if let Ok(mut out) = std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(pipe) {
+                return out.write_all(bytes).is_ok();
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
+    /// A page of a synced folder whose files are not on this computer yet is downloaded as they
+    /// are read, and opening it read them on the window's thread: the window froze until they
+    /// came. A named pipe stands in for a file still coming, as reading one waits until something
+    /// is written into it. The page shown stays, and can be used, until the files are in; then
+    /// the page asked for opens.
+    #[cfg(unix)]
+    #[test]
+    fn a_page_still_downloading_opens_when_its_files_are_in_and_the_window_goes_on_meanwhile() {
+        let (_t, sample, mut h) = window("page-open-downloading");
+        assert_eq!(shown(&h).as_deref(), Some(sample.html_page.as_path()));
+        let pipe = sample.md_page.join("still-coming.bin");
+        assert!(std::process::Command::new("mkfifo").arg(&pipe).status().expect("mkfifo").success());
+
+        let started = std::time::Instant::now();
+        h.state_mut().open_page(&sample.md_page);
+        assert!(started.elapsed() < Duration::from_secs(1), "asked for, the page did not hold the window: {:?}", started.elapsed());
+        for _ in 0..5 {
+            h.step();
+        }
+        assert_eq!(shown(&h).as_deref(), Some(sample.html_page.as_path()), "the page shown stays while the other is on its way");
+
+        // The "download" finishes: the page opens within a few frames.
+        assert!(write_when_read(&pipe, b"the file, downloaded"), "the page's files were being read");
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while shown(&h).as_deref() != Some(sample.md_page.as_path()) && std::time::Instant::now() < until {
+            h.step();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(shown(&h).as_deref(), Some(sample.md_page.as_path()), "and opens once its files are in");
+    }
+
+    /// Asking for another page while one is still on its way opens the one asked for last.
+    #[cfg(unix)]
+    #[test]
+    fn the_page_asked_for_last_is_the_one_opened() {
+        let (_t, sample, mut h) = window("page-open-last-wins");
+        let pipe = sample.md_page.join("still-coming.bin");
+        assert!(std::process::Command::new("mkfifo").arg(&pipe).status().expect("mkfifo").success());
+        h.state_mut().open_page(&sample.md_page);
+        h.step();
+        h.state_mut().open_page(&sample.deep_page);
+        for _ in 0..5 {
+            h.step();
+        }
+        assert_eq!(shown(&h).as_deref(), Some(sample.deep_page.as_path()), "the page asked for last opened");
+        assert!(write_when_read(&pipe, b"late"), "the first page's files were still being read");
+        for _ in 0..20 {
+            h.step();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(shown(&h).as_deref(), Some(sample.deep_page.as_path()), "the first, coming in late, did not open over it");
+    }
+
+    /// On a local disk the files are read at once and the page opens in the same call, as it
+    /// always did; the command line and agents get the page open at once in any case.
+    #[test]
+    fn a_local_page_opens_at_once() {
+        let (_t, sample, mut h) = window("page-open-local");
+        h.state_mut().open_page(&sample.md_page);
+        assert_eq!(shown(&h).as_deref(), Some(sample.md_page.as_path()));
+        h.state_mut().open_path(&sample.deep_page.to_string_lossy());
+        assert_eq!(shown(&h).as_deref(), Some(sample.deep_page.as_path()));
     }
 }

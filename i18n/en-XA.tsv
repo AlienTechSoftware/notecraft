@@ -81,6 +81,7 @@
 @id	ui.font_size	$$$Font Size@@@
 @id	ui.font_family	$$$Font Family@@@
 @id	ui.loading_fonts	$$$Loading fonts...@@@
+@id	ui.page_on_its_way	$$$Opening "{page}": its files are still coming from the synced folder.@@@
 @id	ui.font_family_box	$$$Font name@@@
 @id	ui.recent_fonts	$$$Recently Used Fonts@@@
 @id	ui.all_fonts	$$$All Fonts@@@

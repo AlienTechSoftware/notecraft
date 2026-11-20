@@ -81,6 +81,7 @@
 @id	ui.font_size	[[RLI]]$$$Font Size@@@[[PDI]]
 @id	ui.font_family	[[RLI]]$$$Font Family@@@[[PDI]]
 @id	ui.loading_fonts	[[RLI]]$$$Loading fonts...@@@[[PDI]]
+@id	ui.page_on_its_way	[[RLI]]$$$Opening "{page}": its files are still coming from the synced folder.@@@[[PDI]]
 @id	ui.font_family_box	[[RLI]]$$$Font name@@@[[PDI]]
 @id	ui.recent_fonts	[[RLI]]$$$Recently Used Fonts@@@[[PDI]]
 @id	ui.all_fonts	[[RLI]]$$$All Fonts@@@[[PDI]]
