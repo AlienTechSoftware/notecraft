@@ -75,6 +75,10 @@ pub struct Reader {
     pub focus: Focus,
     /// The line the focus is on.
     pub at: usize,
+    /// The reading carries on for a moment after a swipe on a touchpad, as the page does.
+    fling: crate::fling::Fling,
+    /// How far down the reading is scrolled, as last drawn.
+    offset: f32,
 }
 
 /// The smallest and largest text sizes offered.
@@ -92,7 +96,15 @@ impl Reader {
     /// The reader for a page with this title and these blocks; `has_ink` says whether the page
     /// holds handwriting, which the reader cannot show as words.
     pub fn new(title: &str, blocks: &[Block], has_ink: bool) -> Self {
-        Self { lines: lines(title, blocks, has_ink), size: 22.0, spacing: 1.7, focus: Focus::Off, at: 0 }
+        Self {
+            lines: lines(title, blocks, has_ink),
+            size: 22.0,
+            spacing: 1.7,
+            focus: Focus::Off,
+            at: 0,
+            fling: crate::fling::Fling::default(),
+            offset: 0.0,
+        }
     }
 
     /// Moves the line focus by `by` lines, staying within the reading.
@@ -270,9 +282,38 @@ fn toolbar(ui: &mut Ui, reader: &mut Reader, t: &Tokens, act: &mut Option<Act>) 
     });
 }
 
-fn reading(ui: &mut Ui, reader: &Reader, t: &Tokens) {
+fn reading(ui: &mut Ui, reader: &mut Reader, t: &Tokens) {
     let column = (reader.size * 34.0).min(ui.available_width() - 48.0).max(200.0);
-    egui::ScrollArea::vertical().id_salt("immersive-reader-scroll").auto_shrink([false, false]).show(ui, |ui| {
+    // Fingers on a touchpad scroll the reading themselves; when they lift, it carries on at the
+    // speed they were going and slows to a stop. A click or a key stops it where it is.
+    let now = ui.input(|i| i.time);
+    let fling = &mut reader.fling;
+    ui.input(|i| {
+        if i.pointer.any_pressed() || i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. })) {
+            fling.stop();
+        }
+        for event in &i.events {
+            let egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase, modifiers, .. } = event else { continue };
+            if modifiers.ctrl || modifiers.command {
+                continue;
+            }
+            match phase {
+                egui::TouchPhase::End => fling.lift(i.time),
+                egui::TouchPhase::Cancel => fling.stop(),
+                _ if *delta != egui::Vec2::ZERO => fling.finger(i.time, *delta),
+                _ => {}
+            }
+        }
+    });
+    let carried = reader.fling.step(now);
+    if reader.fling.moving() {
+        ui.ctx().request_repaint();
+    }
+    let mut area = egui::ScrollArea::vertical().id_salt("immersive-reader-scroll").auto_shrink([false, false]);
+    if carried.y != 0.0 {
+        area = area.vertical_scroll_offset((reader.offset - carried.y).max(0.0));
+    }
+    let shown = area.show(ui, |ui| {
         ui.add_space(24.0);
         ui.horizontal(|ui| {
             ui.add_space(((ui.available_width() - column) / 2.0).max(24.0));
@@ -318,6 +359,7 @@ fn reading(ui: &mut Ui, reader: &Reader, t: &Tokens) {
             });
         });
     });
+    reader.offset = shown.state.offset().y;
 }
 
 #[cfg(test)]
@@ -374,5 +416,62 @@ mod tests {
         assert!(r.in_focus(0) && r.in_focus(1) && r.in_focus(2));
         r.focus = Focus::One;
         assert!(!r.in_focus(0) && r.in_focus(1) && !r.in_focus(2));
+    }
+
+    /// A swipe on a touchpad carries the reading on after the fingers lift, as it does the page:
+    /// without it every swipe stopped dead, and a long page took swipe after swipe.
+    #[test]
+    fn a_swipe_carries_the_reading_on_after_the_fingers_lift() {
+        let mut reader = Reader {
+            lines: (0..400).map(|n| Line { kind: Kind::Text, text: format!("Line {n} of a long reading") }).collect(),
+            ..Reader::new("", &[], false)
+        };
+        let ctx = egui::Context::default();
+        let t = crate::theme::Theme::DEFAULT.tokens();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0));
+        let mut time = 0.0;
+        let mut frame = |reader: &mut Reader, events: Vec<egui::Event>| {
+            time += 1.0 / 60.0;
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let _ = show(ui.ctx(), reader, &t);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut reader, vec![egui::Event::PointerMoved(screen.center())]);
+        // A quick swipe down the reading, and the fingers lift.
+        let wheel = |delta: f32, phase| egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, delta),
+            phase,
+            modifiers: egui::Modifiers::NONE,
+            source: egui::MouseWheelSource::Trackpad,
+        };
+        for _ in 0..6 {
+            frame(&mut reader, vec![wheel(-40.0, egui::TouchPhase::Move)]);
+        }
+        frame(&mut reader, vec![wheel(0.0, egui::TouchPhase::End)]);
+        let lifted = reader.offset;
+        assert!(lifted > 100.0, "the fingers scrolled the reading: {lifted}");
+        for _ in 0..30 {
+            frame(&mut reader, Vec::new());
+        }
+        assert!(reader.offset > lifted + 100.0, "and it carried on after they lifted: {lifted} -> {}", reader.offset);
+
+        // A click stops it where it is.
+        frame(
+            &mut reader,
+            vec![egui::Event::PointerButton {
+                pos: screen.center(),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        let stopped = reader.offset;
+        for _ in 0..10 {
+            frame(&mut reader, Vec::new());
+        }
+        assert!((reader.offset - stopped).abs() < 1.0, "a click stopped it: {stopped} -> {}", reader.offset);
     }
 }
