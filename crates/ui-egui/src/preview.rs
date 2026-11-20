@@ -53,59 +53,204 @@ pub(crate) fn line_numbers(lines: usize) -> String {
     (1..=lines).map(|n| format!("{n} |")).collect::<Vec<_>>().join("\n")
 }
 
-fn image_bytes(ctx: &egui::Context, page_dir: &Path, src: &str) -> Option<(String, egui::load::Bytes)> {
-    let rel = src.strip_prefix("assets/")?;
+/// A page's picture, as far as the window has it.
+#[derive(Debug)]
+enum Picture {
+    /// Read: the name egui has it under, and its bytes.
+    Ready(String, egui::load::Bytes),
+    /// Being read. A picture in a synced folder that is not on this computer yet is downloaded
+    /// as it is read, which can take seconds; the page goes on without it meanwhile.
+    Loading,
+    /// Not there, or not readable.
+    Missing,
+}
+
+/// A file's size and time, which say whether what was read of it is still what it holds.
+type Stamp = (u64, Option<std::time::SystemTime>);
+
+/// The pictures of the pages shown so far, kept by file, and the ones on their way.
+#[derive(Default)]
+struct Pictures {
+    /// What was read of each file: its stamp then, the name egui has it under, and its bytes.
+    kept: std::collections::HashMap<std::path::PathBuf, (Stamp, String, std::sync::Arc<[u8]>)>,
+    /// Asked for and not read yet.
+    reading: std::collections::HashSet<std::path::PathBuf>,
+    /// Could not be read, at the stamp the file had: not asked for again until it changes.
+    failed: std::collections::HashMap<std::path::PathBuf, Stamp>,
+    /// The frame the waiting below was counted for, and how much of [`WAIT_PER_FRAME`] it has
+    /// left.
+    waited: (Option<u64>, std::time::Duration),
+    /// How many times a picture was read from disk, for tests.
+    #[cfg(test)]
+    reads: usize,
+}
+
+/// How long a frame waits, all its pictures together, for pictures being read. A picture on
+/// this computer's own disk is read well within it and drawn in the same frame, as before; one
+/// still being downloaded is not, and is drawn when it comes instead of holding up the window.
+#[cfg(not(test))]
+const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_millis(12);
+/// Tests draw many windows at once on a busy machine, and a picture read from their own disk
+/// must still be there in the frame that asked for it.
+#[cfg(test)]
+const WAIT_PER_FRAME: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How many pictures are read at once: one picture slow to download does not hold up the rest.
+const PICTURE_READERS: usize = 4;
+
+type PageImages = std::sync::Arc<std::sync::Mutex<Pictures>>;
+
+fn page_images(ctx: &egui::Context) -> PageImages {
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone())
+}
+
+/// How many times this window has read a picture from disk.
+#[cfg(test)]
+fn picture_reads(ctx: &egui::Context) -> usize {
+    page_images(ctx).lock().map_or(0, |p| p.reads)
+}
+
+/// The picture `src` of the page in `page_dir`, without waiting for it. Asked every frame for
+/// every picture drawn; a picture not read yet is read on the pictures' own thread, one at a
+/// time in the order they are asked for, so the top of a page comes first, and the window is
+/// drawn again when it is in.
+fn picture(ctx: &egui::Context, page_dir: &Path, src: &str) -> Picture {
+    let Some(rel) = src.strip_prefix("assets/") else { return Picture::Missing };
     if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
-        return None;
+        return Picture::Missing;
     }
     let path = page_dir.join("assets").join(rel);
     // Asked every frame for every picture drawn: kept a moment, so a page of printouts on a
     // synced folder does not ask its mount hundreds of times a frame.
     let seen = crate::fscache::seen(&path);
-    if !seen.file {
-        return None;
+    if !seen.exists {
+        return Picture::Missing;
     }
     let stamp = (seen.len, seen.modified);
-    let cache = ctx.data_mut(|d| d.get_temp_mut_or_default::<PageImages>(egui::Id::new("notecraft-page-images")).clone());
-    let mut cache = cache.lock().ok()?;
-    if let Some((had, uri, bytes)) = cache.get(&path)
+    let store = page_images(ctx);
+    let Ok(mut pictures) = store.lock() else { return Picture::Missing };
+    if let Some((had, uri, bytes)) = pictures.kept.get(&path)
         && *had == stamp
     {
-        return Some((uri.clone(), egui::load::Bytes::Shared(bytes.clone())));
+        return Picture::Ready(uri.clone(), egui::load::Bytes::Shared(bytes.clone()));
     }
-    let bytes: std::sync::Arc<[u8]> = std::fs::read(&path).ok()?.into();
-    #[cfg(test)]
-    IMAGE_READS.with(|n| n.set(n.get() + 1));
-    let nanos = stamp.1.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
-    let uri = format!("bytes://page-image/{}#{}-{nanos}", path.display(), stamp.0);
-    // Pictures of pages no longer shown would pile up; past a generous size the store starts over.
-    let held: usize = cache.values().map(|(_, _, b)| b.len()).sum();
-    if held + bytes.len() > PAGE_IMAGES_MAX_BYTES {
-        cache.clear();
+    if pictures.failed.get(&path) == Some(&stamp) {
+        return Picture::Missing;
     }
-    cache.insert(path, (stamp, uri.clone(), bytes.clone()));
-    Some((uri, egui::load::Bytes::Shared(bytes)))
+    if !pictures.reading.insert(path.clone()) {
+        return Picture::Loading;
+    }
+    let frame = ctx.cumulative_pass_nr();
+    // Counted afresh in each frame, the window's first one too.
+    if pictures.waited.0 != Some(frame) {
+        pictures.waited = (Some(frame), WAIT_PER_FRAME);
+    }
+    let budget = pictures.waited.1;
+    drop(pictures);
+    let (done, read) = std::sync::mpsc::channel();
+    let job = PictureRead { path, stamp, store: store.clone(), ctx: ctx.clone(), done };
+    match send_to_reader(job) {
+        Ok(()) => {
+            // Waited for, a moment: on a local disk it is here before the frame goes on.
+            let started = std::time::Instant::now();
+            let came = !budget.is_zero() && read.recv_timeout(budget).is_ok();
+            if let Ok(mut pictures) = store.lock() {
+                pictures.waited.1 = budget.saturating_sub(started.elapsed());
+            }
+            if came { picture(ctx, page_dir, src) } else { Picture::Loading }
+        }
+        // No thread to read on (the web build has none): read here, as before. The picture is
+        // then kept, or marked as not readable, so asking again answers at once.
+        Err(job) => {
+            job.run();
+            picture(ctx, page_dir, src)
+        }
+    }
 }
 
-/// The bytes of the page pictures drawn so far, by file, with the size and time they were read
-/// at and the name egui has them under.
-type PageImages = std::sync::Arc<
-    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, ((u64, Option<std::time::SystemTime>), String, std::sync::Arc<[u8]>)>>,
->;
+/// One picture to read, and where to put it.
+struct PictureRead {
+    path: std::path::PathBuf,
+    stamp: Stamp,
+    store: PageImages,
+    ctx: egui::Context,
+    /// Told when the read is done, for a frame still waiting for it.
+    done: std::sync::mpsc::Sender<()>,
+}
 
-/// How much picture data [`image_bytes`] keeps before it starts over.
+impl PictureRead {
+    fn run(self) {
+        let read = std::fs::read(&self.path);
+        let Ok(mut pictures) = self.store.lock() else { return };
+        pictures.reading.remove(&self.path);
+        #[cfg(test)]
+        {
+            pictures.reads += 1;
+        }
+        match read {
+            Ok(bytes) => {
+                let bytes: std::sync::Arc<[u8]> = bytes.into();
+                let nanos = self.stamp.1.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+                let uri = format!("bytes://page-image/{}#{}-{nanos}", self.path.display(), self.stamp.0);
+                // Pictures of pages no longer shown would pile up; past a generous size the store
+                // starts over.
+                let held: usize = pictures.kept.values().map(|(_, _, b)| b.len()).sum();
+                if held + bytes.len() > PAGE_IMAGES_MAX_BYTES {
+                    pictures.kept.clear();
+                }
+                pictures.failed.remove(&self.path);
+                pictures.kept.insert(self.path, (self.stamp, uri, bytes));
+            }
+            Err(e) => {
+                log::warn!("picture not read: {:?}: {e}", self.path);
+                pictures.failed.insert(self.path, self.stamp);
+            }
+        }
+        drop(pictures);
+        // The frame that asked may have stopped waiting; then it is drawn again instead.
+        if self.done.send(()).is_err() {
+            self.ctx.request_repaint();
+        }
+    }
+}
+
+/// Hands a read to the pictures' thread, started the first time it is needed. Gives the read
+/// back when there is no such thread.
+fn send_to_reader(job: PictureRead) -> Result<(), PictureRead> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        Err(job)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static READER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<PictureRead>>> = std::sync::OnceLock::new();
+        let reader = READER.get_or_init(|| {
+            let (tx, rx) = std::sync::mpsc::channel::<PictureRead>();
+            let rx = std::sync::Arc::new(std::sync::Mutex::new(rx));
+            let mut started = 0;
+            for n in 0..PICTURE_READERS {
+                let rx = rx.clone();
+                let spawned = std::thread::Builder::new().name(format!("notecraft-pictures-{n}")).spawn(move || {
+                    loop {
+                        // The queue is held only to take the next read, not while reading it.
+                        let next = rx.lock().ok().and_then(|q| q.recv().ok());
+                        let Some(job) = next else { break };
+                        job.run();
+                    }
+                });
+                started += usize::from(spawned.is_ok());
+            }
+            (started > 0).then_some(tx)
+        });
+        match reader {
+            Some(tx) => tx.send(job).map_err(|e| e.0),
+            None => Err(job),
+        }
+    }
+}
+
+/// How much picture data [`picture`] keeps before it starts over.
 const PAGE_IMAGES_MAX_BYTES: usize = 512 * 1024 * 1024;
-
-#[cfg(test)]
-thread_local! {
-    static IMAGE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// How many times [`image_bytes`] has read a picture from disk on this thread.
-#[cfg(test)]
-fn image_reads() -> usize {
-    IMAGE_READS.with(std::cell::Cell::get)
-}
 
 /// `file:///C:/dir/a%20b.png` or `file:///home/me/a%20b.png`: the form egui's file
 /// loader reads on every platform (three slashes, spaces and symbols percent-encoded).
@@ -516,14 +661,33 @@ fn picture_max_height(src: &str, zoom: f32) -> f32 {
     if printout { f32::INFINITY } else { 480.0 * zoom }
 }
 
+/// Where a picture still being read will go: a quiet box of about its size, so the page does
+/// not jump far when it comes. A printout's height is not known before it is read, so its box
+/// is a slide's, three quarters as tall as it is wide.
+fn loading_picture(ui: &mut Ui, size: egui::Vec2) {
+    let width = size.x.min(ui.available_width()).max(24.0);
+    let height = if size.y.is_finite() { size.y } else { width * 0.75 };
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height.max(24.0)), egui::Sense::hover());
+    let visuals = ui.visuals();
+    ui.painter().rect_filled(rect, 4.0, visuals.faint_bg_color);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        crate::tl_id!("ui.loading_picture"),
+        egui::FontId::proportional(12.0),
+        visuals.weak_text_color(),
+    );
+}
+
 fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, block: usize, object_rect: &mut Option<egui::Rect>) {
     for s in spans {
         if let Some(src) = &s.image {
-            match image_bytes(ui.ctx(), page_dir, src) {
-                Some((uri, bytes)) => {
-                    // A linked image is the attachment-card form used by NoteCraft. Keep its
-                    // generated shell icon compact; standalone images still use the picture box.
-                    let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, src, zoom) };
+            // A linked image is the attachment-card form used by NoteCraft. Keep its generated
+            // shell icon compact; standalone images still use the picture box.
+            let size = if s.link.is_some() { egui::vec2(48.0 * zoom, 56.0 * zoom) } else { picture_box(ui, src, zoom) };
+            match picture(ui.ctx(), page_dir, src) {
+                Picture::Loading => loading_picture(ui, size),
+                Picture::Ready(uri, bytes) => {
                     let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
                     *object_rect = Some(response.rect);
                     if s.link.is_none() {
@@ -533,7 +697,7 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, b
                         log::debug!("inline image render hover: src={src:?} rect={:?} pointer={:?}", response.rect, ui.ctx().pointer_latest_pos());
                     }
                 }
-                None => {
+                Picture::Missing => {
                     ui.weak(format!("[image: {} ({src})]", s.text));
                 }
             }
@@ -835,8 +999,15 @@ pub(crate) fn show_block_zoomed(
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
             Block::Image { alt, src, width, height } => {
-                match image_bytes(ui.ctx(), page_dir, src) {
-                    Some((uri, bytes)) => {
+                match picture(ui.ctx(), page_dir, src) {
+                    Picture::Loading => {
+                        let size = match (width, height) {
+                            (Some(width), Some(height)) => vec2(*width * zoom, *height * zoom),
+                            _ => vec2(ui.available_width(), picture_max_height(src, zoom)),
+                        };
+                        loading_picture(ui, size);
+                    }
+                    Picture::Ready(uri, bytes) => {
                         let image = egui::Image::from_bytes(uri, bytes).sense(egui::Sense::hover());
                         let response = match (width, height) {
                             (Some(width), Some(height)) => {
@@ -858,7 +1029,7 @@ pub(crate) fn show_block_zoomed(
                             );
                         }
                     }
-                    None => {
+                    Picture::Missing => {
                         ui.weak(format!("[image: {alt} ({src})]"));
                     }
                 }
@@ -1077,6 +1248,19 @@ mod tests {
         assert_eq!(lines[11], "12 |");
     }
 
+    /// The picture once it has been read, asking as each frame does; it is read on a thread of
+    /// its own, so the first asks find it still on its way.
+    fn ready(ctx: &egui::Context, page: &Path, src: &str) -> (String, egui::load::Bytes) {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            match picture(ctx, page, src) {
+                Picture::Ready(uri, bytes) => return (uri, bytes),
+                Picture::Loading if std::time::Instant::now() < until => std::thread::sleep(std::time::Duration::from_millis(5)),
+                other => panic!("{src} was not read: {other:?}"),
+            }
+        }
+    }
+
     /// Issue: the page read every picture from disk on every frame (a page of printouts on a
     /// network or cloud folder made the window crawl). A picture is read once, and again only
     /// when the file changes.
@@ -1086,13 +1270,12 @@ mod tests {
         std::fs::create_dir_all(t.path().join("assets")).expect("assets");
         std::fs::write(t.path().join("assets").join("a.png"), b"first picture bytes").expect("picture");
         let ctx = egui::Context::default();
-        let before = image_reads();
-        let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+        let first = ready(&ctx, t.path(), "assets/a.png");
         for _ in 0..4 {
-            let again = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+            let again = ready(&ctx, t.path(), "assets/a.png");
             assert_eq!(again.0, first.0, "the same name while the file is unchanged");
         }
-        assert_eq!(image_reads() - before, 1, "five frames, one read");
+        assert_eq!(picture_reads(&ctx), 1, "five frames, one read");
         assert_eq!(&*first.1, b"first picture bytes");
     }
 
@@ -1103,14 +1286,13 @@ mod tests {
         let file = t.path().join("assets").join("a.png");
         std::fs::write(&file, b"first").expect("picture");
         let ctx = egui::Context::default();
-        let before = image_reads();
-        let first = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
+        let first = ready(&ctx, t.path(), "assets/a.png");
         std::fs::write(&file, b"a different, longer picture").expect("replaced");
         // What the window knew about the file is kept a moment (see `fscache`); a change made
         // by a command lets it go at once, as here, and one made elsewhere shows within the moment.
         crate::fscache::forget_all();
-        let second = image_bytes(&ctx, t.path(), "assets/a.png").expect("the picture");
-        assert_eq!(image_reads() - before, 2, "read again once it changed");
+        let second = ready(&ctx, t.path(), "assets/a.png");
+        assert_eq!(picture_reads(&ctx), 2, "read again once it changed");
         assert_ne!(first.0, second.0, "a new name, so egui does not keep showing the old picture");
         assert_eq!(&*second.1, b"a different, longer picture");
     }
@@ -1123,10 +1305,55 @@ mod tests {
             std::fs::write(t.path().join(page).join("assets").join("a.png"), bytes).expect("picture");
         }
         let ctx = egui::Context::default();
-        let one = image_bytes(&ctx, &t.path().join("one"), "assets/a.png").expect("page one's");
-        let two = image_bytes(&ctx, &t.path().join("two"), "assets/a.png").expect("page two's");
+        let one = ready(&ctx, &t.path().join("one"), "assets/a.png");
+        let two = ready(&ctx, &t.path().join("two"), "assets/a.png");
         assert_ne!(one.0, two.0, "each page's picture has a name of its own");
         assert_eq!(&*two.1, b"page two's picture");
+    }
+
+    #[test]
+    fn a_picture_that_is_not_there_is_missing_not_loading() {
+        let t = notecraft_store::testing::TempDir::new("page-image-missing");
+        let ctx = egui::Context::default();
+        assert!(matches!(picture(&ctx, t.path(), "assets/none.png"), Picture::Missing));
+        assert!(matches!(picture(&ctx, t.path(), "../outside.png"), Picture::Missing));
+    }
+
+    /// A picture in a synced folder that is not on this computer yet is downloaded when it is
+    /// first read, and the read waits for it: read while the page was drawn, it froze the whole
+    /// window. A named pipe stands in for it here, since reading one waits until something is
+    /// written into it. The window gets its answer at once, and the picture when it comes.
+    #[cfg(unix)]
+    #[test]
+    fn a_picture_slow_to_read_does_not_hold_up_the_window() {
+        let t = notecraft_store::testing::TempDir::new("page-image-slow");
+        std::fs::create_dir_all(t.path().join("assets")).expect("assets");
+        let pipe = t.path().join("assets").join("slow.png");
+        let made = std::process::Command::new("mkfifo").arg(&pipe).status().expect("mkfifo");
+        assert!(made.success(), "a named pipe for the slow picture");
+        let ctx = egui::Context::default();
+
+        // Asked as the window asks, from one thread throughout (what is known about a file is
+        // kept per thread), but not this one, so a read that waits fails the test instead of
+        // hanging it.
+        let (answers, answered) = std::sync::mpsc::channel();
+        let (go_on, written) = std::sync::mpsc::channel::<()>();
+        let (asker, page) = (ctx.clone(), t.path().to_path_buf());
+        std::thread::spawn(move || {
+            let _ = answers.send(format!("{:?}", picture(&asker, &page, "assets/slow.png")));
+            if written.recv().is_ok() {
+                let (_, bytes) = ready(&asker, &page, "assets/slow.png");
+                let _ = answers.send(String::from_utf8_lossy(&bytes).into_owned());
+            }
+        });
+        let first = answered.recv_timeout(std::time::Duration::from_secs(3));
+        assert_eq!(first.as_deref(), Ok("Loading"), "the window is told it is on its way, without waiting for it");
+
+        // Then the "download" finishes, and the picture is there for the next frame.
+        std::fs::write(&pipe, b"the picture, downloaded").expect("written into the pipe");
+        go_on.send(()).expect("the asker is waiting");
+        let then = answered.recv_timeout(std::time::Duration::from_secs(10));
+        assert_eq!(then.as_deref(), Ok("the picture, downloaded"));
     }
 
     use super::*;

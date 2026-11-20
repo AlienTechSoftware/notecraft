@@ -126,6 +126,7 @@
 @id	ui.weekday_short_5	Fr
 @id	ui.weekday_short_6	Sa
 @id	ui.loading_fonts	Loading fonts...
+@id	ui.loading_picture	Loading picture...
 @id	ui.mixed	Mixed
 @id	ui.font_catalog_unavailable	Installed fonts could not be listed on this device.
 @id	ui.underline	Underline
