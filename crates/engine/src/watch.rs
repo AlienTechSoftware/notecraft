@@ -214,6 +214,7 @@ mod imp {
                 (target.roots_gen, target.page_gen, target.roots.clone(), target.page.clone(), target.own_revision.clone())
             };
 
+            let mut tree_baseline_refresh = false;
             if page_gen != tracked_page_gen {
                 tracked_page_gen = page_gen;
                 baseline_page = page.as_deref().map(read_page_stamp);
@@ -224,10 +225,13 @@ mod imp {
                 baseline_tree = (!roots.is_empty()).then(|| read_tree_stamp(&roots));
                 pending_tree = None;
                 last_tree_scan = Some(Instant::now());
+                // Refresh once after the baseline so changes made between watch() and this
+                // asynchronous scan cannot be absorbed without updating the visible tree.
+                tree_baseline_refresh = !roots.is_empty();
             }
 
             let mut page_hit = false;
-            let mut tree_hit = false;
+            let mut tree_hit = tree_baseline_refresh;
 
             if let Some(page_dir) = page.as_deref() {
                 let current = read_page_stamp(page_dir);
@@ -440,6 +444,18 @@ mod tests {
         }));
         watcher.watch(&root, Some(&page), Some(rev.clone()));
 
+        let baseline_deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut baseline_refreshed = false;
+        while std::time::Instant::now() < baseline_deadline {
+            if watcher.take_changes().tree {
+                baseline_refreshed = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(baseline_refreshed, "initial tree baseline must request a refresh");
+        wakes.store(0, Ordering::SeqCst);
+
         // Wait longer than DEBOUNCE while nothing external changes; sync temp files must not wake.
         std::fs::write(page.join(".syncthing.index.md.tmp"), "staging").expect("write sync tmp");
         std::fs::write(page.join("assets").join("photo.png.tmp"), "partial").expect("write asset tmp");
@@ -507,6 +523,31 @@ mod tests {
         }
         assert!(saw_tree, "expected external directory creation to report tree change");
         assert!(wakes.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+    #[test]
+    fn initial_tree_baseline_requests_refresh() {
+        let dir = notecraft_store::testing::TempDir::new("engine-tree-initial-baseline");
+        let root = dir.path().join("notebooks");
+        std::fs::create_dir_all(&root).expect("create root");
+
+        let watcher = FileWatcher::new();
+        watcher.watch(&root, None, None);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut saw_tree = false;
+        while std::time::Instant::now() < deadline {
+            if watcher.take_changes().tree {
+                saw_tree = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(saw_tree, "initial baseline must request a tree refresh");
+
+        std::thread::sleep(Duration::from_millis(1_100));
+        assert_eq!(watcher.take_changes(), WatchChanges::default(), "initial refresh must not repeat");
     }
 
     #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
