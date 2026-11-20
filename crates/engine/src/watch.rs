@@ -49,7 +49,6 @@ pub fn is_sync_temp(path: &Path) -> bool {
 mod imp {
     use super::*;
     use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Condvar, Mutex};
     use std::time::{Instant, SystemTime};
 
@@ -79,13 +78,19 @@ mod imp {
         own_revision: Option<Revision>,
     }
 
+    #[derive(Default)]
+    struct WorkerSignal {
+        stopped: bool,
+        has_target: bool,
+        generation: u64,
+    }
+
     struct Shared {
         wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
         target: Mutex<Target>,
         changes: Mutex<WatchChanges>,
-        stopped: Mutex<bool>,
+        signal: Mutex<WorkerSignal>,
         cv: Condvar,
-        has_target: AtomicBool,
     }
 
     /// Background watcher that debounces external disk changes under the open notebook root
@@ -107,9 +112,8 @@ mod imp {
                 wake: Mutex::new(None),
                 target: Mutex::new(Target::default()),
                 changes: Mutex::new(WatchChanges::default()),
-                stopped: Mutex::new(false),
+                signal: Mutex::new(WorkerSignal::default()),
                 cv: Condvar::new(),
-                has_target: AtomicBool::new(false),
             });
             let bg = Arc::clone(&shared);
             let worker = std::thread::Builder::new().name("notecraft-file-watcher".into()).spawn(move || run_loop(&bg)).ok();
@@ -143,8 +147,12 @@ mod imp {
                     target.own_revision = own_revision;
                 }
                 if roots_changed || page_changed {
-                    self.shared.has_target.store(true, Ordering::Release);
-                    self.shared.cv.notify_all();
+                    // Share the wait mutex so a target update cannot lose its wake.
+                    if let Ok(mut signal) = self.shared.signal.lock() {
+                        signal.has_target = true;
+                        signal.generation = signal.generation.wrapping_add(1);
+                        self.shared.cv.notify_all();
+                    }
                 }
             }
         }
@@ -164,10 +172,11 @@ mod imp {
 
     impl Drop for FileWatcher {
         fn drop(&mut self) {
-            if let Ok(mut stopped) = self.shared.stopped.lock() {
-                *stopped = true;
+            if let Ok(mut signal) = self.shared.signal.lock() {
+                signal.stopped = true;
+                signal.generation = signal.generation.wrapping_add(1);
+                self.shared.cv.notify_all();
             }
-            self.shared.cv.notify_all();
             if let Some(handle) = self.worker.take() {
                 let _ = handle.join();
             }
@@ -185,13 +194,17 @@ mod imp {
 
         loop {
             {
-                let Ok(guard) = shared.stopped.lock() else { return };
-                if *guard {
+                let Ok(signal) = shared.signal.lock() else { return };
+                if signal.stopped {
                     return;
                 }
-                let wait_for = if shared.has_target.load(Ordering::Acquire) { POLL_STEP } else { DEBOUNCE };
-                let Ok((stopped, _)) = shared.cv.wait_timeout(guard, wait_for) else { return };
-                if *stopped {
+                let generation = signal.generation;
+                let wait_for = if signal.has_target { POLL_STEP } else { DEBOUNCE };
+                let Ok((signal, _)) = shared.cv.wait_timeout_while(signal, wait_for, |signal| !signal.stopped && signal.generation == generation)
+                else {
+                    return;
+                };
+                if signal.stopped {
                     return;
                 }
             }
