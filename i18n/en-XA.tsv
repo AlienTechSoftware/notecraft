@@ -81,6 +81,7 @@
 @id	ui.font_size	$$$Font Size@@@
 @id	ui.font_family	$$$Font Family@@@
 @id	ui.loading_fonts	$$$Loading fonts...@@@
+@id	ui.loading_picture	$$$Loading picture...@@@
 @id	ui.font_family_box	$$$Font name@@@
 @id	ui.recent_fonts	$$$Recently Used Fonts@@@
 @id	ui.all_fonts	$$$All Fonts@@@
