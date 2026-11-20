@@ -624,9 +624,15 @@ pub fn show(
     let at = origin.to_vec2();
     for stroke in &pad.drawing.strokes {
         let key = OutlineKey::of(stroke, zoom, feather, dark_page);
-        let kept = pad.outlines.kept.entry(key).or_insert_with(|| (frame, scaled_shape(stroke, zoom, dark_page, feather)));
+        let kept = pad.outlines.kept.entry(key).or_insert_with(|| (frame, Vec::new(), None));
+        // The key sums the points up, and two strokes can sum alike: the points themselves say
+        // whether this is the stroke the shape was built from.
+        if kept.1 != stroke.dabs {
+            kept.1.clone_from(&stroke.dabs);
+            kept.2 = scaled_shape(stroke, zoom, dark_page, feather);
+        }
         kept.0 = frame;
-        if let Some(shape) = &kept.1 {
+        if let Some(shape) = &kept.2 {
             let mut shape = shape.clone();
             shape.translate(at);
             painter.add(shape);
@@ -1408,7 +1414,8 @@ fn stroke_shape(stroke: &Stroke, origin: egui::Pos2, feather: f32) -> Option<egu
 /// last painted in.
 #[derive(Clone, Debug, Default)]
 struct Outlines {
-    kept: std::collections::HashMap<OutlineKey, (u64, Option<egui::Shape>)>,
+    /// By key: the frame it was last painted in, the points it was built from, and its shape.
+    kept: std::collections::HashMap<OutlineKey, (u64, Vec<Dab>, Option<egui::Shape>)>,
 }
 
 impl Outlines {
@@ -1416,13 +1423,13 @@ impl Outlines {
     /// another zoom), once there are many more kept than there are strokes.
     fn let_go(&mut self, frame: u64, strokes: usize) {
         if self.kept.len() > strokes * 2 + 64 {
-            self.kept.retain(|_, (painted, _)| *painted == frame);
+            self.kept.retain(|_, (painted, _, _)| *painted == frame);
         }
     }
 }
 
-/// What a stroke's shape is made from: the stroke itself, its points summed up, and how it is
-/// shown. Two strokes alike in all of it are drawn alike.
+/// What a stroke's shape is kept under: the stroke itself, its points summed up, and how it is
+/// shown. Two strokes can share a key; the points kept with the shape tell them apart.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct OutlineKey {
     tool: &'static str,
@@ -1658,6 +1665,40 @@ mod tests {
         assert_eq!(paint(&mut pad, 1.5, 0.0), 21);
         assert_eq!(paint(&mut pad, 1.5, 0.0), 21);
         assert_eq!(stroke_shapes() - before, 1, "a new stroke is the only one built");
+
+        // Two strokes the key cannot tell apart, alike but for one point between their ends whose
+        // sum comes out the same, are each drawn as themselves.
+        let mut a = Stroke::new(Tool::Pen, Rgb(0, 0, 0), 2.0);
+        let mut b = Stroke::new(Tool::Pen, Rgb(0, 0, 0), 2.0);
+        for (s, middle) in [(&mut a, Dab::new(30.0, 40.0, 0.5)), (&mut b, Dab::new(30.0, 80.0, 1.0))] {
+            s.dabs.push(Dab::new(10.0, 10.0, 0.5));
+            s.dabs.push(middle);
+            s.dabs.push(Dab::new(60.0, 10.0, 0.5));
+        }
+        assert_eq!(OutlineKey::of(&a, 1.5, 1.0, false), OutlineKey::of(&b, 1.5, 1.0, false), "the key alone cannot tell them apart");
+        let only = |stroke: Stroke| {
+            let mut pad = Pad::of_page(t.path());
+            pad.drawing.add(stroke);
+            pad
+        };
+        let shown = |pad: &mut Pad| {
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let body = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 2000.0));
+                show(ui, body, body, body.min, pad, pen, 1.0, &tokens, 1.5);
+            });
+            out.textures_delta.clear();
+            out.shapes.iter().map(|s| s.shape.visual_bounding_rect()).fold(egui::Rect::NOTHING, |a, b| a.union(b))
+        };
+        let (mut pa, mut pb) = (only(a), only(b));
+        let reach_a = shown(&mut pa);
+        let reach_b = shown(&mut pb);
+        assert!(reach_b.max.y > reach_a.max.y + 30.0, "the second is drawn down to its own middle point: {reach_a:?} vs {reach_b:?}");
+        // Kept on one page together, each still draws as itself.
+        let mut both = Pad::of_page(t.path());
+        both.drawing.add(pa.drawing.strokes[0].clone());
+        both.drawing.add(pb.drawing.strokes[0].clone());
+        assert!((shown(&mut both).max.y - reach_b.max.y).abs() < 1.0, "the page with both reaches as far as the second");
 
         // A stroke moved keeps no shape of where it was.
         let before = stroke_shapes();
