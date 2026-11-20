@@ -2357,7 +2357,8 @@ impl NoteCraftApp {
         let pages = self.listed_pages();
         // From the page on its way, if one is: the next page after that is the one after it, not
         // that one again.
-        let here = self.opening.as_ref().map(|o| o.dir.clone()).or_else(|| self.editor.as_ref().map(|e| e.dir.clone())).or_else(|| self.selected.clone());
+        let here =
+            self.opening.as_ref().map(|o| o.dir.clone()).or_else(|| self.editor.as_ref().map(|e| e.dir.clone())).or_else(|| self.selected.clone());
         let at = here.as_ref().and_then(|h| pages.iter().position(|p| p == h));
         let next = match at {
             Some(i) if forward => pages.get(i + 1),
@@ -3018,7 +3019,11 @@ impl NoteCraftApp {
         }
         // Whether it can be made a subpage reads the pages beside it: only when that key is down.
         let down = |key: Key| {
-            ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. } if *k == key && modifiers.matches_logically(mods))))
+            ctx.input(|i| {
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. } if *k == key && modifiers.matches_logically(mods)))
+            })
         };
         if down(Key::CloseBracket) && Self::can_make_subpage(&page) && ctx.input_mut(|input| input.consume_key(mods, Key::CloseBracket)) {
             self.reparent_page(&page, "node.demote");
