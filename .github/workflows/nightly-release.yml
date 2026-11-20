@@ -197,7 +197,12 @@ jobs:
           git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
           # Push the branch with the App token, to an explicit URL. The checkout stored no
           # credential (persist-credentials: false), so nothing overrides the App token here.
-          git push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          # The push runs the LFS pre-push check over the branch history, and the two large
+          # fixtures are not on the server (404 in nightly run #14), so no fetch can supply
+          # them. The bump commit adds no LFS files, so allow the incomplete push: it skips
+          # a check that cannot pass and uploads nothing new. The missing objects are a
+          # separate repo issue; they must be uploaded from a machine that has them.
+          git -c lfs.allowincompletepush=true push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           # Reuse the pull request from a failed run if one already exists for this branch.
           pr="$(gh pr list --head "$branch" --base main --json number --jq '.[0].number // empty')"
           if [ -z "$pr" ]; then
