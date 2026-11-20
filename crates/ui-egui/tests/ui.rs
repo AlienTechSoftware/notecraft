@@ -12594,6 +12594,165 @@ fn a_trackpad_click_puts_down_the_pen_the_pen_picked_up() {
     let settings = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
     assert!(settings.contains("switch_by_device = \"false\""), "the choice is kept: {settings}");
 }
+/// The trackpad puts down a pen the pen picked up on the part of the page the window shows,
+/// once it is scrolled too, and not from outside it; a tool added from the rack is chosen by
+/// hand and stays, but only when the rack takes it.
+#[test]
+fn the_trackpad_switch_follows_the_shown_page_and_the_rack() {
+    let (_t, mut app, s) = sample_app("ui-auto-pen-scrolled");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let pointer = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string()
+    };
+    let pen = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force: Some(0.6) };
+        h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        h.input_mut().events.push(contact(egui::TouchPhase::End, at + egui::vec2(30.0, 4.0)));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at + egui::vec2(30.0, 4.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        settle(h);
+    };
+    let trackpad = |h: &mut Harness<'_, NoteCraftApp>, at: egui::Pos2| {
+        h.input_mut().events.push(egui::Event::MouseMoved(egui::vec2(3.0, 1.0)));
+        h.input_mut().events.push(egui::Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+        }
+        settle(h);
+    };
+    let at = page_origin(&mut h) + egui::vec2(500.0, 300.0);
+
+    // Picked up, then the page pans down by two fingers: low in the window is page still shown,
+    // though below the first screen of it.
+    pen(&mut h, at);
+    assert_eq!(pointer(&mut h), "draw");
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    for _ in 0..20 {
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -40.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+            source: egui::MouseWheelSource::Trackpad,
+        });
+        h.step();
+    }
+    settle(&mut h);
+    // Outside the page shown, over the notebooks: not a click on the page.
+    trackpad(&mut h, egui::pos2(60.0, 400.0));
+    assert_eq!(pointer(&mut h), "draw", "a click beside the page does not put the pen down");
+    trackpad(&mut h, egui::pos2(at.x, 940.0));
+    assert_eq!(pointer(&mut h), "write", "a click low on the page shown puts it down");
+
+    // A tool added from the rack is one chosen by hand: it stays in hand. The caret's pointer is
+    // in hand again, so the pen picks up a pen.
+    pen(&mut h, at);
+    assert_eq!(pointer(&mut h), "draw");
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let add = |h: &mut Harness<'_, NoteCraftApp>| {
+        h.get_by_label("Add").click();
+        settle(h);
+        h.get_by_label("Add Pen").click();
+        settle(h);
+    };
+    add(&mut h);
+    trackpad(&mut h, at);
+    assert_eq!(pointer(&mut h), "draw", "a tool added to the rack stays in hand");
+}
+
+/// An Add the full rack turns down chooses nothing: the pen the pen picked up is still put down
+/// by the trackpad.
+#[test]
+fn an_add_the_full_rack_turns_down_leaves_the_pen_to_the_trackpad() {
+    let t = TempDir::new("ui-auto-pen-full-rack");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let full: Vec<notecraft_ink::rack::Nib> =
+        (0..notecraft_ink::rack::MAX_NIBS).map(|_| notecraft_ink::rack::new_nib(notecraft_ink::Tool::Pen)).collect();
+    s.settings.set("pen_rack", &notecraft_ink::rack::write(&full)).expect("a full rack");
+    let mut app = NoteCraftApp::new(s);
+    app.set_redact_paths(true);
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 1000.0));
+    settle(&mut h);
+    let pointer = |h: &mut Harness<'_, NoteCraftApp>| {
+        let v = ask(h, "ui.inspect", json!({})).expect("inspect");
+        v.pointer("/ink/pointer").and_then(Value::as_str).unwrap_or_default().to_string()
+    };
+    let at = page_origin(&mut h) + egui::vec2(500.0, 300.0);
+    let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force: Some(0.6) };
+    h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    h.input_mut().events.push(contact(egui::TouchPhase::End, at));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    settle(&mut h);
+    assert_eq!(pointer(&mut h), "draw", "the pen picked up a pen");
+    let rack = ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/rack").cloned();
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("nothing open");
+    // Draw > Add > Pen: the rack is full, and says so.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let adds = h.query_all_by_label("Add").count();
+    assert!(adds > 0, "the Draw tab shows Add even with a full rack");
+    h.get_by_label("Add").click();
+    settle(&mut h);
+    h.get_by_label("Add Pen").click();
+    settle(&mut h);
+    assert_eq!(ask(&mut h, "ui.inspect", json!({})).expect("inspect").pointer("/ink/rack").cloned(), rack, "nothing was added");
+    h.input_mut().events.push(egui::Event::MouseMoved(egui::vec2(3.0, 1.0)));
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false] {
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+    }
+    settle(&mut h);
+    assert_eq!(pointer(&mut h), "write", "an Add the full rack turned down chose nothing");
+}
+
 /// Issue #23: Draw > Collect All brings boxes and ink that drifted apart on the canvas back
 /// together, keeps their order and does not lay one over another; one Undo puts them all back.
 #[test]
