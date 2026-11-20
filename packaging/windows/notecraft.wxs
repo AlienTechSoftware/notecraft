@@ -36,6 +36,9 @@
 
     <Icon Id="NotecraftIcon.ico" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="NotecraftIcon.ico" />
+    <!-- Windows writes this as the uninstall entry InstallLocation (it does not expand [properties] here),
+         so it is the default install folder. A custom folder would need this updated. -->
+    <Property Id="ARPINSTALLLOCATION" Value="C:\Program Files\NoteCraft" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/AlienTechSoftware/notecraft" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/AlienTechSoftware/notecraft/releases" />
     <Property Id="ARPHELPLINK" Value="https://github.com/AlienTechSoftware/notecraft/issues" />

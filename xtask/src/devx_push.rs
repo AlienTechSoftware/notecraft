@@ -45,7 +45,14 @@ pub fn prepare(root: &Path) -> Result<(), String> {
     assert_current_branch(root)?;
     require_clean_tree(root)?;
 
-    let pii = Command::new("bash")
+    // On Windows, plain `bash` can be the WSL launcher, which may not start. Prefer Git for
+    // Windows' bash when it is installed; the script is plain POSIX shell.
+    let bash = if cfg!(windows) && std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe").exists() {
+        r"C:\Program Files\Git\bin\bash.exe"
+    } else {
+        "bash"
+    };
+    let pii = Command::new(bash)
         .args(["SKILLS/nc-devx/scripts/check-pii.sh", "origin/main"])
         .current_dir(root)
         .status()

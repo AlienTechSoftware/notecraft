@@ -782,6 +782,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -869,6 +878,15 @@ name = "constant_time_eq"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "cookie"
@@ -1031,12 +1049,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-update"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dunce",
+ "flate2",
+ "getrandom 0.3.4",
+ "log",
+ "plist",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "ureq",
+ "verifysign",
+ "winreg",
+ "winsafe",
+ "zip 9.7.2",
+]
+
+[[package]]
 name = "craft-voice-core"
-version = "0.0.9"
+version = "0.0.15"
 
 [[package]]
 name = "craft-voice-runtime"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "cpal",
  "craft-voice-core",
@@ -1217,6 +1258,12 @@ name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+
+[[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "ecolor"
@@ -1612,6 +1659,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 
 [[package]]
+name = "filetime"
+version = "0.2.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1255e7a9f1902190d4c10a75f2f7f495d3d3ce13e9ba26e6c48683a0f4dbed7"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1894,8 +1951,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3172,6 +3231,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77730ed34f01f4990cb2ea67fec715ecebc6fab9a6396cf83c5529b13f581bdc"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3188,8 +3259,9 @@ dependencies = [
 
 [[package]]
 name = "notecraft"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
+ "craft-update",
  "eframe",
  "egui",
  "image",
@@ -3209,7 +3281,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-android"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "android_logger",
  "eframe",
@@ -3222,12 +3294,12 @@ dependencies = [
  "notecraft-ui-egui",
  "time",
  "winit",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
 name = "notecraft-cli"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-engine",
  "notecraft-import",
@@ -3239,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-demo"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-formats",
  "notecraft-ink",
@@ -3249,14 +3321,14 @@ dependencies = [
 
 [[package]]
 name = "notecraft-diagram"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "mermaid-rs-renderer",
 ]
 
 [[package]]
 name = "notecraft-engine"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "craft-voice-core",
  "notecraft-formats",
@@ -3267,14 +3339,14 @@ dependencies = [
 
 [[package]]
 name = "notecraft-formats"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-model",
 ]
 
 [[package]]
 name = "notecraft-import"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "cab",
  "notecraft-formats",
@@ -3285,18 +3357,18 @@ dependencies = [
 
 [[package]]
 name = "notecraft-ink"
-version = "0.0.9"
+version = "0.0.15"
 
 [[package]]
 name = "notecraft-input-language"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "notecraft-math"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "ratex-font",
  "ratex-layout",
@@ -3306,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-mcp"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-engine",
  "notecraft-store",
@@ -3315,18 +3387,18 @@ dependencies = [
 
 [[package]]
 name = "notecraft-model"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "web-time",
 ]
 
 [[package]]
 name = "notecraft-onenote"
-version = "0.0.9"
+version = "0.0.15"
 
 [[package]]
 name = "notecraft-setup"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-store",
  "rfd",
@@ -3334,7 +3406,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-store"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "log",
  "notecraft-formats",
@@ -3344,7 +3416,7 @@ dependencies = [
 
 [[package]]
 name = "notecraft-text"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "notecraft-model",
  "parley",
@@ -3352,10 +3424,11 @@ dependencies = [
 
 [[package]]
 name = "notecraft-ui-egui"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "arboard",
  "craft-i18n",
+ "craft-update",
  "craft-voice-core",
  "craft-voice-runtime",
  "egui",
@@ -3384,7 +3457,7 @@ dependencies = [
  "ttf-parser",
  "ureq",
  "web-time",
- "zip",
+ "zip 4.6.1",
 ]
 
 [[package]]
@@ -4174,6 +4247,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "plist"
+version = "1.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d86a77b7d9cdebd9643c180c158748db7d894b24a3935ed4b5843e698ae086eb"
+dependencies = [
+ "base64 0.23.1",
+ "indexmap",
+ "quick-xml 0.42.0",
+ "serde",
+ "time",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4348,6 +4434,15 @@ name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
 ]
@@ -4797,7 +4892,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4918,6 +5013,10 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "send_wrapper"
@@ -5288,6 +5387,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5567,6 +5676,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5678,6 +5793,7 @@ checksum = "3ac5cecf619ca81f66a96482db09687c9f7465af65f4300a8c30cca05bd5a59d"
 dependencies = [
  "base64 0.23.1",
  "cookie_store",
+ "flate2",
  "log",
  "percent-encoding",
  "rustls",
@@ -5840,6 +5956,16 @@ dependencies = [
  "hashbrown 0.17.1",
  "png 0.18.1",
  "vello_common 0.2.0",
+]
+
+[[package]]
+name = "verifysign"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6efd25aadc22c756a9012267fae0b130278d335d6ceb512ec02ce82029b5ca9"
+dependencies = [
+ "core-foundation 0.10.1",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6048,7 +6174,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
- "quick-xml",
+ "quick-xml 0.41.0",
  "quote",
 ]
 
@@ -6683,6 +6809,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winreg"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "winresource"
 version = "0.1.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6691,6 +6827,12 @@ dependencies = [
  "toml",
  "version_check",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ef0ffc427f045c0cc9ebffd6f4f91153dcd2a1547b5c3c29ee3f541e16e95c6"
 
 [[package]]
 name = "wit-bindgen"
@@ -6802,7 +6944,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.0.9"
+version = "0.0.15"
 dependencies = [
  "proc-macro2",
  "serde_json",
@@ -7057,7 +7199,7 @@ dependencies = [
  "aes",
  "arbitrary",
  "bzip2",
- "constant_time_eq",
+ "constant_time_eq 0.3.1",
  "crc32fast",
  "deflate64",
  "flate2",
@@ -7073,6 +7215,25 @@ dependencies = [
  "zeroize",
  "zopfli",
  "zstd",
+]
+
+[[package]]
+name = "zip"
+version = "9.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d355ef4ea6fc9eaad04cae82d07c1329f643a5f94d10f35fc55b265f577829"
+dependencies = [
+ "constant_time_eq 0.6.1",
+ "crc32fast",
+ "flate2",
+ "getrandom 0.4.3",
+ "indexmap",
+ "libc",
+ "memchr",
+ "nix",
+ "typed-path",
+ "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

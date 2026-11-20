@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	Terminer
 @id	ui.welcome_wizard_done_title	Merci
 @id	ui.welcome_wizard_done_body	NoteCraft est prêt à l'emploi. Vos choix sont enregistrés. Cette configuration ne réapparaîtra qu'après une réinitialisation des préférences.
+@id	ui.update_prompt.available	{app} {version} est disponible avec les dernières nouveautés et corrections.
+@id	ui.update_prompt.by_developer	par {developer}
+@id	ui.update_prompt.version_change	v{from} vers {to}
+@id	ui.update_prompt.whats_new	Nouveautés
+@id	ui.update_prompt.download	Télécharger
+@id	ui.update_prompt.later	Plus tard
+@id	ui.update_prompt.dismiss	Ignorer
+@id	ui.update_prompt.all_releases	Toutes les versions sont listées sur {url}
+@id	ui.update_prompt.update	Mettre à jour
+@id	ui.update_prompt.restart_to_update	Redémarrer pour mettre à jour
+@id	ui.update_prompt.update_and_restart	Mettre à jour et redémarrer
+@id	ui.update_prompt.downloading	Téléchargement et installation de la mise à jour…
+@id	ui.update_prompt.close	Fermer
+@id	ui.notebooks_folder	Dossier des carnets
+@id	ui.notebooks_folder_hint	Les carnets déjà présents dans le dossier choisi s’ouvrent maintenant. Les nouveaux carnets y seront créés dès le prochain démarrage. Rien n’est déplacé.
+@id	ui.notebooks_folder_current	NoteCraft crée les nouveaux carnets dans {folder}.
+@id	ui.change_notebooks_folder	Changer le dossier des carnets...
+@id	ui.use_the_default_notebooks_folder	Utiliser le dossier par défaut
+@id	ui.choose_the_notebooks_folder	Choisir le dossier des carnets
+@id	ui.notebooks_folder_changed	Le dossier des carnets est maintenant {folder}.
+@id	ui.could_not_save_the_notebooks_folder_error	Impossible d’enregistrer le dossier des carnets : {error}
+@id	ui.could_not_open_the_notebooks_folder_error	Impossible d’ouvrir le dossier des carnets : {error}

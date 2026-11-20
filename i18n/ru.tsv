@@ -790,3 +790,25 @@
 @id	ui.welcome_wizard_finish	Готово
 @id	ui.welcome_wizard_done_title	Спасибо
 @id	ui.welcome_wizard_done_body	NoteCraft готов к работе. Ваш выбор сохранён. Эта настройка появится снова только после сброса параметров.
+@id	ui.update_prompt.available	Доступна {app} {version} с новыми функциями и исправлениями.
+@id	ui.update_prompt.by_developer	от {developer}
+@id	ui.update_prompt.version_change	с v{from} на {to}
+@id	ui.update_prompt.whats_new	Что нового
+@id	ui.update_prompt.download	Скачать
+@id	ui.update_prompt.later	Позже
+@id	ui.update_prompt.dismiss	Скрыть
+@id	ui.update_prompt.all_releases	Все выпуски перечислены на {url}
+@id	ui.update_prompt.update	Обновить
+@id	ui.update_prompt.restart_to_update	Перезапустить для обновления
+@id	ui.update_prompt.update_and_restart	Обновить и перезапустить
+@id	ui.update_prompt.downloading	Загрузка и установка обновления…
+@id	ui.update_prompt.close	Закрыть
+@id	ui.notebooks_folder	Папка блокнотов
+@id	ui.notebooks_folder_hint	Блокноты в выбранной папке открываются сразу. Новые блокноты будут создаваться там с следующего запуска. Ничего не перемещается.
+@id	ui.notebooks_folder_current	NoteCraft создаёт новые блокноты в папке {folder}.
+@id	ui.change_notebooks_folder	Изменить папку блокнотов...
+@id	ui.use_the_default_notebooks_folder	Использовать папку по умолчанию
+@id	ui.choose_the_notebooks_folder	Выберите папку блокнотов
+@id	ui.notebooks_folder_changed	Папка блокнотов теперь: {folder}.
+@id	ui.could_not_save_the_notebooks_folder_error	Не удалось сохранить папку блокнотов: {error}
+@id	ui.could_not_open_the_notebooks_folder_error	Не удалось открыть папку блокнотов: {error}
