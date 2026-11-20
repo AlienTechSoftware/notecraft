@@ -13658,9 +13658,18 @@ mod alert_tests {
             .with_size(vec2(1200.0, 760.0))
             .with_accessibility_check(false)
             .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), NoteCraftApp::new(session));
-        for _ in 0..20 {
+        // Step until the window stops asking for frames. A fixed frame count assumed the window
+        // settles within it, which a slow runner does not guarantee (issue #429). The cap still
+        // catches a window that never settles.
+        let mut settled = false;
+        for _ in 0..300 {
             h.step();
+            if !h.ctx.has_requested_repaint() {
+                settled = true;
+                break;
+            }
         }
+        assert!(settled, "the window never settled: it still asks for frames after 300 steps");
         let (at, end) = (h.state().page_offset_y, h.state().page_offset_max);
         assert!(at <= end + 1.0, "the page is not past its end: {at} of {end}");
         assert!(!h.ctx.has_requested_repaint(), "and with nothing happening the window asks for no more frames");
