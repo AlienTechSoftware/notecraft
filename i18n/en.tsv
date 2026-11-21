@@ -947,6 +947,8 @@
 @id	ui.you_are_running_version	You are running NoteCraft {version}.
 @id	ui.check_for_updates	Check for updates
 @id	ui.check_for_updates_hint	Checks GitHub for a newer release each time NoteCraft starts, and when you press Check for Updates. It downloads and installs only when you press Update and Restart.
+@id	ui.update_check_off_at_start	Don't check for updates at start up
+@id	ui.update_check_not_saved	The update setting could not be saved: {error}
 @id	ui.open_the_releases_page	Open the releases page
 @id	ui.update_checking	Looking for a newer version…
 @id	ui.update_up_to_date	NoteCraft is up to date. The newest release is {version}.

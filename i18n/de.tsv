@@ -791,6 +791,9 @@
 @id	ui.welcome_wizard_done_title	Vielen Dank
 @id	ui.welcome_wizard_done_body	NoteCraft ist einsatzbereit. Deine Auswahl ist gespeichert. Diese Einrichtung erscheint erst wieder, wenn du die Einstellungen zurücksetzt.
 @id	ui.update_prompt.available	{app} {version} ist verfügbar mit den neuesten Funktionen und Fehlerbehebungen.
+@id	ui.check_for_updates_hint	Prüft bei jedem Start von NoteCraft und beim Drücken von Nach Updates suchen auf GitHub nach einer neueren Version. Herunterladen und Installieren erfolgen erst, wenn Sie Aktualisieren und neu starten drücken.
+@id	ui.update_check_off_at_start	Beim Start nicht nach Updates suchen
+@id	ui.update_check_not_saved	Die Update-Einstellung konnte nicht gespeichert werden: {error}
 @id	ui.update_prompt.newest_available	{app} {version} ist die neueste verfügbare Version.
 @id	ui.update_prompt.by_developer	von {developer}
 @id	ui.update_prompt.version_change	v{from} auf {to}

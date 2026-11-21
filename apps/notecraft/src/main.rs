@@ -392,6 +392,7 @@ fn main() -> eframe::Result {
             // Only an installed copy checks by itself. A build tree (including a release build run
             // with cargo) is not installed, so the updater's own test decides it.
             let installed_start = craft_update::self_update::current(&notecraft_ui_egui::update_prompt::NOTECRAFT).is_some()
+                && app.update_check_at_start()
                 && !args.iter().any(|a| a == "--update-from" || a == "--set-version" || a == "--new-version");
             if installed_start {
                 app.start_update_check(env!("CARGO_PKG_VERSION"));

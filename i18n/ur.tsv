@@ -791,6 +791,9 @@
 @id	ui.welcome_wizard_done_title	شکریہ
 @id	ui.welcome_wizard_done_body	NoteCraft استعمال کے لیے تیار ہے۔ آپ کا انتخاب محفوظ ہو گیا ہے۔ یہ ترتیب صرف ترجیحات دوبارہ ترتیب دینے کے بعد ظاہر ہوگی۔
 @id	ui.update_prompt.available	{app} {version} دستیاب ہے، جس میں نئی خصوصیات اور بگ کی اصلاحات شامل ہیں۔
+@id	ui.check_for_updates_hint	NoteCraft کے ہر آغاز پر، اور جب آپ اپ ڈیٹس چیک کریں دبائیں تو GitHub پر نیا ریلیز دیکھا جاتا ہے۔ ڈاؤن لوڈ اور انسٹال صرف اس وقت ہوتا ہے جب آپ اپ ڈیٹ اور دوبارہ شروع کریں دبائیں۔
+@id	ui.update_check_off_at_start	شروع پر اپ ڈیٹس نہ چیک کریں
+@id	ui.update_check_not_saved	اپ ڈیٹ کی ترتیب محفوظ نہیں ہو سکی: {error}
 @id	ui.update_prompt.newest_available	{app} {version} دستیاب سب سے نیا ورژن ہے۔
 @id	ui.update_prompt.by_developer	{developer} کی جانب سے
 @id	ui.update_prompt.version_change	v{from} سے {to}

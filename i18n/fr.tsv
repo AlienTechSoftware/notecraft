@@ -791,6 +791,9 @@
 @id	ui.welcome_wizard_done_title	Merci
 @id	ui.welcome_wizard_done_body	NoteCraft est prêt à l'emploi. Vos choix sont enregistrés. Cette configuration ne réapparaîtra qu'après une réinitialisation des préférences.
 @id	ui.update_prompt.available	{app} {version} est disponible avec les dernières nouveautés et corrections.
+@id	ui.check_for_updates_hint	Vérifie GitHub pour une version plus récente à chaque démarrage de NoteCraft, et lorsque vous appuyez sur Rechercher des mises à jour. Elle ne se télécharge et ne s'installe qu'après que vous appuyez sur Mettre à jour et redémarrer.
+@id	ui.update_check_off_at_start	Ne pas rechercher les mises à jour au démarrage
+@id	ui.update_check_not_saved	Le réglage de mise à jour n'a pas pu être enregistré : {error}
 @id	ui.update_prompt.newest_available	{app} {version} est la version la plus récente disponible.
 @id	ui.update_prompt.by_developer	par {developer}
 @id	ui.update_prompt.version_change	v{from} vers {to}
