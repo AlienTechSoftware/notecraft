@@ -18,6 +18,11 @@
 </p>
 
 <p align="center">
+  <a href="https://notecraft.cloud/"><img src="assets/brand/try-notecraft-badge.png" alt="Try NoteCraft!" height="40"></a>
+  <br>
+</p>
+
+<p align="center">
   <a href="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml"><img alt="CI status on main" src="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/AlienTechSoftware/notecraft/releases/latest"><img alt="Latest release, read from GitHub" src="https://img.shields.io/github/v/release/AlienTechSoftware/notecraft?style=flat-square&color=3b5bdb&label=latest%20release"></a>
   <a href="docs/coverage.json"><img alt="Line coverage on Windows, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.windows&label=coverage%20%C2%B7%20windows&color=2f9e44&style=flat-square&cb=2"></a>
@@ -129,8 +134,6 @@ against the app most people are moving from) and [docs/gaps.md](docs/gaps.md) (w
 or unproven).
 
 ## Quick start
-
-<a href="https://notecraft.cloud/"><img src="assets/brand/try-notecraft-badge.png" alt="Try NoteCraft!" height="40"></a>
 
 You need [Rust](https://rustup.rs).
 
@@ -337,7 +340,7 @@ NoteCraft is funded by AlienTech Software.
 
 <a href="https://alientech.software/"><img src="https://alientech.software/assets/alientech-software-badge.png" alt="AlienTech Software" height="40"></a>
 
-You can also support the project through [GitHub Sponsors](https://github.com/sponsors/AlienTechSoftware).
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/AlienTechSoftware)](https://github.com/sponsors/AlienTechSoftware)
 
 ## Mentions
 
