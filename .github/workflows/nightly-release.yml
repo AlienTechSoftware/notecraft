@@ -271,7 +271,7 @@ jobs:
           git tag -f -a "$TAG" -m "NoteCraft $TAG" "$sha"
           # The checkout stored no credential, so the tag push and the branch delete
           # carry GITHUB_TOKEN in the URL.
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
+          git -c lfs.allowincompletepush=true push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
           # The version branch served its purpose; the pull request is merged.
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete "${{ steps.pr.outputs.branch }}" || true
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
