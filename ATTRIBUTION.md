@@ -1,7 +1,7 @@
 # Attribution
 
 Every file under `assets/` and `docs/images/` has a row here. `cargo xtask assets` fails if one
-is missing. Last reviewed: 2026-10-18.
+is missing. Last reviewed: 2026-11-21.
 
 ## Brand artwork
 
@@ -30,6 +30,8 @@ is missing. Last reviewed: 2026-10-18.
 | `assets/demo/banner-fa.png` | The banner on the Persian welcome page of the Welcome notebook, 720 x 300: the koala tile and the name on a faint ruled page, wordmark only; Persian needs text shaping Pillow does not have here, so that page carries the line as words | Drawn in the private planning repo on 2026-10-19, from `notecraft-512.png` and the theme colours. Text set in Inter and Noto Sans CJK SC (both SIL OFL 1.1); only rendered glyphs are in the picture, no font file is shipped with it | Same as the koala source for the artwork. The rest is NoteCraft's own work |
 | `assets/demo/banner-ur.png` | The banner on the Urdu welcome page of the Welcome notebook, 720 x 300: the koala tile and the name on a faint ruled page, wordmark only; Urdu needs text shaping Pillow does not have here, so that page carries the line as words | Drawn in the private planning repo on 2026-10-19, from `notecraft-512.png` and the theme colours. Text set in Inter and Noto Sans CJK SC (both SIL OFL 1.1); only rendered glyphs are in the picture, no font file is shipped with it | Same as the koala source for the artwork. The rest is NoteCraft's own work |
 | `assets/brand/notecraft-social-dark.png` | Same, dark | Same | Same |
+| `assets/brand/try-notecraft-badge.png` | The "Try NoteCraft!" badge for the README Quick start: the koala tile and the words on the logo purple, 361 x 80 (shown at 180 x 40) | Drawn by a Pillow script on 2026-11-21, from `notecraft-128.png` and the logo purple sampled from it. The text is set in DejaVu Sans Bold; only rendered glyphs are in the picture, no font file is shipped with it | Same as the koala source for the artwork. The rest is NoteCraft's own work |
+| `assets/brand/sponsor-button.svg` | The Sponsor button for the README Sponsors section: a pink heart and the word Sponsor, in GitHub's button style, with a light and a dark form | Drawn for NoteCraft by hand as SVG shapes on 2026-11-21. Not traced or copied from GitHub's artwork | NoteCraft's own work, MIT OR Apache-2.0 like the code |
 
 
 ## Stickers
