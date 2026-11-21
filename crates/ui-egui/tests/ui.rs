@@ -406,7 +406,7 @@ fn about_and_options_show_the_version_and_an_update_button() {
         pump(&mut h);
         let _ = h.get_by_label(&format!("You are running NoteCraft {VERSION}."));
         let _ = h.get_by_label("Check for updates");
-        let _ = h.get_by_label_contains("Nothing is sent until you press the button.");
+        let _ = h.get_by_label_contains("It downloads and installs only when you press Update and Restart.");
         assert!(h.output().platform_output.commands.is_empty(), "{page}: nothing is opened before the button is pressed");
         review(&mut h, &format!("check_for_updates_{}", page.to_lowercase()));
     }

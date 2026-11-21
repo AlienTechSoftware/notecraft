@@ -791,6 +791,10 @@
 @id	ui.welcome_wizard_done_title	Спасибо
 @id	ui.welcome_wizard_done_body	NoteCraft готов к работе. Ваш выбор сохранён. Эта настройка появится снова только после сброса параметров.
 @id	ui.update_prompt.available	Доступна {app} {version} с новыми функциями и исправлениями.
+@id	ui.check_for_updates_hint	Проверяет GitHub на более новую версию при каждом запуске NoteCraft и при нажатии «Проверить обновления». Загрузка и установка начинаются только после нажатия «Обновить и перезапустить».
+@id	ui.update_check_off_at_start	Не проверять обновления при запуске
+@id	ui.update_check_not_saved	Не удалось сохранить настройку обновлений: {error}
+@id	ui.update_prompt.newest_available	{app} {version} — самая новая доступная версия.
 @id	ui.update_prompt.by_developer	от {developer}
 @id	ui.update_prompt.version_change	с v{from} на {to}
 @id	ui.update_prompt.whats_new	Что нового

@@ -1341,6 +1341,8 @@ pub struct NoteCraftApp {
     /// Draw > Auto-switch (issue #9): the pen picks up a pen, and typing or the trackpad puts it
     /// down. On unless turned off.
     auto_switch: bool,
+    /// Options: don't check for updates at start up (off by default, so a start checks).
+    update_check_off: bool,
     /// The pen in hand was picked up by the pen touching the page, not chosen: a trackpad click
     /// on the page puts it down again. One chosen by hand stays, so a trackpad can draw too.
     pen_picked_by_pen: bool,
@@ -1467,6 +1469,7 @@ impl NoteCraftApp {
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
+        let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
@@ -1583,6 +1586,7 @@ impl NoteCraftApp {
             ruler: false,
             auto_shapes: session_auto_shapes,
             auto_switch: session_auto_switch,
+            update_check_off: session_update_check_off,
             pen_picked_by_pen: false,
             replaying: false,
             tabs_layout: session_tabs_layout,
@@ -1892,6 +1896,17 @@ impl NoteCraftApp {
     /// Shows a newer version in Options and About, for a screen check. It only shows the message
     /// and the releases-page link; nothing is downloaded or installed.
     /// The first-use wizard does not open for a test hook: `--new-version` shows only the update.
+    /// Whether the first-use wizard is finished or was never shown. A first launch waits for it, so
+    /// the update check never opens over the wizard.
+    pub fn first_use_done(&self) -> bool {
+        !matches!(self.dialog, Some(Dialog::FirstUseWizard { .. }))
+    }
+
+    /// Whether a start checks GitHub for a newer release: on unless Options turns it off.
+    pub fn update_check_at_start(&self) -> bool {
+        !self.update_check_off
+    }
+
     pub fn skip_first_use_wizard(&mut self) {
         if matches!(self.dialog, Some(Dialog::FirstUseWizard { .. })) {
             self.dialog = None;
@@ -4505,6 +4520,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 self.auto_switch,
+                self.update_check_off,
                 &update,
                 &mut copy,
                 &mut account,
@@ -4563,6 +4579,12 @@ impl NoteCraftApp {
                     // Not kept, so not changed: the next start would have gone back to it.
                     Err(e) => self.complain(&crate::i18n::format_message_id("ui.auto_switch_not_saved", &[("error", &e.to_string())])),
                 },
+                backstage::Act::SetUpdateCheckOff(off) => {
+                    match self.session.settings.set("update_check_off_at_start", if off { "true" } else { "false" }) {
+                        Ok(()) => self.update_check_off = off,
+                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.update_check_not_saved", &[("error", &e.to_string())])),
+                    }
+                }
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
                 backstage::Act::UseDefaultNotebooksFolder => self.apply_notebooks_root_choice(None),
                 backstage::Act::OpenTelemetryFolder(path) => {
