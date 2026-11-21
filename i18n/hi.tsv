@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	धन्यवाद
 @id	ui.welcome_wizard_done_body	NoteCraft उपयोग के लिए तैयार है। आपकी पसंद सहेज ली गई है। यह सेटअप केवल प्राथमिकताएँ रीसेट करने के बाद फिर दिखेगा।
 @id	ui.update_prompt.available	{app} {version} नए फ़ीचर और बग सुधारों के साथ उपलब्ध है।
+@id	ui.update_prompt.newest_available	{app} {version} उपलब्ध सबसे नया संस्करण है।
 @id	ui.update_prompt.by_developer	{developer} द्वारा
 @id	ui.update_prompt.version_change	v{from} से {to}
 @id	ui.update_prompt.whats_new	नया क्या है

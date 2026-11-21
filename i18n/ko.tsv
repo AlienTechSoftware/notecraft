@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	감사합니다
 @id	ui.welcome_wizard_done_body	NoteCraft를 사용할 준비가 되었습니다. 선택한 내용은 저장되었습니다. 이 설정은 환경설정을 초기화한 뒤에만 다시 나타납니다.
 @id	ui.update_prompt.available	{app} {version}을(를) 사용할 수 있습니다. 최신 기능과 버그 수정이 포함되어 있습니다.
+@id	ui.update_prompt.newest_available	{app} {version}은(는) 사용 가능한 최신 버전입니다.
 @id	ui.update_prompt.by_developer	{developer} 제작
 @id	ui.update_prompt.version_change	v{from} → {to}
 @id	ui.update_prompt.whats_new	새로운 기능

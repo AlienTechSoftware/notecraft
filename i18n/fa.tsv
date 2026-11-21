@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	متشکریم
 @id	ui.welcome_wizard_done_body	NoteCraft آماده استفاده است. انتخاب‌های شما ذخیره شد. این راه‌اندازی تنها پس از بازنشانی تنظیمات دوباره نمایش داده می‌شود.
 @id	ui.update_prompt.available	{app} {version} با آخرین امکانات و رفع اشکال در دسترس است.
+@id	ui.update_prompt.newest_available	{app} {version} جدیدترین نسخه‌ی موجود است.
 @id	ui.update_prompt.by_developer	توسط {developer}
 @id	ui.update_prompt.version_change	از v{from} به {to}
 @id	ui.update_prompt.whats_new	تازه‌ها

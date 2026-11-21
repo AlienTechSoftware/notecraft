@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	Vielen Dank
 @id	ui.welcome_wizard_done_body	NoteCraft ist einsatzbereit. Deine Auswahl ist gespeichert. Diese Einrichtung erscheint erst wieder, wenn du die Einstellungen zurücksetzt.
 @id	ui.update_prompt.available	{app} {version} ist verfügbar mit den neuesten Funktionen und Fehlerbehebungen.
+@id	ui.update_prompt.newest_available	{app} {version} ist die neueste verfügbare Version.
 @id	ui.update_prompt.by_developer	von {developer}
 @id	ui.update_prompt.version_change	v{from} auf {to}
 @id	ui.update_prompt.whats_new	Neuerungen

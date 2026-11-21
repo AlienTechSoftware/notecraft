@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	Merci
 @id	ui.welcome_wizard_done_body	NoteCraft est prêt à l'emploi. Vos choix sont enregistrés. Cette configuration ne réapparaîtra qu'après une réinitialisation des préférences.
 @id	ui.update_prompt.available	{app} {version} est disponible avec les dernières nouveautés et corrections.
+@id	ui.update_prompt.newest_available	{app} {version} est la version la plus récente disponible.
 @id	ui.update_prompt.by_developer	par {developer}
 @id	ui.update_prompt.version_change	v{from} vers {to}
 @id	ui.update_prompt.whats_new	Nouveautés

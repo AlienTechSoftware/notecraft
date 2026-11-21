@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	תודה
 @id	ui.welcome_wizard_done_body	NoteCraft מוכן לשימוש. הבחירות שלכם נשמרו. ההגדרה הזו תופיע שוב רק אחרי איפוס ההעדפות.
 @id	ui.update_prompt.available	{app} {version} זמין עם התכונות החדשות ותיקוני השגיאות האחרונים.
+@id	ui.update_prompt.newest_available	{app} {version} היא הגרסה העדכנית ביותר הזמינה.
 @id	ui.update_prompt.by_developer	מאת {developer}
 @id	ui.update_prompt.version_change	מ-v{from} ל-{to}
 @id	ui.update_prompt.whats_new	מה חדש

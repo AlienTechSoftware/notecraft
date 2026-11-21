@@ -794,6 +794,7 @@
 @id	ui.welcome_wizard_done_title	谢谢
 @id	ui.welcome_wizard_done_body	NoteCraft 已准备就绪。您的选择已保存。只有在重置偏好设置后，此设置才会再次出现。
 @id	ui.update_prompt.available	{app} {version} 已推出，包含最新功能和错误修复。
+@id	ui.update_prompt.newest_available	{app} {version} 是目前可用的最新版本。
 @id	ui.update_prompt.by_developer	由 {developer} 提供
 @id	ui.update_prompt.version_change	v{from} 到 {to}
 @id	ui.update_prompt.whats_new	新功能

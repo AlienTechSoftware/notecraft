@@ -791,6 +791,7 @@
 @id	ui.welcome_wizard_done_title	ありがとうございます
 @id	ui.welcome_wizard_done_body	NoteCraft の準備ができました。選択内容は保存されています。この設定は環境設定をリセットしたときにだけ再表示されます。
 @id	ui.update_prompt.available	{app} {version} が利用可能です。最新の機能とバグ修正が含まれています。
+@id	ui.update_prompt.newest_available	{app} {version} は利用可能な最新バージョンです。
 @id	ui.update_prompt.by_developer	{developer} 提供
 @id	ui.update_prompt.version_change	v{from} から {to}
 @id	ui.update_prompt.whats_new	新機能

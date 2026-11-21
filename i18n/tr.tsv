@@ -941,7 +941,8 @@
 @id	ui.version_and_updates	Sürüm ve güncellemeler
 @id	ui.you_are_running_version	NoteCraft {version} sürümünü kullanıyorsunuz.
 @id	ui.check_for_updates	Güncellemeleri denetle
-@id	ui.check_for_updates_hint	GitHub'dan en yeni sürümü ister; daha yeniyse indirir, doğrular ve yükler. Siz düğmeye basana kadar hiçbir şey gönderilmez.
+@id	ui.check_for_updates_hint	NoteCraft her başladığında ve Güncellemeleri denetle düğmesine bastığınızda GitHub'da daha yeni bir sürümü denetler. Yalnızca Güncelle ve yeniden başlat düğmesine basınca indirir ve kurar.
+@id	ui.update_prompt.newest_available	{app} {version} mevcut en yeni sürüm.
 @id	ui.open_the_releases_page	Sürümler sayfasını aç
 @id	ui.update_checking	Daha yeni bir sürüm aranıyor…
 @id	ui.update_up_to_date	NoteCraft güncel. En yeni sürüm {version}.
