@@ -1291,6 +1291,32 @@ mod tests {
     }
 
     #[test]
+    fn a_notebook_linked_into_the_notebooks_folder_opens_its_pages() {
+        // A folder linked into the notebooks folder (a Windows junction, or a symbolic link elsewhere) is
+        // followed like any other folder: its pages open through the link.
+        let t = TempDir::new("engine-linked-notebook");
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let root = t.path().join("notebooks");
+        let mut away = Session::new(&t.path().join("away-root"), settings.clone()).expect("away session");
+        let made = path_of(away.run("notebook.create", &p(&[("name", "Away")])).expect("notebook"));
+        let page = made.join("new-section-1").join("untitled-page");
+        let mut s = Session::new(&root, settings.clone()).expect("session");
+        std::fs::create_dir_all(&root).expect("notebooks folder");
+        let link = root.join("linked-away");
+        #[cfg(windows)]
+        let linked = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&made).status().expect("mklink").success();
+        #[cfg(not(windows))]
+        let linked = std::os::unix::fs::symlink(&made, &link).is_ok();
+        assert!(linked, "the link was made");
+        let through_link = link.join("new-section-1").join("untitled-page");
+        let opened = s.run("open.page", &p(&[("path", &through_link.to_string_lossy())]));
+        assert!(opened.is_ok(), "a page reached through a link opens: {opened:?}");
+        let loaded = s.run("page.load", &p(&[("path", &path_of(opened.expect("opened")).to_string_lossy())]));
+        assert!(loaded.is_ok(), "the linked page loads: {loaded:?}");
+        let _ = page;
+    }
+
+    #[test]
     fn open_page_finds_the_page_for_a_notebook_a_section_or_a_page() {
         let t = TempDir::new("engine-open-page");
         let settings = Settings::at(t.path().join("settings").join("s.toml"));
