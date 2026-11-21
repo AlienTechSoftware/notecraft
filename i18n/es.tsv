@@ -791,6 +791,10 @@
 @id	ui.welcome_wizard_done_title	Gracias
 @id	ui.welcome_wizard_done_body	NoteCraft está listo para usar. Tus opciones están guardadas. Esta configuración solo volverá a aparecer si restableces las preferencias.
 @id	ui.update_prompt.available	{app} {version} está disponible con las últimas novedades y correcciones.
+@id	ui.check_for_updates_hint	Consulta GitHub por una versión más reciente cada vez que se inicia NoteCraft y cuando pulsas Buscar actualizaciones. Solo se descarga e instala cuando pulsas Actualizar y reiniciar.
+@id	ui.update_check_off_at_start	No buscar actualizaciones al iniciar
+@id	ui.update_check_not_saved	No se pudo guardar el ajuste de actualizaciones: {error}
+@id	ui.update_prompt.newest_available	{app} {version} es la versión más reciente disponible.
 @id	ui.update_prompt.by_developer	por {developer}
 @id	ui.update_prompt.version_change	v{from} a {to}
 @id	ui.update_prompt.whats_new	Novedades

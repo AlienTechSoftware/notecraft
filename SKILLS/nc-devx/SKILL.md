@@ -447,6 +447,34 @@ git config user.email
 
 ---
 
+## Git LFS (large sample files)
+
+Two OneNote sample files are stored in Git LFS, and nothing else is:
+
+- `crates/import/tests/fixtures/3p/onenote.rs/samples/Large Desktop.one`
+- `crates/import/tests/fixtures/3p/onenote.rs/samples/Large OneDrive.one`
+
+The rule is in `.gitattributes` (`Large*.one filter=lfs ...`).
+
+What it means for you:
+
+- **Install Git LFS once per machine**, then run `git lfs install` in the clone. Without it, the two
+  files check out as small text pointers, not the real sample, and the import tests that read them
+  fail or skip.
+- **Pushing needs LFS too.** When a push includes new history that touches LFS objects, Git LFS
+  uploads them. If LFS is missing or the objects are not on disk, the push is refused with
+  `missing or corrupt local objects`. The nightly hit this on 20 November 2026.
+- **CI does not fetch LFS objects today.** Nothing on `main` sets `lfs` on a checkout. The nightly's
+  push of its version bump is the one place that needs them. Its fix is pending in PR #425, which
+  either fetches the objects or uses the push flag `lfs.allowincompletepush`. Read that PR's
+  decision before you change the nightly's checkout. Any new workflow that checks out the repository
+  and pushes must handle LFS the same way.
+- `cargo xtask pre-push` does not check LFS. If a push is refused for LFS reasons, run
+  `git lfs fetch --all` and `git lfs pull`, then push again.
+- An LFS object that was never pushed cannot be fetched from the remote. If it is lost locally
+  before its first push, nothing on the remote can restore it: recover it from another copy of the
+  working tree, or re-add the file.
+
 ## Git Hooks
 
 Hooks are in `.githooks/` and run automatically after `git config core.hooksPath .githooks`.

@@ -39,6 +39,10 @@ pub enum Act {
     SetUiLanguage(String),
     /// Draw the whole window at this size, in percent of the system's own scale.
     SetUiScale(u16),
+    /// Options > switch tools with the device in hand, on or off (issue #9).
+    SetAutoSwitch(bool),
+    /// Don't check for updates at start up: the setting is saved, and on by default is off.
+    SetUpdateCheckOff(bool),
     /// Pick the folder NoteCraft keeps new notebooks in, from the next start.
     ChooseNotebooksFolder,
     /// Go back to the default notebooks folder, from the next start.
@@ -186,6 +190,8 @@ pub fn show(
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
+    auto_switch: bool,
+    update_check_off: bool,
     update: &crate::update::Status,
     copy: &mut CopyChoice,
     account: &mut AccountChoice,
@@ -219,6 +225,8 @@ pub fn show(
                         ui_language,
                         languages,
                         ui_scale,
+                        auto_switch,
+                        update_check_off,
                         update,
                         t,
                         &mut acts,
@@ -655,6 +663,8 @@ fn options_page(
     ui_language: &str,
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
+    auto_switch: bool,
+    update_check_off: bool,
     update: &crate::update::Status,
     t: &Tokens,
     acts: &mut Vec<Act>,
@@ -717,9 +727,21 @@ fn options_page(
         });
     ui.label(egui::RichText::new(crate::tl_id!("ui.interface_size_hint")).size(11.5).color(t.muted));
     ui.add_space(12.0);
+    // Issue #9: the window follows what the hand holds, pen or trackpad, unless this is off.
+    let mut switching = auto_switch;
+    if ui.checkbox(&mut switching, crate::tl_id!("ui.auto_switch")).changed() {
+        acts.push(Act::SetAutoSwitch(switching));
+    }
+    ui.label(egui::RichText::new(crate::tl_id!("ui.auto_switch_tip")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
     // Shown here too: Options is where someone asked for a log looks, and an older build may
     // not have the option they were told about.
     version_and_updates(ui, update, t, acts);
+    // Off by default: a start checks GitHub. Ticking this turns the start check off; Options still checks.
+    let mut off = update_check_off;
+    if ui.checkbox(&mut off, crate::tl_id!("ui.update_check_off_at_start")).changed() {
+        acts.push(Act::SetUpdateCheckOff(off));
+    }
     ui.add_space(12.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0")).strong().color(t.strong));
     ui.add_space(12.0);
@@ -826,6 +848,8 @@ mod tests {
                 crate::i18n::AUTO,
                 &crate::i18n::available_languages(),
                 100,
+                true,
+                false,
                 &crate::update::Status::Idle,
                 &mut CopyChoice::default(),
                 &mut AccountChoice::default(),

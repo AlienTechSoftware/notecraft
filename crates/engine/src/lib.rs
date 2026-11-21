@@ -16,9 +16,11 @@ mod json;
 pub mod sample;
 mod session;
 mod voice;
+pub mod watch;
 
 pub use commands::{CommandSpec, Output, Params, registry};
 pub use error::EngineError;
 pub use json::{commands_json, output_json, params_from_json};
 pub use session::Session;
 pub use voice::{InvocationOrigin, VoiceEffect, VoiceUpdate};
+pub use watch::{FileWatcher, WatchChanges, is_sync_temp};
