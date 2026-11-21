@@ -1896,6 +1896,12 @@ impl NoteCraftApp {
     /// Shows a newer version in Options and About, for a screen check. It only shows the message
     /// and the releases-page link; nothing is downloaded or installed.
     /// The first-use wizard does not open for a test hook: `--new-version` shows only the update.
+    /// Whether the first-use wizard is finished or was never shown. A first launch waits for it, so
+    /// the update check never opens over the wizard.
+    pub fn first_use_done(&self) -> bool {
+        !matches!(self.dialog, Some(Dialog::FirstUseWizard { .. }))
+    }
+
     /// Whether a start checks GitHub for a newer release: on unless Options turns it off.
     pub fn update_check_at_start(&self) -> bool {
         !self.update_check_off
