@@ -4,6 +4,12 @@
 # automatically: the release is a draft, and every 0.x or -pre version is marked a pre-release.
 # See docs/releasing.md.
 #
+# After the draft is created, the website (notecraft.cloud and its /demo/) is deployed from
+# main, so a release made by hand cannot leave the demo on the previous version. 0.0.17 did:
+# the nightly that should have deployed the site failed at the tag push, and this workflow
+# had no website step. The deploy reuses the website pipeline, which verifies the live demo
+# embeds the release version before it reports success.
+#
 # Signing: packaging/windows/sign.ps1 signs when WINDOWS_CERTIFICATE or the AZURE_* secrets exist
 # and leaves the files unsigned, with a warning, when they do not. No secret is set today, so
 # these builds are unsigned and Windows SmartScreen will warn. The Android APK is always signed
@@ -120,3 +126,15 @@ jobs:
           storage (Android/data/com.alientechsoftware.notecraft/files/NoteCraft)."
           mapfile -t artifacts < <(find dist -type f -print)
           gh release create "$tag" "${artifacts[@]}" "${flags[@]}" --notes "$notes"
+
+  website:
+    name: Deploy website
+    needs: deploy
+    permissions:
+      contents: read
+    uses: ./.github/workflows/website-pipeline.yml
+    with:
+      deploy: true
+    secrets:
+      AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+  
