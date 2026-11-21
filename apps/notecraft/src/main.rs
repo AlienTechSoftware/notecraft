@@ -389,8 +389,10 @@ fn main() -> eframe::Result {
             // A local update folder replaces the GitHub check, so --set-version does not start its own.
             // An installed copy checks GitHub at every start, as the update card promises. A
             // development run checks only when --set-version asks for it.
-            let installed_start =
-                !cfg!(debug_assertions) && !args.iter().any(|a| a == "--update-from" || a == "--set-version" || a == "--new-version");
+            // Only an installed copy checks by itself. A build tree (including a release build run
+            // with cargo) is not installed, so the updater's own test decides it.
+            let installed_start = craft_update::self_update::current(&notecraft_ui_egui::update_prompt::NOTECRAFT).is_some()
+                && !args.iter().any(|a| a == "--update-from" || a == "--set-version" || a == "--new-version");
             if installed_start {
                 app.start_update_check(env!("CARGO_PKG_VERSION"));
             }
