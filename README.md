@@ -336,11 +336,13 @@ What is missing:
 
 ## Sponsors
 
+<a href="https://github.com/sponsors/AlienTechSoftware"><img src="assets/brand/sponsor-button.svg" alt="Sponsor" height="32"></a>
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/AlienTechSoftware)](https://github.com/sponsors/AlienTechSoftware)
+
 NoteCraft is funded by AlienTech Software.
 
 <a href="https://alientech.software/"><img src="https://alientech.software/assets/alientech-software-badge.png" alt="AlienTech Software" height="40"></a>
-
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/AlienTechSoftware)](https://github.com/sponsors/AlienTechSoftware)
 
 ## Mentions
 
