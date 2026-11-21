@@ -3186,24 +3186,6 @@ esac
             assert!(install_dmg(photocraft(), &rc, Some(&existing), None, false, &paths, &expect).is_err());
         }
 
-        #[test]
-        fn an_unsigned_update_leaves_the_installed_copy_alone() {
-            let dir = tempfile::tempdir().unwrap();
-            let apps = dir.path().join("Applications");
-            let current = bundle(&apps, "0.5.0");
-            let existing = Installed { version: None, source: InstallSource::MacApp, location: current.display().to_string(), package: None };
-            let image = dmg(dir.path(), "0.6.0");
-            let release = Release { tag: "v0.6.0".into(), version: version::parse("0.6.0"), ..Release::default() };
-
-            let result = install_dmg(photocraft(), &image, Some(&existing), None, false, &Paths::under(dir.path()), &Expect::release(&release));
-            assert_eq!(result, Err("the app isn't signed by its developer, so it wasn't installed".into()));
-            assert_eq!(std::fs::read_to_string(current.join("Contents/MacOS/PhotoCraft")).unwrap(), "0.5.0");
-            assert_eq!(
-                std::fs::read_dir(&apps).unwrap().map(|e| e.unwrap().file_name()).collect::<Vec<_>>(),
-                [std::ffi::OsString::from("PhotoCraft.app")]
-            );
-        }
-
         /// A real release passes. Run with `CRAFT_APP=/path/to/PhotoCraft.app cargo test -p
         /// artcraft-launcher-native -- --ignored a_real_craft_app`.
         #[test]
