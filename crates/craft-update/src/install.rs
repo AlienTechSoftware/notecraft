@@ -1437,7 +1437,8 @@ pub mod macos {
             };
             // diskimages-helper can stay busy for a while on a shared runner; a minute of retries is still quick.
             let mut attached = attach();
-            for wait in [1, 2, 4, 8, 16, 32] {
+            // About three minutes in all: a shared macOS runner can keep diskimages-helper busy longer than a minute.
+            for wait in [1, 2, 4, 8, 16, 32, 64, 64] {
                 if attached.is_ok() {
                     break;
                 }
