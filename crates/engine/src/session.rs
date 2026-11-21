@@ -211,11 +211,14 @@ impl Session {
         let dir = self.resolve(path)?;
         let node = tree::load_tree(&dir).ok_or_else(|| EngineError::BadParam(format!("{path} is not a notebook, section group, section or page")))?;
         let real = first_page(&node).ok_or_else(|| EngineError::BadParam(format!("there is no page in {path} yet")))?;
-        // Answer with the path as the user wrote it, so a page reached through a link is still inside the notebooks
-        // folder for the commands that follow (page.load). The page itself was found at its real place above.
+        // A page whose real place is outside every open notebook is answered with the path as the user wrote it, so it
+        // is still inside the notebooks folder for the commands that follow (page.load). A page inside a notebook keeps
+        // its real path: a path typed in a different form (such as a Windows short name) would not match the roots.
+        let known = |p: &Path| p.starts_with(&self.root) || self.extra.iter().any(|n| p.starts_with(n));
         let written = lexical(&joined);
-        let linked = lexical(&dir) != written;
-        if linked && let Ok(rest) = real.strip_prefix(&dir) {
+        if !known(&real)
+            && let Ok(rest) = real.strip_prefix(&dir)
+        {
             return Ok(written.join(rest));
         }
         Ok(real)
