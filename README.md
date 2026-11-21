@@ -130,6 +130,8 @@ or unproven).
 
 ## Quick start
 
+<a href="https://notecraft.cloud/"><img src="assets/brand/try-notecraft-badge.png" alt="Try NoteCraft!" height="40"></a>
+
 You need [Rust](https://rustup.rs).
 
 ```sh
@@ -328,6 +330,20 @@ What is missing:
 **Versions.** The version on `main` is 0.0.9. A nightly release takes the next patch number each day it has new work, so check [Releases](https://github.com/AlienTechSoftware/notecraft/releases) for the newest build; any other change needs the owner's approval. NoteCraft follows the versioning of the Craft apps: `MAJOR.MINOR.PATCH`, still 0.x, tags like `v0.1.0`, and a hyphen such as `0.2.0-rc.1` for a pre-release. A minor release adds features, and a patch release only fixes bugs or rebuilds. We took this from the Craft apps' public tags and release guides, not from a written rule of theirs. Nightly releases are regular GitHub releases marked latest. See [docs/releasing.md](docs/releasing.md).
 
 [ROADMAP.md](ROADMAP.md) has the order of work; [docs/gaps.md](docs/gaps.md) is the full list.
+
+## Sponsors
+
+NoteCraft is funded by AlienTech Software.
+
+<a href="https://alientech.software/"><img src="https://alientech.software/assets/alientech-software-badge.png" alt="AlienTech Software" height="40"></a>
+
+You can also support the project through [GitHub Sponsors](https://github.com/sponsors/AlienTechSoftware).
+
+## Mentions
+
+NoteCraft is listed on [I Did My Own](https://idmo.app/p/notecraft) as an open-source OneNote alternative.
+
+[![I did my own OneNote](https://idmo.app/badge/notecraft)](https://idmo.app/p/notecraft)
 
 ## Credits and licence
 
