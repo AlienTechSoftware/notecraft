@@ -229,11 +229,16 @@ impl Session {
         let canon = std::fs::canonicalize(&joined).map_err(|_| StoreError::NotFound(path.to_string()))?;
         // Inside the notebooks folder as written, or inside a notebook opened from somewhere else. The check
         // reads the path as the user gave it, so a folder linked into a notebook is followed, not refused.
-        let written = lexical(&joined);
-        if !written.starts_with(lexical(&self.root)) && !self.extra.iter().any(|n| written.starts_with(lexical(n))) {
-            return Err(EngineError::BadParam("that path is outside the notebooks folder".into()));
+        // The real place is inside the notebooks folder (or an opened notebook): as before.
+        if canon.starts_with(&self.root) || self.extra.iter().any(|n| canon.starts_with(n)) {
+            return Ok(canon);
         }
-        Ok(canon)
+        // Otherwise the path as written may still be inside, through a link.
+        let written = lexical(&joined);
+        if written.starts_with(lexical(&self.root)) || self.extra.iter().any(|n| written.starts_with(lexical(n))) {
+            return Ok(canon);
+        }
+        Err(EngineError::BadParam("that path is outside the notebooks folder".into()))
     }
 
     /// Runs a command by id. A panic inside the command becomes `EngineError::Panicked`.

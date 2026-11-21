@@ -1295,9 +1295,11 @@ mod tests {
         // A folder linked into the notebooks folder (a Windows junction, or a symbolic link elsewhere) is
         // followed like any other folder: its pages open through the link.
         let t = TempDir::new("engine-linked-notebook");
-        let settings = Settings::at(t.path().join("settings").join("s.toml"));
-        let root = t.path().join("notebooks");
-        let mut away = Session::new(&t.path().join("away-root"), settings.clone()).expect("away session");
+        // The real place of the temporary folder: on some systems its path goes through a link itself.
+        let base = std::fs::canonicalize(t.path()).expect("the temporary folder's real place");
+        let settings = Settings::at(base.join("settings").join("s.toml"));
+        let root = base.join("notebooks");
+        let mut away = Session::new(&base.join("away-root"), settings.clone()).expect("away session");
         let made = path_of(away.run("notebook.create", &p(&[("name", "Away")])).expect("notebook"));
         let page = made.join("new-section-1").join("untitled-page");
         let mut s = Session::new(&root, settings.clone()).expect("session");
