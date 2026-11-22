@@ -9,3 +9,7 @@ Cette page fait partie de la démonstration OCR. Statut : **étape 2, pas encore
 L'écriture manuscrite est plus difficile que l'imprimé. Les lignes soigneusement écrites pourront être lues plus tard, une ligne à la fois. Une page manuscrite entière, avec des ratures, n'est pas encore lue, et le MVP ne tente pas de le faire.
 
 Quand une ligne manuscrite est lue, un mot barré est gardé comme barré, et non comme texte ordinaire. C'est prévu, pas encore construit.
+
+![Une page manuscrite en arabe, à l'encre foncée, avec une date en haut](assets/ocr-letter-ar.jpg)
+
+Une page manuscrite en arabe issue d'un jeu de données du domaine public. Les mots sont visibles, mais l'écriture manuscrite n'est pas encore lue ; c'est une étape ultérieure.
