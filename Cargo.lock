@@ -3416,6 +3416,10 @@ name = "notecraft-onenote"
 version = "0.0.18"
 
 [[package]]
+name = "notecraft-search"
+version = "0.0.17"
+
+[[package]]
 name = "notecraft-setup"
 version = "0.0.18"
 dependencies = [
@@ -3431,6 +3435,7 @@ dependencies = [
  "notecraft-formats",
  "notecraft-ink",
  "notecraft-model",
+ "notecraft-search",
 ]
 
 [[package]]

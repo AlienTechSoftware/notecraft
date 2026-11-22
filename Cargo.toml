@@ -21,6 +21,7 @@ notecraft-math = { path = "crates/math" }
 notecraft-diagram = { path = "crates/diagram" }
 notecraft-ink = { path = "crates/ink" }
 notecraft-formats = { path = "crates/formats" }
+notecraft-search = { path = "crates/search" }
 notecraft-text = { path = "crates/text" }
 notecraft-onenote = { path = "crates/onenote" }
 notecraft-import = { path = "crates/import" }

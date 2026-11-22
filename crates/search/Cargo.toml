@@ -1,0 +1,13 @@
+[package]
+name = "notecraft-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft keyword search: a tokenizer and an in-memory BM25 index over text units. Pure Rust, no dependencies"
+
+[lints]
+workspace = true
+
+[dependencies]

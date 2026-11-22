@@ -67,6 +67,103 @@ pub fn search_in(root: &Path, elsewhere: &[PathBuf], needle: &str, limit: usize)
     hits
 }
 
+/// Where a ranked text came from inside a page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// The page's own text (and title).
+    Page,
+    /// Alt text written for a picture (`<picture>.alt.txt`).
+    Alt,
+    /// Text read from a picture by OCR (`<picture>.txt`).
+    Picture,
+}
+
+/// One page found by the ranked search, with the best of its texts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ranked {
+    pub path: PathBuf,
+    pub title: String,
+    pub source: Source,
+    pub snippet: String,
+    pub score: f64,
+}
+
+/// A text unit of one page, kept beside its index entry.
+struct Piece {
+    page: PathBuf,
+    title: String,
+    source: Source,
+    text: String,
+}
+
+/// The texts of one page: its own text, then each picture's alt text and OCR text. A picture's
+/// companion files sit in the page's `assets` folder, named after the picture.
+fn pieces_of(dir: &Path) -> Vec<Piece> {
+    let title = read_node(dir).map(|i| i.title).unwrap_or_default();
+    let mut out = Vec::new();
+    if let Ok(page) = load_page(dir) {
+        let plain = match page.format {
+            PageFormat::Html => html::strip_tags(&page.body),
+            PageFormat::Cmgfm => html::strip_tags(&render::blocks_to_html(&boxes::read(PageFormat::Cmgfm, &page.body).0)),
+        };
+        out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source: Source::Page, text: format!("{title} {plain}") });
+    }
+    let assets = dir.join("assets");
+    let mut names: Vec<PathBuf> = std::fs::read_dir(&assets).map(|r| r.filter_map(|e| e.ok().map(|e| e.path())).collect()).unwrap_or_default();
+    names.sort();
+    for file in names {
+        let Some(name) = file.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+        let (picture, source) = if let Some(picture) = name.strip_suffix(".alt.txt") {
+            (picture, Source::Alt)
+        } else if let Some(picture) = name.strip_suffix(".txt") {
+            (picture, Source::Picture)
+        } else {
+            continue;
+        };
+        // Only companions of a picture that is there: a text file of the user's own is not one.
+        if !assets.join(picture).is_file() {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&file) {
+            out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source, text });
+        }
+    }
+    out
+}
+
+/// Ranks the pages of the notebooks folder (and the notebooks opened from elsewhere) against
+/// `query` with BM25 over each page's text, its alt text and its picture text. One hit per page,
+/// the best of its texts. At most `limit` hits.
+pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> Vec<Ranked> {
+    if query.split_whitespace().next().is_none() || limit == 0 {
+        return Vec::new();
+    }
+    let mut pages = Vec::new();
+    for nb in child_dirs(root).into_iter().chain(elsewhere.iter().cloned()) {
+        collect_pages(&nb, &mut pages);
+    }
+    let mut seen = std::collections::HashSet::new();
+    pages.retain(|page| seen.insert(std::fs::canonicalize(page).unwrap_or_else(|_| page.clone())));
+    let pieces: Vec<Piece> = pages.iter().flat_map(|dir| pieces_of(dir)).collect();
+    let units: Vec<notecraft_search::Unit> =
+        pieces.iter().enumerate().map(|(i, piece)| notecraft_search::Unit { id: i.to_string(), text: piece.text.clone() }).collect();
+    let index = notecraft_search::Index::build(&units);
+    let mut best: Vec<Ranked> = Vec::new();
+    for hit in index.search(query, usize::MAX) {
+        let Ok(i) = hit.id.parse::<usize>() else { continue };
+        let piece = &pieces[i];
+        if best.iter().any(|r| r.path == piece.page) {
+            continue;
+        }
+        let snippet = piece.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
+        best.push(Ranked { path: piece.page.clone(), title: piece.title.clone(), source: piece.source, snippet, score: hit.score });
+        if best.len() >= limit {
+            break;
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +248,94 @@ mod tests {
         save_body(&page, "<p>The for<b>mat</b> of co<i>op</i>eration</p>").expect("save");
         assert_eq!(search(&root, "format", 10).len(), 1);
         assert_eq!(search(&root, "the format of cooperation", 10).len(), 1);
+    }
+
+    /// A notebook with one page, a picture in it, and the picture's companion files.
+    fn picture_fixture(t: &TempDir) -> (PathBuf, PathBuf) {
+        let s = Settings::at(t.path().join("s.toml"));
+        let root = t.path().join("nb");
+        let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
+        let a = ops::create_node(&nb, "Receipts", NodeKind::Page, Some(PageFormat::Html), &s).expect("a");
+        save_body(&a, "<h1>Receipts</h1><p>Paid in cash.</p>").expect("save");
+        let assets = a.join("assets");
+        std::fs::create_dir_all(&assets).expect("assets");
+        std::fs::write(assets.join("receipt.png"), b"not really a picture").expect("picture");
+        std::fs::write(
+            assets.join("receipt.png.txt"),
+            "Sourdough 6.00
+Flat white 4.50
+",
+        )
+        .expect("ocr text");
+        std::fs::write(assets.join("receipt.png.alt.txt"), "a bakery receipt").expect("alt text");
+        std::fs::write(assets.join("notes.txt"), "a text file the user wrote").expect("users own file");
+        (root, a)
+    }
+
+    #[test]
+    fn a_word_in_picture_text_finds_the_page_with_that_picture() {
+        let t = TempDir::new("search-ranked-ocr");
+        let (root, page) = picture_fixture(&t);
+        let hits = ranked(&root, &[], "sourdough", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, page);
+        assert_eq!(hits[0].source, Source::Picture);
+    }
+
+    #[test]
+    fn a_word_in_alt_text_finds_the_page_with_that_picture() {
+        let t = TempDir::new("search-ranked-alt");
+        let (root, page) = picture_fixture(&t);
+        let hits = ranked(&root, &[], "bakery", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, page);
+        assert_eq!(hits[0].source, Source::Alt);
+    }
+
+    #[test]
+    fn the_page_text_is_searched_too_and_one_page_is_one_hit() {
+        let t = TempDir::new("search-ranked-page");
+        let (root, page) = picture_fixture(&t);
+        let hits = ranked(&root, &[], "cash receipt", 10);
+        assert_eq!(hits.iter().filter(|h| h.path == page).count(), 1, "one hit per page");
+        assert!(matches!(hits[0].source, Source::Page | Source::Alt), "the best text of the page is reported: {:?}", hits[0].source);
+    }
+
+    #[test]
+    fn a_text_file_that_is_not_a_picture_companion_is_not_indexed() {
+        let t = TempDir::new("search-ranked-users-file");
+        let (root, _) = picture_fixture(&t);
+        assert!(ranked(&root, &[], "wrote", 10).is_empty(), "the user's own text file is not searched");
+    }
+
+    #[test]
+    fn the_companion_text_is_derived_so_removing_it_drops_the_match() {
+        let t = TempDir::new("search-ranked-derived");
+        let (root, page) = picture_fixture(&t);
+        assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1);
+        std::fs::remove_file(page.join("assets").join("receipt.png.txt")).expect("the companion exists");
+        assert!(ranked(&root, &[], "sourdough", 10).is_empty(), "the index is rebuilt from the files that remain");
+    }
+
+    /// A6 and A7 on the POC notebook. Set NOTECRAFT_OCR_POC_ROOT to the folder that holds the
+    /// POC notebook (the private test set); run with --ignored.
+    fn poc_root() -> PathBuf {
+        std::env::var_os("NOTECRAFT_OCR_POC_ROOT").map(PathBuf::from).expect("set NOTECRAFT_OCR_POC_ROOT to the folder holding the POC notebook")
+    }
+
+    #[test]
+    #[ignore = "needs NOTECRAFT_OCR_POC_ROOT; run with --ignored"]
+    fn a6_sourdough_finds_the_receipt_page() {
+        let hits = ranked(&poc_root(), &[], "sourdough", 10);
+        let hit = hits.iter().find(|h| h.path.ends_with("receipt-photo")).expect("the receipt page is found");
+        assert_eq!(hit.source, Source::Picture, "the word is in the text read from the picture: {hit:?}");
+    }
+
+    #[test]
+    #[ignore = "needs NOTECRAFT_OCR_POC_ROOT; run with --ignored"]
+    fn a7_an_alt_text_word_finds_the_page_with_the_picture() {
+        let hits = ranked(&poc_root(), &[], "tuesday", 10);
+        let hit = hits.iter().find(|h| h.path.ends_with("receipt-photo")).expect("the receipt page is found");
+        assert_eq!(hit.source, Source::Alt, "the word is only in the alt text: {hit:?}");
     }
 }
