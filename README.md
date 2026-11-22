@@ -71,7 +71,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/equations.png" alt="A page of equations: an inline fraction and square root flowing with the text, and two display equations, the quadratic formula and a sum with an integral, drawn in a tinted box" width="100%"><p align="center"><sub><b>Equations.</b> A TeX subset drawn natively: fractions, roots, sums, integrals and scaled brackets.</sub></p></td>
-<td width="50%" valign="top"><img src="docs/images/dark-green.png" alt="The same window in the dark green theme: dark surfaces, light text and green accents" width="100%"><p align="center"><sub><b>14 themes.</b> Light and dark, seven accents each, every colour checked for contrast by a test.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/dark-default.png" alt="The same window in the default dark theme: dark surfaces, light text and purple accents" width="100%"><p align="center"><sub><b>14 themes.</b> Light and dark, seven accents each, every colour checked for contrast by a test.</sub></p></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/file-screen.png" alt="The File screen listing two notebooks with their coloured covers, the folder each one lives in, an Open folder button and a note that online notebooks are not built" width="100%"><p align="center"><sub><b>File.</b> Your notebooks and where they live on disk. Anything not built says so instead of hiding.</sub></p></td>
