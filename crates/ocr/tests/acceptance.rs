@@ -1,33 +1,40 @@
-//! Acceptance tests for Stage 1 (plan section 5). Written before the implementation, so they
-//! fail until it exists. They read the POC pictures from `NOTECRAFT_OCR_FIXTURES`, which points
-//! at the POC notebook's `Images` folder. The private notebook is not in the public repository.
+//! Acceptance tests for Stage 1 (plan section 5). They read the POC pictures from
+//! `NOTECRAFT_OCR_FIXTURES` (the POC notebook's `Images` folder) and the `ocrs` models from
+//! `NOTECRAFT_OCR_MODELS` (a folder holding `text-detection.onnx` and `text-recognition.onnx`).
+//! Neither is in the public repository.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use notecraft_ocr::{Line, OcrError, Point, Refresh, read_image, refresh_companion};
+use notecraft_ocr::{Engine, Line, OcrError, Point, Refresh, refresh_companion};
 
 fn fixture(relative: &str) -> PathBuf {
     let root = std::env::var_os("NOTECRAFT_OCR_FIXTURES").map(PathBuf::from).expect("set NOTECRAFT_OCR_FIXTURES to the POC notebook's Images folder");
     root.join(relative)
 }
 
+fn engine() -> Engine {
+    let models = std::env::var_os("NOTECRAFT_OCR_MODELS").map(PathBuf::from).expect("set NOTECRAFT_OCR_MODELS to the folder with the ocrs models");
+    Engine::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load")
+}
+
 fn corners() -> [Point; 4] {
     [Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }, Point { x: 10.0, y: 4.0 }, Point { x: 0.0, y: 4.0 }]
 }
 
-/// A2: each line has a box and a confidence in 0 to 1.
+/// A2: each line has a box and a confidence in 0 to 1 when the engine reports one.
 #[test]
 fn a2_a_line_has_a_box_and_a_confidence_from_0_to_1() {
-    let line = Line::new("total 12.40", corners(), 0.9).expect("a valid line");
-    assert!((0.0..=1.0).contains(&line.confidence));
+    let line = Line::new("total 12.40", corners(), Some(0.9)).expect("a valid line");
     assert_eq!(line.quad.len(), 4);
-    assert_eq!(Line::new("total", corners(), 1.5), Err(OcrError::InvalidConfidence(1.5)));
+    assert_eq!(line.confidence, Some(0.9));
+    assert!(Line::new("total", corners(), None).is_ok(), "an engine without a confidence");
+    assert_eq!(Line::new("total", corners(), Some(1.5)), Err(OcrError::InvalidConfidence(1.5)));
 }
 
 /// A1: a printed picture yields its text lines, in reading order, matching the reference text.
 #[test]
 fn a1_the_receipt_reads_back_its_reference_text_in_reading_order() {
-    let lines = read_image(&fixture("receipt-photo/assets/receipt.png")).expect("the receipt reads");
+    let lines = engine().read_image(&fixture("receipt-photo/assets/receipt.png")).expect("the receipt reads");
     let got: Vec<String> = lines.iter().map(|l| l.text.split_whitespace().collect::<Vec<_>>().join(" ")).collect();
     let reference = std::fs::read_to_string(fixture("receipt-photo/assets/receipt.png.txt")).expect("reference text");
     let want: Vec<String> = reference.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty()).collect();
@@ -37,6 +44,7 @@ fn a1_the_receipt_reads_back_its_reference_text_in_reading_order() {
 /// A3: every line's box lies inside the picture, for every POC picture.
 #[test]
 fn a3_every_box_lies_inside_its_picture() {
+    let engine = engine();
     let pictures = [
         "receipt-photo/assets/receipt.png",
         "chart-bars/assets/chart.png",
@@ -45,9 +53,9 @@ fn a3_every_box_lies_inside_its_picture() {
         "arabic-alt-text/assets/receipt-ar.png",
     ];
     for relative in pictures {
-        let path = fixture(relative);
-        let (width, height) = image::image_dimensions(&path).expect("picture size");
-        for line in read_image(&path).expect("picture reads") {
+        let path: &Path = &fixture(relative);
+        let (width, height) = image::image_dimensions(path).expect("picture size");
+        for line in engine.read_image(path).expect("picture reads") {
             for p in line.quad {
                 assert!(p.x >= 0.0 && p.x <= width as f32, "{relative}: x {} outside {width}", p.x);
                 assert!(p.y >= 0.0 && p.y <= height as f32, "{relative}: y {} outside {height}", p.y);

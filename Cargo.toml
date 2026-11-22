@@ -56,6 +56,8 @@ arboard = { version = "3.7", default-features = false, features = ["image-data",
 # The log facade. The app routes it into its log file (apps/notecraft/src/applog.rs).
 log = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+ocrs = { version = "0.14", default-features = false, features = ["rten", "onnx"] }
+rten = { version = "0.28", default-features = false, features = ["rten_format", "onnx_format"] }
 # OneNote packages (.onepkg) are Windows cabinet files, usually LZX compressed (issue #17).
 # Pure Rust, reading only; only crates/import names it.
 cab = "0.6"

@@ -12,3 +12,5 @@ workspace = true
 
 [dependencies]
 image = { workspace = true }
+ocrs = { workspace = true }
+rten = { workspace = true }
