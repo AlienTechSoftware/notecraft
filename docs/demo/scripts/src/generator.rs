@@ -346,29 +346,34 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             }
             built.pages += 1;
         }
-        if let Some(sections) = ocr_sections(&content.join(lang.code))? {
+        if let Some(pages) = ocr_pages(&content.join(lang.code))? {
+            // OCR is one section. Each top page is a file NN-slug.md in it; the pages nested under
+            // it are the files of the folder NN-slug/ beside that file.
             let ocr = group.join(OCR_FOLDER);
             fs::create_dir_all(&ocr).map_err(|e| format!("cannot create {}: {e}", ocr.display()))?;
             write(
                 &ocr.join("_node.toml"),
-                &node_toml("section-group", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
+                &node_toml("section", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
             )?;
             let default_dir = if lang.rtl { Some("rtl") } else { None };
-            for (n, section) in sections.iter().enumerate() {
-                let section_dir = ocr.join(&section.slug);
-                fs::create_dir_all(&section_dir).map_err(|e| format!("cannot create {}: {e}", section_dir.display()))?;
-                let section_id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), section.slug));
-                write(&section_dir.join("_node.toml"), &node_toml("section", &section.title, &section_id, 10 * (n as u32 + 1), None, None))?;
-                for s in &section.sources {
-                    let id = id_for(&format!("{}/{OCR_FOLDER}/{}/{}", lang.folder(), section.slug, s.slug));
-                    let source_path = content.join(lang.code).join(OCR_FOLDER).join(&section.folder).join(format!(
+            for (top, subs) in &pages {
+                let page_dir = ocr.join(&top.slug);
+                let top_id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), top.slug));
+                let top_path =
+                    content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}.{}", top.order, top.slug, if top.html { "html" } else { "md" }));
+                let top_source = convert_source(top.clone(), target_format, &top_path)?;
+                write_page(&page_dir, &top_source, &top_id, default_dir, art)?;
+                built.pages += 1;
+                for s in subs {
+                    let id = id_for(&format!("{}/{OCR_FOLDER}/{}/{}", lang.folder(), top.slug, s.slug));
+                    let sub_path = content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}", top.order, top.slug)).join(format!(
                         "{}-{}.{}",
                         s.order,
                         s.slug,
                         if s.html { "html" } else { "md" }
                     ));
-                    let s = convert_source(s.clone(), target_format, &source_path)?;
-                    write_page(&section_dir.join(&s.slug), &s, &id, default_dir, art)?;
+                    let sub_source = convert_source(s.clone(), target_format, &sub_path)?;
+                    write_page(&page_dir.join(&sub_source.slug), &sub_source, &id, default_dir, art)?;
                     built.pages += 1;
                 }
             }
@@ -378,41 +383,23 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
     Ok(built)
 }
 
-/// One OCR section: a folder `NN-slug/` with a `title.txt` (its name on screen) and its pages.
-struct OcrSection {
-    folder: String,
-    slug: String,
-    title: String,
-    sources: Vec<Source>,
-}
-
-/// The sections of a language's OCR folder, in folder order. A language without the folder has
-/// no OCR section, and that is not an error; a section without a title or without pages is.
-fn ocr_sections(language: &Path) -> Result<Option<Vec<OcrSection>>, String> {
+/// The top pages of a language's OCR section, each with the pages nested under it. A top page is a
+/// file `NN-slug.md` in the OCR folder; its nested pages are the files of the folder `NN-slug/`.
+/// A language without the folder has no OCR section, and that is not an error.
+fn ocr_pages(language: &Path) -> Result<Option<Vec<(Source, Vec<Source>)>>, String> {
     let dir = language.join(OCR_FOLDER);
     if !dir.is_dir() {
         return Ok(None);
     }
-    let mut folders: Vec<PathBuf> =
-        fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    folders.sort();
+    let tops = read_sources(&dir)?;
+    if tops.is_empty() {
+        return Err(format!("{}: no pages", dir.display()));
+    }
     let mut out = Vec::new();
-    for folder in folders {
-        let name = folder.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let (_, slug) = name.split_once('-').ok_or_else(|| format!("{}: name it NN-slug", folder.display()))?;
-        if let Err(why) = names::validate_component(slug) {
-            return Err(format!("{}: folder name '{slug}': {why}", folder.display()));
-        }
-        let title_path = folder.join("title.txt");
-        let title = fs::read_to_string(&title_path).map_err(|_| format!("{}: a section needs a title.txt", folder.display()))?.trim().to_string();
-        if title.is_empty() {
-            return Err(format!("{}: title.txt is empty", folder.display()));
-        }
-        let sources = read_sources(&folder)?;
-        if sources.is_empty() {
-            return Err(format!("{}: no pages", folder.display()));
-        }
-        out.push(OcrSection { folder: name.clone(), slug: slug.to_string(), title, sources });
+    for top in tops {
+        let nested_dir = dir.join(format!("{}-{}", top.order, top.slug));
+        let subs = if nested_dir.is_dir() { read_sources(&nested_dir)? } else { Vec::new() };
+        out.push((top, subs));
     }
     Ok(Some(out))
 }
@@ -1185,63 +1172,67 @@ page-color: yellow
         }
     }
 
-    /// A copy of the content with one OCR page in English: a folder `en/ocr/` beside How to.
+    /// A copy of the content with one OCR page in English, and a subpage nested under it: an
+    /// `en/ocr/90-extra.md` page with `en/ocr/90-extra/10-sub.md` inside its folder.
     fn content_with_ocr(label: &str) -> PathBuf {
         let dir = scratch(label);
         let content = dir.join("content");
         copy_tree(&content_dir(), &content);
-        let section = content.join("en").join("ocr").join("10-images");
-        fs::create_dir_all(&section).expect("ocr section folder");
+        let ocr = content.join("en").join("ocr");
         write(
-            &section.join("title.txt"),
-            "Images
-",
-        )
-        .expect("section title");
-        write(
-            &section.join("10-overview.md"),
+            &ocr.join("90-extra.md"),
             "---
-title: OCR overview
+title: Extra
 ---
 
 A test page for the OCR section.
+",
+        )
+        .expect("ocr page");
+        let nested = ocr.join("90-extra");
+        fs::create_dir_all(&nested).expect("nested folder");
+        write(
+            &nested.join("10-sub.md"),
+            "---
+title: Sub page
+---
+
+A nested test page.
 
 ![A banner](assets/banner-en.png)
 ",
         )
-        .expect("ocr page");
+        .expect("nested page");
         content
     }
 
     #[test]
-    fn an_ocr_folder_adds_a_section_to_the_english_group_in_both_formats() {
+    fn an_ocr_section_holds_its_pages_and_their_nested_subpages_in_both_formats() {
         let content = content_with_ocr("ocr-section");
         let out = content.parent().expect("parent").join("DemoNotebook");
         let both = selected_formats("both").expect("both formats");
         build(&content, &out, &art_dir(), "0.0.0-test", &both).expect("build with an OCR section");
         for format in ["html", "cmgfm"] {
             let root = out.join(format);
-            let group = root.join("10-en").join("ocr");
-            let node = fs::read_to_string(group.join("_node.toml")).expect("the OCR section group node");
-            assert!(node.contains("kind = \"section-group\""), "{node}");
+            let section = root.join("10-en").join("ocr");
+            let node = fs::read_to_string(section.join("_node.toml")).expect("the OCR section node");
+            assert!(node.contains("kind = \"section\""), "OCR is a section, not a group: {node}");
             assert!(node.contains("title = \"OCR\""), "{node}");
-            let section = group.join("images");
-            let section_node = fs::read_to_string(section.join("_node.toml")).expect("the Images section node");
-            assert!(section_node.contains("kind = \"section\"") && section_node.contains("title = \"Images\""), "{section_node}");
-            let page = section.join("overview");
             let index = if format == "html" { "index.html" } else { "index.md" };
-            assert!(page.join(index).is_file(), "the OCR page in {format}");
-            assert!(page.join("assets").join("banner-en.png").is_file(), "its picture is copied in {format}");
+            let page = section.join("extra");
+            assert!(page.join(index).is_file(), "the top page in {format}");
+            let sub = page.join("sub");
+            assert!(sub.join(index).is_file(), "the nested subpage in {format}");
+            assert!(sub.join("assets").join("banner-en.png").is_file(), "its picture is copied in {format}");
         }
         let html_tree = notecraft_store::tree::load_tree(&out.join("html")).expect("HTML tree");
         let english = html_tree.children.iter().find(|g| g.info.title == "English").expect("English group");
         let titles: Vec<&str> = english.children.iter().map(|s| s.info.title.as_str()).collect();
         assert_eq!(titles.len(), 2, "How to and OCR: {titles:?}");
-        assert!(titles.contains(&"OCR"), "{titles:?}");
-        let ocr = english.children.iter().find(|g| g.info.title == "OCR").expect("OCR group");
-        assert_eq!(ocr.info.kind, notecraft_model::NodeKind::SectionGroup, "OCR is a section group");
-        let sections: Vec<&str> = ocr.children.iter().map(|s| s.info.title.as_str()).collect();
-        assert!(sections.contains(&"Images"), "the OCR group holds its sections: {sections:?}");
+        let ocr = english.children.iter().find(|g| g.info.title == "OCR").expect("OCR section");
+        assert_eq!(ocr.info.kind, notecraft_model::NodeKind::Section, "OCR is a section");
+        let pages: Vec<&str> = ocr.children.iter().map(|p| p.info.title.as_str()).collect();
+        assert!(pages.contains(&"Images") && pages.contains(&"Handwriting") && pages.contains(&"Printed"), "{pages:?}");
         let _ = fs::remove_dir_all(content.parent().expect("parent"));
     }
 

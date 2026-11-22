@@ -396,7 +396,10 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
         Err(e) => return Err(format!("inspect {}: {e}", notebooks.display())),
     }
 
-    let target = notebooks.join("welcome-notebook");
+    // Each edition has its own local folder, so both can be kept: HTML in welcome-notebook (the default),
+    // CMGFM in welcome-notebook-cmgfm.
+    let folder_name = if format == "cmgfm" { "welcome-notebook-cmgfm" } else { "welcome-notebook" };
+    let target = notebooks.join(folder_name);
     match fs::symlink_metadata(&target) {
         Ok(meta) if meta.file_type().is_symlink() => return Err(format!("refusing to replace a symlink: {}", target.display())),
         Ok(meta) if !meta.is_dir() => return Err(format!("not a folder: {}", target.display())),
@@ -420,7 +423,7 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
         return Err(format!("temporary copy folder already exists: {}", staging.display()));
     }
     fs::create_dir(&staging).map_err(|e| format!("create {}: {e}", staging.display()))?;
-    let staged_notebook = staging.join("welcome-notebook");
+    let staged_notebook = staging.join(folder_name);
     if let Err(e) = copy_directory(&source, &staged_notebook) {
         return Err(match fs::remove_dir_all(&staging) {
             Ok(()) => e,
@@ -589,19 +592,32 @@ fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
         "demo" => {
-            let selection = match options {
-                [] => "both".to_string(),
-                [format] if ["html", "cmgfm", "both"].contains(&format.as_str()) => format.clone(),
-                _ => return Err("usage: cargo xtask demo [html|cmgfm|both] (default: both)".into()),
-            };
-            cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
-            // The scratch copy is always replaced from docs/demo: the source is the one truth.
-            if selection == "both" {
-                demo_copy(root, &["html".into(), "--replace".into()])?;
-                demo_copy(root, &["cmgfm".into(), "--replace".into()])
-            } else {
-                demo_copy(root, &[selection, "--replace".into()])
+            // cargo xtask demo [html|cmgfm|both] [--copy html|cmgfm]: builds the editions chosen, then
+            // copies one edition (HTML by default) into the local dev copy my-notebooks/welcome-notebook.
+            let mut selection = "both".to_string();
+            let mut copy = vec!["html".to_string()];
+            let usage = "usage: cargo xtask demo [html|cmgfm|both] [--copy html|cmgfm|both] (defaults: both, --copy html)";
+            let mut rest = options.iter();
+            if let Some(first) = options.first().filter(|f| !f.starts_with("--")) {
+                if !["html", "cmgfm", "both"].contains(&first.as_str()) {
+                    return Err(usage.into());
+                }
+                selection = first.clone();
+                rest.next();
             }
+            while let Some(arg) = rest.next() {
+                match (arg.as_str(), rest.next()) {
+                    ("--copy", Some(format)) if format == "both" => copy = vec!["html".to_string(), "cmgfm".to_string()],
+                    ("--copy", Some(format)) if ["html", "cmgfm"].contains(&format.as_str()) => copy = vec![format.clone()],
+                    _ => return Err(usage.into()),
+                }
+            }
+            cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
+            // The scratch copy is replaced from docs/demo: the source is the one truth.
+            for format in copy {
+                demo_copy(root, &[format, "--replace".into()])?;
+            }
+            Ok(())
         }
         "demo-check" => cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),
