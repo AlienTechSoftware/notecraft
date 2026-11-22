@@ -854,6 +854,11 @@ impl Editor {
 /// egui lays the letters of a word out the right way and then puts the next word to the
 /// right of it, so every Arabic page showed its own name with the words backwards. Clicking
 /// it hands the line to the text box, which is still where it is edited.
+/// The id of the open page's title box. It is the same for every page.
+fn page_title_id(ctx: &Context) -> egui::Id {
+    egui::Id::new(("page-title-box", ctx.viewport_id()))
+}
+
 fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id, rename: &mut Option<String>, zoom: f32) {
     let align = crate::pagetext::halign(&ed.title_buf, ed.page_dir);
     let width = ui.available_width();
@@ -3110,6 +3115,14 @@ impl NoteCraftApp {
         if keep_list {
             self.page_opened = false;
         }
+        // The title box has one id for every page: had the page shown's title the keyboard, the
+        // page come in would take what was being typed into it, and save it as its own title.
+        let title = page_title_id(ctx);
+        ctx.memory_mut(|m| {
+            if m.has_focus(title) {
+                m.surrender_focus(title);
+            }
+        });
         ctx.request_repaint();
     }
 
@@ -9704,7 +9717,7 @@ impl NoteCraftApp {
                 ui.label(egui::RichText::new(message).color(tokens.muted));
             }
             // One id for the title, whether it is drawn as words or as a text box.
-            let title_id = egui::Id::new(("page-title-box", ui.ctx().viewport_id()));
+            let title_id = page_title_id(ui.ctx());
             ui.horizontal_wrapped(|ui| {
                 // File details live in the status bar. Keep only compact page controls
                 // here, with a drop instruction while a file is actually over the window.
@@ -15417,7 +15430,40 @@ mod page_open_tests {
         assert_ne!(shown(&h).as_deref(), Some(sample.md_page.as_path()), "the page from the folder left did not open");
     }
 
+    /// Words being typed into the page shown's title when the page asked for comes in stay out
+    /// of the title of the page come in.
+    #[cfg(unix)]
+    #[test]
+    fn typing_in_the_title_does_not_go_into_the_page_coming_in() {
+        let (_t, sample, mut h) = window("page-open-title-typing");
+        let pipe = sample.md_page.join("still-coming.bin");
+        assert!(std::process::Command::new("mkfifo").arg(&pipe).status().expect("mkfifo").success());
+        let title = h.state().editor.as_ref().map(|e| e.title_buf.clone()).expect("a page");
+        let id = egui::Id::new(("page-title-box", h.ctx.viewport_id()));
+        h.ctx.memory_mut(|m| m.request_focus(id));
+        h.step();
+        h.state_mut().open_page_soon(&sample.md_page);
+        assert!(h.state().opening.is_some(), "the page is on its way");
+        h.step();
+        assert!(h.ctx.memory(|m| m.has_focus(id)), "the title has the keyboard");
+        assert!(write_when_read(&pipe, b"in"), "the page's files were being read");
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while shown(&h).as_deref() != Some(sample.md_page.as_path()) && std::time::Instant::now() < until {
+            h.input_mut().events.push(egui::Event::Text("zq".into()));
+            h.step();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(shown(&h).as_deref(), Some(sample.md_page.as_path()), "the page came in");
+        for _ in 0..3 {
+            h.input_mut().events.push(egui::Event::Text("zq".into()));
+            h.step();
+        }
+        let come_in = h.state().editor.as_ref().map(|e| e.title_buf.clone()).unwrap_or_default();
+        assert!(!come_in.contains("zq"), "the page come in kept its own title: {come_in:?} (the other was {title:?})");
+    }
+
     /// Steps the window until `done` holds, for at most ten seconds.
+    #[cfg(unix)]
     fn step_until(h: &mut H, done: impl Fn(&H) -> bool) {
         let until = std::time::Instant::now() + Duration::from_secs(10);
         while !done(h) && std::time::Instant::now() < until {
