@@ -15481,7 +15481,6 @@ mod tabs_layout_tests {
     /// frame: on a synced folder every one of those reads goes to the mount, and the page
     /// crawled. The tabs come from the tree the window already holds.
     #[test]
-    #[ignore = "fails on macOS CI on main; tracked in #447. Remove this line when fixed."]
     fn the_section_tabs_do_not_read_the_notebooks_from_disk_each_frame() {
         let t = notecraft_store::testing::TempDir::new("tabs-layout-reads");
         let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
@@ -15503,7 +15502,6 @@ mod tabs_layout_tests {
         // disk reads it once.
         #[cfg(unix)]
         {
-            use std::io::Write as _;
             use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
             fn sections(nodes: &[Node], out: &mut Vec<PathBuf>) {
                 for n in nodes {
@@ -15525,7 +15523,7 @@ mod tabs_layout_tests {
             assert!(std::process::Command::new("mkfifo").arg(&elsewhere).status().expect("mkfifo").success());
             let (reads, stop) = (std::sync::Arc::new(AtomicUsize::new(0)), std::sync::Arc::new(AtomicBool::new(false)));
             let writer = {
-                let (pipe, reads, stop, text) = (elsewhere.clone(), reads.clone(), stop.clone(), text.clone());
+                let (pipe, reads, stop) = (elsewhere.clone(), reads.clone(), stop.clone());
                 std::thread::spawn(move || {
                     use std::os::unix::fs::OpenOptionsExt as _;
                     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -15533,11 +15531,13 @@ mod tabs_layout_tests {
                     #[cfg(not(any(target_os = "linux", target_os = "android")))]
                     const O_NONBLOCK: i32 = 0x0004;
                     // A reader waits in its open for a writer; opened without waiting, the write
-                    // end opens only while one does.
+                    // end opens only while one does. Nothing is written: a write marks the pipe
+                    // modified, the file watcher sees that and reloads the notebooks, which reads
+                    // the pipe again, over and over (issue #447). A reader of an empty section
+                    // file still counts.
                     while !stop.load(Ordering::SeqCst) {
                         match std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(&pipe) {
-                            Ok(mut out) => {
-                                let _ = out.write_all(&text);
+                            Ok(_) => {
                                 reads.fetch_add(1, Ordering::SeqCst);
                             }
                             Err(_) => std::thread::sleep(Duration::from_millis(1)),
@@ -15552,8 +15552,11 @@ mod tabs_layout_tests {
                 std::thread::sleep(Duration::from_millis(20));
             }
             let before = reads.load(Ordering::SeqCst);
+            // Over a second: longer than the watcher takes to scan the folders and pass a change
+            // on, so a change the pipe made would show up here as reads.
             for _ in 0..20 {
                 h.step();
+                std::thread::sleep(Duration::from_millis(50));
             }
             let read = reads.load(Ordering::SeqCst) - before;
             stop.store(true, Ordering::SeqCst);
@@ -15562,6 +15565,13 @@ mod tabs_layout_tests {
             std::fs::remove_file(&elsewhere).expect("remove the pipe");
             std::fs::write(&elsewhere, &text).expect("the section's file back");
             assert_eq!(read, 0, "twenty frames with the tabs shown, and no reads of the notebooks");
+            // The watcher's reload of the section's own file is let settle too, before its tab is
+            // looked for by name.
+            let settle = std::time::Instant::now() + Duration::from_millis(1500);
+            while std::time::Instant::now() < settle {
+                h.step();
+                std::thread::sleep(Duration::from_millis(20));
+            }
         }
 
         // The tabs are drawn, and one opens its section's first page.
