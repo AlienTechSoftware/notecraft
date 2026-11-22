@@ -1079,8 +1079,8 @@ page-color: yellow
             assert_eq!(html_group.info.title, cmgfm_group.info.title);
             assert_eq!(html_group.children.len(), cmgfm_group.children.len(), "matching structure in {}", html_group.path.display());
             if html_group.info.kind == notecraft_model::NodeKind::SectionGroup {
-                // Every language has its How to section; English also has an OCR section.
-                let expected = if html_group.info.title == "English" { 2 } else { 1 };
+                // Every language has its How to section and its OCR section.
+                let expected = 2;
                 assert_eq!(html_group.children.len(), expected, "sections in {}", html_group.path.display());
                 assert!(html_group.children[0].children.len() >= 8, "the same pages in every language");
             }
@@ -1200,12 +1200,14 @@ A test page for the OCR section.
     #[test]
     fn a_language_without_an_ocr_folder_builds_without_one() {
         let dir = scratch("no-ocr");
+        let content = dir.join("content");
+        copy_tree(&content_dir(), &content);
+        fs::remove_dir_all(content.join("ar").join("ocr")).expect("remove the Arabic OCR folder");
         let out = dir.join("DemoNotebook");
         let html_only = selected_formats("html").expect("html");
-        build(&content_dir(), &out, &art_dir(), "0.0.0-test", &html_only).expect("the content without OCR builds");
-        assert!(content_dir().join("ar").is_dir(), "Arabic has content");
-        assert!(!content_dir().join("ar").join("ocr").exists(), "Arabic has no OCR folder yet");
+        build(&content, &out, &art_dir(), "0.0.0-test", &html_only).expect("the content without an OCR folder builds");
         assert!(!out.join("html").join("20-ar").join("ocr").exists(), "no OCR section without an OCR folder");
+        assert!(out.join("html").join("10-en").join("ocr").is_dir(), "the other languages keep theirs");
         let _ = fs::remove_dir_all(&dir);
     }
 }

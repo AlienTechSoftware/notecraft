@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="180" viewBox="0 0 480 180" role="img" aria-labelledby="t d">
+<title id="t">Capture to archive</title>
+<desc id="d">Three boxes in a row: Capture, then Review, then Archive. Arrows point to the right.</desc>
+<rect x="10" y="60" width="130" height="60" fill="none" stroke="black" stroke-width="3"/>
+<text x="75" y="96" text-anchor="middle" font-family="Arial" font-size="20">Capture</text>
+<rect x="175" y="60" width="130" height="60" fill="none" stroke="black" stroke-width="3"/>
+<text x="240" y="96" text-anchor="middle" font-family="Arial" font-size="20">Review</text>
+<rect x="340" y="60" width="130" height="60" fill="none" stroke="black" stroke-width="3"/>
+<text x="405" y="96" text-anchor="middle" font-family="Arial" font-size="20">Archive</text>
+<path d="M140 90 L175 90 M305 90 L340 90" stroke="black" stroke-width="3"/>
+</svg>
