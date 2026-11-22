@@ -179,19 +179,6 @@ jobs:
         # request, enable auto-merge), minutes after minting. The wait loop polls with
         # GITHUB_TOKEN and the tag push uses GITHUB_TOKEN, so nothing depends on it later.
 
-      - name: Fetch the LFS objects the branch push needs
-        if: steps.decide.outputs.release == 'true'
-        run: |
-          set -euo pipefail
-          # The branch push runs the LFS pre-push check over the branch
-          # history, and it fails when an object is missing locally
-          # (nightly run #13). Fetch only the two large fixtures, after
-          # the release decision, so nights without a release download
-          # nothing. The include and the empty exclude follow the
-          # .lfsconfig comment: the exclusion there still applies to
-          # later LFS commands, so it must be overridden explicitly.
-          git lfs fetch --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one" --exclude=""
-
       - name: Commit the version bump and open its pull request
         id: pr
         if: steps.decide.outputs.release == 'true'
@@ -210,7 +197,12 @@ jobs:
           git commit -q -m "release: v$VERSION" -m "Nightly release of main at $(git rev-parse --short HEAD)."
           # Push the branch with the App token, to an explicit URL. The checkout stored no
           # credential (persist-credentials: false), so nothing overrides the App token here.
-          git push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          # The push runs the LFS pre-push check over the branch history, and the two large
+          # fixtures are not on the server (404 in nightly run #14), so no fetch can supply
+          # them. The bump commit adds no LFS files, so allow the incomplete push: it skips
+          # a check that cannot pass and uploads nothing new. The missing objects are a
+          # separate repo issue; they must be uploaded from a machine that has them.
+          git -c lfs.allowincompletepush=true push --force "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           # Reuse the pull request from a failed run if one already exists for this branch.
           pr="$(gh pr list --head "$branch" --base main --json number --jq '.[0].number // empty')"
           if [ -z "$pr" ]; then
@@ -279,7 +271,7 @@ jobs:
           git tag -f -a "$TAG" -m "NoteCraft $TAG" "$sha"
           # The checkout stored no credential, so the tag push and the branch delete
           # carry GITHUB_TOKEN in the URL.
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
+          git -c lfs.allowincompletepush=true push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
           # The version branch served its purpose; the pull request is merged.
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete "${{ steps.pr.outputs.branch }}" || true
           echo "sha=$sha" >> "$GITHUB_OUTPUT"

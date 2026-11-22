@@ -32,9 +32,9 @@
 {"method": "ui.click", "params": {"x": 87, "y": 52}}
 {"steps": 6}
 {"shot": "docs/images/ribbon-home.png"}
-{"method": "ui.theme", "params": {"mode": "dark", "accent": "green"}}
+{"method": "ui.theme", "params": {"mode": "dark", "accent": "default"}}
 {"wait": 300}
-{"shot": "docs/images/dark-green.png"}
+{"shot": "docs/images/dark-default.png"}
 {"method": "ui.theme", "params": {"mode": "light", "accent": "default"}}
 {"method": "ui.click", "params": {"x": 1264, "y": 15}}
 {"steps": 8}

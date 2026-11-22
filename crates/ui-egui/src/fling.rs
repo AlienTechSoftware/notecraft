@@ -21,7 +21,7 @@ const SLOWEST: f32 = 60.0;
 const FASTEST: f32 = 9000.0;
 
 /// The swipe being made and the fling it left behind.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Fling {
     /// The finger moves of the swipe, with when each came: the newest last.
     moves: VecDeque<(f64, Vec2)>,

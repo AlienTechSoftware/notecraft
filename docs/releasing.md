@@ -126,11 +126,11 @@ pick, such as a minor version.
 4. Android is built by the same Packaging run (`android/build.sh`, checked by `android/test.sh`):
    `notecraft-<version>-android-arm64.apk`. Check the run's summary for how it was signed (see
    Android signing below), then install it on a clean emulator or device before publishing.
-5. For the website, wait for the `Deploy website` workflow on the same `main` commit to succeed.
+5. The Release run deploys the website from the release commit once the draft is created.
    It publishes the browser app and the separately version-checked Welcome notebook archive from
    `docs/demo/DemoNotebook`. Its production check verifies both the served WASM and notebook
    payload. Open the demo in a clean browser session and confirm it opens the official Welcome
-   notebook. If a production run is cancelled or fails, rerun it before signoff.
+   notebook. If the website job fails, rerun it before signoff.
 6. Review the draft's complete asset list and rendered notes, then test each platform package on a
    clean target. Publish the draft only after the owner approves.
 

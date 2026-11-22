@@ -82,6 +82,8 @@ pub const SHEET_H: f32 = 1100.0;
 pub struct Pad {
     /// Where the file is, whether or not it has been written yet.
     pub file: PathBuf,
+    /// Each stroke as it was last painted, kept for the next frame (see [`Outlines`]).
+    outlines: Outlines,
     pub drawing: Drawing,
     /// Changed since it was last written.
     pub dirty: bool,
@@ -149,6 +151,7 @@ impl Pad {
         };
         let (drawing, flat) = read.unwrap_or_else(|| (Drawing::new(SHEET_W, SHEET_H), 0));
         Pad {
+            outlines: Outlines::default(),
             file,
             drawing,
             dirty: false,
@@ -620,15 +623,35 @@ pub fn show(
         ui.ctx().data_mut(|d| d.insert_temp(replay_id(), replay));
         return false;
     }
-    for stroke in pad.drawing.strokes.iter().chain(pad.drawing_now.iter()) {
-        let mut scaled = stroke.clone();
-        scaled.colour = shown_colour(scaled.colour, dark_page);
-        scaled.width *= zoom;
-        for dab in &mut scaled.dabs {
-            dab.x *= zoom;
-            dab.y *= zoom;
+    // A finished stroke does not change, so its shape at this zoom is built once and moved to
+    // where the page is each frame. Built afresh every frame, the page's ink cost more the more
+    // was on it: 2 ms a frame for a page of 260 strokes, more while the pen moved.
+    let feather = 1.0 / ui.ctx().pixels_per_point();
+    let frame = ui.ctx().cumulative_pass_nr();
+    let at = origin.to_vec2();
+    for stroke in &pad.drawing.strokes {
+        let key = OutlineKey::of(stroke, zoom, feather, dark_page);
+        let kept = pad.outlines.kept.entry(key).or_insert_with(|| (frame, Vec::new(), None));
+        // The key sums the points up, and two strokes can sum alike: the points themselves say
+        // whether this is the stroke the shape was built from.
+        if kept.1 != stroke.dabs {
+            kept.1.clone_from(&stroke.dabs);
+            kept.2 = scaled_shape(stroke, zoom, dark_page, feather);
         }
-        paint_stroke(&painter, origin, &scaled);
+        kept.0 = frame;
+        if let Some(shape) = &kept.2 {
+            let mut shape = shape.clone();
+            shape.translate(at);
+            painter.add(shape);
+        }
+    }
+    pad.outlines.let_go(frame, pad.drawing.strokes.len());
+    // The stroke being drawn changes every frame: built afresh.
+    if let Some(stroke) = &pad.drawing_now
+        && let Some(mut shape) = scaled_shape(stroke, zoom, dark_page, feather)
+    {
+        shape.translate(at);
+        painter.add(shape);
     }
 
     // A pen or a rubber in the hand means the ink is not being held any more.
@@ -1306,21 +1329,40 @@ pub fn shown_colour(colour: Rgb, dark_page: bool) -> Rgb {
 }
 
 pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke) {
+    if let Some(shape) = stroke_shape(stroke, origin, 1.0 / painter.ctx().pixels_per_point()) {
+        painter.add(shape);
+    }
+}
+
+/// `stroke` scaled to `zoom` and in the colour the page shows it in, as a shape about the page's
+/// top left corner. `None` for a stroke with nothing to draw.
+fn scaled_shape(stroke: &Stroke, zoom: f32, dark_page: bool, feather: f32) -> Option<egui::Shape> {
+    let mut scaled = stroke.clone();
+    scaled.colour = shown_colour(scaled.colour, dark_page);
+    scaled.width *= zoom;
+    for dab in &mut scaled.dabs {
+        dab.x *= zoom;
+        dab.y *= zoom;
+    }
+    stroke_shape(&scaled, egui::Pos2::ZERO, feather)
+}
+
+/// The shape [`paint_stroke`] paints: a ribbon with feathered edges and round caps, or a blob for
+/// a stroke of one reading. `feather` is one screen pixel, in points.
+fn stroke_shape(stroke: &Stroke, origin: egui::Pos2, feather: f32) -> Option<egui::Shape> {
+    #[cfg(test)]
+    STROKE_SHAPES.with(|n| n.set(n.get() + 1));
     let colour = egui::Color32::from_rgb(stroke.colour.0, stroke.colour.1, stroke.colour.2).gamma_multiply(stroke.tool.opacity());
     let put = |x: f32, y: f32| egui::pos2(origin.x + x, origin.y + y);
     let (left, right) = shape::sides(stroke);
     if left.len() < 2 {
         // A dot: one reading, so there is no ribbon, only a blob.
-        if let Some(d) = stroke.dabs.first() {
-            painter.circle_filled(put(d.x, d.y), shape::width_at(stroke, d.pressure) / 2.0, colour);
-        }
-        return;
+        return stroke.dabs.first().map(|d| egui::Shape::circle_filled(put(d.x, d.y), shape::width_at(stroke, d.pressure) / 2.0, colour));
     }
     // egui smooths the edges of the shapes it builds itself, but not of a mesh: a ribbon of bare
     // triangles has hard, stair-stepped edges. So each edge gets a fringe one screen pixel wide
     // that fades from the ink to nothing, the way egui feathers its own lines: the ink edge sits
     // half a pixel inside the outline and the faded edge half a pixel outside.
-    let feather = 1.0 / painter.ctx().pixels_per_point();
     let clear = egui::Color32::TRANSPARENT;
     let mut mesh = egui::Mesh::default();
     let mut across = egui::vec2(0.0, 1.0);
@@ -1372,7 +1414,78 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
             colour,
         );
     }
-    painter.add(egui::Shape::mesh(mesh));
+    Some(egui::Shape::mesh(mesh))
+}
+
+/// The strokes of a page as last painted, by what decides their shape, with the frame each was
+/// last painted in.
+#[derive(Clone, Debug, Default)]
+struct Outlines {
+    /// By key: the frame it was last painted in, the points it was built from, and its shape.
+    kept: std::collections::HashMap<OutlineKey, (u64, Vec<Dab>, Option<egui::Shape>)>,
+}
+
+impl Outlines {
+    /// Lets go of the shapes of strokes no longer painted (rubbed out, undone, or kept for
+    /// another zoom), once there are many more kept than there are strokes.
+    fn let_go(&mut self, frame: u64, strokes: usize) {
+        if self.kept.len() > strokes * 2 + 64 {
+            self.kept.retain(|_, (painted, _, _)| *painted == frame);
+        }
+    }
+}
+
+/// What a stroke's shape is kept under: the stroke itself, its points summed up, and how it is
+/// shown. Two strokes can share a key; the points kept with the shape tell them apart.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct OutlineKey {
+    tool: &'static str,
+    colour: (u8, u8, u8),
+    width: u32,
+    gain: u32,
+    zoom: u32,
+    feather: u32,
+    dark_page: bool,
+    dabs: usize,
+    first: (u32, u32, u32),
+    last: (u32, u32, u32),
+    /// Every point summed, so a stroke moved or reshaped between its ends is not taken for the
+    /// one it was.
+    sum: u64,
+}
+
+impl OutlineKey {
+    fn of(stroke: &Stroke, zoom: f32, feather: f32, dark_page: bool) -> Self {
+        let bits = |d: &Dab| (d.x.to_bits(), d.y.to_bits(), d.pressure.to_bits());
+        let sum = stroke
+            .dabs
+            .iter()
+            .fold(0u64, |sum, d| sum.rotate_left(5) ^ (u64::from(d.x.to_bits()) << 32 | u64::from(d.y.to_bits())) ^ u64::from(d.pressure.to_bits()));
+        OutlineKey {
+            tool: stroke.tool.id(),
+            colour: (stroke.colour.0, stroke.colour.1, stroke.colour.2),
+            width: stroke.width.to_bits(),
+            gain: stroke.gain.to_bits(),
+            zoom: zoom.to_bits(),
+            feather: feather.to_bits(),
+            dark_page,
+            dabs: stroke.dabs.len(),
+            first: stroke.dabs.first().map_or((0, 0, 0), bits),
+            last: stroke.dabs.last().map_or((0, 0, 0), bits),
+            sum,
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static STROKE_SHAPES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many stroke shapes have been built on this thread, for tests.
+#[cfg(test)]
+fn stroke_shapes() -> usize {
+    STROKE_SHAPES.with(std::cell::Cell::get)
 }
 
 /// A non-overlapping half disc, with the same physical-pixel fringe as the ribbon.
@@ -1571,6 +1684,86 @@ mod tests {
         assert!(written.on_disk());
         pad.apply_save(Ok(written), true).expect("taken in");
         assert!(!pad.dirty, "the saved drawing is the one on disk");
+    }
+
+    /// The page's ink was built afresh, stroke by stroke, in every frame: the more was written
+    /// on a page, the slower it got. A finished stroke is built once for a zoom and kept.
+    #[test]
+    fn a_finished_stroke_is_built_once_and_kept_from_frame_to_frame() {
+        let t = TempDir::new("ink-outlines-kept");
+        let mut pad = Pad::of_page(t.path());
+        for n in 0..20u8 {
+            pad.drawing.add(stroke(f32::from(n) * 12.0));
+        }
+        let ctx = egui::Context::default();
+        let pen = Pen { pointer: crate::ribbon::Pointer::Write, ..Pen::default() };
+        let tokens = crate::theme::Tokens::for_theme(crate::theme::Theme { mode: crate::theme::Mode::Light, accent: crate::theme::Accent::Default });
+        let paint = |pad: &mut Pad, zoom: f32, scrolled: f32| {
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let body = egui::Rect::from_min_size(egui::pos2(0.0, -scrolled), vec2(800.0, 2000.0));
+                show(ui, body, body, body.min, pad, pen, 1.0, &tokens, zoom);
+            });
+            out.textures_delta.clear();
+            out.shapes.len()
+        };
+        let before = stroke_shapes();
+        for scrolled in [0.0, 30.0, 60.0] {
+            assert_eq!(paint(&mut pad, 1.0, scrolled), 20, "every stroke painted, wherever the page is scrolled to");
+        }
+        assert_eq!(stroke_shapes() - before, 20, "three frames, and each stroke built once");
+
+        let before = stroke_shapes();
+        assert_eq!(paint(&mut pad, 1.5, 0.0), 20);
+        assert_eq!(stroke_shapes() - before, 20, "a new zoom builds them again, once");
+
+        let before = stroke_shapes();
+        pad.drawing.add(stroke(400.0));
+        assert_eq!(paint(&mut pad, 1.5, 0.0), 21);
+        assert_eq!(paint(&mut pad, 1.5, 0.0), 21);
+        assert_eq!(stroke_shapes() - before, 1, "a new stroke is the only one built");
+
+        // Two strokes the key cannot tell apart, alike but for one point between their ends whose
+        // sum comes out the same, are each drawn as themselves.
+        let mut a = Stroke::new(Tool::Pen, Rgb(0, 0, 0), 2.0);
+        let mut b = Stroke::new(Tool::Pen, Rgb(0, 0, 0), 2.0);
+        for (s, middle) in [(&mut a, Dab::new(30.0, 40.0, 0.5)), (&mut b, Dab::new(30.0, 80.0, 1.0))] {
+            s.dabs.push(Dab::new(10.0, 10.0, 0.5));
+            s.dabs.push(middle);
+            s.dabs.push(Dab::new(60.0, 10.0, 0.5));
+        }
+        assert_eq!(OutlineKey::of(&a, 1.5, 1.0, false), OutlineKey::of(&b, 1.5, 1.0, false), "the key alone cannot tell them apart");
+        let only = |stroke: Stroke| {
+            let mut pad = Pad::of_page(t.path());
+            pad.drawing.add(stroke);
+            pad
+        };
+        let shown = |pad: &mut Pad| {
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let body = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 2000.0));
+                show(ui, body, body, body.min, pad, pen, 1.0, &tokens, 1.5);
+            });
+            out.textures_delta.clear();
+            out.shapes.iter().map(|s| s.shape.visual_bounding_rect()).fold(egui::Rect::NOTHING, |a, b| a.union(b))
+        };
+        let (mut pa, mut pb) = (only(a), only(b));
+        let reach_a = shown(&mut pa);
+        let reach_b = shown(&mut pb);
+        assert!(reach_b.max.y > reach_a.max.y + 30.0, "the second is drawn down to its own middle point: {reach_a:?} vs {reach_b:?}");
+        // Kept on one page together, each still draws as itself.
+        let mut both = Pad::of_page(t.path());
+        both.drawing.add(pa.drawing.strokes[0].clone());
+        both.drawing.add(pb.drawing.strokes[0].clone());
+        assert!((shown(&mut both).max.y - reach_b.max.y).abs() < 1.0, "the page with both reaches as far as the second");
+
+        // A stroke moved keeps no shape of where it was.
+        let before = stroke_shapes();
+        for dab in &mut pad.drawing.strokes[0].dabs {
+            dab.y += 50.0;
+        }
+        assert_eq!(paint(&mut pad, 1.5, 0.0), 21);
+        assert_eq!(stroke_shapes() - before, 1, "the moved stroke is built again where it is now");
     }
 
     /// A scrolled page reaches above the part of the window it is shown in, and the ink layer

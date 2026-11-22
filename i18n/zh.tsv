@@ -794,6 +794,10 @@
 @id	ui.welcome_wizard_done_title	谢谢
 @id	ui.welcome_wizard_done_body	NoteCraft 已准备就绪。您的选择已保存。只有在重置偏好设置后，此设置才会再次出现。
 @id	ui.update_prompt.available	{app} {version} 已推出，包含最新功能和错误修复。
+@id	ui.check_for_updates_hint	每次启动 NoteCraft 时，以及按下“检查更新”时，都会检查 GitHub 上是否有更新的版本。只有按下“更新并重启”后，才会下载并安装。
+@id	ui.update_check_off_at_start	启动时不检查更新
+@id	ui.update_check_not_saved	无法保存更新设置：{error}
+@id	ui.update_prompt.newest_available	{app} {version} 是目前可用的最新版本。
 @id	ui.update_prompt.by_developer	由 {developer} 提供
 @id	ui.update_prompt.version_change	v{from} 到 {to}
 @id	ui.update_prompt.whats_new	新功能

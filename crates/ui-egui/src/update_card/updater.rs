@@ -138,6 +138,8 @@ pub struct Updater {
     /// Whether this copy can install an update in place, decided once by the app (see
     /// [`Updater::with_installable`]). `None`: the card asks the system itself.
     installable: Option<bool>,
+    /// The same decision, filled in by the check thread (see [`Updater::with_installable_cell`]).
+    installable_cell: Option<std::sync::Arc<std::sync::OnceLock<bool>>>,
     status: Status,
     /// The check running (or queued behind it) was asked for by the user.
     requested: bool,
@@ -185,6 +187,7 @@ impl Updater {
             version,
             source: None,
             installable: None,
+            installable_cell: None,
             status: Status::Idle,
             requested: false,
             started: false,
@@ -221,7 +224,7 @@ impl Updater {
     fn prompt_for(&self, release: Release) -> StartupPrompt {
         let mut prompt = StartupPrompt::new(self.app, release, self.version.clone()).with_translator(self.translate);
         // The card's button follows the decision the app made once, not a fresh check while drawing.
-        if let Some(installable) = self.installable {
+        if let Some(installable) = self.installable.or_else(|| self.installable_cell.as_ref().and_then(|cell| cell.get().copied())) {
             prompt.is_self_updating = installable;
         }
         prompt
@@ -244,6 +247,13 @@ impl Updater {
 
     /// Decides once whether this copy can install an update in place. The card's button uses this
     /// answer, so the button cannot change between one frame and the next.
+    /// A decision the check thread computes, so detecting the installation never runs on the
+    /// window's thread. Read when the card opens; `None` until the check has filled it in.
+    pub fn with_installable_cell(mut self, cell: std::sync::Arc<std::sync::OnceLock<bool>>) -> Self {
+        self.installable_cell = Some(cell);
+        self
+    }
+
     pub fn with_installable(mut self, installable: bool) -> Self {
         self.installable = Some(installable);
         self
