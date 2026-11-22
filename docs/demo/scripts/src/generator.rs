@@ -346,21 +346,31 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             }
             built.pages += 1;
         }
-        if let Some(ocr_sources) = optional_sources(&content.join(lang.code), OCR_FOLDER)? {
+        if let Some(sections) = ocr_sections(&content.join(lang.code))? {
             let ocr = group.join(OCR_FOLDER);
             fs::create_dir_all(&ocr).map_err(|e| format!("cannot create {}: {e}", ocr.display()))?;
             write(
                 &ocr.join("_node.toml"),
-                &node_toml("section", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
+                &node_toml("section-group", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
             )?;
             let default_dir = if lang.rtl { Some("rtl") } else { None };
-            for s in &ocr_sources {
-                let id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), s.slug));
-                let source_path =
-                    content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}.{}", s.order, s.slug, if s.html { "html" } else { "md" }));
-                let s = convert_source(s.clone(), target_format, &source_path)?;
-                write_page(&ocr.join(&s.slug), &s, &id, default_dir, art)?;
-                built.pages += 1;
+            for (n, section) in sections.iter().enumerate() {
+                let section_dir = ocr.join(&section.slug);
+                fs::create_dir_all(&section_dir).map_err(|e| format!("cannot create {}: {e}", section_dir.display()))?;
+                let section_id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), section.slug));
+                write(&section_dir.join("_node.toml"), &node_toml("section", &section.title, &section_id, 10 * (n as u32 + 1), None, None))?;
+                for s in &section.sources {
+                    let id = id_for(&format!("{}/{OCR_FOLDER}/{}/{}", lang.folder(), section.slug, s.slug));
+                    let source_path = content.join(lang.code).join(OCR_FOLDER).join(&section.folder).join(format!(
+                        "{}-{}.{}",
+                        s.order,
+                        s.slug,
+                        if s.html { "html" } else { "md" }
+                    ));
+                    let s = convert_source(s.clone(), target_format, &source_path)?;
+                    write_page(&section_dir.join(&s.slug), &s, &id, default_dir, art)?;
+                    built.pages += 1;
+                }
             }
         }
         built.languages.push(lang.code.to_string());
@@ -368,18 +378,43 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
     Ok(built)
 }
 
-/// The pages of an optional folder inside a language's content. A language without the folder
-/// has no such section, and that is not an error; a folder with no pages is.
-fn optional_sources(language: &Path, folder: &str) -> Result<Option<Vec<Source>>, String> {
-    let dir = language.join(folder);
+/// One OCR section: a folder `NN-slug/` with a `title.txt` (its name on screen) and its pages.
+struct OcrSection {
+    folder: String,
+    slug: String,
+    title: String,
+    sources: Vec<Source>,
+}
+
+/// The sections of a language's OCR folder, in folder order. A language without the folder has
+/// no OCR section, and that is not an error; a section without a title or without pages is.
+fn ocr_sections(language: &Path) -> Result<Option<Vec<OcrSection>>, String> {
+    let dir = language.join(OCR_FOLDER);
     if !dir.is_dir() {
         return Ok(None);
     }
-    let sources = read_sources(&dir)?;
-    if sources.is_empty() {
-        return Err(format!("{}: no pages", dir.display()));
+    let mut folders: Vec<PathBuf> =
+        fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    folders.sort();
+    let mut out = Vec::new();
+    for folder in folders {
+        let name = folder.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let (_, slug) = name.split_once('-').ok_or_else(|| format!("{}: name it NN-slug", folder.display()))?;
+        if let Err(why) = names::validate_component(slug) {
+            return Err(format!("{}: folder name '{slug}': {why}", folder.display()));
+        }
+        let title_path = folder.join("title.txt");
+        let title = fs::read_to_string(&title_path).map_err(|_| format!("{}: a section needs a title.txt", folder.display()))?.trim().to_string();
+        if title.is_empty() {
+            return Err(format!("{}: title.txt is empty", folder.display()));
+        }
+        let sources = read_sources(&folder)?;
+        if sources.is_empty() {
+            return Err(format!("{}: no pages", folder.display()));
+        }
+        out.push(OcrSection { folder: name.clone(), slug: slug.to_string(), title, sources });
     }
-    Ok(Some(sources))
+    Ok(Some(out))
 }
 
 /// The bullet list on the start page: each language's own name as the link, its English
@@ -1155,10 +1190,16 @@ page-color: yellow
         let dir = scratch(label);
         let content = dir.join("content");
         copy_tree(&content_dir(), &content);
-        let ocr = content.join("en").join("ocr");
-        fs::create_dir_all(&ocr).expect("ocr folder");
+        let section = content.join("en").join("ocr").join("10-images");
+        fs::create_dir_all(&section).expect("ocr section folder");
         write(
-            &ocr.join("10-overview.md"),
+            &section.join("title.txt"),
+            "Images
+",
+        )
+        .expect("section title");
+        write(
+            &section.join("10-overview.md"),
             "---
 title: OCR overview
 ---
@@ -1180,10 +1221,13 @@ A test page for the OCR section.
         build(&content, &out, &art_dir(), "0.0.0-test", &both).expect("build with an OCR section");
         for format in ["html", "cmgfm"] {
             let root = out.join(format);
-            let section = root.join("10-en").join("ocr");
-            let node = fs::read_to_string(section.join("_node.toml")).expect("the OCR section node");
-            assert!(node.contains("kind = \"section\""), "{node}");
+            let group = root.join("10-en").join("ocr");
+            let node = fs::read_to_string(group.join("_node.toml")).expect("the OCR section group node");
+            assert!(node.contains("kind = \"section-group\""), "{node}");
             assert!(node.contains("title = \"OCR\""), "{node}");
+            let section = group.join("images");
+            let section_node = fs::read_to_string(section.join("_node.toml")).expect("the Images section node");
+            assert!(section_node.contains("kind = \"section\"") && section_node.contains("title = \"Images\""), "{section_node}");
             let page = section.join("overview");
             let index = if format == "html" { "index.html" } else { "index.md" };
             assert!(page.join(index).is_file(), "the OCR page in {format}");
@@ -1194,6 +1238,10 @@ A test page for the OCR section.
         let titles: Vec<&str> = english.children.iter().map(|s| s.info.title.as_str()).collect();
         assert_eq!(titles.len(), 2, "How to and OCR: {titles:?}");
         assert!(titles.contains(&"OCR"), "{titles:?}");
+        let ocr = english.children.iter().find(|g| g.info.title == "OCR").expect("OCR group");
+        assert_eq!(ocr.info.kind, notecraft_model::NodeKind::SectionGroup, "OCR is a section group");
+        let sections: Vec<&str> = ocr.children.iter().map(|s| s.info.title.as_str()).collect();
+        assert!(sections.contains(&"Images"), "the OCR group holds its sections: {sections:?}");
         let _ = fs::remove_dir_all(content.parent().expect("parent"));
     }
 
@@ -1232,7 +1280,9 @@ A test page for the OCR section.
                 continue;
             }
             languages += 1;
-            for (page, picture) in [("50-arabic-text.md", "ocr-receipt-ar-photo.jpg"), ("60-handwriting-limits.md", "ocr-letter-ar.jpg")] {
+            for (page, picture) in
+                [("20-images/50-arabic-text.md", "ocr-receipt-ar-photo.jpg"), ("30-handwriting/10-handwriting-limits.md", "ocr-letter-ar.jpg")]
+            {
                 let text = fs::read_to_string(ocr.join(page)).expect("page");
                 let line = text
                     .lines()
@@ -1250,9 +1300,9 @@ A test page for the OCR section.
     #[test]
     fn the_english_ocr_pages_have_english_printed_and_handwritten_examples() {
         let ocr = content_dir().join("en").join(OCR_FOLDER);
-        let printed = fs::read_to_string(ocr.join("20-printed-text.md")).expect("English printed-text page");
+        let printed = fs::read_to_string(ocr.join("20-images").join("10-printed-text.md")).expect("English printed-text page");
         assert!(printed.contains("assets/ocr-receipt.png"), "the English printed example is linked");
-        let handwriting = fs::read_to_string(ocr.join("60-handwriting-limits.md")).expect("English handwriting page");
+        let handwriting = fs::read_to_string(ocr.join("30-handwriting").join("10-handwriting-limits.md")).expect("English handwriting page");
         assert!(handwriting.contains("assets/ocr-letter-en.png"), "the English handwritten example is linked");
         assert!(art_dir().join("ocr-letter-en.png").is_file(), "the English handwritten example is in assets/demo");
         assert!(art_dir().join("ocr-receipt.png").is_file(), "the English printed example is in assets/demo");
