@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use notecraft_ocr::{Engine, Line, OcrError, Point, Refresh, refresh_companion};
+use notecraft_ocr::{Line, OcrError, OcrsReader, Point, Refresh, refresh_companion};
 
 fn fixture(relative: &str) -> PathBuf {
     let root = std::env::var_os("NOTECRAFT_OCR_FIXTURES").map(PathBuf::from).expect("set NOTECRAFT_OCR_FIXTURES to the POC notebook's Images folder");
@@ -18,9 +18,9 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-fn engine() -> Engine {
+fn engine() -> OcrsReader {
     let models = std::env::var_os("NOTECRAFT_OCR_MODELS").map(PathBuf::from).expect("set NOTECRAFT_OCR_MODELS to the folder with the ocrs models");
-    Engine::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load")
+    OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load")
 }
 
 fn corners() -> [Point; 4] {

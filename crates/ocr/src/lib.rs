@@ -51,15 +51,29 @@ impl Line {
     }
 }
 
+/// Anything that reads the printed-text lines of a picture. The companion job depends on this
+/// trait, not on a particular engine, so a new engine (a platform fast path, PP-OCRv5 through ONNX,
+/// a test double) plugs in without changing the job.
+pub trait PictureReader {
+    /// Reads one picture, lines in reading order.
+    fn read_picture(&self, path: &Path) -> Result<Vec<Line>, OcrError>;
+}
+
+impl PictureReader for OcrsReader {
+    fn read_picture(&self, path: &Path) -> Result<Vec<Line>, OcrError> {
+        self.read_image(path)
+    }
+}
+
 /// The two `ocrs` models, loaded once and reused for every picture. The models are the official
 /// ONNX files (`text-detection.onnx`, `text-recognition.onnx`), loaded by `rten` in pure Rust.
-pub struct Engine {
+pub struct OcrsReader {
     ocr: ocrs::OcrEngine,
 }
 
-impl Engine {
+impl OcrsReader {
     /// Loads the detection and recognition models from their `.rten` files.
-    pub fn from_model_files(detection: &Path, recognition: &Path) -> Result<Engine, OcrError> {
+    pub fn from_model_files(detection: &Path, recognition: &Path) -> Result<OcrsReader, OcrError> {
         let load = |path: &Path| rten::Model::load_file(path).map_err(|e| OcrError::Model(format!("{}: {e}", path.display())));
         let ocr = ocrs::OcrEngine::new(ocrs::OcrEngineParams {
             detection_model: Some(load(detection)?),
@@ -67,7 +81,7 @@ impl Engine {
             ..Default::default()
         })
         .map_err(|e| OcrError::Engine(e.to_string()))?;
-        Ok(Engine { ocr })
+        Ok(OcrsReader { ocr })
     }
 
     /// Reads the printed-text lines of one picture, in reading order (criteria A1 and A3).
@@ -124,7 +138,7 @@ pub enum Refresh {
 /// The text goes to `<picture>.txt` beside the picture, one line per row. The hash of the bytes
 /// it was read from goes to `<picture>.ocr-hash`. Both are written through a temporary file, so a
 /// crash leaves the old pair, never a half-written one.
-pub fn refresh_companion(engine: &Engine, picture: &Path) -> Result<Refresh, OcrError> {
+pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<Refresh, OcrError> {
     let bytes = std::fs::read(picture).map_err(|e| OcrError::Decode(format!("{}: {e}", picture.display())))?;
     let hash = format!("{:016x}", fnv1a(&bytes));
     let text_path = companion_path(picture, "txt");
@@ -132,7 +146,7 @@ pub fn refresh_companion(engine: &Engine, picture: &Path) -> Result<Refresh, Ocr
     if text_path.exists() && std::fs::read_to_string(&hash_path).is_ok_and(|stored| stored.trim() == hash) {
         return Ok(Refresh::Unchanged);
     }
-    let lines = engine.read_image(picture)?;
+    let lines = reader.read_picture(picture)?;
     let text: String = lines
         .iter()
         .map(|l| {
@@ -206,4 +220,41 @@ fn overlaps_vertically(a: &Piece, b: &Piece) -> bool {
     let overlap = a.bottom.min(b.bottom) - a.top.max(b.top);
     let shorter = (a.bottom - a.top).min(b.bottom - b.top).max(1);
     overlap * 2 >= shorter
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// A reader that counts its calls and returns one fixed line. It needs no model files.
+    struct CountingReader {
+        calls: Cell<u32>,
+    }
+
+    impl PictureReader for CountingReader {
+        fn read_picture(&self, _path: &Path) -> Result<Vec<Line>, OcrError> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(vec![Line::new("TOTAL 13.75", [Point { x: 0.0, y: 0.0 }; 4], None)?])
+        }
+    }
+
+    #[test]
+    fn the_companion_job_works_with_any_reader_and_reads_only_on_change() {
+        let dir = std::env::temp_dir().join(format!("nc-ocr-unit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch folder");
+        let picture = dir.join("picture.png");
+        std::fs::write(&picture, b"first bytes").expect("picture");
+        let reader = CountingReader { calls: Cell::new(0) };
+
+        assert_eq!(refresh_companion(&reader, &picture).expect("first"), Refresh::Rewritten);
+        assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Unchanged);
+        assert_eq!(reader.calls.get(), 1, "an unchanged picture is not read again");
+
+        std::fs::write(&picture, b"second bytes").expect("change");
+        assert_eq!(refresh_companion(&reader, &picture).expect("third"), Refresh::Rewritten);
+        assert_eq!(reader.calls.get(), 2);
+        assert_eq!(std::fs::read_to_string(dir.join("picture.png.txt")).expect("companion"), "TOTAL 13.75\n");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
