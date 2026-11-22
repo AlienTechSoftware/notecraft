@@ -4,7 +4,7 @@
 //! Stage 1 MVP. The engine is `ocrs` (pure Rust, MIT or Apache-2.0), chosen for the bake-off
 //! by the owner's GO. Its model files are not part of this crate; the caller passes their paths.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use image::GenericImageView;
 use ocrs::TextItem;
@@ -82,7 +82,7 @@ impl Engine {
         let lines = self.ocr.find_text_lines(&input, &words);
         let texts = self.ocr.recognize_text(&input, &lines).map_err(engine)?;
 
-        let mut out = Vec::new();
+        let mut pieces = Vec::new();
         for text_line in texts.into_iter().flatten() {
             let text = text_line.to_string();
             if text.trim().is_empty() {
@@ -95,11 +95,16 @@ impl Engine {
                 right = right.max(ch.rect.right());
                 bottom = bottom.max(ch.rect.bottom());
             }
-            // The engine can return a box a few pixels past the picture edge; a box lies inside the picture (A3).
-            let (w, h) = (width as i32, height as i32);
-            let p = |x: i32, y: i32| Point { x: x.clamp(0, w) as f32, y: y.clamp(0, h) as f32 };
-            let quad = [p(left, top), p(right, top), p(right, bottom), p(left, bottom)];
-            out.push(Line::new(text.trim().to_string(), quad, None)?);
+            pieces.push(Piece { text: text.trim().to_string(), left, top, right, bottom });
+        }
+        // The engine splits a row of columns (an item and its price) into separate lines. Join the
+        // pieces that share a row, left to right, so each printed row is one line (A1).
+        let (w, h) = (width as i32, height as i32);
+        let p = |x: i32, y: i32| Point { x: x.clamp(0, w) as f32, y: y.clamp(0, h) as f32 };
+        let mut out = Vec::new();
+        for row in group_rows(pieces) {
+            let quad = [p(row.left, row.top), p(row.right, row.top), p(row.right, row.bottom), p(row.left, row.bottom)];
+            out.push(Line::new(row.text, quad, None)?);
         }
         Ok(out)
     }
@@ -115,6 +120,90 @@ pub enum Refresh {
 }
 
 /// Re-reads a picture only when its file hash changed since the last read (criteria A4 and A5).
-pub fn refresh_companion(_picture: &Path) -> Result<Refresh, OcrError> {
-    panic!("A4/A5: hash check and companion replacement are not implemented yet")
+///
+/// The text goes to `<picture>.txt` beside the picture, one line per row. The hash of the bytes
+/// it was read from goes to `<picture>.ocr-hash`. Both are written through a temporary file, so a
+/// crash leaves the old pair, never a half-written one.
+pub fn refresh_companion(engine: &Engine, picture: &Path) -> Result<Refresh, OcrError> {
+    let bytes = std::fs::read(picture).map_err(|e| OcrError::Decode(format!("{}: {e}", picture.display())))?;
+    let hash = format!("{:016x}", fnv1a(&bytes));
+    let text_path = companion_path(picture, "txt");
+    let hash_path = companion_path(picture, "ocr-hash");
+    if text_path.exists() && std::fs::read_to_string(&hash_path).is_ok_and(|stored| stored.trim() == hash) {
+        return Ok(Refresh::Unchanged);
+    }
+    let lines = engine.read_image(picture)?;
+    let text: String = lines
+        .iter()
+        .map(|l| {
+            format!(
+                "{}
+",
+                l.text
+            )
+        })
+        .collect();
+    write_replacing(&text_path, text.as_bytes())?;
+    write_replacing(&hash_path, hash.as_bytes())?;
+    Ok(Refresh::Rewritten)
+}
+
+fn companion_path(picture: &Path, extension: &str) -> PathBuf {
+    let mut name = picture.file_name().unwrap_or_default().to_os_string();
+    name.push(".");
+    name.push(extension);
+    picture.with_file_name(name)
+}
+
+fn write_replacing(path: &Path, bytes: &[u8]) -> Result<(), OcrError> {
+    let temp = companion_path(path, "tmp");
+    std::fs::write(&temp, bytes).map_err(|e| OcrError::Decode(format!("{}: {e}", temp.display())))?;
+    std::fs::rename(&temp, path).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))
+}
+
+/// FNV-1a, 64 bits: a hash that is the same on every run and every platform, which the standard
+/// library's hasher is not.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |hash, b| (hash ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// One piece of text as the engine reports it, before rows are joined.
+struct Piece {
+    text: String,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+/// Joins pieces that overlap vertically by at least half the shorter one into one row, in reading
+/// order: rows top to bottom, pieces left to right inside a row.
+fn group_rows(mut pieces: Vec<Piece>) -> Vec<Piece> {
+    pieces.sort_by_key(|p| (p.top, p.left));
+    let mut rows: Vec<Vec<Piece>> = Vec::new();
+    for piece in pieces {
+        let joins = rows.iter().position(|row| row.iter().any(|other| overlaps_vertically(other, &piece)));
+        match joins {
+            Some(i) => rows[i].push(piece),
+            None => rows.push(vec![piece]),
+        }
+    }
+    rows.into_iter()
+        .map(|mut row| {
+            row.sort_by_key(|p| p.left);
+            Piece {
+                text: row.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(" "),
+                left: row.iter().map(|p| p.left).min().unwrap_or(0),
+                top: row.iter().map(|p| p.top).min().unwrap_or(0),
+                right: row.iter().map(|p| p.right).max().unwrap_or(0),
+                bottom: row.iter().map(|p| p.bottom).max().unwrap_or(0),
+            }
+        })
+        .collect()
+}
+
+fn overlaps_vertically(a: &Piece, b: &Piece) -> bool {
+    let overlap = a.bottom.min(b.bottom) - a.top.max(b.top);
+    let shorter = (a.bottom - a.top).min(b.bottom - b.top).max(1);
+    overlap * 2 >= shorter
 }

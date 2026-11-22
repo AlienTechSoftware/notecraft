@@ -12,6 +12,12 @@ fn fixture(relative: &str) -> PathBuf {
     root.join(relative)
 }
 
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("nc-ocr-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch folder");
+    dir
+}
+
 fn engine() -> Engine {
     let models = std::env::var_os("NOTECRAFT_OCR_MODELS").map(PathBuf::from).expect("set NOTECRAFT_OCR_MODELS to the folder with the ocrs models");
     Engine::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load")
@@ -67,22 +73,28 @@ fn a3_every_box_lies_inside_its_picture() {
 /// A4: re-running OCR on an unchanged picture does nothing.
 #[test]
 fn a4_an_unchanged_picture_is_not_read_again() {
-    let path = fixture("receipt-photo/assets/receipt.png");
-    refresh_companion(&path).expect("first read");
-    assert_eq!(refresh_companion(&path).expect("second read"), Refresh::Unchanged);
+    let dir = scratch("a4");
+    let picture = dir.join("receipt.png");
+    std::fs::copy(fixture("receipt-photo/assets/receipt.png"), &picture).expect("copy picture");
+    let engine = engine();
+    assert_eq!(refresh_companion(&engine, &picture).expect("first read"), Refresh::Rewritten);
+    assert_eq!(refresh_companion(&engine, &picture).expect("second read"), Refresh::Unchanged);
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A5: changing a picture re-runs OCR and replaces its companion text.
 #[test]
 fn a5_a_changed_picture_is_read_again_and_its_companion_is_replaced() {
-    let dir = std::env::temp_dir().join(format!("nc-ocr-a5-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch folder");
+    let dir = scratch("a5");
     let picture = dir.join("receipt.png");
     std::fs::copy(fixture("receipt-photo/assets/receipt.png"), &picture).expect("copy picture");
-    refresh_companion(&picture).expect("first read");
+    let engine = engine();
+    refresh_companion(&engine, &picture).expect("first read");
     let mut bytes = std::fs::read(&picture).expect("read picture");
     bytes.extend_from_slice(b"changed");
     std::fs::write(&picture, bytes).expect("change picture");
-    assert_eq!(refresh_companion(&picture).expect("second read"), Refresh::Rewritten);
+    assert_eq!(refresh_companion(&engine, &picture).expect("second read"), Refresh::Rewritten);
+    let companion = std::fs::read_to_string(dir.join("receipt.png.txt")).expect("companion text");
+    assert!(companion.contains("TOTAL 13.75"), "the companion holds the new read: {companion}");
     std::fs::remove_dir_all(&dir).ok();
 }
