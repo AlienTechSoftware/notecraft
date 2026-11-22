@@ -139,7 +139,11 @@ pub fn child_dirs(dir: &Path) -> Vec<PathBuf> {
 }
 
 pub fn load_tree(dir: &Path) -> Option<Node> {
-    let info = read_node(dir)?;
+    let Some(info) = read_node(dir) else {
+        // A folder with no node file is not listed. Say so, so that a folder which should show does not vanish silently.
+        log::warn!("folder not listed: {} has no node file", dir.display());
+        return None;
+    };
     let children = child_dirs(dir).iter().filter_map(|c| load_tree(c)).collect();
     Some(Node { path: dir.to_path_buf(), info, children })
 }

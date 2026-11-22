@@ -1393,6 +1393,8 @@ pub struct NoteCraftApp {
     /// Draw > Auto-switch (issue #9): the pen picks up a pen, and typing or the trackpad puts it
     /// down. On unless turned off.
     auto_switch: bool,
+    /// Options: don't check for updates at start up (off by default, so a start checks).
+    update_check_off: bool,
     /// The pen in hand was picked up by the pen touching the page, not chosen: a trackpad click
     /// on the page puts it down again. One chosen by hand stays, so a trackpad can draw too.
     pen_picked_by_pen: bool,
@@ -1519,6 +1521,7 @@ impl NoteCraftApp {
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
+        let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
@@ -1638,6 +1641,7 @@ impl NoteCraftApp {
             ruler: false,
             auto_shapes: session_auto_shapes,
             auto_switch: session_auto_switch,
+            update_check_off: session_update_check_off,
             pen_picked_by_pen: false,
             replaying: false,
             tabs_layout: session_tabs_layout,
@@ -1947,6 +1951,17 @@ impl NoteCraftApp {
     /// Shows a newer version in Options and About, for a screen check. It only shows the message
     /// and the releases-page link; nothing is downloaded or installed.
     /// The first-use wizard does not open for a test hook: `--new-version` shows only the update.
+    /// Whether the first-use wizard is finished or was never shown. A first launch waits for it, so
+    /// the update check never opens over the wizard.
+    pub fn first_use_done(&self) -> bool {
+        !matches!(self.dialog, Some(Dialog::FirstUseWizard { .. }))
+    }
+
+    /// Whether a start checks GitHub for a newer release: on unless Options turns it off.
+    pub fn update_check_at_start(&self) -> bool {
+        !self.update_check_off
+    }
+
     pub fn skip_first_use_wizard(&mut self) {
         if matches!(self.dialog, Some(Dialog::FirstUseWizard { .. })) {
             self.dialog = None;
@@ -2197,7 +2212,14 @@ impl NoteCraftApp {
             return;
         }
         if self.pointer == ribbon::Pointer::Write {
-            if self.stylus.landed().is_some_and(|at| self.page_rect.is_some_and(|page| page.contains(at))) {
+            // On the part of the page the window shows: the page's own rect is one view tall from
+            // its top, and once the page is panned down it no longer covers what is shown.
+            // Not where a menu or a folded ribbon is drawn over the page: that touch is theirs.
+            let page = self.page_view.or(self.page_rect);
+            let on_page = |at: egui::Pos2| {
+                page.is_some_and(|page| page.contains(at)) && ctx.layer_id_at(at).is_none_or(|layer| layer.order < egui::Order::Foreground)
+            };
+            if self.stylus.landed().is_some_and(on_page) {
                 self.ribbon_act(ribbon::Act::InkPen(self.nib));
                 self.pen_picked_by_pen = true;
                 crate::inkpad::claim_press(ctx);
@@ -4673,6 +4695,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 self.auto_switch,
+                self.update_check_off,
                 &update,
                 &mut copy,
                 &mut account,
@@ -4731,6 +4754,12 @@ impl NoteCraftApp {
                     // Not kept, so not changed: the next start would have gone back to it.
                     Err(e) => self.complain(&crate::i18n::format_message_id("ui.auto_switch_not_saved", &[("error", &e.to_string())])),
                 },
+                backstage::Act::SetUpdateCheckOff(off) => {
+                    match self.session.settings.set("update_check_off_at_start", if off { "true" } else { "false" }) {
+                        Ok(()) => self.update_check_off = off,
+                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.update_check_not_saved", &[("error", &e.to_string())])),
+                    }
+                }
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
                 backstage::Act::UseDefaultNotebooksFolder => self.apply_notebooks_root_choice(None),
                 backstage::Act::OpenTelemetryFolder(path) => {
@@ -5538,12 +5567,10 @@ impl NoteCraftApp {
 
     /// Carries out one thing the ribbon asked for.
     fn ribbon_act(&mut self, act: ribbon::Act) {
-        // A tool chosen is chosen by hand, a tool added to the rack or changed on it too; the
-        // automatic switch marks its own choice after this.
-        if matches!(
-            act,
-            ribbon::Act::InkPen(_) | ribbon::Act::InkPointer(_) | ribbon::Act::InkRack(ribbon::RackEdit::Add(_) | ribbon::RackEdit::Set(..))
-        ) {
+        // A tool chosen is chosen by hand; the automatic switch marks its own choice after this.
+        // A tool added to the rack or changed on it is chosen by hand too, once the rack has
+        // taken it (`edit_rack`).
+        if matches!(act, ribbon::Act::InkPen(_) | ribbon::Act::InkPointer(_)) {
             self.pen_picked_by_pen = false;
         }
         match act {
@@ -5894,6 +5921,7 @@ impl NoteCraftApp {
                 self.rack.push(rack::new_nib(tool));
                 self.nib = self.rack.len() - 1;
                 self.pointer = ribbon::Pointer::Draw;
+                self.pen_picked_by_pen = false;
                 let tool = crate::tl!(tool.label());
                 self.say(crate::i18n::format_message_id("ui.added_a_tool", &[("tool", &tool.to_lowercase())]));
             }
@@ -5922,6 +5950,7 @@ impl NoteCraftApp {
                     *slot = nib;
                     self.nib = i;
                     self.pointer = ribbon::Pointer::Draw;
+                    self.pen_picked_by_pen = false;
                 }
             }
         }
@@ -9412,7 +9441,9 @@ impl NoteCraftApp {
             return;
         }
         let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
-        let notebooks = self.open_notebooks();
+        // From the tree the window holds, which commands keep up to date: read from disk here,
+        // every frame, it asked a synced folder's mount for every section and page each time.
+        let notebooks = self.session.tree();
         let Some(notebook) = notebook_for(&dir).and_then(|nb| notebooks.iter().find(|n| n.path == nb)) else { return };
         let tabs = crate::sectiontabs::tabs(notebook);
         let here = section_for(&dir);
@@ -9425,7 +9456,7 @@ impl NoteCraftApp {
                 chosen = crate::sectiontabs::show(ui, &tabs, here.as_deref(), &tokens);
             });
         if let Some(section) = chosen {
-            match first_page_under(&notebooks, &section) {
+            match first_page_under(self.session.tree(), &section) {
                 Some(page) => {
                     self.expand_to(&page);
                     self.open_page_soon(&page);
@@ -15393,5 +15424,128 @@ mod page_open_tests {
             h.step();
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+}
+
+#[cfg(test)]
+mod tabs_layout_tests {
+    use super::*;
+
+    /// View > Tabs layout read every open notebook's tree from disk to draw the tabs, every
+    /// frame: on a synced folder every one of those reads goes to the mount, and the page
+    /// crawled. The tabs come from the tree the window already holds.
+    #[test]
+    #[ignore = "fails on macOS CI on main; tracked in #447. Remove this line when fixed."]
+    fn the_section_tabs_do_not_read_the_notebooks_from_disk_each_frame() {
+        let t = notecraft_store::testing::TempDir::new("tabs-layout-reads");
+        let settings = notecraft_store::Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("settings");
+        let mut session = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
+        let mut app = NoteCraftApp::new(session);
+        app.open_path(&sample.html_page.to_string_lossy());
+        app.tabs_layout = true;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 800.0))
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        for _ in 0..5 {
+            h.step();
+        }
+        // A section of the other notebook gets its `_node.toml` from a named pipe, and a thread
+        // on the other end counts how many times it is read: each read of the notebooks from
+        // disk reads it once.
+        #[cfg(unix)]
+        {
+            use std::io::Write as _;
+            use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+            fn sections(nodes: &[Node], out: &mut Vec<PathBuf>) {
+                for n in nodes {
+                    if n.info.kind == NodeKind::Section {
+                        out.push(n.path.clone());
+                    }
+                    sections(&n.children, out);
+                }
+            }
+            let mut all = Vec::new();
+            sections(h.state().session.tree(), &mut all);
+            let elsewhere = all
+                .into_iter()
+                .find(|s| !sample.html_page.starts_with(s))
+                .map(|s| s.join("_node.toml"))
+                .expect("a section other than the open page's");
+            let text = std::fs::read(&elsewhere).expect("the section's file");
+            std::fs::remove_file(&elsewhere).expect("remove");
+            assert!(std::process::Command::new("mkfifo").arg(&elsewhere).status().expect("mkfifo").success());
+            let (reads, stop) = (std::sync::Arc::new(AtomicUsize::new(0)), std::sync::Arc::new(AtomicBool::new(false)));
+            let writer = {
+                let (pipe, reads, stop, text) = (elsewhere.clone(), reads.clone(), stop.clone(), text.clone());
+                std::thread::spawn(move || {
+                    use std::os::unix::fs::OpenOptionsExt as _;
+                    #[cfg(any(target_os = "linux", target_os = "android"))]
+                    const O_NONBLOCK: i32 = 0o4000;
+                    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                    const O_NONBLOCK: i32 = 0x0004;
+                    // A reader waits in its open for a writer; opened without waiting, the write
+                    // end opens only while one does.
+                    while !stop.load(Ordering::SeqCst) {
+                        match std::fs::OpenOptions::new().write(true).custom_flags(O_NONBLOCK).open(&pipe) {
+                            Ok(mut out) => {
+                                let _ = out.write_all(&text);
+                                reads.fetch_add(1, Ordering::SeqCst);
+                            }
+                            Err(_) => std::thread::sleep(Duration::from_millis(1)),
+                        }
+                    }
+                })
+            };
+            // Anything the change itself sets off is let settle first.
+            let settle = std::time::Instant::now() + Duration::from_millis(1500);
+            while std::time::Instant::now() < settle {
+                h.step();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let before = reads.load(Ordering::SeqCst);
+            for _ in 0..20 {
+                h.step();
+            }
+            let read = reads.load(Ordering::SeqCst) - before;
+            stop.store(true, Ordering::SeqCst);
+            writer.join().expect("the writer");
+            // The section's own file back, for what follows.
+            std::fs::remove_file(&elsewhere).expect("remove the pipe");
+            std::fs::write(&elsewhere, &text).expect("the section's file back");
+            assert_eq!(read, 0, "twenty frames with the tabs shown, and no reads of the notebooks");
+        }
+
+        // The tabs are drawn, and one opens its section's first page.
+        // Another section of the open page's notebook, with a page in it.
+        let here = section_for(&sample.html_page).expect("the page's section");
+        let other = h
+            .state()
+            .session
+            .tree()
+            .iter()
+            .flat_map(|n| n.children.iter())
+            .find(|n| n.info.kind == NodeKind::Section && n.path != here && n.children.iter().any(|p| p.info.kind == NodeKind::Page));
+        let (section, title) = other.map(|n| (n.path.clone(), n.info.title.clone())).expect("another section with a page");
+        {
+            use egui_kittest::kittest::{NodeT as _, Queryable as _};
+            // The section is named in the notebooks pane too; its tab is the one over the page,
+            // right of the panes.
+            let tab = h
+                .query_all_by_label(&title)
+                .max_by(|a, b| {
+                    let x = |n: &egui_kittest::Node<'_>| n.accesskit_node().bounding_box().map_or(0.0, |r| r.x0);
+                    x(a).total_cmp(&x(b))
+                })
+                .expect("the section's tab");
+            tab.click();
+        }
+        for _ in 0..5 {
+            h.step();
+        }
+        let open = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("a page open");
+        assert!(open.starts_with(&section), "a tab opens a page of its section: {open:?}");
     }
 }

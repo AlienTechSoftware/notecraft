@@ -210,7 +210,18 @@ impl Session {
         }
         let dir = self.resolve(path)?;
         let node = tree::load_tree(&dir).ok_or_else(|| EngineError::BadParam(format!("{path} is not a notebook, section group, section or page")))?;
-        first_page(&node).ok_or_else(|| EngineError::BadParam(format!("there is no page in {path} yet")))
+        let real = first_page(&node).ok_or_else(|| EngineError::BadParam(format!("there is no page in {path} yet")))?;
+        // A page whose real place is outside every open notebook is answered with the path as the user wrote it, so it
+        // is still inside the notebooks folder for the commands that follow (page.load). A page inside a notebook keeps
+        // its real path: a path typed in a different form (such as a Windows short name) would not match the roots.
+        let known = |p: &Path| p.starts_with(&self.root) || self.extra.iter().any(|n| p.starts_with(n));
+        let written = lexical(&joined);
+        if !known(&real)
+            && let Ok(rest) = real.strip_prefix(&dir)
+        {
+            return Ok(written.join(rest));
+        }
+        Ok(real)
     }
 
     /// An absolute path or a path relative to the notebooks folder, resolved and
@@ -219,11 +230,18 @@ impl Session {
         let p = Path::new(path);
         let joined = if p.is_absolute() { p.to_path_buf() } else { self.root.join(p) };
         let canon = std::fs::canonicalize(&joined).map_err(|_| StoreError::NotFound(path.to_string()))?;
-        // Inside the notebooks folder, or inside a notebook opened from somewhere else.
-        if !canon.starts_with(&self.root) && !self.extra.iter().any(|n| canon.starts_with(n)) {
-            return Err(EngineError::BadParam("that path is outside the notebooks folder".into()));
+        // Inside the notebooks folder as written, or inside a notebook opened from somewhere else. The check
+        // reads the path as the user gave it, so a folder linked into a notebook is followed, not refused.
+        // The real place is inside the notebooks folder (or an opened notebook): as before.
+        if canon.starts_with(&self.root) || self.extra.iter().any(|n| canon.starts_with(n)) {
+            return Ok(canon);
         }
-        Ok(canon)
+        // Otherwise the path as written may still be inside, through a link.
+        let written = lexical(&joined);
+        if written.starts_with(lexical(&self.root)) || self.extra.iter().any(|n| written.starts_with(lexical(n))) {
+            return Ok(canon);
+        }
+        Err(EngineError::BadParam("that path is outside the notebooks folder".into()))
     }
 
     /// Runs a command by id. A panic inside the command becomes `EngineError::Panicked`.
@@ -294,6 +312,26 @@ fn first_page(n: &Node) -> Option<PathBuf> {
         return Some(n.path.clone());
     }
     n.children.iter().find_map(first_page)
+}
+
+/// The path with `.` removed and each `..` taken back against the path before it. Nothing is read from
+/// the disk, so a link is not followed.
+fn lexical(path: &Path) -> PathBuf {
+    use std::path::Component;
+    // A Windows verbatim prefix (`\?\`) is the same place without it; both forms are compared as one.
+    let text = path.to_string_lossy();
+    let path = Path::new(text.strip_prefix("\\\\?\\").unwrap_or(&text));
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

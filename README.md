@@ -18,6 +18,11 @@
 </p>
 
 <p align="center">
+  <a href="https://notecraft.cloud/"><img src="assets/brand/try-notecraft-badge.png" alt="Try NoteCraft!" height="40"></a>
+  <br>
+</p>
+
+<p align="center">
   <a href="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml"><img alt="CI status on main" src="https://github.com/AlienTechSoftware/notecraft/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/AlienTechSoftware/notecraft/releases/latest"><img alt="Latest release, read from GitHub" src="https://img.shields.io/github/v/release/AlienTechSoftware/notecraft?style=flat-square&color=3b5bdb&label=latest%20release"></a>
   <a href="docs/coverage.json"><img alt="Line coverage on Windows, from docs/coverage.json" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAlienTechSoftware%2Fnotecraft%2Fmain%2Fdocs%2Fcoverage.json&query=%24.badges.windows&label=coverage%20%C2%B7%20windows&color=2f9e44&style=flat-square&cb=2"></a>
@@ -66,7 +71,7 @@ Every picture below is NoteCraft itself, drawn off screen by its own test harnes
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/equations.png" alt="A page of equations: an inline fraction and square root flowing with the text, and two display equations, the quadratic formula and a sum with an integral, drawn in a tinted box" width="100%"><p align="center"><sub><b>Equations.</b> A TeX subset drawn natively: fractions, roots, sums, integrals and scaled brackets.</sub></p></td>
-<td width="50%" valign="top"><img src="docs/images/dark-green.png" alt="The same window in the dark green theme: dark surfaces, light text and green accents" width="100%"><p align="center"><sub><b>14 themes.</b> Light and dark, seven accents each, every colour checked for contrast by a test.</sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/dark-default.png" alt="The same window in the default dark theme: dark surfaces, light text and purple accents" width="100%"><p align="center"><sub><b>14 themes.</b> Light and dark, seven accents each, every colour checked for contrast by a test.</sub></p></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/file-screen.png" alt="The File screen listing two notebooks with their coloured covers, the folder each one lives in, an Open folder button and a note that online notebooks are not built" width="100%"><p align="center"><sub><b>File.</b> Your notebooks and where they live on disk. Anything not built says so instead of hiding.</sub></p></td>
@@ -328,6 +333,22 @@ What is missing:
 **Versions.** The version on `main` is 0.0.9. A nightly release takes the next patch number each day it has new work, so check [Releases](https://github.com/AlienTechSoftware/notecraft/releases) for the newest build; any other change needs the owner's approval. NoteCraft follows the versioning of the Craft apps: `MAJOR.MINOR.PATCH`, still 0.x, tags like `v0.1.0`, and a hyphen such as `0.2.0-rc.1` for a pre-release. A minor release adds features, and a patch release only fixes bugs or rebuilds. We took this from the Craft apps' public tags and release guides, not from a written rule of theirs. Nightly releases are regular GitHub releases marked latest. See [docs/releasing.md](docs/releasing.md).
 
 [ROADMAP.md](ROADMAP.md) has the order of work; [docs/gaps.md](docs/gaps.md) is the full list.
+
+## Sponsors
+
+<a href="https://github.com/sponsors/AlienTechSoftware"><img src="assets/brand/sponsor-button.svg" alt="Sponsor" height="32"></a>
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/AlienTechSoftware)](https://github.com/sponsors/AlienTechSoftware)
+
+NoteCraft is funded by AlienTech Software.
+
+<a href="https://alientech.software/"><img src="https://alientech.software/assets/alientech-software-badge.png" alt="AlienTech Software" height="40"></a>
+
+## Mentions
+
+NoteCraft is listed on [I Did My Own](https://idmo.app/p/notecraft) as an open-source OneNote alternative.
+
+[![I did my own OneNote](https://idmo.app/badge/notecraft)](https://idmo.app/p/notecraft)
 
 ## Credits and licence
 
