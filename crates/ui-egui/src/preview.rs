@@ -141,7 +141,9 @@ fn picture(ctx: &egui::Context, page_dir: &Path, src: &str) -> Picture {
     if !pictures.reading.insert(path.clone()) {
         return Picture::Loading;
     }
-    let frame = ctx.cumulative_pass_nr();
+    // Per frame, not per pass: a frame drawn twice (a zoom drawn again about the pointer) waits
+    // once.
+    let frame = ctx.cumulative_frame_nr();
     // Counted afresh in each frame, the window's first one too.
     if pictures.waited.0 != Some(frame) {
         pictures.waited = (Some(frame), WAIT_PER_FRAME);
@@ -181,7 +183,10 @@ struct PictureRead {
 
 impl PictureRead {
     fn run(self) {
-        let read = std::fs::read(&self.path);
+        // Read and copied into shared bytes before the store is locked: the window waits on that
+        // lock, and copying a large picture took the time it is not to spend waiting.
+        let read = std::fs::read(&self.path).map(std::sync::Arc::<[u8]>::from);
+        let mut evicted = std::collections::HashMap::new();
         let Ok(mut pictures) = self.store.lock() else { return };
         pictures.reading.remove(&self.path);
         #[cfg(test)]
@@ -190,14 +195,14 @@ impl PictureRead {
         }
         match read {
             Ok(bytes) => {
-                let bytes: std::sync::Arc<[u8]> = bytes.into();
                 let nanos = self.stamp.1.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
                 let uri = format!("bytes://page-image/{}#{}-{nanos}", self.path.display(), self.stamp.0);
                 // Pictures of pages no longer shown would pile up; past a generous size the store
                 // starts over.
                 let held: usize = pictures.kept.values().map(|(_, _, b)| b.len()).sum();
                 if held + bytes.len() > PAGE_IMAGES_MAX_BYTES {
-                    pictures.kept.clear();
+                    // Let go of after the lock: freeing them is not the window's to wait for.
+                    evicted = std::mem::take(&mut pictures.kept);
                 }
                 pictures.failed.remove(&self.path);
                 pictures.kept.insert(self.path, (self.stamp, uri, bytes));
@@ -208,6 +213,7 @@ impl PictureRead {
             }
         }
         drop(pictures);
+        drop(evicted);
         // Told to a frame still waiting, and drawn again in any case: the frame may have stopped
         // waiting just as the read came in.
         let _ = self.done.send(());
@@ -285,8 +291,10 @@ impl Readers {
     fn start_reader(&self) -> bool {
         use std::sync::atomic::Ordering;
         let (waiting, idle, queued, live) = (self.waiting.clone(), self.idle.clone(), self.queued.clone(), self.live.clone());
-        self.live.fetch_add(1, Ordering::SeqCst);
         let started = std::thread::Builder::new().name("notecraft-pictures".into()).spawn(move || {
+            // Counted as running once it runs, not when it was asked for: a reader still starting,
+            // whose start may yet fail, is no reason to leave a read queued for it.
+            live.fetch_add(1, Ordering::SeqCst);
             loop {
                 idle.fetch_add(1, Ordering::SeqCst);
                 // Idle from now, not from when the queue is free: readers waiting their turn for
@@ -321,9 +329,6 @@ impl Readers {
                 }
             }
         });
-        if started.is_err() {
-            self.live.fetch_sub(1, Ordering::SeqCst);
-        }
         started.is_ok()
     }
 }
@@ -1478,7 +1483,13 @@ mod tests {
         assert_eq!(first.as_deref(), Ok("Loading"), "the window is told it is on its way, without waiting for it");
 
         // Then the "download" finishes, and the picture is there for the next frame.
-        std::fs::write(&pipe, b"the picture, downloaded").expect("written into the pipe");
+        // Written once a reader has the pipe open, and not waited for past a deadline: a reader
+        // that never came would otherwise hang the test here rather than fail it.
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while nonblocking_write(&pipe, b"the picture, downloaded").is_err() {
+            assert!(std::time::Instant::now() < until, "no reader took the slow picture");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         go_on.send(()).expect("the asker is waiting");
         let then = answered.recv_timeout(std::time::Duration::from_secs(10));
         assert_eq!(then.as_deref(), Ok("the picture, downloaded"));
