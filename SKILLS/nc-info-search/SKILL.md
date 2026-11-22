@@ -62,8 +62,8 @@ addition, never a requirement for finding a word.
 ### What is indexed
 
 - **Page text.** The visible text of each page, from `index.html` or `index.md`, with markup removed.
-- **Alt text.** `<picture>.alt.txt` (authored) and the page's `alt` attribute, per RFC 0003. Indexed
-  with the page, and the picture is the hit target.
+- **Alt text.** The `alt` of each picture in the page markup, per RFC 0003. Indexed with the page
+  as its own text; the page is the hit, and an alt hit carries no boxes.
 - **OCR text.** `<picture>.txt` (derived, from `nc-info-ocr`). Indexed as its own unit, so a hit
   can open the picture with its box outlined (criterion A8).
 - **Later:** attachment text, handwriting and transcripts (Stages 2 and 3).

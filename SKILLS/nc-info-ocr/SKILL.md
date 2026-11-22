@@ -84,8 +84,8 @@ Vec<Line>  { text, quad: [Point; 4], confidence: Option<f32> }   (pixels, clampe
 - **The trait is the seam.** The companion job depends on `PictureReader`, not on `ocrs`. A test
   double runs the job without model files (unit test in `crates/ocr/src/lib.rs`). A later engine
   is one more `impl`, with no change to the job.
-- **Derived files are never authored.** `.txt` and `.ocr-hash` are rebuilt from the picture. The
-  alt text file (`<picture>.alt.txt`, RFC 0003) is never written by the OCR job.
+- **Derived files are never authored.** `.txt`, `.lines` and `.ocr-hash` are rebuilt from the
+  picture. The OCR job never writes alt text; alt text lives in the page markup (see below).
 - **Atomic replacement.** Text and hash are written to `<name>.tmp` and renamed, so a crash leaves
   the old pair, never a half-written file.
 - **Stable hash.** FNV-1a 64 bit, written in code. The standard library's hasher is not stable
@@ -111,8 +111,9 @@ Shipping them needs an owner decision. Measuring them does not.
 
 ### Descriptions (alt text)
 
-- **Authored alt text is the MVP.** Attachment panel field; stored as `<picture>.alt.txt`
-  (RFC 0003 option A). A person writes or accepts it.
+- **Authored alt text is the MVP.** Stored in the page markup, as the `alt` of the picture's
+  `<img>` (HTML) or the `![...]` text (CommonMark), per RFC 0003 option A. `set_alt_text` edits
+  that attribute and keeps the rest of the page. A person writes or accepts it.
 - **Model drafts are Stage 1b, after the MVP is measured.** A model writes a draft; a person
   accepts or edits it before it becomes alt text. Never silent.
 - **Candidates (licences checked on Hugging Face cards, 2026-11-22):**

@@ -72,7 +72,7 @@ pub fn search_in(root: &Path, elsewhere: &[PathBuf], needle: &str, limit: usize)
 pub enum Source {
     /// The page's own text (and title).
     Page,
-    /// Alt text written for a picture (`<picture>.alt.txt`).
+    /// Alt text, read from the `alt` of the picture in the page markup.
     Alt,
     /// Text read from a picture by OCR (`<picture>.txt`).
     Picture,
@@ -139,19 +139,18 @@ fn pieces_of(dir: &Path) -> Vec<Piece> {
             picture: None,
             lines: Vec::new(),
         });
+        // Alt text lives in the page markup, next to the picture it describes.
+        for (_, alt) in crate::assets::alt_texts(&page.body, page.format) {
+            out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source: Source::Alt, text: alt, picture: None, lines: Vec::new() });
+        }
     }
     let assets = dir.join("assets");
     let mut names: Vec<PathBuf> = std::fs::read_dir(&assets).map(|r| r.filter_map(|e| e.ok().map(|e| e.path())).collect()).unwrap_or_default();
     names.sort();
     for file in names {
         let Some(name) = file.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
-        let (picture, source) = if let Some(picture) = name.strip_suffix(".alt.txt") {
-            (picture, Source::Alt)
-        } else if let Some(picture) = name.strip_suffix(".txt") {
-            (picture, Source::Picture)
-        } else {
-            continue;
-        };
+        let Some(picture) = name.strip_suffix(".txt") else { continue };
+        let source = Source::Picture;
         // Only companions of a picture that is there: a text file of the user's own is not one.
         if !assets.join(picture).is_file() {
             continue;
@@ -322,7 +321,7 @@ mod tests {
         let root = t.path().join("nb");
         let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
         let a = ops::create_node(&nb, "Receipts", NodeKind::Page, Some(PageFormat::Html), &s).expect("a");
-        save_body(&a, "<h1>Receipts</h1><p>Paid in cash.</p>").expect("save");
+        save_body(&a, "<h1>Receipts</h1><p>Paid in cash.</p><img src=\"assets/receipt.png\" alt=\"a bakery receipt\">").expect("save");
         let assets = a.join("assets");
         std::fs::create_dir_all(&assets).expect("assets");
         std::fs::write(assets.join("receipt.png"), b"not really a picture").expect("picture");
@@ -333,7 +332,6 @@ Flat white 4.50
 ",
         )
         .expect("ocr text");
-        std::fs::write(assets.join("receipt.png.alt.txt"), "a bakery receipt").expect("alt text");
         std::fs::write(
             assets.join("receipt.png.lines"),
             "10,20,110,20,110,40,10,40	Sourdough 6.00

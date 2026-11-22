@@ -1359,36 +1359,42 @@ mod tests {
         (s, page.to_string_lossy().into_owned())
     }
 
-    #[test]
-    fn alt_text_is_saved_beside_its_picture_and_removed_when_empty() {
-        let t = TempDir::new("engine-alt-text");
-        let (mut s, page) = one_page(&t);
-        s.attach_bytes(&page, "receipt.png", b"not really a picture").expect("picture");
-        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "  a bakery receipt  ")])).expect("alt text");
-        let alt = std::path::Path::new(&page).join("assets").join("receipt.png.alt.txt");
-        assert_eq!(
-            std::fs::read_to_string(&alt).expect("the alt file"),
-            "a bakery receipt
-",
-            "trimmed, one line"
-        );
-        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "")])).expect("removed");
-        assert!(!alt.exists(), "an empty text removes the alt file");
+    /// Attaches a picture and shows it in the page, so there is an `<img>` for its alt text.
+    fn show_picture(s: &mut Session, page: &str, name: &str) {
+        s.attach_bytes(page, name, b"not really a picture").expect("picture");
+        let body = format!("<p>Notes</p><img src=\"assets/{name}\">");
+        notecraft_store::page::save_body(std::path::Path::new(page), &body).expect("the page shows the picture");
     }
 
     #[test]
-    fn alt_text_must_name_a_picture_in_the_page() {
+    fn alt_text_is_written_into_the_page_markup_and_cleared_when_empty() {
+        let t = TempDir::new("engine-alt-text");
+        let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "  a bakery receipt  ")])).expect("alt text");
+        let body = || notecraft_store::page::load_page(std::path::Path::new(&page)).expect("the page").body;
+        assert!(body().contains(r#"<img src="assets/receipt.png" alt="a bakery receipt">"#), "trimmed, in the img tag: {}", body());
+        assert!(!std::path::Path::new(&page).join("assets").join("receipt.png.alt.txt").exists(), "no alt file beside the picture");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "")])).expect("cleared");
+        assert!(body().contains(r#"alt="""#), "an empty text leaves an empty alt: {}", body());
+    }
+
+    #[test]
+    fn alt_text_must_name_a_picture_the_page_shows() {
         let t = TempDir::new("engine-alt-missing");
         let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
         assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "missing.png"), ("text", "x")])).is_err(), "no such picture");
         assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "../escape.png"), ("text", "x")])).is_err(), "a name, not a path");
+        s.attach_bytes(&page, "unshown.png", b"not really a picture").expect("picture");
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "unshown.png"), ("text", "x")])).is_err(), "a picture the page does not show");
     }
 
     #[test]
     fn alt_text_is_found_by_search_once_it_is_written() {
         let t = TempDir::new("engine-alt-search");
         let (mut s, page) = one_page(&t);
-        s.attach_bytes(&page, "receipt.png", b"not really a picture").expect("picture");
+        show_picture(&mut s, &page, "receipt.png");
         s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "a bakery receipt")])).expect("alt text");
         let hits = match s.run("search.query", &p(&[("q", "bakery")])).expect("search") {
             Output::Hits(h) => h,

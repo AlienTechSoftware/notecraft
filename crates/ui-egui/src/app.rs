@@ -3084,15 +3084,19 @@ impl NoteCraftApp {
             self.remember_recent_notebook(&notebook);
         }
         self.nav.visit(dir);
-        // Pictures get their text and boxes when the page opens, once OCR is set up (the setting
-        // ocr_models). A picture that did not change is not read again; with no setting nothing runs.
+        self.read_pictures(dir);
+        self.open_page_inner(dir);
+    }
+
+    /// Reads the text and boxes of the pictures of a page, once OCR is set up (the setting
+    /// ocr_models). A picture that did not change is not read again; with no setting nothing runs.
+    fn read_pictures(&mut self, dir: &Path) {
         if self.session.settings.get("ocr_models").is_some_and(|v| !v.trim().is_empty()) {
             let page = dir.to_string_lossy().into_owned();
             if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
                 log::warn!("picture text was not read for {page}: {e:?}");
             }
         }
-        self.open_page_inner(dir);
     }
 
     /// Opens the page asked for whose files were still on their way, once they are in.
@@ -6167,6 +6171,7 @@ impl NoteCraftApp {
         match notecraft_store::assets::attach_bytes(dir, &name, &picture.png) {
             Ok(link) => {
                 log::debug!("clipboard image paste attached: name={name:?} link={link:?}");
+                self.read_pictures(dir);
                 if let Some(ed) = self.editor.as_mut() {
                     let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
                     ed.blocks.insert(
