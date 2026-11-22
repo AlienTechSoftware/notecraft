@@ -1291,6 +1291,57 @@ mod tests {
     }
 
     #[test]
+    fn a_notebook_linked_into_the_notebooks_folder_opens_its_pages() {
+        // A folder linked into the notebooks folder (a Windows junction, or a symbolic link elsewhere) is
+        // followed like any other folder: its pages open through the link.
+        let t = TempDir::new("engine-linked-notebook");
+        // The real place of the temporary folder: on some systems its path goes through a link itself.
+        let base = std::fs::canonicalize(t.path()).expect("the temporary folder's real place");
+        let settings = Settings::at(base.join("settings").join("s.toml"));
+        let root = base.join("notebooks");
+        let mut away = Session::new(&base.join("away-root"), settings.clone()).expect("away session");
+        let made = path_of(away.run("notebook.create", &p(&[("name", "Away")])).expect("notebook"));
+        let page = made.join("new-section-1").join("untitled-page");
+        let mut s = Session::new(&root, settings.clone()).expect("session");
+        std::fs::create_dir_all(&root).expect("notebooks folder");
+        let link = root.join("linked-away");
+        #[cfg(windows)]
+        let linked = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&made).status().expect("mklink").success();
+        #[cfg(not(windows))]
+        let linked = std::os::unix::fs::symlink(&made, &link).is_ok();
+        assert!(linked, "the link was made");
+        let through_link = link.join("new-section-1").join("untitled-page");
+        let opened = s.run("open.page", &p(&[("path", &through_link.to_string_lossy())]));
+        assert!(opened.is_ok(), "a page reached through a link opens: {opened:?}");
+        let loaded = s.run("page.load", &p(&[("path", &path_of(opened.expect("opened")).to_string_lossy())]));
+        assert!(loaded.is_ok(), "the linked page loads: {loaded:?}");
+        let _ = page;
+    }
+
+    #[test]
+    fn a_page_typed_through_another_spelling_of_the_notebooks_folder_keeps_its_real_place() {
+        // On Windows CI the temporary folder has a short name, so a path typed in the test (or a command line)
+        // differs in spelling from the real place the session holds. A page inside a notebook must come back at
+        // its real place, or the window cannot follow the links on it.
+        let t = TempDir::new("engine-spelling");
+        let base = std::fs::canonicalize(t.path()).expect("the temporary folder's real place");
+        let settings = Settings::at(base.join("settings").join("s.toml"));
+        let root = base.join("notebooks");
+        let mut s = Session::new(&root, settings.clone()).expect("session");
+        let made = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        // Another spelling of the same folder: a junction (Windows) or a symbolic link (elsewhere).
+        let alias = base.join("alias-of-notebooks");
+        #[cfg(windows)]
+        let aliased = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&alias).arg(&root).status().expect("mklink").success();
+        #[cfg(not(windows))]
+        let aliased = std::os::unix::fs::symlink(&root, &alias).is_ok();
+        assert!(aliased, "the alias was made");
+        let typed = alias.join(made.strip_prefix(&root).expect("the notebook is in the folder")).join("new-section-1").join("untitled-page");
+        let shown = s.page_to_show(&typed.to_string_lossy()).expect("the page shows");
+        assert!(shown.starts_with(&root), "a page inside a notebook is answered at its real place: {shown:?}");
+    }
+
+    #[test]
     fn open_page_finds_the_page_for_a_notebook_a_section_or_a_page() {
         let t = TempDir::new("engine-open-page");
         let settings = Settings::at(t.path().join("settings").join("s.toml"));
