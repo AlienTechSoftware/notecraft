@@ -1,6 +1,6 @@
 ---
 id: 19340c913d50c9580a7a
-title: "Handwriting limits"
+title: "محدودیت‌های نوشتار دست‌نویس"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,10 +8,10 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+این صفحه بخشی از نمایش OCR است. وضعیت: **مرحله ۲، هنوز ساخته نشده**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+نوشتار دست‌نویس از متن چاپی سخت‌تر خوانده می‌شود. خط‌هایی که با دقت نوشته شده‌اند بعداً می‌توانند خوانده شوند، یک خط در هر بار. یک صفحه دست‌نویس کامل با خط‌خوردگی هنوز خوانده نمی‌شود و MVP هم سعی نمی‌کند.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+وقتی یک خط دست‌نویس خوانده می‌شود، کلمه خط‌خورده به‌صورت خط‌خورده نگه داشته می‌شود، نه به‌صورت متن معمولی. این برنامه‌ریزی شده، اما هنوز ساخته نشده است.

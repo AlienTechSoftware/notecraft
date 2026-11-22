@@ -1,6 +1,6 @@
 ---
 id: df3d7e5bbf7720c2c03e
-title: "Arabic text"
+title: "טקסט בערבית"
 order: 50
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,10 +8,10 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **later stage**.
+הדף הזה הוא חלק מהדגמת ה-OCR. סטטוס: **שלב מאוחר יותר**.
 
-Right-to-left text is kept in the order it is typed. A receipt in Arabic is shown here; its prices read correctly, but the Arabic words are not yet read by the recogniser in the MVP.
+טקסט שנכתב מימין לשמאל נשמר בסדר שבו הוא הוקלד. כאן מוצגת קבלה בערבית: המחירים שלה נקראים נכון, אבל המילים בערבית עדיין לא נקראות על ידי מזהה התווים של ה-MVP.
 
-![An Arabic receipt from a cafe, with the items and prices written right to left](assets/ocr-receipt-ar.png)
+![קבלה בערבית מבית קפה, עם פריטים ומחירים הכתובים מימין לשמאל](assets/ocr-receipt-ar.png)

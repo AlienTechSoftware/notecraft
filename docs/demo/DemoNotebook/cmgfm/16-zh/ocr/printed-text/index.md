@@ -1,18 +1,18 @@
 ---
 id: 08b7b2f111240acf1ab7
-title: "Printed text"
+title: "印刷文字"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+本页是 OCR 演示的一部分。状态：**MVP**。
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+这是一张收据的照片。NoteCraft 会读取每一行，并把文字保存在图片旁边。搜索某个价格或商品，就能找到这张收据所在的页面。
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![一家咖啡店的纸质收据，列有拿铁、酸面包、橙汁，合计 13.75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+文字是从图片中得出的。图片变化时，文字会重新读取；图片不变时，什么都不会读取。

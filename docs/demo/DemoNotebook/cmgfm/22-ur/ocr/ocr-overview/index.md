@@ -1,6 +1,6 @@
 ---
 id: e570677377e87385ce35
-title: "OCR overview"
+title: "OCR کا جائزہ"
 order: 10
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+یہ صفحہ OCR ڈیمو کا حصہ ہے۔ اس کی حیثیت ہے **MVP، جاری ہے**: چھپا ہوا متن کام کرتا ہے، باقی حصے بعد کے مراحل میں ہیں۔
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft کسی تصویر کا چھپا ہوا متن پڑھتا ہے اور نتیجہ تصویر کے ساتھ محفوظ رکھتا ہے۔ تلاش وہی متن دوبارہ ڈھونڈتی ہے، اس لیے رسید کی تصویر کا کوئی ایک لفظ اس صفحے تک لے جاتا ہے جس پر وہ رسید ہے۔
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+سب کچھ اسی آلے پر چلتا ہے۔ تصویر، اس کا متن اور تلاش کا اشاریہ آپ کے نوٹ بک کے فولڈر اور ایپ کے اپنے ڈیٹا میں رہتے ہیں۔ کچھ بھی کسی سرور کو نہیں بھیجا جاتا۔
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+اگلے صفحات ہر حصہ دکھاتے ہیں: چھپا ہوا متن، متبادل متن، اسکین شدہ صفحات، عربی متن، اور وہ کچھ جو ہاتھ سے لکھا ہوا متن ابھی نہیں کر سکتا۔

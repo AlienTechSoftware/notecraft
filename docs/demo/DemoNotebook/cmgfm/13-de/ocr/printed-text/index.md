@@ -1,18 +1,18 @@
 ---
 id: e95f8d3ebaf3d8172f77
-title: "Printed text"
+title: "Gedruckter Text"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Diese Seite gehört zur OCR-Demo. Status: **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+Hier ist das Foto eines Kassenbons. NoteCraft liest jede Zeile und hält den Text neben dem Bild. Suche nach einem Preis oder Artikel, und die Seite mit diesem Bon wird gefunden.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![Ein Papierbon eines Cafés mit Milchkaffee, Sauerteigbrot, Orangensaft und einer Summe von 13,75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+Der Text wird aus dem Bild abgeleitet. Ändert sich das Bild, wird der Text neu gelesen; ändert es sich nicht, wird nichts gelesen.

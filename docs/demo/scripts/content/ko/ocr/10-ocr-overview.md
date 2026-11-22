@@ -1,13 +1,13 @@
 ---
-title: OCR overview
+title: OCR 개요
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+이 페이지는 OCR 데모의 일부입니다. 상태는 **MVP, 진행 중**입니다. 인쇄된 텍스트는 이미 작동하며, 나머지 부분은 이후 단계입니다.
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft는 그림의 인쇄된 텍스트를 읽고 결과를 그림 옆에 저장합니다. 검색은 그 텍스트를 다시 찾으므로, 영수증 사진의 단어 하나가 그 영수증이 있는 페이지로 연결됩니다.
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+모든 작업은 이 기기에서 이루어집니다. 그림, 그 텍스트, 검색 색인은 노트북 폴더와 앱 자체의 데이터에 남습니다. 어떤 것도 서버로 보내지 않습니다.
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+다음 페이지들은 각 부분을 보여 줍니다. 인쇄된 텍스트, 대체 텍스트, 스캔한 페이지, 아랍어 텍스트, 그리고 손글씨가 아직 할 수 없는 것입니다.

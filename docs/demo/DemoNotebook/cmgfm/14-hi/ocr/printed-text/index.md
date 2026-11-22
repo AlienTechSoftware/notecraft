@@ -1,18 +1,18 @@
 ---
 id: 0b5b585b8ac4a3de0900
-title: "Printed text"
+title: "छपा हुआ पाठ"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+यह पेज OCR डेमो का हिस्सा है। स्थिति: **MVP**।
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+यह एक रसीद की फ़ोटो है। NoteCraft हर पंक्ति पढ़ता है और पाठ को चित्र के बगल में रखता है। कोई कीमत या सामान खोजें, तो इस रसीद वाला पेज मिल जाता है।
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![एक कैफ़े की कागज़ की रसीद, जिसमें फ़्लैट व्हाइट, सोरडो ब्रेड, संतरे का रस और कुल 13.75 लिखा है](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+पाठ चित्र से निकाला जाता है। चित्र बदलता है तो पाठ फिर से पढ़ा जाता है; नहीं बदलता तो कुछ नहीं पढ़ा जाता।

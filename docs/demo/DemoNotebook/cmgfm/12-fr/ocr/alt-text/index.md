@@ -1,18 +1,18 @@
 ---
 id: 7d5cfd17b1b8058e05fc
-title: "Alt text"
+title: "Texte alternatif"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Cette page fait partie de la démonstration OCR. Statut : **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+Le texte alternatif décrit une image pour les personnes qui ne peuvent pas la voir. Une personne l'écrit, et il est enregistré à côté de l'image, comme la page est enregistrée. Le lecteur ne l'écrit jamais seul.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![Trois boîtes alignées, intitulées Capturer, Vérifier et Archiver, reliées par des flèches vers la droite](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+La recherche trouve aussi les mots du texte alternatif, donc une description aide à retrouver la page.

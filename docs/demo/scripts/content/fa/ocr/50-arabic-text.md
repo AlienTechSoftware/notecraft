@@ -1,11 +1,11 @@
 ---
-title: Arabic text
+title: متن عربی
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **later stage**.
+این صفحه بخشی از نمایش OCR است. وضعیت: **مرحله بعدی**.
 
-Right-to-left text is kept in the order it is typed. A receipt in Arabic is shown here; its prices read correctly, but the Arabic words are not yet read by the recogniser in the MVP.
+متنی که از راست به چپ نوشته می‌شود به همان ترتیبی حفظ می‌شود که تایپ شده است. اینجا یک رسید عربی نشان داده شده است: قیمت‌هایش درست خوانده می‌شوند، اما کلمه‌های عربی هنوز توسط تشخیص‌دهنده MVP خوانده نمی‌شوند.
 
-![An Arabic receipt from a cafe, with the items and prices written right to left](assets/ocr-receipt-ar.png)
+![یک رسید عربی از یک کافه که کالاها و قیمت‌ها از راست به چپ نوشته شده‌اند](assets/ocr-receipt-ar.png)

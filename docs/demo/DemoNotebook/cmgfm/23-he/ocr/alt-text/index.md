@@ -1,6 +1,6 @@
 ---
 id: d0fdd827871667bfd8b7
-title: "Alt text"
+title: "טקסט חלופי"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+הדף הזה הוא חלק מהדגמת ה-OCR. סטטוס: **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+טקסט חלופי מתאר תמונה לאנשים שאינם יכולים לראות אותה. אדם כותב אותו, והוא נשמר ליד התמונה, כמו שהדף נשמר. הקורא לעולם לא כותב אותו בעצמו.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![שלוש תיבות בשורה, עם התוויות לכידה, בדיקה וארכיון, מחוברות בחיצים שמצביעים ימינה](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+החיפוש מוצא גם את המילים בטקסט החלופי, ולכן תיאור טוב עוזר למצוא את הדף.

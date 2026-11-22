@@ -1,13 +1,13 @@
 ---
-title: OCR overview
+title: Обзор OCR
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+Эта страница входит в демонстрацию OCR. Её статус: **MVP, в работе**. Печатный текст уже работает, остальные части относятся к следующим этапам.
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft читает печатный текст на изображении и сохраняет результат рядом с изображением. Поиск находит этот текст снова, поэтому слово на фото чека ведёт к странице, на которой оно есть.
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+Всё работает на этом устройстве. Изображение, его текст и поисковый индекс остаются в папке вашего блокнота и в данных самого приложения. Ничего не отправляется на сервер.
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+Следующие страницы показывают каждую часть: печатный текст, альтернативный текст, сканированные страницы, арабский текст и то, чего рукописный текст пока не умеет.

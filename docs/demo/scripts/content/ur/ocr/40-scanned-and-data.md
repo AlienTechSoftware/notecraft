@@ -1,13 +1,13 @@
 ---
-title: Scanned pages
+title: اسکین شدہ صفحات
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+یہ صفحہ OCR ڈیمو کا حصہ ہے۔ حیثیت: **MVP**۔
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+اسکین شدہ صفحہ بھی تصویر کی طرح پڑھا جاتا ہے۔ اس کی سطریں اپنی ترتیب برقرار رکھتی ہیں، اس لیے میٹنگ کی کارروائی اوپر سے نیچے پڑھی جاتی ہے۔
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![تین شمار شدہ نکات والی میٹنگ کی کارروائی کا اسکین شدہ صفحہ](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+جدول ابھی جدول کے طور پر نہیں پڑھے جاتے۔ ان کے الفاظ مل جاتے ہیں، لیکن قطاریں اور کالم برقرار نہیں رہتے۔

@@ -1,13 +1,13 @@
 ---
-title: Printed text
+title: چھپا ہوا متن
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+یہ صفحہ OCR ڈیمو کا حصہ ہے۔ حیثیت: **MVP**۔
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+یہ ایک رسید کی تصویر ہے۔ NoteCraft ہر سطر پڑھتا ہے اور متن تصویر کے ساتھ رکھتا ہے۔ کوئی قیمت یا چیز تلاش کریں تو اس رسید والا صفحہ مل جاتا ہے۔
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![ایک کیفے کی کاغذی رسید، جس میں فلیٹ وائٹ، سور ڈو بریڈ، مالٹے کا جوس اور کل 13.75 درج ہیں](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+متن تصویر سے اخذ کیا جاتا ہے۔ تصویر بدلے تو متن دوبارہ پڑھا جاتا ہے؛ نہ بدلے تو کچھ دوبارہ نہیں پڑھا جاتا۔

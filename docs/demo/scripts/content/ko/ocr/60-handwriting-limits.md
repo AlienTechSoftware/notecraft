@@ -1,11 +1,11 @@
 ---
-title: Handwriting limits
+title: 손글씨의 한계
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+이 페이지는 OCR 데모의 일부입니다. 상태: **2단계, 아직 만들지 않음**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+손글씨는 인쇄보다 읽기 어렵습니다. 정성껏 쓴 줄은 나중에 한 줄씩 읽을 수 있을 것입니다. 지워진 부분이 있는 손글씨 페이지 전체는 아직 읽지 않으며, MVP는 이를 시도하지 않습니다.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+손글씨 줄을 읽을 때 그어진 단어는 일반 텍스트가 아니라 그어진 상태로 보존됩니다. 이는 계획되어 있지만 아직 만들지 않았습니다.

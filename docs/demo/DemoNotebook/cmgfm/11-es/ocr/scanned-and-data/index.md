@@ -1,18 +1,18 @@
 ---
 id: 0dca622a4fffdcd5eb51
-title: "Scanned pages"
+title: "Páginas escaneadas"
 order: 40
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Esta página es parte de la demostración de OCR. Estado: **MVP**.
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+Una página escaneada se lee igual que una foto. Sus líneas conservan el orden, así que las actas de una reunión se leen de arriba abajo.
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![Una página escaneada de actas de reunión con tres puntos numerados](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+Las tablas todavía no se leen como tablas. Sus palabras se encuentran, pero no se conservan las filas ni las columnas.

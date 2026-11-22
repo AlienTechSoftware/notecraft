@@ -1,13 +1,13 @@
 ---
-title: Printed text
+title: Texte imprimé
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Cette page fait partie de la démonstration OCR. Statut : **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+Voici la photo d'un ticket de caisse. NoteCraft lit chaque ligne et garde le texte à côté de l'image. Cherchez un prix ou un article, et la page avec ce ticket est trouvée.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![Un ticket de caisse papier d'un café, avec un café au lait, du pain au levain, un jus d'orange et un total de 13,75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+Le texte est dérivé de l'image. Si l'image change, le texte est relu ; si elle ne change pas, rien n'est relu.

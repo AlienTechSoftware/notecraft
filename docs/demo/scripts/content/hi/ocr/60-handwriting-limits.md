@@ -1,11 +1,11 @@
 ---
-title: Handwriting limits
+title: हस्तलिखित पाठ की सीमाएँ
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+यह पेज OCR डेमो का हिस्सा है। स्थिति: **चरण 2, अभी नहीं बना**।
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+हस्तलिखित पाठ छपे पाठ से कठिन है। सावधानी से लिखी पंक्तियाँ बाद में, एक-एक पंक्ति करके पढ़ी जा सकेंगी। कटे-फटे शब्दों वाला पूरा हस्तलिखित पेज अभी नहीं पढ़ा जाता, और MVP इसकी कोशिश नहीं करता।
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+जब कोई हस्तलिखित पंक्ति पढ़ी जाती है, तो कटा हुआ शब्द सामान्य पाठ की तरह नहीं, कटे हुए के रूप में रखा जाता है। यह योजना में है, पर अभी बना नहीं है।

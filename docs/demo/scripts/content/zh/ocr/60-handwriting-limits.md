@@ -1,11 +1,11 @@
 ---
-title: Handwriting limits
+title: 手写文字的局限
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+本页是 OCR 演示的一部分。状态：**第 2 阶段，尚未构建**。
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+手写比印刷更难识别。工整书写的行以后可以逐行读取。包含涂改的整页手写内容目前还无法读取，MVP 也不尝试。
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+读取手写行时，被划掉的词会保留为被划掉的状态，而不是普通文字。这已经计划好，但尚未构建。

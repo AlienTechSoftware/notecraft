@@ -1,11 +1,11 @@
 ---
-title: Handwriting limits
+title: حدود الكتابة اليدوية
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+هذه الصفحة جزء من عرض التعرف الضوئي على الحروف. الحالة: **المرحلة 2، لم تُبنَ بعد**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+الكتابة اليدوية أصعب قراءةً من المطبوع. يمكن لاحقاً قراءة الأسطر المكتوبة بعناية، سطراً سطراً. لا تُقرأ بعد صفحة يدوية كاملة فيها شطب، ولا يحاول الحد الأدنى للمنتج ذلك.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+عند قراءة سطر يدوي، تُحفظ الكلمة المشطوبة مشطوبة، لا كنص عادي. هذا مخطط له، لكنه لم يُبنَ بعد.

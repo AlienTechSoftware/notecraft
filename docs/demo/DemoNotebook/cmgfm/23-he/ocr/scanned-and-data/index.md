@@ -1,6 +1,6 @@
 ---
 id: 77b5262909753e0d47fd
-title: "Scanned pages"
+title: "עמודים סרוקים"
 order: 40
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+הדף הזה הוא חלק מהדגמת ה-OCR. סטטוס: **MVP**.
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+עמוד סרוק נקרא באותו אופן שבו נקרא צילום. השורות שלו שומרות על סדרן, ולכן פרוטוקול של פגישה נקרא מלמעלה למטה.
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![עמוד סרוק של פרוטוקול פגישה עם שלושה סעיפים ממוספרים](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+טבלאות עדיין לא נקראות כטבלאות. המילים שבהן נמצאות, אבל השורות והעמודות לא נשמרות.

@@ -1,18 +1,18 @@
 ---
 id: 8d68d079ffe1a3382c02
-title: "Alt text"
+title: "替代文字"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+本页是 OCR 演示的一部分。状态：**MVP**。
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+替代文字是为看不见图片的人描述图片的。由人来撰写，并与图片一起保存，就像页面被保存一样。阅读器从不自行编写。
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![三个并排的方框，分别标注"捕获""审阅""归档"，由指向右侧的箭头相连](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+搜索也会找到替代文字中的词，因此好的描述有助于找到页面。

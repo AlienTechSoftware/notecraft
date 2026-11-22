@@ -1,18 +1,18 @@
 ---
 id: 226772e2a69d4daf0227
-title: "OCR overview"
+title: "OCR の概要"
 order: 10
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+このページは OCR デモの一部です。ステータスは **MVP、作業中** です。印刷された文字はすでに動作しており、他の部分は後の段階になります。
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft は画像の印刷された文字を読み取り、結果を画像の横に保存します。検索でその文字を再び見つけられるので、レシートの写真の単語からそのレシートのあるページに移動できます。
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+すべてこのデバイス上で動作します。画像、その文字、検索インデックスはノートブックのフォルダとアプリ自身のデータに保存されます。サーバーには何も送信されません。
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+次のページでは各部分を紹介します。印刷文字、代替テキスト、スキャンしたページ、アラビア語のテキスト、そして手書き文字がまだできないことです。

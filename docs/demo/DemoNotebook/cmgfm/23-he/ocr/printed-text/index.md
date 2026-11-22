@@ -1,6 +1,6 @@
 ---
 id: fdbece3a8a2ad110eb7e
-title: "Printed text"
+title: "טקסט מודפס"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+הדף הזה הוא חלק מהדגמת ה-OCR. סטטוס: **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+זו תמונה של קבלה. NoteCraft קורא כל שורה ושומר את הטקסט ליד התמונה. חפשו מחיר או פריט, והדף עם הקבלה הזו נמצא.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![קבלה נייר מבית קפה, עם פלאט וייט, לחם מחמצת, מיץ תפוזים וסך הכול 13.75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+הטקסט נגזר מהתמונה. אם התמונה משתנה, הטקסט נקרא מחדש; אם לא, לא נקרא דבר.

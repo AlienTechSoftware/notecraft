@@ -1,13 +1,13 @@
 ---
-title: Printed text
+title: النص المطبوع
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+هذه الصفحة جزء من عرض التعرف الضوئي على الحروف. الحالة: **الحد الأدنى للمنتج**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+هذه صورة لإيصال. يقرأ NoteCraft كل سطر ويحتفظ بالنص بجانب الصورة. ابحث عن سعر أو صنف، فتُعثر على الصفحة التي تحتوي هذا الإيصال.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![إيصال ورقي من مقهى، يتضمن قهوة فلات وايت وخبز الخميرة وعصير البرتقال والمجموع 13.75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+النص مشتق من الصورة. إذا تغيّرت الصورة قُرئ النص من جديد، وإذا لم تتغير فلا يُقرأ شيء.

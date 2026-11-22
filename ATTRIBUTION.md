@@ -151,3 +151,7 @@ data.
 | `assets/demo/ocr-scan.png` | A scanned page of meeting minutes for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
 | `assets/demo/ocr-receipt-ar.png` | An Arabic receipt for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
 | `assets/demo/ocr-flow.svg` | Three boxes joined by arrows, for the alt text page | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-chart.png` | A bar chart for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-sketch.png` | A whiteboard sketch for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-dax-query.png` | A query editor screenshot (fictional data) | DashCraft project, `docs/images/dashcraft-dax.png`, unchanged | MIT or Apache-2.0, as the DashCraft repository; credit given on the page |
+| `assets/demo/ocr-data-grid.png` | A data table screenshot (fictional data) | DashCraft project, `docs/images/dashcraft-table.png`, unchanged | MIT or Apache-2.0, as the DashCraft repository; credit given on the page |

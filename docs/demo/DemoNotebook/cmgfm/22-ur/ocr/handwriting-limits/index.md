@@ -1,6 +1,6 @@
 ---
 id: 143ca7d8495da40b44c3
-title: "Handwriting limits"
+title: "ہاتھ سے لکھے متن کی حدود"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,10 +8,10 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+یہ صفحہ OCR ڈیمو کا حصہ ہے۔ حیثیت: **مرحلہ 2، ابھی نہیں بنا**۔
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+ہاتھ سے لکھا متن چھپے متن سے مشکل ہوتا ہے۔ احتیاط سے لکھی ہوئی سطریں بعد میں ایک ایک کر کے پڑھی جا سکیں گی۔ کاٹ کر لکھے گئے حصوں والا پورا ہاتھ سے لکھا صفحہ ابھی نہیں پڑھا جاتا، اور MVP اس کی کوشش نہیں کرتا۔
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+جب ہاتھ سے لکھی کوئی سطر پڑھی جاتی ہے تو کٹا ہوا لفظ عام متن کی طرح نہیں، کٹا ہوا ہی محفوظ رہتا ہے۔ یہ منصوبے میں ہے، مگر ابھی بنایا نہیں گیا۔

@@ -1,6 +1,6 @@
 ---
 id: 93c500f17c1d16acb42a
-title: "Printed text"
+title: "متن چاپی"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+این صفحه بخشی از نمایش OCR است. وضعیت: **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+این عکس یک رسید است. NoteCraft هر خط را می‌خواند و متن را کنار تصویر نگه می‌دارد. قیمت یا کالایی را جستجو کنید، و صفحه‌ای که این رسید در آن است پیدا می‌شود.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![یک رسید کاغذی از یک کافه، با فلت وایت، نان مخمری، آب پرتقال و جمع کل ۱۳٫۷۵](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+متن از روی تصویر ساخته می‌شود. اگر تصویر تغییر کند، متن دوباره خوانده می‌شود؛ اگر تغییر نکند، چیزی خوانده نمی‌شود.

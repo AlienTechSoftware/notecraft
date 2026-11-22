@@ -1,6 +1,6 @@
 ---
 id: e5538e5369349a02e058
-title: "OCR overview"
+title: "نگاه کلی به OCR"
 order: 10
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+این صفحه بخشی از نمایش OCR است. وضعیت آن **MVP، در حال انجام** است: متن چاپی کار می‌کند و بقیه بخش‌ها مرحله‌های بعدی هستند.
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft متن چاپی یک تصویر را می‌خواند و نتیجه را کنار تصویر نگه می‌دارد. جستجو آن متن را دوباره پیدا می‌کند، پس یک کلمه در عکس یک رسید، شما را به صفحه‌ای می‌برد که آن رسید در آن است.
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+همه چیز روی همین دستگاه کار می‌کند. تصویر، متن آن و فهرست جستجو در پوشه دفترچه شما و در داده‌های خود برنامه می‌مانند. چیزی به هیچ سروری فرستاده نمی‌شود.
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+صفحه‌های بعدی هر بخش را نشان می‌دهند: متن چاپی، متن جایگزین، صفحه‌های اسکن‌شده، متن عربی، و آنچه نوشتار دست‌نویس هنوز نمی‌تواند انجام دهد.

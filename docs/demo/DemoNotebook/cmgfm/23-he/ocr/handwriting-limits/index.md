@@ -1,6 +1,6 @@
 ---
 id: c2e9d1dccf50ea0c32ce
-title: "Handwriting limits"
+title: "הגבלות של כתב יד"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,10 +8,10 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+הדף הזה הוא חלק מהדגמת ה-OCR. סטטוס: **שלב 2, עדיין לא נבנה**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+כתב יד קשה יותר לקריאה מטקסט מודפס. שורות שנכתבו בזהירות יוכלו להיקרא מאוחר יותר, שורה אחר שורה. עמוד כתב יד שלם עם קווי מחיקה עדיין לא נקרא, וה-MVP לא מנסה לעשות זאת.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+כששורת כתב יד נקראת, מילה שנמחקה נשמרת כמחוקה, ולא כטקסט רגיל. זה מתוכנן, אבל עדיין לא נבנה.

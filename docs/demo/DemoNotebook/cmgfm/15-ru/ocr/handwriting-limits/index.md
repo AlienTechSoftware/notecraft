@@ -1,16 +1,16 @@
 ---
 id: 0d84ba1867932abb02db
-title: "Handwriting limits"
+title: "Ограничения рукописного текста"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+Эта страница входит в демонстрацию OCR. Статус: **этап 2, ещё не построен**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+Рукописный текст читать труднее печатного. Аккуратно написанные строки можно будет читать позже, по одной строке. Целая рукописная страница с зачёркнутыми местами пока не читается, и MVP этого не пытается делать.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+Когда рукописная строка читается, зачёркнутое слово сохраняется как зачёркнутое, а не как обычный текст. Это запланировано, но ещё не построено.

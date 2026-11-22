@@ -1,6 +1,6 @@
 ---
 id: f4b451b0877bbcc4e192
-title: "Alt text"
+title: "متبادل متن"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+یہ صفحہ OCR ڈیمو کا حصہ ہے۔ حیثیت: **MVP**۔
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+متبادل متن ان لوگوں کے لیے تصویر کی وضاحت کرتا ہے جو اسے دیکھ نہیں سکتے۔ اسے ایک شخص لکھتا ہے، اور وہ تصویر کے ساتھ محفوظ ہوتا ہے، جیسے صفحہ محفوظ ہوتا ہے۔ پڑھنے والا اسے خود کبھی نہیں لکھتا۔
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![تین ڈبے ایک قطار میں، جن پر کیپچر، جائزہ اور محفوظ لکھا ہے، دائیں طرف اشارہ کرتے تیروں سے جڑے ہوئے](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+تلاش متبادل متن کے الفاظ بھی ڈھونڈتی ہے، اس لیے اچھی وضاحت صفحہ ڈھونڈنے میں مدد دیتی ہے۔

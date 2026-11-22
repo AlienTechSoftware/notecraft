@@ -1,13 +1,13 @@
 ---
-title: Alt text
+title: 代替テキスト
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+このページは OCR デモの一部です。ステータス：**MVP**。
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+代替テキストは、画像を見ることができない人のために画像を説明するものです。人が書き、ページが保存されるのと同じように画像の横に保存されます。リーダーが自分で書くことはありません。
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![「取り込み」「確認」「保存」というラベルの付いた三つの箱が横に並び、右向きの矢印で結ばれている](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+検索は代替テキストの単語も見つけるので、説明があるとページを見つけやすくなります。

@@ -1,11 +1,11 @@
 ---
-title: Handwriting limits
+title: Límites de la escritura a mano
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+Esta página es parte de la demostración de OCR. Estado: **etapa 2, sin construir**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+La escritura a mano es más difícil que la impresa. Las líneas escritas con cuidado podrán leerse más adelante, una línea cada vez. Una página entera escrita a mano, con tachaduras, todavía no se lee, y el MVP no lo intenta.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+Cuando se lee una línea escrita a mano, una palabra tachada se conserva como tachada, no como texto normal. Eso está previsto, pero no construido.

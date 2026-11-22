@@ -1,16 +1,16 @@
 ---
 id: 545a2910b204bc779d47
-title: "Handwriting limits"
+title: "Grenzen der Handschrift"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+Diese Seite gehört zur OCR-Demo. Status: **Stufe 2, noch nicht gebaut**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+Handschrift ist schwerer zu lesen als Druck. Sorgfältig geschriebene Zeilen können später gelesen werden, eine Zeile nach der anderen. Eine ganze handschriftliche Seite mit Streichungen wird noch nicht gelesen, und das MVP versucht es nicht.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+Wenn eine handschriftliche Zeile gelesen wird, bleibt ein durchgestrichenes Wort als durchgestrichen erhalten und nicht als normaler Text. Das ist geplant, aber noch nicht gebaut.

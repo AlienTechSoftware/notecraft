@@ -1,13 +1,13 @@
 ---
-title: OCR overview
+title: OCR im Überblick
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+Diese Seite gehört zur OCR-Demo. Ihr Status ist **MVP, in Arbeit**: gedruckter Text funktioniert, die übrigen Teile folgen in späteren Stufen.
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft liest den gedruckten Text in einem Bild und speichert das Ergebnis neben dem Bild. Die Suche findet diesen Text wieder, sodass ein Wort auf dem Foto eines Kassenbons zu der Seite führt, auf der es steht.
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+Alles läuft auf diesem Gerät. Das Bild, sein Text und der Suchindex bleiben im Ordner deines Notizbuchs und in den Daten der App. Nichts wird an einen Server gesendet.
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+Die folgenden Seiten zeigen jeden Teil: gedruckter Text, Alternativtext, gescannte Seiten, arabischer Text und was handschriftlicher Text noch nicht kann.

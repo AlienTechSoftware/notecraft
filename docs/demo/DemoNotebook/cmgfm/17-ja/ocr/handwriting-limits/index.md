@@ -1,16 +1,16 @@
 ---
 id: 76fd3c3746facfe5f6e9
-title: "Handwriting limits"
+title: "手書き文字の限界"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+このページは OCR デモの一部です。ステータス：**段階 2、まだ作られていません**。
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+手書きは印刷よりも読み取りが難しいです。丁寧に書かれた行は、後から一行ずつ読めるようになる予定です。取り消し線のある手書きのページ全体は、まだ読み取れず、MVP も試みません。
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+手書きの行が読み取られるとき、取り消された語は通常の文字ではなく取り消された状態のまま保持されます。これは計画されていますが、まだ作られていません。

@@ -1,13 +1,13 @@
 ---
-title: Alt text
+title: Alternativtext
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Diese Seite gehört zur OCR-Demo. Status: **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+Alternativtext beschreibt ein Bild für Menschen, die es nicht sehen können. Eine Person schreibt ihn, und er wird neben dem Bild gespeichert, so wie die Seite gespeichert wird. Der Leser schreibt ihn nie von selbst.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![Drei Kästchen nebeneinander, beschriftet Erfassen, Prüfen und Archivieren, verbunden durch Pfeile nach rechts](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+Die Suche findet auch die Wörter des Alternativtextes; eine Beschreibung hilft also, die Seite zu finden.

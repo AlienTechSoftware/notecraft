@@ -1,6 +1,6 @@
 ---
 id: 938873a60e9e5f4bb13b
-title: "Alt text"
+title: "متن جایگزین"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+این صفحه بخشی از نمایش OCR است. وضعیت: **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+متن جایگزین تصویر را برای کسانی توصیف می‌کند که آن را نمی‌بینند. یک نفر آن را می‌نویسد و کنار تصویر ذخیره می‌شود، همان‌طور که صفحه ذخیره می‌شود. خواننده هرگز خودش آن را نمی‌نویسد.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![سه جعبه کنار هم با برچسب‌های ثبت، بررسی و بایگانی که با فلش‌هایی به سمت راست به هم وصل شده‌اند](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+جستجو کلمات متن جایگزین را هم پیدا می‌کند، پس توصیف خوب به پیدا کردن صفحه کمک می‌کند.

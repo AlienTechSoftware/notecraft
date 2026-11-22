@@ -1,13 +1,13 @@
 ---
-title: Alt text
+title: 대체 텍스트
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+이 페이지는 OCR 데모의 일부입니다. 상태: **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+대체 텍스트는 그림을 볼 수 없는 사람들을 위해 그림을 설명합니다. 사람이 쓰며, 페이지를 저장하듯 그림 옆에 저장됩니다. 리더가 혼자 쓰는 일은 없습니다.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![캡처, 검토, 보관이라고 적힌 세 상자가 오른쪽을 가리키는 화살표로 나란히 이어져 있음](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+검색은 대체 텍스트의 단어도 찾으므로, 좋은 설명은 페이지를 찾는 데 도움이 됩니다.

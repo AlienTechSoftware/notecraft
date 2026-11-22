@@ -1,6 +1,6 @@
 ---
 id: 16b55a257af6bfe6f0ac
-title: "OCR overview"
+title: "סקירה של OCR"
 order: 10
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
@@ -8,12 +8,12 @@ dir: rtl
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+הדף הזה הוא חלק מהדגמת ה-OCR. הסטטוס שלו הוא **MVP, בעבודה**: טקסט מודפס עובד, והחלקים האחרים הם שלבים מאוחרים יותר.
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft קורא את הטקסט המודפס בתמונה ושומר את התוצאה ליד התמונה. החיפוש מוצא את הטקסט הזה שוב, כך שמילה בתמונה של קבלה מובילה לדף שבו הקבלה נמצאת.
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+הכול פועל במכשיר הזה. התמונה, הטקסט שלה ואינדקס החיפוש נשארים בתיקיית המחברת שלך ובנתונים של האפליקציה עצמה. שום דבר לא נשלח לשרת.
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+הדפים הבאים מציגים כל חלק: טקסט מודפס, טקסט חלופי, עמודים סרוקים, טקסט בערבית, ומה שכתב יד עדיין לא יכול לעשות.

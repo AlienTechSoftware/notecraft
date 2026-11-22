@@ -1,18 +1,18 @@
 ---
 id: 984b01087d0118958121
-title: "Alt text"
+title: "वैकल्पिक पाठ"
 order: 30
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+यह पेज OCR डेमो का हिस्सा है। स्थिति: **MVP**।
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+वैकल्पिक पाठ उन लोगों के लिए चित्र का वर्णन करता है जो उसे देख नहीं सकते। उसे कोई व्यक्ति लिखता है, और वह चित्र के बगल में सहेजा जाता है, जैसे पेज सहेजा जाता है। पाठक उसे कभी अपने आप नहीं लिखता।
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![तीन डिब्बे एक पंक्ति में, जिन पर कैप्चर, समीक्षा और संग्रह लिखा है, दाईं ओर इशारा करते तीरों से जुड़े](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+खोज वैकल्पिक पाठ के शब्द भी ढूँढती है, इसलिए एक अच्छा वर्णन पेज को खोजने में मदद करता है।

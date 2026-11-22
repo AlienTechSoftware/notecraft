@@ -1,13 +1,13 @@
 ---
-title: Scanned pages
+title: Gescannte Seiten
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Diese Seite gehört zur OCR-Demo. Status: **MVP**.
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+Eine gescannte Seite wird genauso gelesen wie ein Foto. Ihre Zeilen behalten die Reihenfolge, sodass das Protokoll einer Besprechung von oben nach unten gelesen wird.
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![Eine gescannte Seite eines Besprechungsprotokolls mit drei nummerierten Punkten](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+Tabellen werden noch nicht als Tabellen gelesen. Ihre Wörter werden gefunden, aber Zeilen und Spalten bleiben nicht erhalten.

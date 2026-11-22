@@ -1,11 +1,11 @@
 ---
-title: Arabic text
+title: アラビア語のテキスト
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **later stage**.
+このページは OCR デモの一部です。ステータス：**後の段階**。
 
-Right-to-left text is kept in the order it is typed. A receipt in Arabic is shown here; its prices read correctly, but the Arabic words are not yet read by the recogniser in the MVP.
+右から左へ書かれたテキストは、入力された順序のまま保存されます。ここではアラビア語のレシートを示しています。価格は正しく読み取れますが、MVP の認識器はまだアラビア語の単語を読み取れません。
 
-![An Arabic receipt from a cafe, with the items and prices written right to left](assets/ocr-receipt-ar.png)
+![商品と価格が右から左に書かれた、カフェのアラビア語のレシート](assets/ocr-receipt-ar.png)

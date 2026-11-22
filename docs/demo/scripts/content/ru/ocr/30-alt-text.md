@@ -1,13 +1,13 @@
 ---
-title: Alt text
+title: Альтернативный текст
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Эта страница входит в демонстрацию OCR. Статус: **MVP**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+Альтернативный текст описывает изображение для людей, которые его не видят. Его пишет человек, и он сохраняется рядом с изображением, так же как сохраняется страница. Читатель никогда не пишет его сам.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![Три блока в ряд с подписями «Снять», «Проверить» и «Архивировать», соединённые стрелками вправо](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+Поиск находит и слова альтернативного текста, поэтому описание помогает найти страницу.

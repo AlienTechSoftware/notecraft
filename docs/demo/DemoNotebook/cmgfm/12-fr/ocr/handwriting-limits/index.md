@@ -1,16 +1,16 @@
 ---
 id: 7082744fd67332355dfd
-title: "Handwriting limits"
+title: "Limites de l'écriture manuscrite"
 order: 60
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **Stage 2, not built**.
+Cette page fait partie de la démonstration OCR. Statut : **étape 2, pas encore construite**.
 
-Handwriting is harder than print. Neatly written lines can be read later, one line at a time. A whole handwritten page, with crossings-out, is not read yet, and the MVP does not try.
+L'écriture manuscrite est plus difficile que l'imprimé. Les lignes soigneusement écrites pourront être lues plus tard, une ligne à la fois. Une page manuscrite entière, avec des ratures, n'est pas encore lue, et le MVP ne tente pas de le faire.
 
-When a handwritten line is read, a struck-out word is kept as struck, not as plain text. That is planned, not built.
+Quand une ligne manuscrite est lue, un mot barré est gardé comme barré, et non comme texte ordinaire. C'est prévu, pas encore construit.

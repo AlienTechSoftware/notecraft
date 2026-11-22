@@ -1,13 +1,13 @@
 ---
-title: Scanned pages
+title: スキャンしたページ
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+このページは OCR デモの一部です。ステータス：**MVP**。
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+スキャンしたページは写真と同じように読み取られます。行の順序は保たれるので、会議の議事録は上から下へ読めます。
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![番号の付いた三つの項目がある、会議の議事録のスキャンページ](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+表はまだ表として読み取られません。表の中の単語は見つかりますが、行と列は保持されません。

@@ -1,13 +1,13 @@
 ---
-title: Scanned pages
+title: الصفحات الممسوحة ضوئياً
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+هذه الصفحة جزء من عرض التعرف الضوئي على الحروف. الحالة: **الحد الأدنى للمنتج**.
 
-A scanned page is read the same way as a photo. Its lines keep their order, so the minutes of a meeting read from top to bottom.
+تُقرأ الصفحة الممسوحة ضوئياً بالطريقة نفسها التي تُقرأ بها الصورة. تحافظ أسطرها على ترتيبها، فتُقرأ محاضر الاجتماعات من الأعلى إلى الأسفل.
 
-![A scanned page of meeting minutes with three numbered items](assets/ocr-scan.png)
+![صفحة ممسوحة ضوئياً من محضر اجتماع فيها ثلاثة بنود مرقمة](assets/ocr-scan.png)
 
-Tables are not read as tables yet. Their words are found, but their rows and columns are not kept.
+لا تُقرأ الجداول بعد كجداول. تُعثر على كلماتها، لكن صفوفها وأعمدتها لا تُحفظ.

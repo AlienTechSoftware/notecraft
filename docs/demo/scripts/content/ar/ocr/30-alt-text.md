@@ -1,13 +1,13 @@
 ---
-title: Alt text
+title: النص البديل
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+هذه الصفحة جزء من عرض التعرف الضوئي على الحروف. الحالة: **الحد الأدنى للمنتج**.
 
-Alt text describes a picture for people who cannot see it. A person writes it, and it is saved beside the picture, as the page is saved. It is never written by the reader on its own.
+يصف النص البديل الصورة للأشخاص الذين لا يستطيعون رؤيتها. يكتبه شخص، ويُحفظ بجانب الصورة كما تُحفظ الصفحة. لا يكتبه القارئ بمفرده أبداً.
 
-![Three boxes in a row, labelled Capture, Review and Archive, joined by arrows pointing right](assets/ocr-flow.svg)
+![ثلاثة صناديق متجاورة، عليها التسميات التقاط ومراجعة وأرشفة، متصلة بأسهم تشير إلى اليمين](assets/ocr-flow.svg)
 
-Search also finds the words of the alt text, so a description helps a page to be found.
+يجد البحث أيضاً كلمات النص البديل، لذلك يساعد الوصف الجيد في العثور على الصفحة.

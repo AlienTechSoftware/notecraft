@@ -1,18 +1,18 @@
 ---
 id: c2403ac4aa38241bf48b
-title: "Printed text"
+title: "Печатный текст"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+Эта страница входит в демонстрацию OCR. Статус: **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+Вот фото чека. NoteCraft читает каждую строку и хранит текст рядом с изображением. Найдите цену или товар, и страница с этим чеком будет найдена.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![Бумажный чек кафе: кофе с молоком, закваска, апельсиновый сок и итог 13,75](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+Текст получен из изображения. Если изображение меняется, текст читается заново; если нет, ничего не читается.

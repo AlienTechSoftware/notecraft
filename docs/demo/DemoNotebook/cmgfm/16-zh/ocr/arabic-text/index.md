@@ -1,16 +1,16 @@
 ---
 id: e77b8984df549f37ef77
-title: "Arabic text"
+title: "阿拉伯文"
 order: 50
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **later stage**.
+本页是 OCR 演示的一部分。状态：**后续阶段**。
 
-Right-to-left text is kept in the order it is typed. A receipt in Arabic is shown here; its prices read correctly, but the Arabic words are not yet read by the recogniser in the MVP.
+从右到左的文字按输入的顺序保存。这里展示的是一张阿拉伯文收据：其中的价格可以正确读取，但 MVP 的识别器目前还读不出阿拉伯文单词。
 
-![An Arabic receipt from a cafe, with the items and prices written right to left](assets/ocr-receipt-ar.png)
+![一家咖啡店的阿拉伯文收据，商品和价格从右到左书写](assets/ocr-receipt-ar.png)

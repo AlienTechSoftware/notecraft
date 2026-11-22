@@ -1,18 +1,18 @@
 ---
 id: 36115fd7e24317292e3d
-title: "Printed text"
+title: "인쇄된 텍스트"
 order: 20
 created: 2026-10-18T00:00:00Z
 updated: 2026-10-18T00:00:00Z
 tags: []
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+이 페이지는 OCR 데모의 일부입니다. 상태: **MVP**.
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+영수증 사진입니다. NoteCraft는 줄마다 읽고 텍스트를 그림 옆에 둡니다. 가격이나 항목을 검색하면 이 영수증이 있는 페이지를 찾을 수 있습니다.
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![플랫 화이트, 사워도우, 오렌지 주스와 합계 13.75가 적힌 카페의 종이 영수증](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+텍스트는 그림에서 얻어집니다. 그림이 바뀌면 텍스트를 다시 읽고, 바뀌지 않으면 아무것도 다시 읽지 않습니다.

@@ -1,13 +1,13 @@
 ---
-title: Printed text
+title: 印刷された文字
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Status: **MVP**.
+このページは OCR デモの一部です。ステータス：**MVP**。
 
-Here is a photo of a receipt. NoteCraft reads each line and keeps the text beside the picture. Search for a price or an item and the page with this receipt is found.
+レシートの写真です。NoteCraft は一行ずつ読み取り、文字を画像の横に保存します。価格や品目を検索すると、このレシートのあるページが見つかります。
 
-![A paper receipt from a cafe, listing a flat white, sourdough, orange juice and a total of 13.75](assets/ocr-receipt.png)
+![カフェの紙のレシート。フラットホワイト、サワードウ、オレンジジュース、合計 13.75 が記載されている](assets/ocr-receipt.png)
 
-The text is derived from the picture. If the picture changes, the text is read again; if it does not change, nothing is read.
+文字は画像から導き出されたものです。画像が変わると文字は読み直され、変わらなければ何も読み直されません。

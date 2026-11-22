@@ -1,13 +1,13 @@
 ---
-title: OCR overview
+title: OCR का परिचय
 ---
 
-*Translation pending: this page is shown in English until it is translated.*
+*Draft translation: please check it with a native speaker before release.*
 
-This page is part of the OCR demo. Its status is **MVP, in progress**: printed text works, and the other parts are later stages.
+यह पेज OCR डेमो का हिस्सा है। इसकी स्थिति है **MVP, प्रगति में**: छपा हुआ पाठ काम करता है, और बाकी हिस्से बाद के चरणों में आएंगे।
 
-NoteCraft reads the printed text in a picture and keeps the result next to the picture. The text is found again by search, so a word in a photo of a receipt finds the page it is on.
+NoteCraft किसी चित्र का छपा हुआ पाठ पढ़ता है और परिणाम को चित्र के साथ सहेजता है। खोज वह पाठ फिर से ढूँढती है, इसलिए रसीद की फ़ोटो का एक शब्द उस पेज तक ले जाता है जिस पर वह है।
 
-Everything runs on this device. The picture, its text and the search index stay in your notebook folder and in the app's own data. Nothing is sent to a server.
+सब कुछ इसी डिवाइस पर चलता है। चित्र, उसका पाठ और खोज सूचकांक आपके नोटबुक के फ़ोल्डर और ऐप के अपने डेटा में रहते हैं। कुछ भी किसी सर्वर पर नहीं भेजा जाता।
 
-The next pages show each part: printed text, alt text, scanned pages, Arabic text, and what handwriting cannot do yet.
+अगले पेज हर हिस्सा दिखाते हैं: छपा पाठ, वैकल्पिक पाठ, स्कैन किए पेज, अरबी पाठ, और यह कि हस्तलिखित पाठ अभी क्या नहीं कर सकता।

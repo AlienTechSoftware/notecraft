@@ -54,7 +54,7 @@ fn the_full_demo_notebooks_have_matching_pages_and_blocks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("docs").join("demo").join("DemoNotebook");
     let html = pages(&root.join("html"));
     let cmgfm = pages(&root.join("cmgfm"));
-    // 240 pages across the 14-language demo, plus six OCR pages in each language.\r\n    assert_eq!(html.len(), 324, "expected every page from the 14-language demo");
+    // 240 pages in the current demo, plus eight OCR pages in each of 13 languages.\n    assert_eq!(html.len(), 344, "expected every page from the 14-language demo");
     assert_eq!(html.len(), cmgfm.len(), "both notebooks must have the same number of pages");
     assert_eq!(html.keys().collect::<Vec<_>>(), cmgfm.keys().collect::<Vec<_>>(), "page paths must match");
     for language in ["10-en", "11-es", "12-fr", "13-de", "14-hi", "15-ru", "16-zh", "17-ja", "18-ko", "19-tr", "20-ar", "21-fa", "22-ur", "23-he"] {
