@@ -11,6 +11,23 @@ metadata:
 
 # nc-info-search - Hybrid search: keyword and semantic
 
+## Local-first rule
+
+The owner strongly prefers to stay local. Search follows the same rule as OCR:
+
+- **Queries, indexes and embeddings stay on the device.** No query text, page text or vector is
+  sent to a server. Hosted search services are excluded for this reason, including the hosted
+  tier of any database with a local mode.
+- **The index is local and rebuildable.** It lives in the app's local data folder and is rebuilt
+  from the notebook files. It never needs a network to exist.
+- **Models are local files.** An embedding model is downloaded once at setup or by the user, then
+  read from disk. Search never fetches a model at query time.
+- **Semantic search is optional.** Without a model installed, search runs on the keyword path
+  alone and stays fully local.
+- **Dependencies must also be local at runtime.** A library that needs a server, or a Python
+  runtime, is excluded even when its data stays on disk, because it breaks the all-Rust,
+  self-contained goal.
+
 ## What exists today
 
 `crates/store/src/search.rs` answers a query by scanning. It walks every page folder under the

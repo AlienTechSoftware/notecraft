@@ -25,6 +25,23 @@ jobs that both produce text about a picture, and why they are kept apart:
 Keep them separate in code and on disk. Mixing them is the usual mistake: OCR text is derived and
 can be overwritten; alt text is the user's and must not be.
 
+## Local-first rule
+
+The owner strongly prefers to stay local. Every design choice here follows that:
+
+- **At runtime, nothing leaves the device.** Decoding, OCR, companion files and any description
+  model run locally. No picture, text or hash is sent to a server, and no cloud OCR or cloud
+  description service is used. Criterion A10 (no network during OCR) is the test for this.
+- **Models are local files.** They are downloaded once, at setup or by the user, and read from
+  disk. The OCR crate takes model paths; it never fetches them. Model downloads are a setup step,
+  not part of OCR.
+- **Excluded for this reason:** cloud OCR and math APIs, server-side search, and any service
+  whose model runs only on its servers. Free on-device SDKs whose models are closed and
+  server-served are also excluded.
+- **Allowed with a check:** a local model whose weights carry a licence we cannot ship (for
+  example CC-BY-SA 4.0 or a research-only licence). It can be used on the owner's machine after
+  review, but not distributed until the licence is decided.
+
 ## Status (2026-11-22)
 
 | Part | State |
