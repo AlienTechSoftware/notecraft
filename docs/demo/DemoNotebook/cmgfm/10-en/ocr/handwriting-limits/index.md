@@ -16,3 +16,7 @@ When a handwritten line is read, a struck-out word is kept as struck, not as pla
 ![A handwritten Arabic page in dark ink, with a date at the top](assets/ocr-letter-ar.jpg)
 
 A handwritten Arabic page from a public domain dataset. The words can be seen, but handwriting is not read yet; that is a later stage.
+
+![A sheet of ruled paper with a short handwritten English letter: one word crossed out with a new one above it, one underlined, one scribbled out](assets/ocr-letter-en.png)
+
+A handwritten English letter with corrections, the way ink works in NoteCraft writing mode. Handwriting is not read yet.

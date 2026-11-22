@@ -13,3 +13,7 @@ Cuando se lee una línea escrita a mano, una palabra tachada se conserva como ta
 ![Una página escrita a mano en árabe, con tinta oscura y una fecha arriba](assets/ocr-letter-ar.jpg)
 
 Una página escrita a mano en árabe de un conjunto de datos de dominio público. Se ven las palabras, pero la escritura a mano todavía no se lee; es una etapa posterior.
+
+![Una hoja de papel rayado con una carta corta escrita a mano en inglés: una palabra tachada y sustituida, otra subrayada y otra garabateada](assets/ocr-letter-en.png)
+
+Una carta escrita a mano en inglés con correcciones, como funciona la tinta en el modo de escritura de NoteCraft. La escritura a mano todavía no se lee.

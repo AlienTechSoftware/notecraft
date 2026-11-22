@@ -1244,4 +1244,17 @@ A test page for the OCR section.
         }
         assert_eq!(languages, LANGUAGES.len(), "every language has the OCR pages");
     }
+
+    /// English is the most used language, so its OCR pages always carry an English printed example
+    /// and an English handwritten example, not only the Arabic ones.
+    #[test]
+    fn the_english_ocr_pages_have_english_printed_and_handwritten_examples() {
+        let ocr = content_dir().join("en").join(OCR_FOLDER);
+        let printed = fs::read_to_string(ocr.join("20-printed-text.md")).expect("English printed-text page");
+        assert!(printed.contains("assets/ocr-receipt.png"), "the English printed example is linked");
+        let handwriting = fs::read_to_string(ocr.join("60-handwriting-limits.md")).expect("English handwriting page");
+        assert!(handwriting.contains("assets/ocr-letter-en.png"), "the English handwritten example is linked");
+        assert!(art_dir().join("ocr-letter-en.png").is_file(), "the English handwritten example is in assets/demo");
+        assert!(art_dir().join("ocr-receipt.png").is_file(), "the English printed example is in assets/demo");
+    }
 }

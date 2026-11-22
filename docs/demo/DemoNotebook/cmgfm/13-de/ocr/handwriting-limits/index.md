@@ -18,3 +18,7 @@ Wenn eine handschriftliche Zeile gelesen wird, bleibt ein durchgestrichenes Wort
 ![Eine handschriftliche arabische Seite in dunkler Tinte, oben mit einem Datum](assets/ocr-letter-ar.jpg)
 
 Eine handschriftliche arabische Seite aus einem Datensatz der Public Domain. Die Wörter sind sichtbar, aber Handschrift wird noch nicht gelesen; das ist eine spätere Stufe.
+
+![Ein liniertes Blatt mit einem kurzen handschriftlichen englischen Brief: ein durchgestrichenes und ersetztes Wort, ein unterstrichenes und ein verkritzeltes](assets/ocr-letter-en.png)
+
+Ein handschriftlicher englischer Brief mit Korrekturen, so wie Tinte im Schreibmodus von NoteCraft funktioniert. Handschrift wird noch nicht gelesen.
