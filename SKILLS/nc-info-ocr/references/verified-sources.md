@@ -29,7 +29,6 @@ failed; treat it as open until checked.
 | Qwen2.5-VL 7B parameters | About 8.3 B | Hugging Face API | Verified |
 | Qwen2.5-VL 3B Instruct licence | `qwen-research` | Hugging Face card metadata and README (`license_name: qwen-research`) | Verified |
 | Qwen2.5-VL 72B Instruct licence | `other` | Hugging Face API | Verified |
-| viveNotes pipeline | PP-OCRv5 through ONNX Runtime on Android, English recogniser only | Local code read by the supervisor (Kotlin); not an external source | Recorded by the team; not re-checked here |
 
 ## Sources
 

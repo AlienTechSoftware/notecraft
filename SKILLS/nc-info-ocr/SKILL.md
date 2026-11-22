@@ -127,8 +127,8 @@ Shipping them needs an owner decision. Measuring them does not.
 - Scratch tests copy the picture into a temporary folder; they never write companion files into
   the fixtures.
 - New engines implement `PictureReader`. New dependencies need the owner's GO.
-- Do not copy code from other apps. viveNotes (Android, Kotlin) was checked for its pipeline
-  shape only; its recogniser is English-only.
+- Do not copy code from other apps. Pipelines of comparable apps may be studied for their shape
+  only; build from public documentation.
 - Licence first: record the weights licence from the model card before any model is used in a
   release.
 
