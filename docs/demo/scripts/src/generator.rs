@@ -31,6 +31,10 @@ const DATE: &str = "2026-10-18T00:00:00Z";
 const START_FOLDER: &str = "00-start";
 const START_TITLE: &str = "Start here";
 const HOW_TO_FOLDER: &str = "how-to";
+/// The optional OCR section of a language group: its content is `content/<language>/ocr/`.
+const OCR_FOLDER: &str = "ocr";
+const OCR_TITLE: &str = "OCR";
+const OCR_ORDER: u32 = 20;
 /// Put into the start page where the list of languages goes.
 const LANGUAGES_MARK: &str = "{{languages}}";
 
@@ -342,9 +346,40 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             }
             built.pages += 1;
         }
+        if let Some(ocr_sources) = optional_sources(&content.join(lang.code), OCR_FOLDER)? {
+            let ocr = group.join(OCR_FOLDER);
+            fs::create_dir_all(&ocr).map_err(|e| format!("cannot create {}: {e}", ocr.display()))?;
+            write(
+                &ocr.join("_node.toml"),
+                &node_toml("section", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
+            )?;
+            let default_dir = if lang.rtl { Some("rtl") } else { None };
+            for s in &ocr_sources {
+                let id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), s.slug));
+                let source_path =
+                    content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}.{}", s.order, s.slug, if s.html { "html" } else { "md" }));
+                let s = convert_source(s.clone(), target_format, &source_path)?;
+                write_page(&ocr.join(&s.slug), &s, &id, default_dir, art)?;
+                built.pages += 1;
+            }
+        }
         built.languages.push(lang.code.to_string());
     }
     Ok(built)
+}
+
+/// The pages of an optional folder inside a language's content. A language without the folder
+/// has no such section, and that is not an error; a folder with no pages is.
+fn optional_sources(language: &Path, folder: &str) -> Result<Option<Vec<Source>>, String> {
+    let dir = language.join(folder);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let sources = read_sources(&dir)?;
+    if sources.is_empty() {
+        return Err(format!("{}: no pages", dir.display()));
+    }
+    Ok(Some(sources))
 }
 
 /// The bullet list on the start page: each language's own name as the link, its English
@@ -1044,7 +1079,9 @@ page-color: yellow
             assert_eq!(html_group.info.title, cmgfm_group.info.title);
             assert_eq!(html_group.children.len(), cmgfm_group.children.len(), "matching structure in {}", html_group.path.display());
             if html_group.info.kind == notecraft_model::NodeKind::SectionGroup {
-                assert_eq!(html_group.children.len(), 1, "one How to section in {}", html_group.path.display());
+                // Every language has its How to section; English also has an OCR section.
+                let expected = if html_group.info.title == "English" { 2 } else { 1 };
+                assert_eq!(html_group.children.len(), expected, "sections in {}", html_group.path.display());
                 assert!(html_group.children[0].children.len() >= 8, "the same pages in every language");
             }
         }
@@ -1097,5 +1134,78 @@ page-color: yellow
     fn format_selection_rejects_unknown_values() {
         let err = selected_formats("markdown").expect_err("unknown format rejected");
         assert!(err.contains("Choose html, cmgfm, or both"), "{err}");
+    }
+
+    /// Copies a folder tree; the tests change a copy of the content, never the checked-in files.
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).expect("create");
+        for entry in fs::read_dir(from).expect("read") {
+            let entry = entry.expect("entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("type").is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).expect("copy");
+            }
+        }
+    }
+
+    /// A copy of the content with one OCR page in English: a folder `en/ocr/` beside How to.
+    fn content_with_ocr(label: &str) -> PathBuf {
+        let dir = scratch(label);
+        let content = dir.join("content");
+        copy_tree(&content_dir(), &content);
+        let ocr = content.join("en").join("ocr");
+        fs::create_dir_all(&ocr).expect("ocr folder");
+        write(
+            &ocr.join("10-overview.md"),
+            "---
+title: OCR overview
+---
+
+A test page for the OCR section.
+
+![A banner](assets/banner-en.png)
+",
+        )
+        .expect("ocr page");
+        content
+    }
+
+    #[test]
+    fn an_ocr_folder_adds_a_section_to_the_english_group_in_both_formats() {
+        let content = content_with_ocr("ocr-section");
+        let out = content.parent().expect("parent").join("DemoNotebook");
+        let both = selected_formats("both").expect("both formats");
+        build(&content, &out, &art_dir(), "0.0.0-test", &both).expect("build with an OCR section");
+        for format in ["html", "cmgfm"] {
+            let root = out.join(format);
+            let section = root.join("10-en").join("ocr");
+            let node = fs::read_to_string(section.join("_node.toml")).expect("the OCR section node");
+            assert!(node.contains("kind = \"section\""), "{node}");
+            assert!(node.contains("title = \"OCR\""), "{node}");
+            let page = section.join("overview");
+            let index = if format == "html" { "index.html" } else { "index.md" };
+            assert!(page.join(index).is_file(), "the OCR page in {format}");
+            assert!(page.join("assets").join("banner-en.png").is_file(), "its picture is copied in {format}");
+        }
+        let html_tree = notecraft_store::tree::load_tree(&out.join("html")).expect("HTML tree");
+        let english = html_tree.children.iter().find(|g| g.info.title == "English").expect("English group");
+        let titles: Vec<&str> = english.children.iter().map(|s| s.info.title.as_str()).collect();
+        assert_eq!(titles.len(), 2, "How to and OCR: {titles:?}");
+        assert!(titles.contains(&"OCR"), "{titles:?}");
+        let _ = fs::remove_dir_all(content.parent().expect("parent"));
+    }
+
+    #[test]
+    fn a_language_without_an_ocr_folder_builds_without_one() {
+        let dir = scratch("no-ocr");
+        let out = dir.join("DemoNotebook");
+        let html_only = selected_formats("html").expect("html");
+        build(&content_dir(), &out, &art_dir(), "0.0.0-test", &html_only).expect("the content without OCR builds");
+        assert!(content_dir().join("ar").is_dir(), "Arabic has content");
+        assert!(!content_dir().join("ar").join("ocr").exists(), "Arabic has no OCR folder yet");
+        assert!(!out.join("html").join("20-ar").join("ocr").exists(), "no OCR section without an OCR folder");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

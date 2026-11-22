@@ -142,3 +142,12 @@ data.
 
 | \crates/ui-egui/assets/fluent/*.svg\ | Selected Fluent UI System Icons used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons | Microsoft Corporation and contributors |
 | \crates/ui-egui/assets/fluent-color/*.svg\ | Selected Fluent UI System Icons colour versions (calendar, clock, link, image, table, video, mic, document) used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons (`assets/<Name>/SVG/ic_fluent_<name>_24_color.svg`) | Microsoft Corporation and contributors |
+
+## OCR demo pictures
+
+| File | What | Origin | Licence status |
+|---|---|---|---|
+| `assets/demo/ocr-receipt.png` | A printed receipt for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-scan.png` | A scanned page of meeting minutes for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-receipt-ar.png` | An Arabic receipt for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-flow.svg` | Three boxes joined by arrows, for the alt text page | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
