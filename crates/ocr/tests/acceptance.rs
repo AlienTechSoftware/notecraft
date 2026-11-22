@@ -39,6 +39,7 @@ fn a2_a_line_has_a_box_and_a_confidence_from_0_to_1() {
 
 /// A1: a printed picture yields its text lines, in reading order, matching the reference text.
 #[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
 fn a1_the_receipt_reads_back_its_reference_text_in_reading_order() {
     let lines = engine().read_image(&fixture("receipt-photo/assets/receipt.png")).expect("the receipt reads");
     let got: Vec<String> = lines.iter().map(|l| l.text.split_whitespace().collect::<Vec<_>>().join(" ")).collect();
@@ -49,6 +50,7 @@ fn a1_the_receipt_reads_back_its_reference_text_in_reading_order() {
 
 /// A3: every line's box lies inside the picture, for every POC picture.
 #[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
 fn a3_every_box_lies_inside_its_picture() {
     let engine = engine();
     let pictures = [
@@ -72,6 +74,7 @@ fn a3_every_box_lies_inside_its_picture() {
 
 /// A4: re-running OCR on an unchanged picture does nothing.
 #[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
 fn a4_an_unchanged_picture_is_not_read_again() {
     let dir = scratch("a4");
     let picture = dir.join("receipt.png");
@@ -84,6 +87,7 @@ fn a4_an_unchanged_picture_is_not_read_again() {
 
 /// A5: changing a picture re-runs OCR and replaces its companion text.
 #[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
 fn a5_a_changed_picture_is_read_again_and_its_companion_is_replaced() {
     let dir = scratch("a5");
     let picture = dir.join("receipt.png");
