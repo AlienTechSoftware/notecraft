@@ -365,6 +365,50 @@ fn default_format_set(s: &mut Session, p: &Params) -> Result<Output, EngineError
     Ok(Output::None)
 }
 
+/// The picture file names a page holds (png, jpg and jpeg), in name order.
+fn picture_names(page: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = notecraft_store::assets::list(page)
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| {
+            let lower = name.to_ascii_lowercase();
+            [".png", ".jpg", ".jpeg"].iter().any(|ext| lower.ends_with(ext))
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Reads the text and boxes of each picture in a page, when the picture changed (criteria A4 and
+/// A5). The models come from the setting `ocr_models`: a folder with text-detection.onnx and
+/// text-recognition.onnx. Nothing is downloaded.
+fn ocr_refresh(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    let folder = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).ok_or_else(|| {
+        EngineError::BadParam("OCR is not set up: set ocr_models to the folder with text-detection.onnx and text-recognition.onnx".into())
+    })?;
+    let models = std::path::PathBuf::from(folder);
+    let reader = notecraft_ocr::OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx"))
+        .map_err(|e| EngineError::BadParam(format!("the OCR models did not load: {e:?}")))?;
+    let (mut read, mut unchanged) = (0usize, 0usize);
+    for name in picture_names(&page) {
+        match notecraft_ocr::refresh_companion(&reader, &page.join("assets").join(&name)) {
+            Ok(notecraft_ocr::Refresh::Rewritten) => read += 1,
+            Ok(notecraft_ocr::Refresh::Unchanged) => unchanged += 1,
+            Err(e) => return Err(EngineError::BadParam(format!("{name}: {e:?}"))),
+        }
+    }
+    Ok(Output::Text(format!("{read} read, {unchanged} unchanged")))
+}
+
+/// Writes the alt text of a picture in a page. An empty text removes it.
+fn alt_set(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    let text = p.get("text").map(String::as_str).unwrap_or("");
+    notecraft_store::assets::set_alt_text(&page, req(p, "picture")?, text)?;
+    Ok(Output::None)
+}
+
 fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let limit = match p.get("limit") {
         Some(l) => l.trim().parse::<usize>().map_err(|_| EngineError::BadParam("limit must be a number".into()))?.min(500),
@@ -862,6 +906,23 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: default_format_set,
     },
     CommandSpec {
+        id: "ocr.refresh",
+        label: "Read the text and boxes of the pictures in a page",
+        params: "path (required): the page, relative to the notebooks folder
+Needs the setting ocr_models: a folder with text-detection.onnx and text-recognition.onnx. A picture is read again only when its bytes changed",
+        changes_tree: false,
+        run: ocr_refresh,
+    },
+    CommandSpec {
+        id: "alt.set",
+        label: "Write the alt text of a picture in a page",
+        params: "path (required): the page, relative to the notebooks folder
+picture (required): the picture's file name in the page's assets
+text (optional): the alt text; empty removes it",
+        changes_tree: false,
+        run: alt_set,
+    },
+    CommandSpec {
         id: "search.query",
         label: "Search all pages",
         params: "q (required): text to find\nlimit (optional): at most this many hits (default 40, at most 500)",
@@ -1287,6 +1348,80 @@ mod tests {
         // What is not a notebook is refused, and so is nothing at all.
         assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
         assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    /// A notebook with one page, and that page's folder as a string.
+    fn one_page(t: &TempDir) -> (Session, String) {
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let mut s = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let made = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        let page = made.join("new-section-1").join("untitled-page");
+        (s, page.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn alt_text_is_saved_beside_its_picture_and_removed_when_empty() {
+        let t = TempDir::new("engine-alt-text");
+        let (mut s, page) = one_page(&t);
+        s.attach_bytes(&page, "receipt.png", b"not really a picture").expect("picture");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "  a bakery receipt  ")])).expect("alt text");
+        let alt = std::path::Path::new(&page).join("assets").join("receipt.png.alt.txt");
+        assert_eq!(
+            std::fs::read_to_string(&alt).expect("the alt file"),
+            "a bakery receipt
+",
+            "trimmed, one line"
+        );
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "")])).expect("removed");
+        assert!(!alt.exists(), "an empty text removes the alt file");
+    }
+
+    #[test]
+    fn alt_text_must_name_a_picture_in_the_page() {
+        let t = TempDir::new("engine-alt-missing");
+        let (mut s, page) = one_page(&t);
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "missing.png"), ("text", "x")])).is_err(), "no such picture");
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "../escape.png"), ("text", "x")])).is_err(), "a name, not a path");
+    }
+
+    #[test]
+    fn alt_text_is_found_by_search_once_it_is_written() {
+        let t = TempDir::new("engine-alt-search");
+        let (mut s, page) = one_page(&t);
+        s.attach_bytes(&page, "receipt.png", b"not really a picture").expect("picture");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "a bakery receipt")])).expect("alt text");
+        let hits = match s.run("search.query", &p(&[("q", "bakery")])).expect("search") {
+            Output::Hits(h) => h,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(hits.len(), 1, "the page with the picture is found by its alt text");
+        assert_eq!(hits[0].source, notecraft_store::search::Source::Alt);
+    }
+
+    #[test]
+    fn ocr_says_how_to_set_up_the_models_when_none_are_set() {
+        let t = TempDir::new("engine-ocr-setup");
+        let (mut s, page) = one_page(&t);
+        let err = s.run("ocr.refresh", &p(&[("path", &page)])).expect_err("no models set");
+        assert!(format!("{err:?}").contains("ocr_models"), "the message names the setting: {err:?}");
+    }
+
+    /// The real OCR job on a picture in the repository's demo art: the first run reads it, the
+    /// second run keeps the result. Needs NOTECRAFT_OCR_MODELS (the folder with the two ONNX files).
+    #[test]
+    #[ignore = "needs NOTECRAFT_OCR_MODELS; run with --ignored"]
+    fn ocr_reads_a_picture_once_and_keeps_it_when_it_is_unchanged() {
+        let models = std::env::var("NOTECRAFT_OCR_MODELS").expect("set NOTECRAFT_OCR_MODELS");
+        let t = TempDir::new("engine-ocr-run");
+        let (mut s, page) = one_page(&t);
+        s.settings.set("ocr_models", &models).expect("the models setting");
+        let picture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("assets").join("demo").join("ocr-receipt.png");
+        s.attach_bytes(&page, "receipt.png", &std::fs::read(&picture).expect("the demo picture")).expect("picture");
+        let first = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("first read"));
+        assert_eq!(first, "1 read, 0 unchanged");
+        assert!(std::path::Path::new(&page).join("assets").join("receipt.png.lines").is_file(), "the boxes file is written");
+        let second = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("second read"));
+        assert_eq!(second, "0 read, 1 unchanged");
     }
 
     #[test]

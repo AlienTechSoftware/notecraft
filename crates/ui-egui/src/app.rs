@@ -3084,6 +3084,14 @@ impl NoteCraftApp {
             self.remember_recent_notebook(&notebook);
         }
         self.nav.visit(dir);
+        // Pictures get their text and boxes when the page opens, once OCR is set up (the setting
+        // ocr_models). A picture that did not change is not read again; with no setting nothing runs.
+        if self.session.settings.get("ocr_models").is_some_and(|v| !v.trim().is_empty()) {
+            let page = dir.to_string_lossy().into_owned();
+            if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
+                log::warn!("picture text was not read for {page}: {e:?}");
+            }
+        }
         self.open_page_inner(dir);
     }
 

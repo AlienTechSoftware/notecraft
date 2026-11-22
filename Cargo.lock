@@ -3343,6 +3343,7 @@ dependencies = [
  "craft-voice-core",
  "notecraft-formats",
  "notecraft-model",
+ "notecraft-ocr",
  "notecraft-store",
  "serde_json",
 ]

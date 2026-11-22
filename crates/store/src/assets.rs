@@ -163,6 +163,37 @@ pub fn attach_bytes(page_dir: &Path, name: &str, bytes: &[u8]) -> Result<String>
 /// `..` in it is refused, so this can never reach out of the page's own folder. The page
 /// is not touched; a line that linked to the file is left as the writer wrote it, and
 /// shows as a link to something that is no longer there.
+/// Writes the alt text of a picture in a page: `assets/<picture>.alt.txt`, through a temporary file.
+/// The text is written by a person (or accepted from a draft); an empty text removes the file.
+pub fn set_alt_text(page_dir: &Path, picture: &str, text: &str) -> Result<()> {
+    if picture.is_empty() || picture.starts_with('.') || picture.contains(['/', '\\']) {
+        return Err(StoreError::invalid("a picture is named by its file name in the page's assets"));
+    }
+    let assets_dir = page_dir.join("assets");
+    if !assets_dir.join(picture).is_file() {
+        return Err(StoreError::NotFound(format!("no picture {picture} in this page")));
+    }
+    let alt = assets_dir.join(format!("{picture}.alt.txt"));
+    let text = text.trim();
+    if text.is_empty() {
+        return match fs::remove_file(&alt) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(StoreError::io("remove", &alt, e)),
+        };
+    }
+    let temp = assets_dir.join(format!("{picture}.alt.txt.tmp"));
+    fs::write(
+        &temp,
+        format!(
+            "{text}
+"
+        ),
+    )
+    .map_err(|e| StoreError::io("write", &temp, e))?;
+    fs::rename(&temp, &alt).map_err(|e| StoreError::io("replace", &alt, e))
+}
+
 pub fn remove(page_dir: &Path, name: &str) -> Result<()> {
     let safe = names::safe_file_name(name);
     if name.is_empty() || safe != name {
