@@ -78,7 +78,11 @@ pub enum Source {
     Picture,
 }
 
-/// One page found by the ranked search, with the best of its texts.
+/// A box in picture pixels: four corners, top left first, clockwise.
+pub type Quad = [[f32; 2]; 4];
+
+/// One page found by the ranked search, with the best of its texts. For a hit on a picture's
+/// text, `picture` is the picture and `boxes` are the boxes of the lines that match the query.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ranked {
     pub path: PathBuf,
@@ -86,6 +90,8 @@ pub struct Ranked {
     pub source: Source,
     pub snippet: String,
     pub score: f64,
+    pub picture: Option<PathBuf>,
+    pub boxes: Vec<Quad>,
 }
 
 /// A text unit of one page, kept beside its index entry.
@@ -94,6 +100,25 @@ struct Piece {
     title: String,
     source: Source,
     text: String,
+    /// For picture text: the picture and its lines with their boxes (from the `.lines` file).
+    picture: Option<PathBuf>,
+    lines: Vec<(String, Quad)>,
+}
+
+/// Reads a picture's `.lines` file: one record per line, `x0,y0,...,y3<TAB>text`.
+fn read_lines_file(path: &Path) -> Vec<(String, Quad)> {
+    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    text.lines()
+        .filter_map(|record| {
+            let (coords, words) = record.split_once('\t')?;
+            let nums: Vec<f32> = coords.split(',').filter_map(|n| n.parse().ok()).collect();
+            if nums.len() != 8 {
+                return None;
+            }
+            let quad = [[nums[0], nums[1]], [nums[2], nums[3]], [nums[4], nums[5]], [nums[6], nums[7]]];
+            Some((words.to_string(), quad))
+        })
+        .collect()
 }
 
 /// The texts of one page: its own text, then each picture's alt text and OCR text. A picture's
@@ -106,7 +131,14 @@ fn pieces_of(dir: &Path) -> Vec<Piece> {
             PageFormat::Html => html::strip_tags(&page.body),
             PageFormat::Cmgfm => html::strip_tags(&render::blocks_to_html(&boxes::read(PageFormat::Cmgfm, &page.body).0)),
         };
-        out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source: Source::Page, text: format!("{title} {plain}") });
+        out.push(Piece {
+            page: dir.to_path_buf(),
+            title: title.clone(),
+            source: Source::Page,
+            text: format!("{title} {plain}"),
+            picture: None,
+            lines: Vec::new(),
+        });
     }
     let assets = dir.join("assets");
     let mut names: Vec<PathBuf> = std::fs::read_dir(&assets).map(|r| r.filter_map(|e| e.ok().map(|e| e.path())).collect()).unwrap_or_default();
@@ -125,7 +157,12 @@ fn pieces_of(dir: &Path) -> Vec<Piece> {
             continue;
         }
         if let Ok(text) = std::fs::read_to_string(&file) {
-            out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source, text });
+            let (picture, lines) = if source == Source::Picture {
+                (Some(assets.join(picture)), read_lines_file(&assets.join(format!("{picture}.lines"))))
+            } else {
+                (None, Vec::new())
+            };
+            out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source, text, picture, lines });
         }
     }
     out
@@ -148,15 +185,43 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
     let units: Vec<notecraft_search::Unit> =
         pieces.iter().enumerate().map(|(i, piece)| notecraft_search::Unit { id: i.to_string(), text: piece.text.clone() }).collect();
     let index = notecraft_search::Index::build(&units);
+    // A page qualifies when every word of the query appears somewhere on it: its title, its text,
+    // its alt text or the text read from its pictures. The ranking then orders the matches.
+    let wanted: Vec<String> = {
+        let mut words = notecraft_search::tokenize(query);
+        words.sort();
+        words.dedup();
+        words
+    };
+    let mut words_on_page: std::collections::HashMap<&Path, std::collections::HashSet<String>> = std::collections::HashMap::new();
+    for piece in &pieces {
+        words_on_page.entry(piece.page.as_path()).or_default().extend(notecraft_search::tokenize(&piece.text));
+    }
+    let qualifies = |page: &Path| words_on_page.get(page).is_some_and(|words| wanted.iter().all(|w| words.contains(w)));
     let mut best: Vec<Ranked> = Vec::new();
     for hit in index.search(query, usize::MAX) {
         let Ok(i) = hit.id.parse::<usize>() else { continue };
         let piece = &pieces[i];
-        if best.iter().any(|r| r.path == piece.page) {
+        if best.iter().any(|r| r.path == piece.page) || !qualifies(&piece.page) {
             continue;
         }
         let snippet = piece.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
-        best.push(Ranked { path: piece.page.clone(), title: piece.title.clone(), source: piece.source, snippet, score: hit.score });
+        let query_words = notecraft_search::tokenize(query);
+        let boxes: Vec<Quad> = piece
+            .lines
+            .iter()
+            .filter(|(words, _)| notecraft_search::tokenize(words).iter().any(|w| query_words.contains(w)))
+            .map(|(_, quad)| *quad)
+            .collect();
+        best.push(Ranked {
+            path: piece.page.clone(),
+            title: piece.title.clone(),
+            source: piece.source,
+            snippet,
+            score: hit.score,
+            picture: piece.picture.clone(),
+            boxes,
+        });
         if best.len() >= limit {
             break;
         }
@@ -268,6 +333,13 @@ Flat white 4.50
         )
         .expect("ocr text");
         std::fs::write(assets.join("receipt.png.alt.txt"), "a bakery receipt").expect("alt text");
+        std::fs::write(
+            assets.join("receipt.png.lines"),
+            "10,20,110,20,110,40,10,40	Sourdough 6.00
+20,50,100,50,100,70,20,70	Flat white 4.50
+",
+        )
+        .expect("boxes");
         std::fs::write(assets.join("notes.txt"), "a text file the user wrote").expect("users own file");
         (root, a)
     }
@@ -337,5 +409,23 @@ Flat white 4.50
         let hits = ranked(&poc_root(), &[], "tuesday", 10);
         let hit = hits.iter().find(|h| h.path.ends_with("receipt-photo")).expect("the receipt page is found");
         assert_eq!(hit.source, Source::Alt, "the word is only in the alt text: {hit:?}");
+    }
+
+    #[test]
+    fn a_picture_hit_carries_the_boxes_of_the_matching_lines() {
+        let t = TempDir::new("search-ranked-boxes");
+        let (root, page) = picture_fixture(&t);
+        let hits = ranked(&root, &[], "sourdough", 10);
+        let hit = &hits[0];
+        assert_eq!(hit.picture.as_deref(), Some(page.join("assets").join("receipt.png").as_path()));
+        assert_eq!(hit.boxes, vec![[[10.0, 20.0], [110.0, 20.0], [110.0, 40.0], [10.0, 40.0]]], "only the line with the word");
+    }
+
+    #[test]
+    fn an_alt_text_hit_has_no_boxes() {
+        let t = TempDir::new("search-ranked-no-boxes");
+        let (root, _) = picture_fixture(&t);
+        let hits = ranked(&root, &[], "bakery", 10);
+        assert!(hits[0].boxes.is_empty());
     }
 }

@@ -7,7 +7,6 @@ use notecraft_store::check::Report;
 use notecraft_store::page::Page;
 use notecraft_store::page::Version;
 use notecraft_store::recycle::Recycled;
-use notecraft_store::search::Hit;
 use notecraft_store::tags::Tagged;
 use notecraft_store::{StoreError, assets, check, ops, page, page_templates, recycle, search, tags, tree};
 use std::collections::BTreeMap;
@@ -24,7 +23,7 @@ pub enum Output {
     Page(Page),
     Versions(Vec<Version>),
     Recycled(Vec<Recycled>),
-    Hits(Vec<Hit>),
+    Hits(Vec<search::Ranked>),
     Tagged(Vec<Tagged>),
     Report(Report),
     Count(usize),
@@ -373,7 +372,7 @@ fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     };
     // Every open notebook, the ones opened from another folder too: the window calls this
     // Search all pages (issue #127).
-    Ok(Output::Hits(search::search_in(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
+    Ok(Output::Hits(search::ranked(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
 }
 
 /// The tagged notes in a scope: what Find Tags lists in its Tags Summary (issue #166).

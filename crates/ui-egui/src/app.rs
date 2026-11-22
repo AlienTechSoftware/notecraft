@@ -24,7 +24,7 @@ use crate::theme::{Accent, Mode, ModePref, Theme, Tokens};
 use egui::{Align2, Color32, Context, Id, Key, Modifiers, Sense, Ui, vec2};
 use notecraft_engine::{EngineError, Output, Params, Session};
 use notecraft_model::{NodeColor, NodeKind, PageFormat};
-use notecraft_store::search::Hit;
+use notecraft_store::search::Ranked;
 use notecraft_store::tree::Node;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
@@ -1306,7 +1306,7 @@ pub struct NoteCraftApp {
     session_only_storage: bool,
     search: String,
     searched: String,
-    hits: Vec<Hit>,
+    hits: Vec<Ranked>,
     /// Where each search result is, as its notebook and section titles (issue #370).
     hit_trails: Vec<String>,
     /// The result chosen with the arrow keys, if any (issue #370).
@@ -4519,7 +4519,7 @@ impl NoteCraftApp {
             && right.input(|input| input.key_pressed(Key::Enter))
             && let Some(path) = self.hits.get(self.search_pick.unwrap_or(0)).or(self.hits.first()).map(|hit| hit.path.clone())
         {
-            self.open_search_result(&path);
+            self.open_search_result(ui.ctx(), &path);
         }
         if resp.has_focus() && !self.hits.is_empty() {
             let (down, up) = right.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp)));
@@ -8699,7 +8699,18 @@ impl NoteCraftApp {
         self.search_pick = None;
     }
 
-    fn open_search_result(&mut self, path: &Path) {
+    fn open_search_result(&mut self, ctx: &Context, path: &Path) {
+        // A hit on a picture's text outlines the matching lines when the page shows the picture.
+        let highlight = self.hits.iter().find(|hit| hit.path == path).and_then(|hit| {
+            let picture = hit.picture.as_ref()?;
+            if hit.boxes.is_empty() {
+                return None;
+            }
+            let name = picture.file_name()?.to_string_lossy().into_owned();
+            let pixels = image::image_dimensions(picture).ok()?;
+            Some(crate::preview::PictureHighlight { page_dir: path.to_path_buf(), src: format!("assets/{name}"), pixels, boxes: hit.boxes.clone() })
+        });
+        crate::preview::set_picture_highlight(ctx, highlight);
         self.expand_to(path);
         self.open_page_soon(path);
     }
@@ -8807,7 +8818,7 @@ impl NoteCraftApp {
             self.dismiss_search();
         }
         if let Some(p) = chosen {
-            self.open_search_result(&p);
+            self.open_search_result(ctx, &p);
         }
     }
 

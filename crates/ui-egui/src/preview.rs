@@ -773,6 +773,7 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, b
                 Picture::Loading => loading_picture(ui, size),
                 Picture::Ready(uri, bytes) => {
                     let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
+                    outline_highlight(ui, page_dir, src, response.rect);
                     *object_rect = Some(response.rect);
                     if s.link.is_none() {
                         record_rendered_image(ui.ctx(), block, response.rect, src);
@@ -1261,6 +1262,50 @@ pub struct RenderedImage {
 
 pub fn rendered_images_id() -> egui::Id {
     egui::Id::new("rendered-image-hits")
+}
+
+/// The boxes of a search hit on a picture, to outline when that picture is drawn. `src` is the
+/// picture's name as the page writes it (`assets/x.png`); `pixels` is its size in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PictureHighlight {
+    pub page_dir: std::path::PathBuf,
+    pub src: String,
+    pub pixels: (u32, u32),
+    pub boxes: Vec<[[f32; 2]; 4]>,
+}
+
+fn highlight_id() -> egui::Id {
+    egui::Id::new("notecraft-picture-highlight")
+}
+
+/// Sets, or with `None` clears, the picture whose matching lines are outlined.
+pub fn set_picture_highlight(ctx: &egui::Context, highlight: Option<PictureHighlight>) {
+    ctx.data_mut(|data| data.insert_temp(highlight_id(), highlight));
+}
+
+fn picture_highlight(ctx: &egui::Context) -> Option<PictureHighlight> {
+    ctx.data_mut(|data| data.get_temp::<Option<PictureHighlight>>(highlight_id())).flatten()
+}
+
+/// Maps a box, in the picture's pixels, into the rectangle the picture is drawn in. The four
+/// corners keep their order.
+pub fn box_on_screen(quad: [[f32; 2]; 4], drawn: egui::Rect, pixels: (u32, u32)) -> [egui::Pos2; 4] {
+    let (w, h) = (pixels.0.max(1) as f32, pixels.1.max(1) as f32);
+    let at = |p: [f32; 2]| egui::pos2(drawn.left() + p[0] / w * drawn.width(), drawn.top() + p[1] / h * drawn.height());
+    [at(quad[0]), at(quad[1]), at(quad[2]), at(quad[3])]
+}
+
+/// Outlines the boxes of the highlight when this is the picture it is for.
+fn outline_highlight(ui: &Ui, page_dir: &Path, src: &str, drawn: egui::Rect) {
+    let Some(h) = picture_highlight(ui.ctx()) else { return };
+    if h.page_dir != page_dir || h.src != src {
+        return;
+    }
+    let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
+    for quad in &h.boxes {
+        let corners = box_on_screen(*quad, drawn, h.pixels).to_vec();
+        ui.painter().add(egui::Shape::closed_line(corners, stroke));
+    }
 }
 
 pub fn record_rendered_image(ctx: &egui::Context, block: usize, rect: egui::Rect, src: &str) {
@@ -1903,5 +1948,14 @@ mod tests {
         assert_eq!(images[1].block, 1);
         assert_eq!(images[1].src, "assets/inline.png");
         assert!(images[1].rect.width() > 0.0 && images[1].rect.height() > 0.0);
+    }
+
+    #[test]
+    fn a_box_in_picture_pixels_lands_on_the_drawn_picture_in_the_same_corners() {
+        let drawn = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(200.0, 100.0));
+        // A 100 x 50 picture drawn twice as large: every pixel is two points.
+        let quad = [[0.0, 0.0], [50.0, 0.0], [50.0, 25.0], [0.0, 25.0]];
+        let corners = box_on_screen(quad, drawn, (100, 50));
+        assert_eq!(corners, [egui::pos2(10.0, 10.0), egui::pos2(110.0, 10.0), egui::pos2(110.0, 60.0), egui::pos2(10.0, 60.0)]);
     }
 }

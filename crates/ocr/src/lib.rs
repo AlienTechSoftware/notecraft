@@ -147,19 +147,26 @@ pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<R
         return Ok(Refresh::Unchanged);
     }
     let lines = reader.read_picture(picture)?;
-    let text: String = lines
-        .iter()
-        .map(|l| {
-            format!(
-                "{}
-",
-                l.text
-            )
-        })
-        .collect();
+    let text: String = lines.iter().map(|l| format!("{}\n", l.text)).collect();
     write_replacing(&text_path, text.as_bytes())?;
+    write_replacing(&companion_path(picture, "lines"), &lines_file(&lines))?;
     write_replacing(&hash_path, hash.as_bytes())?;
     Ok(Refresh::Rewritten)
+}
+
+/// The boxes file: one line per text line, `x0,y0,x1,y1,x2,y2,x3,y3<TAB>text`, in picture pixels.
+/// Tabs and line breaks inside a text are replaced by spaces, so each line is one record.
+fn lines_file(lines: &[Line]) -> Vec<u8> {
+    let mut out = String::new();
+    for line in lines {
+        let coords: Vec<String> = line.quad.iter().flat_map(|p| [p.x.to_string(), p.y.to_string()]).collect();
+        let text: String = line.text.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect();
+        out.push_str(&coords.join(","));
+        out.push('\t');
+        out.push_str(&text);
+        out.push('\n');
+    }
+    out.into_bytes()
 }
 
 fn companion_path(picture: &Path, extension: &str) -> PathBuf {
@@ -256,5 +263,22 @@ mod tests {
         assert_eq!(reader.calls.get(), 2);
         assert_eq!(std::fs::read_to_string(dir.join("picture.png.txt")).expect("companion"), "TOTAL 13.75\n");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_boxes_file_has_one_record_per_line_and_no_stray_breaks() {
+        let quad = [Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }, Point { x: 10.0, y: 4.0 }, Point { x: 0.0, y: 4.0 }];
+        let lines = vec![
+            Line::new(
+                "a	b
+c", quad, None,
+            )
+            .expect("line"),
+        ];
+        assert_eq!(
+            String::from_utf8(lines_file(&lines)).expect("utf-8"),
+            "0,0,10,0,10,4,0,4	a b c
+"
+        );
     }
 }
