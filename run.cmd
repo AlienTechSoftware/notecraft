@@ -29,8 +29,8 @@ REM   run.cmd --expand-all                 start with all tree items expanded
 REM   run.cmd --control 9100               start the control channel on port 9100
 REM   run.cmd --version                    print the app version and exit
 REM   run.cmd --fresh-demo                 rebuild the demo notebook and replace my-notebooks\welcome-notebook
-REM   run.cmd --ocr-tool                   start the OCR test and label tool (tools\ocr-lab) instead of NoteCraft
-REM   run.cmd --ocr-tool --folder <dir> --models <dir>
+REM   run.cmd --ocr-lab                   start the OCR test and label tool (tools\ocr-lab) instead of NoteCraft
+REM   run.cmd --ocr-lab --folder <dir> --models <dir>
 REM                                        the same, on your own test folder and OCR model folder
 REM
 REM ARGUMENTS
@@ -119,10 +119,10 @@ if "%FRESH_DEMO%"=="1" (
     cargo xtask demo-copy html --replace
     if errorlevel 1 exit /b %errorlevel%
 )
-REM --ocr-tool: start the OCR test and label tool instead of NoteCraft. Its own arguments
+REM --ocr-lab: start the OCR test and label tool instead of NoteCraft. Its own arguments
 REM (--folder, --models) are passed through; the notebooks folder is not used.
 set OCR_TOOL=0
-for %%A in (%*) do if /i "%%A"=="--ocr-tool" set OCR_TOOL=1
+for %%A in (%*) do if /i "%%A"=="--ocr-lab" set OCR_TOOL=1
 if "%OCR_TOOL%"=="1" (
     cargo run -p notecraft-ocr-lab -- %*
     exit /b %errorlevel%
