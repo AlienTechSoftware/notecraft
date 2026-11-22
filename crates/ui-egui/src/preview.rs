@@ -1104,6 +1104,7 @@ pub(crate) fn show_block_zoomed(
                             // the words, and never wider than its column.
                             _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(zoom)),
                         };
+                        outline_highlight(ui, page_dir, src, response.rect);
                         rendered_object_rect = Some(response.rect);
                         // Named by its alt text, so tests and screen readers can find the picture.
                         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Image, true, alt.as_str()));

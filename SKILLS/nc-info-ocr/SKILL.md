@@ -51,7 +51,7 @@ The owner strongly prefers to stay local. Every design choice here follows that:
 | Companion job | Built: hash check, text and hash files written through a temporary file |
 | Acceptance A1 to A5 | Pass against the POC pictures |
 | Keyword search (A6, A7) | Not built. Storage choice open, see `nc-info-search` |
-| UI box highlight (A8) | Not built |
+| UI box highlight (A8) | Built and checked on screen: searching "sourdough" on the POC receipt outlines the matching line |
 | Arabic (A9) | Measured: fails with `ocrs` (English recogniser) |
 | No network (A10) | No networking crate in the OCR crate's tree; not yet run with the network off |
 | CI on three platforms (A11) | Not run; needs a push |
