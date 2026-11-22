@@ -197,7 +197,9 @@ impl Pad {
         InkWrite {
             file: self.file.clone(),
             expected: self.saved_bytes.clone(),
-            text: (!self.drawing.is_empty()).then(|| svg::write(&self.drawing, svg::Flavour::Editable)),
+            // A copy of the strokes, not the file: writing the file out takes time that grows with
+            // the page, and it is done where the save is made, off the window's thread.
+            drawing: (!self.drawing.is_empty()).then(|| self.drawing.clone()),
             keep_first: self.incomplete,
         }
     }
@@ -1550,10 +1552,28 @@ pub struct InkWrite {
     /// What the file held when the drawing was read or last written: anything else there now
     /// was written by another window or program, and is not written over.
     expected: Option<Vec<u8>>,
-    /// The drawing as the file keeps it, or `None` when nothing is drawn and the file goes.
-    text: Option<String>,
+    /// The drawing to write, or `None` when nothing is drawn and the file goes.
+    drawing: Option<Drawing>,
     /// The file holds more than the drawing does: it is kept beside it first (issue #157).
     keep_first: bool,
+}
+
+/// The drawing as its file keeps it.
+fn svg_text(drawing: &Drawing) -> String {
+    #[cfg(test)]
+    SVG_WRITES.with(|n| n.set(n.get() + 1));
+    svg::write(drawing, svg::Flavour::Editable)
+}
+
+#[cfg(test)]
+thread_local! {
+    static SVG_WRITES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times a page's ink has been written out as SVG on this thread.
+#[cfg(test)]
+fn svg_writes() -> usize {
+    SVG_WRITES.with(std::cell::Cell::get)
 }
 
 /// What a write left: the file as it now is, and where the original was kept if it was.
@@ -1572,6 +1592,9 @@ impl Written {
 impl InkWrite {
     /// Writes the ink, or takes the file away when nothing is drawn.
     pub fn run(self) -> std::io::Result<Written> {
+        // Written out first, the slow part: the file is then checked for a change made by another
+        // window as late as it can be, just before it is written.
+        let text = self.drawing.as_ref().map(svg_text);
         let current = match std::fs::read(&self.file) {
             Ok(bytes) => Some(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -1588,7 +1611,7 @@ impl InkWrite {
         let kept = if self.keep_first && self.file.is_file() { Some(keep_original(&self.file)?) } else { None };
         // A page drawn on and then rubbed clean loses its file rather than keeping an
         // empty one, so a page with no ink has no ink in its folder either.
-        match &self.text {
+        match &text {
             None => match std::fs::remove_file(&self.file) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -1597,7 +1620,7 @@ impl InkWrite {
             Some(text) => std::fs::write(&self.file, text)?,
         }
         // What is now on disk is what was written: it is not read back over a slow mount.
-        Ok(Written { bytes: self.text.map(String::into_bytes), kept })
+        Ok(Written { bytes: text.map(String::into_bytes), kept })
     }
 }
 
@@ -1632,6 +1655,35 @@ mod tests {
         s.dabs.push(Dab::new(x, 40.0, 0.3));
         s.dabs.push(Dab::new(x + 30.0, 40.0, 1.0));
         s
+    }
+
+    /// Writing a page's ink out as SVG takes time that grows with the page: 80 ms for a page of
+    /// 260 strokes. Done when a save was prepared, on the window's thread, it froze the pen for
+    /// that long after every stroke. A save is now prepared from a copy of the strokes, and the
+    /// file is written out where the save is made, off the window's thread.
+    #[test]
+    fn a_save_is_prepared_without_writing_the_ink_out() {
+        let t = TempDir::new("ink-save-prepared");
+        let mut pad = Pad::of_page(t.path());
+        // A page well written on: 300 strokes of 80 points each.
+        for n in 0..300u16 {
+            let mut s = Stroke::new(Tool::Pen, Rgb(0x20, 0x20, 0x20), 2.0);
+            for k in 0..80u16 {
+                s.dabs.push(Dab::new(f32::from(k) * 3.0, f32::from(n) * 4.0 + (f32::from(k) * 0.3).sin() * 2.0, 0.6));
+            }
+            pad.drawing.add(s);
+        }
+        let before = svg_writes();
+        let write = pad.prepare_save();
+        assert_eq!(svg_writes(), before, "nothing written out on the window's thread");
+
+        let file = write.file.clone();
+        let written = std::thread::spawn(move || write.run()).join().expect("the save's thread").expect("written");
+        let on_disk = std::fs::read_to_string(&file).expect("the ink file");
+        assert_eq!(on_disk, svg::write(&pad.drawing, svg::Flavour::Editable), "the same file as before");
+        assert!(written.on_disk());
+        pad.apply_save(Ok(written), true).expect("taken in");
+        assert!(!pad.dirty, "the saved drawing is the one on disk");
     }
 
     /// The page's ink was built afresh, stroke by stroke, in every frame: the more was written
