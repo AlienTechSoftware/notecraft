@@ -1,8 +1,9 @@
 //! Tests for the MVP 1 dataset: the manifest, the truth files and the smoke run.
 //!
-//! The dataset is private and is not in the repository. `NOTECRAFT_OCR_DATASET` points at its
-//! folder (`smoke`, `dev`, `eval`, `truth` and `manifest.csv`). Without it, the tests that need
-//! the dataset are ignored; run them with `--ignored` once it is set. The parser test always runs.
+//! The smoke set is checked in under `tests/fixtures/mvp-smoke`: its pictures and manifest. The
+//! larger private dataset is read from `NOTECRAFT_OCR_DATASET` when it is set. Tests that need
+//! ground truth a person has not verified yet, or the models, are ignored; run them with
+//! `--ignored` once both are in place.
 //!
 //! The rules come from the dataset README: every picture has a manifest row with its source,
 //! licence and credit before it is used; ids are unique; ground truth is written by a person.
@@ -70,8 +71,10 @@ fn parse_manifest(text: &str) -> Vec<Row> {
         .collect()
 }
 
-fn dataset() -> Option<PathBuf> {
-    std::env::var_os("NOTECRAFT_OCR_DATASET").map(PathBuf::from)
+fn dataset() -> PathBuf {
+    std::env::var_os("NOTECRAFT_OCR_DATASET")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("mvp-smoke"))
 }
 
 fn load_manifest(root: &Path) -> Vec<Row> {
@@ -101,9 +104,8 @@ fn a_manifest_record_keeps_commas_inside_quotes() {
 /// Every picture under smoke, dev and eval has a manifest row in its own split, with its source,
 /// licence and credit filled in. Ids are unique.
 #[test]
-#[ignore = "needs NOTECRAFT_OCR_DATASET; run with --ignored"]
 fn every_picture_has_a_complete_manifest_row_in_its_split() {
-    let root = dataset().expect("set NOTECRAFT_OCR_DATASET");
+    let root = dataset();
     let rows = load_manifest(&root);
     let mut ids = HashSet::new();
     for row in &rows {
@@ -125,9 +127,9 @@ fn every_picture_has_a_complete_manifest_row_in_its_split() {
 
 /// Every printed-OCR row that has a truth file points at a file that exists and is not empty.
 #[test]
-#[ignore = "needs NOTECRAFT_OCR_DATASET; run with --ignored"]
+#[ignore = "truth is not verified by a person yet (dataset rule 3); run with --ignored once truth/ is filled"]
 fn every_printed_row_has_its_truth_file() {
-    let root = dataset().expect("set NOTECRAFT_OCR_DATASET");
+    let root = dataset();
     for row in load_manifest(&root).iter().filter(|r| r.category == "printed-ocr") {
         let truth = root.join("truth").join(&row.truth_file);
         let text = std::fs::read_to_string(&truth).unwrap_or_default();
@@ -138,9 +140,9 @@ fn every_printed_row_has_its_truth_file() {
 /// The smoke set for printed OCR: each picture reads without error, and every box lies inside
 /// its picture (criterion A3 on new pictures).
 #[test]
-#[ignore = "needs NOTECRAFT_OCR_DATASET and NOTECRAFT_OCR_MODELS; run with --ignored"]
+#[ignore = "needs NOTECRAFT_OCR_MODELS; run with --ignored"]
 fn the_printed_smoke_pictures_read_and_their_boxes_are_inside() {
-    let root = dataset().expect("set NOTECRAFT_OCR_DATASET");
+    let root = dataset();
     let models = std::env::var_os("NOTECRAFT_OCR_MODELS").map(PathBuf::from).expect("set NOTECRAFT_OCR_MODELS");
     let engine = OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load");
     let rows = load_manifest(&root);
