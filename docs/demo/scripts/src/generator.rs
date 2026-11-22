@@ -1210,4 +1210,38 @@ A test page for the OCR section.
         assert!(out.join("html").join("10-en").join("ocr").is_dir(), "the other languages keep theirs");
         let _ = fs::remove_dir_all(&dir);
     }
+
+    /// The two pictures the OCR pages added from the CC0 dataset are real files, linked from the
+    /// Arabic text and handwriting pages in every language, with alt text, and credited.
+    #[test]
+    fn the_dataset_pictures_are_linked_with_alt_text_and_credited() {
+        let pictures = ["ocr-receipt-ar-photo.jpg", "ocr-letter-ar.jpg"];
+        for name in pictures {
+            assert!(art_dir().join(name).is_file(), "{name} is in assets/demo");
+        }
+        let attribution =
+            fs::read_to_string(art_dir().parent().expect("assets").parent().expect("repo").join("ATTRIBUTION.md")).expect("ATTRIBUTION.md");
+        for name in pictures {
+            let row = attribution.lines().find(|l| l.contains(name)).unwrap_or_else(|| panic!("{name} has an attribution row"));
+            assert!(row.contains("CC0 1.0"), "{name} is credited as CC0: {row}");
+        }
+        let mut languages = 0;
+        for lang in LANGUAGES {
+            let ocr = content_dir().join(lang.code).join(OCR_FOLDER);
+            if !ocr.is_dir() {
+                continue;
+            }
+            languages += 1;
+            for (page, picture) in [("50-arabic-text.md", "ocr-receipt-ar-photo.jpg"), ("60-handwriting-limits.md", "ocr-letter-ar.jpg")] {
+                let text = fs::read_to_string(ocr.join(page)).expect("page");
+                let line = text
+                    .lines()
+                    .find(|l| l.contains(&format!("assets/{picture}")))
+                    .unwrap_or_else(|| panic!("{} links {picture}", ocr.join(page).display()));
+                let alt = line.trim_start_matches("![").split("](").next().unwrap_or("");
+                assert!(!alt.trim().is_empty(), "{} has alt text for {picture}", ocr.join(page).display());
+            }
+        }
+        assert_eq!(languages, LANGUAGES.len(), "every language has the OCR pages");
+    }
 }
