@@ -50,6 +50,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-ink", 1),
     ("notecraft-input-language", 1),
     ("notecraft-onenote", 1),
+    ("notecraft-ocr", 1),
     ("notecraft-formats", 1),
     ("notecraft-text", 1),
     ("notecraft-store", 2),

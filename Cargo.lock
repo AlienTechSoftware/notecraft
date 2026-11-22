@@ -3393,6 +3393,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "notecraft-ocr"
+version = "0.0.17"
+dependencies = [
+ "image",
+]
+
+[[package]]
 name = "notecraft-onenote"
 version = "0.0.18"
 
