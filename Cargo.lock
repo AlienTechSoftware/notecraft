@@ -3413,6 +3413,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "notecraft-ocr-lab"
+version = "0.0.18"
+dependencies = [
+ "eframe",
+ "egui",
+ "image",
+ "notecraft-ocr",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "notecraft-onenote"
 version = "0.0.18"
 
