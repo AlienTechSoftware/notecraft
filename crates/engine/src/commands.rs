@@ -1319,6 +1319,29 @@ mod tests {
     }
 
     #[test]
+    fn a_page_typed_through_another_spelling_of_the_notebooks_folder_keeps_its_real_place() {
+        // On Windows CI the temporary folder has a short name, so a path typed in the test (or a command line)
+        // differs in spelling from the real place the session holds. A page inside a notebook must come back at
+        // its real place, or the window cannot follow the links on it.
+        let t = TempDir::new("engine-spelling");
+        let base = std::fs::canonicalize(t.path()).expect("the temporary folder's real place");
+        let settings = Settings::at(base.join("settings").join("s.toml"));
+        let root = base.join("notebooks");
+        let mut s = Session::new(&root, settings.clone()).expect("session");
+        let made = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        // Another spelling of the same folder: a junction (Windows) or a symbolic link (elsewhere).
+        let alias = base.join("alias-of-notebooks");
+        #[cfg(windows)]
+        let aliased = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&alias).arg(&root).status().expect("mklink").success();
+        #[cfg(not(windows))]
+        let aliased = std::os::unix::fs::symlink(&root, &alias).is_ok();
+        assert!(aliased, "the alias was made");
+        let typed = alias.join(made.strip_prefix(&root).expect("the notebook is in the folder")).join("new-section-1").join("untitled-page");
+        let shown = s.page_to_show(&typed.to_string_lossy()).expect("the page shows");
+        assert!(shown.starts_with(&root), "a page inside a notebook is answered at its real place: {shown:?}");
+    }
+
+    #[test]
     fn open_page_finds_the_page_for_a_notebook_a_section_or_a_page() {
         let t = TempDir::new("engine-open-page");
         let settings = Settings::at(t.path().join("settings").join("s.toml"));
