@@ -75,6 +75,32 @@ pub struct Reader {
     pub focus: Focus,
     /// The line the focus is on.
     pub at: usize,
+    /// The reading carries on for a moment after a swipe on a touchpad, as the page does.
+    fling: crate::fling::Fling,
+    /// How far down the reading is scrolled, as last drawn.
+    offset: f32,
+    /// Where the reading was drawn last: a swipe is the reading's only if it began over it.
+    view: Option<egui::Rect>,
+    /// The swipe the fingers are making, from its start to its end.
+    swipe: Swipe,
+}
+
+/// What the reader knows of the swipe in progress: kept from the fingers' start to their lift.
+#[derive(Clone, Copy, Debug, Default)]
+struct Swipe {
+    /// Begun over the reading, and so the reading's to carry on.
+    ours: bool,
+    /// A zoom (Ctrl or Cmd held at some point): never carried on as a scroll.
+    zoom: bool,
+    /// A click or a key stopped it: the lift that ends it carries nothing on.
+    dropped: bool,
+    /// Its start was seen: where it began says whose it is, and moving over the reading later
+    /// does not make it the reading's.
+    seen: bool,
+    /// Begun with Shift held (and not Alt): egui scrolls it sideways to its end, as it keeps the
+    /// keys the fingers came down with, and the reading, which only scrolls up and down, does
+    /// not move, so nothing is carried on either.
+    sideways: bool,
 }
 
 /// The smallest and largest text sizes offered.
@@ -92,7 +118,17 @@ impl Reader {
     /// The reader for a page with this title and these blocks; `has_ink` says whether the page
     /// holds handwriting, which the reader cannot show as words.
     pub fn new(title: &str, blocks: &[Block], has_ink: bool) -> Self {
-        Self { lines: lines(title, blocks, has_ink), size: 22.0, spacing: 1.7, focus: Focus::Off, at: 0 }
+        Self {
+            lines: lines(title, blocks, has_ink),
+            size: 22.0,
+            spacing: 1.7,
+            focus: Focus::Off,
+            at: 0,
+            fling: crate::fling::Fling::default(),
+            offset: 0.0,
+            view: None,
+            swipe: Swipe::default(),
+        }
     }
 
     /// Moves the line focus by `by` lines, staying within the reading.
@@ -270,9 +306,68 @@ fn toolbar(ui: &mut Ui, reader: &mut Reader, t: &Tokens, act: &mut Option<Act>) 
     });
 }
 
-fn reading(ui: &mut Ui, reader: &Reader, t: &Tokens) {
+fn reading(ui: &mut Ui, reader: &mut Reader, t: &Tokens) {
     let column = (reader.size * 34.0).min(ui.available_width() - 48.0).max(200.0);
-    egui::ScrollArea::vertical().id_salt("immersive-reader-scroll").auto_shrink([false, false]).show(ui, |ui| {
+    // Fingers on a touchpad scroll the reading themselves; when they lift, it carries on at the
+    // speed they were going and slows to a stop. A click or a key stops it where it is.
+    let now = ui.input(|i| i.time);
+    let (fling, swipe, view) = (&mut reader.fling, &mut reader.swipe, reader.view);
+    ui.input(|i| {
+        if i.pointer.any_pressed() || i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. })) {
+            fling.stop();
+            swipe.dropped = true;
+        }
+        let over = |i: &egui::InputState| view.is_some_and(|v| i.pointer.hover_pos().is_some_and(|p| v.contains(p)));
+        for event in &i.events {
+            let egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase, modifiers, .. } = event else { continue };
+            match phase {
+                // Fingers down: whatever was carrying on stops, moved yet or not, and the swipe is
+                // the reading's if it began over it.
+                egui::TouchPhase::Start => {
+                    fling.stop();
+                    *swipe = Swipe {
+                        ours: over(i),
+                        zoom: modifiers.ctrl || modifiers.command,
+                        dropped: false,
+                        seen: true,
+                        sideways: modifiers.shift && !modifiers.alt,
+                    };
+                }
+                egui::TouchPhase::End => {
+                    if swipe.ours && !swipe.zoom && !swipe.dropped {
+                        fling.lift(i.time);
+                    } else {
+                        fling.stop();
+                    }
+                    *swipe = Swipe::default();
+                }
+                egui::TouchPhase::Cancel => {
+                    fling.stop();
+                    *swipe = Swipe::default();
+                }
+                egui::TouchPhase::Move => {
+                    // A swipe whose start was not seen is the reading's if it moves over it.
+                    if !swipe.seen && !swipe.ours && !swipe.zoom && !swipe.dropped && over(i) {
+                        swipe.ours = true;
+                    }
+                    // Zoom stays zoom to the end, even once the key is let go.
+                    swipe.zoom |= modifiers.ctrl || modifiers.command;
+                    if swipe.ours && !swipe.zoom && !swipe.dropped && !swipe.sideways && *delta != egui::Vec2::ZERO {
+                        fling.finger(i.time, *delta);
+                    }
+                }
+            }
+        }
+    });
+    let carried = reader.fling.step(now);
+    if reader.fling.moving() {
+        ui.ctx().request_repaint();
+    }
+    let mut area = egui::ScrollArea::vertical().id_salt("immersive-reader-scroll").auto_shrink([false, false]);
+    if carried.y != 0.0 {
+        area = area.vertical_scroll_offset((reader.offset - carried.y).max(0.0));
+    }
+    let shown = area.show(ui, |ui| {
         ui.add_space(24.0);
         ui.horizontal(|ui| {
             ui.add_space(((ui.available_width() - column) / 2.0).max(24.0));
@@ -318,6 +413,8 @@ fn reading(ui: &mut Ui, reader: &Reader, t: &Tokens) {
             });
         });
     });
+    reader.offset = shown.state.offset().y;
+    reader.view = Some(shown.inner_rect);
 }
 
 #[cfg(test)]
@@ -374,5 +471,192 @@ mod tests {
         assert!(r.in_focus(0) && r.in_focus(1) && r.in_focus(2));
         r.focus = Focus::One;
         assert!(!r.in_focus(0) && r.in_focus(1) && !r.in_focus(2));
+    }
+
+    /// A swipe on a touchpad carries the reading on after the fingers lift, as it does the page:
+    /// without it every swipe stopped dead, and a long page took swipe after swipe.
+    #[test]
+    fn a_swipe_carries_the_reading_on_after_the_fingers_lift() {
+        let mut reader = Reader {
+            lines: (0..400).map(|n| Line { kind: Kind::Text, text: format!("Line {n} of a long reading") }).collect(),
+            ..Reader::new("", &[], false)
+        };
+        let ctx = egui::Context::default();
+        let t = crate::theme::Theme::DEFAULT.tokens();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0));
+        let mut time = 0.0;
+        let mut frame = |reader: &mut Reader, events: Vec<egui::Event>| {
+            time += 1.0 / 60.0;
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let _ = show(ui.ctx(), reader, &t);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut reader, vec![egui::Event::PointerMoved(screen.center())]);
+        // A quick swipe down the reading, and the fingers lift.
+        let wheel = |delta: f32, phase| egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, delta),
+            phase,
+            modifiers: egui::Modifiers::NONE,
+            source: egui::MouseWheelSource::Trackpad,
+        };
+        for _ in 0..6 {
+            frame(&mut reader, vec![wheel(-40.0, egui::TouchPhase::Move)]);
+        }
+        frame(&mut reader, vec![wheel(0.0, egui::TouchPhase::End)]);
+        let lifted = reader.offset;
+        assert!(lifted > 100.0, "the fingers scrolled the reading: {lifted}");
+        for _ in 0..30 {
+            frame(&mut reader, Vec::new());
+        }
+        assert!(reader.offset > lifted + 100.0, "and it carried on after they lifted: {lifted} -> {}", reader.offset);
+
+        // A click stops it where it is.
+        frame(
+            &mut reader,
+            vec![egui::Event::PointerButton {
+                pos: screen.center(),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        let stopped = reader.offset;
+        for _ in 0..10 {
+            frame(&mut reader, Vec::new());
+        }
+        assert!((reader.offset - stopped).abs() < 1.0, "a click stopped it: {stopped} -> {}", reader.offset);
+    }
+
+    /// A long reading in a window, driven a frame at a time with the events given.
+    struct Bench {
+        reader: Reader,
+        ctx: egui::Context,
+        time: f64,
+    }
+
+    impl Bench {
+        const SCREEN: egui::Rect = egui::Rect { min: egui::Pos2::ZERO, max: egui::pos2(900.0, 700.0) };
+
+        fn new() -> Self {
+            let reader = Reader {
+                lines: (0..400).map(|n| Line { kind: Kind::Text, text: format!("Line {n} of a long reading") }).collect(),
+                ..Reader::new("", &[], false)
+            };
+            let mut bench = Bench { reader, ctx: egui::Context::default(), time: 0.0 };
+            bench.frame(vec![egui::Event::PointerMoved(Self::SCREEN.center())]);
+            bench
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>) {
+            self.time += 1.0 / 60.0;
+            let t = crate::theme::Theme::DEFAULT.tokens();
+            let input = egui::RawInput { screen_rect: Some(Self::SCREEN), time: Some(self.time), events, ..Default::default() };
+            let reader = &mut self.reader;
+            let mut out = self.ctx.run_ui(input, |ui| {
+                let _ = show(ui.ctx(), reader, &t);
+            });
+            out.textures_delta.clear();
+        }
+
+        fn wheel(delta: f32, phase: egui::TouchPhase, ctrl: bool) -> egui::Event {
+            Self::wheel_with(delta, phase, if ctrl { egui::Modifiers::CTRL } else { egui::Modifiers::NONE })
+        }
+
+        fn wheel_with(delta: f32, phase: egui::TouchPhase, modifiers: egui::Modifiers) -> egui::Event {
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, delta),
+                phase,
+                modifiers,
+                source: egui::MouseWheelSource::Trackpad,
+            }
+        }
+
+        /// A quick swipe down: the fingers' start, six moves (Ctrl held on the first if `ctrl`),
+        /// and, before the lift, `between`.
+        fn swipe(&mut self, ctrl: bool, between: Vec<egui::Event>) {
+            self.frame(vec![Self::wheel(0.0, egui::TouchPhase::Start, ctrl)]);
+            for n in 0..6 {
+                self.frame(vec![Self::wheel(-40.0, egui::TouchPhase::Move, ctrl && n == 0)]);
+            }
+            self.frame(between);
+            self.frame(vec![Self::wheel(0.0, egui::TouchPhase::End, false)]);
+        }
+
+        /// How far the reading moves on its own over the next half second.
+        fn carries_on(&mut self) -> f32 {
+            let from = self.reader.offset;
+            for _ in 0..30 {
+                self.frame(Vec::new());
+            }
+            self.reader.offset - from
+        }
+    }
+
+    #[test]
+    fn a_swipe_begun_over_the_toolbar_does_not_carry_the_reading_on() {
+        let mut b = Bench::new();
+        b.frame(vec![egui::Event::PointerMoved(egui::pos2(450.0, 10.0))]);
+        b.swipe(false, Vec::new());
+        assert!(b.carries_on().abs() < 1.0, "the toolbar's swipe is not the reading's");
+    }
+
+    #[test]
+    fn a_swipe_begun_over_the_toolbar_stays_the_toolbars_over_the_reading() {
+        let mut b = Bench::new();
+        b.frame(vec![egui::Event::PointerMoved(egui::pos2(450.0, 10.0))]);
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::Start, false)]);
+        b.frame(vec![egui::Event::PointerMoved(Bench::SCREEN.center())]);
+        for _ in 0..6 {
+            b.frame(vec![Bench::wheel(-40.0, egui::TouchPhase::Move, false)]);
+        }
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::End, false)]);
+        assert!(b.carries_on().abs() < 1.0, "begun over the toolbar, it is not the reading's to carry on");
+    }
+
+    #[test]
+    fn a_swipe_with_shift_held_carries_nothing_on_up_or_down() {
+        let mut b = Bench::new();
+        b.frame(vec![Bench::wheel_with(0.0, egui::TouchPhase::Start, egui::Modifiers::SHIFT)]);
+        for _ in 0..6 {
+            // The key is let go during the swipe: egui keeps the one it began with.
+            b.frame(vec![Bench::wheel(-40.0, egui::TouchPhase::Move, false)]);
+        }
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::End, false)]);
+        assert!(b.carries_on().abs() < 1.0, "egui scrolled it sideways; it is not carried on up and down");
+        b.swipe(false, Vec::new());
+        assert!(b.carries_on() > 20.0, "the next swipe, with no key, carries on");
+    }
+
+    #[test]
+    fn a_zoom_stays_a_zoom_once_its_key_is_let_go() {
+        let mut b = Bench::new();
+        b.swipe(true, Vec::new());
+        assert!(b.carries_on().abs() < 1.0, "a pinch-zoom does not carry on as a scroll");
+    }
+
+    #[test]
+    fn a_click_before_the_lift_leaves_nothing_to_carry_on() {
+        let mut b = Bench::new();
+        let click = egui::Event::PointerButton {
+            pos: Bench::SCREEN.center(),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        b.swipe(false, vec![click]);
+        assert!(b.carries_on().abs() < 1.0, "the click stopped the swipe, and the lift did not start it again");
+    }
+
+    #[test]
+    fn fingers_put_down_stop_the_reading_before_they_move() {
+        let mut b = Bench::new();
+        b.swipe(false, Vec::new());
+        assert!(b.carries_on() > 20.0, "the swipe carries on");
+        b.frame(vec![Bench::wheel(0.0, egui::TouchPhase::Start, false)]);
+        assert!(b.carries_on().abs() < 1.0, "fingers resting on the pad stop it");
     }
 }

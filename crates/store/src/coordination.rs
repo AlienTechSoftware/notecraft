@@ -21,7 +21,10 @@ pub fn page_writer(page: &Path) -> Result<Arc<Mutex<()>>> {
 }
 
 fn writer_for(root: &Path, page: bool) -> Result<Arc<Mutex<()>>> {
-    let root = std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))?;
+    // The browser build has no file system to canonicalize against; its notebook paths are
+    // already the keys the writers map needs.
+    let root =
+        if cfg!(target_arch = "wasm32") { root.to_path_buf() } else { std::fs::canonicalize(root).map_err(|e| StoreError::io("open", root, e))? };
     let mut writers = WRITERS.lock().map_err(|_| StoreError::invalid("the notebook writers are unavailable"))?;
     writers.retain(|_, writer| writer.strong_count() > 0);
     if let Some(writer) = writers.get(&(page, root.clone())).and_then(Weak::upgrade) {

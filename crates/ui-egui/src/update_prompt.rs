@@ -29,6 +29,7 @@ pub fn translate(text: &str, args: &[(&str, &str)]) -> String {
         "v{from} to {to}" => "ui.update_prompt.version_change",
         "What's new" => "ui.update_prompt.whats_new",
         "Download" => "ui.update_prompt.download",
+        "{app} {version} is the newest version available." => "ui.update_prompt.newest_available",
         "Later" => "ui.update_prompt.later",
         "Dismiss" => "ui.update_prompt.dismiss",
         "All releases are listed at {url}" => "ui.update_prompt.all_releases",
@@ -49,18 +50,20 @@ pub const REPO: &str = "AlienTechSoftware/notecraft";
 /// `running`. `--set-version` runs it as an older copy, for one run; nothing is saved.
 pub fn check_latest(running: &str) -> Updater {
     let running_owned = running.to_string();
-    log::info!("update: install for this copy (main thread): {:?}", craft_update::self_update::current(&NOTECRAFT));
+    // Detecting the installation probes the system (package managers on Linux), so it runs on the
+    // check thread. The window reads the answer when the card opens.
+    let installable = Arc::new(std::sync::OnceLock::new());
+    let decided = installable.clone();
     let source: CheckSource = Arc::new(move || {
-        log::info!("update: install for this copy (check thread): {:?}", craft_update::self_update::current(&NOTECRAFT));
-        log::info!("update: self-updating on the check thread: {}", craft_update::self_update::is_self_updating(&NOTECRAFT));
+        let is_self_updating = craft_update::self_update::is_self_updating(&NOTECRAFT);
+        log::info!("update: installable, decided on the check thread: {is_self_updating}");
+        let _ = decided.set(is_self_updating);
         let http = craft_update::Http::new(&format!("NoteCraft/{running_owned}"))?;
         let answer = craft_update::check_for_update(&NOTECRAFT, &http, &running_owned);
         log::info!("update: latest release check finished: {:?}", answer.as_ref().map(|r| r.as_ref().map(|x| x.tag.clone())));
         answer
     });
-    let installable = craft_update::self_update::is_self_updating(&NOTECRAFT);
-    log::info!("update: installable, decided once at start: {installable}");
-    Updater::new(&NOTECRAFT, running).with_translator(translate).with_installable(installable).with_source(source)
+    Updater::new(&NOTECRAFT, running).with_translator(translate).with_installable_cell(installable).with_source(source)
 }
 
 /// A prompt offering release `version` of NoteCraft, read from its GitHub release. The first

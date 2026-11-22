@@ -456,21 +456,65 @@ Two OneNote sample files are stored in Git LFS, and nothing else is:
 
 The rule is in `.gitattributes` (`Large*.one filter=lfs ...`).
 
-What it means for you:
+### Why these files use LFS
 
-- **Install Git LFS once per machine**, then run `git lfs install` in the clone. Without it, the two
-  files check out as small text pointers, not the real sample, and the import tests that read them
-  fail or skip.
-- **Pushing needs LFS too.** When a push includes new history that touches LFS objects, Git LFS
-  uploads them. If LFS is missing or the objects are not on disk, the push is refused with
-  `missing or corrupt local objects`. The nightly hit this on 20 November 2026.
-- **CI does not fetch LFS objects today.** Nothing on `main` sets `lfs` on a checkout. The nightly's
-  push of its version bump is the one place that needs them. Its fix is pending in PR #425, which
-  either fetches the objects or uses the push flag `lfs.allowincompletepush`. Read that PR's
-  decision before you change the nightly's checkout. Any new workflow that checks out the repository
-  and pushes must handle LFS the same way.
+The two files are 113 MB and 161 MB, and GitHub rejects plain git objects that large. LFS keeps the
+real bytes on GitHub's LFS server and leaves a 134-byte pointer in git. Without LFS the files could
+not be committed at all. They are OneNote samples from the onenote.rs corpus, used only by manual
+import tests. No build, test or CI run reads them, so a normal clone skips them on purpose.
+
+### One-time setup
+
+1. Install Git LFS: `winget install GitHub.GitLFS` on Windows, `brew install git-lfs` on macOS, or
+   your package manager on Linux. Check it with `git lfs version`.
+2. Run `git lfs install` once per machine. It adds the LFS filters to your global git config.
+
+### Daily use
+
+- A normal clone or pull gives you the two files as pointers. That is expected. The import tests
+  do not need them.
+- To get the real files for a manual import test, run:
+
+  ```
+  git lfs pull --include="crates/import/tests/fixtures/3p/onenote.rs/samples/Large*.one" --exclude=""
+  ```
+
+  The empty `--exclude` is required, because `.lfsconfig` skips these files by default.
+- To put the real files back as pointers in your working tree, run
+  `git checkout -- <file>` for each of the two files. This does not change the repository.
+- Before you commit a change to one of these files, run `git status`. Git LFS should show the file
+  as modified only when its content really changed. If it shows an unexpected change, stop and check.
+
+### Pushing with LFS
+
+- When a push includes LFS objects that the remote does not have, Git LFS uploads them first. If
+  the local objects are missing, the push fails with `missing or corrupt local objects`. This
+  happened to the nightly on 20 November 2026.
+- To upload the two samples yourself, you need a copy of the full file in the working tree and write
+  access to the repository. Stage the file with `git add` so Git LFS stores it locally, then run
+  `git lfs push --all origin`, then unstage with `git restore --staged`. Do not commit the file.
+- Only a full-size file can be uploaded. If the local file does not match the pointer's hash, Git
+  LFS refuses it. Check the hash against `SHA256SUMS.txt` in the corpus folder first.
+
+### CI and the nightly
+
+- CI does not fetch LFS objects. Nothing on `main` sets `lfs` on a checkout. The nightly's push of
+  its version bump is the one place that needs them. Its fix is pending in PR #425, which either
+  fetches the objects or uses the push flag `lfs.allowincompletepush`. Read that PR's decision
+  before you change the nightly's checkout.
+- Any new workflow that checks out the repository and pushes must handle LFS the same way.
 - `cargo xtask pre-push` does not check LFS. If a push is refused for LFS reasons, run
   `git lfs fetch --all` and `git lfs pull`, then push again.
+
+### Troubleshooting
+
+- **The two files are only 134-byte text files.** Run the `git lfs pull` command above.
+- **`git lfs` is not found.** Install Git LFS, then run `git lfs install` again.
+- **Push refused: `missing or corrupt local objects`.** Run `git lfs fetch --all`, then
+  `git lfs pull`. If the file was never on this machine in full, get it from a copy of the full
+  file, then push again.
+- **Upload refused or auth fails.** You need write access to the repository. Do not put
+  credentials in chat or in the repository.
 - An LFS object that was never pushed cannot be fetched from the remote. If it is lost locally
   before its first push, nothing on the remote can restore it: recover it from another copy of the
   working tree, or re-add the file.
