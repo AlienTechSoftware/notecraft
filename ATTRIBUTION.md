@@ -113,7 +113,7 @@ data.
 | `docs/images/file-screen.png` | The File screen with the notebook covers |
 | `docs/images/html-page.png` | An HTML page with the preview |
 | `docs/images/equations.png` | Inline and display equations |
-| `docs/images/dark-green.png` | The dark green theme |
+| `docs/images/dark-default.png` | The default dark theme |
 | `docs/images/theme-switcher.png` | The theme menu open |
 
 ## PDF printout rendering
