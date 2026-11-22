@@ -205,7 +205,8 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
         if best.iter().any(|r| r.path == piece.page) || !qualifies(&piece.page) {
             continue;
         }
-        let snippet = piece.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
+        // Lowercased, as the search has always shown its snippets.
+        let snippet = piece.text.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
         let query_words = notecraft_search::tokenize(query);
         let boxes: Vec<Quad> = piece
             .lines
