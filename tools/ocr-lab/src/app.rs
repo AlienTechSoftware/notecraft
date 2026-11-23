@@ -276,6 +276,93 @@ impl Lab {
         self.applied_adjust = Some(self.adjust);
     }
 
+    /// Runs OCR on every picture in the folder and saves each result beside its picture. The window
+    /// waits while it runs; the status line says how far it has got. A picture that fails is counted
+    /// and skipped, so one bad file does not stop the rest.
+    fn run_all(&mut self) {
+        let Some(reader) = self.reader.as_ref() else { return };
+        let total = self.pictures.len();
+        let started = std::time::Instant::now();
+        let (mut done, mut failed) = (0usize, 0usize);
+        for path in self.pictures.clone() {
+            let name = self.relative_name(&path);
+            let mut timings = Vec::new();
+            match telemetry::timed("read picture", &mut timings, || reader.read_image(&path)) {
+                Ok(lines) => {
+                    save_run(&path, &lines, &timings, &mut self.log);
+                    done += 1;
+                }
+                Err(e) => {
+                    failed += 1;
+                    self.log.event(&format!("OCR failed on {name}: {e:?}"));
+                }
+            }
+            self.status = format!("OCR on all: {} of {total} done, {failed} failed", done + failed);
+        }
+        self.log.event(&format!("OCR on all: {done} saved, {failed} failed, in {:.1} s", started.elapsed().as_secs_f64()));
+        self.status = format!("OCR on all finished: {done} saved, {failed} failed, in {:.1} s.", started.elapsed().as_secs_f64());
+        // The open picture now has a fresh run; reload it so the panel shows the saved result.
+        if let Some(index) = self.loaded.as_ref().map(|l| l.index) {
+            self.reload_run(index);
+        }
+    }
+
+    /// Re-reads the saved run of the picture at `index` into the open picture, if it is the one open.
+    fn reload_run(&mut self, index: usize) {
+        let path = self.pictures[index].clone();
+        if let Some(loaded) = self.loaded.as_mut()
+            && loaded.index == index
+            && let Some((lines, timings)) = load_run(&path)
+        {
+            loaded.score = Some(case::score(&loaded.file.labels, &lines));
+            loaded.lines = lines;
+            loaded.timings = timings;
+        }
+    }
+
+    /// Deletes the saved run of the picture open now. The picture and its labels are kept.
+    fn clear_result_of_open(&mut self) {
+        let Some(index) = self.loaded.as_ref().map(|l| l.index) else { return };
+        let path = self.pictures[index].clone();
+        match remove_run_file(&path) {
+            Ok(removed) => {
+                if let Some(loaded) = self.loaded.as_mut() {
+                    loaded.lines.clear();
+                    loaded.timings.clear();
+                    loaded.score = None;
+                }
+                self.status =
+                    if removed { "The saved OCR result of this picture is cleared.".into() } else { "This picture has no saved OCR result.".into() };
+                self.log.event(&format!("cleared the OCR result of {}", self.relative_name(&path)));
+            }
+            Err(e) => self.status = format!("Could not clear the result: {e}"),
+        }
+    }
+
+    /// Deletes every saved run in the folder. Labels and pictures are kept.
+    fn clear_all_results(&mut self) {
+        let mut removed = 0usize;
+        let mut failed = 0usize;
+        for path in self.pictures.clone() {
+            match remove_run_file(&path) {
+                Ok(true) => removed += 1,
+                Ok(false) => {}
+                Err(_) => failed += 1,
+            }
+        }
+        if let Some(loaded) = self.loaded.as_mut() {
+            loaded.lines.clear();
+            loaded.timings.clear();
+            loaded.score = None;
+        }
+        self.status = if failed == 0 {
+            format!("Cleared {removed} saved OCR results. Labels are kept.")
+        } else {
+            format!("Cleared {removed} saved OCR results; {failed} could not be removed.")
+        };
+        self.log.event(&format!("cleared {removed} saved OCR results ({failed} failed)"));
+    }
+
     fn run_ocr(&mut self) {
         let Some(reader) = self.reader.as_ref() else {
             self.status = self.reader_error.clone().unwrap_or_else(|| "The models are not loaded.".to_string());
@@ -665,12 +752,24 @@ impl Lab {
             if ui.add_enabled(can_run, egui::Button::new("Run OCR")).clicked() {
                 self.run_ocr();
             }
+            let can_run_all = self.reader.is_some() && !self.pictures.is_empty();
+            if ui.add_enabled(can_run_all, egui::Button::new("Run OCR on all")).clicked() {
+                self.run_all();
+            }
             let can_copy = self.loaded.is_some();
             if ui.add_enabled(can_copy, egui::Button::new("Copy report")).clicked()
                 && let Some(text) = self.report()
             {
                 ui.ctx().copy_text(text);
                 self.status = "Report copied, and written under local/reports.".to_string();
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.add_enabled(self.loaded.is_some(), egui::Button::new("Clear this result")).clicked() {
+                self.clear_result_of_open();
+            }
+            if ui.add_enabled(!self.pictures.is_empty(), egui::Button::new("Clear all results")).clicked() {
+                self.clear_all_results();
             }
         });
         ui.horizontal(|ui| {
@@ -936,6 +1035,15 @@ fn open_in_file_manager(folder: &Path) {
     }
 }
 
+/// Deletes the saved run beside a picture. Returns whether there was one to delete.
+fn remove_run_file(picture: &Path) -> Result<bool, String> {
+    match std::fs::remove_file(case::run_path(picture)) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("{}: {e}", case::run_path(picture).display())),
+    }
+}
+
 /// Saves a run beside its picture, so the next time it opens the result is there without reading
 /// the picture again. The file records the picture's checksum: a changed picture does not match and
 /// its old run is ignored.
@@ -1077,6 +1185,19 @@ mod tests {
         let screen = Lab::to_screen(origin, 2.0, [30.0, 10.0]);
         assert_eq!(screen, egui::pos2(160.0, 60.0));
         assert_eq!(Lab::to_pixels(origin, 2.0, screen), [30.0, 10.0]);
+    }
+
+    #[test]
+    fn clearing_a_result_removes_only_its_run_file_and_says_when_there_was_none() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-clear-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let picture = dir.join("c.png");
+        image::RgbImage::new(4, 4).save(&picture).expect("picture");
+        std::fs::write(case::run_path(&picture), "{}").expect("run file");
+        assert_eq!(remove_run_file(&picture), Ok(true), "the run is removed");
+        assert!(picture.is_file(), "the picture is kept");
+        assert_eq!(remove_run_file(&picture), Ok(false), "a second clear finds nothing");
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
     #[test]
