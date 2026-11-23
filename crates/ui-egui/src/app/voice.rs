@@ -263,7 +263,10 @@ fn add_paragraphs(blocks: &mut Vec<notecraft_formats::Block>, boxes: &mut [notec
     let at = at.min(blocks.len());
     let before = blocks.len();
     for (k, line) in lines.iter().enumerate() {
-        blocks.insert(at + k, notecraft_formats::Block::Paragraph(vec![notecraft_formats::Span { text: (*line).into(), ..Default::default() }]));
+        blocks.insert(
+            at + k,
+            notecraft_formats::Block::Paragraph(vec![notecraft_formats::Span { text: (*line).into(), ..Default::default() }], Vec::new()),
+        );
     }
     if !boxes.is_empty() && boxes.iter().map(|c| c.blocks).sum::<usize>() == before {
         let owner = at.saturating_sub(1);
@@ -307,8 +310,8 @@ fn normalized(blocks: &[notecraft_formats::Block]) -> Vec<notecraft_formats::Blo
     let mut blocks = blocks.to_vec();
     for block in &mut blocks {
         match block {
-            Block::Paragraph(s) | Block::Heading { spans: s, .. } | Block::Quote(s) | Block::Item { spans: s, .. } => spans(s),
-            Block::Table { head, rows } => {
+            Block::Paragraph(s, _) | Block::Heading { spans: s, .. } | Block::Quote(s, _) | Block::Item { spans: s, .. } => spans(s),
+            Block::Table { head, rows, .. } => {
                 for cell in head.iter_mut().chain(rows.iter_mut().flatten()) {
                     spans(cell);
                 }
@@ -338,9 +341,9 @@ fn insert_words(block: &mut notecraft_formats::Block, caret: &pageedit::Caret, w
     let position = marked.find(&marker).ok_or(crate::tl_id!("voice.choose_a_cursor_position_in_the_paragraph_s_words_6538d9ab"))?;
     let at = marked[..position].chars().count() + words.chars().count();
     let spans = match block {
-        notecraft_formats::Block::Paragraph(s)
+        notecraft_formats::Block::Paragraph(s, _)
         | notecraft_formats::Block::Heading { spans: s, .. }
-        | notecraft_formats::Block::Quote(s)
+        | notecraft_formats::Block::Quote(s, _)
         | notecraft_formats::Block::Item { spans: s, .. } => s,
         _ => return Err(crate::tl_id!("voice.choose_a_paragraph_before_inserting_3f802b0c").into()),
     };
@@ -382,7 +385,7 @@ fn page_file(ed: &Editor) -> PathBuf {
 fn validate_voice_block(block: &notecraft_formats::Block) -> Result<(), String> {
     use notecraft_formats::Block;
     let spans = match block {
-        Block::Paragraph(spans) | Block::Heading { spans, .. } | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        Block::Paragraph(spans, _) | Block::Heading { spans, .. } | Block::Quote(spans, _) | Block::Item { spans, .. } => spans,
         _ => return Err(crate::tl_id!("voice.dictation_currently_supports_paragraphs_headings_q_4db15ad2").into()),
     };
     if spans.iter().any(|span| span.code || span.math) {
@@ -1577,7 +1580,7 @@ mod tests {
             app.apply_voice_text(&target, "Hola, mundo. مرحبا ").expect("insert");
             let after = app.editor.as_ref().expect("editor").blocks.clone();
             assert_eq!(after[1], before[1]);
-            let notecraft_formats::Block::Paragraph(spans) = &after[0] else { panic!("paragraph") };
+            let notecraft_formats::Block::Paragraph(spans, _) = &after[0] else { panic!("paragraph") };
             assert!(spans.iter().any(|s| s.text.contains("Hola, mundo. مرحبا")));
             assert!(spans.iter().any(|s| s.text == "bold" && s.bold));
             app.save_now();
@@ -1637,8 +1640,10 @@ mod tests {
             for (words, before_caret) in [("$5", "prefix $5 "), ("*", "prefix * "), ("(a)", "prefix (a) ")] {
                 let (_t, mut app) = app(format);
                 let ed = app.editor.as_mut().expect("editor");
-                ed.blocks =
-                    vec![notecraft_formats::Block::Paragraph(vec![notecraft_formats::Span { text: "prefix suffix".into(), ..Default::default() }])];
+                ed.blocks = vec![notecraft_formats::Block::Paragraph(
+                    vec![notecraft_formats::Span { text: "prefix suffix".into(), ..Default::default() }],
+                    Vec::new(),
+                )];
                 ed.rebuild_body();
                 ed.caret = Some(pageedit::Caret { block: 0, text: pageedit::caret_text(&ed.blocks[0]), selection: (7, 7), ..Default::default() });
                 NoteCraftApp::mark_dirty_from_blocks(ed);
@@ -1648,7 +1653,7 @@ mod tests {
                 let ed = app.editor.as_ref().expect("editor");
                 let caret = ed.caret.as_ref().expect("caret");
                 let drawn: String = match &ed.blocks[0] {
-                    notecraft_formats::Block::Paragraph(spans) => spans.iter().map(|s| s.text.as_str()).collect(),
+                    notecraft_formats::Block::Paragraph(spans, _) => spans.iter().map(|s| s.text.as_str()).collect(),
                     other => panic!("paragraph expected, got {other:?}"),
                 };
                 assert_eq!(drawn, format!("{before_caret}suffix"), "{format:?}: the words read as typed");
@@ -1788,11 +1793,14 @@ mod tests {
             for code in [true, false] {
                 let (_t, mut app) = app(format);
                 let ed = app.editor.as_mut().expect("editor");
-                ed.blocks = vec![notecraft_formats::Block::Paragraph(vec![
-                    notecraft_formats::Span { text: "before ".into(), ..Default::default() },
-                    notecraft_formats::Span { text: "abc".into(), code, math: !code, ..Default::default() },
-                    notecraft_formats::Span { text: " after".into(), ..Default::default() },
-                ])];
+                ed.blocks = vec![notecraft_formats::Block::Paragraph(
+                    vec![
+                        notecraft_formats::Span { text: "before ".into(), ..Default::default() },
+                        notecraft_formats::Span { text: "abc".into(), code, math: !code, ..Default::default() },
+                        notecraft_formats::Span { text: " after".into(), ..Default::default() },
+                    ],
+                    Vec::new(),
+                )];
                 ed.rebuild_body();
                 ed.caret = Some(pageedit::Caret { block: 0, text: pageedit::caret_text(&ed.blocks[0]), selection: (10, 10), ..Default::default() });
                 NoteCraftApp::mark_dirty_from_blocks(ed);
@@ -2304,6 +2312,7 @@ mod tests {
             ed.blocks.push(notecraft_formats::Block::Table {
                 head: vec![vec![notecraft_formats::Span { text: "Column".into(), ..Default::default() }]],
                 rows: vec![],
+                emoji: Vec::new(),
             });
             ed.columns.set(2, 0, 244.0, &[160.0]);
             ed.justified.set(1, Some(notecraft_model::justify::Strength::High));

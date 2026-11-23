@@ -14528,6 +14528,7 @@ fn a_pen_on_a_folded_ribbon_over_the_page_picks_up_no_pen() {
 #[test]
 fn block_header_plus_adds_and_removes_an_emoji() {
     const THUMB_UP: &str = "\u{1F44D}";
+    const GRIN: &str = "\u{1F600}";
     let (_t, app, s) = sample_app("ui-block-emoji");
     let mut h = harness(app, LIGHT);
     h.state_mut().open_path(&s.md_page.to_string_lossy());
@@ -14538,9 +14539,11 @@ fn block_header_plus_adds_and_removes_an_emoji() {
     h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
     h.run();
     settle(&mut h);
-    assert!(h.query_all_by_label(THUMB_UP).count() > 0, "the `+` opens the emoji popup");
+    assert!(h.query_all_by_label(GRIN).count() > 0, "the `+` opens the emoji popup");
 
     // Criterion 2: choosing an emoji puts it beside the `+`.
+    h.get_by_label("Hands").click();
+    h.run();
     h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
     h.run();
     settle(&mut h);
@@ -14587,6 +14590,8 @@ fn block_header_records_usage_like_the_other_controls() {
     h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
     h.run();
     settle(&mut h);
+    h.get_by_label("Hands").click();
+    h.run();
     h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
     h.run();
     settle(&mut h);
@@ -14617,6 +14622,8 @@ fn a_block_emoji_is_saved_with_the_page_in_both_formats() {
         h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
         h.run();
         settle(&mut h);
+        h.get_by_label("Hands").click();
+        h.run();
         h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
         h.run();
         settle(&mut h);
@@ -14804,7 +14811,30 @@ fn the_emoji_grid_shows_every_choice_including_the_party_popper() {
     h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
     h.run();
     settle(&mut h);
+    h.get_by_label("Symbols").click();
+    h.run();
+    settle(&mut h);
     let popper = h.query_all_by_label(POPPER).last().expect("the party popper is in the grid").rect();
-    let tiles = h.query_all_by_label_contains("\u{1F600}").count();
-    assert!(tiles >= 1 && popper.bottom() > 0.0, "the popper is laid out: {popper:?}");
+    let _ = 0;
+    assert!(popper.height() > 0.0 && popper.width() > 0.0, "the popper is laid out: {popper:?}");
+}
+
+/// The emoji popup has tabs: the Hearts tab shows hearts only, and the Smileys tab is the first.
+#[test]
+fn the_emoji_popup_has_tabs_that_show_one_group_at_a_time() {
+    const GRIN: &str = "\u{1F600}";
+    const RED_HEART: &str = "\u{2764}\u{FE0F}";
+    let (_t, app, s) = sample_app("ui-emoji-tabs");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    assert!(h.query_all_by_label(GRIN).count() > 0, "the Smileys tab is shown first");
+    h.get_by_label("Hearts").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label(GRIN).count(), 0, "the Hearts tab hides the smileys");
+    assert!(h.query_all_by_label(RED_HEART).count() > 0, "and shows the hearts");
 }

@@ -75,6 +75,10 @@ pub const CHOICES: &[&str] = &[
     "\u{1F3B5}",
 ];
 
+/// The tabs above the grid: each has a name and the range of `CHOICES` it shows, in order. Together
+/// they cover every choice, and a search looks through all of them.
+pub const TABS: &[(&str, std::ops::Range<usize>)] = &[("Smileys", 0..24), ("Hands", 24..34), ("Hearts", 34..44), ("Symbols", 44..70)];
+
 /// A short English name for each choice, in the same order as `CHOICES`; the search matches them.
 pub const CHOICE_NAMES: &[&str] = &[
     "grinning face",
@@ -234,11 +238,28 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
                 field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, "Search emoji"));
                 ui.data_mut(|d| d.insert_temp(search_id, query.clone()));
                 let needle = query.trim().to_lowercase();
+                // The tab shown: the last one picked, or the first; ignored while searching.
+                let tab_id = open_id().with("tab");
+                let mut tab: usize = ui.data(|d| d.get_temp::<usize>(tab_id)).unwrap_or(0);
+                if needle.is_empty() {
+                    ui.horizontal(|ui| {
+                        for (n, (name, _)) in TABS.iter().enumerate() {
+                            if ui.selectable_label(tab == n, *name).clicked() {
+                                tab = n;
+                            }
+                        }
+                    });
+                    ui.data_mut(|d| d.insert_temp(tab_id, tab));
+                }
+                let shown = if needle.is_empty() { TABS[tab.min(TABS.len() - 1)].1.clone() } else { 0..CHOICES.len() };
                 // Wide and tall enough to show every choice; the grid scrolls only past that.
                 egui::ScrollArea::vertical().max_height(300.0 * zoom).show(ui, |ui| {
                     ui.set_max_width(10.0 * 36.0 * zoom);
                     ui.horizontal_wrapped(|ui| {
-                        for (c, name) in CHOICES.iter().zip(CHOICE_NAMES) {
+                        for (index, (c, name)) in CHOICES.iter().zip(CHOICE_NAMES).enumerate() {
+                            if !shown.contains(&index) {
+                                continue;
+                            }
                             if !needle.is_empty() && !name.contains(needle.as_str()) {
                                 continue;
                             }
@@ -310,6 +331,16 @@ mod tests {
     fn every_choice_has_a_name_to_search_by() {
         assert_eq!(CHOICES.len(), CHOICE_NAMES.len());
         assert!(CHOICE_NAMES.iter().all(|n| !n.is_empty()));
+    }
+
+    #[test]
+    fn the_tabs_cover_every_choice_once() {
+        let mut next = 0;
+        for (_, range) in TABS {
+            assert_eq!(range.start, next, "the tabs run on in order");
+            next = range.end;
+        }
+        assert_eq!(next, CHOICES.len());
     }
 
     #[test]
